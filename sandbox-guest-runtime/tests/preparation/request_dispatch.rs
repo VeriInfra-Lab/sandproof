@@ -23,6 +23,9 @@ use serde_json::{Value, json};
 #[path = "start_dispatch.rs"]
 mod start;
 
+#[path = "operation_replies.rs"]
+mod operation_replies;
+
 struct NoLookup;
 impl AccountSource for NoLookup {
     fn lookup(&self, _: &str) -> Result<Account, AccountError> {

@@ -283,7 +283,18 @@ async fn dispatch(
         *fixture.command.lock().unwrap() = Some(Stop(fixture.registry.connectable(pid).unwrap()));
         reply
     } else {
-        ready.execute_pid(&fixture.registry, limits).await.unwrap()
+        match ready.execute_pid(&fixture.registry, limits).await {
+            Ok(reply) => reply,
+            Err(failure) => {
+                return failure
+                    .into_operation_response(command_requests::http::reply::Limits {
+                        wire_bytes: 8192,
+                        chunk_bytes: 2048,
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
     };
     assert_eq!(reply.is_stream(), stream);
     reply

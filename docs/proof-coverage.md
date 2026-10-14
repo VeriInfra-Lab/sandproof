@@ -396,6 +396,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [命令请求准入/PID 分派](../sandbox-guest-service/src/command_requests.rs)增加原请求额度到 token/Basic/JSON 阻塞工作的所有权连接、取消/超时后实际闭包退出、单次解码和不可替换请求到原注册句柄、部分输入不重放、原响应期限与最后 Bytes 引用释放的自有义务，尚未抽取或证明。真实账户/进程适配沿用现有端口，不把其有限测试提升为 HTTP 路由、跨服务恢复、整机容量或 Go 双端证据；纯核心及已证明 Rust 未改，旧定理不覆盖新编排。
 
+[PID 操作拒绝](../sandbox-guest-service/src/command_requests/http/operation.rs)新增原选择器、实际表查询结果及参数检查顺序到有限错误观察的对应；原终局保留与存活控制的区别、未知不伪装 NotFound、超时不重用旧观察和派发失败不重放也须证明。已观察事实到固定类型/数值/枚举文本、Go JSON 转义、一元/流式错误格式、共用有限发送器和原错误/期限/容量到最后副本均尚未抽取或证明。受控原 Go 格式对照不执行原 getProcess/handleInput/SendSignal，真实 Linux 与 SDK 回归也不能代替完整 E03、任意并发或整机内存证明；纯核心和已证明 Rust/Lean 未改。
+
 [命令空消息语义](../sandbox-guest-runtime/src/protocol.rs)修正完整零长度标准流帧到默认 protobuf 请求的连接，不放宽一元空 JSON、原输入预算或截断拒绝。[可选 EOS 校验](../sandbox-guest-runtime/src/protocol/end_stream.rs)另增加首消息优先、完整终结帧/EOF、独立载荷预算、encoding/json 字段/null/重复/折叠语义、Unicode 替换及有界副本、已知形状与 base64 校验而不应用客户端错误的对应义务；不保留任意元数据树的空间界和未知深度遍历也尚未证明。有限原 Go server-stream 对照不覆盖压缩、公开错误全文或完整协议证明；纯核心和已证明 Rust/Lean 未改。
 
 [命令请求 gzip](../sandbox-guest-runtime/src/protocol/request_body.rs)增加原协商到逐帧解压、wire-empty 与展开为空的区分、首消息/尾帧错误顺序、原始与展开预算、EOS 规范化及已解码请求同时驻留的对应义务。命令和文件抽取为同一[有界解压器](../sandbox-guest-service/src/request_gzip.rs)，各自错误分类、原授权/取消/绝对期限、实际 worker 退出及请求容量保留仍须分别证明；可信 expander 接口本身不提供分配上界证明。有限固定 Go 接受性/值对照不证明公开错误全文或整套协议，新增 Selected::decode 与 SDK 迁移尚未抽取或证明。后续[已知 gzip 回复](../sandbox-guest-service/src/command_requests/http/reply.rs)复用文件错误观察，增加实际阶段到固定文本、一元 identity/流式协商 EOS、未知故障不误映射、原错误/期限/容量到发送失败和最后副本的对应义务；有限完整错误字节测试不证明全部 codec 错误或正式端点。纯核心和已证明 Rust/Lean 未改。

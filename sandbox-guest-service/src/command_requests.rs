@@ -309,6 +309,8 @@ pub struct Failure {
     #[cfg(target_os = "linux")]
     default_account: Option<http::default_account::Rejection>,
     #[cfg(target_os = "linux")]
+    operation: Option<http::operation::Rejection>,
+    #[cfg(target_os = "linux")]
     response: Option<http::ResponseFormat>,
     _owner: Owner,
 }
@@ -321,6 +323,8 @@ impl Failure {
             unknown_user: None,
             #[cfg(target_os = "linux")]
             default_account: None,
+            #[cfg(target_os = "linux")]
+            operation: None,
             #[cfg(target_os = "linux")]
             response: None,
             _owner: owner,

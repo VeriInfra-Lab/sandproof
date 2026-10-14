@@ -15,6 +15,8 @@ from e2b.envd.process import process_connect, process_pb
 from e2b.sandbox.commands.command_handle import CommandExitException
 from e2b.sandbox_sync.commands.command_handle import CommandHandle
 from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 
 from sdk_support import isolated_sdk_environment
 
@@ -44,6 +46,21 @@ class Peer:
             await stream.aclose()
         else:
             stream.close()
+
+    async def rejected(self, method, kind, payload, code, message):
+        try:
+            if method == 'connect':
+                stream = self.call(method, kind.from_json(json.dumps(payload)))
+                try:
+                    await self.next(stream)
+                finally:
+                    await self.close(stream)
+            else:
+                await self.unary(method, kind, payload)
+        except ConnectError as error:
+            assert (error.code, error.message) == (code, message), repr(error)
+        else:
+            raise AssertionError(f'{method} unexpectedly accepted rejected request')
 
     async def output(self, stream, channel, expected):
         actual = bytearray()
@@ -129,6 +146,22 @@ async def run(settings):
         await peer.close(stream)
 
     selector = {'process': {'pid': pid}}
+    # Native SDK calls decode real Rust failure responses before a later valid
+    # reconnect/control. They neither close stdin nor substitute a signal.
+    missing = {'process': {'pid': 4294967295}}
+    for method, kind in [('connect', process_pb.ConnectRequest),
+                         ('send_input', process_pb.SendInputRequest),
+                         ('send_signal', process_pb.SendSignalRequest)]:
+        await peer.rejected(method, kind, missing, Code.NOT_FOUND,
+                            'process with pid 4294967295 not found')
+    for method, kind in [('connect', process_pb.ConnectRequest),
+                         ('send_input', process_pb.SendInputRequest)]:
+        await peer.rejected(method, kind, {}, Code.UNIMPLEMENTED,
+                            'invalid input type *process.ProcessSelector')
+    await peer.rejected('send_input', process_pb.SendInputRequest, selector,
+                        Code.UNIMPLEMENTED, 'invalid input type <nil>')
+    await peer.rejected('send_signal', process_pb.SendSignalRequest, selector,
+                        Code.UNIMPLEMENTED, 'invalid signal: SIGNAL_UNSPECIFIED')
     stream = peer.call('connect', process_pb.ConnectRequest.from_json(json.dumps(selector)))
     try:
         first = (await peer.next(stream)).event.event
@@ -174,4 +207,5 @@ if __name__ == '__main__':
     settings = json.load(sys.stdin)
     with isolated_sdk_environment():
         asyncio.run(run(settings))
-    print(f"authenticated PID SDK: {settings['mode']}, async={settings['asynchronous']} passed")
+    print(f"authenticated PID SDK: {settings['mode']}, async={settings['asynchronous']} passed; "
+          "seven operation rejections passed")

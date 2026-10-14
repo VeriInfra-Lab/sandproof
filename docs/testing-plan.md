@@ -78,6 +78,10 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [命令空消息回归](../sandbox-guest-runtime/tests/protocol.rs)核对零长度完整帧、最小正预算、缺失/截断/错误 flags/多个消息和一元空正文的区别；EOS 回归另核对先解码首消息、两个载荷独立预算和不采纳客户端 error。[固定 Go F 对照](../sandbox-guest-runtime/tests/command_requests.rs)通过原 server-stream handler 回显生成 Start/Connect 请求，覆盖全部 256 个空帧 flags、JSON 形状、截断和多个数据消息。[后续 EOS 对照](../sandbox-guest-runtime/tests/command_requests/streams.rs)新增 3,948 组首消息存在性、所有尾帧 flags、完整 EOF、已知字段形状/null/重复/折叠、UTF-8/surrogate、base64 和深度边界；只比较接受性与成功解码字段，错误码/全文、压缩及完整服务未据此验收。
 
+[PID 操作回复检查](../sandbox-guest-service/src/command_requests/http/operation/tests.rs)覆盖原始/压缩精确预算、原观察/期限、缺失分类和最后字节副本。固定 Go R 入口以 144 组 Connect/控制方法、JSON 类型、协商编码和 PID/信号边界比较完整状态/头/flags/错误字节；使用原 fmt、生成枚举和 Connect 渲染固定 getProcess/handleInput/SendSignal 表达式，查询结果为受控事实，不执行原服务方法或证明其并发顺序。共用 SANDPROOF_GUEST_CONNECT_REFERENCE 并显式 --include-ignored。
+
+[Linux PID 拒绝连接](../sandbox-guest-runtime/tests/preparation/operation_replies.rs)新增真实 worker/登记、缺失 PID 优先于参数、缺失选择器/输入与未知信号不影响原进程、后续合法 TERM、保留 Connect 与终局过期拒绝，以及 tag/无格式保持未分类。每次核对完成鉴权释放和原回复最后副本容量。[固定 SDK 调用集](../tests/compat/guest_registered_sdk.py)每轮新增七个原生成客户端错误调用，八轮共 56 个，使用原 ConnectError 的 code/message 后继续原命令的重连/输入/PTY/终止；它不等同于高层异常映射或 Go 双端 E03。两个 Linux 场景及新增 SDK 失败调用待本候选 CI，交叉检查不能计作实跑。
+
 F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFERENCE 并显式 --include-ignored；参考二进制须包含 F 入口。新增 EOS 本地对照及可移植规范化检查已执行；Linux 默认账户顺序测试加入零长度 Start 帧及带客户端 error 的合法 EOS，确认仍查询原默认账户，已在下述 #448 CI 通过。
 
 [正常命令回复检查](../sandbox-guest-service/src/command_requests/http/response/tests.rs)覆盖协商 charset/identity/gzip、短消息压缩、每帧预算与无累计上限、真实编码长度头、原期限、截断/非法帧、最后副本反压和排队编码取消后实际工作退出。固定 Go N 入口复用原生成消息及 Connect handler，以 164 组 List/控制回复、Start/Connect 事件、Unicode/长文本和两种编码/类型比较真实头、flags 与解压后的 JSON 值；压缩字节流及 protobuf JSON 空白/键序不要求一致，长度头先核对各自实际字节再比较是否存在，不据此宣称跨编码器 2048 临界字节完全相同。N 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。
@@ -86,9 +90,9 @@ F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFER
 
 [命令请求 gzip 检查](../sandbox-guest-service/src/command_requests/compression/tests.rs)覆盖 wire-empty/展开为空、首消息与尾帧错误顺序、首头/正文故障、原始和展开预算以及取消/期限；排队解压另以单阻塞线程屏障核对原鉴权与容量直到实际退出才释放。固定 Go E 入口复用原生成消息和 stream/unary handler，以 3,116 组七种命令、拼接/空/截断/损坏 gzip、全部 flags 和压缩 EOS 比较接受性及解码值；不把粗分类当作公开错误全文。E 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建参考二进制并显式 --include-ignored。
 
-[Linux gzip 请求连接](../sandbox-guest-service/src/command_requests/tests/http/gzip.rs)核对七种方法、分块输入、格式/期限和原容量；[Start 顺序](../sandbox-guest-service/src/command_requests/tests/start/gzip.rs)核对 gzip/framing/预算失败先于默认账户及准备，合法压缩请求才查询原默认账户，gzip 账户拒绝保持最后副本责任。SDK/PID 路由迁移到 Selected::decode，固定 SDK 自身仍发送 identity，不能把该回归计为原 SDK 发送 gzip。新增两项 Linux 连接与迁移后的 SDK 回归待本候选 CI；组件对照不代替完整 E03/E05。
+[Linux gzip 请求连接](../sandbox-guest-service/src/command_requests/tests/http/gzip.rs)核对七种方法、分块输入、格式/期限和原容量；[Start 顺序](../sandbox-guest-service/src/command_requests/tests/start/gzip.rs)核对 gzip/framing/预算失败先于默认账户及准备，合法压缩请求才查询原默认账户，gzip 账户拒绝保持最后副本责任。SDK/PID 路由迁移到 Selected::decode，固定 SDK 自身仍发送 identity，不能把该回归计为原 SDK 发送 gzip。两项 Linux 连接与迁移后的 SDK 回归已在下述 #451 CI 通过；组件对照不代替完整 E03/E05。
 
-[命令 gzip 回复检查](../sandbox-guest-service/src/command_requests/http/reply/tests/gzip.rs)覆盖真实解压阶段到固定回复、原始/压缩精确预算、原期限、最后字节副本及未分类故障。Go E 的可选 Reply 观察与原接受性入口分开，以 828 组七种命令、两种 JSON 类型、首消息/压缩 EOS 和首头/正文/拼接成员失败比较真实状态、头、flags 与完整解压错误字节；不要求 gzip 位流相同。须重建参考二进制并显式 --include-ignored；它不执行命令或比较任意 DEFLATE 诊断。Linux 原鉴权/选择/解压到 into_response 的连接新增一项，核对默认格式、完成鉴权释放和最后副本容量，待该候选 CI，不能沿用 #451 请求解码证据。
+[命令 gzip 回复检查](../sandbox-guest-service/src/command_requests/http/reply/tests/gzip.rs)覆盖真实解压阶段到固定回复、原始/压缩精确预算、原期限、最后字节副本及未分类故障。Go E 的可选 Reply 观察与原接受性入口分开，以 828 组七种命令、两种 JSON 类型、首消息/压缩 EOS 和首头/正文/拼接成员失败比较真实状态、头、flags 与完整解压错误字节；不要求 gzip 位流相同。须重建参考二进制并显式 --include-ignored；它不执行命令或比较任意 DEFLATE 诊断。Linux 原鉴权/选择/解压到 into_response 的连接另核对默认格式、完成鉴权释放和最后副本容量，已在下述 #452 CI 通过，独立于 #451 请求解码证据。
 
 [Start 默认账户回复检查](../sandbox-guest-service/src/command_requests/http/default_account/tests.rs)覆盖原始/压缩载荷独立限额、原期限、缺失观察/选择与最后字节副本。固定 Go D 入口用原生成 Start 消息及 Connect handler，比较 20 组 JSON 类型、identity/gzip、空/普通/转义/控制/长用户名的真实 HTTP 头、flags 和 JSON 原字节；失败表达来自固定 GetAuthUser，账户查询为受控失败，不运行进程。D 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。独立 gzip 编码通过不代表 gzip Start 连接已经 Linux 实测。
 
@@ -111,6 +115,8 @@ F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFER
 #441–#448 的头/方法、显式账户/token/默认账户与空帧/EOS 连接已有累积 Linux 证据：[#442](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38571233313) 源 065b70f0b6e7f19bf6d84f95ad207e1dc6be38b1、checkout 736bf8496a94526419af12e0fcda3218f7deedf3；[#447](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38583740598) 源 db327e9ea840be23d6db69a5224b7b8968d2b58e、checkout a15e028333dcacc078c0bedca138e65fb52e0d18；[#448](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38586175865) 源 ad6fbfb3ea226f0a54c7a358892851d6e094adb8、checkout 4d06bfa9e90c219fe3cd5930e7840c623e86928b。三次四项 CI 均通过；#447/#448 的 service lib 各 368 passed / 56 ignored，含账户顺序/所有权和八轮 SDK/PID 真实进程，#448 另覆盖合法 EOS 的默认账户顺序。固定 Go 显式对照仍另行执行，不由 ignored 推算通过。
 
 正常回复连接另在 [#450 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38589161073) 通过：源 f5a8eb8db49def00b9cce4d1e69cc4dae9b21a3e、checkout 53060df12ae418172753eb6a2a74bb37aa976c6c；四项 CI、77 项 SDK 合同、八轮 SDK/PID 真实命令、List gzip 原容量测试及封存 Redis 均通过，service lib 374 passed / 57 ignored。该证据不包含后续请求 gzip 连接，也不是正式服务、Go 双端或完整 E03。
+
+请求 gzip 在 [#451 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38592180107) 通过：源 530227c14c5a4bea64174536646feb5242bb2ac0、checkout 9041fdd0c8b2c34758286e8dcc95381fdc68eeb7，service 380 passed / 58 ignored，含七方法解压、Start 失败顺序及排队取消。已知 gzip 回复在 [#452 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38593528212) 通过：源 0e15d65664d9c6573a47f02de1a5764b1e5388b5、checkout f5793b488ddf28baa5bfe482b6410517de904e73，service 383 passed / 59 ignored，含原选择到错误响应及最后副本。两次四项 CI、77 项 SDK、八轮真实 PID/SDK 与封存 Redis 均通过；固定 Go 显式对照独立报告，不包含后续 PID 操作错误或完整 E03。
 
 上述 Start 组件的六项账户/准入/实进程回归已在 [#438 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38562089660) 实跑通过（源 550ca46ecb595d25932936a33999fe4fec8cf5fa，实际 checkout e596ebabe93f29dc90504b2e8d2d4d6f34145bb1）：preparation 28 passed、service lib 344 passed / 50 ignored，SDK 与封存 Redis 检查通过。该精确父提交证据不覆盖新增 SDK/PID 组合或完整公开端点。
 

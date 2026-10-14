@@ -200,20 +200,55 @@ pub(super) async fn send_stream_error(
     if !format.content_type().starts_with("application/connect+") {
         return Err(Error::UnclassifiedFault);
     }
+    send_error(
+        format,
+        StatusCode::BAD_REQUEST,
+        limits,
+        deadline,
+        owner,
+        move |_, limit| encode(limit),
+    )
+    .await
+}
+
+/// A known operation failure uses unary identity JSON or the original stream
+/// format. The caller owns its observed classification and bounded diagnostic.
+#[cfg(any(target_os = "linux", test))]
+pub(super) async fn send_error(
+    format: ResponseFormat,
+    unary_status: StatusCode,
+    limits: Limits,
+    deadline: Instant,
+    owner: Owner,
+    encode: impl FnOnce(bool, usize) -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Error> {
+    check_limits(limits)?;
+    let stream = format.content_type().starts_with("application/connect+");
     let plan = Plan {
         method_head: None,
-        stream: true,
-        gzip: format.encoding() == Encoding::Gzip,
-        content_type: format.content_type(),
-        status: StatusCode::OK,
+        stream,
+        gzip: stream && format.encoding() == Encoding::Gzip,
+        content_type: if stream {
+            format.content_type()
+        } else {
+            "application/json"
+        },
+        status: if stream { StatusCode::OK } else { unary_status },
     };
     let payload = finite_body::prepare(deadline, owner, move |cancelled| {
         let limit = limits
             .wire_bytes
-            .checked_sub(5)
+            .checked_sub(if stream { 5 } else { 0 })
             .ok_or(Error::ResponseLimit)?;
-        let payload = encode(limit)?;
-        wire::frame(&payload, plan.gzip, limits, deadline, &cancelled)
+        let payload = encode(stream, limit)?;
+        wire::encode_payload(
+            &payload,
+            stream.then_some(2),
+            plan.gzip,
+            limits,
+            deadline,
+            &cancelled,
+        )
     })
     .await?;
     response(payload, plan, limits, deadline)

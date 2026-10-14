@@ -17,6 +17,8 @@ pub mod account;
 pub mod authorization;
 #[cfg(any(target_os = "linux", test))]
 pub mod default_account;
+#[cfg(any(target_os = "linux", test))]
+pub mod operation;
 pub mod reply;
 #[cfg(any(target_os = "linux", test))]
 pub mod response;

@@ -1,5 +1,6 @@
-//! PID-only dispatch under the original request. Errors deliberately remain
-//! payload-free component errors; public Connect status/text mapping is separate.
+//! PID-only dispatch under the original request. Known selector/parameter
+//! failures preserve their actual observation for the separate HTTP sender.
+use super::http::operation::Rejection;
 use super::{Body, Error, Failure, Instant, Owner, Ready, Request, check_deadline};
 use crate::command::{CommandBodyLimits, ManagedCommand, PidRegistry};
 use sandproof_guest_runtime::{
@@ -81,13 +82,13 @@ impl Ready {
         let deadline = self.deadline();
         let format = self.response;
         let owner = self.decoded.authenticated.admitted.owner.clone();
+        let mut observed = None;
         let result = async {
             check_deadline(deadline)?;
             let request = &self.decoded.request;
             if let Request::Connect(selector) = request {
-                let command = registry
-                    .connectable(pid(selector.as_ref())?)
-                    .map_err(Error::Registry)?;
+                let number = pid(selector.as_ref(), &mut observed)?;
+                let command = lookup(registry.connectable(number), number, &mut observed)?;
                 let stream = command
                     .subscribe(command.identity())
                     .map_err(Error::Command)?;
@@ -105,7 +106,7 @@ impl Ready {
                 _ => {
                     let bytes = protocol::encode_response(Response::Empty, limits.message_bytes)
                         .map_err(Error::Protocol)?;
-                    control(request, registry).await?;
+                    control(request, registry, &mut observed).await?;
                     bytes
                 }
             };
@@ -131,45 +132,79 @@ impl Ready {
             .map_err(|error| {
                 let mut failure = Failure::new(error, deadline, owner);
                 failure.response = format;
+                failure.operation = observed.filter(|observation| observation.matches(error));
                 failure
             })
     }
 }
-fn pid(selector: Option<&Selector>) -> Result<u32, Error> {
+fn pid(selector: Option<&Selector>, observed: &mut Option<Rejection>) -> Result<u32, Error> {
     match selector {
         Some(Selector::Pid(pid)) => Ok(*pid),
         Some(Selector::Tag(_)) => Err(Error::UnsupportedOperation),
-        _ => Err(Error::Protocol(protocol::ProtocolError::Unimplemented)),
+        _ => {
+            *observed = Some(Rejection::MissingSelector);
+            Err(Error::Protocol(protocol::ProtocolError::Unimplemented))
+        }
     }
 }
-fn live(registry: &PidRegistry, selector: Option<&Selector>) -> Result<ManagedCommand, Error> {
-    registry.live(pid(selector)?).map_err(Error::Registry)
+fn lookup(
+    result: Result<ManagedCommand, crate::command::RegistryError>,
+    number: u32,
+    observed: &mut Option<Rejection>,
+) -> Result<ManagedCommand, Error> {
+    result.map_err(|error| {
+        if error == crate::command::RegistryError::NotFound {
+            *observed = Some(Rejection::PidNotFound(number));
+        }
+        Error::Registry(error)
+    })
 }
-async fn control(request: &Request, registry: &PidRegistry) -> Result<(), Error> {
+fn live(
+    registry: &PidRegistry,
+    selector: Option<&Selector>,
+    observed: &mut Option<Rejection>,
+) -> Result<ManagedCommand, Error> {
+    let number = pid(selector, observed)?;
+    lookup(registry.live(number), number, observed)
+}
+async fn control(
+    request: &Request,
+    registry: &PidRegistry,
+    observed: &mut Option<Rejection>,
+) -> Result<(), Error> {
     let result = match request {
         Request::SendInput { process, input } => {
-            let command = live(registry, process.as_ref())?;
+            let command = live(registry, process.as_ref(), observed)?;
             match input {
                 Some(Input::Stdin(bytes)) => command.write_input(command.identity(), bytes).await,
                 Some(Input::Pty(bytes)) => command.write_pty(command.identity(), bytes).await,
-                _ => return Err(Error::Protocol(protocol::ProtocolError::Unimplemented)),
+                _ => {
+                    *observed = Some(Rejection::MissingInput);
+                    return Err(Error::Protocol(protocol::ProtocolError::Unimplemented));
+                }
             }
         }
         Request::CloseStdin(process) => {
-            let command = live(registry, process.as_ref())?;
+            let command = live(registry, process.as_ref(), observed)?;
             command.close_input(command.identity())
         }
         Request::SendSignal { process, signal } => {
-            let command = live(registry, process.as_ref())?;
+            let command = live(registry, process.as_ref(), observed)?;
             let signal = match signal {
                 Signal::Terminate => ProcessSignal::Terminate,
                 Signal::Kill => ProcessSignal::Kill,
-                _ => return Err(Error::Protocol(protocol::ProtocolError::Unimplemented)),
+                signal => {
+                    *observed = Some(Rejection::Signal(match signal {
+                        Signal::Unknown(value) => *value,
+                        _ => 0,
+                    }));
+                    return Err(Error::Protocol(protocol::ProtocolError::Unimplemented));
+                }
             };
             command.signal(command.identity(), signal)
         }
         Request::Update { process, pty } => {
-            let command = live(registry, process.as_ref())?;
+            let command = live(registry, process.as_ref(), observed)?;
             if let Some(pty) = pty {
                 let size = pty.size.as_ref().map_or_else(PtySize::default, |size| {
                     PtySize::from_wire(size.cols, size.rows)

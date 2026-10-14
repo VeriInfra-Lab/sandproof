@@ -393,6 +393,10 @@ List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用�
 
 [无 tag 的 Start 组件](../sandbox-guest-service/src/command_requests/start.rs)消费同一 Ready 请求：复用 Basic 预检的精确账户，默认账户在解码后查询，阻塞查询持续持有原授权/请求至实际退出；账户失败先于命令参数拒绝。原初始化快照与已选账户经共用纯组合生成 cwd、环境和数值身份，环境 USER/HOME 不选择内核身份；账户解析后只捕获一次原执行期限，HTTP/响应期限不刷新。调用方显式提供同一 VM/服务会话、未用命令编号、固定 worker/私有目录、原 PID 集/活跃表及预算，不从客户端读取这些配置。prepare 前检查首个 Start 帧按最大 PID 的编码预算并预留原始配置的 List 元数据；原票据持久 claim、装入原活跃记录后才接受放行。返回同一初始订阅，回复取消不关闭共享 stdin 或重执行；接受后的超时可能已有命令，失败不代表未执行或收尾成功。带 tag（包括空串）仍是本组件的 UnsupportedOperation，未定义公开状态码或选择重复策略；完整 HTTP Start/tag 路由尚未启用。
 
+[PID 操作拒绝回复](../sandbox-guest-service/src/command_requests/http/operation.rs)只消费原 execute_pid 已保存的有限事实：缺失/空选择器、实际 NotFound 的 u32 PID、成功取得存活句柄后缺失输入或不支持信号。Connect 先使用原可连接记录（包括有效保留终局），控制操作只查存活记录；未知/未准备好/锁失败不伪装成 PID 不存在。缺失 PID 仍先于输入/信号参数拒绝，失败不重新查表或影响原进程；超时不把先前事实升级为另一个公开错误。
+
+原 Failure::into_operation_response 使用同一回复格式、绝对期限和请求责任：PID 缺失为 not_found，一元 404；缺少选择器/输入或不支持信号为 unimplemented，一元 501；一元错误始终 identity application/json。Connect 错误为 200、原 charset/协商编码的唯一 EOS，无进程事件。文本保持固定 getProcess/handleInput/SendSignal 的类型名、无符号 PID 和枚举名称/有符号数字，按 Go JSON 转义；数值临时字符串大小固定有界。原 JSON、编码副本和传输块各计入有界工作区，编码失败/最后副本继续持有同一责任。tag、Start/工作进程、I/O 细节和缺失格式/观察仍未分类，不能由这些错误推断旧进程不存在或已清理。
+
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)消费同一 Basic 预检结果，先选择已知命令的 POST 与两个 Connect JSON 类型，复用有界 MIME 参数解析。其他原协议为未选定分类，不据此公开返回 415。一元与 Start/Connect 分别选择原 Content-Encoding/Accept-Encoding 和 Connect-Content-Encoding/Connect-Accept-Encoding 的第一值；空值/identity/gzip、逗号或 ASCII 空格分割及不解释 q 权重遵循固定协商。方法/媒体类型先于压缩，压缩错误先于版本，版本先于期限语法错误；有效期限先收紧原准入上限，失败保留已选回复格式/编码及原期限，不刷新容量或时钟。诊断只复制完整头预算后的对应首值，Debug 不暴露原值。
 
 Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不可替换的原回复格式；旧 decode_identity 仍在读正文前拒绝 gzip，不将其 EncodingNotImplemented 定义为公开拒绝政策。零/负 wire 期限保留为到期并在本组件效果前拒绝；原 Go 外层上下文到期本身并不证明每个流 handler 都停止派发，有限头对照不作此承诺。失败保留请求容量，不保留已经完成的鉴权读锁。解码/操作错误全文及未分类账户故障、keepalive 头和正式路由/daemon 仍待连接。
