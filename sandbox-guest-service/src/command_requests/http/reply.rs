@@ -1,5 +1,5 @@
-//! Bounded replies for observed Connect method and header failures. No arbitrary
-//! diagnostics, codec policy or command-operation errors are mapped.
+//! Bounded replies for observed Connect method, header and gzip failures. No
+//! arbitrary diagnostics, codec policy or command-operation errors are mapped.
 use super::Error as SelectionError;
 #[cfg(any(target_os = "linux", test))]
 use super::{Encoding, ResponseFormat};
@@ -108,6 +108,7 @@ impl Plan {
         let status = match error {
             SelectionError::Compression(_) => StatusCode::NOT_IMPLEMENTED,
             SelectionError::Version(_) | SelectionError::Timeout(_) => StatusCode::BAD_REQUEST,
+            error if observed_compression(error).is_some() => StatusCode::BAD_REQUEST,
             _ => return Err(Error::UnclassifiedFault),
         };
         let format = format.ok_or(Error::UnclassifiedFault)?;
@@ -125,6 +126,17 @@ impl Plan {
             },
             status: if stream { StatusCode::OK } else { status },
         })
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn observed_compression(error: &SelectionError) -> Option<crate::file_rpc_response::GzipRejection> {
+    if let SelectionError::Request(crate::command_requests::Error::Compression { stage, error }) =
+        error
+    {
+        crate::file_rpc_response::GzipRejection::observed(*stage, *error)
+    } else {
+        None
     }
 }
 

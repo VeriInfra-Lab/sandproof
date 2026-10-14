@@ -88,6 +88,8 @@ F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFER
 
 [Linux gzip 请求连接](../sandbox-guest-service/src/command_requests/tests/http/gzip.rs)核对七种方法、分块输入、格式/期限和原容量；[Start 顺序](../sandbox-guest-service/src/command_requests/tests/start/gzip.rs)核对 gzip/framing/预算失败先于默认账户及准备，合法压缩请求才查询原默认账户，gzip 账户拒绝保持最后副本责任。SDK/PID 路由迁移到 Selected::decode，固定 SDK 自身仍发送 identity，不能把该回归计为原 SDK 发送 gzip。新增两项 Linux 连接与迁移后的 SDK 回归待本候选 CI；组件对照不代替完整 E03/E05。
 
+[命令 gzip 回复检查](../sandbox-guest-service/src/command_requests/http/reply/tests/gzip.rs)覆盖真实解压阶段到固定回复、原始/压缩精确预算、原期限、最后字节副本及未分类故障。Go E 的可选 Reply 观察与原接受性入口分开，以 828 组七种命令、两种 JSON 类型、首消息/压缩 EOS 和首头/正文/拼接成员失败比较真实状态、头、flags 与完整解压错误字节；不要求 gzip 位流相同。须重建参考二进制并显式 --include-ignored；它不执行命令或比较任意 DEFLATE 诊断。Linux 原鉴权/选择/解压到 into_response 的连接新增一项，核对默认格式、完成鉴权释放和最后副本容量，待该候选 CI，不能沿用 #451 请求解码证据。
+
 [Start 默认账户回复检查](../sandbox-guest-service/src/command_requests/http/default_account/tests.rs)覆盖原始/压缩载荷独立限额、原期限、缺失观察/选择与最后字节副本。固定 Go D 入口用原生成 Start 消息及 Connect handler，比较 20 组 JSON 类型、identity/gzip、空/普通/转义/控制/长用户名的真实 HTTP 头、flags 和 JSON 原字节；失败表达来自固定 GetAuthUser，账户查询为受控失败，不运行进程。D 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。独立 gzip 编码通过不代表 gzip Start 连接已经 Linux 实测。
 
 [Linux Start 连接检查](../sandbox-guest-service/src/command_requests/tests/default_account.rs)另核对原 token/Basic/选择/解码到默认查询的顺序、原格式与期限、查询次数、鉴权释放、Bytes 副本、未分类源故障和无选择旧入口；缺失 worker 路径与空闲进程/登记名额确认这些失败不进入准备。两项 Linux 场景与原 Start/SDK 成功回归已在下述 #447/#448 CI 通过；不从可移植错误编码推算 Linux 组合、完整 E03 或资源峰值通过。

@@ -253,13 +253,27 @@ mod owned {
         pub const fn response_format(&self) -> Option<ResponseFormat> {
             self.response
         }
-        /// Emit only observed method/compression/version/timeout failures.
+        /// Compatibility entry for `into_response`, including recognized gzip
+        /// failures from the selected request decoder.
         /// The original request capacity and deadline survive preparation and
         /// all response byte references. Other failures remain unclassified.
         /// # Errors
         /// Unclassified selection, limits, expiry or encoding/worker failure;
         /// the returned failure retains the same original capacity.
         pub async fn into_header_response(
+            self,
+            limits: super::reply::Limits,
+        ) -> Result<axum::response::Response, super::reply::Failure> {
+            self.into_response(limits).await
+        }
+
+        /// Emit an observed method/header failure or recognized request gzip
+        /// failure. Stream errors preserve the original negotiated format;
+        /// unary errors use identity JSON. No process is dispatched or retried.
+        /// # Errors
+        /// Unclassified faults, limits, expiry or encoder loss, retaining the
+        /// original observation, absolute deadline and request capacity.
+        pub async fn into_response(
             self,
             limits: super::reply::Limits,
         ) -> Result<axum::response::Response, super::reply::Failure> {

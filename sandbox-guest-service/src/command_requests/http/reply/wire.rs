@@ -103,7 +103,8 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
     if !matches!(
         error,
         SelectionError::Compression(_) | SelectionError::Version(_) | SelectionError::Timeout(_)
-    ) {
+    ) && super::observed_compression(error).is_none()
+    {
         return Err(Error::UnclassifiedFault);
     }
     go_json::bounded(limit as u64, |put| {
@@ -135,6 +136,14 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
                     message(b"strconv.ParseInt: parsing ")?;
                     go_quote::quoted(value.value(), &mut message)?;
                     message(b": invalid syntax")?;
+                }
+            }
+            error if super::observed_compression(error).is_some() => {
+                for part in super::observed_compression(error)
+                    .expect("classified gzip failure")
+                    .parts()
+                {
+                    message(part)?;
                 }
             }
             _ => unreachable!("classified before encoding"),

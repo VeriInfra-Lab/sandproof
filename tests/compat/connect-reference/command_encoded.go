@@ -9,8 +9,8 @@ import (
 )
 
 type encodedCommandInput struct {
-	Method, Body string
-	Gzip         bool
+	Method, Body      string
+	Gzip, Reply, UTF8 bool
 }
 
 func encodedCommandRecord(data []byte) encodedCommandInput {
@@ -36,6 +36,9 @@ func encodedCommandHeaders(req *http.Request, data []byte) {
 	}
 	if input.Gzip {
 		req.Header.Set(name, "gzip")
+	}
+	if input.UTF8 {
+		req.Header.Set("Content-Type", req.Header.Get("Content-Type")+"; charset=utf-8")
 	}
 }
 func encodedCommandObservation(res *http.Response, body []byte) string {

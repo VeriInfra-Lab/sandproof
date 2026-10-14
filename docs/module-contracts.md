@@ -399,7 +399,9 @@ Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不�
 
 [命令请求 gzip](../sandbox-guest-service/src/command_requests/compression.rs)与文件请求复用[有界解压器](../sandbox-guest-service/src/request_gzip.rs)：HTTP framing 完整后，在原阻塞解码责任内依次展开数据和可选 EOS，原授权、取消信号和绝对期限不替换。压缩输入总量及每个展开消息各受原 body.total_bytes 限制，解压输出块受 body.frame_bytes 限制；拼接/空成员仍校验，读压缩源和取输出块前检查取消/期限。原载荷、展开消息、解析字段及 codec 工作区可能同时驻留，不冒充单副本或整机峰值。
 
-流式零长度标准帧跳过解压和 protobuf JSON，非空 gzip 展开为空仍是 JSON 错误；一元实际空正文也进入原 JSON 拒绝。首消息解码先于尾帧，压缩 EOS 先展开再校验额外字节与元数据；有效客户端 error 不替换执行结果。Header/Body 故障事实与独立预算分别保留，尚无公开 gzip/帧错误全文映射；未知压缩失败不能派发，取消或到期也不提前归还仍排队/运行的 worker 责任。固定 Go 对照只核对解码值和接受性，Linux 连接/SDK 与完整 E03 分开验收。
+流式零长度标准帧跳过解压和 protobuf JSON，非空 gzip 展开为空仍是 JSON 错误；一元实际空正文也进入原 JSON 拒绝。首消息解码先于尾帧，压缩 EOS 先展开再校验额外字节与元数据；有效客户端 error 不替换执行结果。Header/Body 故障事实与独立预算分别保留，已知 gzip 回复见下文，其他帧错误全文仍待接通；未知压缩失败不能派发，取消或到期也不提前归还仍排队/运行的 worker 责任。固定 Go 解码对照只核对值和接受性，Linux 连接/SDK 与完整 E03 分开验收。
+
+[命令 gzip 拒绝回复](../sandbox-guest-service/src/command_requests/http/reply.rs)由原 HTTP Failure::into_response 消费实际解压阶段与原选择格式，只接受已知 Header 截断/坏头及 Body 截断/坏后续头/校验错误。它复用文件侧 GzipRejection 的 get decompressor:/decompress: 文本，不能把展开为空、任意 DEFLATE 诊断、资源/期限或传输失败伪装成这些错误。一元回复为 400、identity application/json；Start/Connect 为 200、原 charset 和已协商 gzip 的唯一错误 EOS，code 为 invalid_argument，不产生 Start/End 或再次派发。原始及压缩帧预算、较早期限、编码失败和最后字节副本沿原有限响应责任；旧 into_header_response 委托同一发送器。其他解码错误仍须补齐，有限完整错误字节对照不是整个端点等价证明。
 
 [正常命令 HTTP 回复](../sandbox-guest-service/src/command_requests/http/response.rs)由 Reply::into_http_response 消费原执行结果/订阅、原格式和期限；无选择的旧入口不能事后补选格式。List/控制成功使用一元 JSON、原 charset、gzip 广告及协商 Content-Encoding；Start/Connect 使用原流类型和 Connect 编码头，每个数据/终结帧分别压缩，保留 flags=0/2 到 1/3。gzip 没有小消息豁免；一元实际编码长度至多 2048 才带自动 Content-Length，流不带长度头。低层 into_body 仍只交付未格式化 identity 字节，HTTP 调用方须使用新入口。
 

@@ -330,7 +330,11 @@ func main() {
 			continue
 		}
 		if mode == "E" {
-			fmt.Fprintln(out, encodedCommandObservation(res, responseBody))
+			if encodedCommandRecord(data).Reply {
+				fmt.Fprintln(out, commandHeaderReply(res, responseBody))
+			} else {
+				fmt.Fprintln(out, encodedCommandObservation(res, responseBody))
+			}
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}

@@ -2,7 +2,7 @@ use crate::{
     file_rpc_requests::CompressionStage, upload_body::GzipError, upload_response::GzipReadError,
 };
 
-/// A recognized gzip failure with its actual unary decoding stage. Empty
+/// A recognized gzip failure with its actual Connect decoding stage. Empty
 /// collected bodies skip decompression; local budgets and arbitrary codec
 /// diagnostics cannot be turned into these fixed Connect messages.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,7 +22,7 @@ impl GzipRejection {
             reason: error.try_into().ok()?,
         })
     }
-    pub(super) fn parts(self) -> [&'static [u8]; 2] {
+    pub(crate) fn parts(self) -> [&'static [u8]; 2] {
         [
             match self.stage {
                 CompressionStage::Header => b"get decompressor: ",
