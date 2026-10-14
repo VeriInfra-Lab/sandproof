@@ -151,6 +151,18 @@ async fn send_inner(
     format: Option<ResponseFormat>,
     limits: Limits,
 ) -> Result<Response, Error> {
+    check_limits(limits)?;
+    let plan = Plan::select(&source.error, format)?;
+    let deadline = source.deadline;
+    let payload = finite_body::prepare(deadline, source.clone(), move |cancelled| {
+        wire::encode(&source.error, plan, limits, deadline, &cancelled)
+    })
+    .await?;
+    response(payload, plan, limits, deadline)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn check_limits(limits: Limits) -> Result<(), Error> {
     if limits.wire_bytes == 0
         || limits.chunk_bytes == 0
         || limits.wire_bytes > u32::MAX as usize
@@ -159,12 +171,49 @@ async fn send_inner(
     {
         return Err(Error::InvalidConfiguration);
     }
-    let plan = Plan::select(&source.error, format)?;
-    let deadline = source.deadline;
-    let payload = finite_body::prepare(deadline, source.clone(), move |cancelled| {
-        wire::encode(&source.error, plan, limits, deadline, &cancelled)
+    Ok(())
+}
+
+/// Internal sender for already observed stream failures; the caller retains
+/// the source on preparation errors, and supplies only bounded fixed JSON.
+#[cfg(any(target_os = "linux", test))]
+pub(super) async fn send_stream_error(
+    format: ResponseFormat,
+    limits: Limits,
+    deadline: Instant,
+    owner: Owner,
+    encode: impl FnOnce(usize) -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Error> {
+    check_limits(limits)?;
+    if !format.content_type().starts_with("application/connect+") {
+        return Err(Error::UnclassifiedFault);
+    }
+    let plan = Plan {
+        method_head: None,
+        stream: true,
+        gzip: format.encoding() == Encoding::Gzip,
+        content_type: format.content_type(),
+        status: StatusCode::OK,
+    };
+    let payload = finite_body::prepare(deadline, owner, move |cancelled| {
+        let limit = limits
+            .wire_bytes
+            .checked_sub(5)
+            .ok_or(Error::ResponseLimit)?;
+        let payload = encode(limit)?;
+        wire::frame(&payload, plan.gzip, limits, deadline, &cancelled)
     })
     .await?;
+    response(payload, plan, limits, deadline)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn response(
+    payload: finite_body::PreparedBody<Error>,
+    plan: Plan,
+    limits: Limits,
+    deadline: Instant,
+) -> Result<Response, Error> {
     let length = payload.length();
     let mut response = Response::new(payload.into_body(limits.chunk_bytes, deadline, false));
     *response.status_mut() = plan.status;

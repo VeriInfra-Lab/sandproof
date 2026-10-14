@@ -11,6 +11,9 @@ use std::{
     path::Path,
 };
 
+#[path = "default_account.rs"]
+mod default_account;
+
 struct StartFixture {
     directory: tempfile::TempDir,
     owners: CommandOwners,

@@ -388,6 +388,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [显式 Basic 账户回复](../sandbox-guest-service/src/command_requests/http/account.rs)新增有界缺失账户观察来源、原首值/方法不可替换、账户失败先于协议解释、外层 authn 与 handler 格式区分、MIME 规范化及动态头/正文引用到原容量的对应义务。共享 MIME 格式器仅开放 crate 内复用，新的 Connect 规范化及原预检/SDK 测试路由连接均未证明。有限 Go 原字节与本地所有权测试不涵盖 NSS 的任意故障、gRPC、默认账户、正式监听或整机上界；纯核心与已证明 Rust/Lean 未改。
 
+[Start 默认账户回复](../sandbox-guest-service/src/command_requests/http/default_account.rs)新增原查询阶段与有界失败观察、Ready 到 Failure 的原格式保留、默认/显式账户响应区分，以及共享帧/压缩/有限发送器到原请求容量和期限的对应义务。缺失观察和未选格式不能产生公开用户名错误；有限 Go 对照不证明实际 gzip Start、系统账户或完整服务。新连接及共享错误编码重构尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
+
 [命令 token 回复](../sandbox-guest-service/src/command_requests/http/authorization.rs)新增原鉴权分类/方法不可替换、外层 API 拒绝先于协议解释、HEAD 预算、响应失败及字节副本到原名额/期限的连接义务。复用原 token 有界发送器，未改变 Session 政策；固定 Go 有限 HTTP 对照不证明初始化、完整路由或任意故障。这部分连接和 SDK 测试入口迁移尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
 
 [命令请求准入/PID 分派](../sandbox-guest-service/src/command_requests.rs)增加原请求额度到 token/Basic/JSON 阻塞工作的所有权连接、取消/超时后实际闭包退出、单次解码和不可替换请求到原注册句柄、部分输入不重放、原响应期限与最后 Bytes 引用释放的自有义务，尚未抽取或证明。真实账户/进程适配沿用现有端口，不把其有限测试提升为 HTTP 路由、跨服务恢复、整机容量或 Go 双端证据；纯核心及已证明 Rust 未改，旧定理不覆盖新编排。

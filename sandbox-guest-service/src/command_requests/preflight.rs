@@ -13,6 +13,7 @@ pub struct Prepared {
 pub struct Ready {
     pub(super) decoded: Decoded,
     pub(super) account: Option<Account>,
+    pub(super) response: Option<super::http::ResponseFormat>,
 }
 impl Authenticated {
     /// Resolve only an explicit Basic username before decoding. Absent or
@@ -111,6 +112,7 @@ impl Prepared {
                 .decode(method, body, protocol_deadline)
                 .await?,
             account: self.account,
+            response: None,
         })
     }
 }

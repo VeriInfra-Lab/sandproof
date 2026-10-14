@@ -15,6 +15,8 @@ use crate::connect_timeout::InvalidTimeout;
 #[cfg(any(target_os = "linux", test))]
 pub mod account;
 pub mod authorization;
+#[cfg(any(target_os = "linux", test))]
+pub mod default_account;
 pub mod reply;
 #[cfg(test)]
 mod tests;
@@ -354,6 +356,10 @@ mod owned {
             self.prepared
                 .decode(self.plan.rpc.method(), body, self.plan.deadline)
                 .await
+                .map(|mut ready| {
+                    ready.response = Some(response);
+                    ready
+                })
                 .map_err(|failure| Failure::request(failure, response))
         }
     }

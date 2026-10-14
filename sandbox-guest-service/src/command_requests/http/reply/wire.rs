@@ -22,10 +22,26 @@ pub(super) fn encode(
     if !plan.stream {
         return Ok(payload);
     }
+    frame(&payload, plan.gzip, limits, deadline, cancelled)
+}
+pub(super) fn frame(
+    payload: &[u8],
+    gzip: bool,
+    limits: Limits,
+    deadline: Instant,
+    cancelled: &watch::Receiver<bool>,
+) -> Result<Vec<u8>, Error> {
+    let limit = limits
+        .wire_bytes
+        .checked_sub(5)
+        .ok_or(Error::ResponseLimit)?;
+    if payload.len() > limit {
+        return Err(Error::ResponseLimit);
+    }
     let mut output = vec![0; 5];
-    if plan.gzip {
+    if gzip {
         let mut encoder = Encoder::new(
-            payload.as_slice(),
+            payload,
             EncodeLimits {
                 chunk_bytes: limits.chunk_bytes,
                 decoded_bytes: limit as u64,
@@ -41,9 +57,9 @@ pub(super) fn encode(
             append(&mut output, &chunk, limits.wire_bytes)?;
         }
     } else {
-        append(&mut output, &payload, limits.wire_bytes)?;
+        append(&mut output, payload, limits.wire_bytes)?;
     }
-    output[0] = if plan.gzip { 3 } else { 2 };
+    output[0] = if gzip { 3 } else { 2 };
     let length = u32::try_from(output.len() - 5).map_err(|_| Error::ResponseLimit)?;
     output[1..5].copy_from_slice(&length.to_be_bytes());
     Ok(output)

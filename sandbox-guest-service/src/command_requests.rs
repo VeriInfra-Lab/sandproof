@@ -287,6 +287,10 @@ pub struct Failure {
     deadline: Instant,
     #[cfg(target_os = "linux")]
     unknown_user: Option<crate::upload_response::UnknownUser>,
+    #[cfg(target_os = "linux")]
+    default_account: Option<http::default_account::Rejection>,
+    #[cfg(target_os = "linux")]
+    response: Option<http::ResponseFormat>,
     _owner: Owner,
 }
 impl Failure {
@@ -296,6 +300,10 @@ impl Failure {
             deadline,
             #[cfg(target_os = "linux")]
             unknown_user: None,
+            #[cfg(target_os = "linux")]
+            default_account: None,
+            #[cfg(target_os = "linux")]
+            response: None,
             _owner: owner,
         }
     }

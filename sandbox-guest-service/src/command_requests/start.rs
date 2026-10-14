@@ -67,9 +67,13 @@ impl Ready {
         response: CommandBodyLimits,
     ) -> Result<Reply, Failure> {
         let deadline = self.deadline();
+        let format = self.response;
+        let mut default_account = None;
         let owner = self.decoded.authenticated.admitted.owner.clone();
         let result = async {
-            let resolved = self.resolve_start(accounts, settings).await?;
+            let resolved = self
+                .resolve_start(accounts, settings, &mut default_account)
+                .await?;
             response.validate(Instant::now()).map_err(Error::Response)?;
             // Later actual PID width cannot invalidate the initial frame budget.
             encode_event(Event::Start(u32::MAX), response.message_bytes)
@@ -120,13 +124,19 @@ impl Ready {
         timeout_at(deadline, result)
             .await
             .unwrap_or(Err(Error::DeadlineExceeded))
-            .map_err(|error| Failure::new(error, deadline, owner))
+            .map_err(|error| {
+                let mut failure = Failure::new(error, deadline, owner);
+                failure.default_account = default_account;
+                failure.response = format;
+                failure
+            })
     }
 
     async fn resolve_start<S: AccountSource>(
         self,
         accounts: &AccountPool<S>,
         settings: &ExecutionSettings,
+        observed: &mut Option<super::http::default_account::Rejection>,
     ) -> Result<Resolved, Error> {
         let deadline = self.deadline();
         check_deadline(deadline)?;
@@ -143,19 +153,42 @@ impl Ready {
         }
         validate_command_settings(settings).map_err(Error::Context)?;
         let authenticated = Arc::new(authenticated);
+        let fallback = &authenticated.authorization().defaults().user;
         let name = selected_user_with_limits(
             authenticated.headers(),
-            &authenticated.authorization().defaults().user,
+            fallback,
             settings.limits.username_bytes,
             settings.limits.authorization_bytes,
         )
-        .map_err(Error::Context)?;
+        .map_err(|error| {
+            if self.account.is_none()
+                && error == ContextError::Unauthenticated
+                && fallback.len() <= settings.limits.username_bytes
+                && (fallback.is_empty() || fallback.contains(['\0', '\n', '\r', ':']))
+            {
+                *observed = Some(if fallback.is_empty() {
+                    super::http::default_account::Rejection::Missing
+                } else {
+                    super::http::default_account::Rejection::Unknown(
+                        crate::upload_response::UnknownUser::new(fallback),
+                    )
+                });
+            }
+            Error::Context(error)
+        })?;
         let account = match self.account {
             Some(account) => account,
             None => accounts
                 .lookup_admitted(name.clone(), deadline, authenticated.clone())
                 .await
-                .map_err(Error::Context)?,
+                .map_err(|error| {
+                    if error == ContextError::Unauthenticated {
+                        *observed = Some(super::http::default_account::Rejection::Unknown(
+                            crate::upload_response::UnknownUser::new(&name),
+                        ));
+                    }
+                    Error::Context(error)
+                })?,
         };
         if account.name != name {
             return Err(Error::Context(ContextError::Unavailable));
