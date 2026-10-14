@@ -237,20 +237,8 @@ async fn dispatch(
         .prepare(&fixture.accounts, settings().limits)
         .await
         .unwrap();
-    // Only the pinned client's selected JSON/identity shape is accepted here.
-    // This is deliberately not a general HTTP negotiation or error mapper.
     let stream = matches!(method, "Start" | "Connect");
-    assert_eq!(
-        prepared.headers()["content-type"],
-        if stream {
-            "application/connect+json"
-        } else {
-            "application/json"
-        }
-    );
-    assert_eq!(prepared.headers()["connect-timeout-ms"], "10000");
-    assert!(!prepared.headers().contains_key("content-encoding"));
-    assert!(!prepared.headers().contains_key("connect-content-encoding"));
+    selected_json(prepared.headers(), stream);
     let ready = prepared
         .decode(method, body, received + Duration::from_secs(10))
         .await
@@ -313,6 +301,29 @@ async fn dispatch(
         reply.into_body(),
     )
         .into_response()
+}
+
+fn selected_json(headers: &HeaderMap, stream: bool) {
+    // Only the pinned client's selected JSON/identity shape is accepted here.
+    // This is deliberately not a general HTTP negotiation or error mapper.
+    assert_eq!(
+        headers["content-type"],
+        if stream {
+            "application/connect+json"
+        } else {
+            "application/json"
+        }
+    );
+    assert_eq!(headers["connect-timeout-ms"], "10000");
+    for name in ["content-encoding", "connect-content-encoding"] {
+        // The fixed client materializes None as IdentityCompression, and may
+        // send the explicit name. Both absent and identity mean raw bytes.
+        let value = headers.get(name).map_or(b"".as_slice(), |v| v.as_bytes());
+        assert!(
+            matches!(value, b"" | b"identity"),
+            "unexpected fixture encoding: {name}"
+        );
+    }
 }
 
 async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
