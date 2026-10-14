@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
 //! Guest service composition under development. These initialization routes
 //! are not an installed envd replacement. Command/file registration, account
-//! integration, listener admission and immutable-template integration remain
-//! separate obligations; health does not certify authorization or readiness.
+//! integration and immutable-template integration remain separate obligations.
+//! The bounded listener is explicitly configured by its caller; health does
+//! not certify authorization or readiness.
 
 pub mod file_authorization;
 pub mod file_download;
@@ -14,6 +15,7 @@ pub mod file_rpc_response;
 pub mod file_upload;
 mod go_json;
 mod go_quote;
+pub mod listener;
 mod owned_body;
 pub mod upload_body;
 pub mod upload_response;

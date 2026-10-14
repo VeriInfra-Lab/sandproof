@@ -28,6 +28,7 @@ sandproof-guest-service = { path = "../sandbox-guest-service" }
 sha2 = "=0.10.9"
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
+tower = { version = "=0.5.2", features = ["util"] }
 
 [[bin]]
 name = "sandproof-guest-worker"
