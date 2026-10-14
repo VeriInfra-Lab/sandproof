@@ -345,12 +345,12 @@ def sandproof_protocol.WorkReceipt.validate_for.closure (E : Type) (C : Type)
   sandproof_protocol.WorkAction C
 
 /-- [sandproof_foundations_extract::store_retain_above::{closure}]
-    Source: 'src/lib.rs', lines 44:17-44:42 -/
+    Source: 'src/lib.rs', lines 48:17-48:42 -/
 @[reducible]
 def store_retain_above.closure := Std.U64
 
 /-- [sandproof_foundations_extract::option_is_none_or::{closure}]
-    Source: 'src/lib.rs', lines 48:21-48:42 -/
+    Source: 'src/lib.rs', lines 52:21-52:42 -/
 @[reducible]
 def option_is_none_or.closure := Std.U64
 

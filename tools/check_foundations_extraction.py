@@ -37,7 +37,7 @@ EXTERNALS = {
 # A public root cannot disappear by removing it from both the Rust adapter and
 # extraction script. Each expansion is an explicit, reviewed coverage change.
 ROOTS = {
-    "counter_from_u64", "counter_next", "counter_value", "counter_into_u64", "lane_current",
+    "counter_from_u64", "counter_next", "counter_value", "counter_into_u64", "internal_error_text", "lane_current",
     "store_get_copy", "store_put", "store_retain_above", "option_is_none_or",
     "resource_add", "resource_positive",
     "resource_fits", "resource_values", "create_binding_valid", "identity_response",
@@ -56,6 +56,7 @@ ROOTS = {
 }
 ROOT_MODULES = {'numeric', 'receipts'}
 REQUIRED_IDENTITY_CALLS = {
+    "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt",
     "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from",
     "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values",
     "sandproof_protocol::valid_identifier",
@@ -74,6 +75,7 @@ LIBRARY_SOURCES = {
     'core/src/str/traits.rs', 'core/src/num/mod.rs', 'core/src/num/error.rs',
     'core/src/fmt/num.rs',
     'core/src/bool.rs', 'core/src/fmt/mod.rs', 'core/src/num/uint_macros.rs',
+    'core/src/result.rs',
 }
 
 

@@ -28,6 +28,10 @@ pub fn counter_into_u64(value: PositiveCounter) -> u64 {
     u64::from(value)
 }
 
+pub fn internal_error_text(value: InternalError) -> String {
+    value.to_string()
+}
+
 pub fn lane_current(lane: &sandproof_center_core::RetentionLane) -> Option<PositiveCounter> {
     lane.current()
 }

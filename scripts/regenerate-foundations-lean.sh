@@ -23,6 +23,7 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::counter_next \
   --start-from crate::counter_value \
   --start-from crate::counter_into_u64 \
+  --start-from crate::internal_error_text \
   --start-from crate::lane_current \
   --start-from crate::store_get_copy \
   --start-from crate::store_put \

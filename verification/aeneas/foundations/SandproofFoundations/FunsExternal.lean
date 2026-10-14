@@ -9,6 +9,13 @@ compiler/library agreement. See docs/formal/dependencies.md. -/
 open Aeneas Aeneas.Std
 namespace SandproofFoundationsRust
 
+-- Preserve the fixed backend's literal bytes and bound; only discharge the
+-- bound with kernel-checked reduction instead of its default native tactic.
+-- Generated literals resolve this local adapter without editing the output.
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
 @[simp, rust_fun "core::option::{core::option::Option<@T>}::as_ref"]
 def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
   .ok value
@@ -161,5 +168,15 @@ def alloc.string.ToString.Blanket.to_string {T : Type}
   match result with
   | .Ok _ => .ok formatter.output
   | .Err _ => .fail .panic
+
+-- Only the registered default String-backed formatting domain is modeled.
+-- The actual String writer appends UTF-8 and normally returns Ok; this does
+-- not assert that an arbitrary fmt::Write sink succeeds or that OOM recovers.
+@[rust_fun "core::fmt::{core::fmt::Formatter<'a>}::write_str"]
+def core.fmt.Formatter.write_str (formatter : core.fmt.Formatter) (value : Str) :
+    Result (core.result.Result Unit core.fmt.Error × core.fmt.Formatter) :=
+  match IdentifierLibrary.decodeString value.val with
+  | some text => .ok (.Ok (), ⟨formatter.output ++ text⟩)
+  | none => .fail .panic
 
 end SandproofFoundationsRust

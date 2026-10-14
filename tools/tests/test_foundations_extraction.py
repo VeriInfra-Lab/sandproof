@@ -16,10 +16,11 @@ class FoundationsExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/foundations/translation.json').read_text())
 
     def test_real_checked_roots_are_present(self):
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 56)
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), 57)
 
     def test_value_conversion_roots_cannot_disappear(self):
         for name in ('sandproof_foundations_extract::counter_into_u64',
+                     'sandproof_foundations_extract::internal_error_text',
                      'sandproof_foundations_extract::resource_values'):
             with self.subTest(name=name):
                 inventory = copy.deepcopy(self.inventory)
@@ -29,6 +30,7 @@ class FoundationsExtractionTests(unittest.TestCase):
 
     def test_actual_value_conversions_cannot_disappear_or_become_opaque(self):
         for name in (
+            'sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt',
             'sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from',
             'sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values',
         ):
@@ -50,7 +52,7 @@ class FoundationsExtractionTests(unittest.TestCase):
 
     def test_value_conversion_roots_cannot_silently_reduce_coverage(self):
         read_text = Path.read_text
-        for function in ('counter_into_u64', 'resource_values'):
+        for function in ('counter_into_u64', 'resource_values', 'internal_error_text'):
             def without_root(path, *args, **kwargs):
                 value = read_text(path, *args, **kwargs)
                 if path == ROOT / 'scripts/regenerate-foundations-lean.sh':
@@ -122,15 +124,20 @@ class FoundationsExtractionTests(unittest.TestCase):
 
     def test_standard_library_sources_cannot_be_omitted_or_malformed(self):
         read_text = Path.read_text
-        for change in ('missing', 'malformed'):
+        for role, relative, change in (
+            ('production', 'core/src/option.rs', 'missing'),
+            ('extraction', 'alloc/src/vec/mod.rs', 'malformed'),
+            ('production', 'core/src/result.rs', 'missing'),
+            ('extraction', 'core/src/result.rs', 'missing'),
+        ):
             def changed_environment(path, *args, **kwargs):
                 value = read_text(path, *args, **kwargs)
                 if path == ROOT / 'verification/foundations-environment.json':
                     environment = json.loads(value)
                     if change == 'missing':
-                        environment['library_sources']['production'].pop('core/src/option.rs')
+                        environment['library_sources'][role].pop(relative)
                     else:
-                        environment['library_sources']['extraction']['alloc/src/vec/mod.rs'] = 'unchecked'
+                        environment['library_sources'][role][relative] = 'unchecked'
                     return json.dumps(environment)
                 return value
 

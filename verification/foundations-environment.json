@@ -96,7 +96,8 @@
       "core/src/fmt/num.rs": "e3db1034a79b77973f7ebb280a9543fd2508c5a5e73481ba924a3c7c9694b2fe",
       "core/src/bool.rs": "3f9f031a22808d15656a98b1981ce1d44df282856d4b861047ded1276d7572e3",
       "core/src/fmt/mod.rs": "0b01f8c3ef1a7c1a75eaf468456a2fc10a608d9f9191b56e1793f8b9bfb29b23",
-      "core/src/num/uint_macros.rs": "27b60f61c397a3e42930743c72fdbd01497f3d04bd5ab8cc65a53747fa236454"
+      "core/src/num/uint_macros.rs": "27b60f61c397a3e42930743c72fdbd01497f3d04bd5ab8cc65a53747fa236454",
+      "core/src/result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d"
     },
     "extraction": {
       "alloc/src/vec/mod.rs": "161d97d3549abee6416787475f3da48780f70a34065b333478e2b1f629fff2e9",
@@ -111,7 +112,8 @@
       "core/src/fmt/num.rs": "6c8f8e56e0dc92d6afa17dcca050ace3696e0bc46d977749489c8831cbc55af7",
       "core/src/bool.rs": "7e96cdc4559d0884c027ffc5de3c6e5bdaf0a0dbdc0e01339159f2062ce05a80",
       "core/src/fmt/mod.rs": "54596bb5eb43b6f24c4815543c486c997ccac39f9b6dadefb4c98ddd106317c3",
-      "core/src/num/uint_macros.rs": "caad28bef2017170cabd6f5edc34b775a66914fc36cbfaff6529c8f2d2a672aa"
+      "core/src/num/uint_macros.rs": "caad28bef2017170cabd6f5edc34b775a66914fc36cbfaff6529c8f2d2a672aa",
+      "core/src/result.rs": "b7a1da21e96c0fbb74af31dfcf4904c8f74a974733aa62a69b0ae41c2107a196"
     }
   },
   "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)"
