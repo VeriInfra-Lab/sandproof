@@ -381,6 +381,7 @@ fn sequential_reservations_match_original_fold_for_scopes_and_overflow() {
         assert_eq!(image, before);
     }
 }
+
 #[test]
 fn retained_history_is_bounded_without_forgetting_old_identities() {
     let tenant = "1".try_into().unwrap();
