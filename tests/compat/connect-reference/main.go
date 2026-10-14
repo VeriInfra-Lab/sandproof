@@ -1,5 +1,5 @@
 // Original Connect HTTP transport pinned by envd f455fd58fa3f289e78ce1de690c35968d8d29322.
-// Transport modes use a passthrough JSON codec. P/J use original generated
+// Transport modes use a passthrough JSON codec. P/J/K use original generated
 // messages and the default codec for property/request observations. No mode
 // here executes real file operations or a complete envd compatibility test.
 package main
@@ -166,7 +166,7 @@ func main() {
 			Error  bool
 		}
 		switch mode {
-		case "J":
+		case "J", "K":
 			target, body = requestEndpoint(data)
 		case "P":
 			target, body = propertyEndpoint(data), []byte("{}")
@@ -258,6 +258,15 @@ func main() {
 				panic(err)
 			}
 			continue
+		}
+		if mode == "K" {
+			if length := res.Header.Get("Content-Length"); length != "" {
+				if length != strconv.Itoa(len(responseBody)) {
+					panic("invalid JSON rejection response length")
+				}
+				res.Header.Set("Content-Length", "valid")
+			}
+			responseBody = normalizeRequestFailure(target, res.StatusCode, responseBody)
 		}
 		if mode == "P" {
 			// Original protojson deliberately varies insignificant whitespace.

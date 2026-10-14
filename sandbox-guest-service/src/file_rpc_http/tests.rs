@@ -19,6 +19,7 @@ use std::{
 };
 
 struct Meta;
+mod json_errors;
 mod unsupported_compression;
 impl MetadataSource for Meta {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {

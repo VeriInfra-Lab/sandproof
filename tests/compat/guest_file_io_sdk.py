@@ -177,6 +177,22 @@ def unsupported_encoding_cases():
         yield headers, f'unknown compression "{encoding}": supported encodings are gzip'
 
 
+JSON_ERROR_HEADERS = {**HEADERS, 'content-type': 'application/json', 'connect-protocol-version': '1',
+                      'accept-encoding': 'gzip,identity', 'x-fixture-json-error': 'true'}
+
+
+def json_error_cases(root):
+    """Synthetic invalid JSON; parsed by the unmodified SDK error decoder."""
+    prefix = 'unmarshal message: unmarshal into *filesystem.MakeDirRequest: proto: '
+    first = '{"path":' + json.dumps(root + '/json-refused') + ','
+    return [
+        (b'', 'unmarshal message: zero-length payload is not a valid JSON object'),
+        (b'{"path":1}', prefix + '(line 1:9): invalid value for string field path: 1'),
+        (b'{"path":"\\ud800"}', prefix + 'unexpected EOF'),
+        ((first + '"path":null}').encode(), prefix + f'(line 1:{len(first) + 1}): duplicate field "path"'),
+    ]
+
+
 def run_sync(settings, root):
     url = settings['url']
     client = sync_client(clients.FilesystemClientSync, url, ConnectionConfig())
@@ -207,6 +223,9 @@ def run_sync(settings, root):
         for headers, expected in unsupported_encoding_cases():
             response = transport.post(url + '/filesystem.Filesystem/MakeDir', json={'path': root + '/encoding-refused'}, headers=headers)
             connect_failure(response, expected, status=501, code=Code.UNIMPLEMENTED)
+        for data, expected in json_error_cases(root):
+            response = transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=JSON_ERROR_HEADERS)
+            connect_failure(response, expected)
     for target, headers, message in account_cases(settings):
         selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
         try:
@@ -255,6 +274,9 @@ async def run_async(settings, root):
         for headers, expected in unsupported_encoding_cases():
             response = await transport.post(url + '/filesystem.Filesystem/MakeDir', json={'path': root + '/encoding-refused'}, headers=headers)
             connect_failure(response, expected, status=501, code=Code.UNIMPLEMENTED)
+        for data, expected in json_error_cases(root):
+            response = await transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=JSON_ERROR_HEADERS)
+            connect_failure(response, expected)
     for target, headers, message in account_cases(settings):
         selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
         try:
@@ -281,3 +303,4 @@ if __name__ == '__main__':
     print('guest real unary files: 60 sync/async file scenarios (including 4 gzip negotiation and 4 explicit generated-client gzip request cases) + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')
     print('guest unary gzip failures: 10 synthetic sync/async HTTP inputs parsed by the original Connect error parser; not original SDK request encoding')
     print('guest unary unsupported encoding: 4 synthetic sync/async HTTP inputs parsed by the original Connect error parser; before invalid version/timeout')
+    print('guest unary JSON failures: 8 synthetic sync/async HTTP inputs parsed by the original Connect error parser; not original SDK request encoding')

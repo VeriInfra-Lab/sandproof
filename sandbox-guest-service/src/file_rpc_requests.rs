@@ -263,8 +263,11 @@ impl Authenticated {
                         &cancelled,
                     )?;
                 }
-                let request = file_protocol::decode_request(method, &payload, limit)
-                    .map_err(Error::Protocol)?;
+                let request = file_protocol::decode_request_observed(method, &payload, limit)
+                    .map_err(|failure| match failure {
+                        file_protocol::DecodeFailure::Json(error) => Error::Json(error),
+                        file_protocol::DecodeFailure::Protocol(error) => Error::Protocol(error),
+                    })?;
                 drop(payload);
                 owned_body::check_active::<Error>(deadline, &cancelled)?;
                 Ok(Decoded {
@@ -341,6 +344,7 @@ pub enum Error {
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
+    Json(file_protocol::JsonError),
     Compression {
         stage: CompressionStage,
         error: GzipError,
@@ -361,7 +365,7 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
-/// Observed compression/version/timeout and known gzip errors have fixed responses.
+/// Observed compression/version/timeout/JSON and known gzip errors have fixed responses.
 /// Other classifications remain unmapped; no automatic replay.
 pub struct Failure {
     error: Error,
@@ -381,7 +385,10 @@ impl Failure {
     pub(crate) fn has_response(&self) -> bool {
         matches!(
             self.error,
-            Error::Version(_) | Error::Timeout(_) | Error::UnsupportedCompression(_)
+            Error::Version(_)
+                | Error::Timeout(_)
+                | Error::UnsupportedCompression(_)
+                | Error::Json(_)
         ) || self.gzip_rejection().is_some()
     }
     #[must_use]
@@ -394,7 +401,7 @@ impl Failure {
     }
 
     /// Consume a selected POST unary JSON failure and its original capacity.
-    /// Known compression/version/timeout/gzip errors use identity response encoding.
+    /// Known compression/version/timeout/gzip/JSON errors use identity response encoding.
     /// # Errors
     /// Unmapped source failure, response budget, original expiry or lost worker.
     /// Every failure retains the original owner; no fresh deadline is granted.
@@ -413,6 +420,7 @@ impl Failure {
             (Error::Version(error), _) => Rejection::Version(error),
             (Error::Timeout(error), _) => Rejection::Timeout(error),
             (Error::UnsupportedCompression(error), _) => Rejection::UnsupportedCompression(error),
+            (Error::Json(error), _) => Rejection::Json(error),
             (_, Some(error)) => Rejection::Gzip(error),
             (error, None) => {
                 return Err(file_rpc_response::Failure::unclassified(

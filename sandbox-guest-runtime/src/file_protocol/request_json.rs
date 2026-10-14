@@ -91,7 +91,7 @@ pub(super) fn uint32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, 
     exact_uint32(number).ok_or_else(|| de::Error::custom("invalid protobuf uint32"))
 }
 
-fn exact_uint32(number: &str) -> Option<u32> {
+pub(super) fn exact_uint32(number: &str) -> Option<u32> {
     // RawValue checks JSON number grammar without floating point conversion.
     // Equality rejects all surrounding JSON whitespace in a quoted number.
     if !matches!(number.as_bytes().first(), Some(b'-' | b'0'..=b'9')) {

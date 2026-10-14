@@ -56,10 +56,16 @@ struct Fixture {
     gzip_requests: AtomicUsize,
     gzip_rejected: AtomicUsize,
     compression_rejected: AtomicUsize,
+    json_rejected: AtomicUsize,
     username: String,
 }
 
-fn record_prepared_rejection(fixture: &Fixture, response: &Response, gzip_request: bool) {
+fn record_prepared_rejection(
+    fixture: &Fixture,
+    response: &Response,
+    gzip_request: bool,
+    json_request: bool,
+) {
     if response.status() == StatusCode::UNAUTHORIZED {
         fixture.rejected.fetch_add(1, Ordering::SeqCst);
     } else if response.status() == StatusCode::NOT_IMPLEMENTED {
@@ -67,7 +73,10 @@ fn record_prepared_rejection(fixture: &Fixture, response: &Response, gzip_reques
         fixture.compression_rejected.fetch_add(1, Ordering::SeqCst);
     } else {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        if gzip_request {
+        if json_request {
+            assert!(!response.headers().contains_key("content-encoding"));
+            fixture.json_rejected.fetch_add(1, Ordering::SeqCst);
+        } else if gzip_request {
             assert!(!response.headers().contains_key("content-encoding"));
             fixture.gzip_rejected.fetch_add(1, Ordering::SeqCst);
         } else {
@@ -77,6 +86,10 @@ fn record_prepared_rejection(fixture: &Fixture, response: &Response, gzip_reques
 }
 
 async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
+    let json_request = request
+        .headers()
+        .get("x-fixture-json-error")
+        .is_some_and(|value| value == "true");
     let gzip_request = request
         .headers()
         .get("content-encoding")
@@ -94,10 +107,11 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
     let request = match fixture.http.prepare(request).await.unwrap() {
         Prepared::Ready(ready) => ready,
         Prepared::Response(response) => {
-            record_prepared_rejection(&fixture, &response, gzip_request);
+            record_prepared_rejection(&fixture, &response, gzip_request, json_request);
             return response;
         }
     };
+    assert!(!json_request, "invalid JSON reached file dispatch");
     // Only generated absolute paths and this literal unexpandable path enter
     // the shared component; no arbitrary relative/home path is admitted.
     let inside = |p: &str| {
@@ -300,6 +314,7 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         gzip_requests: AtomicUsize::new(0),
         gzip_rejected: AtomicUsize::new(0),
         compression_rejected: AtomicUsize::new(0),
+        json_rejected: AtomicUsize::new(0),
         username,
     })
 }
@@ -394,6 +409,7 @@ fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
     assert_eq!(fixture.gzip_requests.load(Ordering::SeqCst), 14);
     assert_eq!(fixture.gzip_rejected.load(Ordering::SeqCst), 10);
     assert_eq!(fixture.compression_rejected.load(Ordering::SeqCst), 4);
+    assert_eq!(fixture.json_rejected.load(Ordering::SeqCst), 8);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
@@ -403,6 +419,7 @@ fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
         let dir = root.join(mode);
         assert!(!dir.join("gzip-refused").exists());
         assert!(!dir.join("encoding-refused").exists());
+        assert!(!dir.join("json-refused").exists());
         assert!(!dir.join("path-refused").exists());
         assert!(!dir.join("auth-refused").exists());
         assert!(!dir.join("timeout-refused").exists());
