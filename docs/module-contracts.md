@@ -459,6 +459,8 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 [上传成功回执](../sandbox-guest-service/src/upload_response.rs)消费已完成的原 BatchReply，在原槽位与绝对期限内序列化并按需发送。保留固定 Go 的数组顺序、metadata/name/path/type 字段顺序、metadata 键排序、空 metadata 省略、空批次 `[]` 及无尾随换行；name 来自原解析路径的 Linux basename，不重新访问文件。复用下载错误的 Go JSON 转义，以同一编码器先计算精确线长、检查独立 wire_bytes 后分配。原结果路径/metadata、完整编码载荷及一个输出块分别计费，不能把 chunk_bytes 宣称为全部驻留内存。
 
+上传回包前在原绝对期限内等待同一批次的实际文件/解压持有者收尾；等待取消或到期不释放仍在运行的工作、不回滚或重放前缀。序列化仍在原守卫内执行，完成后的有限内存载荷直接按需分块，不保留等待下一次读取的回包工作器。HTTP 已知长度收完最后一块后即使不再轮询 EOF，也不额外占额；最后字节副本仍占原名额，前一块未释放前不交付下一块。此修正不改变名额数量、各项预算或超时，不增加正式监听器和新的部署入口。
+
 固定 HTTP/1.1 成功写入的 JSON 数组由 Go 自动嗅探为 `text/plain; charset=utf-8`；本组件显式保留该头，载荷不超过 2048 字节时带 Content-Length，更大时由 HTTP/1.1 传输分块。未新增错误响应所用的 nosniff。输出块及全部 Bytes 副本释放前不继续发送下一块；取消/过期不能伪造 EOF，原工作槽位保留到实际序列化/销毁和最后字节副本释放。文件 I/O 完成后的原初始化可继续，回执不重新获取授权；序列化预算或发送失败不撤销已完成文件及 metadata，也不自动重放。可移植所有权与固定 Go 真实回环 HTTP 成功头/正文对照已运行；Linux 原文件池连接及 SDK 回读组合待实跑，文件 I/O 错误响应接下述组件，其余上传拒绝和正式监听器仍待完成。
 
 [上传 I/O 错误回执](../sandbox-guest-service/src/upload_response/errors.rs)将原阶段/路径/errno/属性名按固定 processFile、permissions.EnsureDirs 与 pkg/xattr 0.4.12 错误包装格式生成 JSON。code/message 顺序、Go JSON 转义、末尾换行、application/json; charset=utf-8 和 nosniff 保持原样；HTTP/1.1 完整载荷不超过 2048 字节才带自动 Content-Length。write ENOSPC 的诊断使用原请求声明长度，包括 multipart framing 或 gzip 压缩长度，不使用已写/展开字节数；未声明或零长度不增加 attempted 文本。缺少必要 errno 或属性名返回不可分类错误，不编造公开诊断。

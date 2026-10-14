@@ -61,6 +61,9 @@ struct Lease {
 struct Reservation {
     lease: Arc<Lease>,
     deadline: Instant,
+    // The HTTP response waits for every actual upload/decoder owner to end.
+    // This is a receipt, not an extra quota or permission to release early.
+    settlement: Option<tokio::sync::watch::Sender<()>>,
 }
 
 /// A pool admits at most `in_flight` requests/retained transfers.
@@ -141,7 +144,11 @@ impl FileStreams {
             context,
             metadata,
             expected,
-            Reservation { lease, deadline },
+            Reservation {
+                lease,
+                deadline,
+                settlement: None,
+            },
         )
         .await
     }
@@ -154,7 +161,11 @@ impl FileStreams {
         expected: Option<u64>,
         reservation: Reservation,
     ) -> Result<UploadStream, FileStreamError> {
-        let Reservation { lease, deadline } = reservation;
+        let Reservation {
+            lease,
+            deadline,
+            settlement,
+        } = reservation;
         let (send, receive) = mpsc::channel(1);
         let (opened, ready) = oneshot::channel();
         let worker_lease = Arc::clone(&lease);
@@ -190,6 +201,7 @@ impl FileStreams {
             // Includes file destruction/metadata and any cancelled waiter's I/O.
             drop(auth);
             drop(worker_lease);
+            drop(settlement);
             if let Some((reply, result)) = completion {
                 let _ = reply.send(timely(deadline, result));
             }

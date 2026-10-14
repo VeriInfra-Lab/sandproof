@@ -64,7 +64,11 @@ impl FileStreams {
             query_path,
             metadata,
             limits,
-            Reservation { lease, deadline },
+            Reservation {
+                lease,
+                deadline,
+                settlement: None,
+            },
         )
     }
 

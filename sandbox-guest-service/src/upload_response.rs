@@ -2,13 +2,14 @@
 //! It reports observed file outcomes; delivery failure never rolls them back.
 use crate::{
     go_json,
-    owned_body::{self, OwnedBody, Owner, Source},
+    owned_body::{self, Owner},
 };
 use axum::{http::HeaderValue, response::Response};
 use sandproof_guest_runtime::{file_mime::basename, file_upload::UploadResult};
 use std::fmt;
 use tokio::time::Instant;
 
+mod body;
 #[cfg(test)]
 mod tests;
 
@@ -106,19 +107,9 @@ pub(crate) async fn send_with_head(
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Error> {
     let limits = limits.validate()?;
-    let (length, body) = OwnedBody::start(deadline, owner, move |_, _| {
-        let bytes = encode()?;
-        Ok((
-            bytes.len(),
-            Payload {
-                bytes: if head { Vec::new() } else { bytes },
-                offset: 0,
-                chunk_bytes: limits.chunk_bytes,
-            },
-        ))
-    })
-    .await?;
-    let mut response = Response::new(body.into_body());
+    let payload = body::prepare(deadline, owner, encode).await?;
+    let length = payload.length();
+    let mut response = Response::new(payload.into_body(limits.chunk_bytes, deadline, head));
     // The pinned handler writes JSON with no explicit Content-Type. Go's HTTP
     // writer sniffs this array as text/plain. Its 2048-byte buffer adds a length
     // only when the complete payload fits; larger HTTP/1.1 replies are chunked.
@@ -166,24 +157,4 @@ fn encode(results: &[UploadResult], limit: usize) -> Result<Vec<u8>, Error> {
         put(b"]")
     })
     .map_err(|_| Error::ResponseLimit)
-}
-struct Payload {
-    bytes: Vec<u8>,
-    offset: usize,
-    chunk_bytes: usize,
-}
-impl Source<Error> for Payload {
-    fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, Error> {
-        if self.offset == self.bytes.len() {
-            return Ok(None);
-        }
-        if self.offset == 0 && self.bytes.len() <= self.chunk_bytes {
-            return Ok(Some(std::mem::take(&mut self.bytes)));
-        }
-        let count = (self.bytes.len() - self.offset).min(self.chunk_bytes);
-        let end = self.offset + count;
-        let chunk = self.bytes[self.offset..end].to_vec();
-        self.offset = end;
-        Ok(Some(chunk))
-    }
 }
