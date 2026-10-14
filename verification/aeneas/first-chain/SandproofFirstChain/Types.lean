@@ -63,14 +63,14 @@ inductive sandproof_protocol.internal.InternalError where
 def sandproof_protocol.internal.PositiveCounter := Std.U64
 
 /-- [sandproof_protocol::NodeId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
     Name pattern: [sandproof_protocol::NodeId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::NodeId"]
 def sandproof_protocol.NodeId := String
 
 /-- [sandproof_protocol::DeploymentId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
     Name pattern: [sandproof_protocol::DeploymentId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::DeploymentId"]
@@ -87,21 +87,21 @@ structure sandproof_protocol.internal.NodeIdentity where
   node_generation : sandproof_protocol.internal.PositiveCounter
 
 /-- [sandproof_protocol::OperationId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
     Name pattern: [sandproof_protocol::OperationId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::OperationId"]
 def sandproof_protocol.OperationId := String
 
 /-- [sandproof_protocol::SandboxId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
     Name pattern: [sandproof_protocol::SandboxId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::SandboxId"]
 def sandproof_protocol.SandboxId := String
 
 /-- [sandproof_protocol::TenantId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
     Name pattern: [sandproof_protocol::TenantId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::TenantId"]
@@ -144,7 +144,7 @@ inductive sandproof_protocol.internal.lifecycle.Intent where
 | Destroy : sandproof_protocol.internal.lifecycle.Intent
 
 /-- [sandproof_protocol::ResourceId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
     Name pattern: [sandproof_protocol::ResourceId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::ResourceId"]

@@ -68,7 +68,7 @@ def sandproof_protocol.internal.PositiveCounter.get
   ok self
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 66:37-66:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::NodeId, sandproof_protocol::NodeId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -80,7 +80,7 @@ def sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 66:37-66:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -219,7 +219,7 @@ def sandproof_protocol.internal.ControlIdentity.validate_node
       residual
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::OperationId> for sandproof_protocol::OperationId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 66:37-66:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::OperationId, sandproof_protocol::OperationId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -232,7 +232,7 @@ def sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 66:37-66:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::SandboxId, sandproof_protocol::SandboxId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -245,7 +245,7 @@ def sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 66:37-66:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::TenantId, sandproof_protocol::TenantId>}::eq]
     Visibility: public -/
 @[rust_fun

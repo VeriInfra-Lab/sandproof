@@ -16,7 +16,7 @@ class FoundationsExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/foundations/translation.json').read_text())
 
     def test_real_checked_roots_are_present(self):
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 15)
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), 49)
 
     def test_destination_cannot_depend_on_the_checkout_or_another_output(self):
         for destination in ('/old-checkout/verification/aeneas/llbc/sandproof_foundations.llbc',
@@ -168,6 +168,29 @@ class FoundationsExtractionTests(unittest.TestCase):
         llbc['translated']['target_information'][0]['key'] = 'unreviewed-target'
         with self.assertRaisesRegex(ValueError, 'extraction target'):
             check(ROOT, llbc, self.inventory)
+
+    def test_identity_constructor_and_recovery_parser_must_be_real(self):
+        for name in (
+            'sandproof_foundations_extract::tenant_from_str',
+            'sandproof_foundations_extract::node_from_string',
+            'sandproof_foundations_extract::node_into_string',
+            'sandproof_protocol::valid_identifier',
+            'sandproof_protocol::identifiers::parse_allocated_number',
+            'sandproof_center_core::validation::number',
+        ):
+            with self.subTest(name=name):
+                inventory = copy.deepcopy(self.inventory)
+                next(f for f in inventory['functions'] if f['rust_name'] == name)['is_opaque'] = True
+                with self.assertRaisesRegex(ValueError, 'owned body missing'):
+                    check(ROOT, self.llbc, inventory)
+
+    def test_new_constructor_and_direct_root_cannot_disappear(self):
+        for name in ('sandproof_foundations_extract::deployment_from_string',
+                     'sandproof_center_core::validation::number'):
+            inventory = copy.deepcopy(self.inventory)
+            inventory['functions'] = [f for f in inventory['functions'] if f['rust_name'] != name]
+            with self.assertRaisesRegex(ValueError, 'root was not generated'):
+                check(ROOT, self.llbc, inventory)
 
 
 if __name__ == '__main__':

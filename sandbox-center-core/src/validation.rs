@@ -3,10 +3,10 @@ use sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION;
 use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
 use std::collections::BTreeSet;
 
-pub(crate) fn number(value: &str, prefix: &str, highwater: u64) -> Option<u64> {
-    let suffix = value.strip_prefix(prefix)?;
-    let value = suffix.parse::<u64>().ok()?;
-    (value > 0 && value <= highwater && value.to_string() == suffix).then_some(value)
+/// The exact syntax/frontier check used by recovery, without authorization.
+#[must_use]
+pub fn number(value: &str, prefix: &str, highwater: u64) -> Option<u64> {
+    sandproof_protocol::parse_allocated_number(value, prefix, highwater)
 }
 impl CenterState {
     /// Full recovery validation, not merely successful deserialization.

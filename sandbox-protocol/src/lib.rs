@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display};
 
+mod identifiers;
 pub mod internal;
+pub use identifiers::parse_allocated_number;
 
 pub const PROTOCOL_VERSION: u16 = 1;
 
