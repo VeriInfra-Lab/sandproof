@@ -180,7 +180,11 @@ async fn authenticated_defaults_reach_real_worker_without_inheriting_daemon_envi
             (key.to_owned(), value.to_owned())
         })
         .collect();
-    assert_eq!(actual, spec.env);
+    // The fixed /bin/sh wrapper supplies its actual working directory. Keep
+    // exact equality for all variables, including no other daemon inheritance.
+    let mut expected = spec.env.clone();
+    expected.insert("PWD".into(), spec.cwd.to_str().unwrap().into());
+    assert_eq!(actual, expected);
     assert_eq!(actual["VALUE"], "request");
     assert_eq!(actual["USER"], "root");
     assert_eq!(
