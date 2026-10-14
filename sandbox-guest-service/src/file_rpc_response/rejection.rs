@@ -8,6 +8,7 @@ use crate::{
 };
 use tokio::time::Instant;
 mod compression;
+mod json;
 pub use compression::GzipRejection;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,9 +20,10 @@ pub enum Rejection {
     PathExpansion(PathExpansion),
     Gzip(GzipRejection),
     UnsupportedCompression(crate::file_rpc_requests::UnsupportedCompression),
+    Json(sandproof_guest_runtime::file_protocol::JsonError),
 }
 
-/// Send an observed account/header/path/gzip failure for a selected unary JSON request
+/// Send an observed account/header/path/gzip/JSON failure for a selected unary JSON request
 /// with identity response encoding.
 /// Only the shared resolver constructs the bounded username observation; no
 /// arbitrary source error, password or token is included. Protocol selection
@@ -42,7 +44,8 @@ pub async fn rejected(
         Rejection::Version(_)
         | Rejection::Timeout(_)
         | Rejection::PathExpansion(_)
-        | Rejection::Gzip(_) => StatusCode::BAD_REQUEST,
+        | Rejection::Gzip(_)
+        | Rejection::Json(_) => StatusCode::BAD_REQUEST,
     };
     send_encoded(owner, limits, deadline, status, accepts_gzip, move || {
         payload(&rejection, limits.wire_bytes)
@@ -60,12 +63,14 @@ fn payload(rejection: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
             Rejection::Version(_)
             | Rejection::Timeout(_)
             | Rejection::PathExpansion(_)
-            | Rejection::Gzip(_) => br#"{"code":"invalid_argument","message":""#,
+            | Rejection::Gzip(_)
+            | Rejection::Json(_) => br#"{"code":"invalid_argument","message":""#,
         })?;
         // Compose Go %q with JSON escaping directly into the bounded sink;
         // never allocate an unbounded intermediate quoted error message.
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match rejection {
+            Rejection::Json(error) => json::message(error, &mut message)?,
             Rejection::UnsupportedCompression(encoding) => {
                 message(b"unknown compression ")?;
                 go_quote::quoted(encoding.value(), &mut message)?;

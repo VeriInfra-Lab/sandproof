@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::json;
 
-fn messages() -> Vec<Vec<u8>> {
+pub(super) fn messages() -> Vec<Vec<u8>> {
     let mut cases = [
         "",
         " ",
@@ -64,7 +64,7 @@ fn messages() -> Vec<Vec<u8>> {
     cases
 }
 
-fn numbers() -> Vec<String> {
+pub(super) fn numbers() -> Vec<String> {
     let mut values = vec![
         "null".into(),
         "true".into(),
@@ -233,7 +233,7 @@ fn original_generated_bare_exponents_match_known_and_discarded_fields() {
     );
 }
 
-fn exponent_messages() -> Vec<(&'static str, Vec<u8>)> {
+pub(super) fn exponent_messages() -> Vec<(&'static str, Vec<u8>)> {
     let mut cases = Vec::new();
     for mantissa in [
         "0",
@@ -319,13 +319,13 @@ async fn protobuf_decoding_retains_original_admission_deadline_and_failure_capac
         let admitted = pool.admit().unwrap();
         let end = admitted.deadline();
         let auth = admitted.authenticate(&session, headers()).await.unwrap();
-        let body = Body::from_stream(stream::iter(
+        let payload = Body::from_stream(stream::iter(
             body.as_bytes()
                 .chunks(16)
                 .map(|bytes| Ok::<_, std::io::Error>(Bytes::copy_from_slice(bytes)))
                 .collect::<Vec<_>>(),
         ));
-        let result = auth.decode("ListDir", body).await;
+        let result = auth.decode("ListDir", payload).await;
         full(&pool);
         match (result, expected) {
             (Ok(decoded), Ok(expected)) => {
@@ -334,9 +334,10 @@ async fn protobuf_decoding_retains_original_admission_deadline_and_failure_capac
                 drop(decoded);
             }
             (Err(failure), Err(expected)) => {
-                assert_eq!(failure.error(), &Error::Protocol(expected));
+                assert_eq!(expected, ProtocolError::InvalidArgument);
+                assert_eq!(failure.error(), &json_error("ListDir", body.as_bytes()));
                 assert_eq!(failure.deadline(), end);
-                assert!(!failure.has_response());
+                assert!(failure.has_response());
                 drop(failure);
             }
             _ => panic!("wrong request decoding result"),

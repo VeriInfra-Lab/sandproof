@@ -5,7 +5,8 @@ use axum::http::Method;
 use sandproof_guest_runtime::file_protocol::JsonContentType;
 use std::fmt;
 
-/// Method/media-type rejection is not yet mapped to a public response.
+/// Method rejection maps to the fixed empty 405 after Basic preflight;
+/// media-type rejection remains an unmapped protocol classification.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SelectionError {
     Method,

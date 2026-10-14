@@ -19,6 +19,9 @@ use std::{
 };
 
 struct Meta;
+mod json_errors;
+mod methods;
+mod token;
 mod unsupported_compression;
 impl MetadataSource for Meta {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {
@@ -378,13 +381,14 @@ async fn route_auth_protocol_and_account_rejections_do_not_read_body_or_mutate_f
             .initialize(br#"{"accessToken":"token","defaultUser":"user"}"#)
             .await
             .unwrap();
-        if case >= 4 {
+        if matches!(case, 1 | 2) || case >= 4 {
             let response = result.unwrap();
             assert_eq!(
                 response.status(),
                 match case {
+                    2 => StatusCode::METHOD_NOT_ALLOWED,
                     4 | 5 => StatusCode::NOT_IMPLEMENTED,
-                    7 => StatusCode::UNAUTHORIZED,
+                    1 | 7 => StatusCode::UNAUTHORIZED,
                     _ => StatusCode::BAD_REQUEST,
                 }
             );
@@ -393,10 +397,6 @@ async fn route_auth_protocol_and_account_rejections_do_not_read_body_or_mutate_f
             let failure = result.unwrap_err();
             let expected = match case {
                 0 => Error::Route,
-                1 => Error::Request(file_rpc_requests::Error::Authorization(
-                    ServiceError::Unauthenticated,
-                )),
-                2 => Error::Selection(SelectionError::Method),
                 3 => Error::Selection(SelectionError::ContentType),
                 _ => unreachable!(),
             };

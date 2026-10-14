@@ -263,7 +263,7 @@ async fn header_response_clones_encoding_failures_and_unmapped_errors_retain_adm
         .authenticate(&session, headers())
         .await
         .unwrap()
-        .decode("Stat", Body::from("{"))
+        .decode("WatchDir", Body::from("{}"))
         .await
         .err()
         .unwrap();

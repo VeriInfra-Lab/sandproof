@@ -7,8 +7,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::{ProtocolError, encode_json, null_default, parse};
 
-mod request_json;
+pub(crate) mod request_json;
 use request_json::uint32;
+mod diagnosis;
+pub use diagnosis::{JsonError, JsonField, JsonReason};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DecodeFailure {
+    Protocol(ProtocolError),
+    Json(JsonError),
+}
 
 mod content_type;
 pub use content_type::{JsonContentType, json_content_type};
@@ -81,6 +89,25 @@ pub fn decode_request(method: &str, body: &[u8], limit: usize) -> Result<Request
         }
         _ => Err(ProtocolError::Unimplemented),
     }
+}
+
+/// Decode with a bounded, observed original-protobuf diagnostic on JSON failure.
+/// A disagreement between the decoders remains an unmapped classification.
+/// # Errors
+/// Same input budgets and methods as `decode_request`; no HTTP or I/O effects.
+pub fn decode_request_observed(
+    method: &str,
+    body: &[u8],
+    limit: usize,
+) -> Result<Request, DecodeFailure> {
+    decode_request(method, body, limit).map_err(|error| {
+        if error == ProtocolError::InvalidArgument
+            && let Some(observed) = diagnosis::observe(method, body)
+        {
+            return DecodeFailure::Json(observed);
+        }
+        DecodeFailure::Protocol(error)
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

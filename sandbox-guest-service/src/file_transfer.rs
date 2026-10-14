@@ -77,6 +77,14 @@ pub struct FileStreams {
 }
 
 impl FileStreams {
+    /// Snapshot for resource observations, not an admission reservation or a
+    /// filesystem/VM cleanup receipt. A concurrent caller can consume a slot
+    /// immediately afterwards; normal admission always uses try-acquire.
+    #[must_use]
+    pub fn available_slots(&self) -> usize {
+        self.slots.available_permits()
+    }
+
     /// # Errors
     /// Invalid per-file limits, concurrency or absolute waiting deadline.
     pub fn new(
