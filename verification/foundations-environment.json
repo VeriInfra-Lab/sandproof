@@ -66,6 +66,7 @@
   "lean": "4.31.0",
   "external_contracts": [
     "A6-foundations-stdlib",
+    "A6-foundations-identifiers",
     "toolchain-translation"
   ],
   "excludes": [
@@ -84,11 +85,33 @@
   "library_sources": {
     "production": {
       "alloc/src/vec/mod.rs": "93e3f8bad8de514ccd23c84d9c036405f32cf0b24c40e11f69f012b5264ad08e",
-      "core/src/option.rs": "ddba805a572e9cdbae5c1809bec07b36afdabd67a918bbccc7dab4cfe27cf067"
+      "core/src/option.rs": "ddba805a572e9cdbae5c1809bec07b36afdabd67a918bbccc7dab4cfe27cf067",
+      "alloc/src/string.rs": "68d7464cc83b0064bac9b600b72b4feb7c90eb5efc92def549b7eb586c6537ed",
+      "alloc/src/str.rs": "ef6974342cf6a89eb7ce00d32a7fa49bfa88a4e9058bbfe4ca6bee2436bad8bf",
+      "core/src/str/mod.rs": "2c90ff097999f139148ef065c428c35a07807d8b38535ce5e2b43d65ad0deaae",
+      "core/src/str/iter.rs": "88858f9fa60fe17d5d2277035d4df4b6805c5a46986b19efd61cb6759b78656e",
+      "core/src/str/traits.rs": "e243be20a65e3d80eb53f275fe9b5369d4262b98b4a965b1f91e6c13a3479f3d",
+      "core/src/num/mod.rs": "f0820f9dfb94999440c8cb4a349736fa21df7e5668e19b6b49e016ff67c05ce3",
+      "core/src/num/error.rs": "90c897311885ce115e057eedd67876219f9c2d6da0476e340eeeb5d370ce9725",
+      "core/src/fmt/num.rs": "e3db1034a79b77973f7ebb280a9543fd2508c5a5e73481ba924a3c7c9694b2fe",
+      "core/src/bool.rs": "3f9f031a22808d15656a98b1981ce1d44df282856d4b861047ded1276d7572e3",
+      "core/src/fmt/mod.rs": "0b01f8c3ef1a7c1a75eaf468456a2fc10a608d9f9191b56e1793f8b9bfb29b23",
+      "core/src/num/uint_macros.rs": "27b60f61c397a3e42930743c72fdbd01497f3d04bd5ab8cc65a53747fa236454"
     },
     "extraction": {
       "alloc/src/vec/mod.rs": "161d97d3549abee6416787475f3da48780f70a34065b333478e2b1f629fff2e9",
-      "core/src/option.rs": "2dab92cdbec51b006307496b24cc757d7b2bc4056eff156d0fff445f66c1d2f5"
+      "core/src/option.rs": "2dab92cdbec51b006307496b24cc757d7b2bc4056eff156d0fff445f66c1d2f5",
+      "alloc/src/string.rs": "525acea77c51de51eae6457674dd6942adb5aca1580de26d2e25d24d8f0b5bb8",
+      "alloc/src/str.rs": "f160c025a52379d8300a6d2602d162362568691ff6f3b224ab9d0d92f5c03666",
+      "core/src/str/mod.rs": "f03f33d0e9c37226a2b31b112207b7e430a1e7e73b7d35fb2690b39da57645d5",
+      "core/src/str/iter.rs": "7333a75588ddbaf58d44ce53a317bbad57f4789d5f7a1b382cee352663e69f54",
+      "core/src/str/traits.rs": "c62e78cdf36bca4eddef7653d564b693044e1bab1a81301acddbd6354c10ca16",
+      "core/src/num/mod.rs": "eb06b0b1ad4d9de07a6246957c4407c2f6f1e0db9460a85ad5833dfbf03c253b",
+      "core/src/num/error.rs": "f66e9b263eb9f9aab957801d08a4a8185d7d15e5945a9f491023986d19ca2636",
+      "core/src/fmt/num.rs": "6c8f8e56e0dc92d6afa17dcca050ace3696e0bc46d977749489c8831cbc55af7",
+      "core/src/bool.rs": "7e96cdc4559d0884c027ffc5de3c6e5bdaf0a0dbdc0e01339159f2062ce05a80",
+      "core/src/fmt/mod.rs": "54596bb5eb43b6f24c4815543c486c997ccac39f9b6dadefb4c98ddd106317c3",
+      "core/src/num/uint_macros.rs": "caad28bef2017170cabd6f5edc34b775a66914fc36cbfaff6529c8f2d2a672aa"
     }
   },
   "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)"

@@ -17,6 +17,20 @@ EXTERNALS = {
     "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
     "alloc::vec::{alloc::vec::Vec<T>}::retain",
     "core::option::{core::option::Option<T>}::is_none_or",
+    "core::bool::{bool}::then_some",
+    "core::num::{u8}::is_ascii_alphanumeric",
+    "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}::from_str",
+    "core::str::iter::{impl core::iter::traits::iterator::Iterator<u8> for core::str::iter::Bytes<'_0>}::all",
+    "core::str::{str}::len",
+    "core::str::{str}::is_empty",
+    "core::str::{str}::split_at_checked",
+    "core::str::{str}::bytes",
+    "core::str::{str}::parse",
+    "core::str::traits::{impl core::cmp::PartialEq<str> for str}::eq",
+    "alloc::str::{impl alloc::borrow::ToOwned<alloc::string::String> for str}::to_owned",
+    "alloc::string::{impl core::cmp::PartialEq<&'_0 str> for alloc::string::String}::eq",
+    "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+    "alloc::string::{impl alloc::string::ToString for T}::to_string",
 }
 
 # A public root cannot disappear by removing it from both the Rust adapter and
@@ -27,6 +41,27 @@ ROOTS = {
     "resource_add", "resource_positive",
     "resource_fits", "create_binding_valid", "identity_response",
     "retry_hint", "outcome_observation",
+    "allocated_number", "center_allocated_number",
+    "tenant_from_string", "tenant_from_str", "tenant_value", "tenant_into_string",
+    "sandbox_from_string", "sandbox_from_str", "sandbox_value", "sandbox_into_string",
+    "operation_from_string", "operation_from_str", "operation_value", "operation_into_string",
+    "logical_action_from_string", "logical_action_from_str", "logical_action_value", "logical_action_into_string",
+    "resource_from_string", "resource_from_str", "resource_value", "resource_into_string",
+    "client_request_from_string", "client_request_from_str", "client_request_value", "client_request_into_string",
+    "deployment_from_string", "deployment_from_str", "deployment_value", "deployment_into_string",
+    "node_from_string", "node_from_str", "node_value", "node_into_string",
+}
+REQUIRED_IDENTITY_CALLS = {
+    "sandproof_protocol::valid_identifier",
+    "sandproof_protocol::identifiers::parse_allocated_number",
+    "sandproof_center_core::validation::number",
+}
+LIBRARY_SOURCES = {
+    'alloc/src/vec/mod.rs', 'core/src/option.rs', 'alloc/src/string.rs',
+    'alloc/src/str.rs', 'core/src/str/mod.rs', 'core/src/str/iter.rs',
+    'core/src/str/traits.rs', 'core/src/num/mod.rs', 'core/src/num/error.rs',
+    'core/src/fmt/num.rs',
+    'core/src/bool.rs', 'core/src/fmt/mod.rs', 'core/src/num/uint_macros.rs',
 }
 
 
@@ -51,7 +86,7 @@ def check(root, llbc, inventory):
         raise ValueError('unexpected extraction crate')
     environment = json.loads((root / 'verification/foundations-environment.json').read_text())
     libraries = environment.get('library_sources', {})
-    source_paths = {'alloc/src/vec/mod.rs', 'core/src/option.rs'}
+    source_paths = LIBRARY_SOURCES
     if (set(libraries) != {'production', 'extraction'}
             or any(set(sources) != source_paths for sources in libraries.values())
             or any(not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
@@ -69,8 +104,11 @@ def check(root, llbc, inventory):
     roots = re.findall(r'--start-from crate::([a-z0-9_]+)', script)
     source = (root / 'verification/extract-foundations/src/lib.rs').read_text()
     public = re.findall(r'pub fn ([a-z0-9_]+)\(', source)
+    all_roots = re.findall(r'--start-from ([a-z0-9_:]+)', script)
+    expected_roots = {'crate::' + name for name in ROOTS}
     if (len(roots) != len(set(roots)) or len(public) != len(set(public))
-            or set(roots) != ROOTS or set(public) != ROOTS):
+            or set(roots) != ROOTS or set(public) != ROOTS
+            or len(all_roots) != len(set(all_roots)) or set(all_roots) != expected_roots):
         raise ValueError('free production-call roots and script disagree')
     functions = inventory['functions']
     # Aeneas emits the parent, loop wrapper and loop body under ONE Rust name.
@@ -132,8 +170,8 @@ def check(root, llbc, inventory):
             lean_name = function['lean_name'].removeprefix('SandproofFoundationsRust.')
             if not re.search(r'\bdef\s+' + re.escape(lean_name) + r'\b', generated.read_text()):
                 raise ValueError(f'owned loop/function has no generated definition: {name}')
-    for name in roots:
-        function = by_name.get(f'{crate}::{name}')
+    for name in [f'{crate}::{name}' for name in roots] + sorted(REQUIRED_IDENTITY_CALLS):
+        function = by_name.get(name)
         if function is None or function['lean_file'] != 'SandproofFoundations/Funs.lean':
             raise ValueError(f'root was not generated as a real function: {name}')
         generated = root / 'verification/aeneas/foundations' / function['lean_file']
@@ -143,7 +181,7 @@ def check(root, llbc, inventory):
     actual = {f['rust_name'] for f in functions if f['is_opaque']}
     if actual != EXTERNALS:
         raise ValueError(f'unreviewed external surface: added={actual-EXTERNALS}, removed={EXTERNALS-actual}')
-    return len(roots)
+    return len(all_roots)
 
 
 def main():

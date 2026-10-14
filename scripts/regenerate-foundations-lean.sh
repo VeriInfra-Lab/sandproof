@@ -34,6 +34,40 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::identity_response \
   --start-from crate::retry_hint \
   --start-from crate::outcome_observation \
+  --start-from crate::allocated_number \
+  --start-from crate::tenant_from_string \
+  --start-from crate::tenant_from_str \
+  --start-from crate::tenant_value \
+  --start-from crate::tenant_into_string \
+  --start-from crate::sandbox_from_string \
+  --start-from crate::sandbox_from_str \
+  --start-from crate::sandbox_value \
+  --start-from crate::sandbox_into_string \
+  --start-from crate::operation_from_string \
+  --start-from crate::operation_from_str \
+  --start-from crate::operation_value \
+  --start-from crate::operation_into_string \
+  --start-from crate::logical_action_from_string \
+  --start-from crate::logical_action_from_str \
+  --start-from crate::logical_action_value \
+  --start-from crate::logical_action_into_string \
+  --start-from crate::resource_from_string \
+  --start-from crate::resource_from_str \
+  --start-from crate::resource_value \
+  --start-from crate::resource_into_string \
+  --start-from crate::client_request_from_string \
+  --start-from crate::client_request_from_str \
+  --start-from crate::client_request_value \
+  --start-from crate::client_request_into_string \
+  --start-from crate::deployment_from_string \
+  --start-from crate::deployment_from_str \
+  --start-from crate::deployment_value \
+  --start-from crate::deployment_into_string \
+  --start-from crate::node_from_string \
+  --start-from crate::node_from_str \
+  --start-from crate::node_value \
+  --start-from crate::node_into_string \
+  --start-from crate::center_allocated_number \
   --include sandproof_protocol --include sandproof_center_core \
   --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_foundations.llbc \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline

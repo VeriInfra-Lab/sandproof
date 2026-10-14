@@ -67,6 +67,23 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 两版真实标准库 `alloc/src/vec/mod.rs`、`core/src/option.rs` 摘要单列在同一环境清单并在工具审计中实查。源码审查、状态化回归和摘要不代替标准库形式化证明；这是有限库接口的显式合同，不是把自有退休/删除许可作为可信前提。源版本或模型变化须重查筛选、Option 判断、其 V4 调用字典及邻接证明闭包。
 
+### A6 身份字符串与规范编号库模型使用登记
+
+`A6-foundations-identifiers` 增加 14 个精确库接口，连同上述 8 个合为 22 个不透明函数模型；实际清单由[抽取审计器](../../tools/check_foundations_extraction.py)检查，不允许把自有身份构造器、谓词、闭包或中心解析包装改为不透明调用。模型分为：
+
+| 库观察 | 合同和调用边界 |
+|---|---|
+| `str::len/is_empty/bytes`、`u8::is_ascii_alphanumeric`、`Bytes::all` | UTF-8 字节长度和原字节顺序；ASCII 判断；回调按序、短路且保留更新后的状态，失败原样传播，回调本身由 V0 证明 |
+| `String::deref`、`str::to_owned`、字符串/借用字符串相等 | 有效且长度可表示的 UTF-8，逐字节保持内容；复制正常返回不改变文本，不采用有损 UTF-8 解码，不保证物理分配一定成功 |
+| `str::split_at_checked`、`str::parse`、`u64::from_str` | 只在范围内的 UTF-8 边界切分，其他切点返回 None；实际 u64 十进制解析接受前导 `+` 和零，但只接受 ASCII 数字并拒绝溢出。错误原因仅在本项目随后 `.ok()` 的观察中商为“解析失败”，不能用于保留 ParseIntError 细节的其他调用 |
+| `ToString::to_string`、`bool::then_some`及固定 u64 默认 Display | 默认十进制输出无符号、无前导零；ToString 调用原 Display 并读取其输出，不能忽略回调后伪造成功；then_some 保留给定值。本批仅连接实际 u64 默认实例，不覆盖自定义格式参数或用户 Display |
+
+可计算实现见 [IdentifierLibrary](../../verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean)、[TypesExternal](../../verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean) 与既有 FunsExternal。Bytes 保存尚未消费的字节；格式缓冲区是明确的输出字符串，不使用无观察内容的类型替代。UTF-8 字符串/字节往返引理由 Lean 内核检查；这些定义与固定 Rust 标准库符合仍是显式 A6 条件，不等于标准库本身已证明。
+
+两版标准库的字符串、字节迭代、解析、布尔与格式源码摘要在同一环境清单登记并实查。生产/抽取编译器、目标、翻译器和 Lean 未改变；标准库来源、模型或默认格式实例变化后，重查构造/取值/规范编号、完整身份输入域及其调用闭包。调用方还须建立有效 Rust UTF-8/有限值、成功分配和后端表示条件，不从纯正常返回定理推出 OOM/abort 可恢复。
+
+V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议规范编号解析与中心实际包装；不是将这些自有行为作为外部假设。中心恢复中完整 `CenterState::is_valid`、存储身份恢复、JSON 自有字段访问及全部调用资格仍分别属于未闭合连接。Serde/serde_json 的整套编解码不纳入本合同：将 `from_slice/to_vec<ControlIdentity>` 整体设成不透明，即使翻译成功也不能计作自有字段往返已证。
+
 ### A6 网络地址库模型使用登记
 
 `A6-network-stdlib` 是独立于上述六函数的最小 IPv4 标准库合同，覆盖真实调用的 `String` 精确相等、`String` 到 `str` 借用、`str::parse` 的字典调用、`Ipv4Addr::from_str` 及 `u32::from(Ipv4Addr)`，以及所需的 `Ipv4Addr`、`AddrParseError` 表示；下方克隆与析构登记限定新增的两个接口及内置模型使用条件。生产编译器为 Rust 1.97.0，抽取前端为 `nightly-2026-08-18`；两版标准库解析器的实现和文件摘要不同，不将抽取版源码等同于生产版源码。精确编译器提交、两版库源码摘要、目标及配置冻结在[网络模型环境清单](../../verification/network-environment.json)，源码/模型/检查脚本摘要见[网络输入清单](../../verification/network-inputs.sha256)，生成物由重新抽取逐字节核对；变更后重新核对依赖闭包。[生产版解析器源码](https://github.com/rust-lang/rust/blob/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/net/parser.rs)、[抽取版解析器源码](https://github.com/rust-lang/rust/blob/8fa1c96cfd489e4c27654c144ae871ce2c4db6c6/library/core/src/net/parser.rs)

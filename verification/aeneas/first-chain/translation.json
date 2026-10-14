@@ -96,8 +96,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 66,
+        "end_line": 66
       },
       "is_opaque": false,
       "can_fail": true,
@@ -113,8 +113,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 66,
+        "end_line": 66
       },
       "is_opaque": false,
       "can_fail": true,
@@ -215,8 +215,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 66,
+        "end_line": 66
       },
       "is_opaque": false,
       "can_fail": true,
@@ -232,8 +232,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 66,
+        "end_line": 66
       },
       "is_opaque": false,
       "can_fail": true,
@@ -249,8 +249,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 66,
+        "end_line": 66
       },
       "is_opaque": false,
       "can_fail": true,
@@ -457,8 +457,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 68,
+        "end_line": 68
       }
     },
     {
@@ -469,8 +469,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 68,
+        "end_line": 68
       }
     },
     {
@@ -493,8 +493,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 68,
+        "end_line": 68
       }
     },
     {
@@ -505,8 +505,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 68,
+        "end_line": 68
       }
     },
     {
@@ -517,8 +517,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 68,
+        "end_line": 68
       }
     },
     {
@@ -565,8 +565,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 68,
+        "end_line": 68
       }
     },
     {

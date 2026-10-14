@@ -13,6 +13,7 @@
 | [共享类型](../../sandbox-protocol/src/internal.rs)、[高级操作](../../sandbox-protocol/src/internal/lifecycle.rs)、[窗口](../../sandbox-protocol/src/internal/window.rs) | 部署/节点/全局实例/操作/版本/位置/窗口的类型、完整相等与表示关系 |
 | [本地类型](../../controller-core/src/model.rs)、[编号](../../controller-core/src/ids.rs) | 本地 generation、epoch、逻辑工作、attempt 与全局编号明确分开 |
 | [中心保留位置](../../sandbox-center-core/src/model.rs)的 `RetentionLane::current` | 原退休高水位的严格后继及耗尽边界；退休推进、关闭与复用授权仍由 V1/V2/V3 提供 |
+| [身份构造](../../sandbox-protocol/src/lib.rs)、[规范编号解析](../../sandbox-protocol/src/identifiers.rs)及[中心恢复检查](../../sandbox-center-core/src/validation.rs)的纯解析入口 | 八类不透明字符串的原值与构造域；中心已分配编号的精确前缀、非零、高水位和规范十进制文本；完整恢复状态与退休许可仍由 V1/V2 提供 |
 | [有限表](../../controller-core/src/store.rs)的 `Store::get_copy/put/retain` | 首次匹配查询、首次替换或缺失追加、有限遍历终止；删除、唯一性和修改范围分别证明，自有键比较由调用模块实例化 |
 | [协议样例](../../sandbox-protocol/tests/contract_examples.rs)、[依赖锁](../../Cargo.lock) | 编解码/数值边界的固定输入，库模型版本登记 |
 | [抽取入口](../../scripts/regenerate-rust-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前本地入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
@@ -33,7 +34,7 @@
 
 | 拟定定理 | 精确义务 | 前提提供方 |
 |---|---|---|
-| `identity_roundtrip` | 对合法完整身份 `b`，实际编码后成功解码等于 `b`；拒绝未知协议/不可表示值，不缩窄或混用字段 | 协议解析库最小合同；调用范围由 V3/V7 |
+| `identity_roundtrip` | 对构造域内完整身份 `b`，实际编码后成功解码等于 `b`；字段完整、非法字符串/不可表示值拒绝，不缩窄或混用字段。可表示但不支持的协议版本及零位置可先解码，随后按版本→节点→位置的原序拒绝，不能改为解析阶段拒绝 | 协议解析库最小合同；调用范围由 V3/V7 |
 | `checked_counter_refines` | 未耗尽时下一个编号恰为原值加一；耗尽拒绝、无回绕；退休不降低高水位 | 各模块 `R_i` 与实际有界整数定义 |
 | `resource_arithmetic_refines` | 已接受的各分量加减及单位换算等于数学结果且落在表示域；不足/溢出不进入成功分支 | V1/V4 的准入条件 |
 | `evidence_kind_separated` | Accepted、Ready、Stopped、Cleaned、Released、Unknown 不互推；任何持久记录不自动产生物理证据 | V6 证据构造及 V5/V2 提交连接 |
