@@ -1,5 +1,5 @@
-//! Bounded replies for three observed Connect header failures. No arbitrary
-//! diagnostics, method/codec policy or command-operation errors are mapped.
+//! Bounded replies for observed Connect method and header failures. No arbitrary
+//! diagnostics, codec policy or command-operation errors are mapped.
 use super::Error as SelectionError;
 #[cfg(any(target_os = "linux", test))]
 use super::{Encoding, ResponseFormat};
@@ -87,6 +87,7 @@ impl fmt::Debug for Failure {
 #[derive(Clone, Copy)]
 #[cfg(any(target_os = "linux", test))]
 struct Plan {
+    method_head: Option<bool>,
     stream: bool,
     gzip: bool,
     content_type: &'static str,
@@ -95,6 +96,15 @@ struct Plan {
 #[cfg(any(target_os = "linux", test))]
 impl Plan {
     fn select(error: &SelectionError, format: Option<ResponseFormat>) -> Result<Self, Error> {
+        if let SelectionError::Method { head } = error {
+            return Ok(Self {
+                method_head: Some(*head),
+                stream: false,
+                gzip: false,
+                content_type: "",
+                status: StatusCode::METHOD_NOT_ALLOWED,
+            });
+        }
         let status = match error {
             SelectionError::Compression(_) => StatusCode::NOT_IMPLEMENTED,
             SelectionError::Version(_) | SelectionError::Timeout(_) => StatusCode::BAD_REQUEST,
@@ -103,6 +113,7 @@ impl Plan {
         let format = format.ok_or(Error::UnclassifiedFault)?;
         let stream = format.content_type().starts_with("application/connect+");
         Ok(Self {
+            method_head: None,
             stream,
             gzip: stream && format.encoding() == Encoding::Gzip,
             // Unary Connect errors always use uncompressed application/json,
@@ -158,21 +169,25 @@ async fn send_inner(
     let mut response = Response::new(payload.into_body(limits.chunk_bytes, deadline, false));
     *response.status_mut() = plan.status;
     let headers = response.headers_mut();
-    headers.insert("content-type", HeaderValue::from_static(plan.content_type));
-    headers.insert(
-        if plan.stream {
-            "connect-accept-encoding"
-        } else {
-            "accept-encoding"
-        },
-        HeaderValue::from_static("gzip"),
-    );
+    if plan.method_head.is_some() {
+        headers.insert("allow", HeaderValue::from_static("POST"));
+    } else {
+        headers.insert("content-type", HeaderValue::from_static(plan.content_type));
+        headers.insert(
+            if plan.stream {
+                "connect-accept-encoding"
+            } else {
+                "accept-encoding"
+            },
+            HeaderValue::from_static("gzip"),
+        );
+    }
     if plan.gzip {
         headers.insert("connect-content-encoding", HeaderValue::from_static("gzip"));
     }
     // The original server flushes stream EOS, so never supplies a length. Its
     // unary writer only supplies an automatic length within the 2048-byte buffer.
-    if !plan.stream && length <= 2048 {
+    if !plan.stream && plan.method_head != Some(true) && length <= 2048 {
         headers.insert(
             "content-length",
             HeaderValue::from_str(&length.to_string()).map_err(|_| Error::Unavailable)?,

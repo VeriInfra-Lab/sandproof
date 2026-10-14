@@ -12,7 +12,7 @@ import (
 
 func commandHeaderReply(res *http.Response, body []byte) string {
 	result := []string{strconv.Itoa(res.StatusCode)}
-	for _, name := range []string{"Content-Type", "Content-Encoding", "Connect-Content-Encoding", "Accept-Encoding", "Connect-Accept-Encoding", "Content-Length"} {
+	for _, name := range []string{"Content-Type", "Content-Encoding", "Connect-Content-Encoding", "Accept-Encoding", "Connect-Accept-Encoding", "Content-Length", "Allow"} {
 		result = append(result, hex.EncodeToString([]byte(res.Header.Get(name))))
 	}
 	flag := ""

@@ -99,7 +99,9 @@ impl fmt::Debug for RejectedValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Request(super::Error),
-    Method,
+    Method {
+        head: bool,
+    },
     /// Other original protocols/codecs remain unselected, not publicly 415.
     ContentType,
     Compression(RejectedValue),
@@ -148,7 +150,13 @@ fn select(
         ));
     }
     if method != Method::POST {
-        return Err((Error::Method, original, None));
+        return Err((
+            Error::Method {
+                head: method == Method::HEAD,
+            },
+            original,
+            None,
+        ));
     }
     let codec = std::str::from_utf8(first(headers, "content-type"))
         .ok()
@@ -238,7 +246,7 @@ mod owned {
         pub const fn response_format(&self) -> Option<ResponseFormat> {
             self.response
         }
-        /// Emit only observed compression/version/timeout header failures.
+        /// Emit only observed method/compression/version/timeout failures.
         /// The original request capacity and deadline survive preparation and
         /// all response byte references. Other failures remain unclassified.
         /// # Errors

@@ -42,7 +42,7 @@ fn selected_json_keeps_first_fields_and_original_header_failure_order() {
             select(&h, &Method::GET, rpc, 4096, now, original)
                 .unwrap_err()
                 .0,
-            Error::Method
+            Error::Method { head: false }
         );
         let content = h
             .insert("content-type", "invalid".parse().unwrap())

@@ -384,7 +384,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)新增 Basic 预检到方法/媒体类型/压缩/版本/期限的顺序、第一字段与有界诊断、较早期限和协商格式保留、identity 解码前拒绝以及失败/Ready 到原容量的连接义务。命令和文件共用 MIME 选择主体，保留原文件 API；有限 Go 对照不证明完整协议、到期效果边界或公开错误映射。新增选择、共享解析重构及 SDK 路由迁移尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
 
-[命令头错误回复](../sandbox-guest-service/src/command_requests/http/reply.rs)增加原选择观察到一元/流式固定错误的映射、协商 gzip 终结帧、原始和压缩载荷独立限额，以及编码失败/取消/最后字节引用到原请求容量和期限的连接义务。有限原 Go 字节对照及所有权测试不证明任意错误、完整命令协议或整机内存上界；这部分适配尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
+[命令头错误回复](../sandbox-guest-service/src/command_requests/http/reply.rs)增加原选择观察到一元/流式固定错误的映射、原方法与 HEAD 的 405 空回复、协商 gzip 终结帧、原始和压缩载荷独立限额，以及编码失败/取消/最后字节引用到原请求容量和期限的连接义务。有限原 Go 字节对照及所有权测试不证明任意错误、完整命令协议或整机内存上界；这部分适配尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
 
 [命令请求准入/PID 分派](../sandbox-guest-service/src/command_requests.rs)增加原请求额度到 token/Basic/JSON 阻塞工作的所有权连接、取消/超时后实际闭包退出、单次解码和不可替换请求到原注册句柄、部分输入不重放、原响应期限与最后 Bytes 引用释放的自有义务，尚未抽取或证明。真实账户/进程适配沿用现有端口，不把其有限测试提升为 HTTP 路由、跨服务恢复、整机容量或 Go 双端证据；纯核心及已证明 Rust 未改，旧定理不覆盖新编排。
 

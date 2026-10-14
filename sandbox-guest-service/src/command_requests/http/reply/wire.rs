@@ -10,6 +10,9 @@ pub(super) fn encode(
     deadline: Instant,
     cancelled: &watch::Receiver<bool>,
 ) -> Result<Vec<u8>, Error> {
+    if plan.method_head.is_some() {
+        return Ok(Vec::new());
+    }
     let prefix = if plan.stream { 5 } else { 0 };
     let limit = limits
         .wire_bytes

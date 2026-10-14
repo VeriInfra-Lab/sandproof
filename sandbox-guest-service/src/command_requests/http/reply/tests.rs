@@ -249,3 +249,55 @@ async fn multichunk_rejection_requires_consumption_before_next_data() {
     drop(body);
     released(slots).await;
 }
+
+#[tokio::test]
+async fn empty_method_replies_keep_capacity_until_eof_drop_or_original_expiry() {
+    for head in [false, true] {
+        for finish in 0..3 {
+            let (owner, slots) = retain();
+            let response = send(
+                SelectionError::Method { head },
+                None,
+                Limits {
+                    wire_bytes: 1,
+                    chunk_bytes: 1,
+                },
+                deadline(),
+                owner,
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.status(), 405);
+            assert_eq!(response.headers()["allow"], "POST");
+            assert_eq!(
+                response
+                    .headers()
+                    .get("content-length")
+                    .map(axum::http::HeaderValue::as_bytes),
+                if head { None } else { Some(b"0".as_slice()) }
+            );
+            for absent in [
+                "content-type",
+                "content-encoding",
+                "connect-content-encoding",
+                "accept-encoding",
+                "connect-accept-encoding",
+            ] {
+                assert!(!response.headers().contains_key(absent));
+            }
+            let mut body = response.into_body();
+            assert_eq!(slots.available_permits(), 0);
+            if finish == 0 {
+                assert!(body.frame().await.is_none());
+                assert_eq!(slots.available_permits(), 1);
+            } else if finish == 1 {
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_secs(31)).await;
+                assert!(body.frame().await.unwrap().is_err());
+                tokio::time::resume();
+            }
+            drop(body);
+            released(slots).await;
+        }
+    }
+}

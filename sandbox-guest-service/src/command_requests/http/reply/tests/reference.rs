@@ -3,6 +3,14 @@ use crate::file_download::tests::reference::{Reference, hex};
 use std::collections::BTreeMap;
 
 async fn check(oracle: &mut Reference, rpc: Rpc, fields: &BTreeMap<&'static str, Vec<String>>) {
+    check_method(oracle, rpc, "POST", fields).await;
+}
+async fn check_method(
+    oracle: &mut Reference,
+    rpc: Rpc,
+    method: &str,
+    fields: &BTreeMap<&'static str, Vec<String>>,
+) {
     let mut headers = HeaderMap::new();
     for (name, values) in fields {
         for value in values {
@@ -11,7 +19,7 @@ async fn check(oracle: &mut Reference, rpc: Rpc, fields: &BTreeMap<&'static str,
     }
     let (error, end, format) = select(
         &headers,
-        &Method::POST,
+        &method.parse().unwrap(),
         rpc,
         16384,
         Instant::now(),
@@ -29,14 +37,19 @@ async fn check(oracle: &mut Reference, rpc: Rpc, fields: &BTreeMap<&'static str,
         "accept-encoding",
         "connect-accept-encoding",
         "content-length",
+        "allow",
     ] {
         observation.push(hex(response
             .headers()
             .get(name)
             .map_or(b"", |v| v.as_bytes())));
     }
+    let stream = response
+        .headers()
+        .get("content-type")
+        .is_some_and(|v| v.as_bytes().starts_with(b"application/connect+"));
     let body = drain(response.into_body()).await;
-    if rpc.is_stream() {
+    if stream {
         let size = u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize;
         assert_eq!(body.len(), size + 5);
         let payload = if body[0] & 1 == 0 {
@@ -50,7 +63,7 @@ async fn check(oracle: &mut Reference, rpc: Rpc, fields: &BTreeMap<&'static str,
         observation.push(String::new());
         observation.push(hex(&body));
     }
-    let input = serde_json::json!({"RPC": rpc.method(), "Method":"POST", "Headers": fields});
+    let input = serde_json::json!({"RPC": rpc.method(), "Method":method, "Headers": fields});
     oracle.check(
         &format!("W\t{}", hex(&serde_json::to_vec(&input).unwrap())),
         &observation.join("\t"),
@@ -118,6 +131,35 @@ async fn emitted_header_failures_match_original_connect_status_headers_flags_and
                     }
                     check(&mut oracle, rpc, &fields).await;
                 }
+            }
+        }
+    }
+    oracle.finish();
+}
+
+#[tokio::test]
+#[ignore = "explicit fixed Go Connect command method replies; set SANDPROOF_GUEST_CONNECT_REFERENCE"]
+async fn non_post_replies_match_original_before_codec_compression_version_and_timeout() {
+    let mut oracle = Reference::from_env("SANDPROOF_GUEST_CONNECT_REFERENCE");
+    for rpc in [
+        Rpc::Start,
+        Rpc::Connect,
+        Rpc::List,
+        Rpc::SendInput,
+        Rpc::CloseStdin,
+        Rpc::SendSignal,
+        Rpc::Update,
+    ] {
+        for method in ["GET", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"] {
+            for content in ["application/json", "application/connect+json", "invalid"] {
+                let fields = BTreeMap::from([
+                    ("content-type", vec![content.into()]),
+                    ("content-encoding", vec!["br".into()]),
+                    ("connect-content-encoding", vec!["br".into()]),
+                    ("connect-protocol-version", vec!["bad".into()]),
+                    ("connect-timeout-ms", vec!["bad".into()]),
+                ]);
+                check_method(&mut oracle, rpc, method, &fields).await;
             }
         }
     }

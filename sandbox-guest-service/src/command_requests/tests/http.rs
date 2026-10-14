@@ -64,7 +64,7 @@ async fn http_selection_failures_keep_original_capacity_without_holding_complete
         assert_eq!(failure.deadline(), deadline);
         assert!(matches!(
             (case, failure.error()),
-            (0, SelectionError::Method)
+            (0, SelectionError::Method { head: false })
                 | (1, SelectionError::ContentType)
                 | (2, SelectionError::Compression(_))
                 | (3, SelectionError::Version(_))
@@ -212,6 +212,52 @@ async fn selected_header_reply_keeps_original_admission_through_last_bytes_or_fa
             .unwrap();
             drop(copy);
         }
+        released(&pool).await;
+    }
+}
+
+#[tokio::test]
+async fn original_head_method_failure_transfers_same_request_into_empty_response() {
+    use crate::command_requests::http::reply;
+    let session = session().await;
+    let pool = CommandRequests::new(limits()).unwrap();
+    for method in [Method::HEAD, Method::GET] {
+        let mut h = headers();
+        h.insert("content-type", "invalid".parse().unwrap());
+        h.insert("connect-timeout-ms", "bad".parse().unwrap());
+        let failure = prepare_headers(&pool, &session, h)
+            .await
+            .select_json(&method, Rpc::Start)
+            .err()
+            .unwrap();
+        assert_eq!(
+            failure.error(),
+            &SelectionError::Method {
+                head: method == Method::HEAD
+            }
+        );
+        let response = failure
+            .into_header_response(reply::Limits {
+                wire_bytes: 1,
+                chunk_bytes: 1,
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 405);
+        assert_eq!(
+            response.headers().contains_key("content-length"),
+            method != Method::HEAD
+        );
+        full(&pool);
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            session.initialize(br#"{"accessToken":"token"}"#),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let mut body = response.into_body();
+        assert!(body.frame().await.is_none());
         released(&pool).await;
     }
 }

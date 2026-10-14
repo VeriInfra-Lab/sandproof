@@ -78,6 +78,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [命令头错误响应检查](../sandbox-guest-service/src/command_requests/http/reply/tests.rs)覆盖最后字节副本/取消/原期限、逐块背压、原始及压缩帧上限、未分类拒绝和 Debug 脱敏。显式固定 Go W 入口对七种命令、两种 JSON 类型、两种协商和七种拒绝组合比较 196 组真实 HTTP 状态/编码广告/长度、唯一终结帧 flags 和解压后的 JSON 原字节，包含超过 Go 自动长度阈值及非 ASCII/HTML 转义；不要求 gzip 压缩流逐字节相同。共用 SANDPROOF_GUEST_CONNECT_REFERENCE，必须重建并显式 --include-ignored；不计作普通 CI 已执行。[原准入连接检查](../sandbox-guest-service/src/command_requests/tests/http.rs)另覆盖选择失败到实际响应/失败的名额与鉴权释放，新增 Linux 场景待候选 CI。尚无正式监听、完整错误覆盖或 Go/Rust 同 SDK E03。
 
+同一 W 入口另有 126 组非 POST 对照：七种命令、六种 HTTP 方法与三种媒体类型，同时叠加坏压缩/版本/期限，核对最先返回的 405、Allow: POST、空正文及 HEAD 的长度头差异。可移植检查覆盖空 body 在 EOF、丢弃或原期限到期后的名额释放；Linux 原 Basic 预检到 HEAD/GET 回复的连接用例待候选 CI，不能从父分支通过推算。
+
 [命令 HTTP 选择检查](../sandbox-guest-service/src/command_requests/http/tests.rs)覆盖七种方法的一元/流式 JSON、重复头首值、MIME 参数、压缩字段分离及 q 非权重、拒绝顺序、期限与失败格式。显式固定 Go V 入口经原生成消息和 Connect v1.18.1 真实回环对照 329 组选择/状态/错误文本；handler 为受控回复，不执行命令，也不证明原 Start 在零/负期限没有副作用。[Linux 所有权检查](../sandbox-guest-service/src/command_requests/tests/http.rs)核对失败持有原请求但释放完成的鉴权锁，gzip/过期不读正文，成功解码保留同一 Ready/期限；该提交已在下述 #440 CI 实跑，后续候选仍须独立重跑。identity 入口未实现请求 gzip 或完整错误映射，不能计完整 E03。V 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，需重建参考二进制并显式 --include-ignored。
 
 #440 的 HTTP 选择和八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38567961659) 通过：源 411c9fec8f511eedb3141dc01ff60fe098cbe050，checkout 8756de4a0c3ec2b20892e88fd966c16d2bb7d1d8；新增两项选择所有权检查、preparation 28 项、service lib 349 passed / 51 ignored、八轮 SDK 实进程及四项 CI 均通过。显式固定 Go 对照另在本地运行，不能由 CI 的 ignored 推算通过；此父提交不覆盖新增头错误响应。

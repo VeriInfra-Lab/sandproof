@@ -56,7 +56,7 @@ fn observation(
                 }
             }
             match error {
-                Error::Method => {
+                Error::Method { .. } => {
                     seen.status = 405;
                     seen.allow = "POST";
                 }
