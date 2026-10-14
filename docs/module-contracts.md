@@ -352,7 +352,11 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 [持久 PID 集](../sandbox-guest-runtime/src/pid_claims.rs)已实现独立文件端口，调用方显式提供原 VM 的受信任绑定摘要、私有目录 FD、预期 UID 和包含上界的 PID 范围 1..=max_pid，表示上限为 4,194,304，没有生产默认值。首次 create 仅供可信的新 VM 制备，采用排他创建；正常重启必须 open 已存在且完整的同绑定/范围文件，缺失/损坏时不新建、修复或清空。固定版本头、PID 0 保留位、尾部未用位及 SHA-256 校验覆盖整个位图；最大持久图像 524,365 字节，校验读取另有同尺寸副本，哈希/文件系统分配另计。文件为预期 UID 的私有普通单链接文件，NOFOLLOW/NONBLOCK 打开并持有单写者锁；通过同一目录 FD 核对名称/inode。claim 在原写者上置位并同步后才返回绑定完整 CommandIdentity 的不可克隆回执；写入/校验失败或 panic 毒化当前写者。重开只接受完整有效图像并重新确认同步，不修复中断状态；没有发布回执的写前失败可仍为旧图像，已完整保存的新位继续拒绝复用。目录来源/祖先、VM 绑定生产、首次制备唯一性及真实持久存储由调用方保证；不能抵抗来宾 root、同 UID 篡改、有效旧图像回滚或虚假 fsync。
 
-[准备到 PID 登记连接](../sandbox-guest-service/src/command/registration.rs)通过 PendingCommand::register_pid 等待原 gated worker，将同一票据移入阻塞持久化任务。PidRegistrar 克隆共享独立的单写入名额，进入等待/阻塞队列前预留，原进程即使已到期并收尾，存储名额仍保留到实际文件任务退出；繁忙直接拒绝，不用进程名额代替磁盘任务预算。排队取消在写入前检查，执行中取消可保守烧掉 PID，但不会自动放行代码。返回的 PidRegisteredCommand 固定原票据和实际持久回执，仍须由调用方先安装同一身份的活跃选择器预留，再消费 commit；原执行/准入期限不刷新。失败/丢弃沿原准备所有者停止和 wait，容量只在实际收尾后释放。该连接尚无公开 PID/tag 查询、终局 TTL、正式命令 HTTP 路由或跨服务活跃进程恢复，不把持久位图当作活跃登记表。
+[准备到 PID 登记连接](../sandbox-guest-service/src/command/registration.rs)通过 PendingCommand::register_pid 等待原 gated worker，将同一票据移入阻塞持久化任务。PidRegistrar 克隆共享独立的单写入名额，进入等待/阻塞队列前预留，原进程即使已到期并收尾，存储名额仍保留到实际文件任务退出；繁忙直接拒绝，不用进程名额代替磁盘任务预算。排队取消在写入前检查，执行中取消可保守烧掉 PID，但不会自动放行代码。返回的 PidRegisteredCommand 固定原票据和实际持久回执，仍须由调用方先安装同一身份的活跃选择器预留，再消费 commit；原执行/准入期限不刷新。失败/丢弃沿原准备所有者停止和 wait，容量只在实际收尾后释放。持久位图本身不是活跃登记表；下述组件连接内存 PID 记录与终局保留，正式 HTTP/tag 查询及跨服务活跃进程恢复仍未接通。
+
+[有界 PID 登记](../sandbox-guest-service/src/command/registry.rs)已连接持久回执和原命令 owner，仍是未安装 HTTP 路由的 Linux 组件。调用方显式配置 VM 绑定、服务会话、登记条数、逐记录编码字节与终局保留时长；固定 Go 为 30 秒，正式装配须采用复核后的值。prepare 前预留登记名额并按最大 PID 检查整条 List 元数据编码，保存调用方原配置的副本；编码字节不冒充容器/分配器或整个进程 RAM 上界。publish 拒绝错 VM/会话和已有 PID，先装入精确记录再派发原票据。独立登记任务在 HTTP 等待者之外保留 commit、控制句柄和原始订阅：受理前取消停止原 gated worker，受理后丢失 Start 回复只丢失该回复/订阅，不丢失登记、不重执行。准备清理未知或 owner 丢失保持 unavailable 并继续占额。
+
+live 只取已启动未终结的原控制句柄，connectable 另允许保留期内的原终局订阅；都不凭数值 PID 接管进程，正式分派仍须每请求重新鉴权。List 只编码当前已观察活跃项，完整回复有独立预算。真实 wait/输出排空时由命令 owner 保存 completed_at；终局到期从此时计算，重连、延迟唤醒或 Start 回复丢失均不刷新。读取路径即使早于定时器清理也拒绝到期项；删除只匹配原记录，未知责任不按 TTL 释放，失败不能缓存成成功 End。登记元数据到期后可归还自身名额；仍持有命令/订阅/输出的外部使用者继续占原 CommandOwners 记录名额。tag 当前只作为 List 元数据保存，重复仲裁与 tag 查询尚未实现；该组件不自行批准公开 tag 差异，不恢复跨服务活跃进程。
 
 已加入的 [sandproof-guest-core](../sandbox-guest-core/src/lib.rs) 只承担两个有限局部决定，不依赖 HTTP、Tokio、文件系统或宿主控制器：
 
@@ -363,7 +367,7 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 命令驻留计数在消费后归还，不累计全部输出；文件总量预算与驻留预算分开。取消/超时只结束相应订阅/传输，不推断进程已停止或文件未改变；失败对象不会自动退还尚未确认释放的底层资源。实际服务的进程、连接、订阅、请求、终局保留和日志预算仍须在后续实现中逐项接通并验收，不能用数值边界测试冒充整机资源测量。
 
-新增的 [sandproof-guest-runtime](../sandbox-guest-runtime/src/lib.rs) 是未接入公开服务的 Linux 执行端口。`CommandProcess::prepare` 只启动受信任安装路径的私有 worker：创建独占临时 Unix socket，核对内核 peer PID/UID、pidfd 与 `/proc` 创建时钟，传入有界执行上下文，再停在放行闸门。调用者须在 prepare 前预留进程容量、在 `release` 前保存公开选择器归属；持久 PID 集及准备交接见上文，公开活跃登记与查询仍待接通。
+新增的 [sandproof-guest-runtime](../sandbox-guest-runtime/src/lib.rs) 是未接入公开服务的 Linux 执行端口。`CommandProcess::prepare` 只启动受信任安装路径的私有 worker：创建独占临时 Unix socket，核对内核 peer PID/UID、pidfd 与 `/proc` 创建时钟，传入有界执行上下文，再停在放行闸门。调用者须在 prepare 前预留进程容量、在 `release` 前保存公开选择器归属；持久 PID 集及准备交接见上文，内存 PID 登记已接通，正式 HTTP 命令查询仍待接通。
 
 [可保留的准备对象](../sandbox-guest-runtime/src/process/preparation.rs)在同步 `spawn` 返回前持有原 child；借用式 `finish` 握手只能尝试一次，取消或失败保留原对象供 `abort` 实际 wait。已取得 pidfd 后只信号原内核身份；取得前的 child 停止至多尝试一次，不在未知 wait 后反复按数值 PID 发信号。Drop 只请求停止，不能作为容量归还依据；低层便利方法 `CommandProcess::prepare` 被整体取消时仍只有这一 Drop 保证，需要取消后收尾的调用方使用准备对象或下面的管理入口。
 
@@ -379,7 +383,7 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 初始及 resize 的行列按固定 Go 端点将 wire uint32 取低 16 位，零与缺省尺寸保留为零；这只用于终端尺寸，不适用于身份或资源预算。`write_pty` 与管道 `write_input` 互斥，错误通道明确拒绝；PTY 拒绝 CloseStdin，Ctrl+D 是普通终端输入，实际 EOF 仍由终端模式决定。独立控制句柄执行 resize，检查原完整身份和实际 ioctl 结果，不等待正在写入的输入锁；内核可向前台进程组发送 SIGWINCH，显式 kill/term 仍只使用原主进程 pidfd。Linux PTY read 的 EIO 按该端口的 EOF 处理，其他错误仍为失败；EOF 不能替代实际 wait/消费确认。写就绪若已挂断/出错立即失败，不在满缓冲的 EAGAIN 上忙转阻塞收尾。终端 FD 随原管理记录/输入/控制引用保留，结束记录及 TTL 仍按下述待接入规则处理。
 
-`ProcessLimits` 的块大小、上下文字节和闸门握手期限是显式组件参数，没有生产默认值；握手期限不是命令执行期限。账户/默认上下文与真实 worker 已有组合入口；正式命令路由及鉴权接入、终局保留期限、跨重启登记和完整资源收尾仍待接入；命令管理组件见下文。编解码和测试路由不能当作可安装的 Rust envd 或模板切换证据；一元操作执行/回复及正式协议对照仍未完成。
+`ProcessLimits` 的块大小、上下文字节和闸门握手期限是显式组件参数，没有生产默认值；握手期限不是命令执行期限。账户/默认上下文与真实 worker 已有组合入口；正式命令路由及鉴权接入、公开终局保留配置、跨重启活跃登记和完整资源收尾仍待接入；命令管理组件见下文。编解码和测试路由不能当作可安装的 Rust envd 或模板切换证据；一元操作执行/回复及正式协议对照仍未完成。
 
 [sandproof-guest-service](../sandbox-guest-service/src/lib.rs) 已实现独立的初始化 HTTP 路由和会话组件，尚无生产监听器、命令/文件路由或模板安装。`GET /health` 返回 204 及自身 `X-Sandproof-Guest-Version`，不借用 Go envd 版本，也不代表认证或模板就绪。`POST /init` 只接受原宿主实际发送的 JSON 字段 `accessToken`、`defaultUser`、`defaultWorkdir`、`envVars`；其他上游可选初始化功能明确拒绝，不静默忽略。公开网关未增加初始化入口。
 

@@ -1,7 +1,7 @@
-//! Owned command execution, independent of an HTTP request. Public selectors,
-//! authorization of later requests and retention TTLs belong to the future
-//! registry. Durable PID claims can be attached to gated preparation; none of
-//! these APIs resolve a raw public PID to an active command.
+//! Owned command execution, independent of an HTTP request. Durable PID claims
+//! connect gated preparation to a bounded active/retained PID registry. Tag
+//! arbitration, public HTTP routes and later-request authorization remain
+//! separate; a raw numeric PID is never adopted as a new control capability.
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,11 +18,15 @@ use crate::AuthPermit;
 mod driver;
 mod preparation;
 mod registration;
+mod registry;
 mod streams;
 pub use preparation::{
     AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationSpec,
 };
 pub use registration::{PidRegisteredCommand, PidRegistrar, RegistrationError};
+pub use registry::{
+    PidRegistry, RegisteredStart, RegistryError, RegistryLimits, RegistryReservation,
+};
 #[cfg(test)]
 mod tests;
 pub use streams::{CommandOutput, CommandSubscription, OutputEvent};
@@ -67,6 +71,9 @@ pub struct CommandStatus {
     /// Complete only after actual wait and output settlement; an error never
     /// represents a successful complete stream or absence of descendants.
     pub completion: Option<Result<CommandExit, CommandError>>,
+    /// Captured by the execution owner when wait and output settlement finish.
+    /// Retention consumers must use this origin, not their later wake-up time.
+    pub completed_at: Option<Instant>,
     pub deadline_action: Option<DeadlineAction>,
     /// The owner task disappeared before observing settlement. Its capacity is
     /// quarantined for this pool's lifetime; this is not a completion receipt.
@@ -210,6 +217,7 @@ impl CommandReservation {
         let (status, _) = watch::channel(CommandStatus {
             launch: LaunchStatus::Pending,
             completion: None,
+            completed_at: None,
             deadline_action: None,
             owner_lost: false,
         });

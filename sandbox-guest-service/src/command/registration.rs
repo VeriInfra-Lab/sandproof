@@ -41,6 +41,10 @@ pub struct PidRegisteredCommand {
     claim: Claim,
 }
 impl PidRegisteredCommand {
+    pub(super) fn belongs_to(&self, binding: Binding) -> bool {
+        self.claim.belongs_to(binding)
+    }
+
     #[must_use]
     pub const fn identity(&self) -> CommandIdentity {
         self.claim.identity()

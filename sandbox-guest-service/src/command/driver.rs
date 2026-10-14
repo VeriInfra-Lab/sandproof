@@ -71,9 +71,10 @@ fn finish(shared: &Shared, result: Result<CommandExit, CommandError>) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .finish(result);
-    shared
-        .status
-        .send_modify(|state| state.completion = Some(result));
+    shared.status.send_modify(|state| {
+        state.completion = Some(result);
+        state.completed_at = Some(Instant::now());
+    });
 }
 
 pub(super) fn spawn(

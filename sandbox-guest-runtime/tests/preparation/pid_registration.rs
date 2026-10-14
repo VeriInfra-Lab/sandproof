@@ -3,6 +3,9 @@ use sandproof_guest_runtime::pid_claims::{Binding, Error as ClaimError, MAX_PID,
 use sandproof_guest_service::command::{PidRegistrar, RegistrationError};
 use std::{fs::File, os::unix::fs::MetadataExt};
 
+#[path = "pid_registry.rs"]
+mod registry;
+
 fn binding() -> Binding {
     Binding::new([0x31; 32]).unwrap()
 }
