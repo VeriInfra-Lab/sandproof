@@ -50,7 +50,7 @@ async fn gzip_framing_and_budgets_fail_before_default_account_or_start_preparati
                 vec![0],
             ]
             .concat(),
-            Some("protocol"),
+            Some("trailing"),
         ),
         (wire(1, b""), None),
         (
@@ -80,7 +80,12 @@ async fn gzip_framing_and_budgets_fail_before_default_account_or_start_preparati
                 (kind, failure.error()),
                 ("header", SelectionError::Request(Error::Compression { .. }))
                     | ("limit", SelectionError::Request(Error::BodyLimit))
-                    | ("protocol", SelectionError::Request(Error::Protocol(_)))
+                    | (
+                        "trailing",
+                        SelectionError::Request(Error::Framing(
+                            sandproof_guest_runtime::protocol::FramingError::ExtraBytes(1)
+                        ))
+                    )
             ));
             assert_eq!(failure.deadline(), deadline);
             session
