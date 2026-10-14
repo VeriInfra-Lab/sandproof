@@ -155,7 +155,7 @@ async fn guest_initialization_and_token_rotation_reach_all_three_original_interf
 }
 
 #[tokio::test]
-async fn guest_preserves_each_response_owner_and_keeps_health_and_init_independent() {
+async fn guest_preserves_response_owners_health_availability_and_initialization_order() {
     let fixture = fixture().await;
     std::fs::write(fixture.directory.path().join("data"), b"content").unwrap();
     let components = parts(&fixture, &registry(), &fixture.session);
@@ -168,6 +168,15 @@ async fn guest_preserves_each_response_owner_and_keeps_health_and_init_independe
     full(&pools.ordinary);
     assert!(pools.files.admit().is_err());
     assert!(pools.rpc.admit().is_err());
+    // Download bytes retain their original authorization through the last
+    // owner. Initialization has its own admission slot but must still wait for
+    // that authorization; health is independent of both slots and auth locks.
+    let mut initializing = Box::pin(guest.handle(init("token")));
+    assert!(
+        std::future::poll_fn(|cx| Poll::Ready(initializing.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
     let health = guest
         .handle(at(Method::GET, "/health", Body::empty()))
         .await
@@ -178,16 +187,25 @@ async fn guest_preserves_each_response_owner_and_keeps_health_and_init_independe
         health.headers()["x-sandproof-guest-version"],
         env!("CARGO_PKG_VERSION")
     );
-    assert_eq!(
-        guest.handle(init("token")).await.unwrap().status(),
-        StatusCode::NO_CONTENT
-    );
     let last = held.clone();
     drop(held);
     full(&pools.ordinary);
     assert!(pools.files.admit().is_err());
     assert!(pools.rpc.admit().is_err());
+    assert!(
+        std::future::poll_fn(|cx| Poll::Ready(initializing.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
     drop(last);
+    assert_eq!(
+        timeout(Duration::from_secs(5), initializing)
+            .await
+            .unwrap()
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
     assert!(pools.ordinary.admit().is_ok());
     timeout(Duration::from_secs(5), async {
         while pools.files.admit().is_err() || pools.rpc.admit().is_err() {
