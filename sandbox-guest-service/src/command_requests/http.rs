@@ -22,6 +22,8 @@ pub mod operation;
 pub mod reply;
 #[cfg(any(target_os = "linux", test))]
 pub mod response;
+#[cfg(any(target_os = "linux", test))]
+pub mod start;
 #[cfg(test)]
 mod tests;
 

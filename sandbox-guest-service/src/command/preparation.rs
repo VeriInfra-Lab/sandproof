@@ -3,6 +3,7 @@
 //! registration, and only then may the original worker be dispatched.
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use sandproof_guest_core::CommandIdentity;
@@ -80,9 +81,19 @@ pub enum AdmissionStatus {
 }
 
 #[derive(Clone)]
-pub struct AdmissionObserver(watch::Receiver<AdmissionStatus>);
+pub struct AdmissionObserver(watch::Receiver<AdmissionStatus>, Arc<AtomicBool>);
 
 impl AdmissionObserver {
+    // The immutable fact is published before Stopping. Unknown cleanup or
+    // owner loss cannot be relabelled as this original preparation failure.
+    pub(crate) fn missing_working_directory(&self) -> bool {
+        matches!(
+            self.status(),
+            AdmissionStatus::Stopping(CommandError::InvalidArgument)
+                | AdmissionStatus::Stopped(CommandError::InvalidArgument)
+        ) && self.1.load(Ordering::Acquire)
+    }
+
     #[must_use]
     pub fn status(&self) -> AdmissionStatus {
         *self.0.borrow()
@@ -246,6 +257,7 @@ impl CommandOwners {
         let until = execution.0.map_or(until, |at| at.min(until));
         let reservation = self.reserve()?;
         let (status, observer) = watch::channel(AdmissionStatus::Preparing);
+        let missing_cwd = Arc::new(AtomicBool::new(false));
         let (decision, receive_decision) = oneshot::channel();
         let (reply, receive_reply) = oneshot::channel();
         owner::spawn(
@@ -258,10 +270,10 @@ impl CommandOwners {
                 request: request.owner.clone(),
             },
             receive_decision,
-            owner::AdmissionOwner::new(reservation, status, reply),
+            owner::AdmissionOwner::new(reservation, status, reply, missing_cwd.clone()),
         );
         Ok(PendingCommand {
-            observer: AdmissionObserver(observer),
+            observer: AdmissionObserver(observer, missing_cwd),
             decision: Some(decision),
             reply: receive_reply,
             _request: request.owner,
@@ -285,5 +297,44 @@ impl Worker {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cwd_fact_does_not_relabel_expiry_owner_loss_or_unknown_cleanup() {
+        let (status, receiver) = watch::channel(AdmissionStatus::Preparing);
+        let fact = Arc::new(AtomicBool::new(false));
+        let observer = AdmissionObserver(receiver, fact.clone());
+        status.send_replace(AdmissionStatus::Stopped(CommandError::InvalidArgument));
+        assert!(!observer.missing_working_directory());
+        fact.store(true, Ordering::Release);
+        for state in [
+            AdmissionStatus::Preparing,
+            AdmissionStatus::Ready(CommandIdentity {
+                session: 1,
+                command: 1,
+                pid: 1,
+                start_ticks: 1,
+            }),
+            AdmissionStatus::Stopping(CommandError::DeadlineExceeded),
+            AdmissionStatus::Stopped(CommandError::Cancelled),
+            AdmissionStatus::Stopped(CommandError::Unavailable),
+            AdmissionStatus::CleanupUnknown,
+            AdmissionStatus::OwnerLost,
+        ] {
+            status.send_replace(state);
+            assert!(!observer.missing_working_directory(), "{state:?}");
+        }
+        for state in [
+            AdmissionStatus::Stopping(CommandError::InvalidArgument),
+            AdmissionStatus::Stopped(CommandError::InvalidArgument),
+        ] {
+            status.send_replace(state);
+            assert!(observer.missing_working_directory());
+        }
     }
 }

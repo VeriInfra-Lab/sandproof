@@ -31,6 +31,7 @@ pub struct CommandPreparation {
     session: u64,
     command: u64,
     attempted: bool,
+    missing_cwd: bool,
     waited: Option<ExitStatus>,
 }
 
@@ -105,8 +106,16 @@ impl CommandPreparation {
             session,
             command,
             attempted: false,
+            missing_cwd: false,
             waited: None,
         })
+    }
+
+    /// Whether this exact worker reported the fixed pre-launch ENOENT check.
+    /// This is neither an actual-wait receipt nor evidence for another path.
+    #[must_use]
+    pub const fn missing_working_directory(&self) -> bool {
+        self.missing_cwd
     }
 
     /// Complete the private handshake at most once; no user code is released.
@@ -152,9 +161,7 @@ impl CommandPreparation {
             stream.write_all(&self.payload).await?;
             let mut ready = [0; 4];
             stream.read_exact(&mut ready).await?;
-            if &ready != crate::worker::READY {
-                return Err(invalid("worker refused context"));
-            }
+            check_ready(ready, &mut self.missing_cwd)?;
             Ok(stream)
         })
         .await
@@ -251,4 +258,15 @@ impl CommandPreparation {
             }
         }
     }
+}
+
+fn check_ready(ready: [u8; 4], missing_cwd: &mut bool) -> io::Result<()> {
+    if &ready == crate::worker::CWD_MISSING {
+        *missing_cwd = true;
+        return Err(invalid("worker reported missing cwd"));
+    }
+    if &ready != crate::worker::READY {
+        return Err(invalid("worker refused context"));
+    }
+    Ok(())
 }

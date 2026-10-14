@@ -69,6 +69,7 @@ impl Ready {
         let deadline = self.deadline();
         let format = self.response;
         let mut default_account = None;
+        let mut missing_cwd = None;
         let owner = self.decoded.authenticated.admitted.owner.clone();
         let result = async {
             let resolved = self
@@ -83,6 +84,12 @@ impl Ready {
                 .reserve_optional(resolved.request.process.as_ref(), None)
                 .map_err(Error::Registry)?;
             check_deadline(deadline)?;
+            let cwd = resolved
+                .launch
+                .cwd
+                .to_str()
+                .ok_or(Error::Unavailable)?
+                .to_owned();
             let pending = preparation
                 .owners
                 .prepare_command_admitted(
@@ -103,10 +110,21 @@ impl Ready {
                     },
                 )
                 .map_err(Error::Command)?;
+            let observer = pending.observer();
             let ticket = pending
                 .register_pid(preparation.registrar.clone(), preparation.binding)
                 .await
-                .map_err(Error::Registration)?;
+                .map_err(|error| {
+                    if error
+                        == crate::command::RegistrationError::Preparation(
+                            crate::command::CommandError::InvalidArgument,
+                        )
+                        && observer.missing_working_directory()
+                    {
+                        missing_cwd = Some(cwd);
+                    }
+                    Error::Registration(error)
+                })?;
             check_deadline(deadline)?;
             let start = reservation.publish(ticket).map_err(Error::Registry)?;
             let (_command, subscription) = start.started().await.map_err(Error::Command)?;
@@ -122,6 +140,7 @@ impl Ready {
             .map_err(|error| {
                 let mut failure = Failure::new(error, deadline, owner);
                 failure.default_account = default_account;
+                failure.missing_cwd = missing_cwd;
                 failure.response = format;
                 failure
             })

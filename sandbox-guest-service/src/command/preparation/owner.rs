@@ -2,6 +2,10 @@ use super::{
     AdmissionLimits, AdmissionStatus, CommandError, CommandPreparation, CommandReservation,
     Context, Decision, Instant, PreparationSpec, Reply, Worker, oneshot, watch,
 };
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 /// Constructed before spawn, so even an unpolled task resolves its observers.
 pub(super) struct AdmissionOwner {
@@ -10,6 +14,7 @@ pub(super) struct AdmissionOwner {
     reply: Option<oneshot::Sender<Reply>>,
     unsettled: bool,
     finished: bool,
+    missing_cwd: Arc<AtomicBool>,
 }
 
 impl AdmissionOwner {
@@ -17,6 +22,7 @@ impl AdmissionOwner {
         reservation: CommandReservation,
         status: watch::Sender<AdmissionStatus>,
         reply: oneshot::Sender<Reply>,
+        missing_cwd: Arc<AtomicBool>,
     ) -> Self {
         Self {
             reservation: Some(reservation),
@@ -24,6 +30,7 @@ impl AdmissionOwner {
             reply: Some(reply),
             unsettled: false,
             finished: false,
+            missing_cwd,
         }
     }
 
@@ -110,7 +117,12 @@ async fn run(
         biased;
         () = tokio::time::sleep_until(until) => Err(CommandError::DeadlineExceeded),
         _ = &mut decision => Err(CommandError::Cancelled),
-        result = preparation.finish() => result.map_err(|error| prepare_error(&error)),
+        result = preparation.finish() => {
+            if result.is_err() && preparation.missing_working_directory() {
+                owner.missing_cwd.store(true, Ordering::Release);
+            }
+            result.map_err(|error| prepare_error(&error))
+        },
     };
     let process = match prepared {
         Ok(process) => process,

@@ -473,7 +473,11 @@ Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不�
 
 [命令启动包装](../sandbox-guest-runtime/src/launch_wrapper.rs)在受信任的单线程 worker 内采用固定 Go 的 /bin/sh -c 包装：先写自身 oom_score_adj=100，再 exec 可用的 ionice（best-effort/4）及 nice（从继承值调整到 0），最后以独立位置参数传递原 cmd/argv。可选工具只按捕获的 daemon PATH、原 daemon 身份和工作目录查找；请求 env PATH 只用于用户程序。采用固定 Go 的词法路径整理、有效身份可执行检查及默认相对命中拒绝规则；工具缺失则省略，实际工具或 shell 失败由原进程退出报告。未设置包装标记的低层 LaunchSpec 继续直接 exec，公开命令上下文始终携带该标记。
 
-查找和有界包装构造在 READY 前完成；shell、工具与用户代码均等待同一原 PID 持久 claim 和放行，exec 不另建公开进程身份。原始及包装后的序列化上下文各自受同一 launch_bytes 上限约束；二次校验有一个有界编码临时副本，不将编码预算当作全部 RSS。阻塞查找仍由原准备所有者、握手期限和精确子进程收尾负责。缺失/null process 与空 cmd 采用固定 Go getter 的空命令执行语义，启动后报告 shell 的真实非零 End；List 元数据保留原 process 缺失或显式空对象。此包装不补造 cwd Stat、启动错误映射或正式 daemon 部署的验收。
+查找和有界包装构造在 READY 前完成；shell、工具与用户代码均等待同一原 PID 持久 claim 和放行，exec 不另建公开进程身份。原始及包装后的序列化上下文各自受同一 launch_bytes 上限约束；二次校验有一个有界编码临时副本，不将编码预算当作全部 RSS。阻塞查找仍由原准备所有者、握手期限和精确子进程收尾负责。缺失/null process 与空 cmd 采用固定 Go getter 的空命令执行语义，启动后报告 shell 的真实非零 End；List 元数据保留原 process 缺失或显式空对象。此包装不补造完整启动错误映射或正式 daemon 部署的验收。
+
+[Start 工作目录缺失](../sandbox-guest-runtime/src/worker.rs)在原包装 worker、原 daemon 身份下执行一次跟随链接的 metadata/Stat；只有 ENOENT 发送专属私有拒绝标记，READY、PID claim 和用户执行均未发生。ENOTDIR、权限及其他 Stat 错误继续原准备流程，由真正 chdir/exec 决定，不冒充目录缺失或已验证可访问。检查与执行间仍可被文件系统修改，成功 Stat 不授权或固定目标。原准备所有者在实际 wait 前保留进程/请求容量，阻塞 Stat 与取消不产生脱离所有权的新任务。
+
+HTTP 只从原握手及同一次准备失败提取目录缺失事实，保留原解析路径；组件层保留握手拒绝的 InvalidArgument，不能只凭该粗错误推断公开文本。失去 owner、未知收尾、超时或其他粗粒度错误不能凭 errno、字符串或后续路径查询推断此事实。已观察拒绝以协商的 Start EOS 返回 invalid_argument、cwd '原路径' does not exist；错误路径按原 JSON 转义，原预算/期限及最后字节副本责任保持。默认账户错误继续原 sender，其他启动失败不借本分类变成确定错误。
 
 [文件账户/路径上下文](../sandbox-guest-service/src/files.rs)从同一 `AuthPermit` 快照解析：RPC 沿用 Basic 用户规则，HTTP 文件操作仅从解码后的 `username` 查询选择账号，缺省才使用初始化用户；不把 `user` 别名或 Basic 头当作 HTTP 选择器。显式空/未知账号失败，环境 HOME/USER 不参与账号或 home 选择。Move 的两个路径共用一次账户查询，完整解析后才能交给后续派发；本组件不创建目录、重命名或打开文件。返回的 UID/GID 是创建对象的目标归属，不是文件 worker 的降权凭据，保持既有 daemon/root 文件 I/O 边界。
 

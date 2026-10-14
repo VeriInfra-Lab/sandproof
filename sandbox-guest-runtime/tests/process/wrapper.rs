@@ -102,3 +102,73 @@ async fn wrapped_launch_budget_refuses_before_ready_and_reaps_original_worker() 
     drop(preparation);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
 }
+
+#[tokio::test]
+async fn wrapped_missing_cwd_is_observed_before_ready_and_original_worker_is_reaped() {
+    for dangling in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut spec = shell(directory.path(), "printf forbidden > effect", false);
+        spec.envd_wrapper_path = Some(String::new());
+        spec.cwd = directory.path().join("missing");
+        if dangling {
+            std::os::unix::fs::symlink("absent-target", &spec.cwd).unwrap();
+        }
+        let mut preparation = sandproof_guest_runtime::CommandPreparation::spawn(
+            Path::new(WORKER),
+            directory.path(),
+            1,
+            1,
+            &spec,
+            limits(),
+        )
+        .unwrap();
+        assert!(!preparation.missing_working_directory());
+        assert!(preparation.finish().await.is_err());
+        assert!(preparation.missing_working_directory());
+        assert!(!preparation.abort().await.unwrap().success());
+        drop(preparation);
+        assert!(!directory.path().join("effect").exists());
+        assert_eq!(
+            std::fs::read_dir(directory.path()).unwrap().count(),
+            usize::from(dangling)
+        );
+    }
+}
+
+#[tokio::test]
+async fn cwd_non_enoent_and_raw_launch_failures_are_not_missing_directory_observations() {
+    for case in 0..3 {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("file"), b"original").unwrap();
+        let mut spec = shell(directory.path(), "printf forbidden > effect", false);
+        spec.envd_wrapper_path = (case != 2).then(String::new);
+        spec.cwd = directory.path().join(match case {
+            0 => "file/child", // Stat ENOTDIR is not Go os.ErrNotExist.
+            1 => "file",       // Stat succeeds, but actual chdir fails.
+            _ => "missing",    // Low-level raw exec keeps its original contract.
+        });
+        let mut preparation = sandproof_guest_runtime::CommandPreparation::spawn(
+            Path::new(WORKER),
+            directory.path(),
+            1,
+            1,
+            &spec,
+            limits(),
+        )
+        .unwrap();
+        let mut process = Owned(preparation.finish().await.unwrap());
+        assert!(!preparation.missing_working_directory());
+        drop(preparation);
+        assert_eq!(
+            process.release().await.unwrap(),
+            LaunchObservation::ExecFailed(if case == 2 { 2 } else { 20 })
+        );
+        assert!(!process.wait_main().await.unwrap().success());
+        drop(process);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert_eq!(
+            std::fs::read(directory.path().join("file")).unwrap(),
+            b"original"
+        );
+    }
+}

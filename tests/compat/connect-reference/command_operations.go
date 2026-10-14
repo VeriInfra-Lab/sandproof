@@ -1,6 +1,7 @@
 // Controlled failure observations from runtime f455fd58fa3f289e78ce1de690c35968d8d29322:
 // process/service.go getProcess, input.go handleInput/CloseStdin, signal.go
-// SendSignal, update.go Update, and handler/handler.go terminal capabilities.
+// SendSignal, update.go Update, and handler/handler.go terminal capabilities
+// and missing-cwd expression (a controlled Stat ENOENT observation).
 // Original fmt/generated enum/Connect perform rendering; this does not execute
 // those service methods, query an OS process table or validate their ordering.
 package main
@@ -18,6 +19,7 @@ import (
 
 type commandOperationInput struct {
 	Method, Kind string
+	Cwd          string
 	Number       int64
 	Gzip, UTF8   bool
 }
@@ -36,6 +38,8 @@ func operationError(headers http.Header) error {
 	}
 	input := operationRecord(data)
 	switch input.Kind {
+	case "cwd":
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cwd '%s' does not exist", input.Cwd))
 	case "selector":
 		var selector *rpc.ProcessSelector
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("invalid input type %T", selector))
@@ -67,6 +71,10 @@ func operationUnary[T any, U any](mux *http.ServeMux, method string) {
 	}))
 }
 func registerCommandOperations(mux *http.ServeMux) {
+	start := "/fixture.CommandOperations/Start"
+	mux.Handle(start, connect.NewServerStreamHandler(start, func(_ context.Context, req *connect.Request[rpc.StartRequest], _ *connect.ServerStream[rpc.StartResponse]) error {
+		return operationError(req.Header())
+	}))
 	path := "/fixture.CommandOperations/Connect"
 	mux.Handle(path, connect.NewServerStreamHandler(path, func(_ context.Context, req *connect.Request[rpc.ConnectRequest], _ *connect.ServerStream[rpc.ConnectResponse]) error {
 		return operationError(req.Header())
@@ -79,7 +87,7 @@ func registerCommandOperations(mux *http.ServeMux) {
 func operationEndpoint(data []byte) (string, []byte) {
 	input := operationRecord(data)
 	body := []byte("{}")
-	if input.Method == "Connect" {
+	if input.Method == "Connect" || input.Method == "Start" {
 		body = append([]byte{0, 0, 0, 0, 2}, body...)
 	}
 	return "/fixture.CommandOperations/" + input.Method, body
@@ -87,7 +95,7 @@ func operationEndpoint(data []byte) (string, []byte) {
 func operationHeaders(req *http.Request, data []byte) {
 	input := operationRecord(data)
 	accept := "Accept-Encoding"
-	if input.Method == "Connect" {
+	if input.Method == "Connect" || input.Method == "Start" {
 		req.Header.Set("Content-Type", "application/connect+json")
 		accept = "Connect-Accept-Encoding"
 	}

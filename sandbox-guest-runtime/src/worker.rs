@@ -11,6 +11,7 @@ use crate::LaunchSpec;
 pub(crate) const HELLO: &[u8; 4] = b"SG01";
 pub(crate) const READY: &[u8; 4] = b"SG02";
 pub(crate) const ERROR: &[u8; 4] = b"SGE1";
+pub(crate) const CWD_MISSING: &[u8; 4] = b"SGC1";
 
 /// Run the private worker protocol, then replace this exact process by exec.
 /// The worker binary is single-threaded; success does not return.
@@ -41,11 +42,25 @@ fn execute(gate: &mut UnixStream, maximum: usize) -> io::Result<()> {
     gate.read_exact(&mut data)?;
     let mut spec: LaunchSpec = serde_json::from_slice(&data)?;
     spec.validate()?;
+    let wrapped = spec.envd_wrapper_path.is_some();
     // Resolve only optional trusted priority helpers while still gated and
     // under the daemon identity/cwd. The shell and all user code wait for the
     // original durable PID claim and release. Parent cancellation can kill
     // this exact unreleased worker even if filesystem lookup blocks.
     crate::launch_wrapper::prepare(&mut spec, maximum)?;
+    // Fixed handler.New checks Stat under the daemon identity. Only ENOENT
+    // gets this diagnostic: ENOTDIR, permission and other failures continue
+    // to the actual chdir/exec after release. No user code has run here.
+    if wrapped
+        && std::fs::metadata(&spec.cwd).is_err_and(|error| {
+            error.raw_os_error() == Some(rustix::io::Errno::NOENT.raw_os_error())
+        })
+    {
+        gate.write_all(CWD_MISSING)?;
+        return Err(io::Error::from_raw_os_error(
+            rustix::io::Errno::NOENT.raw_os_error(),
+        ));
+    }
     gate.write_all(READY)?;
     let mut release = [0];
     gate.read_exact(&mut release)?;
