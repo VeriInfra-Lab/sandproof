@@ -49,6 +49,7 @@ impl MetadataSource for Meta {
 }
 struct Fixture {
     root: PathBuf,
+    username: String,
     endpoint: FileHttp<Meta, SystemAccounts, sandproof_guest_runtime::file_download::date::Utc>,
     seen: AtomicUsize,
     multipart_seen: AtomicUsize,
@@ -220,6 +221,7 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
     let endpoint = FileHttp::new(session, requests, streams, accounts, http_settings(&root));
     Arc::new(Fixture {
         root,
+        username,
         endpoint,
         seen: AtomicUsize::new(0),
         multipart_seen: AtomicUsize::new(0),
@@ -336,7 +338,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .take()
         .unwrap()
         .write_all(
-            serde_json::json!({"url":format!("http://{address}"),"root":directory.path()})
+            serde_json::json!({"url":format!("http://{address}"),"root":directory.path(),"username":fixture.username})
                 .to_string()
                 .as_bytes(),
         )
@@ -350,8 +352,8 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 464);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 146);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 468);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 148);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 110);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     check_files(directory.path());
@@ -359,6 +361,11 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
 
 fn check_files(directory: &Path) {
     for mode in ["sync", "async"] {
+        assert_eq!(
+            std::fs::read(directory.join(mode).join("before-path")).unwrap(),
+            b"kept"
+        );
+        assert!(!directory.join(mode).join("after-path").exists());
         for name in [
             "account-rejected",
             "signed-rejected",

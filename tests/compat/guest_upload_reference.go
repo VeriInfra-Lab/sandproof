@@ -491,6 +491,37 @@ type PostFilesParams struct{ Path *string }
 func oracleExpandAndResolve(path string, _ *user.User, _ *string) (string, error) {
 	return path, nil
 }
+
+// Original expand/ExpandAndResolve, permissions/path.go blob
+// 0bf85a3f01572191c9f8281ac85e0fccb3005863. Only function names and the
+// ResolveDefaultWorkdir namespace change. Error cases never reach filepath.Abs.
+func originalExpand(path, homedir string) (string, error) {
+	if len(path) == 0 { return path, nil }
+	if path[0] != '~' { return path, nil }
+	if len(path) > 1 && path[1] != '/' && path[1] != '\\' {
+		return "", errors.New("cannot expand user-specific home dir")
+	}
+	return filepath.Join(homedir, path[1:]), nil
+}
+func originalDefaultWorkdir(workdir string, defaultWorkdir *string) string {
+	if workdir != "" { return workdir }
+	if defaultWorkdir != nil { return *defaultWorkdir }
+	return ""
+}
+func originalExpandAndResolve(path string, user *user.User, defaultPath *string) (string, error) {
+	path = originalDefaultWorkdir(path, defaultPath)
+	path, err := originalExpand(path, user.HomeDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to expand path '%s' for user '%s': %w", path, user.Username, err)
+	}
+	if filepath.IsAbs(path) { return path, nil }
+	path = filepath.Join(user.HomeDir, path)
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve path '%s' for user '%s' with home dir '%s': %w", path, user.Username, user.HomeDir, err)
+	}
+	return abs, nil
+}
 func resolvePath(part *multipart.Part, paths *UploadSuccess, u *user.User, defaultPath *string, params PostFilesParams) (string, error) {
 	var pathToResolve string
 
@@ -835,6 +866,24 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "X":
+			if server == nil { server = referenceServer() }
+			name, path, fallback := string(unhex(f[2])), string(unhex(f[3])), string(unhex(f[4]))
+			_, err := originalExpandAndResolve(path, &user.User{Username: name, HomeDir: "/synthetic/home"}, &fallback)
+			if err == nil { panic("expected real expansion error") }
+			if f[1] == "POST" {
+				err = fmt.Errorf("error resolving path: %w", err)
+			} else {
+				err = fmt.Errorf("error expanding and resolving path '%s': %w", path, err)
+			}
+			request, failure := http.NewRequest(f[1], server.URL, strings.NewReader(err.Error()))
+			if failure != nil { panic(failure) }
+			request.Header.Set("X-Reference-Code", "400")
+			client := server.Client()
+			client.Timeout = 5 * time.Second
+			response, failure := client.Do(request)
+			if failure != nil { panic(failure) }
+			dumpUpload(response)
 		case "U":
 			if server == nil {
 				server = referenceServer()

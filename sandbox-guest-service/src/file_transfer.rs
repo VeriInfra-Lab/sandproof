@@ -43,6 +43,7 @@ pub enum FileStreamError {
     Operation(TransferIoError),
     UploadFault(sandproof_guest_runtime::file_upload::Fault),
     DuplicatePath(crate::file_upload::DuplicatePath),
+    PathExpansion(crate::upload_response::PathExpansion),
     ResourceExhausted,
     DeadlineExceeded,
     Unavailable,

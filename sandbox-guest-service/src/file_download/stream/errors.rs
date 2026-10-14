@@ -94,6 +94,50 @@ fn json_plan(
 impl super::Download {
     pub(crate) async fn unknown_user(
         error: crate::upload_response::UnknownUser,
+        request: IdentityRequest,
+        limits: IdentityLimits,
+        deadline: super::Instant,
+        owner: super::Owner,
+    ) -> Result<Self, DownloadError> {
+        Self::context_rejection(
+            StatusCode::UNAUTHORIZED,
+            move |limit| payload(&error.parts(), Some(StatusCode::UNAUTHORIZED), limit),
+            request,
+            limits,
+            deadline,
+            owner,
+        )
+        .await
+    }
+
+    pub(crate) async fn path_expansion(
+        error: crate::upload_response::PathExpansion,
+        original: String,
+        request: IdentityRequest,
+        limits: IdentityLimits,
+        deadline: super::Instant,
+        owner: super::Owner,
+    ) -> Result<Self, DownloadError> {
+        Self::context_rejection(
+            StatusCode::BAD_REQUEST,
+            move |limit| {
+                payload(
+                    &error.download_parts(&original),
+                    Some(StatusCode::BAD_REQUEST),
+                    limit,
+                )
+            },
+            request,
+            limits,
+            deadline,
+            owner,
+        )
+        .await
+    }
+
+    async fn context_rejection(
+        status: StatusCode,
+        encode: impl FnOnce(u64) -> Result<Vec<u8>, Error> + Send + 'static,
         mut request: IdentityRequest,
         limits: IdentityLimits,
         deadline: super::Instant,
@@ -107,8 +151,7 @@ impl super::Download {
             OwnedBody::start(deadline, Arc::clone(&owner), move |_, cancel| {
                 let control = Control { deadline, cancel };
                 control.check()?;
-                let status = StatusCode::UNAUTHORIZED;
-                let bytes = payload(&error.parts(), Some(status), limits.plan.wire_bytes)?;
+                let bytes = encode(limits.plan.wire_bytes)?;
                 // Match the fixed Go HTTP writer's buffered JSON response,
                 // including HEAD; the encoding budget still applies to HEAD.
                 if bytes.len() <= 2048 {

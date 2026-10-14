@@ -11,6 +11,7 @@ use tokio::time::Instant;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
     UnknownUser(super::UnknownUser),
+    PathExpansion(super::PathExpansion),
     MultipartGzip {
         stage: SourceStage,
         error: GzipReadError,
@@ -73,6 +74,7 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let offset_text;
     match error {
         Rejection::UnknownUser(error) => parts.extend(error.parts()),
+        Rejection::PathExpansion(error) => parts.extend(error.upload_parts()),
         Rejection::MultipartGzip { stage, error } => parts.extend([
             match stage {
                 SourceStage::NextPart => b"error reading form: multipart: NextPart: ".as_slice(),

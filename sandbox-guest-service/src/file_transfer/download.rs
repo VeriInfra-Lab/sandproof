@@ -116,6 +116,12 @@ impl FileStreams {
             .map_err(DownloadRequestError::Admission)?;
         let auth = Arc::new(auth);
         let owner: Owner = Arc::new((Arc::clone(&auth), lease));
+        let identity = IdentityLimits {
+            plan: limits.response,
+            chunk_bytes: self.limits.chunk_bytes,
+            file_bytes: self.limits.total_bytes,
+            path_bytes: self.limits.file.path_bytes,
+        };
         let selection = match auth
             .resolve_http_files_admitted(
                 request.username.as_deref(),
@@ -131,15 +137,23 @@ impl FileStreams {
                 return Err(DownloadRequestError::Context(error));
             }
             Err(crate::files::SelectionError::UnknownUser(error)) => {
-                return Download::unknown_user(
+                return Download::unknown_user(error, request.http, identity, deadline, owner)
+                    .await
+                    .map_err(DownloadRequestError::Download);
+            }
+        };
+        let path = request.path.as_deref().unwrap_or("");
+        let context = match selection.resolve_detailed(path) {
+            Ok(context) => context,
+            Err(crate::files::PathError::Context(error)) => {
+                return Err(DownloadRequestError::Context(error));
+            }
+            Err(crate::files::PathError::Expansion(error)) => {
+                return Download::path_expansion(
                     error,
+                    request.path.take().unwrap_or_default(),
                     request.http,
-                    IdentityLimits {
-                        plan: limits.response,
-                        chunk_bytes: self.limits.chunk_bytes,
-                        file_bytes: self.limits.total_bytes,
-                        path_bytes: self.limits.file.path_bytes,
-                    },
+                    identity,
                     deadline,
                     owner,
                 )
@@ -147,10 +161,6 @@ impl FileStreams {
                 .map_err(DownloadRequestError::Download);
             }
         };
-        let path = request.path.as_deref().unwrap_or("");
-        let context = selection
-            .resolve(path)
-            .map_err(DownloadRequestError::Context)?;
         if let ContentType::Detect { original_path, .. } = &mut request.http.content_type {
             *original_path = request.path.take().unwrap_or_default();
         }

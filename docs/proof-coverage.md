@@ -314,6 +314,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [未知文件账号响应](../sandbox-guest-service/src/upload_response/account.rs)新增缺失账户分类与预算先于诊断分配、拒绝阶段、Go JSON/小响应头/HEAD 以及原容量/期限交付的自有义务。可移植有限 Go 对照不证明完整账户源或 POSIX 语义，Linux 请求/SDK 组合待实跑；这些适配未抽取或证明，历史已证明 Rust、纯核心及 LLBC/Lean 未改。
 
+[路径展开错误](../sandbox-guest-service/src/upload_response/path.rs)新增真实词法失败到原 HTTP 包装、原查询与默认路径区分、诊断分配预算、批次中先前副作用保留与更晚 part 不执行的自有连接义务。共享下载上下文错误发送器的重构有可移植回归；固定 Go 原函数有限对照不证明文件系统解析/竞态或全输入等价，Linux 请求/SDK 组合待实跑。未抽取或证明，历史已证明 Rust、纯核心及 LLBC/Lean 未改。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。

@@ -19,6 +19,8 @@ mod rejection;
 pub use rejection::{Rejection, rejected};
 mod account;
 pub use account::UnknownUser;
+mod path;
+pub use path::PathExpansion;
 mod gzip_header;
 pub use gzip_header::GzipHeaderError;
 mod gzip_read;

@@ -82,6 +82,9 @@ impl Failure {
                 Rejection::UnknownUser(_) => {
                     UploadRequestError::Context(ContextError::Unauthenticated)
                 }
+                Rejection::PathExpansion(_) => UploadRequestError::Body(UploadBodyError::Transfer(
+                    FileStreamError::Context(ContextError::InvalidArgument),
+                )),
                 Rejection::UnsupportedEncoding(_) => {
                     UploadRequestError::Encoding(file_encoding::Error::Unsupported)
                 }
@@ -122,6 +125,9 @@ impl Failure {
 
     fn body(error: UploadBodyError) -> Self {
         match error {
+            UploadBodyError::Transfer(FileStreamError::PathExpansion(error)) => {
+                Self::Rejected(Rejection::PathExpansion(error))
+            }
             UploadBodyError::MultipartGzip { stage, error } => {
                 Self::Rejected(Rejection::MultipartGzip { stage, error })
             }

@@ -234,6 +234,67 @@ async fn admitted_account_and_original_query_feed_identity_gzip_range_and_head()
 }
 
 #[tokio::test]
+async fn expansion_errors_use_query_or_default_after_account_before_stat_and_encoding() {
+    let root = tempfile::tempdir().unwrap();
+    let session = session().await;
+    session
+        .initialize(br#"{"accessToken":"token","defaultUser":"alice","defaultWorkdir":"~default"}"#)
+        .await
+        .unwrap();
+    let streams = pool();
+    let config = settings(root.path());
+    let (accounts, names) = accounts(root.path(), None, Duration::from_secs(5));
+    for path in [Some("~other/never"), Some(""), None] {
+        for method in [Method::GET, Method::HEAD] {
+            let mut req = query(path, "identity;q=0");
+            req.http.method = method.clone();
+            let download = streams
+                .download_request(
+                    session.authorize(Some("token")).await.unwrap(),
+                    req,
+                    &accounts,
+                    &config,
+                    limits(),
+                    Utc,
+                )
+                .await
+                .unwrap();
+            assert_eq!(download.status(), 400);
+            assert_eq!(streams.slots.available_permits(), 0);
+            assert!(!download.headers().contains_key("vary"));
+            let bytes = collect(download).await;
+            if method == Method::HEAD {
+                assert!(bytes.is_empty());
+            } else {
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+                    serde_json::json!({"code":400,"message":format!("error expanding and resolving path '{}': failed to expand path '' for user 'alice': cannot expand user-specific home dir",path.unwrap_or(""))})
+                );
+            }
+            quiesce(&streams).await;
+        }
+    }
+    assert_eq!(names.lock().unwrap().len(), 6);
+    let mut req = query(Some("~other/never"), "identity");
+    req.username = Some("missing".into());
+    let download = streams
+        .download_request(
+            session.authorize(Some("token")).await.unwrap(),
+            req,
+            &accounts,
+            &config,
+            limits(),
+            Utc,
+        )
+        .await
+        .unwrap();
+    assert_eq!(download.status(), 401);
+    drop(collect(download).await);
+    quiesce(&streams).await;
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
 async fn context_errors_precede_stat_and_encoding_without_poisoning_capacity() {
     let root = tempfile::tempdir().unwrap();
     let session = session().await;

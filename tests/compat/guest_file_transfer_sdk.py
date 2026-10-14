@@ -885,7 +885,35 @@ async def negotiated_async(url, root):
             check_negotiated(response, status, compressed, vary, expected)
 
 
-def run_sync(url, root):
+def path_errors_sync(sandbox, root, username):
+    first, later = f'{root}/before-path', f'{root}/after-path'
+    try:
+        sandbox.files.write_files([{'path': first, 'data': b'kept'},
+                                   {'path': '~other/never', 'data': b'never'},
+                                   {'path': later, 'data': b'later'}], use_octet_stream=False)
+    except InvalidArgumentException as error:
+        assert str(error) == (f"error resolving path: failed to expand path '' for user '{username}': "
+                              'cannot expand user-specific home dir')
+    else:
+        raise AssertionError('invalid multipart path reported success')
+    assert bytes(sandbox.files.read(first, format='bytes')) == b'kept'
+
+
+async def path_errors_async(sandbox, root, username):
+    first, later = f'{root}/before-path', f'{root}/after-path'
+    try:
+        await sandbox.files.write_files([{'path': first, 'data': b'kept'},
+                                         {'path': '~other/never', 'data': b'never'},
+                                         {'path': later, 'data': b'later'}], use_octet_stream=False)
+    except InvalidArgumentException as error:
+        assert str(error) == (f"error resolving path: failed to expand path '' for user '{username}': "
+                              'cannot expand user-specific home dir')
+    else:
+        raise AssertionError('invalid multipart path reported success')
+    assert bytes(await sandbox.files.read(first, format='bytes')) == b'kept'
+
+
+def run_sync(url, root, username):
     sandbox = Sandbox.connect('probe-sandbox', **arguments(url))
     for name, data in payloads():
         path = f'{root}/{name}'
@@ -927,6 +955,7 @@ def run_sync(url, root):
     query_binding_sync(sandbox, url, root)
     authorization_sync(sandbox, url, root)
     missing_accounts_sync(sandbox, url, root)
+    path_errors_sync(sandbox, root, username)
     header_rejections_sync(url, root)
     framing_sync(sandbox, url, root)
     qp_sync(sandbox, url, root)
@@ -937,7 +966,7 @@ def run_sync(url, root):
     negotiated_sync(url, root)
 
 
-async def run_async(url, root):
+async def run_async(url, root, username):
     sandbox = await AsyncSandbox.connect('probe-sandbox', **arguments(url))
     for name, data in payloads():
         path = f'{root}/{name}'
@@ -983,6 +1012,7 @@ async def run_async(url, root):
     await query_binding_async(sandbox, url, root)
     await authorization_async(sandbox, url, root)
     await missing_accounts_async(sandbox, url, root)
+    await path_errors_async(sandbox, root, username)
     await header_rejections_async(url, root)
     await framing_async(sandbox, url, root)
     await qp_async(sandbox, url, root)
@@ -996,6 +1026,6 @@ async def run_async(url, root):
 if __name__ == '__main__':
     settings = json.load(sys.stdin)
     with isolated_sdk_environment():
-        run_sync(settings['url'], settings['root'] + '/sync')
-        asyncio.run(run_async(settings['url'], settings['root'] + '/async'))
+        run_sync(settings['url'], settings['root'] + '/sync', settings['username'])
+        asyncio.run(run_async(settings['url'], settings['root'] + '/async', settings['username']))
     print('Pinned sync/async SDK raw/multipart, gzip download, synthetic range/conditional downloads and gzip upload with SDK readback passed (test routes only).')

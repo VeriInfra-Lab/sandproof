@@ -139,8 +139,11 @@ impl UploadBatch {
         }
         let context = self
             .selection
-            .resolve(self.query_path.as_deref().unwrap_or(filename))
-            .map_err(FileStreamError::Context)?;
+            .resolve_detailed(self.query_path.as_deref().unwrap_or(filename))
+            .map_err(|error| match error {
+                crate::files::PathError::Expansion(error) => FileStreamError::PathExpansion(error),
+                crate::files::PathError::Context(error) => FileStreamError::Context(error),
+            })?;
         if self
             .results
             .iter()

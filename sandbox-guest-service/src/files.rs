@@ -89,6 +89,24 @@ impl From<SelectionError> for ContextError {
     }
 }
 
+pub(crate) enum PathError {
+    Expansion(crate::upload_response::PathExpansion),
+    Context(ContextError),
+}
+impl From<ContextError> for PathError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<PathError> for ContextError {
+    fn from(error: PathError) -> Self {
+        match error {
+            PathError::Expansion(_) => Self::InvalidArgument,
+            PathError::Context(error) => error,
+        }
+    }
+}
+
 impl HttpFileSelection {
     pub(crate) fn check_input(&self, path: &str) -> Result<(), ContextError> {
         check_path_size(path, &self.settings)
@@ -98,13 +116,22 @@ impl HttpFileSelection {
     /// # Errors
     /// Invalid or oversized paths, before any file effect.
     pub fn resolve(&self, path: &str) -> Result<HttpFileContext, ContextError> {
+        self.resolve_detailed(path).map_err(Into::into)
+    }
+
+    pub(crate) fn resolve_detailed(&self, path: &str) -> Result<HttpFileContext, PathError> {
         Ok(HttpFileContext {
             owner: FileOwner {
                 username: self.account.name.clone(),
                 uid: self.account.credentials.uid,
                 gid: self.account.credentials.gid,
             },
-            path: resolve_file_path(path, self.workdir.as_deref(), &self.account, &self.settings)?,
+            path: resolve_file_path_detailed(
+                path,
+                self.workdir.as_deref(),
+                &self.account,
+                &self.settings,
+            )?,
         })
     }
 }
@@ -240,6 +267,15 @@ fn resolve_file_path(
     account: &Account,
     settings: &FileSettings,
 ) -> Result<String, ContextError> {
+    resolve_file_path_detailed(path, workdir, account, settings).map_err(Into::into)
+}
+
+fn resolve_file_path_detailed(
+    path: &str,
+    workdir: Option<&str>,
+    account: &Account,
+    settings: &FileSettings,
+) -> Result<String, PathError> {
     let path = if path.is_empty() {
         workdir.unwrap_or("")
     } else {
@@ -250,7 +286,15 @@ fn resolve_file_path(
     // Do not resolve symlinks or pre-check filesystem existence. NUL also
     // survives here: fixed envd rejects it at the operation's I/O boundary,
     // not as an ExpandAndResolve error. No CString/syscall occurs here.
-    let resolved = expand_path(path, &account.home, &settings.daemon_workdir)?;
+    let resolved = expand_path(path, &account.home, &settings.daemon_workdir).map_err(|error| {
+        // This pure function returns InvalidArgument only for ~other, after
+        // the path budget above. Settings/account validation happens earlier.
+        if error == ContextError::InvalidArgument {
+            PathError::Expansion(crate::upload_response::PathExpansion::new(&account.name))
+        } else {
+            PathError::Context(error)
+        }
+    })?;
     check_path_size(&resolved, settings)?;
     Ok(resolved)
 }
