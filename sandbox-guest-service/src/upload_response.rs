@@ -17,6 +17,8 @@ pub use errors::io_failure;
 mod multipart_read;
 mod rejection;
 pub use rejection::{Rejection, rejected};
+mod account;
+pub use account::UnknownUser;
 mod gzip_header;
 pub use gzip_header::GzipHeaderError;
 mod gzip_read;

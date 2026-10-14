@@ -65,10 +65,23 @@ impl From<UploadRequestError> for Failure {
     }
 }
 impl Failure {
+    fn selection(error: crate::files::SelectionError) -> Self {
+        match error {
+            crate::files::SelectionError::UnknownUser(error) => {
+                Self::Rejected(Rejection::UnknownUser(error))
+            }
+            crate::files::SelectionError::Context(error) => {
+                Self::Request(UploadRequestError::Context(error))
+            }
+        }
+    }
     fn legacy(self) -> UploadRequestError {
         match self {
             Self::Request(error) => error,
             Self::Rejected(error) => match error {
+                Rejection::UnknownUser(_) => {
+                    UploadRequestError::Context(ContextError::Unauthenticated)
+                }
                 Rejection::UnsupportedEncoding(_) => {
                     UploadRequestError::Encoding(file_encoding::Error::Unsupported)
                 }
@@ -164,7 +177,7 @@ impl FileStreams {
     }
 
     /// Send successes, observed file I/O faults and supported header/dispatch/part
-    /// rejections under the original upload slot and deadline. Unmapped account,
+    /// rejections and unknown accounts under the original upload slot and deadline. Other account,
     /// codec/transport and component failures remain explicit.
     /// # Errors
     /// Unmapped request rejection, unknown I/O observation, response budget,
@@ -335,7 +348,7 @@ impl FileStreams {
                 owner,
             )
             .await
-            .map_err(UploadRequestError::Context)?;
+            .map_err(Failure::selection)?;
         timely(deadline, Ok(())).map_err(UploadRequestError::Transfer)?;
         let metadata = file_upload::metadata_detailed(&request.headers)
             .map_err(|error| Failure::Rejected(Rejection::Metadata(error)))?;

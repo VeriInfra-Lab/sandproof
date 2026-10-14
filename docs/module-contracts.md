@@ -407,6 +407,8 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 [文件 HTTP 编排入口](../sandbox-guest-service/src/file_http.rs)已把 `/files` 的 GET/HEAD/POST 连接到同一请求准入、查询/签名/令牌、账户和上传/下载组件。入口接受可信 HTTP framing 层尚未消费的 Body，以其精确 size hint 取得已知长度；不重新解析 Content-Length，不把未知长度改为零，也不预读/整包缓冲正文。GET/HEAD 丢弃未使用的请求正文。MIME 原查询路径与 Content-Disposition 由原许可/解析路径派生，客户端不能指定回复头或 Range boundary；MIME 目录、daemon 工作目录、本地时区及各预算仍来自显式可信配置。
 
+[未知文件账号错误](../sandbox-guest-service/src/upload_response/account.rs)把已观测的不存在账户（包括原有空串/NUL/换行/冒号快速拒绝）连接到固定 401 JSON：`error looking up user '<name>': user: unknown user <name>`。只反射原已限长用户名，不公开源错误文本；用户名预算先于诊断副本分配，账户数据库不可用、坏记录、配置、超额和超时不套用该响应。上传仍先做编码/gzip 首头检查，再查账户，后续 metadata/正文模式/文件打开不执行；下载先查账户，后续 stat/编码协商不执行。缺省用户名来自初始化，显式空串不会回退到默认值。上传保留原传输名额，下载保留原授权和名额，响应及最后字节副本沿用原绝对期限；HEAD 抑制正文但仍检查编码预算。此错误的 Go HTTP 小响应自动 Content-Length（2048 字节缓冲界限）与头/正文有可移植对照。旧粗分类上传/上下文入口仍返回 Unauthenticated；HTTP 上传和下载请求入口返回该 401。其他路径/账户故障及最终监听器策略仍待补齐。
+
 支持的固定拒绝和真实完成结果沿用原有界响应；其他准备/账户/传输/交付失败保持分类，失败对象保留原请求名额与期限，后台任务还可能独立保留同一名额。入口没有通用 HTTP 错误兜底、生产监听器或部署默认值，调用方须实现有界的最终失败策略。固定 SDK 回环夹具只保留测试目录前置条件、计数和监听，将实际文件处理交给该入口；未映射错误使测试直接失败，不能以夹具自造 JSON 算作兼容。
 
 流式下载在实际多范围计划需要时才于原阻塞 worker 获取 30 字节 OS 随机数，转为 Go 格式的 60 位小写十六进制 boundary；条件提前结束、完整/单范围或范围拒绝不调用随机源。熵失败显式分类，没有常量回退；系统随机源阻塞/失败仍受原工作所有权与后续期限检查约束，不宣称能打断不可返回的系统调用。底层显式 boundary 接口保留供受控对照，纯计划 finish 不自行获取熵；正式编排使用按需生成路径。固定 getrandom 版本沿用 workspace 已锁定版本，OS 熵质量仍为外部前提。
@@ -459,7 +461,7 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 upload_request_response 复用原首头预检与一次准入，将成功数组和实际文件故障交给同一有界发送器；故障在原 worker/batch 中移动，不新增 I/O 或重放。路径/属性的原预算、完整编码线长及输出块预算分别计费；生成错误载荷前先计算精确线长。原槽位/绝对期限覆盖处理与发送，直到最后 Bytes 副本释放；仍在运行的 I/O 自持原授权，实际完成后初始化可继续。编码或发送失败保留所有已发生的文件效果。每个响应至多新增一个阻塞发送任务，可与取消中的解压/文件析构重叠，但始终持有同一原槽位；全服务任务/库分配预算仍待冻结。FileStreamError、UploadBodyError、UploadRequestError 及包含它的 IdentityDownloadError 因拥有详细故障不再 Copy；调用方须借用或显式 clone，上传文件故障匹配 UploadFault，预算拒绝仍匹配 Operation 等原分类。SDK 夹具所有 POST 已连接这一入口；身份/查询/解码/传输拒绝的完整公开错误仍待连接，未匹配错误仍显式返回，不把夹具通用拒绝当正式合同。可移植原 Go 对照已运行，Linux 文件/SDK 错误组合待实跑。
 
-[上传头与模式拒绝](../sandbox-guest-service/src/upload_response/rejection.rs)复用同一 JSON 错误发送器，对不支持的 Content-Encoding、Content-Type、raw 缺失 path 和 HTTP metadata 校验失败返回固定 400 文本。仅在原完整头预算/一次准入通过后保留实际首字段字节；后续重复字段不替换首值，原始不透明字节按 Go JSON 规则转义。编码/账户/metadata/模式的已有处理顺序不变；其余预算、配置、账户、gzip 正文和 multipart 错误仍显式返回，不能套用这些四类错误。旧 upload_request 与 metadata 入口保留粗分类；内部详细失败供 upload_request_response 发送，不要求旧调用方迁移。
+[上传头与模式拒绝](../sandbox-guest-service/src/upload_response/rejection.rs)复用同一 JSON 错误发送器，对不支持的 Content-Encoding、Content-Type、raw 缺失 path 和 HTTP metadata 校验失败返回固定 400 文本。仅在原完整头预算/一次准入通过后保留实际首字段字节；后续重复字段不替换首值，原始不透明字节按 Go JSON 规则转义。编码/账户/metadata/模式的已有处理顺序不变；其余预算、配置及未映射账户/正文错误仍显式返回，不能套用这些四类错误。旧 upload_request 与 metadata 入口保留粗分类；内部详细失败供 upload_request_response 发送，不要求旧调用方迁移。
 
 HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检查，记录规范化键与首个无效字节/原字节偏移，不保存整个无效值。所有条目先校验，再比较包含 user.e2b. 前缀的完整总大小；单条错误优先于总量超限，成功后才复制值。Go map 在多个无效条目时的首错误顺序不固定，本组件选择实际遇到的条目；不保证跨实现同一首键，对照使用单个无效条目或唯一总量错误。HTTP HeaderName 已限定 ASCII token，所以 %q 键引用只需外侧双引号。拒绝响应的原容量保留至最后字节副本释放，初始化可在实际前置工作结束后继续；不读取尚未进入正文阶段的 identity 输入或打开文件。可移植原方法/错误分支与真实 Go HTTP 对照已有本地运行，Linux 请求连接与合成头请求经固定 SDK 错误解析仍待实跑；不代表完整 PostFiles、正式监听器或 E03 验收。
 
@@ -547,7 +549,7 @@ Range 保留区间顺序、重叠、重复、后缀零长度、空列表、空�
 
 [下载请求连接](../sandbox-guest-service/src/file_transfer/download.rs)的 download_request 在账户查询之前取得文件池槽位和绝对期限，原 AuthPermit 快照、槽位及期限经账户查询、路径解析移交上述同一下载 worker。账户池自己的期限只能缩短原请求等待；取消或超时不停止已派发查询，其阻塞任务继续持有原授权和文件池容量，直到真实退出。账户解析失败不 stat/open，原查询缺省用户及空路径工作目录规则沿用；MIME Detect 的原路径取本次查询，缺省/空串不改用展开后的默认目录扩展名。初始化在这些持有者及最后响应 Bytes 副本释放前等待。
 
-新入口接受已认证、已解码的查询，返回明确的 Admission/Context/Download 分类；账户/预算错误的完整 HTTP 映射、签名与正式路由仍待连接。旧 download_negotiated 继续接受调用方已解析的上下文，只为下载部分准入，调用方须自行保留此前账户查询的授权/预算。固定 SDK 测试路由已迁移到新入口；Linux 账户阻塞/期限/真实文件/SDK 组合仅交叉检查，执行待补。
+新入口接受已认证、已解码的查询，返回明确的 Admission/Context/Download 分类；未知账号 401 已连接，其他账户/预算错误的完整 HTTP 映射及正式路由仍待连接；签名许可见前述共用入口。旧 download_negotiated 继续接受调用方已解析的上下文，只为下载部分准入，调用方须自行保留此前账户查询的授权/预算。固定 SDK 测试路由已迁移到新入口；Linux 账户阻塞/期限/真实文件/SDK 组合仅交叉检查，执行待补。
 
 编码解析失败与四类条件字段强制 identity 失败保留不同的 Vary 阶段；If-Match/If-Unmodified-Since 本身不强制回退。identity 复用原条件/嗅探/范围执行，gzip 复用原有界编码器而不再准入或重新计时。准备期 SniffSeek/LengthSeek 变为固定 `500 seeker can't seek`，清除原实体缓存头、保留 Vary/Disposition 并抑制 HEAD 正文；原单独 identity 入口仍返回组件错误。初始单段 range seek 的已知 Linux errno 变为 `416 seek <解析路径>: <errno 文本>`，不带成功范围计划尚未应设置的 Content-Range/Accept-Ranges/Content-Length；默认清除实体缓存头，保留此前已有头。未知 I/O 错误仍返回组件失败；多段正文开始后的 seek/read 失败仍为正文错误，不能改写已经发送的状态。gzip HEAD 仍消费/压缩至实际 EOF，在同一 worker 丢弃输出后返回空正文，避免 HTTP 不轮询 HEAD body 时完全省略读取；本组件延后交出 HEAD 响应头，编码/源失败仍显式失败，这一发送时机及原 gzip 失败差异须保留在端点验收中，不能称已与 Go 故障路径等价。
 

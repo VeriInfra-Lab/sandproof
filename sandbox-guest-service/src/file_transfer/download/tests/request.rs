@@ -243,19 +243,23 @@ async fn context_errors_precede_stat_and_encoding_without_poisoning_capacity() {
     for username in ["", "missing"] {
         let mut req = query(Some("absent"), "identity;q=0");
         req.username = Some(username.into());
-        assert!(matches!(
-            streams
-                .download_request(
-                    session.authorize(Some("token")).await.unwrap(),
-                    req,
-                    &accounts,
-                    &settings,
-                    limits(),
-                    Utc,
-                )
-                .await,
-            Err(DownloadRequestError::Context(ContextError::Unauthenticated))
-        ));
+        let download = streams
+            .download_request(
+                session.authorize(Some("token")).await.unwrap(),
+                req,
+                &accounts,
+                &settings,
+                limits(),
+                Utc,
+            )
+            .await
+            .unwrap();
+        assert_eq!(download.status(), 401);
+        let actual: serde_json::Value = serde_json::from_slice(&collect(download).await).unwrap();
+        assert_eq!(
+            actual,
+            serde_json::json!({"code":401, "message":format!("error looking up user '{username}': user: unknown user {username}")})
+        );
         quiesce(&streams).await;
     }
     assert_eq!(*names.lock().unwrap(), ["missing"]);

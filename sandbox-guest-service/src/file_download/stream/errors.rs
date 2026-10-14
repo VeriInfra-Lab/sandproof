@@ -63,6 +63,15 @@ pub(super) fn json(
         _ => return Err(error),
     };
     let bytes = payload(&parts, Some(status), limits.plan.wire_bytes)?;
+    json_plan(bytes, status, headers, limits)
+}
+
+fn json_plan(
+    bytes: Vec<u8>,
+    status: StatusCode,
+    mut headers: HeaderMap,
+    limits: IdentityLimits,
+) -> Result<ResponsePlan, DownloadError> {
     headers.insert(
         "content-type",
         HeaderValue::from_static("application/json; charset=utf-8"),
@@ -79,6 +88,51 @@ pub(super) fn json(
         required_seek: None,
         file_bytes: 0,
     })
+}
+
+#[cfg(any(target_os = "linux", test))]
+impl super::Download {
+    pub(crate) async fn unknown_user(
+        error: crate::upload_response::UnknownUser,
+        mut request: IdentityRequest,
+        limits: IdentityLimits,
+        deadline: super::Instant,
+        owner: super::Owner,
+    ) -> Result<Self, DownloadError> {
+        use super::{Arc, Control, OwnedBody, response_reader};
+        if limits.chunk_bytes == 0 || limits.chunk_bytes > isize::MAX as usize / 16 {
+            return Err(DownloadError::InvalidConfiguration);
+        }
+        let ((status, headers), body) =
+            OwnedBody::start(deadline, Arc::clone(&owner), move |_, cancel| {
+                let control = Control { deadline, cancel };
+                control.check()?;
+                let status = StatusCode::UNAUTHORIZED;
+                let bytes = payload(&error.parts(), Some(status), limits.plan.wire_bytes)?;
+                // Match the fixed Go HTTP writer's buffered JSON response,
+                // including HEAD; the encoding budget still applies to HEAD.
+                if bytes.len() <= 2048 {
+                    request
+                        .response
+                        .insert("content-length", HeaderValue::from(bytes.len()));
+                }
+                let plan = json_plan(bytes, status, request.response, limits)?;
+                response_reader(
+                    std::io::Cursor::new(Vec::new()),
+                    plan,
+                    request.method == super::Method::HEAD,
+                    control,
+                    limits.chunk_bytes,
+                )
+            })
+            .await?;
+        Ok(Self {
+            status,
+            headers,
+            body,
+            _owner: owner,
+        })
+    }
 }
 
 pub(super) fn range(

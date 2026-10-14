@@ -10,6 +10,7 @@ use tokio::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
+    UnknownUser(super::UnknownUser),
     MultipartGzip {
         stage: SourceStage,
         error: GzipReadError,
@@ -29,6 +30,9 @@ pub enum Rejection {
 }
 impl Rejection {
     fn status(&self) -> StatusCode {
+        if matches!(self, Self::UnknownUser(_)) {
+            return StatusCode::UNAUTHORIZED;
+        }
         if matches!(
             self,
             Self::MultipartSetup(_)
@@ -68,6 +72,7 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::UnknownUser(error) => parts.extend(error.parts()),
         Rejection::MultipartGzip { stage, error } => parts.extend([
             match stage {
                 SourceStage::NextPart => b"error reading form: multipart: NextPart: ".as_slice(),

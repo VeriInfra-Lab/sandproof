@@ -48,7 +48,8 @@ impl FileStreams {
     /// Caller authenticates and decodes the query; this does not install routes.
     /// # Errors
     /// Admission, account/path resolution, unmapped I/O, budgets or original
-    /// deadline. Context failures remain explicit, not invented HTTP diagnostics.
+    /// deadline. Observed unknown accounts become the fixed bounded 401;
+    /// other context failures remain explicit, without invented diagnostics.
     pub async fn download_request<S: AccountSource, Z: LocalZone + Send + 'static>(
         &self,
         auth: AuthPermit,
@@ -115,7 +116,7 @@ impl FileStreams {
             .map_err(DownloadRequestError::Admission)?;
         let auth = Arc::new(auth);
         let owner: Owner = Arc::new((Arc::clone(&auth), lease));
-        let selection = auth
+        let selection = match auth
             .resolve_http_files_admitted(
                 request.username.as_deref(),
                 accounts,
@@ -124,7 +125,28 @@ impl FileStreams {
                 Arc::clone(&owner),
             )
             .await
-            .map_err(DownloadRequestError::Context)?;
+        {
+            Ok(selection) => selection,
+            Err(crate::files::SelectionError::Context(error)) => {
+                return Err(DownloadRequestError::Context(error));
+            }
+            Err(crate::files::SelectionError::UnknownUser(error)) => {
+                return Download::unknown_user(
+                    error,
+                    request.http,
+                    IdentityLimits {
+                        plan: limits.response,
+                        chunk_bytes: self.limits.chunk_bytes,
+                        file_bytes: self.limits.total_bytes,
+                        path_bytes: self.limits.file.path_bytes,
+                    },
+                    deadline,
+                    owner,
+                )
+                .await
+                .map_err(DownloadRequestError::Download);
+            }
+        };
         let path = request.path.as_deref().unwrap_or("");
         let context = selection
             .resolve(path)

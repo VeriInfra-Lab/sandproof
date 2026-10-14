@@ -5,6 +5,7 @@ acceptance; no production/cloud endpoint or credential is used.
 """
 import asyncio
 import gzip
+import hashlib
 from email import policy
 from email.parser import BytesParser
 from io import BytesIO, StringIO
@@ -214,6 +215,54 @@ def authorization_sync(sandbox, url, root):
     with httpx.Client(trust_env=False, timeout=10) as client:
         for method, target, args, message in authorization_cases(sandbox, url, root):
             assert_authorization_response(method, client.request(method, target, **args), message)
+
+
+def unknown_users(root):
+    # One unique valid spelling exercises the real passwd miss. A colon cannot
+    # name a passwd entry and exercises the bounded invalid-name fast path.
+    return ['sandproof-' + hashlib.sha256(root.encode()).hexdigest()[:24], ':missing']
+
+
+def missing_accounts_sync(sandbox, url, root):
+    path = f'{root}/account-rejected'
+    for user in unknown_users(root):
+        calls = [lambda: sandbox.files.read(path, user=user),
+                 lambda: sandbox.files.write(path, b'never', user=user, use_octet_stream=True),
+                 lambda: sandbox.files.write(path, b'never', user=user, use_octet_stream=False),
+                 lambda: sandbox.files.write(path, b'never', user=user, use_octet_stream=True, gzip=True)]
+        for call in calls:
+            try:
+                call()
+            except AuthenticationException as error:
+                assert str(error) == f"error looking up user '{user}': user: unknown user {user}"
+            else:
+                raise AssertionError('unknown account must fail')
+    # SDK omits empty user values; exercise explicit empty through a synthetic
+    # client and the original SDK exception parser, separately from SDK calls.
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        response = client.get(f'{url}/files', params={'path': path, 'username': ''},
+                              headers={'x-access-token': 'fixture-token'})
+        assert_authorization_response('GET', response, "error looking up user '': user: unknown user ")
+
+
+async def missing_accounts_async(sandbox, url, root):
+    path = f'{root}/account-rejected'
+    for user in unknown_users(root):
+        calls = [lambda: sandbox.files.read(path, user=user),
+                 lambda: sandbox.files.write(path, b'never', user=user, use_octet_stream=True),
+                 lambda: sandbox.files.write(path, b'never', user=user, use_octet_stream=False),
+                 lambda: sandbox.files.write(path, b'never', user=user, use_octet_stream=True, gzip=True)]
+        for call in calls:
+            try:
+                await call()
+            except AuthenticationException as error:
+                assert str(error) == f"error looking up user '{user}': user: unknown user {user}"
+            else:
+                raise AssertionError('unknown account must fail')
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        response = await client.get(f'{url}/files', params={'path': path, 'username': ''},
+                                    headers={'x-access-token': 'fixture-token'})
+        assert_authorization_response('GET', response, "error looking up user '': user: unknown user ")
 
 
 async def authorization_async(sandbox, url, root):
@@ -877,6 +926,7 @@ def run_sync(url, root):
     sdk_compressed_upload_sync(sandbox, root)
     query_binding_sync(sandbox, url, root)
     authorization_sync(sandbox, url, root)
+    missing_accounts_sync(sandbox, url, root)
     header_rejections_sync(url, root)
     framing_sync(sandbox, url, root)
     qp_sync(sandbox, url, root)
@@ -932,6 +982,7 @@ async def run_async(url, root):
     await sdk_compressed_upload_async(sandbox, root)
     await query_binding_async(sandbox, url, root)
     await authorization_async(sandbox, url, root)
+    await missing_accounts_async(sandbox, url, root)
     await header_rejections_async(url, root)
     await framing_async(sandbox, url, root)
     await qp_async(sandbox, url, root)

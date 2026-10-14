@@ -252,11 +252,13 @@ async fn budgets_cover_input_and_resolved_paths_without_starting_overbudget_look
     );
     config.limits.username_bytes = 2;
     let before = count.load(Ordering::SeqCst);
-    assert_eq!(
-        auth.resolve_http_file(Some("bob"), None, &pool, &config)
-            .await,
-        Err(ContextError::ResourceExhausted)
-    );
+    for name in ["bob", ":\ninvalid"] {
+        assert_eq!(
+            auth.resolve_http_file(Some(name), None, &pool, &config)
+                .await,
+            Err(ContextError::ResourceExhausted)
+        );
+    }
     assert_eq!(count.load(Ordering::SeqCst), before);
     config.limits.path_bytes = 0;
     assert_eq!(

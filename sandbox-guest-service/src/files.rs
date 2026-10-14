@@ -71,6 +71,24 @@ pub struct HttpFileSelection {
     settings: FileSettings,
 }
 
+pub(crate) enum SelectionError {
+    UnknownUser(crate::upload_response::UnknownUser),
+    Context(ContextError),
+}
+impl From<ContextError> for SelectionError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<SelectionError> for ContextError {
+    fn from(error: SelectionError) -> Self {
+        match error {
+            SelectionError::UnknownUser(_) => Self::Unauthenticated,
+            SelectionError::Context(error) => error,
+        }
+    }
+}
+
 impl HttpFileSelection {
     pub(crate) fn check_input(&self, path: &str) -> Result<(), ContextError> {
         check_path_size(path, &self.settings)
@@ -195,7 +213,7 @@ impl AuthPermit {
         settings: &FileSettings,
         deadline: tokio::time::Instant,
         owner: crate::owned_body::Owner,
-    ) -> Result<HttpFileSelection, ContextError> {
+    ) -> Result<HttpFileSelection, SelectionError> {
         settings.validate()?;
         let name = username.unwrap_or(&self.defaults().user);
         let account = file_account(name, accounts, settings, Some((deadline, owner))).await?;
@@ -249,27 +267,33 @@ async fn file_account<S: AccountSource>(
     accounts: &AccountPool<S>,
     settings: &FileSettings,
     admitted: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
-) -> Result<Account, ContextError> {
-    if name.is_empty() || name.contains(['\0', '\n', '\r', ':']) {
-        return Err(ContextError::Unauthenticated);
-    }
+) -> Result<Account, SelectionError> {
     if name.len() > settings.limits.username_bytes {
-        return Err(ContextError::ResourceExhausted);
+        return Err(ContextError::ResourceExhausted.into());
+    }
+    let missing = || SelectionError::UnknownUser(crate::upload_response::UnknownUser::new(name));
+    if name.is_empty() || name.contains(['\0', '\n', '\r', ':']) {
+        return Err(missing());
     }
     let account = match admitted {
         Some((deadline, owner)) => {
             accounts
                 .lookup_admitted(name.to_owned(), deadline, owner)
-                .await?
+                .await
         }
-        None => accounts.lookup(name.to_owned()).await?,
-    };
+        None => accounts.lookup(name.to_owned()).await,
+    }
+    .map_err(|error| match error {
+        // AccountPool maps only AccountError::NotFound to Unauthenticated.
+        ContextError::Unauthenticated => missing(),
+        other => SelectionError::Context(other),
+    })?;
     if account.name != name
         || account.home.contains('\0')
         || account.credentials.uid == u32::MAX
         || account.credentials.gid == u32::MAX
     {
-        return Err(ContextError::Unavailable);
+        return Err(ContextError::Unavailable.into());
     }
     // Source allocation is bounded by AccountPool's source contract. Check
     // before joining so a long home cannot allocate an unbudgeted result.

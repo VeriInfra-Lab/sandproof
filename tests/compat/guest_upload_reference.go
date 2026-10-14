@@ -835,6 +835,26 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "U":
+			if server == nil {
+				server = referenceServer()
+			}
+			// Fixed GET/POST wrapper; the actual typed Go missing-user error is
+			// injected, not an operating-system lookup or full endpoint run.
+			name := string(unhex(f[2]))
+			err := fmt.Errorf("error looking up user '%s': %w", name, user.UnknownUserError(name))
+			request, failure := http.NewRequest(f[1], server.URL, strings.NewReader(err.Error()))
+			if failure != nil {
+				panic(failure)
+			}
+			request.Header.Set("X-Reference-Code", "401")
+			client := server.Client()
+			client.Timeout = 5 * time.Second
+			response, failure := client.Do(request)
+			if failure != nil {
+				panic(failure)
+			}
+			dumpUpload(response)
 		case "Q":
 			fmt.Printf("%x\n", strconv.Quote(string(unhex(f[1]))))
 		case "N", "V", "L", "K", "Z", "Y":

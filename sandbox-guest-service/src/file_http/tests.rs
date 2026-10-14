@@ -47,6 +47,9 @@ impl AccountSource for Accounts {
         if name == "missing" {
             return Err(AccountError::NotFound);
         }
+        if name == "unavailable" {
+            return Err(AccountError::Unavailable);
+        }
         Ok(Account {
             name: name.into(),
             home: self.home.clone(),
@@ -321,14 +324,18 @@ async fn preflight_rejections_do_not_read_body_or_resolve_accounts_and_failures_
     assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
     let failed = fixture
         .http
-        .handle(request(Method::GET, "path=file&username=missing", unread()))
+        .handle(request(
+            Method::GET,
+            "path=file&username=unavailable",
+            unread(),
+        ))
         .await
         .err()
         .unwrap();
     assert!(matches!(
         failed.error(),
         Error::Download(DownloadRequestError::Context(
-            crate::ContextError::Unauthenticated
+            crate::ContextError::Unavailable
         ))
     ));
     assert!(failed.deadline().is_some());
@@ -343,6 +350,75 @@ async fn preflight_rejections_do_not_read_body_or_resolve_accounts_and_failures_
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     drop(collect(response).await);
     released(&fixture.requests).await;
+}
+
+#[tokio::test]
+async fn missing_accounts_preserve_stage_order_and_response_capacity_without_file_effects() {
+    let root = tempfile::tempdir().unwrap();
+    let fixture = fixture(root.path()).await;
+    for method in [Method::GET, Method::HEAD, Method::POST] {
+        for (query, name) in [
+            ("username=", ""),
+            ("username=missing", "missing"),
+            ("username=%3A%0A%22%3C%26", ":\n\"<&"),
+        ] {
+            let body = Body::from_stream(futures_util::stream::poll_fn(
+                |_| -> std::task::Poll<Option<Result<Bytes, std::io::Error>>> {
+                    panic!("unknown identity account must not read body")
+                },
+            ));
+            let mut req = request(method.clone(), &format!("path=never&{query}"), body);
+            req.headers_mut()
+                .insert("accept-encoding", "identity;q=0".parse().unwrap());
+            req.headers_mut()
+                .insert("content-type", "invalid/type".parse().unwrap());
+            req.headers_mut()
+                .insert("x-metadata-bad", "bad\t".parse().unwrap());
+            let response = fixture.http.handle(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            full(&fixture.requests);
+            let bytes = collect(response).await;
+            if method == Method::HEAD {
+                assert!(bytes.is_empty());
+            } else {
+                let actual: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(
+                    actual,
+                    serde_json::json!({"code":401,"message":format!("error looking up user '{name}': user: unknown user {name}")})
+                );
+                let copy = bytes.clone();
+                drop(bytes);
+                full(&fixture.requests);
+                drop(copy);
+                released(&fixture.requests).await;
+                continue;
+            }
+            drop(bytes);
+            released(&fixture.requests).await;
+        }
+    }
+    // Exactly one actual missing-account query per method; invalid spellings
+    // do not consult the account source. No stat/encoding/metadata/open follows.
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 3);
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    let mut req = request(
+        Method::POST,
+        "path=never&username=missing",
+        Body::from("bad gzip"),
+    );
+    req.headers_mut()
+        .insert("content-encoding", "gzip".parse().unwrap());
+    let response = fixture.http.handle(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let error: serde_json::Value = serde_json::from_slice(&collect(response).await).unwrap();
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("error decompressing request body:")
+    );
+    released(&fixture.requests).await;
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]
