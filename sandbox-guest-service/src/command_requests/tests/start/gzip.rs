@@ -2,6 +2,7 @@ use super::*;
 use crate::command_requests::http::{Error as SelectionError, Rpc};
 use crate::file_rpc_requests::tests::gzip::compressed;
 use axum::http::Method;
+use sandproof_guest_runtime::protocol::FramingError;
 
 fn wire(flag: u8, payload: &[u8]) -> Vec<u8> {
     let mut result = vec![flag];
@@ -82,9 +83,7 @@ async fn gzip_framing_and_budgets_fail_before_default_account_or_start_preparati
                     | ("limit", SelectionError::Request(Error::BodyLimit))
                     | (
                         "trailing",
-                        SelectionError::Request(Error::Framing(
-                            sandproof_guest_runtime::protocol::FramingError::ExtraBytes(1)
-                        ))
+                        SelectionError::Request(Error::Framing(FramingError::ExtraBytes(1)))
                     )
             ));
             assert_eq!(failure.deadline(), deadline);
