@@ -19,7 +19,7 @@ use axum::{
     body::Body,
     extract::{OriginalUri, State},
     http::{HeaderMap, Method},
-    response::{IntoResponse, Response},
+    response::Response,
     routing::post,
 };
 use sandproof_guest_runtime::{
@@ -239,7 +239,6 @@ async fn dispatch(
     let stream = rpc.is_stream();
     selected_json(prepared.headers(), stream);
     let selected = prepared.select_json(&Method::POST, rpc).unwrap();
-    let content_type = selected.content_type();
     let ready = selected.decode_identity(body).await.unwrap();
     fixture.calls.fetch_add(1, Ordering::SeqCst);
     let limits = CommandBodyLimits {
@@ -287,7 +286,13 @@ async fn dispatch(
         ready.execute_pid(&fixture.registry, limits).await.unwrap()
     };
     assert_eq!(reply.is_stream(), stream);
-    ([("content-type", content_type)], reply.into_body()).into_response()
+    reply
+        .into_http_response(command_requests::http::response::Limits {
+            wire_bytes: 8192,
+            chunk_bytes: 2048,
+        })
+        .await
+        .unwrap()
 }
 
 fn selected_json(headers: &HeaderMap, stream: bool) {

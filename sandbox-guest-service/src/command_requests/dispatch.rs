@@ -12,13 +12,22 @@ pub struct Reply {
     body: Body,
     stream: bool,
     deadline: Instant,
+    format: Option<super::http::ResponseFormat>,
+    owner: Owner,
 }
 impl Reply {
-    pub(super) fn streaming(body: Body, deadline: Instant) -> Self {
+    pub(super) fn streaming(
+        body: Body,
+        deadline: Instant,
+        format: Option<super::http::ResponseFormat>,
+        owner: Owner,
+    ) -> Self {
         Self {
             body,
             stream: true,
             deadline,
+            format,
+            owner,
         }
     }
     #[must_use]
@@ -29,9 +38,30 @@ impl Reply {
     pub const fn deadline(&self) -> Instant {
         self.deadline
     }
-    /// Capacity follows every returned Bytes clone, including after Body drop.
+    /// Low-level identity bytes without HTTP formatting. Capacity follows every
+    /// returned Bytes clone. Selected HTTP callers use `into_http_response`.
     pub fn into_body(self) -> Body {
         self.body
+    }
+
+    /// Apply this request's original response format to its completed operation
+    /// or original command subscription. No new admission or operation occurs.
+    /// # Errors
+    /// Missing selection, invalid limits, encoding or expiry. A response failure
+    /// never authorizes replaying the operation or restarting the command.
+    pub async fn into_http_response(
+        self,
+        limits: super::http::response::Limits,
+    ) -> Result<axum::response::Response, super::http::response::Failure> {
+        super::http::response::send(
+            self.body,
+            self.stream,
+            self.format,
+            limits,
+            self.deadline,
+            self.owner,
+        )
+        .await
     }
 }
 impl Ready {
@@ -49,6 +79,7 @@ impl Ready {
         limits: CommandBodyLimits,
     ) -> Result<Reply, Failure> {
         let deadline = self.deadline();
+        let format = self.response;
         let owner = self.decoded.authenticated.admitted.owner.clone();
         let result = async {
             check_deadline(deadline)?;
@@ -64,7 +95,7 @@ impl Ready {
                     .into_body(owner.clone(), limits, deadline)
                     .map_err(Error::Response)?;
                 check_deadline(deadline)?;
-                return Ok(Reply::streaming(body, deadline));
+                return Ok(Reply::streaming(body, deadline, format, owner.clone()));
             }
             let bytes = match request {
                 Request::List => registry
@@ -90,12 +121,18 @@ impl Ready {
                 })),
                 stream: false,
                 deadline,
+                format,
+                owner: owner.clone(),
             })
         };
         timeout_at(deadline, result)
             .await
             .unwrap_or(Err(Error::DeadlineExceeded))
-            .map_err(|error| Failure::new(error, deadline, owner))
+            .map_err(|error| {
+                let mut failure = Failure::new(error, deadline, owner);
+                failure.response = format;
+                failure
+            })
     }
 }
 fn pid(selector: Option<&Selector>) -> Result<u32, Error> {

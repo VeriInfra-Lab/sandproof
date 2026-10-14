@@ -86,15 +86,11 @@ async fn http_selection_failures_keep_original_capacity_without_holding_complete
 }
 
 #[tokio::test]
-async fn identity_decoder_rejects_expired_or_gzip_selection_before_reading_and_keeps_ready_ownership()
- {
+async fn identity_decoder_rejects_expired_or_gzip_request_before_reading_and_keeps_ready_ownership()
+{
     let session = session().await;
     let pool = CommandRequests::new(limits()).unwrap();
-    for field in [
-        "connect-content-encoding",
-        "connect-accept-encoding",
-        "connect-timeout-ms",
-    ] {
+    for field in ["connect-content-encoding", "connect-timeout-ms"] {
         let mut h = headers();
         h.insert("content-type", "application/connect+json".parse().unwrap());
         h.insert(
@@ -144,6 +140,89 @@ async fn identity_decoder_rejects_expired_or_gzip_selection_before_reading_and_k
     assert_eq!(ready.request(), &Request::List);
     full(&pool);
     drop(ready);
+    released(&pool).await;
+}
+
+#[tokio::test]
+async fn selected_success_keeps_gzip_format_deadline_and_original_request_capacity() {
+    use crate::command_requests::http::response;
+    use sandproof_guest_runtime::gzip::{DecodeLimits, Decoder};
+    let session = session().await;
+    let pool = CommandRequests::new(limits()).unwrap();
+    for content_type in ["application/json", "application/json; charset=utf-8"] {
+        let mut h = headers();
+        h.insert("content-type", content_type.parse().unwrap());
+        h.insert("accept-encoding", "gzip".parse().unwrap());
+        let selected = prepare_headers(&pool, &session, h)
+            .await
+            .select_json(&Method::POST, Rpc::List)
+            .unwrap();
+        let deadline = selected.deadline();
+        let ready = selected.decode_identity(Body::from("{}")).await.unwrap();
+        let reply = ready
+            .execute_pid(&registry(), response_limits())
+            .await
+            .unwrap();
+        assert_eq!(reply.deadline(), deadline);
+        let response = reply
+            .into_http_response(response::Limits {
+                wire_bytes: 4096,
+                chunk_bytes: 4096,
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.headers()["content-type"], content_type);
+        assert_eq!(response.headers()["content-encoding"], "gzip");
+        assert_eq!(response.headers()["accept-encoding"], "gzip");
+        session
+            .initialize(br#"{"accessToken":"token"}"#)
+            .await
+            .unwrap();
+        let mut body = response.into_body();
+        let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        let mut decoder = Decoder::new(
+            bytes.as_ref(),
+            DecodeLimits {
+                encoded_bytes: 4096,
+                decoded_bytes: 4096,
+                chunk_bytes: 4096,
+                header_bytes: 4096,
+                members: 8,
+            },
+        )
+        .unwrap();
+        assert_eq!(decoder.next_chunk().unwrap().unwrap(), b"{}");
+        assert!(decoder.next_chunk().unwrap().is_none());
+        drop(decoder);
+        let copy = bytes.clone();
+        drop(bytes);
+        drop(body);
+        full(&pool);
+        drop(copy);
+        released(&pool).await;
+    }
+    // The legacy decoder cannot invent a negotiated HTTP format after execution.
+    let prepared = prepare_headers(&pool, &session, headers()).await;
+    let deadline = prepared.deadline();
+    let ready = prepared
+        .decode("List", Body::from("{}"), deadline)
+        .await
+        .unwrap();
+    let reply = ready
+        .execute_pid(&registry(), response_limits())
+        .await
+        .unwrap();
+    let failure = reply
+        .into_http_response(response::Limits {
+            wire_bytes: 4096,
+            chunk_bytes: 4096,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(failure.error(), response::Error::UnclassifiedFault);
+    assert_eq!(failure.deadline(), deadline);
+    full(&pool);
+    drop(failure);
     released(&pool).await;
 }
 

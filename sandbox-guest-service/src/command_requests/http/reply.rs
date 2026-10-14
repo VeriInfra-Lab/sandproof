@@ -17,7 +17,7 @@ use tokio::time::Instant;
 #[cfg(test)]
 mod tests;
 #[cfg(any(target_os = "linux", test))]
-mod wire;
+pub(super) mod wire;
 
 /// One original admitted request covers the bounded source diagnostic, raw
 /// payload, optional compressed frame, codec workspace and transmission chunk.
@@ -39,7 +39,7 @@ pub enum Error {
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "command header response: {self:?}")
+        write!(f, "command HTTP response: {self:?}")
     }
 }
 impl std::error::Error for Error {}
@@ -162,7 +162,7 @@ async fn send_inner(
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn check_limits(limits: Limits) -> Result<(), Error> {
+pub(super) fn check_limits(limits: Limits) -> Result<(), Error> {
     if limits.wire_bytes == 0
         || limits.chunk_bytes == 0
         || limits.wire_bytes > u32::MAX as usize

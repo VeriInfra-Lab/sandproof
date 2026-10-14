@@ -80,7 +80,11 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFERENCE 并显式 --include-ignored；参考二进制须包含 F 入口。新增 EOS 本地对照及可移植规范化检查已执行；Linux 默认账户顺序测试加入零长度 Start 帧及带客户端 error 的合法 EOS，确认仍查询原默认账户，执行待候选 CI。
 
-[Start 默认账户回复检查](../sandbox-guest-service/src/command_requests/http/default_account/tests.rs)覆盖原始/压缩载荷独立限额、原期限、缺失观察/选择与最后字节副本。固定 Go D 入口用原生成 Start 消息及 Connect handler，比较 20 组 JSON 类型、identity/gzip、空/普通/转义/控制/长用户名的真实 HTTP 头、flags 和 JSON 原字节；失败表达来自固定 GetAuthUser，账户查询为受控失败，不运行进程。D 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。独立 gzip 编码通过不代表实际 gzip Start 已启用。
+[正常命令回复检查](../sandbox-guest-service/src/command_requests/http/response/tests.rs)覆盖协商 charset/identity/gzip、短消息压缩、每帧预算与无累计上限、真实编码长度头、原期限、截断/非法帧、最后副本反压和排队编码取消后实际工作退出。固定 Go N 入口复用原生成消息及 Connect handler，以 164 组 List/控制回复、Start/Connect 事件、Unicode/长文本和两种编码/类型比较真实头、flags 与解压后的 JSON 值；压缩字节流及 protobuf JSON 空白/键序不要求一致，长度头先核对各自实际字节再比较是否存在，不据此宣称跨编码器 2048 临界字节完全相同。N 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。
+
+[Linux 正常回复连接](../sandbox-guest-service/src/command_requests/tests/http.rs)核对原选择/账户预检、List、gzip 回复到原期限和请求名额，旧未选择入口保持未分类；固定 SDK/PID 测试路由改用 Reply::into_http_response 输出成功头和正文。新连接和八轮真实命令 SDK 回归待候选 CI；不把可移植编码、交叉静态检查或受限测试路由记为请求 gzip、正式服务或完整 E03。
+
+[Start 默认账户回复检查](../sandbox-guest-service/src/command_requests/http/default_account/tests.rs)覆盖原始/压缩载荷独立限额、原期限、缺失观察/选择与最后字节副本。固定 Go D 入口用原生成 Start 消息及 Connect handler，比较 20 组 JSON 类型、identity/gzip、空/普通/转义/控制/长用户名的真实 HTTP 头、flags 和 JSON 原字节；失败表达来自固定 GetAuthUser，账户查询为受控失败，不运行进程。D 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。独立 gzip 编码通过不代表 gzip Start 请求已启用。
 
 [Linux Start 连接检查](../sandbox-guest-service/src/command_requests/tests/default_account.rs)另核对原 token/Basic/选择/解码到默认查询的顺序、原格式与期限、查询次数、鉴权释放、Bytes 副本、未分类源故障和无选择旧入口；缺失 worker 路径与空闲进程/登记名额确认这些失败不进入准备。两项新增 Linux 场景与原 Start/SDK 成功回归待候选 CI；不从可移植错误编码推算 Linux 组合、完整 E03 或资源峰值通过。
 

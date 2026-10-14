@@ -119,7 +119,7 @@ impl Ready {
             let body = subscription
                 .into_body(owner.clone(), response, deadline)
                 .map_err(Error::Response)?;
-            Ok(Reply::streaming(body, deadline))
+            Ok(Reply::streaming(body, deadline, format, owner.clone()))
         };
         timeout_at(deadline, result)
             .await

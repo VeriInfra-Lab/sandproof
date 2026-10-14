@@ -180,7 +180,7 @@ func main() {
 			target, body = commandAccountPath, []byte("invalid unread request")
 		case "Q":
 			target, body = commandRequestEndpoint(data)
-		case "O":
+		case "O", "N":
 			target, body, commandStream = commandResponseEndpoint(data)
 		case "J", "K":
 			target, body = requestEndpoint(data)
@@ -219,10 +219,13 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
-		if mode == "O" {
+		if mode == "O" || mode == "N" {
 			req.Header.Set("X-Fixture-Command", hex.EncodeToString(data))
 			if commandStream {
 				req.Header.Set("Content-Type", "application/connect+json")
+			}
+			if mode == "N" {
+				commandSuccessHeaders(req, data, commandStream)
 			}
 		}
 		if mode == "M" {
@@ -295,6 +298,13 @@ func main() {
 		}
 		if mode == "O" {
 			fmt.Fprintln(out, commandResponseObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "N" {
+			fmt.Fprintln(out, commandSuccessObservation(res, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}

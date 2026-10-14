@@ -395,11 +395,15 @@ List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用�
 
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)消费同一 Basic 预检结果，先选择已知命令的 POST 与两个 Connect JSON 类型，复用有界 MIME 参数解析。其他原协议为未选定分类，不据此公开返回 415。一元与 Start/Connect 分别选择原 Content-Encoding/Accept-Encoding 和 Connect-Content-Encoding/Connect-Accept-Encoding 的第一值；空值/identity/gzip、逗号或 ASCII 空格分割及不解释 q 权重遵循固定协商。方法/媒体类型先于压缩，压缩错误先于版本，版本先于期限语法错误；有效期限先收紧原准入上限，失败保留已选回复格式/编码及原期限，不刷新容量或时钟。诊断只复制完整头预算后的对应首值，Debug 不暴露原值。
 
-Selected::decode_identity 将 identity 请求交给原解码/派发，并在 Ready 保存不可替换的原回复格式；gzip 选择已保存，但该入口在读正文前返回组件 EncodingNotImplemented，未定义公开拒绝政策。零/负 wire 期限保留为到期并在本组件效果前拒绝；原 Go 外层上下文到期本身并不证明每个流 handler 都停止派发，有限头对照不作此承诺。失败保留请求容量，不保留已经完成的鉴权读锁。请求/正常输出 gzip、解码/操作错误全文及未分类账户故障、keepalive 头和正式路由/daemon 仍待连接。
+Selected::decode_identity 将 identity 请求交给原解码/派发，并在 Ready 保存不可替换的原回复格式；允许协商 gzip 回复，请求 gzip 仍在读正文前返回组件 EncodingNotImplemented，未定义公开拒绝政策。零/负 wire 期限保留为到期并在本组件效果前拒绝；原 Go 外层上下文到期本身并不证明每个流 handler 都停止派发，有限头对照不作此承诺。失败保留请求容量，不保留已经完成的鉴权读锁。请求 gzip、解码/操作错误全文及未分类账户故障、keepalive 头和正式路由/daemon 仍待连接。
+
+[正常命令 HTTP 回复](../sandbox-guest-service/src/command_requests/http/response.rs)由 Reply::into_http_response 消费原执行结果/订阅、原格式和期限；无选择的旧入口不能事后补选格式。List/控制成功使用一元 JSON、原 charset、gzip 广告及协商 Content-Encoding；Start/Connect 使用原流类型和 Connect 编码头，每个数据/终结帧分别压缩，保留 flags=0/2 到 1/3。gzip 没有小消息豁免；一元实际编码长度至多 2048 才带自动 Content-Length，流不带长度头。低层 into_body 仍只交付未格式化 identity 字节，HTTP 调用方须使用新入口。
+
+逐帧编码按下游需求进入阻塞任务，安静流不占阻塞线程；原消息、编码后的完整帧各受显式 wire 预算，帧头计入，传输块和 codec 工作区另计。原字节、编码副本和传输块可同时驻留，不冒充单副本或整机 RAM 上界。编码任务和最后一个编码字节副本持续持有原请求及原帧的订阅/记录/输出责任；副本释放前不读取下一帧，不累计限制整条输出。取消/过期只拆除此响应，仍在运行的编码工作到实际退出才放回责任；截断、帧错误或超限不追加成功 EOS，不重执行控制操作或重新启动命令。固定 Go 有限格式对照与本地所有权检查已执行，实际 Linux 账户/登记/SDK 连接须另跑候选 CI。
 
 [Start 默认账户错误](../sandbox-guest-service/src/command_requests/http/default_account.rs)保存原 Start 查询中的有界 NotFound 或已明确无效的缺省用户名观察，消费同一 Failure 的原协商格式和期限。默认账户错误在 JSON 解码后、执行参数/首帧/登记/子进程之前；回复为 200、原 Connect 流类型、编码广告及唯一错误终结帧，使用 invalid default user 文本，不能复用显式 Basic 外层 authn 的状态、长度或压缩规则。空缺省用户名的 no user specified 表达保留为内部观察；当前 Session 的初始化空串沿既有规则忽略，不为测试放宽初始化。
 
-错误 JSON 与头错误共用帧封装、gzip 和有限响应传输，原始及压缩后完整帧各受 wire 预算，编码/失败/最后 Bytes 副本继续持有原请求责任。未经过 HTTP 选择的低层 decode、查询资源/不可用/期限错误或缺失观察保持未分类，不重新查账号、替换格式、刷新期限或重放 Start。当前实际 Start 入口仍只接收 identity；错误发送器的 gzip 对照仅验证独立编码，不表示 gzip Start 已接通。默认账户失败不改变 tag 的组件拒绝或确认新的公开策略，正式监听和其他 Start 错误仍待接通。
+错误 JSON 与头错误共用帧封装、gzip 和有限响应传输，原始及压缩后完整帧各受 wire 预算，编码/失败/最后 Bytes 副本继续持有原请求责任。未经过 HTTP 选择的低层 decode、查询资源/不可用/期限错误或缺失观察保持未分类，不重新查账号、替换格式、刷新期限或重放 Start。当前实际 Start 请求仍只接收 identity；已协商的 gzip 回复可交给发送器，独立 gzip 编码对照不表示请求 gzip 已接通。默认账户失败不改变 tag 的组件拒绝或确认新的公开策略，正式监听和其他 Start 错误仍待接通。
 
 [命令头错误响应](../sandbox-guest-service/src/command_requests/http/reply.rs)消费同一选择失败，映射已观察的方法、压缩、版本和期限格式错误。非 POST 在选择时保留原 HEAD 标记，回复 405、Allow: POST 和空正文；普通方法的零长度头与 HEAD 缺失自动长度头分别保留，codec/压缩/版本/期限格式不覆盖更早的方法拒绝。一元回复沿固定 501/400、identity application/json；Start/Connect 沿 200、原协商媒体类型及唯一 Connect 终结帧，gzip 终结帧使用 flags=3，identity 为 2，不伪造进程 Start/End。错误文本按固定 Go 引号及 JSON 转义直接写入有界载荷；原始载荷和压缩后完整帧各受同一上限，帧头计入 wire 预算。阻塞编码、传输及最后字节副本均保留原请求名额和较早期限，取消等待不提前释放仍在运行的编码工作；过期/超限/未分类失败保留原观察和容量，不临时扩大预算发送另一条回复。其他 codec/账户/解码/操作失败保持未分类，显式 Basic 账户有下述独立前置入口；本组件没有安装监听器或改变 tag 政策。
 

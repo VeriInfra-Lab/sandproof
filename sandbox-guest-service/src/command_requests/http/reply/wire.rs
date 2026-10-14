@@ -31,14 +31,26 @@ pub(super) fn frame(
     deadline: Instant,
     cancelled: &watch::Receiver<bool>,
 ) -> Result<Vec<u8>, Error> {
+    encode_payload(payload, Some(2), gzip, limits, deadline, cancelled)
+}
+
+pub(in crate::command_requests::http) fn encode_payload(
+    payload: &[u8],
+    flag: Option<u8>,
+    gzip: bool,
+    limits: Limits,
+    deadline: Instant,
+    cancelled: &watch::Receiver<bool>,
+) -> Result<Vec<u8>, Error> {
+    let prefix = if flag.is_some() { 5 } else { 0 };
     let limit = limits
         .wire_bytes
-        .checked_sub(5)
+        .checked_sub(prefix)
         .ok_or(Error::ResponseLimit)?;
     if payload.len() > limit {
         return Err(Error::ResponseLimit);
     }
-    let mut output = vec![0; 5];
+    let mut output = vec![0; prefix];
     if gzip {
         let mut encoder = Encoder::new(
             payload,
@@ -59,9 +71,11 @@ pub(super) fn frame(
     } else {
         append(&mut output, payload, limits.wire_bytes)?;
     }
-    output[0] = if gzip { 3 } else { 2 };
-    let length = u32::try_from(output.len() - 5).map_err(|_| Error::ResponseLimit)?;
-    output[1..5].copy_from_slice(&length.to_be_bytes());
+    if let Some(flag) = flag {
+        output[0] = flag | u8::from(gzip);
+        let length = u32::try_from(output.len() - prefix).map_err(|_| Error::ResponseLimit)?;
+        output[1..5].copy_from_slice(&length.to_be_bytes());
+    }
     Ok(output)
 }
 fn append(output: &mut Vec<u8>, bytes: &[u8], limit: usize) -> Result<(), Error> {

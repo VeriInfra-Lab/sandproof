@@ -18,6 +18,8 @@ pub mod authorization;
 #[cfg(any(target_os = "linux", test))]
 pub mod default_account;
 pub mod reply;
+#[cfg(any(target_os = "linux", test))]
+pub mod response;
 #[cfg(test)]
 mod tests;
 
@@ -112,7 +114,7 @@ pub enum Error {
     Compression(RejectedValue),
     Version(RejectedValue),
     Timeout(InvalidTimeout),
-    /// Selection understands gzip; this identity decoder cannot execute it.
+    /// Selection understands gzip; this decoder cannot expand a gzip request.
     EncodingNotImplemented,
 }
 
@@ -326,9 +328,9 @@ mod owned {
             self.plan.deadline
         }
 
-        /// Decode only a negotiated identity request/response. Gzip is preserved
-        /// in the selection but explicitly refused here before body polling;
-        /// selecting a valid encoding does not silently execute unimplemented I/O.
+        /// Decode a negotiated identity request, preserving the selected response
+        /// for `Reply::into_http_response`. A gzip request remains unsupported here
+        /// and is refused before body polling.
         /// Zero/negative wire deadlines are retained as expired and cannot reach
         /// effects in this component; this is not proof that Go checks at every
         /// such boundary. The fixed SDK's API zero normally omits that header.
@@ -337,9 +339,7 @@ mod owned {
         pub async fn decode_identity(self, body: Body) -> Result<Ready, Failure> {
             let refusal = if Instant::now() >= self.plan.deadline {
                 Some(Error::Request(super::super::Error::DeadlineExceeded))
-            } else if self.plan.request_encoding != Encoding::Identity
-                || self.plan.response_encoding != Encoding::Identity
-            {
+            } else if self.plan.request_encoding != Encoding::Identity {
                 Some(Error::EncodingNotImplemented)
             } else {
                 None
