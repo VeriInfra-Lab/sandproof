@@ -76,7 +76,11 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #439 的八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38564633601) 通过：源 a0329fa9a899059f4a2ef56ced87d66f8f389e40，checkout 06fb36868fb3a37f39c3296cce50d56793241e0b；四项 CI、原命令/文件与封存 Redis 均通过。首轮测试错误要求 identity 头缺失而失败，修正为原客户端显式 identity 后实跑通过，生产代码未为测试改变语义。后续迁移到共用 HTTP 选择的候选须独立重跑。
 
-[命令 HTTP 选择检查](../sandbox-guest-service/src/command_requests/http/tests.rs)覆盖七种方法的一元/流式 JSON、重复头首值、MIME 参数、压缩字段分离及 q 非权重、拒绝顺序、期限与失败格式。显式固定 Go V 入口经原生成消息和 Connect v1.18.1 真实回环对照 329 组选择/状态/错误文本；handler 为受控回复，不执行命令，也不证明原 Start 在零/负期限没有副作用。[Linux 所有权检查](../sandbox-guest-service/src/command_requests/tests/http.rs)核对失败持有原请求但释放完成的鉴权锁，gzip/过期不读正文，成功解码保留同一 Ready/期限；新增 Linux 用例及迁移后的 SDK 路由待候选 CI。identity 入口未实现 gzip 帧或公开错误映射，不能计完整 E03。V 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，需重建参考二进制并显式 --include-ignored。
+[命令头错误响应检查](../sandbox-guest-service/src/command_requests/http/reply/tests.rs)覆盖最后字节副本/取消/原期限、逐块背压、原始及压缩帧上限、未分类拒绝和 Debug 脱敏。显式固定 Go W 入口对七种命令、两种 JSON 类型、两种协商和七种拒绝组合比较 196 组真实 HTTP 状态/编码广告/长度、唯一终结帧 flags 和解压后的 JSON 原字节，包含超过 Go 自动长度阈值及非 ASCII/HTML 转义；不要求 gzip 压缩流逐字节相同。共用 SANDPROOF_GUEST_CONNECT_REFERENCE，必须重建并显式 --include-ignored；不计作普通 CI 已执行。[原准入连接检查](../sandbox-guest-service/src/command_requests/tests/http.rs)另覆盖选择失败到实际响应/失败的名额与鉴权释放，新增 Linux 场景待候选 CI。尚无正式监听、完整错误覆盖或 Go/Rust 同 SDK E03。
+
+[命令 HTTP 选择检查](../sandbox-guest-service/src/command_requests/http/tests.rs)覆盖七种方法的一元/流式 JSON、重复头首值、MIME 参数、压缩字段分离及 q 非权重、拒绝顺序、期限与失败格式。显式固定 Go V 入口经原生成消息和 Connect v1.18.1 真实回环对照 329 组选择/状态/错误文本；handler 为受控回复，不执行命令，也不证明原 Start 在零/负期限没有副作用。[Linux 所有权检查](../sandbox-guest-service/src/command_requests/tests/http.rs)核对失败持有原请求但释放完成的鉴权锁，gzip/过期不读正文，成功解码保留同一 Ready/期限；该提交已在下述 #440 CI 实跑，后续候选仍须独立重跑。identity 入口未实现请求 gzip 或完整错误映射，不能计完整 E03。V 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，需重建参考二进制并显式 --include-ignored。
+
+#440 的 HTTP 选择和八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38567961659) 通过：源 411c9fec8f511eedb3141dc01ff60fe098cbe050，checkout 8756de4a0c3ec2b20892e88fd966c16d2bb7d1d8；新增两项选择所有权检查、preparation 28 项、service lib 349 passed / 51 ignored、八轮 SDK 实进程及四项 CI 均通过。显式固定 Go 对照另在本地运行，不能由 CI 的 ignored 推算通过；此父提交不覆盖新增头错误响应。
 
 上述 Start 组件的六项账户/准入/实进程回归已在 [#438 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38562089660) 实跑通过（源 550ca46ecb595d25932936a33999fe4fec8cf5fa，实际 checkout e596ebabe93f29dc90504b2e8d2d4d6f34145bb1）：preparation 28 passed、service lib 344 passed / 50 ignored，SDK 与封存 Redis 检查通过。该精确父提交证据不覆盖新增 SDK/PID 组合或完整公开端点。
 

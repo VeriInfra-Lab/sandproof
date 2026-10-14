@@ -1,5 +1,5 @@
 //! Selected Connect JSON headers after the original token/Basic preflight.
-//! No listener, public error mapping, gzip body codec or tag policy is installed.
+//! No listener, request gzip codec or tag policy is installed.
 #[cfg(any(target_os = "linux", test))]
 use axum::http::{HeaderMap, Method};
 #[cfg(any(target_os = "linux", test))]
@@ -12,6 +12,7 @@ use tokio::time::Instant;
 use crate::connect_timeout;
 use crate::connect_timeout::InvalidTimeout;
 
+pub mod reply;
 #[cfg(test)]
 mod tests;
 
@@ -222,7 +223,7 @@ mod owned {
         error: Error,
         deadline: Instant,
         response: Option<ResponseFormat>,
-        _owner: Owner,
+        owner: Owner,
     }
     impl Failure {
         #[must_use]
@@ -237,12 +238,24 @@ mod owned {
         pub const fn response_format(&self) -> Option<ResponseFormat> {
             self.response
         }
+        /// Emit only observed compression/version/timeout header failures.
+        /// The original request capacity and deadline survive preparation and
+        /// all response byte references. Other failures remain unclassified.
+        /// # Errors
+        /// Unclassified selection, limits, expiry or encoding/worker failure;
+        /// the returned failure retains the same original capacity.
+        pub async fn into_header_response(
+            self,
+            limits: super::reply::Limits,
+        ) -> Result<axum::response::Response, super::reply::Failure> {
+            super::reply::send(self.error, self.response, limits, self.deadline, self.owner).await
+        }
         fn request(failure: RequestFailure, response: ResponseFormat) -> Self {
             Self {
                 error: Error::Request(failure.error()),
                 deadline: failure.deadline(),
                 response: Some(response),
-                _owner: std::sync::Arc::new(failure),
+                owner: std::sync::Arc::new(failure),
             }
         }
     }
@@ -277,7 +290,7 @@ mod owned {
                     error,
                     deadline,
                     response,
-                    _owner: self.authenticated.admitted.owner.clone(),
+                    owner: self.authenticated.admitted.owner.clone(),
                 }),
             }
         }
@@ -323,7 +336,7 @@ mod owned {
                     error,
                     deadline: self.plan.deadline,
                     response: Some(self.plan.response()),
-                    _owner: self.prepared.authenticated.admitted.owner.clone(),
+                    owner: self.prepared.authenticated.admitted.owner.clone(),
                 });
             }
             let response = self.plan.response();

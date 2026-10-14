@@ -146,3 +146,72 @@ async fn identity_decoder_rejects_expired_or_gzip_selection_before_reading_and_k
     drop(ready);
     released(&pool).await;
 }
+
+#[tokio::test]
+async fn selected_header_reply_keeps_original_admission_through_last_bytes_or_failed_encoding() {
+    use crate::command_requests::http::reply;
+    let session = session().await;
+    let pool = CommandRequests::new(limits()).unwrap();
+    for case in 0..5 {
+        let mut h = headers();
+        h.insert("content-type", "application/connect+json".parse().unwrap());
+        h.insert("connect-accept-encoding", "gzip".parse().unwrap());
+        h.insert("connect-protocol-version", "bad".parse().unwrap());
+        if case == 1 {
+            h.insert("connect-content-encoding", "br".parse().unwrap());
+        } else if case == 2 {
+            h.insert("connect-protocol-version", "1".parse().unwrap());
+            h.insert("connect-timeout-ms", "bad".parse().unwrap());
+        }
+        let failure = prepare_headers(&pool, &session, h)
+            .await
+            .select_json(&Method::POST, Rpc::Start)
+            .err()
+            .unwrap();
+        let original = failure.deadline();
+        if case == 4 {
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(31)).await;
+            tokio::time::resume();
+        }
+        let result = failure
+            .into_header_response(reply::Limits {
+                wire_bytes: if case == 3 { 1 } else { 16384 },
+                chunk_bytes: 16384,
+            })
+            .await;
+        if case >= 3 {
+            let failure = result.unwrap_err();
+            assert_eq!(failure.deadline(), original);
+            assert_eq!(
+                failure.error(),
+                if case == 3 {
+                    reply::Error::ResponseLimit
+                } else {
+                    reply::Error::DeadlineExceeded
+                }
+            );
+            full(&pool);
+            drop(failure);
+        } else {
+            let response = result.unwrap();
+            assert_eq!(response.status(), 200);
+            let mut body = response.into_body();
+            let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+            assert_eq!(bytes[0], if case == 1 { 2 } else { 3 });
+            let copy = bytes.clone();
+            drop(body);
+            drop(bytes);
+            full(&pool);
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                session.initialize(br#"{"accessToken":"token"}"#),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            drop(copy);
+        }
+        released(&pool).await;
+    }
+}

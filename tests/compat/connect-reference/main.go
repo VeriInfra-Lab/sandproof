@@ -177,7 +177,7 @@ func main() {
 			target, body = requestEndpoint(data)
 		case "M":
 			target, body = methodEndpoint(data)
-		case "V":
+		case "V", "W":
 			target, body = commandHeaderEndpoint(data)
 		case "P":
 			target, body = propertyEndpoint(data), []byte("{}")
@@ -219,7 +219,7 @@ func main() {
 		if mode == "M" {
 			methodHeaders(req, data)
 		}
-		if mode == "V" {
+		if mode == "V" || mode == "W" {
 			commandHeaders(req, data)
 		}
 		if mode == "G" || mode == "Z" {
@@ -284,6 +284,13 @@ func main() {
 		}
 		if mode == "V" {
 			fmt.Fprintln(out, commandHeaderObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "W" {
+			fmt.Fprintln(out, commandHeaderReply(res, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}
