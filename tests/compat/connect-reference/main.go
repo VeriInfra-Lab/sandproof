@@ -24,9 +24,14 @@ import (
 )
 
 type payload []byte
-type codec struct{}
+type codec struct{ name string }
 
-func (codec) Name() string                  { return "json" }
+func (c codec) Name() string {
+	if c.name != "" {
+		return c.name
+	}
+	return "json"
+}
 func (codec) Marshal(v any) ([]byte, error) { return []byte(*v.(*payload)), nil }
 func (codec) Unmarshal(data []byte, v any) error {
 	*v.(*payload) = append(payload(nil), data...)
@@ -57,7 +62,7 @@ func main() {
 	const path = "/fixture.Filesystem/Reply"
 	handler := connect.NewUnaryHandler(path, func(_ context.Context, req *connect.Request[payload]) (*connect.Response[payload], error) {
 		return connect.NewResponse(req.Msg), nil
-	}, connect.WithCodec(codec{}))
+	}, connect.WithCodec(codec{}), connect.WithCodec(codec{name: "json; charset=utf-8"}))
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	// The envd account failure observation is controlled here. Both wrappers
@@ -144,6 +149,8 @@ func main() {
 			target, body = "/fixture.Filesystem/Default", []byte("{}")
 		case "H":
 			body = []byte("invalid JSON")
+		case "C":
+			body = []byte("{}")
 		}
 		req, err := http.NewRequest(http.MethodPost, server.URL+target, bytes.NewReader(body))
 		if err != nil {
@@ -152,7 +159,9 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
-		if mode == "A" {
+		if mode == "C" {
+			req.Header.Set("Content-Type", string(data))
+		} else if mode == "A" {
 			req.SetBasicAuth(string(data), "ignored-password")
 			req.Header.Set("Connect-Timeout-Ms", "invalid")
 		} else if mode == "U" {
@@ -189,6 +198,22 @@ func main() {
 		}
 		if err := res.Body.Close(); err != nil {
 			panic(err)
+		}
+		if mode == "C" {
+			selected := "OTHER"
+			if res.StatusCode == http.StatusOK {
+				switch res.Header.Get("Content-Type") {
+				case "application/json":
+					selected = "JSON"
+				case "application/json; charset=utf-8":
+					selected = "UTF8"
+				}
+			}
+			fmt.Fprintln(out, selected)
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
 		}
 		values := []string{strconv.Itoa(res.StatusCode)}
 		for _, name := range []string{"Content-Type", "Content-Length", "Accept-Encoding", "Content-Encoding", "X-Content-Type-Options", "Vary"} {

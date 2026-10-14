@@ -22,8 +22,10 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
+mod selection;
 mod timeout;
 mod version;
+pub use selection::SelectionError;
 pub use timeout::{InvalidTimeout, TimeoutReason};
 pub use version::InvalidVersion;
 #[cfg(test)]
@@ -98,6 +100,10 @@ pub struct Admitted {
     deadline: Instant,
 }
 impl Admitted {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn owner(&self) -> Owner {
+        self.lease.clone()
+    }
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.deadline
@@ -148,6 +154,25 @@ pub struct Authenticated {
     headers: HeaderMap,
 }
 impl Authenticated {
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn json_codec(&self) -> Option<file_protocol::JsonContentType> {
+        let value = self.headers.get("content-type")?;
+        file_protocol::json_content_type(
+            std::str::from_utf8(value.as_bytes()).ok()?,
+            self.admitted.limits.headers.bytes,
+        )
+        .ok()
+        .flatten()
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn select_http(
+        &self,
+        method: &axum::http::Method,
+        codec: Option<file_protocol::JsonContentType>,
+    ) -> Result<file_protocol::JsonContentType, SelectionError> {
+        selection::select(method, &self.headers, codec)
+    }
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.admitted.deadline

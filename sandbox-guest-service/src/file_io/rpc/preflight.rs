@@ -110,6 +110,10 @@ impl FilePool {
 }
 
 impl PreparedRpc {
+    pub(crate) fn owner(&self) -> Owner {
+        self.selected.lease.clone()
+    }
+
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.authenticated.deadline()

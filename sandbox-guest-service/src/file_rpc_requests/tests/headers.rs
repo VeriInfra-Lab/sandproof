@@ -2,6 +2,104 @@ use super::*;
 use crate::file_rpc_response;
 use http_body_util::BodyExt;
 
+#[tokio::test]
+async fn admitted_selection_uses_first_media_type_without_changing_headers_or_deadline() {
+    let session = session().await;
+    let pool = FileRpcRequests::new(limits()).unwrap();
+    let mut h = headers();
+    h.append(
+        "content-type",
+        "Application/JSON; Charset=\"UTF-8\"".parse().unwrap(),
+    );
+    h.append("content-type", "application/proto".parse().unwrap());
+    let admitted = pool.admit().unwrap();
+    let end = admitted.deadline();
+    let auth = admitted.authenticate(&session, h.clone()).await.unwrap();
+    let codec = auth.json_codec();
+    assert_eq!(codec, Some(file_protocol::JsonContentType::Utf8));
+    assert_eq!(
+        auth.select_http(&axum::http::Method::POST, codec),
+        Ok(file_protocol::JsonContentType::Utf8)
+    );
+    assert_eq!(auth.headers(), &h);
+    assert_eq!(auth.deadline(), end);
+    full(&pool);
+    drop(auth);
+    released(&pool).await;
+}
+
+#[test]
+#[ignore = "explicit fixed Go Connect HTTP reference; set SANDPROOF_GUEST_CONNECT_REFERENCE"]
+fn fixed_go_json_media_type_selection_reference() {
+    use file_protocol::{JsonContentType, json_content_type};
+    let mut oracle = Reference::from_env("SANDPROOF_GUEST_CONNECT_REFERENCE");
+    let mut cases = vec![
+        String::new(),
+        "application/proto".into(),
+        "application/grpc+json".into(),
+    ];
+    for base in [
+        "application/json",
+        " APPLICATION/JSON ",
+        "APPLİCATİON/JSON",
+        "application/json-extra",
+    ] {
+        for suffix in [
+            "",
+            ";",
+            "; ",
+            ";charset=utf-8",
+            "; Charset = \"UTF-8\"",
+            ";charset=latin1",
+            ";charset=utf-8;charset=utf-8",
+            ";charset=UTF-8;charset=utf-8",
+            ";charset=utf-8;ignored=x",
+            ";ignored*=unknown''x",
+            ";ignored*1=x",
+            ";charset*=utf-8''ut%66-8",
+            ";charset*=unknown''ignored",
+            ";charset*0=ut;charset*1=f-8",
+            ";charset*0*=utf-8''ut;charset*1*=f%2D8",
+            ";charset=utf-8;charset*=unknown''ignored",
+            ";charset=utf-8;charset*=utf-8''latin1",
+            ";charset*=utf-8''%FF",
+            ";bad",
+            ";;",
+            ";charset=utf-8;",
+            ";charset=\"utf\\-8\"",
+            ";charset=utf-8;bad*0*=unknown''ignored;bad*1=x",
+            ";charset=utf-8\u{a0}",
+        ] {
+            cases.push(format!("{base}{suffix}"));
+        }
+    }
+    for base in [
+        "application/json;charset=utf-8",
+        "application/json; charset=\"utf-8\"",
+    ] {
+        for index in 0..base.len() {
+            for byte in *b" \t;=\"\\*/A0" {
+                let mut value = base.as_bytes().to_vec();
+                value[index] = byte;
+                cases.push(String::from_utf8(value).unwrap());
+            }
+        }
+    }
+    let count = cases.len();
+    for value in cases {
+        let expected = match json_content_type(&value, 4096).unwrap() {
+            Some(JsonContentType::Json) => "JSON",
+            Some(JsonContentType::Utf8) => "UTF8",
+            None => "OTHER",
+        };
+        oracle.check(&format!("C\t{}", hex(value.as_bytes())), expected);
+    }
+    oracle.finish();
+    eprintln!(
+        "{count} fixed Connect JSON media-type selection HTTP cases; other protocols are not implemented here."
+    );
+}
+
 fn response_limits() -> file_rpc_response::Limits {
     file_rpc_response::Limits {
         wire_bytes: 65536,

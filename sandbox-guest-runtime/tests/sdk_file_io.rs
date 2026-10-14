@@ -4,7 +4,7 @@
 use axum::{
     Router,
     body::{Body, Bytes},
-    extract::{Path as RoutePath, State},
+    extract::State,
     http::{Request as HttpRequest, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
@@ -17,6 +17,7 @@ use sandproof_guest_runtime::{
 use sandproof_guest_service::{
     AccountPool, InitLimits, Metadata, MetadataSource, ServiceError, Session, SystemAccounts,
     file_io::{FileDispatchError, FilePool, RpcError},
+    file_rpc_http::{Error as HttpError, FileRpcHttp, Prepared},
     file_rpc_requests::{FileRpcRequests, Limits as RequestLimits},
     file_upload::HeaderLimits,
     files::{FileContextLimits, FileSettings},
@@ -46,9 +47,7 @@ impl MetadataSource for Meta {
 }
 struct Fixture {
     session: Session<Meta>,
-    accounts: AccountPool<SystemAccounts>,
-    files: FilePool,
-    requests: FileRpcRequests,
+    http: FileRpcHttp<Meta, SystemAccounts>,
     root: PathBuf,
     seen: AtomicUsize,
     rejected: AtomicUsize,
@@ -56,53 +55,17 @@ struct Fixture {
     username: String,
 }
 
-async fn rpc(
-    State(fixture): State<Arc<Fixture>>,
-    RoutePath(method): RoutePath<String>,
-    request: HttpRequest<Body>,
-) -> Response {
-    let admitted = fixture.requests.admit().unwrap();
-    let (parts, body) = request.into_parts();
-    let authenticated = admitted
-        .authenticate(&fixture.session, parts.headers)
-        .await
-        .unwrap();
-    let preparation = fixture
-        .files
-        .prepare_rpc(
-            authenticated,
-            &fixture.accounts,
-            FileSettings {
-                daemon_workdir: fixture.root.to_str().unwrap().into(),
-                limits: FileContextLimits {
-                    path_bytes: 4096,
-                    username_bytes: 64,
-                    authorization_bytes: 256,
-                },
-            },
-        )
-        .await;
-    let prepared = match preparation {
-        Ok(prepared) => prepared,
-        Err(failure) => {
-            assert!(failure.rejection().is_some());
-            fixture.rejected.fetch_add(1, Ordering::SeqCst);
-            return failure.into_response(response_limits()).await.unwrap();
-        }
-    };
-    // This fixture selects unary JSON; explicit accounts use real preflight.
-    // General protocol selection remains separate from this real preflight.
-    assert_eq!(prepared.headers()["content-type"], "application/json");
-    let request = match prepared.decode(&method, body).await {
-        Ok(request) => request,
-        Err(failure) => {
-            assert!(matches!(
-                failure.error(),
-                sandproof_guest_service::file_rpc_requests::Error::Version(_)
-                    | sandproof_guest_service::file_rpc_requests::Error::Timeout(_)
-            ));
-            fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
-            return failure.into_response(response_limits()).await.unwrap();
+async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
+    let request = match fixture.http.prepare(request).await.unwrap() {
+        Prepared::Ready(ready) => ready,
+        Prepared::Response(response) => {
+            if response.status() == StatusCode::UNAUTHORIZED {
+                fixture.rejected.fetch_add(1, Ordering::SeqCst);
+            } else {
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
+            }
+            return response;
         }
     };
     // This test fixture accepts only generated absolute paths, before the
@@ -122,15 +85,20 @@ async fn rpc(
         | Request::ListDir { path: p, .. } => inside(p),
     }
     fixture.seen.fetch_add(1, Ordering::SeqCst);
-    match request.execute(&fixture.accounts).await {
-        Ok(reply) => reply.into_response(response_limits()).await.unwrap(),
-        Err(failure) => {
-            if failure.rejection().is_some() {
+    match request.execute().await {
+        Ok(response) => {
+            if response.status() == StatusCode::UNAUTHORIZED {
                 fixture.rejected.fetch_add(1, Ordering::SeqCst);
-                return failure.into_response(response_limits()).await.unwrap();
+            } else {
+                assert_eq!(response.status(), StatusCode::OK);
             }
-            let RpcError::Dispatch(FileDispatchError::Operation(error)) = failure.error() else {
-                panic!("unexpected fixture admission/context failure: {failure:?}")
+            response
+        }
+        Err(failure) => {
+            let HttpError::Execution(RpcError::Dispatch(FileDispatchError::Operation(error))) =
+                failure.error()
+            else {
+                panic!("unexpected fixture HTTP dispatch failure: {failure:?}")
             };
             let status = match error {
                 sandproof_guest_runtime::filesystem::FileError::NotFound => StatusCode::NOT_FOUND,
@@ -229,46 +197,62 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         )
         .await
         .unwrap();
+    let accounts = AccountPool::local(
+        AccountLimits {
+            file_bytes: 65536,
+            groups: 128,
+        },
+        2,
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let files = FilePool::new(
+        2,
+        FileLimits {
+            path_bytes: 4096,
+            entries: 4,
+            retained_bytes: 65536,
+            visited: 1024,
+            xattr_bytes: 65536,
+            account_bytes: 65536,
+        },
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let requests = FileRpcRequests::new(RequestLimits {
+        in_flight: 2,
+        timeout: Duration::from_secs(5),
+        headers: HeaderLimits {
+            bytes: 4096,
+            fields: 32,
+        },
+        body: HttpBodyLimits {
+            total_bytes: 4096,
+            frame_bytes: 4096,
+            frames: 256,
+            trailer_bytes: 1024,
+            trailer_fields: 16,
+        },
+    })
+    .unwrap();
+    let http = FileRpcHttp::new(
+        session.clone(),
+        requests,
+        files,
+        accounts,
+        FileSettings {
+            daemon_workdir: root.to_str().unwrap().into(),
+            limits: FileContextLimits {
+                path_bytes: 4096,
+                username_bytes: 64,
+                authorization_bytes: 256,
+            },
+        },
+        response_limits(),
+    );
     Arc::new(Fixture {
         session,
-        accounts: AccountPool::local(
-            AccountLimits {
-                file_bytes: 65536,
-                groups: 128,
-            },
-            2,
-            Duration::from_secs(5),
-        )
-        .unwrap(),
-        files: FilePool::new(
-            2,
-            FileLimits {
-                path_bytes: 4096,
-                entries: 4,
-                retained_bytes: 65536,
-                visited: 1024,
-                xattr_bytes: 65536,
-                account_bytes: 65536,
-            },
-            Duration::from_secs(5),
-        )
-        .unwrap(),
-        requests: FileRpcRequests::new(RequestLimits {
-            in_flight: 2,
-            timeout: Duration::from_secs(5),
-            headers: HeaderLimits {
-                bytes: 4096,
-                fields: 32,
-            },
-            body: HttpBodyLimits {
-                total_bytes: 4096,
-                frame_bytes: 4096,
-                frames: 256,
-                trailer_bytes: 1024,
-                trailer_fields: 16,
-            },
-        })
-        .unwrap(),
+        http,
         root,
         seen: AtomicUsize::new(0),
         rejected: AtomicUsize::new(0),

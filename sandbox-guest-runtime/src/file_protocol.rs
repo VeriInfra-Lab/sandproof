@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::{ProtocolError, encode_json, null_default, parse, uint32};
 
+mod content_type;
+pub use content_type::{JsonContentType, json_content_type};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {
     Stat(String),

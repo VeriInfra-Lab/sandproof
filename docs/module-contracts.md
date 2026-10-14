@@ -419,7 +419,11 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 目录创建沿固定词法父路径逐级检查，新建或观察到创建竞争后设置目标归属，不修改原有目录权限。Move 先建立目的父目录，再 rename 并读取属性；失败可能已留下父目录或已完成重命名。ListDir 按固定 Go 的最多 255 次链接解析、零深度默认 1、词法深度优先顺序工作，不遍历子链接，返回路径保留请求别名；边界深度目录的读取失败仍可使调用失败。Remove 使用父目录句柄和不跟随最终链接的逐层打开/删除，删除链接本身；不把并发路径替换下的局部效果称作目录约束、快照或事务。缺失删除成功，其他失败/预算耗尽可留下部分删除；不得重放以消除丢失回复的不确定性。
 
-[一元请求准入](../sandbox-guest-service/src/file_rpc_requests.rs)在完整 HTTP 头已解析后立即占用共享有限名额，无等待队列。完整头预算先于受保护令牌快照；鉴权锁等待沿用准入时的绝对期限，取消不遗留读者。authenticate 与 decode 分成两个阶段，供外层协议及账户中间件衔接。固定 envd 的显式 Basic 账户查询在 Connect 解码之前，缺省账户在方法执行时查询；Linux [Basic 前置查询](../sandbox-guest-service/src/file_io/rpc/preflight.rs)已连接这两个阶段：prepare_rpc 在正文前预留文件槽位，显式用户先查账户，缺省/畸形 Basic 留到方法执行；PreparedRpc→ReadyRpc 保留同一个账户、设置、授权、原请求/文件槽位与较早期限，后续不刷新显式账户或再次准入。账户查询取消/超时、正文与解码失败沿用原责任，实际查询结束前仍持有授权。账户来源仍提前解析并验证 UID/GID/groups/home，不能据此声称与 Go user.Lookup 的所有失败顺序等价。已知缺失账户的固定 RPC 拒绝已连接；完整协议选择仍待接通，SDK 测试夹具仅使用 JSON，包含默认及显式账户。
+[一元 HTTP 编排](../sandbox-guest-service/src/file_rpc_http.rs)将五种固定路径接到同一准入、令牌快照、Basic 前置查询、解码、真实文件操作和有界回复。handle 执行整条组件链；prepare 返回已确定的拒绝响应或不可替换字段/授权/设置的 Ready，供受信任调用方在副作用前追加限制，Ready::execute 消费后只执行一次。路由之外不派发操作；未知选择、未映射请求/I/O 错误和回复准备失败保留原容量与较早期限，未准入失败没有伪造的请求所有权。克隆入口共享原池，Ready 的固定大小封装分配也归同一请求容量。该模块没有监听器、默认预算或通用 HTTP 错误兜底。
+
+该编排只选择 POST、identity 请求/响应以及已限长 UTF-8 Content-Type 的两种原 JSON codec：application/json 和带 charset=utf-8 的形式。复用原 Go MIME 参数规则（含引用、重复参数及 RFC 2231），成功回复保留规范化 charset；账户/版本/超时错误仍是原 application/json。方法、类型及编码只取第一字段，但全部字段先受完整头预算约束。原 Connect 的 gzip 响应协商按逗号/Unicode 空白和精确名称识别，不解析 q 权重；需要压缩或其他协议的请求返回未接通分类，不将它们当 identity 正文执行，也不冒称原实现一定返回 415。媒体类型可先分类，协议拒绝在显式 Basic 前置查询之后才交回；其他媒体类型、原始非 UTF-8 类型字段、压缩与完整失败映射仍待接通。
+
+[一元请求准入](../sandbox-guest-service/src/file_rpc_requests.rs)在完整 HTTP 头已解析后立即占用共享有限名额，无等待队列。完整头预算先于受保护令牌快照；鉴权锁等待沿用准入时的绝对期限，取消不遗留读者。authenticate 与 decode 分成两个阶段，供外层协议及账户中间件衔接。固定 envd 的显式 Basic 账户查询在 Connect 解码之前，缺省账户在方法执行时查询；Linux [Basic 前置查询](../sandbox-guest-service/src/file_io/rpc/preflight.rs)已连接这两个阶段：prepare_rpc 在正文前预留文件槽位，显式用户先查账户，缺省/畸形 Basic 留到方法执行；PreparedRpc→ReadyRpc 保留同一个账户、设置、授权、原请求/文件槽位与较早期限，后续不刷新显式账户或再次准入。账户查询取消/超时、正文与解码失败沿用原责任，实际查询结束前仍持有授权。账户来源仍提前解析并验证 UID/GID/groups/home，不能据此声称与 Go user.Lookup 的所有失败顺序等价。已知缺失账户的固定 RPC 拒绝和上述 JSON/identity 选择已连接；完整协议选择仍待接通，固定 SDK 包含默认及显式账户。
 
 decode 接受可信 framing 层尚未读取的 identity Body，使用精确 size hint 而不重读 Content-Length。实际长度、总量、帧数/帧长、trailer 数量/字节及合法结束全部校验；合法 JSON 后没有 HTTP EOF 仍是未完成。收集缓冲扩容不越过正文预算，原头、一个源帧、收集正文和解码字段可能重叠驻留，须分别计入请求峰值。只有完整输入才进入阻塞解码队列；未启动/已到期任务不解码，取消等待后仍在队列或执行的 worker 持有原授权与名额直至真实退出。成功的 Decoded 经 into_rpc 消费转入原文件编排，不改换已解码字段、授权或准入；失败对象保留名额，已结束的鉴权/读取不继续占读锁。
 
@@ -427,7 +431,7 @@ Connect-Timeout-Ms 在 decode 阶段按固定 v1.18.1 的第一字段规则读�
 
 版本和超时长度/语法拒绝通过 Failure::into_response 返回固定 400、`invalid_argument` JSON 和原 Connect 响应头。诊断只取已计入完整头预算的对应字段，Debug 不输出原值；Go `%q` 与 JSON 转义直接组合到有界输出，不先分配无限长错误字符串。响应/失败/字节副本保留原槽位与期限，过期失败不获得新期限。实际到期、帧/正文预算、传输和 JSON 解码错误仍只分类，不套用上述错误。调用方仍负责方法、媒体类型及压缩选择；本组件不代表完整 Connect/gRPC 协议协商，套接字/请求头读取、正式路由及完整失败策略仍待接通。
 
-[一元请求编排](../sandbox-guest-service/src/file_io/rpc.rs)接收已鉴权、已解码并限长的请求与调用方原名额/绝对期限，在账户查询之前预留一次文件池槽位。账户查询、路径解析和实际 I/O 共用较早的请求/池期限；Move 两个路径来自同次账户快照。取消/超时后尚未返回的账户查询继续持有原授权、请求名额和文件池槽位；阻塞文件任务实际开始前再查期限，已排队但过期的任务不开始副作用。已派发系统调用仍须实际返回，结果及分类错误保留原请求责任到调用方丢弃，实际 I/O 结束后不继续阻止初始化。低层入口不解析套接字、正文或 HTTP 头期限，不生成 RPC 错误文本；SDK 测试路由已迁移到上述准入→Basic 前置查询→解码→ReadyRpc::execute，原 execute_rpc 保留给已解码的低层组件调用；正式 RPC 路由及错误映射仍待接通，Linux 新组合待实跑。
+[一元请求编排](../sandbox-guest-service/src/file_io/rpc.rs)接收已鉴权、已解码并限长的请求与调用方原名额/绝对期限，在账户查询之前预留一次文件池槽位。账户查询、路径解析和实际 I/O 共用较早的请求/池期限；Move 两个路径来自同次账户快照。取消/超时后尚未返回的账户查询继续持有原授权、请求名额和文件池槽位；阻塞文件任务实际开始前再查期限，已排队但过期的任务不开始副作用。已派发系统调用仍须实际返回，结果及分类错误保留原请求责任到调用方丢弃，实际 I/O 结束后不继续阻止初始化。低层入口不解析套接字、正文或 HTTP 头期限，不生成 RPC 错误文本；SDK 测试路由通过上述 FileRpcHttp 的 prepare/execute 使用同一链路，保留临时路径限制；原 execute_rpc 保留给已解码的低层组件调用，正式监听器及完整错误映射仍待接通。
 
 [一元账户拒绝](../sandbox-guest-service/src/file_rpc_response/rejection.rs)只接收同一次查询观察到的缺失账户：显式 Basic 返回 `invalid username: '<name>'`，方法内默认账户返回 `invalid default user: '<name>'`，均为 401 和 `unauthenticated` JSON，无末尾换行。前者沿原 authn ErrorWriter，不宣告 Accept-Encoding；后者沿原 Connect handler，保留 gzip 请求解码声明。用户名仍受原输入预算约束，完整 Go JSON 转义另受 wire_bytes 约束；原始账户来源错误、密码和令牌不进入回执。无效文本、重复头、预算、不可用来源及其他 I/O 分类不伪造该 401。RpcFailure::into_response 消费观察与原容量/期限，正文副本及编码失败继续持有请求/文件槽位，已结束的账户查询不继续持有授权；已过期的失败不获得新期限。该映射限于调用方已选择的一元 JSON，不代表 gRPC、流协议或其他中间件失败相容；旧 execute_rpc 粗分类入口不补造诊断。
 
