@@ -240,8 +240,13 @@ async fn real_output_can_exceed_resident_buffer_many_times() {
                         .consume_output(identity, channel, bytes.len())
                         .unwrap();
                 }
-                CommandEvent::End { code, signal } => {
+                CommandEvent::End {
+                    code,
+                    signal,
+                    core_dumped,
+                } => {
                     assert_eq!((code, signal), (0, None));
+                    assert!(!core_dumped);
                     ended = true;
                 }
             }
@@ -481,7 +486,8 @@ async fn pidfd_signal_requires_actual_wait_and_pipe_drain_before_end() {
             end,
             Some(CommandEvent::End {
                 code: -1,
-                signal: Some(number)
+                signal: Some(number),
+                core_dumped: false,
             })
         );
         assert_eq!(process.next_event().await.unwrap(), None);

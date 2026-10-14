@@ -21,6 +21,7 @@ use sandproof_guest_service::{
     file_rpc_requests::{FileRpcRequests, Limits as RequestLimits},
     file_upload::HeaderLimits,
     files::{FileContextLimits, FileSettings},
+    listener::{Limits as ListenerLimits, Listener},
     upload_body::HttpBodyLimits,
 };
 use sha2::{Digest, Sha512};
@@ -34,6 +35,7 @@ use std::{
     time::Duration,
 };
 use tokio::{io::AsyncWriteExt, net::TcpListener, process::Command, sync::oneshot, time::timeout};
+use tower::ServiceExt;
 
 struct Meta;
 impl MetadataSource for Meta {
@@ -56,18 +58,34 @@ struct Fixture {
     gzip_requests: AtomicUsize,
     gzip_rejected: AtomicUsize,
     compression_rejected: AtomicUsize,
+    json_rejected: AtomicUsize,
+    token_rejected: AtomicUsize,
     username: String,
 }
 
-fn record_prepared_rejection(fixture: &Fixture, response: &Response, gzip_request: bool) {
+fn record_prepared_rejection(
+    fixture: &Fixture,
+    response: &Response,
+    gzip_request: bool,
+    json_request: bool,
+) {
     if response.status() == StatusCode::UNAUTHORIZED {
-        fixture.rejected.fetch_add(1, Ordering::SeqCst);
+        if response.headers()["content-type"] == "application/json; charset=utf-8" {
+            assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+            assert!(!response.headers().contains_key("accept-encoding"));
+            fixture.token_rejected.fetch_add(1, Ordering::SeqCst);
+        } else {
+            fixture.rejected.fetch_add(1, Ordering::SeqCst);
+        }
     } else if response.status() == StatusCode::NOT_IMPLEMENTED {
         assert!(!response.headers().contains_key("content-encoding"));
         fixture.compression_rejected.fetch_add(1, Ordering::SeqCst);
     } else {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        if gzip_request {
+        if json_request {
+            assert!(!response.headers().contains_key("content-encoding"));
+            fixture.json_rejected.fetch_add(1, Ordering::SeqCst);
+        } else if gzip_request {
             assert!(!response.headers().contains_key("content-encoding"));
             fixture.gzip_rejected.fetch_add(1, Ordering::SeqCst);
         } else {
@@ -77,6 +95,14 @@ fn record_prepared_rejection(fixture: &Fixture, response: &Response, gzip_reques
 }
 
 async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
+    let valid_token = request
+        .headers()
+        .get("x-access-token")
+        .is_some_and(|v| v == "fixture-token");
+    let json_request = request
+        .headers()
+        .get("x-fixture-json-error")
+        .is_some_and(|value| value == "true");
     let gzip_request = request
         .headers()
         .get("content-encoding")
@@ -94,10 +120,12 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
     let request = match fixture.http.prepare(request).await.unwrap() {
         Prepared::Ready(ready) => ready,
         Prepared::Response(response) => {
-            record_prepared_rejection(&fixture, &response, gzip_request);
+            record_prepared_rejection(&fixture, &response, gzip_request, json_request);
             return response;
         }
     };
+    assert!(!json_request, "invalid JSON reached file dispatch");
+    assert!(valid_token, "invalid access token reached file dispatch");
     // Only generated absolute paths and this literal unexpandable path enter
     // the shared component; no arbitrary relative/home path is admitted.
     let inside = |p: &str| {
@@ -300,6 +328,8 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         gzip_requests: AtomicUsize::new(0),
         gzip_rejected: AtomicUsize::new(0),
         compression_rejected: AtomicUsize::new(0),
+        json_rejected: AtomicUsize::new(0),
+        token_rejected: AtomicUsize::new(0),
         username,
     })
 }
@@ -344,11 +374,22 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
     let address = listener.local_addr().unwrap();
     let (stop, stopped) = oneshot::channel();
     let server = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async {
+        Listener::new(ListenerLimits {
+            connections: 32,
+            header_count: 64,
+            buffer_bytes: 16 * 1024,
+            header_timeout: Duration::from_secs(5),
+            connection_timeout: Duration::from_mins(1),
+        })
+        .unwrap()
+        .serve(
+            listener,
+            move |request| app.clone().oneshot(request),
+            async {
                 let _ = stopped.await;
-            })
-            .await
+            },
+        )
+        .await
     });
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let mut sdk = Command::new("uv")
@@ -379,11 +420,17 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap();
     let status = timeout(Duration::from_mins(1), sdk.wait()).await;
     let _ = stop.send(());
-    timeout(Duration::from_secs(5), server)
+    let report = timeout(Duration::from_secs(5), server)
         .await
         .expect("file fixture connection leak")
         .unwrap()
         .unwrap();
+    assert_eq!(report.refused, 0);
+    assert_eq!(report.failed, 0);
+    assert_eq!(report.expired, 0);
+    assert_eq!(report.completed, report.admitted);
+    assert!((1..=32).contains(&report.peak_connections));
+    eprintln!("Fixed file SDK passed through bounded HTTP/1 listener: {report:?}");
     assert!(status.expect("file SDK deadline").unwrap().success());
     check_results(directory.path(), &fixture, &missing_default);
 }
@@ -394,6 +441,8 @@ fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
     assert_eq!(fixture.gzip_requests.load(Ordering::SeqCst), 14);
     assert_eq!(fixture.gzip_rejected.load(Ordering::SeqCst), 10);
     assert_eq!(fixture.compression_rejected.load(Ordering::SeqCst), 4);
+    assert_eq!(fixture.json_rejected.load(Ordering::SeqCst), 8);
+    assert_eq!(fixture.token_rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
@@ -403,6 +452,8 @@ fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
         let dir = root.join(mode);
         assert!(!dir.join("gzip-refused").exists());
         assert!(!dir.join("encoding-refused").exists());
+        assert!(!dir.join("json-refused").exists());
+        assert!(!dir.join("token-refused").exists());
         assert!(!dir.join("path-refused").exists());
         assert!(!dir.join("auth-refused").exists());
         assert!(!dir.join("timeout-refused").exists());

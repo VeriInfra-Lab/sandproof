@@ -85,6 +85,7 @@ pub enum CommandEvent {
     End {
         code: i32,
         signal: Option<i32>,
+        core_dumped: bool,
     },
 }
 
@@ -409,6 +410,7 @@ impl CommandProcess {
                     return Ok(Some(CommandEvent::End {
                         code,
                         signal: self.waited.and_then(|s| s.signal()),
+                        core_dumped: self.waited.is_some_and(|s| s.core_dumped()),
                     }));
                 }
                 CommandOutcome::Failed(_) => return Err(io::Error::other("output stream failed")),

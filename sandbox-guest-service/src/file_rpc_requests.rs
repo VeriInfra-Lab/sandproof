@@ -263,8 +263,11 @@ impl Authenticated {
                         &cancelled,
                     )?;
                 }
-                let request = file_protocol::decode_request(method, &payload, limit)
-                    .map_err(Error::Protocol)?;
+                let request = file_protocol::decode_request_observed(method, &payload, limit)
+                    .map_err(|failure| match failure {
+                        file_protocol::DecodeFailure::Json(error) => Error::Json(error),
+                        file_protocol::DecodeFailure::Protocol(error) => Error::Protocol(error),
+                    })?;
                 drop(payload);
                 owned_body::check_active::<Error>(deadline, &cancelled)?;
                 Ok(Decoded {
@@ -341,6 +344,7 @@ pub enum Error {
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
+    Json(file_protocol::JsonError),
     Compression {
         stage: CompressionStage,
         error: GzipError,
@@ -361,7 +365,8 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
-/// Observed compression/version/timeout and known gzip errors have fixed responses.
+/// Actual token denials and observed compression/version/timeout/JSON and known
+/// gzip errors have fixed responses.
 /// Other classifications remain unmapped; no automatic replay.
 pub struct Failure {
     error: Error,
@@ -381,7 +386,11 @@ impl Failure {
     pub(crate) fn has_response(&self) -> bool {
         matches!(
             self.error,
-            Error::Version(_) | Error::Timeout(_) | Error::UnsupportedCompression(_)
+            Error::Authorization(ServiceError::Unauthenticated)
+                | Error::Version(_)
+                | Error::Timeout(_)
+                | Error::UnsupportedCompression(_)
+                | Error::Json(_)
         ) || self.gzip_rejection().is_some()
     }
     #[must_use]
@@ -393,8 +402,9 @@ impl Failure {
         self.deadline
     }
 
-    /// Consume a selected POST unary JSON failure and its original capacity.
-    /// Known compression/version/timeout/gzip errors use identity response encoding.
+    /// Consume a failure and its original capacity. Actual token denials use
+    /// the outer API JSON format; selected POST unary JSON protocol errors use
+    /// the Connect JSON format. Both use identity response encoding.
     /// # Errors
     /// Unmapped source failure, response budget, original expiry or lost worker.
     /// Every failure retains the original owner; no fresh deadline is granted.
@@ -403,6 +413,12 @@ impl Failure {
         limits: crate::file_rpc_response::Limits,
     ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
         use crate::file_rpc_response::{self, Rejection};
+        if matches!(
+            self.error,
+            Error::Authorization(ServiceError::Unauthenticated)
+        ) {
+            return self.into_authorization_response(limits, false).await;
+        }
         let gzip = self.gzip_rejection();
         let Self {
             error,
@@ -413,6 +429,7 @@ impl Failure {
             (Error::Version(error), _) => Rejection::Version(error),
             (Error::Timeout(error), _) => Rejection::Timeout(error),
             (Error::UnsupportedCompression(error), _) => Rejection::UnsupportedCompression(error),
+            (Error::Json(error), _) => Rejection::Json(error),
             (_, Some(error)) => Rejection::Gzip(error),
             (error, None) => {
                 return Err(file_rpc_response::Failure::unclassified(
@@ -422,6 +439,27 @@ impl Failure {
             }
         };
         file_rpc_response::rejected(rejection, limits, deadline, owner).await
+    }
+
+    /// Only the actual protected-session denial uses this pre-protocol format.
+    /// HEAD checks the full payload budget before suppressing its body.
+    pub(crate) async fn into_authorization_response(
+        self,
+        limits: crate::file_rpc_response::Limits,
+        head: bool,
+    ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
+        let Self {
+            error,
+            deadline,
+            _owner: owner,
+        } = self;
+        if error != Error::Authorization(ServiceError::Unauthenticated) {
+            return Err(crate::file_rpc_response::Failure::unclassified(
+                deadline,
+                Arc::new((error, owner)),
+            ));
+        }
+        crate::file_rpc_response::token::rejected(limits, deadline, owner, head).await
     }
 }
 impl fmt::Debug for Failure {

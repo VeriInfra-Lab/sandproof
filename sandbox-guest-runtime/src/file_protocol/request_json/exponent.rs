@@ -11,7 +11,7 @@ pub(super) enum Repair {
 }
 
 impl Repair {
-    pub(super) fn apply(self, token: &mut [u8]) {
+    pub(super) fn apply(self, token: &mut [u8], command: bool) {
         match self {
             Self::Bare => token[token.len() - 1] = b' ',
             Self::Signed => {
@@ -20,7 +20,14 @@ impl Repair {
                 // discarded fields still accept it. Do not reuse this adapter
                 // for schemas with signed/floating-point fields.
                 token.fill(b' ');
-                token[..2].copy_from_slice(b"-1");
+                if command {
+                    // Commands include signed enum integers. A fractional
+                    // sentinel is invalid for every known scalar in these
+                    // seven schemas, but still discarded in unknown fields.
+                    token[..3].copy_from_slice(b"0.1");
+                } else {
+                    token[..2].copy_from_slice(b"-1");
+                }
             }
         }
     }
