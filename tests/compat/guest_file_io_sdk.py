@@ -25,6 +25,8 @@ def cases(root):
         return pb.RemoveRequest(path=f'{root}/{name}')
     return [
         ('stat', stat('file'), 'file'),
+        ('stat', pb.StatRequest(path='~sandproof-other-311'), Code.INVALID_ARGUMENT),
+        ('move', pb.MoveRequest(source='~sandproof-other-311', destination=f'{root}/path-refused/dest'), Code.INVALID_ARGUMENT),
         ('remove', remove('dir/.'), Code.INTERNAL),
         ('remove', remove('file/child'), Code.INTERNAL),
         ('list_dir', pb.ListDirRequest(path=f'{root}/missing'), Code.NOT_FOUND),
@@ -51,12 +53,15 @@ def cases(root):
     ]
 
 
-def check(response, failure, expected, root, method=None, request=None):
+def check(response, failure, expected, root, method=None, request=None, username=None):
     if isinstance(expected, Code):
         assert isinstance(failure, ConnectError) and failure.code == expected, (failure, expected)
         assert response is None
         if expected != Code.RESOURCE_EXHAUSTED:
-            if method == 'stat':
+            if ((method == 'stat' and request.path.startswith('~')) or
+                    (method == 'move' and request.source.startswith('~'))):
+                message = f"failed to expand path '' for user '{username}': cannot expand user-specific home dir"
+            elif method == 'stat':
                 message = f'file not found: lstat {request.path}: no such file or directory'
             elif method == 'move':
                 message = f'source file not found: rename {request.source} {request.destination}: no such file or directory'
@@ -131,7 +136,7 @@ def run_sync(settings, root):
             response = getattr(client, method)(request, headers=HEADERS, timeout_ms=5000)
         except ConnectError as error:
             failure = error
-        check(response, failure, expected, root, method, request)
+        check(response, failure, expected, root, method, request, settings['username'])
 
     response = client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)
@@ -162,7 +167,7 @@ async def run_async(settings, root):
             response = await getattr(client, method)(request, headers=HEADERS, timeout_ms=5000)
         except ConnectError as error:
             failure = error
-        check(response, failure, expected, root, method, request)
+        check(response, failure, expected, root, method, request, settings['username'])
 
     response = await client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)
@@ -189,4 +194,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings, settings['root'] + '/sync')
         asyncio.run(run_async(settings, settings['root'] + '/async'))
-    print('guest real unary files: 48 sync/async file scenarios + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')
+    print('guest real unary files: 52 sync/async file scenarios + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')

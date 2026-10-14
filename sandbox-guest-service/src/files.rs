@@ -107,6 +107,42 @@ impl From<PathError> for ContextError {
     }
 }
 
+pub(crate) enum RpcContextError {
+    UnknownUser(crate::upload_response::UnknownUser),
+    Expansion(crate::upload_response::PathExpansion),
+    Context(ContextError),
+}
+impl From<ContextError> for RpcContextError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<SelectionError> for RpcContextError {
+    fn from(error: SelectionError) -> Self {
+        match error {
+            SelectionError::UnknownUser(user) => Self::UnknownUser(user),
+            SelectionError::Context(error) => Self::Context(error),
+        }
+    }
+}
+impl From<PathError> for RpcContextError {
+    fn from(error: PathError) -> Self {
+        match error {
+            PathError::Expansion(error) => Self::Expansion(error),
+            PathError::Context(error) => Self::Context(error),
+        }
+    }
+}
+impl From<RpcContextError> for ContextError {
+    fn from(error: RpcContextError) -> Self {
+        match error {
+            RpcContextError::UnknownUser(_) => Self::Unauthenticated,
+            RpcContextError::Expansion(_) => Self::InvalidArgument,
+            RpcContextError::Context(error) => error,
+        }
+    }
+}
+
 impl HttpFileSelection {
     pub(crate) fn check_input(&self, path: &str) -> Result<(), ContextError> {
         check_path_size(path, &self.settings)
@@ -151,6 +187,7 @@ impl AuthPermit {
     ) -> Result<FileContext, ContextError> {
         self.resolve_file_rpc_with_origin(request, headers, accounts, settings, None)
             .await
+            .map_err(Into::into)
     }
 
     pub(crate) async fn resolve_file_rpc_admitted<S: AccountSource>(
@@ -161,7 +198,7 @@ impl AuthPermit {
         settings: &FileSettings,
         deadline: tokio::time::Instant,
         owner: crate::owned_body::Owner,
-    ) -> Result<FileContext, ContextError> {
+    ) -> Result<FileContext, RpcContextError> {
         self.resolve_file_rpc_with_origin(
             request,
             headers,
@@ -181,7 +218,7 @@ impl AuthPermit {
         settings: &FileSettings,
         deadline: tokio::time::Instant,
         owner: crate::owned_body::Owner,
-    ) -> Result<FileContext, SelectionError> {
+    ) -> Result<FileContext, RpcContextError> {
         settings.validate()?;
         check_request_paths(request, settings)?;
         let account = file_account(
@@ -202,7 +239,7 @@ impl AuthPermit {
         accounts: &AccountPool<S>,
         settings: &FileSettings,
         origin: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
-    ) -> Result<FileContext, ContextError> {
+    ) -> Result<FileContext, RpcContextError> {
         settings.validate()?;
         check_request_paths(request, settings)?;
         let name = selected_user_with_limits(
@@ -213,6 +250,7 @@ impl AuthPermit {
         )?;
         let account = file_account(&name, accounts, settings, origin).await?;
         self.resolve_file_rpc_account(request, account, settings)
+            .map_err(Into::into)
     }
 
     pub(crate) fn resolve_file_rpc_account(
@@ -220,9 +258,16 @@ impl AuthPermit {
         request: &Request,
         account: Account,
         settings: &FileSettings,
-    ) -> Result<FileContext, ContextError> {
+    ) -> Result<FileContext, PathError> {
         check_request_paths(request, settings)?;
-        let path = |value: &str| self.file_path(value, &account, settings);
+        let path = |value: &str| {
+            resolve_file_path_detailed(
+                value,
+                self.defaults().workdir.as_deref(),
+                &account,
+                settings,
+            )
+        };
         let request = match request {
             Request::Stat(value) => Request::Stat(path(value)?),
             Request::MakeDir(value) => Request::MakeDir(path(value)?),
@@ -302,24 +347,6 @@ impl AuthPermit {
             settings: settings.clone(),
         })
     }
-
-    fn file_path(
-        &self,
-        path: &str,
-        account: &Account,
-        settings: &FileSettings,
-    ) -> Result<String, ContextError> {
-        resolve_file_path(path, self.defaults().workdir.as_deref(), account, settings)
-    }
-}
-
-fn resolve_file_path(
-    path: &str,
-    workdir: Option<&str>,
-    account: &Account,
-    settings: &FileSettings,
-) -> Result<String, ContextError> {
-    resolve_file_path_detailed(path, workdir, account, settings).map_err(Into::into)
 }
 
 fn resolve_file_path_detailed(

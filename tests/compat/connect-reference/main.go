@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/user"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -81,6 +82,17 @@ func main() {
 		}
 		return nil, authn.Errorf("invalid default user: '%s'", username)
 	}, connect.WithCodec(codec{})))
+	mux.Handle("/fixture.Filesystem/Expand", connect.NewUnaryHandler("/fixture.Filesystem/Expand", func(_ context.Context, req *connect.Request[payload]) (*connect.Response[payload], error) {
+		var input struct{ Name, Path, Default string }
+		if err := json.Unmarshal(*req.Msg, &input); err != nil {
+			panic(err)
+		}
+		_, err := originalExpandAndResolve(input.Path, &user.User{Username: input.Name, HomeDir: "/synthetic/home"}, &input.Default)
+		if err == nil {
+			panic("path reference requires an actual expansion rejection")
+		}
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}, connect.WithCodec(codec{})))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	client := server.Client()
@@ -147,6 +159,8 @@ func main() {
 			target, body = "/fixture.Filesystem/Explicit", []byte("invalid JSON")
 		case "U":
 			target, body = "/fixture.Filesystem/Default", []byte("{}")
+		case "X":
+			target = "/fixture.Filesystem/Expand"
 		case "H":
 			body = []byte("invalid JSON")
 		case "C":

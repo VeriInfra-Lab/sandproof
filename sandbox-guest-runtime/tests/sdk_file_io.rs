@@ -68,9 +68,14 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
             return response;
         }
     };
-    // This test fixture accepts only generated absolute paths, before the
-    // shared component resolves context or can perform any file operation.
-    let inside = |p: &str| assert!(Path::new(p).starts_with(&fixture.root) && !p.contains(".."));
+    // Only generated absolute paths and this literal unexpandable path enter
+    // the shared component; no arbitrary relative/home path is admitted.
+    let inside = |p: &str| {
+        assert!(
+            p == "~sandproof-other-311"
+                || (Path::new(p).starts_with(&fixture.root) && !p.contains(".."))
+        );
+    };
     match request.request() {
         Request::Move {
             source,
@@ -338,7 +343,10 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 50);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 54);
+    for client in ["sync", "async"] {
+        assert!(!directory.path().join(client).join("path-refused").exists());
+    }
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);

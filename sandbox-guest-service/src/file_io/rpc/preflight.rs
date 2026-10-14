@@ -8,7 +8,7 @@ use crate::{
     basic_auth,
     file_rpc_requests::{Authenticated, Decoded, Failure},
     file_rpc_response::Rejection,
-    files::{SelectionError, file_account},
+    files::{RpcContextError, SelectionError, file_account},
 };
 use axum::body::Body;
 use sandproof_guest_runtime::{accounts::Account, filesystem::FileLimits};
@@ -172,7 +172,7 @@ impl ReadyRpc {
             let auth = Arc::new(request.auth);
             let context = if let Some(account) = account {
                 auth.resolve_file_rpc_account(&request.request, account, &settings)
-                    .map_err(SelectionError::Context)
+                    .map_err(RpcContextError::from)
             } else {
                 auth.resolve_default_file_rpc_admitted(
                     &request.request,
@@ -184,11 +184,15 @@ impl ReadyRpc {
                 .await
             }
             .map_err(|error| match error {
-                SelectionError::UnknownUser(user) => {
+                RpcContextError::UnknownUser(user) => {
                     rejection = Some(Rejection::DefaultUser(user));
                     RpcError::Context(ContextError::Unauthenticated)
                 }
-                SelectionError::Context(error) => RpcError::Context(error),
+                RpcContextError::Expansion(error) => {
+                    rejection = Some(Rejection::PathExpansion(error));
+                    RpcError::Context(ContextError::InvalidArgument)
+                }
+                RpcContextError::Context(error) => RpcError::Context(error),
             })?;
             FilePool::dispatch_observed(auth, lease, deadline, move || {
                 filesystem::execute_detailed(

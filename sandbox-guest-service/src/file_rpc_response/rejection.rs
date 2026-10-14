@@ -4,7 +4,7 @@ use super::{Error, Failure, Limits, Owner, Response, StatusCode, send_encoded};
 use crate::{
     file_rpc_requests::{InvalidTimeout, InvalidVersion, TimeoutReason},
     go_json, go_quote,
-    upload_response::UnknownUser,
+    upload_response::{PathExpansion, UnknownUser},
 };
 use tokio::time::Instant;
 
@@ -14,9 +14,10 @@ pub enum Rejection {
     DefaultUser(UnknownUser),
     Version(InvalidVersion),
     Timeout(InvalidTimeout),
+    PathExpansion(PathExpansion),
 }
 
-/// Send an observed account/header failure for a selected unary JSON request
+/// Send an observed account/header/path failure for a selected unary JSON request
 /// with identity response encoding.
 /// Only the shared resolver constructs the bounded username observation; no
 /// arbitrary source error, password or token is included. Protocol selection
@@ -33,7 +34,9 @@ pub async fn rejected(
     let accepts_gzip = !matches!(rejection, Rejection::ExplicitUser(_));
     let status = match &rejection {
         Rejection::ExplicitUser(_) | Rejection::DefaultUser(_) => StatusCode::UNAUTHORIZED,
-        Rejection::Version(_) | Rejection::Timeout(_) => StatusCode::BAD_REQUEST,
+        Rejection::Version(_) | Rejection::Timeout(_) | Rejection::PathExpansion(_) => {
+            StatusCode::BAD_REQUEST
+        }
     };
     send_encoded(owner, limits, deadline, status, accepts_gzip, move || {
         payload(&rejection, limits.wire_bytes)
@@ -47,7 +50,7 @@ fn payload(rejection: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
             Rejection::ExplicitUser(_) | Rejection::DefaultUser(_) => {
                 br#"{"code":"unauthenticated","message":""#
             }
-            Rejection::Version(_) | Rejection::Timeout(_) => {
+            Rejection::Version(_) | Rejection::Timeout(_) | Rejection::PathExpansion(_) => {
                 br#"{"code":"invalid_argument","message":""#
             }
         })?;
@@ -55,6 +58,11 @@ fn payload(rejection: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
         // never allocate an unbounded intermediate quoted error message.
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match rejection {
+            Rejection::PathExpansion(error) => {
+                for part in error.rpc_parts() {
+                    message(part)?;
+                }
+            }
             Rejection::ExplicitUser(user) | Rejection::DefaultUser(user) => {
                 message(if matches!(rejection, Rejection::ExplicitUser(_)) {
                     b"invalid username: '"
@@ -88,5 +96,7 @@ fn payload(rejection: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     .map_err(|_| Error::ResponseLimit)
 }
 
+#[cfg(test)]
+mod path_tests;
 #[cfg(test)]
 mod tests;

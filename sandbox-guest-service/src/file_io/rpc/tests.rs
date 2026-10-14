@@ -374,3 +374,79 @@ async fn unary_response_uses_pool_clamped_deadline_and_keeps_both_slots_after_co
         assert!(root.path().join("created").is_dir());
     }
 }
+
+#[tokio::test]
+async fn direct_rpc_keeps_expansion_observation_and_request_slots() {
+    let root = tempfile::tempdir().unwrap();
+    let session = session().await;
+    let pool = super::super::tests::pool();
+    let (accounts, calls) = accounts(root.path(), None);
+    let (owner, requests) = request_owner();
+    let failure = pool
+        .execute_rpc(
+            request(
+                &session,
+                Request::Move {
+                    source: "~other".into(),
+                    destination: "partial/dest".into(),
+                },
+                Instant::now() + Duration::from_secs(30),
+                owner,
+            )
+            .await,
+            &accounts,
+            &settings(root.path()),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        failure.error(),
+        RpcError::Context(ContextError::InvalidArgument)
+    );
+    assert!(matches!(
+        failure.rejection(),
+        Some(crate::file_rpc_response::Rejection::PathExpansion(_))
+    ));
+    assert!(failure.fault().is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(!root.path().join("partial").exists());
+    assert_eq!(pool.slots.available_permits(), 0);
+    assert_eq!(requests.available_permits(), 0);
+    session
+        .initialize(br#"{"accessToken":"token"}"#)
+        .await
+        .unwrap();
+    drop(failure);
+    released(&pool, &requests).await;
+}
+
+#[tokio::test]
+async fn path_budget_failure_does_not_invent_an_expansion_rejection() {
+    let root = tempfile::tempdir().unwrap();
+    let session = session().await;
+    let pool = super::super::tests::pool();
+    let (accounts, calls) = accounts(root.path(), None);
+    let (owner, requests) = request_owner();
+    let failure = pool
+        .execute_rpc(
+            request(
+                &session,
+                Request::Stat(format!("~{}", "x".repeat(4096))),
+                Instant::now() + Duration::from_secs(30),
+                owner,
+            )
+            .await,
+            &accounts,
+            &settings(root.path()),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        failure.error(),
+        RpcError::Context(ContextError::ResourceExhausted)
+    );
+    assert!(failure.rejection().is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    drop(failure);
+    released(&pool, &requests).await;
+}

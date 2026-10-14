@@ -35,7 +35,7 @@ pub enum RpcError {
 
 /// Retains the request responsibility and, once reserved, the unary file slot.
 /// A timed-out/cancelled blocking worker can independently hold both as well.
-/// Only observed account or mapped I/O failures have fixed responses; other
+/// Only observed account/path or mapped I/O failures have fixed responses; other
 /// failures imply no HTTP status. No failure implies that I/O can be replayed.
 pub struct RpcFailure {
     error: RpcError,
@@ -55,7 +55,7 @@ impl RpcFailure {
         self.rejection.as_ref()
     }
 
-    /// Send a fixed account or observed file failure for a selected unary JSON
+    /// Send a fixed account/path or observed file failure for selected unary JSON
     /// request under the original request/file slots and deadline.
     /// # Errors
     /// Unmapped context/I/O failures remain classified, or bounded response
@@ -113,6 +113,7 @@ impl FilePool {
     ) -> Result<FileReply, RpcFailure> {
         let mut deadline = request.deadline;
         let mut owner = request.owner;
+        let mut rejection = None;
         let mut fault = None;
         let result = async {
             deadline = deadline.min(self.deadline().map_err(RpcError::Dispatch)?);
@@ -132,7 +133,13 @@ impl FilePool {
                     Arc::new((Arc::clone(&auth), Arc::clone(&lease))),
                 )
                 .await
-                .map_err(RpcError::Context)?;
+                .map_err(|error| match error {
+                    crate::files::RpcContextError::Expansion(error) => {
+                        rejection = Some(crate::file_rpc_response::Rejection::PathExpansion(error));
+                        RpcError::Context(ContextError::InvalidArgument)
+                    }
+                    other => RpcError::Context(other.into()),
+                })?;
             let limits = self.limits;
             Self::dispatch_observed(auth, lease, deadline, move || {
                 filesystem::execute_detailed(
@@ -153,7 +160,7 @@ impl FilePool {
         .await;
         result.map_err(|error| RpcFailure {
             error,
-            rejection: None,
+            rejection,
             fault,
             deadline,
             _owner: owner,

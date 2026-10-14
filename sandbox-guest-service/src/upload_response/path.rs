@@ -20,6 +20,14 @@ impl PathExpansion {
         ]
     }
 
+    pub(crate) fn rpc_parts(&self) -> [&[u8]; 3] {
+        [
+            b"failed to expand path '' for user '",
+            self.username.as_bytes(),
+            b"': cannot expand user-specific home dir",
+        ]
+    }
+
     #[cfg(any(target_os = "linux", test))]
     pub(crate) fn download_parts<'a>(&'a self, original: &'a str) -> [&'a [u8]; 5] {
         // Go assigns expand's empty error result to its local path. The outer
