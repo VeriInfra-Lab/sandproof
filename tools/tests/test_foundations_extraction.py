@@ -16,7 +16,7 @@ class FoundationsExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/foundations/translation.json').read_text())
 
     def test_real_checked_roots_are_present(self):
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 13)
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), 15)
 
     def test_destination_cannot_depend_on_the_checkout_or_another_output(self):
         for destination in ('/old-checkout/verification/aeneas/llbc/sandproof_foundations.llbc',
@@ -60,6 +60,39 @@ class FoundationsExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'root was not generated'):
             check(ROOT, self.llbc, inventory)
 
+    def test_retain_root_and_callback_cannot_become_opaque_or_disappear(self):
+        root_name = 'sandproof_foundations_extract::store_retain_above'
+        inventory = copy.deepcopy(self.inventory)
+        inventory['functions'] = [f for f in inventory['functions'] if f['rust_name'] != root_name]
+        with self.assertRaisesRegex(ValueError, 'root was not generated'):
+            check(ROOT, self.llbc, inventory)
+
+        inventory = copy.deepcopy(self.inventory)
+        callback = next(f for f in inventory['functions']
+                        if f['rust_name'].startswith(root_name + '::')
+                        and f['rust_name'].endswith('::call_mut'))
+        callback['is_opaque'] = True
+        with self.assertRaisesRegex(ValueError, 'owned body missing'):
+            check(ROOT, self.llbc, inventory)
+
+    def test_standard_library_sources_cannot_be_omitted_or_malformed(self):
+        read_text = Path.read_text
+        for change in ('missing', 'malformed'):
+            def changed_environment(path, *args, **kwargs):
+                value = read_text(path, *args, **kwargs)
+                if path == ROOT / 'verification/foundations-environment.json':
+                    environment = json.loads(value)
+                    if change == 'missing':
+                        environment['library_sources']['production'].pop('core/src/option.rs')
+                    else:
+                        environment['library_sources']['extraction']['alloc/src/vec/mod.rs'] = 'unchecked'
+                    return json.dumps(environment)
+                return value
+
+            with patch.object(Path, 'read_text', changed_environment):
+                with self.assertRaisesRegex(ValueError, 'source registry'):
+                    check(ROOT, self.llbc, self.inventory)
+
     def test_simultaneous_write_root_removal_cannot_reduce_coverage(self):
         read_text = Path.read_text
 
@@ -81,6 +114,7 @@ class FoundationsExtractionTests(unittest.TestCase):
             'sandproof_center_core::model::{sandproof_center_core::model::RetentionLane}::current',
             'sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy',
             'sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put',
+            'sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain',
         ):
             with self.subTest(name=name):
                 inventory = copy.deepcopy(self.inventory)

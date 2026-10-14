@@ -30,6 +30,14 @@ pub fn store_put(store: &mut sandbox_controller_core::Store<u64, u64>, key: u64,
     store.put(key, value);
 }
 
+pub fn store_retain_above(store: &mut sandbox_controller_core::Store<u64, u64>, floor: u64) {
+    store.retain(|_, value| *value > floor);
+}
+
+pub fn option_is_none_or(value: Option<u64>, floor: u64) -> bool {
+    value.is_none_or(|value| value > floor)
+}
+
 pub fn resource_add(left: Resources, right: Resources) -> Option<Resources> {
     left.checked_add(right)
 }

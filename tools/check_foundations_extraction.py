@@ -15,13 +15,16 @@ EXTERNALS = {
     "core::result::{core::result::Result<T, E>}::ok",
     "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
     "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
+    "alloc::vec::{alloc::vec::Vec<T>}::retain",
+    "core::option::{core::option::Option<T>}::is_none_or",
 }
 
 # A public root cannot disappear by removing it from both the Rust adapter and
 # extraction script. Each expansion is an explicit, reviewed coverage change.
 ROOTS = {
     "counter_from_u64", "counter_next", "counter_value", "lane_current",
-    "store_get_copy", "store_put", "resource_add", "resource_positive",
+    "store_get_copy", "store_put", "store_retain_above", "option_is_none_or",
+    "resource_add", "resource_positive",
     "resource_fits", "create_binding_valid", "identity_response",
     "retry_hint", "outcome_observation",
 }
@@ -47,6 +50,13 @@ def check(root, llbc, inventory):
     if inventory.get('crate') != crate:
         raise ValueError('unexpected extraction crate')
     environment = json.loads((root / 'verification/foundations-environment.json').read_text())
+    libraries = environment.get('library_sources', {})
+    source_paths = {'alloc/src/vec/mod.rs', 'core/src/option.rs'}
+    if (set(libraries) != {'production', 'extraction'}
+            or any(set(sources) != source_paths for sources in libraries.values())
+            or any(not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
+                   for sources in libraries.values() for digest in sources.values())):
+        raise ValueError('standard-library source registry is incomplete or malformed')
     targets = {target['key'] for target in llbc['translated']['target_information']}
     if targets != {environment['target']}:
         raise ValueError('extraction target does not match the frozen environment')
@@ -178,6 +188,13 @@ def main():
                 raise ValueError('production/extraction compiler differs from the frozen environment')
             if extraction_version != environment['extraction_compiler'] or cfg != environment['cfg']:
                 raise ValueError('extraction compiler/configuration differs from the frozen environment')
+            production_sysroot = subprocess.check_output(['rustc', '--print', 'sysroot'], text=True).strip()
+            for role, sysroot in (('production', production_sysroot), ('extraction', toolchain)):
+                library_root = Path(sysroot) / 'lib/rustlib/src/rust/library'
+                for relative, expected in environment['library_sources'][role].items():
+                    actual = hashlib.sha256((library_root / relative).read_bytes()).hexdigest()
+                    if actual != expected:
+                        raise ValueError(f'{role} standard-library source differs: {relative}')
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'V0 extraction audit failed: {error}', file=sys.stderr)
         return 1

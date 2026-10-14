@@ -24,6 +24,20 @@ def tablePut [DecidableEq K] (key : K) (value : V) : List (K × V) → List (K �
     if stored = key then (stored, value) :: rest
     else (stored, old) :: tablePut key value rest
 
+def tableRetain (keep : K → V → Bool) (entries : List (K × V)) : List (K × V) :=
+  entries.filter (fun entry => keep entry.1 entry.2)
+
+def tableRetainState (step : S → K → V → Bool × S)
+    (state : S) : List (K × V) → List (K × V) × S
+  | [] => ([], state)
+  | (key, value) :: rest =>
+    let (keep, next) := step state key value
+    let (tail, finalState) := tableRetainState step next rest
+    (if keep then (key, value) :: tail else tail, finalState)
+
+def tableDelete [DecidableEq K] (key : K) (entries : List (K × V)) : List (K × V) :=
+  tableRetain (fun stored _ => decide (stored ≠ key)) entries
+
 structure ResourceVector where
   instances : Nat
   cpu : Nat

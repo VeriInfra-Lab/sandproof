@@ -25,6 +25,8 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::lane_current \
   --start-from crate::store_get_copy \
   --start-from crate::store_put \
+  --start-from crate::store_retain_above \
+  --start-from crate::option_is_none_or \
   --start-from crate::resource_add \
   --start-from crate::resource_positive \
   --start-from crate::resource_fits \
