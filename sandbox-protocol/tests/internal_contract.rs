@@ -132,3 +132,26 @@ fn malformed_ids_fields_counters_and_counter_exhaustion_fail_closed() {
     encoded["node_generation"] = 0.into();
     assert!(serde_json::from_value::<NodeIdentity>(encoded).is_err());
 }
+
+#[test]
+fn private_counter_representation_keeps_wire_and_all_numeric_boundaries() {
+    for value in [1, 2, u64::MAX - 1, u64::MAX] {
+        let counter = PositiveCounter::try_from(value).unwrap();
+        assert_eq!(counter.get(), value);
+        let encoded = serde_json::to_string(&counter).unwrap();
+        assert_eq!(encoded, value.to_string());
+        assert_eq!(
+            serde_json::from_str::<PositiveCounter>(&encoded).unwrap(),
+            counter
+        );
+        let expected = value
+            .checked_add(1)
+            .ok_or(InternalError::InvalidCounter)
+            .and_then(PositiveCounter::try_from);
+        assert_eq!(counter.checked_next(), expected);
+        assert_eq!(counter.get(), value);
+    }
+    for malformed in ["0", "-1", "18446744073709551616", "1.0", "null", "\"1\""] {
+        assert!(serde_json::from_str::<PositiveCounter>(malformed).is_err());
+    }
+}

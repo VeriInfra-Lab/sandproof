@@ -174,7 +174,8 @@ impl WindowState {
 
     #[must_use]
     pub fn window(&self, id: WindowId) -> Option<&WindowRecord> {
-        self.open.iter().find(|record| record.id == id)
+        let index = self.open.iter().position(|record| record.id == id)?;
+        self.open.get(index)
     }
 
     /// Validate a persisted snapshot before reducing or trusting its views.
@@ -467,6 +468,27 @@ mod tests {
         assert_eq!(limits.max_open_windows(), 7);
         assert_eq!(limits.max_duration_ms(), 11);
         assert_eq!(WindowState::new(limits).limits(), limits);
+    }
+
+    #[test]
+    fn window_query_keeps_first_match_reference_and_missing_behavior() {
+        let mut state = fresh(4, 100);
+        let first = issue(&mut state, 1, 0, 50);
+        issue(&mut state, 2, 1, 50);
+        // Query behavior is preserved even for a malformed persisted shape;
+        // validation still rejects the duplicate before reduction.
+        let mut duplicate = state.open[0];
+        duplicate.tenant = TenantId(3);
+        state.open.push(duplicate);
+        assert_eq!(state.validate(), Err(WindowReject::InvalidState));
+        for id in [first, WindowId(1), WindowId(2), WindowId(u64::MAX)] {
+            let original = state.open.iter().find(|record| record.id == id);
+            assert_eq!(state.window(id), original);
+            if let (Some(actual), Some(expected)) = (state.window(id), original) {
+                assert!(std::ptr::eq(actual, expected));
+            }
+        }
+        assert_eq!(state.window(first).unwrap().tenant, TenantId(1));
     }
 
     #[test]
