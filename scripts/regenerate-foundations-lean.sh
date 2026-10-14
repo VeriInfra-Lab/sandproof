@@ -22,6 +22,7 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::counter_from_u64 \
   --start-from crate::counter_next \
   --start-from crate::counter_value \
+  --start-from crate::counter_into_u64 \
   --start-from crate::lane_current \
   --start-from crate::store_get_copy \
   --start-from crate::store_put \
@@ -30,6 +31,7 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::resource_add \
   --start-from crate::resource_positive \
   --start-from crate::resource_fits \
+  --start-from crate::resource_values \
   --start-from crate::create_binding_valid \
   --start-from crate::identity_response \
   --start-from crate::retry_hint \

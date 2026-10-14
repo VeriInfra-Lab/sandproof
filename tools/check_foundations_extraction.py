@@ -37,10 +37,10 @@ EXTERNALS = {
 # A public root cannot disappear by removing it from both the Rust adapter and
 # extraction script. Each expansion is an explicit, reviewed coverage change.
 ROOTS = {
-    "counter_from_u64", "counter_next", "counter_value", "lane_current",
+    "counter_from_u64", "counter_next", "counter_value", "counter_into_u64", "lane_current",
     "store_get_copy", "store_put", "store_retain_above", "option_is_none_or",
     "resource_add", "resource_positive",
-    "resource_fits", "create_binding_valid", "identity_response",
+    "resource_fits", "resource_values", "create_binding_valid", "identity_response",
     "retry_hint", "outcome_observation",
     "allocated_number", "center_allocated_number",
     "tenant_from_string", "tenant_from_str", "tenant_value", "tenant_into_string",
@@ -56,6 +56,8 @@ ROOTS = {
 }
 ROOT_MODULES = {'numeric', 'receipts'}
 REQUIRED_IDENTITY_CALLS = {
+    "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from",
+    "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values",
     "sandproof_protocol::valid_identifier",
     "sandproof_protocol::identifiers::parse_allocated_number",
     "sandproof_center_core::validation::number",
