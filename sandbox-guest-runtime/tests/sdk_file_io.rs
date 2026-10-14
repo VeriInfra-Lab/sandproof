@@ -3,21 +3,24 @@
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 use axum::{
     Router,
-    body::Bytes,
-    extract::{DefaultBodyLimit, Path as RoutePath, State},
-    http::{HeaderMap, StatusCode},
+    body::{Body, Bytes},
+    extract::{Path as RoutePath, State},
+    http::{Request as HttpRequest, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
 };
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
-    file_protocol::{Request, decode_request},
+    file_protocol::Request,
     filesystem::FileLimits,
 };
 use sandproof_guest_service::{
     AccountPool, InitLimits, Metadata, MetadataSource, ServiceError, Session, SystemAccounts,
-    file_io::{FileDispatchError, FilePool, RpcError, RpcRequest},
+    file_io::{FileDispatchError, FilePool, RpcError},
+    file_rpc_requests::{FileRpcRequests, Limits as RequestLimits},
+    file_upload::HeaderLimits,
     files::{FileContextLimits, FileSettings},
+    upload_body::HttpBodyLimits,
 };
 use sha2::{Digest, Sha512};
 use std::{
@@ -29,13 +32,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{
-    io::AsyncWriteExt,
-    net::TcpListener,
-    process::Command,
-    sync::{Semaphore, oneshot},
-    time::{Instant, timeout},
-};
+use tokio::{io::AsyncWriteExt, net::TcpListener, process::Command, sync::oneshot, time::timeout};
 
 struct Meta;
 impl MetadataSource for Meta {
@@ -51,7 +48,7 @@ struct Fixture {
     session: Session<Meta>,
     accounts: AccountPool<SystemAccounts>,
     files: FilePool,
-    requests: Arc<Semaphore>,
+    requests: FileRpcRequests,
     root: PathBuf,
     seen: AtomicUsize,
 }
@@ -59,21 +56,30 @@ struct Fixture {
 async fn rpc(
     State(fixture): State<Arc<Fixture>>,
     RoutePath(method): RoutePath<String>,
-    headers: HeaderMap,
-    body: Bytes,
+    request: HttpRequest<Body>,
 ) -> Response {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let owner = Arc::new(Arc::clone(&fixture.requests).try_acquire_owned().unwrap());
-    let request = decode_request(&method, &body, 4096).unwrap();
-    let auth = fixture
-        .session
-        .authorize(headers.get("x-access-token").and_then(|v| v.to_str().ok()))
+    let admitted = fixture.requests.admit().unwrap();
+    let (parts, body) = request.into_parts();
+    let authenticated = admitted
+        .authenticate(&fixture.session, parts.headers)
         .await
         .unwrap();
+    // This selected SDK fixture uses only JSON and the initialized default
+    // account. General protocol selection and explicit Basic-user middleware
+    // are separate obligations, not emulated by this test route.
+    assert_eq!(authenticated.headers()["content-type"], "application/json");
+    assert!(!authenticated.headers().contains_key("authorization"));
+    assert!(
+        authenticated
+            .headers()
+            .get("connect-protocol-version")
+            .is_none_or(|value| value.is_empty() || value == "1")
+    );
+    let request = authenticated.decode(&method, body).await.unwrap();
     // This test fixture accepts only generated absolute paths, before the
     // shared component resolves context or can perform any file operation.
     let inside = |p: &str| assert!(Path::new(p).starts_with(&fixture.root) && !p.contains(".."));
-    match &request {
+    match request.request() {
         Request::Move {
             source,
             destination,
@@ -90,13 +96,7 @@ async fn rpc(
     match fixture
         .files
         .execute_rpc(
-            RpcRequest {
-                auth,
-                request,
-                headers,
-                deadline,
-                owner,
-            },
+            request.into_rpc(),
             &fixture.accounts,
             &FileSettings {
                 daemon_workdir: fixture.root.to_str().unwrap().into(),
@@ -234,7 +234,22 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
             Duration::from_secs(5),
         )
         .unwrap(),
-        requests: Arc::new(Semaphore::new(2)),
+        requests: FileRpcRequests::new(RequestLimits {
+            in_flight: 2,
+            timeout: Duration::from_secs(5),
+            headers: HeaderLimits {
+                bytes: 4096,
+                fields: 32,
+            },
+            body: HttpBodyLimits {
+                total_bytes: 4096,
+                frame_bytes: 4096,
+                frames: 256,
+                trailer_bytes: 1024,
+                trailer_fields: 16,
+            },
+        })
+        .unwrap(),
         root,
         seen: AtomicUsize::new(0),
     })
@@ -247,7 +262,6 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
     let fixture = fixture(directory.path().to_owned()).await;
     let app = Router::new()
         .route("/filesystem.Filesystem/{method}", post(rpc))
-        .layer(DefaultBodyLimit::max(4096))
         .with_state(Arc::clone(&fixture));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

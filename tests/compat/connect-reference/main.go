@@ -64,6 +64,32 @@ func main() {
 	scanner.Buffer(make([]byte, 65536), 2<<20)
 	out := bufio.NewWriter(os.Stdout)
 	for scanner.Scan() {
+		if value, ok := strings.CutPrefix(scanner.Text(), "T\t"); ok {
+			raw, err := hex.DecodeString(value)
+			if err != nil {
+				panic(err)
+			}
+			// Same first-value, empty, ten-byte and strconv.ParseInt decisions
+			// as v1.18.1 protocol_connect.go SetTimeout, before context creation.
+			// Report parsed milliseconds; do not race a live wall-clock deadline.
+			switch {
+			case len(raw) == 0:
+				fmt.Fprintln(out, "NONE")
+			case len(raw) > 10:
+				fmt.Fprintln(out, "ERR\tlength")
+			default:
+				millis, err := strconv.ParseInt(string(raw), 10, 64)
+				if err != nil {
+					fmt.Fprintln(out, "ERR\tinvalid")
+				} else {
+					fmt.Fprintf(out, "OK\t%d\n", millis)
+				}
+			}
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
 		data, err := hex.DecodeString(scanner.Text())
 		if err != nil {
 			panic(err)

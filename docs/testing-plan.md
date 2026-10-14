@@ -95,7 +95,9 @@ SANDPROOF_GUEST_AUTH_REFERENCE=/absolute/path/to/auth-reference \
 
 [一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。新增[一元请求组合检查](../sandbox-guest-service/src/file_io/rpc/tests.rs)核对满额/到期先于账户查询、取消/到期后的账户与授权保留、Move 部分效果及结果/错误保留原名额；文件工作池另以单线程阻塞池和屏障核对排队到期不执行及运行中到期不提前归还请求所有权。新增候选只有 Linux 交叉静态检查，Linux 实跑待补。普通 Linux 基础检查与兼容入口执行这些组件。
 
-[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。夹具已迁移到同一 execute_rpc 编排；成功响应使用 FileReply::into_response 的有界编码、原期限和需求驱动正文，错误仍由原合成 Connect 测试映射在 Bytes 中保留实际失败所有者。该迁移 Linux 实跑待补，不计为固定 Go 错误对照。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
+[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。夹具已迁移到同一 FileRpcRequests→execute_rpc 编排，在原始 Body 提取后、正文读取前准入，再经受保护鉴权、有界正文解码和同一封装进入文件池；固定调用集只使用 JSON 与初始化的默认账户，不把显式 Basic 用户/通用协议选择模拟为通过。成功响应使用 FileReply::into_response 的有界编码、原期限和需求驱动正文，错误仍由原合成 Connect 测试映射在 Bytes 中保留实际失败所有者。该迁移 Linux 实跑待补，不计为固定 Go 错误对照。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
+
+[一元准入与正文检查](../sandbox-guest-service/src/file_rpc_requests/tests.rs)覆盖非法配置、共享池无排队、全头/鉴权拒绝、排队写锁下的鉴权取消/到期、已知与未知长度、逐帧/总量/trailer 预算、错误帧与不完整 EOF、完整 JSON 后等待 EOF、结果/失败保留名额，以及到期解码 worker 仍在单阻塞线程队列时保留授权与名额。使用实际锁、通道屏障和可推进时钟，取消后的初始化须能完成；这些可移植检查已本地运行。复用固定 Connect 参考工具，另将原 SetTimeout 的空值/长度判断和 Go strconv.ParseInt 决策投影成解析结果，比较 533 个有限向量（含正负号、十字节边界、非 ASCII 和每个字节）；该对照不创建真实请求期限、不靠 1 ms 竞速，也不代表完整 Connect 头/错误相容。定向执行见下方，显式参考不计为普通 CI 自动执行。
 
 [一元响应检查](../sandbox-guest-service/src/file_rpc_response/tests.rs)在 macOS/Linux 使用同一原文件 JSON 编码器，覆盖三个响应形状、编码边界/转义膨胀、原期限、背压、最后字节副本、取消编码 worker 及失败对象的容量保留。共享纯命令/文件协议测试也可移植执行，新增 Vec 扩容不越过线长预算的检查。Linux 一元组合另检查真实 mkdir 完成后编码超限、实际池期限先于原请求期限、初始化不被结果保留阻塞，以及到期正文副本继续持有请求/文件两个槽位；此新增 Linux 组合与 SDK 迁移尚未实跑，不用可移植测试代替。
 
@@ -106,6 +108,8 @@ SANDPROOF_GUEST_AUTH_REFERENCE=/absolute/path/to/auth-reference \
   -mod=readonly -trimpath -buildvcs=false -o /absolute/path/to/connect-reference .)
 SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference \
   cargo test -p sandproof-guest-service --locked --lib file_rpc_response -- --include-ignored --nocapture
+SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference \
+  cargo test -p sandproof-guest-service --locked --lib file_rpc_requests -- --include-ignored --nocapture
 cargo test -p sandproof-guest-runtime --locked --test protocol --test file_protocol
 ```
 
