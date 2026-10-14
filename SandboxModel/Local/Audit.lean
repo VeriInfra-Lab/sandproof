@@ -24,6 +24,17 @@ import SandboxModel.ProofAuditCommand
 #audit_controller_proof SandboxModel.Local.Creation.effect_insert_model
 #audit_controller_proof SandboxModel.Local.Creation.initial_effect_insert_realizable
 
+#audit_controller_proof SandboxModel.Local.Creation.record_identity_exact
+#audit_controller_proof SandboxModel.Local.Creation.record_identity_view
+#audit_controller_proof SandboxModel.Local.Creation.record_identity_refines
+#audit_controller_proof SandboxModel.Local.Creation.resource_index_exact
+#audit_controller_proof SandboxModel.Local.Creation.resource_index_view
+#audit_controller_proof SandboxModel.Local.Creation.initial_plan_exact
+#audit_controller_proof SandboxModel.Local.Creation.initial_plan_view
+#audit_controller_proof SandboxModel.Local.Creation.ledger_view
+#audit_controller_proof SandboxModel.Local.Creation.store_new_operation_refines
+#audit_controller_proof SandboxModel.Local.Creation.initial_operation_store_realizable
+
 #audit_controller_proof SandboxModel.Local.Runtime.crash_exact
 #audit_controller_proof SandboxModel.Local.Runtime.recover_exact
 #audit_controller_proof SandboxModel.Local.Runtime.update_view

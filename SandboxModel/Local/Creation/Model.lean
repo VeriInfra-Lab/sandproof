@@ -82,6 +82,13 @@ def plan (world : model.World) (input : request.CreateRequest) : model.Operation
   retry_limit := 3, sealed := false
 }
 
+/-- Register the complete creation operation and its original resource plan.
+    Other fields are unchanged; existing keys use ordered first replacement. -/
+def storeOperation (world : model.World) (input : request.CreateRequest) : model.World :=
+  {world with
+    operations := ⟨tablePut (operationKey input) (ledger input) world.operations.entries⟩,
+    operation_plans := ⟨tablePut (operationKey input) (plan world input) world.operation_plans.entries⟩}
+
 def initialEffect (input : request.CreateRequest) : model.EffectId :=
   ⟨⟨.InstallFence input.sandbox 1 false⟩, 0⟩
 
