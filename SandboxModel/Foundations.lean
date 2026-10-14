@@ -12,6 +12,7 @@ import SandboxModel.Foundations.Evidence
 import SandboxModel.Foundations.Composition
 import SandboxModel.Foundations.Observations
 import SandboxModel.Foundations.Identifiers
+import SandboxModel.Foundations.ErrorMessages
 import SandboxModel.Foundations.AllocatedNumbers
 import SandboxModel.Foundations.NumberCompleteness
 import SandboxModel.Foundations.Numeric

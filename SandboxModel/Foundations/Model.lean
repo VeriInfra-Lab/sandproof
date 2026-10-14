@@ -13,6 +13,15 @@ def makeCounter (n : Nat) : Option Nat :=
 def nextCounter (n : Nat) : Option Nat :=
   if n < maxCounter then some (n + 1) else none
 
+inductive InternalFailure where
+  | invalidCounter | unsupportedVersion | bindingMismatch
+  deriving DecidableEq
+
+def internalFailureMessage : InternalFailure → String
+  | .invalidCounter => "invalid or exhausted internal counter"
+  | .unsupportedVersion => "unsupported internal protocol"
+  | .bindingMismatch => "internal binding mismatch"
+
 -- First-match query semantics, including duplicate keys. Mutation/uniqueness
 -- and representation by an abstract map are separate module obligations.
 def tableLookup [DecidableEq K] (key : K) : List (K × V) → Option V

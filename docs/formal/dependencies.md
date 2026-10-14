@@ -82,7 +82,11 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 可计算实现见 [IdentifierLibrary](../../verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean)、[TypesExternal](../../verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean) 与既有 FunsExternal。Bytes 保存尚未消费的字节；格式缓冲区是明确的输出字符串，不使用无观察内容的类型替代。UTF-8 字符串/字节往返引理由 Lean 内核检查；这些定义与固定 Rust 标准库符合仍是显式 A6 条件，不等于标准库本身已证明。
 
-两版标准库的字符串、字节迭代、解析、布尔与格式源码摘要在同一环境清单登记并实查。生产/抽取编译器、目标、翻译器和 Lean 未改变；标准库来源、模型或默认格式实例变化后，重查构造/取值/规范编号、完整身份输入域及其调用闭包。调用方还须建立有效 Rust UTF-8/有限值、成功分配和后端表示条件，不从纯正常返回定理推出 OOM/abort 可恢复。
+内部错误文本子树另使用默认 **String-backed** `Formatter::write_str`：在有效 UTF-8、可表示的字符串缓冲及正常分配域内追加完整文本；`ToString` 仍调用原 Display 并保留其结果，外层失败继续传播，Display 返回格式错误时对应原 panic。模型不保证任意 `fmt::Write` 设备成功，不声明物理 OOM/abort 可恢复，也不覆盖格式标志、浮点、Serde Error/Expected 或最终 JSON 错误行列。真实自有 `InternalError::fmt` 的三分支及文字由生产源码抽取，不能以库合同假定它们正确。无效 UTF-8 的数学 Str 位于合法 Rust str 域外，模型返回外层失败，不将其改成成功的空文本。此接口属于固定内置模型绑定，原 23 个非内置函数的清单不减少。
+
+本模块的字面量构造包装仍委托同版 `Aeneas.Std.toStr`，保持同一文本、字节及 U32 长度前提，只显式传入内核检查的范围证明，不使用其默认本机求值证明参数；不得手改生成代码或放宽公理审计。新增其它字面量或模型引用后须重新检查实际生成定义、范围证明及依赖闭包，不能以包装自身无公理代替调用根的审计。
+
+两版标准库的字符串、字节迭代、解析、布尔、格式及 `Result::expect` 源码摘要在同一环境清单登记并实查。`ToString` 的格式错误经 `expect` 进入原 panic，仅对应失败类别，不声明 panic 消息、栈展开或进程恢复。生产/抽取编译器、目标、翻译器和 Lean 未改变；标准库来源、模型或默认格式实例变化后，重查构造/取值/规范编号、完整身份输入域及其调用闭包。调用方还须建立有效 Rust UTF-8/有限值、成功分配和后端表示条件，不从纯正常返回定理推出 OOM/abort 可恢复。
 
 V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议规范编号解析与中心实际包装；不是将这些自有行为作为外部假设。中心恢复中完整 `CenterState::is_valid`、存储身份恢复、JSON 自有字段访问及全部调用资格仍分别属于未闭合连接。Serde/serde_json 的整套编解码不纳入本合同：将 `from_slice/to_vec<ControlIdentity>` 整体设成不透明，即使翻译成功也不能计作自有字段往返已证。
 
