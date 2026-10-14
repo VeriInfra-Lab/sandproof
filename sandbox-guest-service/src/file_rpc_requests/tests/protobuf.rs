@@ -180,12 +180,10 @@ fn original_generated_file_request_decoding_matches_values_and_rejections() {
         }
     }
     for number in numbers() {
-        // The fixed Go tokenizer also accepts a bare exponent marker directly
-        // before a delimiter. Track that malformed-JSON gap separately below.
-        if number == "1e" {
-            continue;
-        }
         check("ListDir", format!(r#"{{"depth":{number}}}"#).as_bytes());
+    }
+    for (method, body) in exponent_messages() {
+        check(method, &body);
     }
     // Every individual raw byte in both a known and a discarded string, plus
     // discarded object keys. Invalid UTF-8 cannot become a replacement character.
@@ -206,8 +204,8 @@ fn original_generated_file_request_decoding_matches_values_and_rejections() {
 }
 
 #[test]
-#[ignore = "explicit original Connect malformed-number gap; set SANDPROOF_GUEST_CONNECT_REFERENCE"]
-fn original_generated_bare_exponent_gap_remains_explicit() {
+#[ignore = "explicit original Connect malformed-number reference; set SANDPROOF_GUEST_CONNECT_REFERENCE"]
+fn original_generated_bare_exponents_match_known_and_discarded_fields() {
     let mut oracle = Reference::from_env("SANDPROOF_GUEST_CONNECT_REFERENCE");
     for (body, observed) in [
         (r#"{"depth":1e}"#, "OK\t\t1\t\t"),
@@ -221,14 +219,72 @@ fn original_generated_bare_exponent_gap_remains_explicit() {
             observed,
         );
         assert_eq!(
-            file_protocol::decode_request("ListDir", body.as_bytes(), body.len()),
-            Err(ProtocolError::InvalidArgument)
+            observation(file_protocol::decode_request(
+                "ListDir",
+                body.as_bytes(),
+                body.len()
+            )),
+            observed
         );
     }
     oracle.finish();
     eprintln!(
-        "4 known malformed-exponent differences remain; not approved compatibility exceptions or parity results."
+        "4 previously recorded malformed-exponent gaps now match the original Connect decoder."
     );
+}
+
+fn exponent_messages() -> Vec<(&'static str, Vec<u8>)> {
+    let mut cases = Vec::new();
+    for mantissa in [
+        "0",
+        "-0",
+        "0.0",
+        "-0.000",
+        "1",
+        "1.5",
+        "1.00",
+        "4294967295",
+        "4294967296",
+        "1000000000000000000000000",
+        "-1",
+        "01",
+        "+1",
+        "1.",
+        "-.0",
+    ] {
+        for exponent in ["e", "E", "e+", "e-", "e0", "e+0", "e-0", "ee", "e_"] {
+            let number = format!("{mantissa}{exponent}");
+            for gap in ["", " ", "\t", "\r\n"] {
+                for body in [
+                    format!(r#"{{"depth":{number}{gap}}}"#),
+                    format!(r#"{{"depth":{number}{gap},"path":"p"}}"#),
+                    format!(r#"{{"depth":{number}{gap}"path":"p"}}"#),
+                    format!(r#"{{"future":{number}{gap}}}"#),
+                    format!(r#"{{"future":[{number}{gap}]}}"#),
+                    format!(r#"{{"future":{{"n":{number}{gap}}}}}"#),
+                    format!(r#"{{"path":{number}{gap}}}"#),
+                ] {
+                    cases.push(("ListDir", body.into_bytes()));
+                }
+            }
+            cases.push((
+                "ListDir",
+                format!(r#"{{"depth":{}}}"#, serde_json::to_string(&number).unwrap()).into_bytes(),
+            ));
+            for key in ["source", "destination"] {
+                cases.push(("Move", format!(r#"{{"{key}":{number}}}"#).into_bytes()));
+            }
+        }
+    }
+    for byte in 0..=255 {
+        for (prefix, suffix) in [
+            (b"{\"depth\":1e".as_slice(), b"}".as_slice()),
+            (b"{\"future\":[0e+", b"]}"),
+        ] {
+            cases.push(("ListDir", [prefix, &[byte], suffix].concat()));
+        }
+    }
+    cases
 }
 
 #[tokio::test]
@@ -243,6 +299,14 @@ async fn protobuf_decoding_retains_original_admission_deadline_and_failure_capac
                 depth: 100,
             }),
         ),
+        (
+            r#"{"future":0e+,"depth":1e}"#,
+            Ok(Request::ListDir {
+                path: String::new(),
+                depth: 1,
+            }),
+        ),
+        (r#"{"depth":0e+}"#, Err(ProtocolError::InvalidArgument)),
         (
             r#"{"future":"\ud800"}"#,
             Err(ProtocolError::InvalidArgument),

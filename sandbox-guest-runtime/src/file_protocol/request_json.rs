@@ -3,16 +3,21 @@
 use crate::protocol::ProtocolError;
 use serde::{Deserialize, Deserializer, de};
 use serde_json::value::RawValue;
+use std::borrow::Cow;
+
+mod exponent;
 
 /// Serde's iterative ignored-value parser checks JSON syntax, but deliberately
 /// skips UTF-8/surrogate validation and does not enforce a nesting limit. Check
 /// every string and container first, including discarded fields. This scan is
-/// iterative; its only temporary allocation is the current escaped string's
-/// decoder scratch, bounded by the already admitted body. No Value tree is built.
+/// iterative; string scratch is bounded by the already admitted body. Bare
+/// exponent tokens accepted by the fixed Go tokenizer are normalized in one
+/// lazy copy of exactly the input length. No Value tree is built.
 /// The fixed protobuf default allows 10,000 containers including the message.
-pub(super) fn validate(body: &[u8]) -> Result<(), ProtocolError> {
+pub(super) fn prepare(body: &[u8]) -> Result<Cow<'_, [u8]>, ProtocolError> {
     let mut offset = 0;
     let mut depth = 0_usize;
+    let mut normalized = None;
     while let Some(byte) = body.get(offset) {
         match byte {
             b'"' => {
@@ -34,13 +39,22 @@ pub(super) fn validate(body: &[u8]) -> Result<(), ProtocolError> {
             b']' | b'}' => {
                 depth = depth.checked_sub(1).ok_or(ProtocolError::InvalidArgument)?;
             }
+            b'-' | b'0'..=b'9' => {
+                let (length, repair) = exponent::scan(&body[offset..]);
+                if let Some(repair) = repair {
+                    let output = normalized.get_or_insert_with(|| body.to_vec());
+                    repair.apply(&mut output[offset..offset + length]);
+                }
+                offset += length;
+                continue;
+            }
             _ => {}
         }
         offset += 1;
     }
     // Object shape, matching brackets, numeric syntax, duplicates and trailing
     // input are checked by the typed decoder immediately after this scan.
-    Ok(())
+    Ok(normalized.map_or(Cow::Borrowed(body), Cow::Owned))
 }
 
 struct CheckedString;
@@ -125,5 +139,36 @@ fn exact_uint32(number: &str) -> Option<u32> {
             return None;
         }
         integer[..end].parse().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_numbers_borrow_and_compatibility_copy_stays_within_original_body_size() {
+        for number in ["1e2", "1.25e2", "-0", "4294967295"] {
+            let body = format!(r#"{{"depth":{number},"path":"1e+"}}"#);
+            assert!(matches!(
+                prepare(body.as_bytes()).unwrap(),
+                Cow::Borrowed(_)
+            ));
+        }
+        for count in [1, 17, 4096, 65536] {
+            let body = format!(
+                r#"{{"future":{}e+,"depth":1e,"path":"1e+"}}"#,
+                "1".repeat(count)
+            );
+            let Cow::Owned(prepared) = prepare(body.as_bytes()).unwrap() else {
+                panic!("normalization copy required")
+            };
+            assert_eq!(prepared.len(), body.len());
+            assert_eq!(prepared.capacity(), body.len());
+            let value: serde_json::Value = serde_json::from_slice(&prepared).unwrap();
+            assert_eq!(value["future"], -1);
+            assert_eq!(value["depth"], 1);
+            assert_eq!(value["path"], "1e+");
+        }
     }
 }

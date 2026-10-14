@@ -57,7 +57,8 @@ pub fn decode_request(method: &str, body: &[u8], limit: usize) -> Result<Request
     if !matches!(method, "Stat" | "MakeDir" | "Remove" | "ListDir" | "Move") {
         return Err(ProtocolError::Unimplemented);
     }
-    request_json::validate(body)?;
+    let prepared = request_json::prepare(body)?;
+    let body = prepared.as_ref();
     match method {
         "Stat" => Ok(Request::Stat(parse::<PathRequest>(body)?.path)),
         "MakeDir" => Ok(Request::MakeDir(parse::<PathRequest>(body)?.path)),

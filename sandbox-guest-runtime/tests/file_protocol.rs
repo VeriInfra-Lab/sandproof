@@ -293,6 +293,67 @@ fn depth_preserves_exact_decimal_integer_semantics_without_float_rounding() {
 }
 
 #[test]
+fn incomplete_exponents_match_fixed_number_tokens_without_repairing_strings_or_structure() {
+    for (value, expected) in [
+        ("1e", 1),
+        ("-0E", 0),
+        ("1.000e", 1),
+        ("4294967295E", u32::MAX),
+    ] {
+        let body = format!("{{\"depth\":{value}}}");
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Ok(Request::ListDir {
+                path: String::new(),
+                depth: expected
+            })
+        );
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len() - 1),
+            Err(ProtocolError::ResourceExhausted)
+        );
+    }
+    for value in ["1e+", "1e-", "-0e+", "1.5e", "4294967296e"] {
+        let body = format!("{{\"depth\":{value}}}");
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Err(ProtocolError::InvalidArgument)
+        );
+        let body = format!("{{\"future\":[{value}],\"path\":\"1e+\"}}");
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len()),
+            Ok(Request::Stat("1e+".into()))
+        );
+    }
+    for body in [
+        r#"{"depth":"1e"}"#,
+        r#"{"depth":01e}"#,
+        r#"{"future":1.e}"#,
+        r#"{"future":1e+_}"#,
+        r#"{"future":1e+"#,
+        r#"{"future":1e "path":"p"}"#,
+        r#"{"depth":1e,"depth":null}"#,
+    ] {
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Err(ProtocolError::InvalidArgument),
+            "{body}"
+        );
+    }
+    for depth in [9999, 10_000] {
+        let body = format!(
+            "{{\"future\":{}1e+{}}}",
+            "[".repeat(depth),
+            "]".repeat(depth)
+        );
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len()).is_ok(),
+            depth == 9999
+        );
+    }
+}
+
+#[test]
 fn byte_budgets_reject_before_decoding_and_never_emit_a_partial_response() {
     let body = br#"{"path":"x"}"#;
     assert_eq!(
