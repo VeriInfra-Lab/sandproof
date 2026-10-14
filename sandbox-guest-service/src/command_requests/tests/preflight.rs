@@ -9,6 +9,9 @@ use sandproof_guest_runtime::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "start.rs"]
+mod start;
+
 struct Accounts(Arc<AtomicUsize>);
 impl AccountSource for Accounts {
     fn lookup(&self, name: &str) -> Result<Account, AccountError> {

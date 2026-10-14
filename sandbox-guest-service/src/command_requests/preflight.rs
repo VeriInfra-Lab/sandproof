@@ -6,13 +6,13 @@ use std::sync::Arc;
 
 pub struct Prepared {
     authenticated: Authenticated,
-    // Preserve the exact explicit account for future Start context composition.
+    // Preserve the exact explicit account for Start context composition.
     // PID operations don't switch credentials or refresh this lookup.
     account: Option<Account>,
 }
 pub struct Ready {
     pub(super) decoded: Decoded,
-    pub(super) _account: Option<Account>,
+    pub(super) account: Option<Account>,
 }
 impl Authenticated {
     /// Resolve only an explicit Basic username before decoding. Absent or
@@ -99,7 +99,7 @@ impl Prepared {
                 .authenticated
                 .decode(method, body, protocol_deadline)
                 .await?,
-            _account: self.account,
+            account: self.account,
         })
     }
 }

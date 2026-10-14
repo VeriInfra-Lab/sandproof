@@ -14,6 +14,13 @@ pub struct Reply {
     deadline: Instant,
 }
 impl Reply {
+    pub(super) fn streaming(body: Body, deadline: Instant) -> Self {
+        Self {
+            body,
+            stream: true,
+            deadline,
+        }
+    }
     #[must_use]
     pub const fn is_stream(&self) -> bool {
         self.stream
@@ -30,8 +37,8 @@ impl Reply {
 impl Ready {
     /// Consume one authenticated, decoded request and dispatch to the original
     /// PID capability only. Each later request must repeat token/Basic preflight.
-    /// Start and tag selectors remain unsupported by this component pending the
-    /// separate launch/tag assembly. A successful control reply is not an exit
+    /// Start uses the separate `start_pid` entry; tag selectors remain unsupported
+    /// pending their policy/assembly. A successful control reply is not an exit
     /// receipt. Cancellation of a write may follow a delivered prefix.
     /// # Errors
     /// Expiry, unsupported operation, missing/unknown PID, I/O or response budget.
@@ -57,11 +64,7 @@ impl Ready {
                     .into_body(owner.clone(), limits, deadline)
                     .map_err(Error::Response)?;
                 check_deadline(deadline)?;
-                return Ok(Reply {
-                    body,
-                    stream: true,
-                    deadline,
-                });
+                return Ok(Reply::streaming(body, deadline));
             }
             let bytes = match request {
                 Request::List => registry

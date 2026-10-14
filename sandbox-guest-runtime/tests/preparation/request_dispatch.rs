@@ -20,6 +20,9 @@ use sandproof_guest_service::{
 };
 use serde_json::{Value, json};
 
+#[path = "start_dispatch.rs"]
+mod start;
+
 struct NoLookup;
 impl AccountSource for NoLookup {
     fn lookup(&self, _: &str) -> Result<Account, AccountError> {

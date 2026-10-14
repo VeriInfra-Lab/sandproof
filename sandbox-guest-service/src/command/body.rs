@@ -19,6 +19,19 @@ pub struct CommandBodyLimits {
     /// Idle time after downstream releases a frame. Must be positive.
     pub keepalive: Duration,
 }
+impl CommandBodyLimits {
+    pub(crate) fn validate(self, now: Instant) -> Result<(), CommandBodyError> {
+        if self.message_bytes == 0
+            || self.message_bytes > u32::MAX as usize
+            || self.message_bytes > isize::MAX as usize - 5
+            || self.keepalive.is_zero()
+            || now.checked_add(self.keepalive).is_none()
+        {
+            return Err(CommandBodyError::InvalidArgument);
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandBodyError {
@@ -94,14 +107,7 @@ impl CommandSubscription {
         deadline: Instant,
     ) -> Result<Body, CommandBodyError> {
         let now = Instant::now();
-        if limits.message_bytes == 0
-            || limits.message_bytes > u32::MAX as usize
-            || limits.message_bytes > isize::MAX as usize - 5
-            || limits.keepalive.is_zero()
-            || now.checked_add(limits.keepalive).is_none()
-        {
-            return Err(CommandBodyError::InvalidArgument);
-        }
+        limits.validate(now)?;
         if deadline <= now {
             return Err(CommandBodyError::DeadlineExceeded);
         }

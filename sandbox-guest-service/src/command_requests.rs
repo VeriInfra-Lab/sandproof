@@ -26,9 +26,13 @@ mod dispatch;
 #[cfg(target_os = "linux")]
 mod preflight;
 #[cfg(target_os = "linux")]
+mod start;
+#[cfg(target_os = "linux")]
 pub use dispatch::Reply;
 #[cfg(target_os = "linux")]
 pub use preflight::{Prepared, Ready};
+#[cfg(target_os = "linux")]
+pub use start::StartPreparation;
 #[cfg(test)]
 mod tests;
 
@@ -254,10 +258,12 @@ pub enum Error {
     #[cfg(target_os = "linux")]
     Registry(crate::command::RegistryError),
     #[cfg(target_os = "linux")]
+    Registration(crate::command::RegistrationError),
+    #[cfg(target_os = "linux")]
     Command(crate::command::CommandError),
     #[cfg(target_os = "linux")]
     Response(crate::command::CommandBodyError),
-    /// Start/tag selection are not wired by this PID-only component.
+    /// Wrong dispatch entry or a tag requiring the unselected tag policy.
     UnsupportedOperation,
 }
 impl crate::owned_body::Failure for Error {
