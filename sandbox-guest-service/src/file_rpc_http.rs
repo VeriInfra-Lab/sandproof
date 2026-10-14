@@ -41,6 +41,7 @@ pub struct Ready<M, S> {
     inner: Arc<Inner<M, S>>,
     operation: ReadyRpc,
     codec: JsonContentType,
+    encoding: file_rpc_response::Encoding,
 }
 impl<M, S> Clone for FileRpcHttp<M, S> {
     fn clone(&self) -> Self {
@@ -116,6 +117,7 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
         // the original explicit Basic middleware must still run first.
         let codec = authenticated.json_codec();
         let selection = authenticated.select_http(&parts.method, codec);
+        let encoding = file_rpc_requests::response_encoding(authenticated.headers());
         let prepared = match inner
             .files
             .prepare_rpc(authenticated, &inner.accounts, inner.settings.clone())
@@ -160,6 +162,7 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
             inner: self.inner.clone(),
             operation: ready,
             codec,
+            encoding,
         })))
     }
 }
@@ -183,11 +186,12 @@ impl<M: MetadataSource, S: AccountSource> Ready<M, S> {
             inner,
             operation,
             codec,
+            encoding,
         } = self;
         match operation.execute(&inner.accounts).await {
             Ok(reply) => {
                 let mut response = reply
-                    .into_response(inner.response)
+                    .into_response_with_encoding(inner.response, encoding)
                     .await
                     .map_err(Failure::response)?;
                 response

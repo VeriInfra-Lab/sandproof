@@ -26,6 +26,8 @@ mod selection;
 mod timeout;
 mod version;
 pub use selection::SelectionError;
+#[cfg(any(target_os = "linux", test))]
+pub(crate) use selection::response_encoding;
 pub use timeout::{InvalidTimeout, TimeoutReason};
 pub use version::InvalidVersion;
 #[cfg(test)]
@@ -198,7 +200,7 @@ impl Authenticated {
     }
 
     /// Decode a selected POST unary JSON file method after Basic middleware and
-    /// HTTP/codec/compression selection (identity request and response here).
+    /// HTTP/codec/compression selection (identity request; response is separate).
     /// The trusted HTTP framing layer supplies the unconsumed Body; an exact
     /// size hint is its length, never a reparse of Content-Length. Applies the
     /// fixed Connect timeout now, capped by the admission's original deadline.

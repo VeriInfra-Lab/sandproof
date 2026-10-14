@@ -302,7 +302,7 @@ async fn route_auth_protocol_and_account_rejections_do_not_read_body_or_mutate_f
             }
             5 => {
                 req.headers_mut()
-                    .insert("accept-encoding", "gzip".parse().unwrap());
+                    .insert("content-encoding", "br".parse().unwrap());
             }
             6 => {
                 req.headers_mut()
@@ -347,8 +347,7 @@ async fn route_auth_protocol_and_account_rejections_do_not_read_body_or_mutate_f
                 )),
                 2 => Error::Selection(SelectionError::Method),
                 3 => Error::Selection(SelectionError::ContentType),
-                4 => Error::Selection(SelectionError::RequestCompression),
-                _ => Error::Selection(SelectionError::ResponseCompression),
+                _ => Error::Selection(SelectionError::RequestCompression),
             };
             assert_eq!(failure.error(), &expected);
             assert!(!format!("{failure:?}").contains("private body"));
@@ -627,5 +626,6 @@ async fn failed_error_encoding_keeps_original_deadline_and_created_move_parent()
 mod reference;
 
 mod directory;
+mod gzip;
 mod path;
 mod remove;

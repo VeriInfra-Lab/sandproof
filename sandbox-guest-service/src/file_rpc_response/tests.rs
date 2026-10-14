@@ -6,6 +6,8 @@ use http_body_util::BodyExt;
 use std::{collections::BTreeMap, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+mod gzip;
+
 enum Records {
     One(Entry),
     Many(Vec<Entry>),
@@ -266,24 +268,32 @@ async fn cancelled_encoding_worker_retains_original_records_until_it_actually_re
             .unwrap();
         view(&records.retained)
     }
-    let slots = Arc::new(Semaphore::new(1));
-    let (entered, started) = tokio::sync::oneshot::channel();
-    let (resume, resumed) = std::sync::mpsc::channel();
-    let records = Arc::new(Gated {
-        retained: Retained {
-            records: Records::One(entry()),
-            _slot: Arc::clone(&slots).try_acquire_owned().unwrap(),
-        },
-        entered: Mutex::new(Some(entered)),
-        resume: Mutex::new(resumed),
-    });
-    let task = tokio::spawn(send(records, gated_view, limits(), deadline()));
-    started.await.unwrap();
-    task.abort();
-    assert!(task.await.unwrap_err().is_cancelled());
-    assert_eq!(slots.available_permits(), 0);
-    resume.send(()).unwrap();
-    released(slots).await;
+    for encoding in [Encoding::Identity, Encoding::Gzip] {
+        let slots = Arc::new(Semaphore::new(1));
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (resume, resumed) = std::sync::mpsc::channel();
+        let records = Arc::new(Gated {
+            retained: Retained {
+                records: Records::One(entry()),
+                _slot: Arc::clone(&slots).try_acquire_owned().unwrap(),
+            },
+            entered: Mutex::new(Some(entered)),
+            resume: Mutex::new(resumed),
+        });
+        let task = tokio::spawn(send_with_encoding(
+            records,
+            gated_view,
+            limits(),
+            deadline(),
+            encoding,
+        ));
+        started.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(slots.available_permits(), 0);
+        resume.send(()).unwrap();
+        released(slots).await;
+    }
 }
 
 #[tokio::test]

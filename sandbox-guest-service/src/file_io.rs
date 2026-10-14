@@ -76,12 +76,22 @@ impl FileReply {
         self,
         limits: crate::file_rpc_response::Limits,
     ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
+        self.into_response_with_encoding(limits, crate::file_rpc_response::Encoding::Identity)
+            .await
+    }
+
+    pub(crate) async fn into_response_with_encoding(
+        self,
+        limits: crate::file_rpc_response::Limits,
+        encoding: crate::file_rpc_response::Encoding,
+    ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
         let deadline = self.deadline;
-        crate::file_rpc_response::send(
+        crate::file_rpc_response::send_with_encoding(
             Arc::new(self),
             |reply| reply.response.as_wire(),
             limits,
             deadline,
+            encoding,
         )
         .await
     }

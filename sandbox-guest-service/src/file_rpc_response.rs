@@ -1,4 +1,4 @@
-//! Identity JSON unary replies, charged to their already admitted records.
+//! Bounded JSON unary replies, charged to their already admitted records.
 //! Fixed account/header rejections share the same owned JSON response transport.
 //! Request admission and protocol negotiation remain separate.
 use crate::owned_body::{self, OwnedBody, Owner, Payload};
@@ -14,12 +14,15 @@ mod rejection;
 pub use rejection::{Rejection, rejected};
 mod io;
 pub use io::io_failure;
+mod compression;
+pub use compression::Encoding;
 
 #[cfg(test)]
 mod tests;
 
-/// The record budget is separate. Encoding retains at most this JSON payload
-/// plus one bounded transmission chunk, under the original request capacity.
+/// The record budget is separate. Identity retains this JSON payload plus one
+/// transmission chunk. Gzip preparation additionally retains at most `wire_bytes`
+/// compressed bytes and its fixed codec workspace, under original capacity.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     pub wire_bytes: usize,
@@ -95,15 +98,39 @@ pub async fn send<T: Send + Sync + 'static>(
     limits: Limits,
     deadline: Instant,
 ) -> Result<Response, Failure> {
+    send_with_encoding(records, view, limits, deadline, Encoding::Identity).await
+}
+
+/// Encode successful records with the already selected unary response encoding.
+/// Fixed Connect has no minimum gzip size here; errors use the separate identity
+/// JSON sender. Raw JSON and compressed bytes each obey the configured cap.
+/// # Errors
+/// Invalid limits, encoding/compression limits, expiry or lost worker. A failed
+/// response never authorizes replaying the completed filesystem operation.
+pub async fn send_with_encoding<T: Send + Sync + 'static>(
+    records: Arc<T>,
+    view: for<'a> fn(&'a T) -> file_protocol::Response<'a>,
+    limits: Limits,
+    deadline: Instant,
+    encoding: Encoding,
+) -> Result<Response, Failure> {
     let owner: Owner = records.clone();
-    send_encoded(owner, limits, deadline, StatusCode::OK, true, move || {
-        file_protocol::encode_response(view(&records), limits.wire_bytes).map_err(|error| {
-            match error {
-                ProtocolError::ResourceExhausted => Error::ResponseLimit,
-                _ => Error::Encoding,
-            }
-        })
-    })
+    send_encoded_with_encoding(
+        owner,
+        limits,
+        deadline,
+        StatusCode::OK,
+        true,
+        encoding,
+        move || {
+            file_protocol::encode_response(view(&records), limits.wire_bytes).map_err(|error| {
+                match error {
+                    ProtocolError::ResourceExhausted => Error::ResponseLimit,
+                    _ => Error::Encoding,
+                }
+            })
+        },
+    )
     .await
 }
 
@@ -115,6 +142,27 @@ async fn send_encoded(
     accepts_gzip: bool,
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Failure> {
+    send_encoded_with_encoding(
+        owner,
+        limits,
+        deadline,
+        status,
+        accepts_gzip,
+        Encoding::Identity,
+        encode,
+    )
+    .await
+}
+
+async fn send_encoded_with_encoding(
+    owner: Owner,
+    limits: Limits,
+    deadline: Instant,
+    status: StatusCode,
+    accepts_gzip: bool,
+    encoding: Encoding,
+    encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Failure> {
     let result = async {
         if limits.wire_bytes == 0
             || limits.chunk_bytes == 0
@@ -123,8 +171,12 @@ async fn send_encoded(
         {
             return Err(Error::InvalidConfiguration);
         }
-        let (length, body) = OwnedBody::start(deadline, Arc::clone(&owner), move |_, _| {
+        let (length, body) = OwnedBody::start(deadline, Arc::clone(&owner), move |_, cancelled| {
             let bytes = encode()?;
+            let bytes = match encoding {
+                Encoding::Identity => bytes,
+                Encoding::Gzip => compression::compress(&bytes, limits, deadline, &cancelled)?,
+            };
             Ok((bytes.len(), Payload::new(bytes, limits.chunk_bytes)))
         })
         .await?;
@@ -133,6 +185,11 @@ async fn send_encoded(
         response
             .headers_mut()
             .insert("content-type", HeaderValue::from_static("application/json"));
+        if encoding == Encoding::Gzip {
+            response
+                .headers_mut()
+                .insert("content-encoding", HeaderValue::from_static("gzip"));
+        }
         // The Connect handler advertises its request decoder. authn's outer
         // ErrorWriter does not pass through that handler and adds no such header.
         if accepts_gzip {

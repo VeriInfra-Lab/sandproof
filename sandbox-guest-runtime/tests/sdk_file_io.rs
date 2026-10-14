@@ -52,10 +52,15 @@ struct Fixture {
     seen: AtomicUsize,
     rejected: AtomicUsize,
     header_rejected: AtomicUsize,
+    gzip_responses: AtomicUsize,
     username: String,
 }
 
 async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
+    let wants_gzip = request
+        .headers()
+        .get("accept-encoding")
+        .is_some_and(|v| v == "gzip");
     let request = match fixture.http.prepare(request).await.unwrap() {
         Prepared::Ready(ready) => ready,
         Prepared::Response(response) => {
@@ -92,6 +97,14 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     match request.execute().await {
         Ok(response) => {
+            if wants_gzip {
+                if response.status() == StatusCode::OK {
+                    assert_eq!(response.headers()["content-encoding"], "gzip");
+                    fixture.gzip_responses.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    assert!(!response.headers().contains_key("content-encoding"));
+                }
+            }
             if response.status() == StatusCode::UNAUTHORIZED {
                 fixture.rejected.fetch_add(1, Ordering::SeqCst);
             } else {
@@ -258,6 +271,7 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         seen: AtomicUsize::new(0),
         rejected: AtomicUsize::new(0),
         header_rejected: AtomicUsize::new(0),
+        gzip_responses: AtomicUsize::new(0),
         username,
     })
 }
@@ -343,7 +357,8 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 54);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 58);
+    assert_eq!(fixture.gzip_responses.load(Ordering::SeqCst), 2);
     for client in ["sync", "async"] {
         assert!(!directory.path().join(client).join("path-refused").exists());
     }

@@ -140,6 +140,14 @@ def run_sync(settings, root):
 
     response = client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)
+    for path, expected in [('dir/a/child', 'child'), ('missing', Code.NOT_FOUND)]:
+        request = pb.StatRequest(path=f'{root}/{path}')
+        response, failure = None, None
+        try:
+            response = client.stat(request, headers={**HEADERS, 'accept-encoding': 'gzip'}, timeout_ms=5000)
+        except ConnectError as error:
+            failure = error
+        check(response, failure, expected, root, 'stat', request, settings['username'])
     for target, headers, message in account_cases(settings):
         selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
         try:
@@ -171,6 +179,14 @@ async def run_async(settings, root):
 
     response = await client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)
+    for path, expected in [('dir/a/child', 'child'), ('missing', Code.NOT_FOUND)]:
+        request = pb.StatRequest(path=f'{root}/{path}')
+        response, failure = None, None
+        try:
+            response = await client.stat(request, headers={**HEADERS, 'accept-encoding': 'gzip'}, timeout_ms=5000)
+        except ConnectError as error:
+            failure = error
+        check(response, failure, expected, root, 'stat', request, settings['username'])
     for target, headers, message in account_cases(settings):
         selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
         try:
@@ -194,4 +210,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings, settings['root'] + '/sync')
         asyncio.run(run_async(settings, settings['root'] + '/async'))
-    print('guest real unary files: 52 sync/async file scenarios + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')
+    print('guest real unary files: 56 sync/async file scenarios (including 4 gzip negotiation cases) + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')

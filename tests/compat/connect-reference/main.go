@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -96,6 +97,7 @@ func main() {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	client := server.Client()
+	client.Transport.(*http.Transport).DisableCompression = true
 	defer client.CloseIdleConnections()
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 65536), 2<<20)
@@ -154,6 +156,11 @@ func main() {
 			panic(err)
 		}
 		target, body := path, data
+		var compression struct {
+			Accept []string
+			Data   string
+			Error  bool
+		}
 		switch mode {
 		case "A":
 			target, body = "/fixture.Filesystem/Explicit", []byte("invalid JSON")
@@ -161,6 +168,17 @@ func main() {
 			target, body = "/fixture.Filesystem/Default", []byte("{}")
 		case "X":
 			target = "/fixture.Filesystem/Expand"
+		case "G":
+			if err := json.Unmarshal(data, &compression); err != nil {
+				panic(err)
+			}
+			body, err = hex.DecodeString(compression.Data)
+			if err != nil {
+				panic(err)
+			}
+			if compression.Error {
+				target = "/fixture.Filesystem/Expand"
+			}
 		case "H":
 			body = []byte("invalid JSON")
 		case "C":
@@ -173,6 +191,12 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
+		if mode == "G" {
+			req.Header.Del("Accept-Encoding")
+			for _, value := range compression.Accept {
+				req.Header.Add("Accept-Encoding", value)
+			}
+		}
 		if mode == "C" {
 			req.Header.Set("Content-Type", string(data))
 		} else if mode == "A" {
@@ -212,6 +236,28 @@ func main() {
 		}
 		if err := res.Body.Close(); err != nil {
 			panic(err)
+		}
+		if mode == "G" {
+			// Compare semantic gzip completion, never DEFLATE implementation bytes.
+			if length := res.Header.Get("Content-Length"); length != "" {
+				if length != strconv.Itoa(len(responseBody)) {
+					panic("invalid response length")
+				}
+				res.Header.Set("Content-Length", "valid")
+			}
+			if res.Header.Get("Content-Encoding") == "gzip" {
+				reader, err := gzip.NewReader(bytes.NewReader(responseBody))
+				if err != nil {
+					panic(err)
+				}
+				responseBody, err = io.ReadAll(reader)
+				if err != nil {
+					panic(err)
+				}
+				if err := reader.Close(); err != nil {
+					panic(err)
+				}
+			}
 		}
 		if mode == "C" {
 			selected := "OTHER"
