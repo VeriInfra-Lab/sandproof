@@ -142,17 +142,13 @@ fn defaults_presence_and_oneofs_do_not_change_execution_intent() {
 #[test]
 fn malformed_fields_never_fall_back_to_another_operation() {
     for (method, value) in [
-        ("Start", json!({"process": {"command": "/bin/sh"}})),
         ("Start", json!({"stdin": "false"})),
         ("Start", json!({"pty": {"size": {"rows": -1}}})),
-        ("Start", json!({"envs": {"SECRET": "do not echo"}})),
         ("Connect", json!({"process": {"pid": 1, "tag": "other"}})),
         ("Connect", json!({"process": {"pid": 4_294_967_296_u64}})),
         ("Connect", json!({"process": {"pid": -1}})),
         ("SendInput", json!({"input": {"stdin": "", "pty": ""}})),
         ("SendInput", json!({"input": {"stdin": "not base64"}})),
-        ("SendSignal", json!({"signal": "SIGKILL"})),
-        ("List", json!({"unexpected": "value"})),
         ("List", json!(null)),
         ("List", json!([])),
         ("Start", json!([null, null, null, false])),

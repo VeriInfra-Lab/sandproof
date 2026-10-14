@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::{ProtocolError, encode_json, null_default, parse};
 
-mod request_json;
+pub(crate) mod request_json;
 use request_json::uint32;
 mod diagnosis;
 pub use diagnosis::{JsonError, JsonField, JsonReason};

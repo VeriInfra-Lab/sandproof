@@ -1,6 +1,6 @@
 // Original Connect HTTP transport pinned by envd f455fd58fa3f289e78ce1de690c35968d8d29322.
-// Transport modes use a passthrough JSON codec. P/J/K use original generated
-// messages and the default codec for property/request observations. No mode
+// Transport modes use a passthrough JSON codec. P/J/K/O/Q use original generated
+// messages and the default codec for property/command observations. No mode
 // here executes real file operations or a complete envd compatibility test.
 package main
 
@@ -71,6 +71,7 @@ func main() {
 	registerProperties(mux)
 	registerRequests(mux)
 	registerCommandResponses(mux)
+	registerCommandRequests(mux)
 	// The envd account failure observation is controlled here. Both wrappers
 	// below are the original authn/Connect implementation, not a replacement.
 	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
@@ -168,6 +169,8 @@ func main() {
 			Error  bool
 		}
 		switch mode {
+		case "Q":
+			target, body = commandRequestEndpoint(data)
 		case "O":
 			target, body, commandStream = commandResponseEndpoint(data)
 		case "J", "K":
@@ -269,6 +272,13 @@ func main() {
 		}
 		if mode == "O" {
 			fmt.Fprintln(out, commandResponseObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "Q" {
+			fmt.Fprintln(out, commandRequestObservation(res.StatusCode, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}
