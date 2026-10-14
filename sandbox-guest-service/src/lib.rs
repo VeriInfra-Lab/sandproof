@@ -6,6 +6,7 @@
 //! not certify authorization or readiness.
 
 pub mod command_requests;
+mod connect_timeout;
 pub mod file_authorization;
 pub mod file_download;
 pub mod file_encoding;

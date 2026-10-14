@@ -2,6 +2,9 @@ use axum::http::HeaderMap;
 use std::{fmt, time::Duration};
 use tokio::time::Instant;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TimeoutReason {
     TooLong,
@@ -55,6 +58,19 @@ pub(super) fn parse(value: &[u8]) -> Result<Option<i64>, TimeoutReason> {
         .iter()
         .fold(0_i64, |n, byte| n * 10 + i64::from(byte - b'0'));
     Ok(Some(if negative { -millis } else { millis }))
+}
+
+// The fixed Start handler uses a background process context and only attaches
+// a timeout for a positive duration. The outer Connect context must separately
+// refuse zero/negative request deadlines BEFORE invoking any command effects.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn execution_duration(headers: &HeaderMap) -> Result<Option<Duration>, TimeoutReason> {
+    let value = headers
+        .get("connect-timeout-ms")
+        .map_or(b"".as_slice(), |value| value.as_bytes());
+    Ok(parse(value)?
+        .filter(|millis| *millis > 0)
+        .map(|millis| Duration::from_millis(millis.unsigned_abs())))
 }
 
 pub(super) fn deadline(

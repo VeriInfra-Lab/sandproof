@@ -24,8 +24,8 @@ use tokio::{
 
 mod compression;
 mod selection;
+use crate::connect_timeout as timeout;
 pub use compression::CompressionStage;
-mod timeout;
 mod version;
 pub use selection::{SelectionError, UnsupportedCompression};
 #[cfg(any(target_os = "linux", test))]

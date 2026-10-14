@@ -103,25 +103,19 @@ impl ExecutionDeadline {
             .ok_or(CommandError::InvalidArgument)
     }
 
-    /// Parse the fixed Connect wire range, not a new SDK field. HTTP admission
-    /// must call this once; parsing again on Connect must only bound that stream.
+    /// Parse the fixed Start execution timeout within the Connect wire range.
+    /// Selects the first field; empty/zero/negative means no execution deadline.
+    /// HTTP admission must separately reject an expired request before effects:
+    /// wire zero/negative already expires that context. Capture this once at
+    /// Start's original execution origin, never again on a later Connect.
     /// # Errors
-    /// Duplicate, empty, signed, nondecimal and >10-digit values are rejected.
+    /// Malformed signed decimal, >10-byte value or unrepresentable deadline.
     pub fn from_headers(headers: &HeaderMap, start: Instant) -> Result<Self, CommandError> {
-        let mut values = headers.get_all("connect-timeout-ms").iter();
-        let first = values.next();
-        if values.next().is_some() {
-            return Err(CommandError::InvalidArgument);
-        }
-        let Some(value) = first else {
-            return Ok(Self(None));
-        };
-        let value = value.to_str().map_err(|_| CommandError::InvalidArgument)?;
-        if value.is_empty() || value.len() > 10 || !value.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(CommandError::InvalidArgument);
-        }
-        let ms = value.parse().map_err(|_| CommandError::InvalidArgument)?;
-        Self::from_duration(start, Duration::from_millis(ms))
+        let duration = crate::connect_timeout::execution_duration(headers)
+            .map_err(|_| CommandError::InvalidArgument)?;
+        duration.map_or(Ok(Self(None)), |duration| {
+            Self::from_duration(start, duration)
+        })
     }
 }
 
