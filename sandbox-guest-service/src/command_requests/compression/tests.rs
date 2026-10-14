@@ -37,14 +37,14 @@ fn compressed_command_data_and_eos_keep_empty_wire_and_first_failure_semantics()
             .concat();
             assert_eq!(decode_now(method, &with_end, 1024).unwrap(), expected);
         }
-        assert_eq!(
+        assert!(matches!(
             decode_now(method, &frame(1, &compressed(b"")), 1024),
-            Err(Error::Protocol(ProtocolError::InvalidArgument))
-        );
-        assert_eq!(
+            Err(Error::Json(_))
+        ));
+        assert!(matches!(
             decode_now(method, &[frame(0, b"bad"), frame(3, b"bad")].concat(), 1024),
-            Err(Error::Protocol(ProtocolError::InvalidArgument))
-        );
+            Err(Error::Json(_))
+        ));
         // A compressed special frame is expanded before checking trailing data.
         assert!(matches!(
             decode_now(
@@ -67,10 +67,10 @@ fn compressed_command_data_and_eos_keep_empty_wire_and_first_failure_semantics()
         );
     }
     for wire in [b"".to_vec(), compressed(b"")] {
-        assert_eq!(
+        assert!(matches!(
             decode_now("List", &wire, 1024),
-            Err(Error::Protocol(ProtocolError::InvalidArgument))
-        );
+            Err(Error::Json(_))
+        ));
     }
     assert_eq!(
         decode_now("List", &[compressed(b"{"), compressed(b"}")].concat(), 1024).unwrap(),

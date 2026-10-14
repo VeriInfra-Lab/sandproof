@@ -11,6 +11,7 @@ use tokio::sync::Semaphore;
 
 mod framing;
 mod gzip;
+mod json;
 mod reference;
 
 fn limits() -> Limits {

@@ -130,9 +130,10 @@ impl Ready {
             .await
             .unwrap_or(Err(Error::DeadlineExceeded))
             .map_err(|error| {
+                let observed = observed.filter(|observation| observation.matches(&error));
                 let mut failure = Failure::new(error, deadline, owner);
                 failure.response = format;
-                failure.operation = observed.filter(|observation| observation.matches(error));
+                failure.operation = observed;
                 failure
             })
     }

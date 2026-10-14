@@ -7,6 +7,8 @@ use sandproof_guest_service::command_http::{
 
 #[path = "framing_http.rs"]
 mod framing;
+#[path = "json_http.rs"]
+mod json_errors;
 
 type Http = CommandHttp<MetadataFixture, CurrentAccount>;
 fn processes(fixture: &Fixture, registry: &PidRegistry, registrar: &PidRegistrar) -> Processes {

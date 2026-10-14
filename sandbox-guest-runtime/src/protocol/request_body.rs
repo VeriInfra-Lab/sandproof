@@ -1,4 +1,4 @@
-use super::{ProtocolError, Request, decode_message, end_stream};
+use super::{ProtocolError, Request, end_stream};
 use std::borrow::Cow;
 
 /// Scalar observations made while receiving a complete bounded HTTP body.
@@ -21,6 +21,7 @@ pub(super) fn decode<E: From<ProtocolError>>(
     gzip: bool,
     mut expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
     framing: impl Fn(FramingError) -> E,
+    json: impl Fn(&str, &[u8]) -> Result<Request, E>,
 ) -> Result<Request, E> {
     if limit == 0 {
         return Err(ProtocolError::ResourceExhausted.into());
@@ -36,9 +37,9 @@ pub(super) fn decode<E: From<ProtocolError>>(
             return Err(ProtocolError::Unimplemented.into());
         }
         let bytes = payload(body, gzip, limit, &mut expand)?;
-        return decode_message(method, &bytes).map_err(Into::into);
+        return json(method, &bytes);
     }
-    let (request, tail) = message(method, body, limit, gzip, &mut expand, &framing)?;
+    let (request, tail) = message(method, body, limit, gzip, &mut expand, &framing, &json)?;
     let request = request.ok_or_else(|| framing(FramingError::ZeroMessages))?;
     if tail.is_empty() {
         return Ok(request);
@@ -48,10 +49,10 @@ pub(super) fn decode<E: From<ProtocolError>>(
         // fields before decoding that second message to observe its earlier JSON
         // failure. There is never a retained pair of decoded command requests.
         drop(request);
-        message(method, tail, limit, gzip, &mut expand, &framing)?;
+        message(method, tail, limit, gzip, &mut expand, &framing, &json)?;
         return Err(framing(FramingError::MultipleMessages));
     }
-    message(method, tail, limit, gzip, &mut expand, &framing)?;
+    message(method, tail, limit, gzip, &mut expand, &framing, &json)?;
     Ok(request)
 }
 
@@ -62,6 +63,7 @@ fn message<'a, E: From<ProtocolError>>(
     gzip: bool,
     expand: &mut impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
     framing: &impl Fn(FramingError) -> E,
+    json: &impl Fn(&str, &[u8]) -> Result<Request, E>,
 ) -> Result<(Option<Request>, &'a [u8]), E> {
     let (flag, bytes, tail) = envelope(body, limit, framing)?;
     if flag & 1 != 0 && !gzip {
@@ -74,7 +76,7 @@ fn message<'a, E: From<ProtocolError>>(
         payload(bytes, flag & 1 != 0, limit, expand)?
     };
     if flag <= 1 {
-        return Ok((Some(decode_message(method, &bytes)?), tail));
+        return Ok((Some(json(method, &bytes)?), tail));
     }
     // Original Connect expands before draining/checking extra bytes, then checks
     // the end-stream flag and finally the encoding/json metadata payload.

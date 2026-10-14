@@ -1,4 +1,4 @@
-//! Bounded replies for observed Connect method, header, framing and gzip failures. No
+//! Bounded replies for observed Connect method, header, framing, JSON and gzip failures. No
 //! arbitrary diagnostics, codec policy or command-operation errors are mapped.
 use super::Error as SelectionError;
 #[cfg(any(target_os = "linux", test))]
@@ -110,10 +110,21 @@ impl Plan {
             SelectionError::Version(_) | SelectionError::Timeout(_) => StatusCode::BAD_REQUEST,
             error if observed_compression(error).is_some() => StatusCode::BAD_REQUEST,
             error if observed_framing(error).is_some() => StatusCode::BAD_REQUEST,
+            SelectionError::Request(crate::command_requests::Error::Json(_)) => {
+                StatusCode::BAD_REQUEST
+            }
             _ => return Err(Error::UnclassifiedFault),
         };
         let format = format.ok_or(Error::UnclassifiedFault)?;
         let stream = format.content_type().starts_with("application/connect+");
+        if let SelectionError::Request(crate::command_requests::Error::Json(error)) = error
+            && (!matches!(
+                error.method(),
+                "Start" | "Connect" | "List" | "SendInput" | "CloseStdin" | "SendSignal" | "Update"
+            ) || stream != matches!(error.method(), "Start" | "Connect"))
+        {
+            return Err(Error::UnclassifiedFault);
+        }
         if observed_framing(error).is_some() && !stream {
             return Err(Error::UnclassifiedFault);
         }

@@ -33,7 +33,7 @@ impl Failure {
     }
     #[must_use]
     pub fn request_error(&self) -> RequestError {
-        self.source.request_error
+        self.source.request_error.clone()
     }
     #[must_use]
     pub fn deadline(&self) -> Instant {

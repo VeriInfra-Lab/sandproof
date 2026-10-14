@@ -85,13 +85,13 @@ fn framing_observations_follow_actual_receive_and_decode_order() {
         for wire in [
             [frame(0, b"bad"), vec![7]].concat(),
             [frame(0, b"{}"), frame(0, b"bad")].concat(),
-            frame(2, b"bad"),
         ] {
-            assert_eq!(
-                observed(rpc, &wire, false),
-                RequestError::Protocol(ProtocolError::InvalidArgument)
-            );
+            assert!(matches!(observed(rpc, &wire, false), RequestError::Json(_)));
         }
+        assert_eq!(
+            observed(rpc, &frame(2, b"bad"), false),
+            RequestError::Protocol(ProtocolError::InvalidArgument)
+        );
         assert!(matches!(
             observed(rpc, &[frame(3, b"bad"), vec![7]].concat(), true),
             RequestError::Compression { .. }

@@ -404,6 +404,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [帧失败观察与回复](../sandbox-guest-runtime/src/protocol/request_body.rs)新增原读取/解压/JSON 顺序到有限错误事实、消息数量与空标准消息/EOS 的区别、第二条标准消息解析前释放第一条字段、低层兼容错误与 HTTP 详细分类分离的对应义务。固定 scalar 到 Connect code/完整文本、原响应格式/期限和最后副本容量的连接尚未抽取或证明；7,568 组固定 Go 完整错误字节对照只覆盖选定帧错误，不覆盖任意 JSON/运输错误、实时性或整机内存。新增共用 HTTP 连接及共享解码重构不沿用旧定理背书，纯核心和已证明 Rust/Lean 未改。
 
+[命令 JSON 诊断与回复](../sandbox-guest-runtime/src/file_protocol/diagnosis/command.rs)新增共享词法器 peek 缓存、字段/列表/map/oneof 顺序、原位置/片段到 process 类型诊断、双解析器分歧不误报、跨命名空间拒绝的自有义务。有限已知递归、未知深度栈、map 键集合、bytes 校验临时空间及错误副本的界，原解码责任/期限到回复失败和最后副本均尚未抽取或证明。固定 Go 完整 HTTP 字节对照和 Linux 入口测试只覆盖选定输入，不证明完整协议、实时性或整机内存；文件共享词法及格式重构也不能沿用旧定理。纯核心和已证明 Rust/Lean 未改。
+
 [命令请求 gzip](../sandbox-guest-runtime/src/protocol/request_body.rs)增加原协商到逐帧解压、wire-empty 与展开为空的区分、首消息/尾帧错误顺序、原始与展开预算、EOS 规范化及已解码请求同时驻留的对应义务。命令和文件抽取为同一[有界解压器](../sandbox-guest-service/src/request_gzip.rs)，各自错误分类、原授权/取消/绝对期限、实际 worker 退出及请求容量保留仍须分别证明；可信 expander 接口本身不提供分配上界证明。有限固定 Go 接受性/值对照不证明公开错误全文或整套协议，新增 Selected::decode 与 SDK 迁移尚未抽取或证明。后续[已知 gzip 回复](../sandbox-guest-service/src/command_requests/http/reply.rs)复用文件错误观察，增加实际阶段到固定文本、一元 identity/流式协商 EOS、未知故障不误映射、原错误/期限/容量到发送失败和最后副本的对应义务；有限完整错误字节测试不证明全部 codec 错误或正式端点。纯核心和已证明 Rust/Lean 未改。
 
 [命令请求 JSON](../sandbox-guest-runtime/src/protocol/request_json.rs)增加丢弃未知字段前的 Unicode/容器校验、null 与重复字段/oneof 的区分、环境键唯一性、精确 i32/uint32 归一化、未知枚举到实际拒绝、原始 bytes 长度/字母表到 padding 及尾位解码的自有义务。共用扫描器为命令选择非整数哨兵，文件选择原负整数哨兵；各已知类型拒绝与未知字段丢弃、原字节预算/按需副本上界的对应未抽取或证明。固定 Go Q 只比较有限解码结果/分类，不证明错误全文、鉴权或执行；纯核心与已证明 Rust 未改，旧结论不覆盖新解析逻辑。

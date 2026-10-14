@@ -14,6 +14,8 @@ use std::{fmt, sync::Arc};
 use tokio::time::Instant;
 
 mod rejection;
+#[cfg(any(target_os = "linux", test))]
+pub(crate) use rejection::json::command_message as command_json_message;
 pub use rejection::{GzipRejection, Rejection, rejected};
 mod io;
 pub use io::io_failure;

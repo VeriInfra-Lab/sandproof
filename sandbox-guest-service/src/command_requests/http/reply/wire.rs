@@ -102,7 +102,10 @@ fn map_gzip(error: &gzip::Error) -> Error {
 fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>, Error> {
     if !matches!(
         error,
-        SelectionError::Compression(_) | SelectionError::Version(_) | SelectionError::Timeout(_)
+        SelectionError::Compression(_)
+            | SelectionError::Version(_)
+            | SelectionError::Timeout(_)
+            | SelectionError::Request(crate::command_requests::Error::Json(_))
     ) && super::observed_compression(error).is_none()
         && super::observed_framing(error).is_none()
     {
@@ -123,6 +126,9 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match error {
+            SelectionError::Request(crate::command_requests::Error::Json(error)) => {
+                crate::file_rpc_response::command_json_message(error, &mut message)?;
+            }
             SelectionError::Compression(value) => {
                 message(b"unknown compression ")?;
                 go_quote::quoted(value.value(), &mut message)?;

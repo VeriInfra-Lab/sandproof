@@ -15,13 +15,14 @@ use serde::{Deserialize, Serialize};
 mod content_type;
 mod end_stream;
 mod request_body;
-mod request_json;
+pub(crate) mod request_json;
 use crate::file_protocol::request_json::{prepare_command, uint32};
 pub use content_type::canonical_content_type;
 pub use request_body::FramingError;
 use request_json::{bytes, envs, signal};
 
 pub use crate::file_protocol::JsonContentType;
+pub use crate::file_protocol::{JsonError, JsonField, JsonOneof, JsonReason};
 
 /// Select only the fixed Connect JSON codecs for a known unary/stream method.
 /// None means unselected, not an HTTP rejection of other original protocols.
@@ -296,6 +297,7 @@ pub fn decode_request(
         false,
         |_| Err(ProtocolError::InvalidArgument),
         |_| ProtocolError::InvalidArgument,
+        decode_message,
     )
 }
 
@@ -312,26 +314,50 @@ pub fn decode_request_with_gzip<E: From<ProtocolError>>(
     max_message_bytes: usize,
     expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
 ) -> Result<Request, E> {
-    request_body::decode(method, body, max_message_bytes, true, expand, |_| {
-        ProtocolError::InvalidArgument.into()
-    })
+    request_body::decode(
+        method,
+        body,
+        max_message_bytes,
+        true,
+        expand,
+        |_| ProtocolError::InvalidArgument.into(),
+        |method, payload| decode_message(method, payload).map_err(Into::into),
+    )
 }
 
-/// Decode the selected command encoding and retain bounded framing observations
-/// at their actual receive stage. Unlike the legacy entry points, this preserves
-/// cardinality, truncation and special-envelope failures separately from JSON.
+/// Decode the selected command encoding and retain bounded framing/JSON
+/// observations at their actual receive stage. Protobuf diagnostics are observed
+/// only after actual decode failure; diagnostic disagreement stays unclassified.
 /// The expander has the same trusted allocation/cancellation obligations as
 /// `decode_request_with_gzip`; gzip is the already selected HTTP request encoding.
 /// # Errors
-/// Original protocol/JSON/budget, framing observation or unchanged gzip error.
-pub fn decode_request_observed<E: From<ProtocolError> + From<FramingError>>(
+/// Original protocol/budget, framing/JSON observation or unchanged gzip error.
+pub fn decode_request_observed<E: From<ProtocolError> + From<FramingError> + From<JsonError>>(
     method: &str,
     body: &[u8],
     max_message_bytes: usize,
     gzip: bool,
     expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
 ) -> Result<Request, E> {
-    request_body::decode(method, body, max_message_bytes, gzip, expand, E::from)
+    request_body::decode(
+        method,
+        body,
+        max_message_bytes,
+        gzip,
+        expand,
+        E::from,
+        |method, payload| {
+            decode_message(method, payload).map_err(|error| {
+                if error == ProtocolError::InvalidArgument
+                    && let Some(observed) =
+                        crate::file_protocol::diagnosis::observe_command(method, payload)
+                {
+                    return E::from(observed);
+                }
+                E::from(error)
+            })
+        },
+    )
 }
 
 fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError> {

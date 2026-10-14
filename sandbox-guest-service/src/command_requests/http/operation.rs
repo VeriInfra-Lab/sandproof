@@ -18,14 +18,14 @@ pub(crate) enum Rejection {
 }
 impl Rejection {
     #[cfg(target_os = "linux")]
-    pub(crate) fn matches(self, error: RequestError) -> bool {
+    pub(crate) fn matches(self, error: &RequestError) -> bool {
         match self {
             Self::PidNotFound(_) => {
-                error == RequestError::Registry(crate::command::RegistryError::NotFound)
+                error == &RequestError::Registry(crate::command::RegistryError::NotFound)
             }
             _ => {
                 error
-                    == RequestError::Protocol(
+                    == &RequestError::Protocol(
                         sandproof_guest_runtime::protocol::ProtocolError::Unimplemented,
                     )
             }
@@ -50,7 +50,7 @@ impl Failure {
     }
     #[must_use]
     pub fn request_error(&self) -> RequestError {
-        self.source.request_error
+        self.source.request_error.clone()
     }
     #[must_use]
     pub fn deadline(&self) -> Instant {
@@ -73,7 +73,7 @@ impl crate::command_requests::Failure {
     /// The original error and request responsibility survive every refusal.
     pub async fn into_operation_response(self, limits: reply::Limits) -> Result<Response, Failure> {
         let source = Source {
-            rejection: self.operation.filter(|r| r.matches(self.error())),
+            rejection: self.operation.filter(|r| r.matches(&self.error())),
             format: self.response,
             request_error: self.error(),
             deadline: self.deadline(),

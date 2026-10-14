@@ -22,7 +22,7 @@ impl fmt::Debug for Failure {
 }
 impl Failure {
     #[must_use]
-    pub const fn error(&self) -> Error {
+    pub fn error(&self) -> Error {
         self.request.error()
     }
     #[must_use]

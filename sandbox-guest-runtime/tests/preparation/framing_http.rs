@@ -1,13 +1,13 @@
 use super::*;
 use sandproof_guest_runtime::gzip::{DecodeLimits, Decoder};
 
-fn frame(flag: u8, payload: &[u8]) -> Vec<u8> {
+pub(super) fn frame(flag: u8, payload: &[u8]) -> Vec<u8> {
     let mut bytes = vec![flag];
     bytes.extend(u32::try_from(payload.len()).unwrap().to_be_bytes());
     bytes.extend(payload);
     bytes
 }
-fn expanded(payload: &[u8]) -> Vec<u8> {
+pub(super) fn expanded(payload: &[u8]) -> Vec<u8> {
     let mut decoder = Decoder::new(
         payload,
         DecodeLimits {
