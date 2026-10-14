@@ -5,7 +5,15 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{ProtocolError, encode_json, null_default, parse, uint32};
+use crate::protocol::{ProtocolError, encode_json, null_default, parse};
+
+mod request_json;
+use request_json::uint32;
+
+mod content_type;
+pub use content_type::{JsonContentType, json_content_type};
+mod fault;
+pub use fault::{FaultContext, FaultStage, FileFault};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {
@@ -17,14 +25,12 @@ pub enum Request {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct PathRequest {
     #[serde(default, deserialize_with = "null_default")]
     path: String,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ListRequest {
     #[serde(default, deserialize_with = "null_default")]
     path: String,
@@ -33,7 +39,6 @@ struct ListRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct MoveRequest {
     #[serde(default, deserialize_with = "null_default")]
     source: String,
@@ -49,6 +54,11 @@ pub fn decode_request(method: &str, body: &[u8], limit: usize) -> Result<Request
     if limit == 0 || body.len() > limit {
         return Err(ProtocolError::ResourceExhausted);
     }
+    if !matches!(method, "Stat" | "MakeDir" | "Remove" | "ListDir" | "Move") {
+        return Err(ProtocolError::Unimplemented);
+    }
+    let prepared = request_json::prepare(body)?;
+    let body = prepared.as_ref();
     match method {
         "Stat" => Ok(Request::Stat(parse::<PathRequest>(body)?.path)),
         "MakeDir" => Ok(Request::MakeDir(parse::<PathRequest>(body)?.path)),
@@ -83,6 +93,15 @@ pub enum FileType {
     Directory,
     #[serde(rename = "FILE_TYPE_SYMLINK")]
     Symlink,
+}
+impl FileType {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Serde skip_serializing_if passes a field reference"
+    )]
+    fn is_unspecified(&self) -> bool {
+        *self == Self::Unspecified
+    }
 }
 
 /// A valid protobuf timestamp, not a guess based on request or wall-clock time.
@@ -127,15 +146,21 @@ impl ModifiedTime {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub name: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", skip_serializing_if = "FileType::is_unspecified")]
     pub kind: FileType,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub path: String,
-    #[serde(serialize_with = "int64")]
+    #[serde(serialize_with = "int64", skip_serializing_if = "is_zero")]
     pub size: i64,
+    #[serde(skip_serializing_if = "is_zero")]
     pub mode: u32,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub permissions: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub owner: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub group: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modified_time: Option<ModifiedTime>,
@@ -143,6 +168,10 @@ pub struct Entry {
     pub symlink_target: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, String>,
+}
+
+fn is_zero<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 #[expect(
@@ -171,6 +200,7 @@ pub fn encode_response(response: Response<'_>, limit: usize) -> Result<Vec<u8>, 
     }
     #[derive(Serialize)]
     struct Many<'a> {
+        #[serde(skip_serializing_if = "<[Entry]>::is_empty")]
         entries: &'a [Entry],
     }
     #[derive(Serialize)]

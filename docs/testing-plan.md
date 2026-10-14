@@ -58,9 +58,272 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [文件协议检查](../sandbox-guest-runtime/tests/file_protocol.rs)消费同一文件共享样例，核对重复/畸形消息、缺省/null、uint32 深度、int64 尺寸、可选链接字段、时间戳精度/边界和编码预算。[文件上下文测试](../sandbox-guest-service/src/files/tests.rs)覆盖 Basic 与 HTTP username 的分离、一次 Move 查询、默认值/环境不改变身份、词法路径、无效 UID 和展开后预算。Linux 兼容入口还运行[固定同步/异步 SDK 组合](../sandbox-guest-runtime/tests/sdk_files.rs)：原会话授权与路径解析接到文件编解码，核对各一元方法、大尺寸/纳秒/元数据/空列表/可选链接及超额错误。该测试只返回预定合成属性，没有实际 stat、目录修改或文件传输；真实文件权限、链接竞争、磁盘满、部分读写、Go 双端对照和 KVM 仍须独立执行。
 
-[一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。普通 Linux 基础检查与兼容入口执行这些组件。
+[查询绑定检查](../sandbox-guest-runtime/src/file_query/tests.rs)及[错误回执检查](../sandbox-guest-service/src/file_query/tests.rs)覆盖原字节/空值、畸形字段局部丢弃、固定字段顺序、int64 边界与 unsigned 溢出优先级、完整原始输入预算、非 UTF-8 显式拒绝、Go Quote 线长预算及原守卫/期限。可移植定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_query`。固定 SDK 文件测试路由也迁移至共用绑定：原 SDK 读写带加号/百分号/空格的文件名，合成 GET/HEAD/POST 检查重复/非法过期时间先于鉴权和文件效果，HEAD 核对空正文与原长度头，GET/POST plain text 400 经原 SDK 错误解析器核对；Linux 组合待实跑，不能计为完整 E03 或签名验证。
 
-[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
+[查询参考适配器](../tests/compat/query-reference/main.go)使用独立锁定的 Go 模块，直接调用 Go 1.26.8 URL.Query 和 oapi runtime v1.6.0 原绑定函数，字段顺序、类型及错误包装来自固定 envd `f455fd58fa3f289e78ce1de690c35968d8d29322` 的 GetFiles/PostFiles 生成代码；main.go 的 HandlerFromMux 使用原默认 ErrorHandler。对照包含种子 0x311、任意百分号字节、非法/Unicode 输入及 2047/2048/2049 字节响应；HTTP 模式比较 GET/HEAD/POST，只调用 http.Error 的真实自有回环服务，不执行完整 envd 或文件操作。已本地显式运行，默认 ignored，普通 CI 不制备 Go 或下载模块。先按 go.mod/go.sum 准备固定依赖，再执行：
+
+```sh
+cd tests/compat/query-reference
+GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build -mod=readonly -trimpath -buildvcs=false \
+  -o /absolute/path/to/query-reference .
+cd ../../..
+SANDPROOF_GUEST_QUERY_REFERENCE=/absolute/path/to/query-reference \
+  cargo test -p sandproof-guest-service --locked --lib file_query -- --include-ignored --nocapture
+```
+
+[文件鉴权检查](../sandbox-guest-service/src/session/file_authorization/tests.rs)和[会话回归](../sandbox-guest-service/tests/session.rs)可在原 macOS/Linux 库运行；会话与初始化 HTTP 组合不依赖 Linux 系统调用，现不再按平台隐藏。覆盖令牌优先/空头回退、非法签名先于过期、相同到期秒、当前快照后读时钟、字段/操作绑定、全部头和保留字节预算、无初始化拒绝、候选轮换失败/取消、原许可阻止轮换和原绝对期限。401 JSON 与最后字节副本保留原守卫另行检查。请求准入组件另检查 HEAD 的完整编码预算、空正文、原长度头、丢弃和到期释放；Linux 公共文件入口核对拒绝前不读正文/查账户。固定 SDK 组合增加合成 HEAD 鉴权拒绝，尚未 Linux 实跑；HEAD 不经 SDK 文件错误解析器断言不存在的响应正文。定向入口为 `cargo test -p sandproof-guest-service --locked --lib session::file_authorization` 与 `cargo test -p sandproof-guest-service --locked --test session`。
+
+[固定 Go 鉴权参考](../tests/compat/guest_authorization_reference.go)保留原 generateSignature/validateSigning 函数体和 SHA-256/base64 方法；仅将令牌存储/日志依赖换为测试替身，清零函数名及 Unix 时钟注入改变，不执行原存储实现或完整 envd。显式组比较签名和允许/拒绝文本，包括读写、缺省/空用户、Unicode/分隔符路径、无/负数/int64 边界到期时间、错误令牌与错误签名；另经原 jsonError 和真实 Go 回环 HTTP 比较 GET/HEAD/POST 四种原签名拒绝；这些有限对照本地已运行，默认 ignored。未初始化匿名回退和重复令牌差异由受保护配置测试单独核对，不能用此对照宣称两种配置完全一致。
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/auth-reference tests/compat/guest_authorization_reference.go
+SANDPROOF_GUEST_AUTH_REFERENCE=/absolute/path/to/auth-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  session::file_authorization -- --include-ignored --nocapture
+```
+
+[文件请求准入检查](../sandbox-guest-service/src/file_requests/tests.rs)覆盖共享池无排队、非法预算、头/查询预算及绑定先于鉴权、专用许可持续占额、400/401 错误对象/正文/最后字节副本的所有权、超时与编码失败后的原名额释放。[会话鉴权检查](../sandbox-guest-service/src/session/file_authorization/tests.rs)另用实际写锁和可推进时钟检查取消/到期的鉴权等待释放原容量且不遗留读者。可移植定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_requests` 及上述会话定向入口。它不代表套接字/请求头读取、正式拒绝策略或系统内存峰值已经验收。
+
+新增 Linux [下载许可组合](../sandbox-guest-service/src/file_transfer/download/tests/request/authorization.rs)和[上传许可组合](../sandbox-guest-service/src/file_transfer/batch/tests/authorization.rs)检查错误操作/到期先于账户和文件效果、原 query 到实际路径/用户、鉴权期限不在正文重新起算，以及在途下载字节保留原槽位；入口请求名额另随阻塞账户查询取消、上传成功/拒绝的最后响应副本和下载原期限保留，这些实际执行待补。固定同步/异步 SDK 文件测试路由全部经共用请求准入取得文件专用许可，另用原 download_url/upload_url 生成签名，仅将 URL origin 改到自有回环夹具，经原查询访问 raw/multipart 上传及下载，检查修改路径/用户/操作、过期、错令牌及令牌优先的 401 文本；这是新增 Linux 组合入口，未执行不得计为通过，不代表公开直连模式、中心/宿主签名 URL 转发、E03 或 KVM 验收。
+
+[共用文件 HTTP 编排检查](../sandbox-guest-service/src/file_http/tests.rs)新增真实目录内 framing 已知/未知长度上传、实际下载、多范围动态边界和完整线长、拒绝时不读取正文/不查账户、满池/错误路由无副作用，以及未映射账户错误保留原请求责任；定向 Linux 入口为 `cargo test -p sandproof-guest-service --locked --lib file_http`，实际运行待补。SDK 文件回环夹具已调用共用 FileHttp，保留原目录前置条件与调用集，未映射错误不再由夹具生成通用 JSON。可移植 [boundary 检查](../sandbox-guest-service/src/file_download/boundary.rs)、[计划检查](../sandbox-guest-service/src/file_download/tests.rs)及[流执行检查](../sandbox-guest-service/src/file_download/stream/tests.rs)核对 30 字节编码、熵失败无回退、仅实际多范围请求调用熵源，以及 worker 生成边界后的实际正文/Content-Length；OS 熵 smoke 不证明熵质量。这些不代替真实 socket framing/连接预算、Linux 文件/SDK、完整 E03 或监听器部署验收。
+
+[未知文件账号响应检查](../sandbox-guest-service/src/upload_response/account/tests.rs)覆盖 GET/HEAD/POST 的固定 401、JSON 转义、Go 小响应 Content-Length 边界、HEAD 抑制、精确响应预算、原期限及最后字节副本释放；可移植测试及固定 Go 有限对照已本地运行。对照复用原 upload reference，显式注入 Go `user.UnknownUserError`，只核对原包装/jsonError/实际回环 HTTP 写出，不代表真实账户数据库或完整端点。Linux FileHttp 检查新增空/缺失/特殊字符用户名、无正文读取/文件效果、编码首头先于账户、账户先于后续阶段、不可用源保持未映射分类；实际执行待补。SDK 文件组合新增原同步/异步 read、raw/multipart write、gzip write 的未知账号 AuthenticationException；SDK 会省略空 user，因此显式空 username 另由合成请求经原 SDK 解析器核对。该扩展也待 Linux 实跑，不能记为 E03 通过。
+
+[路径展开错误检查](../sandbox-guest-service/src/upload_response/path/tests.rs)对照固定 permissions 的原 expand/ExpandAndResolve 和 GET/POST 错误包装、真实回环 HTTP jsonError，覆盖特殊字符、默认工作目录触发时原查询为空、HEAD、响应字节上限及长错误头/正文；该有限可移植对照已本地运行，不执行真实账号或失败路径 I/O。Linux [上传路径检查](../sandbox-guest-service/src/file_transfer/batch/tests/upload_path.rs)覆盖 raw 拒绝不轮询 identity 正文、旧粗分类、identity/gzip multipart 前文件保留且后文件不执行、查询覆盖非法文件名；[下载请求检查](../sandbox-guest-service/src/file_transfer/download/tests/request.rs)覆盖账户先于展开、展开先于 stat/协商、默认值与 HEAD。这些仅已交叉检查，实际运行待补。固定 SDK 组合新增原同步/异步 multipart 批次失败后回读已完成文件，Rust 检查后续目标未创建；其 Linux 实跑待补。原 SDK gzip=True 会强制 raw 上传，因此压缩 multipart 只归入组件场景，不能标成 SDK 发出的压缩 multipart。
+
+[一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove_tests.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。新增[一元请求组合检查](../sandbox-guest-service/src/file_io/rpc/tests.rs)核对满额/到期先于账户查询、取消/到期后的账户与授权保留、Move 部分效果及结果/错误保留原名额；文件工作池另以单线程阻塞池和屏障核对排队到期不执行及运行中到期不提前归还请求所有权。这些一元编排组件已在上述 #408 的同一 Linux CI 运行；普通 Linux 基础检查与兼容入口执行这些组件。
+
+[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。夹具已迁移到共享 FileRpcHttp 的 prepare/execute 入口，内部复用 FileRpcRequests→FilePool::prepare_rpc→ReadyRpc::execute 编排，在原始 Body 提取后、正文读取前准入，再经受保护鉴权、Basic 前置查询、有界正文解码和同一封装进入文件池；固定调用集使用 JSON；原 40 个文件场景外，新增同步/异步各一次真实显式账户查询成功，以及显式空/未知/转义用户名与未知缺省账户的固定 ConnectError code/message，共 10 个账户场景。未知缺省账户有独立会话和路由，Rust 检查拒绝请求未创建目标。成功响应使用 FileReply 的有界 identity/gzip 编码、原期限和需求驱动正文，账户及已映射 Stat/MakeDir/Move 错误使用实际 RpcFailure::into_response，原 SDK 同步/异步调用逐一核对完整 code/message，另新增缺失目录/普通文件 ListDir 失败，另加同步/异步 Remove 的末尾点/非目录父路径失败，再加同步/异步 Stat 与 Move 源路径的展开失败，再加同步/异步各一次 gzip 成功解码与协商 gzip 后的 identity 错误，再增加同步/异步各一次显式 gzip 请求成功/错误，共 60 文件 + 10 账户 + 2 timeout 场景；目录配额仍使用测试合成错误并在 Bytes 中保留实际失败所有者。原 40 文件场景及 10 账户场景已在 [#408 的 Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38503390750) 通过（源 b125b717307380f549635815ce134da2384aed61，合并测试 9b76a3879072bedd3d0292b2f6d8abc9b2f5992f），不计为完整双端对照。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
+
+[共享一元 HTTP 检查](../sandbox-guest-service/src/file_rpc_http/tests.rs)核对五种真实操作、规范化 charset、prepare 阶段无文件效果、拒绝前不读取正文、显式账户先于方法/头拒绝、共享入口满额、最后字节副本、取消正文后初始化/容量恢复，以及成功 mkdir 后回复编码失败保留原期限和已完成效果。六项 Linux 组件及 SDK 同一 52 场景的新入口迁移已在 [#411 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38506866432) 执行通过（源 0871dcbb35d2238a0324d3631f848180c6a6c33f，合并测试 6614fd276bce9924ba34f6bdb97888e880117e52）；定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_rpc_http`。SDK 夹具仍在 prepare 后检查临时树内的不可变路径，Stat/MakeDir/Move 文件阶段错误、rename 前置检查、worker 错误自身保留容量、SDK 精确文本已在 [#412 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38508480755) 执行通过（源 de22025ea9d861b3df9634728474c47485117a20，合并测试 e773c89066729ceb4bc426e64f46c6ab366b74f8）。目录阶段六项 runtime 与一项 HTTP 组件、SDK 56 场景已在 [#413 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38509964858) 通过（源 89b67bdee3e022d34952e068e2b5686a33eb823f，合并测试 204705dd87aa85c08bd49e0b231a5d52c44a2d63）。Remove 四项新增 runtime、一项 HTTP 组件及 SDK 60 场景已在 [#414 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38511250356) 通过（源 d270b4ec7de406c425468551618c500bc8d21a6d，合并测试 4c27a17823e0fd60859fba73f5e9cfd4182a803b）；路径展开四项新增 service 组件及 SDK 64 场景已在 [#415 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38512018326) 通过（源 042b96e015652b6517f880620c345181a4db4ea4，合并测试 d0e1ba520b50554661d9a576c190c0161aae8140）；gzip 响应和请求的后续 Linux CI 证据分别见下文；新错误响应候选须另跑适用检查。
+
+[一元文件错误检查](../sandbox-guest-service/src/file_rpc_response/io/tests.rs)可移植核对 lstat、MakeDir 初始 stat/已存在、rename、父目录 stat/mkdir/chown/非目录九种阶段的固定文本、Connect code/status/头、特殊字节与 Go JSON 转义、精确编码预算、缺失观察和最后字节副本的容量保留。权限/磁盘满/chown 的 errno 向量是受控格式检查，不是特权或磁盘故障实测。工作池另检查实际错误结果自身继续保留名额，返回后文件被替换也不重查/改变原诊断；共享 HTTP Linux 组件新增真实缺失路径、非目录、已有目录/文件、循环链接、Move 部分效果及错误编码超限后的原期限/双槽位检查；以上 Stat/MakeDir/Move 新增组件及原 SDK 52 场景中的精确 message 断言已在上述 #412 Linux CI 执行。
+
+目录错误新增 13 组可移植格式向量，覆盖解析/目录检查/遍历各阶段、内部 Connect code 前缀与 HTTP 状态，以及原路径 Go %q 组合转义、上下文角色错配和精确预算。Linux [路径解析交错](../sandbox-guest-runtime/src/filesystem/path/tests.rs)核对中间路径未提前清理、断链/循环、尾斜杠、readlink 前链接被替换，另以受控 errno 检查原 too many links 文本优先级；[目录交错](../sandbox-guest-runtime/src/filesystem/directory/tests.rs)核对解析后根消失、根 lstat 不跟随替换链接、遍历后段失败不返回已有结果及打开目录失败。共享 HTTP 新增七种目录失败及后续正常请求，检查原请求/文件容量。六项 Linux runtime 组件、一项 HTTP 组件及原 SDK 同步/异步各两项 ListDir code/message 检查已在上述 #413 CI 通过，不冒充权限、磁盘或全竞争矩阵已通过。
+
+Remove 新增五组可移植阶段格式向量及上下文角色拒绝；Linux 删除检查覆盖真实末尾点、非目录父路径、NUL、首尾/中间斜杠，受控子项失败核对首次错误、兄弟部分删除、最终成功覆盖旧错误及诊断预算。受控读取错误核对外层完整路径与内层 basename，ENOENT 不执行最后 rmdir；注入 errno 只验证编排，不计为真实内核 I/O 故障。共享 HTTP 核对六种失败、原容量及后续缺失/正常删除，SDK 各新增两项精确 code/message。这些 Remove Linux 检查与 SDK 60 场景已在上述 #414 CI 通过；原 Go Remove 方法显式对照、权限/磁盘/全竞争矩阵仍未执行。
+
+[一元展开拒绝检查](../sandbox-guest-service/src/file_rpc_response/rejection/path_tests.rs)核对特殊用户名的固定正文、精确转义预算、错误编码失败及最后字节副本的原容量；固定 permissions 原 expand/ExpandAndResolve 经原 Connect HTTP 的 12 组对照含显式路径、空请求触发默认路径、转义/NUL 与长用户名，已本地执行。Linux [HTTP 接线检查](../sandbox-guest-service/src/file_rpc_http/tests/path.rs)覆盖五种方法/Move 两端、显式/默认账户只查一次、默认工作目录拒绝、响应持有期间会话更新不改变原用户名、账户失败优先和编码失败原期限；旧 execute_rpc 入口另核对观察保留及路径预算错误不伪造展开诊断。以上四项 Linux 组件及原 SDK 同步/异步各新增两项错误已在上述 #415 CI 执行；临时路由只额外接受预定不可展开字面量，并核对 Move 没有创建父目录。
+
+[JSON 类型选择](../sandbox-guest-runtime/src/file_protocol/content_type.rs)和[选择顺序检查](../sandbox-guest-service/src/file_rpc_requests/selection.rs)可移植执行，覆盖两种原 JSON codec、重复字段、参数/大小边界、方法先于类型先于压缩、原大小写及编码字段规则。共享 Go MIME 解析器的类型小写改用已有 Go 简单 Unicode 映射，含 U+0130；原 multipart 对照继续执行。固定 Connect 参考 C 操作在真实 HTTP handler 中观察 JSON 选择及规范化回复头，729 组有限向量含大小写、Unicode、quoted/extended/continued 参数、冲突重复值及逐字节变异，已本地通过。测试只观察 JSON codec，不能将其他结果理解为本模块已实现其他协议或固定 415；原始非 UTF-8 类型字段尚未接通。
+
+[一元准入与正文检查](../sandbox-guest-service/src/file_rpc_requests/tests.rs)覆盖非法配置、共享池无排队、全头/鉴权拒绝、排队写锁下的鉴权取消/到期、已知与未知长度、逐帧/总量/trailer 预算、错误帧与不完整 EOF、完整 JSON 后等待 EOF、结果/失败保留名额，以及到期解码 worker 仍在单阻塞线程队列时保留授权与名额。使用实际锁、通道屏障和可推进时钟，取消后的初始化须能完成；这些可移植检查已本地运行。复用固定 Connect 参考工具，另将原 SetTimeout 的空值/长度判断和 Go strconv.ParseInt 决策投影成解析结果，比较 533 个有限向量（含正负号、十字节边界、非 ASCII 和每个字节）；该对照不创建真实请求期限、不靠 1 ms 竞速，也不代表完整 Connect 头/错误相容。定向执行见下方，显式参考不计为普通 CI 自动执行。
+
+[Basic 解析检查](../sandbox-guest-service/src/basic_auth/tests.rs)可移植执行，覆盖缺省/畸形/显式空的区分、密码非 UTF-8、重复头与预算拒绝，以及非零尾部填充位不能误选默认账户。固定 Go 参考新增 B 操作直接调用原 http.Request.BasicAuth，1171 个有限向量核对 scheme、填充、每个字节、密码及原始 CR/LF；原始字节比较不代表非法 HTTP 头可被网络层接受，也不执行账户查询或 authn 中间件。普通三项与显式参考已本地运行。
+
+[Linux Basic 编排检查](../sandbox-guest-service/src/file_io/rpc/tests/preflight.rs)覆盖显式账户仅查一次、缺省延后、换源也不刷新已有账户、原设置/期限、查账户先于非法正文/方法/timeout、满额/已过期零查询、未知用户错误保留容量而释放授权、运行中查询取消/到期、正文取消及已到期解码任务仍在阻塞队列时的授权/双槽位保留。真实临时目录、通道屏障和可推进时钟检查原请求/文件名额及初始化锁；该前置连接已在 #408/#409 Linux CI 运行。入口 `cargo test -p sandproof-guest-service --locked file_io::rpc::tests::preflight`。
+
+[一元响应检查](../sandbox-guest-service/src/file_rpc_response/tests.rs)在 macOS/Linux 使用同一原文件 JSON 编码器，覆盖三个响应形状、编码边界/转义膨胀、原期限、背压、最后字节副本、取消编码 worker 及失败对象的容量保留。共享纯命令/文件协议测试也可移植执行，新增 Vec 扩容不越过线长预算的检查。Linux 一元组合另检查真实 mkdir 完成后编码超限、实际池期限先于原请求期限、初始化不被结果保留阻塞，以及到期正文副本继续持有请求/文件两个槽位；这些 Linux 所有权组件已在上述 #408 CI 运行，SDK 执行范围见上方；不用可移植测试代替。
+
+[一元 gzip 响应检查](../sandbox-guest-service/src/file_rpc_response/tests/gzip.rs)覆盖三种成功形状、空对象也压缩、JSON/压缩后双字节预算、压缩载荷背压/取消/到期与最后副本占额，原屏障编码取消检查同时覆盖 identity/gzip。固定 Go Connect v1.18.1 参考新增 G 操作：12 组第一字段/重复字段/精确大小写/权重/空白输入 × 四种完整成功载荷和一个原路径错误，共 60 组本地回环 HTTP 对照，比较状态、选定响应头和完整解压正文，并核对存在的 Content-Length 等于实际编码字节数；不要求 DEFLATE 字节或跨压缩库的近 2048 字节边界一致。passthrough codec 不执行 protobuf，也不是完整 envd 双端。[Linux gzip 接线检查](../sandbox-guest-service/src/file_rpc_http/tests/gzip.rs)新增五种方法、charset、错误 identity、实际删除后压缩超限仍保留原双槽位/期限的两项组件；固定 SDK 工厂构造原同步/异步生成客户端时，显式设置 accept_compression=[GzipCompression()]，新增四项协商成功/错误检查；普通工厂默认关闭压缩且会覆盖每次调用的压缩头，不能仅传头冒充已协商。Rust 核对实际 gzip,identity 请求头和两次 gzip 成功响应计数。这些 Linux 组件及 SDK 68 场景已在修复客户端构造选项后的 [#416 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38514457822) 通过（源 945c2df0d8b2fbc54d453c16a982f97572f49e93，合并测试 136e4792110f2f4e8986e78f948210247148f779），service lib 286 passed / 41 ignored，封存 Redis 通过。初次夹具只有调用头而无构造选项，实际 gzip 计数为零的失败不计为压缩证据。
+
+[一元 gzip 请求检查](../sandbox-guest-service/src/file_rpc_requests/tests/gzip.rs)新增四项可移植组件：五种方法与拼接成员、独立压缩/展开精确预算、校验/后续坏头/空输入、HTTP 完结与头拒绝顺序、取消/到期后排队 worker 的原授权与槽位。固定 Connect 参考 Z 操作对照 100 组：五组 Content-Encoding 第一字段/重复字段 × 五组 Accept-Encoding × 四种原始载荷，包含零字节、拼接空成员与跨成员 JSON；比较原 handler 解压内容和响应编码。passthrough codec 不执行 protobuf 或文件方法，畸形流公开文本不在此对照内。[Linux 请求接线检查](../sandbox-guest-service/src/file_rpc_http/tests/gzip_request.rs)新增两项组件，核对五种真实方法、显式账户不刷新、gzip 请求覆盖 identity 接受头、完整校验先于默认账户/文件派发、失败原双槽位及后续恢复。SDK 工厂保留标准环境/传输，构造原生成客户端时另显式启用 send_compression=GzipCompression()，新增四项真实请求及成功/错误解码；Rust 另核对四次 gzip 请求。八项同步/异步客户端选项探针已在本地合成 HTTP 验证；两项 Linux 请求组件及 SDK 72 场景已在 [#417 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38515049974) 通过（源 45163772170ddc5644a620546b3118fb2717757a，合并测试 643a0d54f92d36b8c46e771727672c683f7c7915），service lib 292 passed / 42 ignored，封存 Redis 通过。不是普通工厂的默认压缩行为，也不是完整双端/KVM 验收。
+
+[一元 gzip 错误检查](../sandbox-guest-service/src/file_rpc_requests/tests/gzip_errors.rs)以两段压缩正文的所有非空截断前缀（排除完整首成员）、坏首头、CRC/ISIZE 和后续坏头核对实际 Header/Body 阶段，覆盖固定 400 JSON、精确响应预算、编码失败与最后副本占额、授权释放；预算/传输/期限和未知 DEFLATE 错误不能伪造公开诊断。固定 Connect G 操作另执行 46 种损坏输入 × 两种 Accept-Encoding，共 92 组实际回环 HTTP 对照，比较状态、选定头、实际 Content-Length 与完整 identity 错误正文；有限损坏流不代表全部 codec 错误或完整端点。Linux HTTP 组件将原损坏请求检查接到已知响应，并增加错误编码失败保留原双槽位/期限、无账户/文件派发及恢复检查；新增组合的精确提交证据见下文。SDK 夹具另增加同步/异步各五次合成损坏 gzip HTTP 输入，由固定 ConnectWireError 原解析器检查 code/message，Rust 核对十次已知拒绝及无目标文件效果；这十次独立于原 SDK 72 场景，不称为 SDK 自己编码的损坏请求。本地五种合成 JSON 解析探针通过；上述 Linux HTTP/文件组合已在 [#418 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38516493555) 通过（源 cb8ed7087ca8aedec8a7f54d41b4f6dba0e568b6，合并测试 733ebbf15a8c3c2b386155d5a6b8054431fe10d7），SDK 72 原调用及十次合成坏 gzip、service lib 295 passed / 43 ignored、封存 Redis 均通过。
+
+[一元未知压缩检查](../sandbox-guest-service/src/file_rpc_requests/tests/unsupported_compression.rs)覆盖未知第一字段先于版本/超时/正文、合法首字段忽略后续未知值、固定 501 / unimplemented、精确回复预算、原收紧期限、到期不刷新和最后副本占额。固定 Connect H 操作新增原始压缩头，134 种未知编码（含全部 0x80–0xff 字节及 Unicode/转义）× 两组版本/超时，共 268 组实际 HTTP 对照，逐项比较状态、头和完整 identity JSON。Linux [入口检查](../sandbox-guest-service/src/file_rpc_http/tests/unsupported_compression.rs)核对显式账户错误优先、缺省账户不查询、正文不读取、无文件效果和编码失败保留双槽位/期限；原选择拒绝测试同步迁移。SDK 夹具新增同步/异步各两次合成 br/GZIP 请求，同时携带坏版本/超时，由固定原错误解析器核对四次 501 及无目标文件；与 72 个原 SDK 场景和十次坏 gzip 输入分开统计。本地七种错误 JSON 解析探针通过；新增 Linux 组合已在 [#419 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38517259405) 通过（源 d171ca79a81caa41520d1fd11ade4158b89e82f9，合并测试 13d785d7654bb307d5e0788a0444d12e48b14c4b）：SDK 72 原调用、十次坏 gzip 和四次未知编码、service lib 298 passed / 44 ignored 及封存 Redis 通过。
+
+[一元账户回执检查](../sandbox-guest-service/src/file_rpc_response/rejection/tests.rs)核对两个拒绝阶段的文本/响应头、转义后精确预算、原期限、最后字节副本、编码排队取消及失败对象保留。Go 参考新增 A/U 操作使用原 authn v0.1.0 中间件和原 Connect v1.18.1 handler，显式路径同时给出非法 JSON/timeout 仍先返回账户错误；16 个实际回环 HTTP 向量含空/特殊字符及 2047/2048/2049/8192 字节边界，已本地执行。账户缺失是受控观察，不运行 Go 账户数据库或完整 envd；原 SDK 错误解析组合另行验收。
+
+[一元头拒绝检查](../sandbox-guest-service/src/file_rpc_requests/tests/headers.rs)核对可选版本的第一字段、重复头、不修剪原值、版本与超时格式错误顺序、正文未读取、有效期限先收紧及拒绝后的原容量。实际初始化、响应字节副本和编码失败验证授权与名额分别释放；未映射错误不能补造 400。固定 Go 参考 H 操作使用原 Connect handler，229 组真实回环 HTTP 对照比较状态/头/正文，含 Unicode、非法 UTF-8、特殊转义、重复字段和大字段，已本地执行；不代表其他媒体类型或压缩协议。Linux 前置连接新增版本/超时拒绝的显式/缺省查询次数、无目录副作用和双槽位保留检查；SDK 同步/异步各新增一次超长 timeout 拒绝，显式缺失账户同时携带超长 timeout 仍先返回 401。新增头拒绝和 SDK 52 场景已在 [#409 的 Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38504921791) 通过（源 0cbcb4d42f3dd076df7edfacfdbd5acf318144b5，合并测试 970f72de981f9077f55c6aa0d56f45b627299af2）。
+
+[Linux 一元账户回执连接](../sandbox-guest-service/src/file_io/rpc/tests/preflight/rejection.rs)检查显式/缺省来源、固定文本、无文件效果、实际授权释放、原双槽位到字节副本/编码失败/到期的保留，以及不可用源/重复 Basic 保持未映射。账户回执及头拒绝连接已分别在上述 #408/#409 CI 运行。文件传输 SDK 的 Range 检查读取原始 MIME 字段，保持精确 Content-Type 值及重复字段拒绝，避免 Python email.policy 对参数补引号造成假失败；仍逐项核对 range、两个 part 内容及总长度，并保留该夹具的五项回归。
+
+有限响应收尾回归 `known_length_rpc_reply_releases_on_last_bytes_without_an_extra_eof_poll` 检查 identity/gzip 及单块/多块载荷：完整收到 Content-Length 指定字节后保留正文对象，不再轮询 EOF，最后字节副本释放才归还原名额。Linux `final_rpc_bytes_release_both_pools_without_an_http_eof_poll` 另覆盖实际 mkdir 成功及 stat 失败、请求/文件双名额和随后的正常请求；本地可移植回归先复现旧实现名额不归还，修复后通过，Linux 新组合尚待该汇总候选实跑。上传原编码取消/实际退出、最后字节及真实解码收尾回归保留；这些用例不更改容量或期限，也不算 KVM/完整来宾服务验收。
+
+[文件属性 protobuf 对照](../sandbox-guest-service/src/file_rpc_response/tests/protobuf.rs)使用上游固定生成的 [filesystem.pb.go](../tests/compat/connect-reference/filesystem/filesystem.pb.go)，Git blob 7724e46497b97b24e4238068360f7244b93ee2cb，与 runtime f455fd58fa3f289e78ce1de690c35968d8d29322 的 packages/envd/internal/services/spec/filesystem/filesystem.pb.go 字节相同，参考程序启动时另检查嵌入源码 SHA-256 94e27e6aa36a685ea38c1ab636f2823ade538da494b476cd241f445866887b7f，[原许可证](../tests/compat/connect-reference/filesystem/E2B-LICENSE)随源码保留。参考 P 操作直接构造原消息并经默认 Connect HTTP codec 编码，不使用透传 JSON codec；48 组向量覆盖空/单/多属性、零值、枚举、int64、mode、optional 空值/epoch、时间戳边界、空元数据值和控制/Unicode 字符。比较状态、选定头和完整紧凑 JSON，双方先独立核对实际 Content-Length；原 protojson 可变空白被压紧，不宣称临近 2048 字节时头阈值相同。记录是合成属性，不运行 Go 文件方法、legacy 转换或整个 envd；现代固定 SDK 使用其正常 User-Agent。Rust 另有精确预算及存在性回归，原 SDK 18 场景夹具现在断言空目录正文为 {}、链接零 type/mode 缺省但空 symlinkTarget 存在；上述属性/空目录 Linux 组合已在 [#420 SDK CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38518473350) 通过（源 8b0b964db1e56521da8f6a1edfc9eed6342e28d2，实际合并 checkout 64b1de1eb60f58d9fd64e5b7f64b1fe8db4bbf50）：原 SDK 18 个合成属性场景、文件组合、service lib 298 passed / 45 ignored 及封存 Redis 通过；该运行的两项流程检查曾在 checkout 被取消，须另行重试，SDK 成功不代表全运行通过。原文件方法参考改用默认 MarshalOptions，并移除空 metadata 的额外归一化；Linux 原文件方法对照本候选未执行，不能沿用先前结果。显式入口为 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib original_generated_properties -- --include-ignored --nocapture`。
+
+[文件请求 protobuf 对照](../sandbox-guest-service/src/file_rpc_requests/tests/protobuf.rs)的 J 操作经同一固定生成消息与默认 Connect HTTP codec 解码五种原请求，测试 handler 仅回显解码结果，不查账户或执行文件操作。6,280 组本地向量比较解码字段及 invalid_argument 分类，覆盖缺省/null、重复已知/未知字段、转义字段名、所有单个原始字节、代理项、嵌套边界、超大未知数字、精确小数/指数及 uint32 边界；不比较尚未接通的错误全文。裸指数矩阵另覆盖正/负零、非法前缀、小数/范围边界、e/E/符号、分隔符与空白、已知字符串/数值字段及未知嵌套值；先前四个 `{"depth":1e}` 与未知值 `1e`/`1e+`/`1e-` 差异已修复，并保留逐项相等断言。按需兼容副本的长度/容量不超过原正文，正常数字直接借用，长数字段一次推进；转换不改变原始字节预算、字符串、重复字段与结构拒绝。可移植回归另检查原消息预算先行、扫描深度、精确整数与同一准入名额/期限；不存在浮点舍入或先构造整棵 Value 树。显式执行 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib file_rpc_requests::tests::protobuf -- --include-ignored --nocapture`；普通 CI 不自动执行 Go 对照。这些组件结果不能代替 Linux 实际文件、原 SDK 双端 E03、正式监听器或 KVM。
+
+[Connect 传输参考](../tests/compat/connect-reference/main.go)以固定 Go 1.26.8、原 Connect v1.18.1、authn v0.1.0 和 protobuf v1.36.12 在本机真实 HTTP 上返回同一个已编码载荷，比较八组状态/头/正文，包括 2047/2048/2049 字节边界。参考使用 passthrough 测试 codec，隔离原 Connect 传输；成功传输对照不执行 protobuf 编解码、认证、文件操作或完整 envd，不能视为 E03 双端通过。该显式 ignored 对照已本地执行，普通 CI 不自动安装 Go 依赖。新增 X 操作使用 [固定路径函数](../tests/compat/connect-reference/path.go)的实际展开错误交给原 Connect handler，透传 codec 不校验 protobuf，也不访问真实账户/文件；显式执行 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib fixed_go_rpc_expansion_rejections_match_http -- --ignored --nocapture`，已有本地结果。
+
+```sh
+(cd tests/compat/connect-reference && GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build \
+  -mod=readonly -trimpath -buildvcs=false -o /absolute/path/to/connect-reference .)
+SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference \
+  cargo test -p sandproof-guest-service --locked --lib file_rpc_response -- --include-ignored --nocapture
+SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference \
+  cargo test -p sandproof-guest-service --locked --lib file_rpc_requests -- --include-ignored --nocapture
+SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference \
+  cargo test -p sandproof-guest-service --locked --lib basic_auth -- --include-ignored --nocapture
+cargo test -p sandproof-guest-runtime --locked --test protocol --test file_protocol
+```
+
+新增[流式文件端口检查](../sandbox-guest-runtime/tests/file_transfer.rs)覆盖二进制/空文件、父目录/链接、长度和元数据预校验、截断/超额后保留前缀、元数据替换/清空及打开后路径替换、文件增长和缩短。[传输所有权检查](../sandbox-guest-service/src/file_transfer/tests.rs)覆盖原授权阻止初始化、上传结果/下载块及传输引用占额、消费前不预读、取消后不可重用、显式 EOF 与工作者丢失、空闲期限和过期就绪回复。可推进时钟和明确块释放建立顺序；未模拟内核永久阻塞、真实磁盘满或整机峰值。
+
+[原 SDK 文件传输组合](../sandbox-guest-runtime/tests/sdk_file_transfer.rs)与[同步/异步调用集](../tests/compat/guest_file_transfer_sdk.py)经一次性回环路由连接原授权、真实账号/路径解析和传输池，检查原始字节上传、普通/流式下载、大于块预算的内容、元数据替换、目录/缺失错误及先前成功写入不回滚；新增单文件/多文件 multipart、字节/二进制流/文本流、Unicode 完整文件名、批次元数据、重复路径/目录失败后的前缀及后项不处理。Linux `check-compat.sh` 已登记以上入口，已有原提交的 Linux 组件检查；可定向执行 `cargo test -p sandproof-guest-runtime --locked --test file_transfer`、`cargo test -p sandproof-guest-service --locked file_transfer::tests` 和 `cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_transfer -- --nocapture`。后续改动须重跑，交叉类型检查不能算运行通过。测试适配现支持 raw/multipart POST 和 identity GET；multipart 已有原提交 Linux 组件证据，后续候选仍须重跑；不代表正式路由、下述新增 gzip 组合、range/conditional、固定 Go HTTP 双端对照、E03 或 KVM 验收。
+
+新增[批量上传检查](../sandbox-guest-service/src/file_transfer/batch/tests.rs)覆盖单槽位顺序多文件、一次账户查询、元数据/结果保留、相对路径判重、查询空路径覆盖、合法空批次、取消中间文件、总量/数量/结果预算、后续文件失败与整批绝对期限。结果预算拒绝可发生在实际写完之后，测试要求文件保留而整批失败。Linux 基础及兼容入口中的 service 全测试会执行该组，也可定向 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests`；该组已有原提交的 Linux CI 运行验证，后续改动须重跑。此处直接向组件交入已解码文件名和正文块，没有执行 multipart MIME 解析、网络请求或固定 Go HTTP 对照。
+
+[multipart 解码检查](../sandbox-guest-runtime/src/multipart/tests.rs)可在 macOS/Linux 运行，覆盖逐块和全部切点、近似边界二进制、CRLF/LF、前导/尾随内容、空 part、逐字节截断、前一 part 结束后边界行失败、折叠/重复头、完整文件名、RFC 2231 跨续段 UTF-8、quoted-printable 的部分错误/4096 字节临界值，以及全部输入预算、错误后不可复用和大流中固定解析缓冲容量。执行 `cargo test -p sandproof-guest-runtime --locked --lib multipart`；普通 Linux 兼容入口已有 runtime lib 测试，因此会执行可移植组。该解析组件已有本地实跑，不代表下述上传组合或 Linux 全服务验收。
+
+[multipart 上传组件检查](../sandbox-guest-service/src/file_transfer/batch/tests/multipart.rs)接原批次和真实临时文件，覆盖跨帧/跨写块、QP 二进制/前缀错误、未知字段、查询空串覆盖/缺少文件名、空表单、重复路径、后续边界失败、声明长度/实际正文/空帧/尾随内容/trailers 预算及异常顺序。明确通道信号确认已有文件写完且正在等待下一 HTTP 帧，再测试实际 EOF 前的授权/容量保留、结束标记后的传输错误、中途取消和可推进的原期限。服务全测试与 Linux 兼容入口会执行该组，定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::multipart`。该组和扩展固定 SDK multipart 已有原提交的 Linux 组件证据，后续候选仍须重跑；完整基础检查不能由组件绿灯替代，没有磁盘满/故障文件系统、正式监听器或 KVM 的通过声明。
+
+[gzip 检查](../sandbox-guest-runtime/src/gzip/tests.rs)在 macOS/Linux 可运行：`cargo test -p sandproof-guest-runtime --locked --lib gzip`。覆盖空/二进制/多段、所有截断点、CRC/长度损坏、逐项预算、精确上限后的真实 EOF/源错误、错误后不可复用、非法 DEFLATE 回溯距离及大流的小缓冲编码/解码。首个头部失败与正文错误分开核对，后者检查实际可见前缀。本地组件及下述固定 Go 对照已运行；Linux 候选、HTTP gzip/文件副作用与 SDK 压缩组合仍待验证。
+
+[Go gzip 适配器](../tests/compat/guest_gzip_reference.go)仅调用固定 Go 1.26.8 `compress/gzip`。显式组比较所有 flag、额外头、名称长度、截断/校验/尾随错误和种子 0x311 变异的初始化结果、字节前缀和终态，并双向检查 Go/Rust 压缩结果；不要求压缩字节相同。默认 ignored，不把普通 CI 绿灯算作执行过 Go 对照：
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/gzip-reference tests/compat/guest_gzip_reference.go
+SANDPROOF_GUEST_GZIP_REFERENCE=/absolute/path/to/gzip-reference \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  gzip::tests::fixed_go_gzip_reference -- --ignored --nocapture
+```
+
+[HTTP gzip 所有权检查](../sandbox-guest-service/src/upload_body/tests.rs)可在 macOS/Linux 执行：`cargo test -p sandproof-guest-service --locked --lib upload_body`。原库代码直接接受受控 HTTP Body，测试首个头部之后按需读取、`Bytes` 副本背压、头部/正文等待取消、同步源轮询阻塞期间保留守卫、原绝对期限、真实 HTTP EOF/尾部错误、编码/展开/帧预算与错误穿过 Body 包装。同步通道和明确轮询信号控制交错；可推进时钟只在等待点确认后使用。该组已有本地运行，只验证传输/守卫连接，不替代 Linux AuthPermit/文件实际副作用。
+
+[gzip 文件组合](../sandbox-guest-service/src/file_transfer/batch/tests/gzip.rs)覆盖一批多段 raw/压缩 multipart、无效头部不打开目标、文件内容前缀与旧 metadata、MIME 结束后 CRC 错误、后续 gzip 段失败、真实 EOF 前授权/容量保留，以及取消/期限/展开预算。入口为 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::gzip`，Linux 基础与兼容入口包含该组；本候选实际运行待补。固定 SDK 文件测试路由另加合成 gzip POST、同步/异步原 SDK 回读、首头错误 400 及校验失败后的数据保留。固定 SDK 支持 gzip=True 上传；此组的压缩 POST 由测试 HTTP 客户端构造，原 SDK 压缩上传在下述错误响应驱动另行检查，不能将合成输入记为原 SDK 上传或完整 E03；扩展组合仍待 Linux 实跑。
+
+[上传头检查](../sandbox-guest-service/src/file_upload/tests.rs)及[共享验证](../sandbox-guest-runtime/src/file_upload/tests.rs)覆盖首字段、忽略空 metadata 后缀、无效/超额值与整个 HeaderMap 的独立预算，已有本地运行。定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_upload`。显式 [Go 上传头适配器](../tests/compat/guest_upload_reference.go)调用固定 Go 1.26.8 ParseMediaType，复制固定 runtime 的 metadata 提取/验证原函数；比较媒体类型选择及 metadata 接受值，覆盖不透明字节、Unicode 大小写/空白、无效可选参数与冲突重复参数。不比较 Go map 随机迭代下的首条错误文本，不代表完整 Go HTTP 上传端点；默认 ignored，已有本地显式运行：
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/go1.26.8/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/upload-reference tests/compat/guest_upload_reference.go
+SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  file_upload::tests::fixed_go_upload_selection_and_metadata_match_original_methods -- --ignored --nocapture
+```
+
+[上传故障检查](../sandbox-guest-service/src/file_upload/tests.rs)使用同一 Go 上传参考的 F 操作，复制固定 runtime 的 processFile 原函数，仅替换日志类型与 I/O 调用名；受控返回不同阶段的 EIO/EACCES/ENOSPC/EDQUOT，对照阶段状态，不自行重写预期表。macOS 参考按 Linux errno 身份适配宿主常量；它不执行文件系统操作，也不验证完整错误字符串。显式入口为：
+
+```sh
+SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  file_upload::tests::upload_fault_status_matches_original_process_file -- --ignored --nocapture
+```
+
+[详细上传 FD 检查](../sandbox-guest-runtime/tests/file_transfer.rs)覆盖目标目录、父路径是文件、目标/父链接循环、悬空链接、NUL 路径与遍历预算前置拒绝；[内部写入检查](../sandbox-guest-runtime/src/filesystem/transfer/upload/tests.rs)覆盖真实临时文件短写前缀后注入 ENOSPC、Interrupted 重试、失败后不可重放、零写、只读 FD 的实际 EBADF 和 O_PATH 的 xattr 列表失败。所有真实资源仅位于各用例私有目录，不填满宿主磁盘或改动设备文件。这两组已交叉检查，Linux 执行待补；受控 ENOSPC 不计为真实磁盘满验收。Linux runtime 全测试包含它们，定向入口分别为 `cargo test -p sandproof-guest-runtime --locked --test file_transfer` 和 `cargo test -p sandproof-guest-runtime --locked --lib filesystem::transfer::upload::tests`。
+
+[上传错误回执对照](../sandbox-guest-service/src/upload_response/errors/tests.rs)通过同一 Go 参考的 J 操作，调用原 processFile、EnsureDirs、os.PathError 和 pkg/xattr.Error，再由真实回环 HTTP 执行原 jsonError；只替换实际 I/O 观察，不启动完整 envd。Linux errno 文本固定，核对全部阶段、普通/空间/配额及未知 errno、原请求未知/零/正/最大有符号长度、控制/HTML/Unicode/无效 UTF-8、xattr 单字节与 2047/2048/2049 字节边界；可移植预算、未分类拒绝及原容量/期限检查一起运行，已有本地证据。显式入口为：
+
+```sh
+SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  upload_response::errors::tests -- --include-ignored --nocapture
+```
+
+[Linux 错误响应连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_errors.rs)验证 raw identity/gzip 的真实父路径/目标目录错误穿过 worker、先前 multipart 文件保留且之后文件未打开、Bytes 克隆持有原槽位、实际 I/O 完成后初始化可继续、错误编码预算失败保留文件并归还容量。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_errors`；已交叉检查，实际运行待补。原固定 SDK 驱动另精确检查同步/异步 raw/multipart 目录异常文本，并新增原 SDK gzip=True 的成功写入/回读及目录拒绝，和合成 gzip 场景分别计数；不模拟磁盘满，该 Linux 组合也待实跑。
+
+[上传头拒绝对照](../sandbox-guest-service/src/upload_response/rejection/tests.rs)使用 Go 参考 P 操作：原 encoding.go 选择、metadata 提取/验证，以及 PostFiles/handleRawUpload 的相应拒绝表达式，再经原 jsonError 的真实回环 HTTP 比较 400、头和正文。覆盖首字段/重复值、无效 UTF-8/HTML/Unicode、键长/单字节值、原字节偏移、单条失败先于整体大小、完整总大小及 2048 字节响应边界；不将摘取分支当作完整端点执行。显式入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib upload_response::rejection -- --include-ignored --nocapture`，预算与响应副本所有权检查同时运行，已有本地证据。
+
+[Linux 上传头拒绝连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_headers.rs)验证四类错误、首值/拒绝顺序、正文零轮询、无文件副作用、账户调用次数、原槽位/期限、初始化与失败收尾；入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_headers`，已交叉检查，实际执行待补。SDK 驱动另用同步/异步测试 HTTP 客户端构造异常头，交给锁定 SDK 原文件错误解析器检查异常类型/文本；普通 SDK 会在客户端校验 metadata 且不发送异常媒体类型，所以此项明确记作合成输入与 SDK 解析组合，不记原 SDK write 发出的请求，Linux 待实跑。
+
+[gzip 首头/响应对照](../sandbox-guest-service/src/upload_response/gzip_header/tests.rs)使用上传 Go 参考 G 操作：固定 getDecompressedBody 调用 Go 1.26.8 gzip.NewReader，成功只报告首头准备完成，失败走 PostFiles 的原包装表达式和 jsonError 真实回环 HTTP。覆盖全部 flag、首头截断、魔数/方法的单字节、名称/注释 512 字节边界、extra 最大长度及 FHCRC，按多种 HTTP/解码分块比较准备结果或完整错误状态/头/JSON；明确不读取 DEFLATE/正文/trailer。显式入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib upload_response::gzip_header -- --include-ignored --nocapture`，已有本地运行；空输入与长度/源/预算/期限拒绝、首读 Interrupted 重试另有可移植检查。
+
+[Linux gzip 首头请求连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_gzip_header.rs)核对 raw/multipart 首头拒绝先于账户/metadata/文件，原容量/期限/初始化和最后副本释放，以及传输/预算不被伪装成 EOF；入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_gzip_header`，已交叉检查，实际运行待补。SDK 驱动另加合成空/截断/损坏 gzip raw/multipart 请求，经原错误解析器核对异常文本并由 Rust 检查目标未创建；不记作原 SDK 压缩器产生的输入，该 Linux 组合也待实跑。
+
+[multipart 路径拒绝对照](../sandbox-guest-service/src/upload_response/rejection/tests.rs)使用上传 Go 参考 B 操作：复制固定原 resolvePath 与 CustomPart 方法，仅替换命名空间，路径展开注入已解析观察，不调用真实账户/文件系统；缺失文件名经原 FormName 闸门和原 MIME 参数解析。比较完整 400/HTTP 头/JSON，覆盖完成列表中各重复位置、其他路径数量 0–4 与原 >1 列表阈值、完成顺序、Unicode/转义和 2048 字节头边界。沿用上述 upload_response::rejection 显式 Go 入口，已有本地运行，不代表完整原路由或 Linux 路径展开。
+
+[Linux multipart 路径拒绝连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_multipart.rs)覆盖 identity/gzip 的词法重复、先前文件保留/后项不处理、缺失文件名与查询空串覆盖、详细旧入口迁移、原槽位/最后字节副本/期限/初始化、响应预算失败和文件数量拒绝优先级；入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_multipart`，已交叉检查，实际运行待补。固定同步/异步 SDK 驱动增加原 write_files 重复路径的精确异常与已完成顺序检查；另用合成 identity/gzip 无 filename 表单经原 SDK 错误解析器验证，不能记作 SDK write 发出的输入。Linux SDK 组合仍待实跑。
+
+[multipart 准备对照](../sandbox-guest-service/src/upload_response/rejection/tests/setup.rs)使用上传 Go 参考 T 操作，直接调用 Go 1.26.8 Request.MultipartReader/NextPart：受控 reader 记录首次正文读取，进入该 reader 仅报告准备就绪；零读取错误按固定 handleMultipartUpload 原包装和状态经 jsonError 输出。比较各类型/参数、引号/续段/扩展 boundary、ASCII 单字节与 Unicode、重复 Content-Type 首值的就绪或完整 500/头/JSON；不将注入的 reader 错误作为真实服务错误。沿用 upload_response::rejection 显式入口，已有本地运行；独立检查旧 boundary 粗分类、资源预算和非 UTF-8 参数拒绝。
+
+[Linux multipart 准备连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_multipart_setup.rs)核对 identity 正文零轮询、gzip 首头后的拒绝、旧文件不变、首头字段、账户调用、metadata/类型/预算优先级、正文截断不映射为准备失败，以及原槽位/期限/初始化/编码失败/旧入口迁移。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_multipart_setup`，已交叉检查，实际运行待补。SDK 驱动用合成 identity/gzip 三种准备失败经原错误解析器核对 500 和 SandboxException 的完整文本，并由 Rust 夹具检查文件不存在；不记为原 SDK write 产生，Linux 组合待实跑。
+
+[raw gzip 正文对照](../sandbox-guest-service/src/upload_response/gzip_read/tests.rs)使用上传 Go 参考 D 操作：原 getDecompressedBody 创建固定 Go gzip reader，原 processFile 的 ReadFrom 调用由内存目标实际消费 reader，并保留错误前前缀；文件系统调用仍为受控观察，未执行真实写盘/metadata。完整成功只比较 END 和前缀，失败比较前缀及原 500/头/JSON。覆盖首头就绪后的逐字节截断、全部 trailer 字节逐 bit 损坏、后续成员头/正文、空/二进制/多段，使用多种输入/解码分块；未知 DEFLATE 细节不纳入公开诊断。显式入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib upload_response::gzip_read -- --include-ignored --nocapture`，已有本地运行；转换检查拒绝首头空输入和源/预算/期限等无对应错误。
+
+[Linux raw gzip 错误连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_gzip_read.rs)覆盖三类 500、已写前缀及旧 metadata、multipart 完成文件的独立错误、identity 输入不套用 raw gzip 包装、长度/展开预算保持原分类、旧入口错误不变、原槽位/期限/初始化/字节副本及响应编码失败。入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_gzip_read`，已交叉检查，实际执行待补。固定同步/异步 SDK 驱动的合成压缩请求新增截断和后续头错误，与原校验损坏一起核对原 SDK SandboxException 的精确文本，再由原 SDK 回读前缀；这是测试客户端构造的错误输入，不能记为 SDK 压缩器发送或 Linux 已执行。
+
+[multipart framing 对照](../sandbox-guest-service/src/upload_response/multipart_read/tests.rs)使用上传 Go 参考 N 操作，运行原 handleMultipartUpload、handlePart、resolvePath、processFile；真实 Go MIME reader 读取正文，ReadFrom 的内存目标记录文件前缀，原 handlePart 到达 metadata 回读时标记完成。仅替换日志/文件系统和既有路径观察，不宣称真实写盘/metadata。比较 EOF 阶段、两类坏边界行、CRLF/LF、忽略字段、后继 part 和已完成文件的观察及完整失败 HTTP；Go Q 操作另核对所有 Unicode 标量值和全部字节的 Quote 转义。显式入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib upload_response::multipart_read -- --include-ignored --nocapture`，已有本地运行；普通组件检查另核对诊断行预算、失败后不可复用、粗入口兼容及转义后精确响应预算。
+
+[Linux framing 连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_framing.rs)覆盖 identity/gzip 中的原始/QP 文件截断、前一个完成文件/旧 metadata、忽略字段 EOF、两类坏边界行后不打开后继文件，以及头/QP/源/预算的独立分类、旧入口兼容、原槽位/期限/初始化/最后副本和响应编码失败。入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_framing`，已交叉检查，实际运行待补。固定同步/异步 SDK 驱动增加合成 identity/gzip MIME 错误，核对原 SDK SandboxException 文本并由 SDK 回读前缀；输入由测试客户端构造，Linux HTTP/文件组合待补，不记为原 SDK write 发送。
+
+[MIME 头诊断对照](../sandbox-guest-service/src/upload_response/multipart_read/tests/headers.rs)沿用上传 Go 参考 N 操作，比较首行缩进/80 字节边界、缺少冒号的原物理行、非法键/值与折叠后的逻辑行、键大小写/空格、控制和非 UTF-8 字节、无终止空行及真实 EOF、较大响应和前一个完成文件；逐项比较文件观察及原 500/头/JSON。入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib upload_response::multipart_read::tests::headers -- --include-ignored --nocapture`，已有本地运行。参考 V 操作另在原 MIME reader 的底层注入实际 Reader 失败，核对坏头验证与失败包装顺序，不代称真实 HTTP 断网。可移植 runtime 检查另核对未读 EOF 的提前拒绝、逻辑行未完成时等待、真实源失败参与已有头验证且不合成 EOF、失败后不可复用、头字节/字段数预算及合法头截断的独立分类。
+
+[Linux MIME 头连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_mime_headers.rs)核对 identity/gzip 原消息、前一个完成文件与 metadata、当前文件未打开、明确物理行错误后不再轮询输入、真实源失败时已有坏头诊断优先、本地长度/预算/不支持文本/合法头 EOF 的独立分类、旧入口迁移及原槽位/期限/初始化/最后副本/编码失败。入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_mime_headers`，已交叉检查，实跑待补。固定同步/异步 SDK 驱动新增合成坏 MIME 头，经原错误解析器核对 SandboxException 的精确文本，并由 Rust 夹具核对目标不存在；不记为原 SDK write 生成，Linux 组合待实跑。
+
+[QP 诊断对照](../sandbox-guest-service/src/upload_response/multipart_read/tests/quoted_printable.rs)沿用原上传参考 N/V，比较裸控制字节、短/非法转义、可接受的字面等号、软换行、4096 字节临界值、已完成前一个文件和实际源失败，逐项核对解码前缀、完成标记与原 HTTP。原满行缓冲对齐差异已改为一致回归；新增 L/K 操作在原方法的底层 Reader 限制单次读取大小，独立于 Rust 内部事件分块，核对普通/软换行/带前一物理行的 4096 临界值，以及长 MIME 头/折叠缩进和 NextPart 满行失败。入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib upload_response::multipart_read::tests::quoted_printable -- --include-ignored --nocapture`，已有本地运行。runtime 普通检查覆盖错误优先级、不可复用、旧粗入口和源/块预算分类，响应检查覆盖转义后精确预算。
+
+[Linux QP 连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_quoted_printable.rs)核对 identity/gzip 的实际文件前缀/旧 metadata/前一个完成文件、坏行后零轮询、真实源失败、本地长度/预算与文件写预算优先级、旧入口及原响应槽位/期限/初始化/最后副本/编码失败。已交叉检查，执行待补。固定同步/异步 SDK 驱动增加合成 QP 失败请求、原 SandboxException 精确文本和 SDK 文件前缀回读；输入并非原 SDK write 生成，本地只验证固定 Go/SDK 错误解析，Linux HTTP/文件/SDK 组合待实跑。
+
+[源读缓冲组件检查](../sandbox-guest-runtime/src/multipart/read_buffer.rs)核对分段提交一次实际读取的调用顺序、原输入预算、物理头行末 CR、数据最后片段才携带 EOF、满行不再读取，以及尾随输入处理；原大流用例同时核对两种解析入口的固定缓冲容量。QP 普通测试另区分同次返回字节/EOF、字节/错误和之后才到来的终态。[Linux 读取边界连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_read_boundaries.rs)按明确源读取大小和事件块配置比较满行完成/失败、文件前缀与 metadata，使用 panic-tail 确认 buffer full 不多读。已交叉检查，实际执行待补；它不替代真实 HTTP/gzip 分块与完整双端 SDK 验收。
+
+[multipart gzip 阶段对照](../sandbox-guest-service/src/upload_response/multipart_read/tests/gzip.rs)新增上传 Go 参考 Z 操作，原 getDecompressedBody 的真实 gzip reader 接原 handleMultipartUpload/handlePart/processFile。Rust 使用实际 GzipBody 与 MIME/QP reader；覆盖 MIME 各阶段切点、三类 gzip 失败、前一个完成文件、忽略字段、坏头/QP 诊断优先级、歧义及近似边界尾部，比较内存文件前缀/完成标记及失败 HTTP。原方法遇 MIME End 即结束，故对照不代称 Rust 后续严格排空与 Go 等价。显式入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib gzip_source_stage -- --include-ignored --nocapture`，已有本地运行。普通 runtime 测试另核对 fail_source 的顺序、不可复用及 EOF/失败互斥，响应测试核对精确预算和不接受 Complete 阶段伪造响应。
+
+[Linux multipart gzip 连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_multipart_gzip.rs)检查三个错误阶段、已完成前项/当前文件前缀和 metadata、QP/头/忽略字段优先级、原编码门控、直接批次/旧入口迁移、长度/展开预算和原响应槽位/期限/字节副本。已交叉检查，执行待补。固定同步/异步 SDK 驱动增加合成压缩错误，使用原异常解析器和 SDK 回读核对文本/前缀；Rust 夹具的 QP 文件检查路径按驱动的实际创建目录修正。这些输入不来自原 SDK 压缩器，Linux 组合仍待实跑，不能计作完整 E03。
+
+[忽略 QP 字段对照](../sandbox-guest-service/src/upload_response/multipart_read/tests/ignored.rs)核对 Close 遇编码错误后保留的原始预读位置、后续文件打开/完成及原边界诊断。固定 Go L 操作独立限制源读取，Rust 内部事件分片另设；包含短/非法转义、软换行、裸控制字节、满行及后续内容，并保留前一个完成文件。gzip 组使用原上传参考 Y：Rust 记录实际解压块序列，Go 在原 gzip reader 外以 ReadFull 按序提供同样字节，末尾零项必须读到真实 gzip 错误，不注入诊断；两端必须消费同一来源序列。仅设相同块上限不足以建立该事实。入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib ignored_qp -- --include-ignored --nocapture`，已有本地运行。
+
+[Discard 普通组件检查](../sandbox-guest-runtime/src/multipart/discard.rs)覆盖有界预读而非全字段排空、错误/顺序/来源/预算、不可复用和 4 MiB 忽略 QP 流中的固定解析容量。[Linux 忽略字段连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_ignored.rs)核对 identity/gzip 固定源读取及内部块下的后继文件/旧 metadata、先前文件保留、原错误与响应预算、旧入口和等待中的授权/取消/原期限。已交叉检查，执行待补。SDK 驱动另加入对网络分块稳定的合成成功/满行失败，核对原异常解析和后继文件回读/未创建；Linux HTTP/文件/SDK 组合未实跑，不记作原 SDK write 生成或完整 E03。
+
+[上传顺序检查](../sandbox-guest-service/src/file_transfer/batch/tests/upload.rs)连接原授权、实际账户池与临时文件，覆盖编码/首头/用户名/metadata/媒体类型/path 的拒绝优先级，raw/multipart × identity/gzip 四种组合的一次准入/一次账户查询、首 metadata 值和 raw 短正文前缀。条件变量屏障与可推进时钟核对账户查询取消/超时后原授权和上传槽位仍保留，实际查询退出后才允许初始化及容量复用。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload`；Linux service 全测试包含该组，已交叉检查，实际运行待补。固定 SDK 文件夹具所有 POST 已改接同一组件，原 raw/multipart 与合成 gzip 回读组合须在此候选重跑；无正式监听器、签名/完整上传错误 JSON、特权身份切换或 KVM 通过声明。
+
+[上传回执检查](../sandbox-guest-service/src/upload_response/tests.rs)纳入可移植 service lib，覆盖空批次、空 metadata 省略、字段/键顺序、Go 转义、精确响应线长、无效预算、原期限、逐块背压和响应丢弃后最后 Bytes 副本占额，已有本地运行。原上传 Go 参考适配器新增生成类型的成功数组与固定 PostFiles 的写头/正文调用，通过真实本机 HTTP/1.1 服务核对状态、Content-Type、Content-Length、nosniff 缺省和完整正文；含 2047/2048/2049 字节边界、控制/HTML/Unicode 字符及多文件。参考仅发送合成内存响应，不访问实际文件或启动完整 envd；运行后关闭自己的回环服务。显式入口为：
+
+```sh
+SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  upload_response::tests::fixed_go_upload_success_bytes_and_actual_http_headers_match -- --ignored --nocapture
+```
+
+[Linux 回执连接检查](../sandbox-guest-service/src/file_transfer/batch/tests/response.rs)验证已完成文件/metadata 在响应预算失败后保留，实际 BatchReply 与响应字节使用同一原槽位，文件 I/O 完成后初始化仍可推进，空批次响应后容量可复用。SDK 文件夹具已移除成功数组的独立 JSON 拼装；同步/异步合成 POST 检查空 metadata、Unicode/HTML 文件名和大 metadata 响应头/精确正文，再用原 SDK 回读实际文件。这些 Linux 组已交叉检查，实际运行待补；可移植响应对照不能替代它们或完整端点验收。
+
+[gzip 编码所有权检查](../sandbox-guest-service/src/upload_body/encode/tests.rs)纳入上述可移植 service lib 入口，覆盖打开后不预读、空/二进制/大文件块、固定源缓冲、Bytes 克隆背压、打开和读取阻塞期间的取消/原期限、两种总量边界及源错误不能变 HTTP EOF。本地已运行；不模拟 Linux 文件权限或授权实现。
+
+[Linux gzip 下载检查](../sandbox-guest-service/src/file_transfer/gzip_download/tests.rs)和原 [FD 检查](../sandbox-guest-runtime/tests/file_transfer.rs)增加增长/缩短、路径替换、链接、procfs 非 stat 长度读取、真实 AuthPermit/响应 Bytes 持有、容量/期限及原始/压缩预算。定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::gzip_download::tests`，基础和兼容入口会发现该组；当前候选待 Linux 实跑。固定 SDK 文件路由另以原 `files.read(..., gzip=True)` 检查同步/异步 bytes、stream、Unicode text、空/二进制/大文件与缺失/目录错误，合成 HTTP 客户端检查未自动解码的 gzip 正文、无 Content-Length 及 Vary；该扩展也待 Linux 实跑。路由已接下述 stat→编码选择→open 组件，完整正式入口与 E03 双端验收仍待补。
+
+[内容编码测试](../sandbox-guest-runtime/src/file_encoding/tests.rs)和[HTTP 字段测试](../sandbox-guest-service/src/file_encoding.rs)可在 macOS/Linux 原库运行，覆盖 q/大小写/Unicode 空白/不透明字节、重复参数、identity/wildcard、原始字节/项预算、第一重复头、条件字段非空规则和 Vary 设置阶段。13 项同权重列表回归要求保留原 Go 选择，不能稳定排序后误选 gzip。定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_encoding`；普通 runtime/service 库检查会发现这两组。组件没有 stat/open/实际范围响应或 HTTP 错误顺序的执行证据。
+
+[编码 Go 参考适配](../tests/compat/guest_encoding_reference.go)复制固定 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322` 的原选择函数，仅改变 package/import 和输入输出驱动，固定 Go 1.26.8。显式组比较浮点 bits/错误、Content-Encoding、Accept-Encoding 和条件 identity 选择，包括种子 0x311 的十进制/十六进制/畸形数值与长列表；本地已运行，默认 ignored，普通 CI 不代为执行，也未启动完整 Go envd。原样函数及 Apache/BSD 许可证随源码保留：
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/encoding-reference tests/compat/guest_encoding_reference.go
+SANDPROOF_GUEST_ENCODING_REFERENCE=/absolute/path/to/encoding-reference \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  file_encoding::tests::fixed_go_encoding_reference -- --ignored --nocapture
+```
+
+[下载决策检查](../sandbox-guest-runtime/src/file_download/tests.rs)及[响应计划检查](../sandbox-guest-service/src/file_download/tests.rs)纳入可移植库测试，定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_download`。覆盖条件优先级、强弱标签、第一重复字段、旧 HTTP 日期、零时间、Range 解析顺序、空文件/后缀零长度、单段 HEAD seek 要求、多段 MIME 字节/长度、错误头保留及组件预算。已有本地运行；输出为读取计划，不等于真实文件读写、原授权保持、错误收尾或网络 HEAD 行为已验证。
+
+[范围正文执行检查](../sandbox-guest-service/src/file_download/stream/tests.rs)纳入可移植 service lib；定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_download::stream`。覆盖条件拒绝前不 seek/read、完整/单段/多段/零后缀与 HEAD、准备期和正文期的 seek 失败、短读前缀、无伪造结尾、匿名 HTTP 正文错误、原期限以及 Bytes 克隆背压。阻塞 seek/read 用屏障控制，超时用可推进时钟；确认取消后守卫仍保留到实际调用与源析构结束。本地已运行；共享 gzip worker 重构须同时运行原上传/下载所有权回归。
+
+[Linux identity 范围检查](../sandbox-guest-service/src/file_transfer/identity_download/tests.rs)增加真实临时文件、空/二进制、原 FD 替换/增长/缩短、AuthPermit/容量保留及所选文件预算；定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::identity_download::tests`。固定 SDK 文件夹具的 identity GET/HEAD 已接该组件，合成 HTTP 客户端在原 SDK 写入后检查单/多段、无交集、空文件、304/412、If-Range 回退及 HEAD，原同步/异步 SDK 文件回读继续同路执行。该组还检查原查询扩展名与解析后文件名分离，以及同一 FD 的嗅探/范围读取。测试路由使用受控内建 MIME 表、UTC 和测试边界；identity 自动嗅探，gzip 只查扩展名，合成 HTTP 检查类型/Disposition 和多段各 part 类型，不表示实际模板 MIME/时区/协商已接通；新增 Linux 组尚未实跑，不计为通过或 E03 全端点对照。
+
+[下载顺序检查](../sandbox-guest-service/src/file_download/stream/tests/negotiation.rs)覆盖 stat/目录拒绝先于编码、编码拒绝不 open、两类 Vary 阶段、原四类条件回退、gzip 不嗅探、HEAD 实际消费但抑制正文，以及 stat/open 阻塞取消时原守卫保留。普通组验证准备 seek 的匿名 500 和头清理；显式 Go 组比较嗅探/长度两阶段故障的状态、11 个头和正文，Go httptest 的 HEAD attempted body 按真实 net/http 抑制规则规范化。入口为 `cargo test -p sandproof-guest-service --locked --lib file_download::stream::tests::negotiation`；原 gzip 所有权及计划器回归须同时运行。新增显式组复用下述参考二进制与环境变量，运行该组时另加 `-- --include-ignored --nocapture`；普通 CI 不代为执行 Go。
+
+[下载错误检查](../sandbox-guest-service/src/file_download/stream/tests/errors.rs)覆盖 stat/目录/编码/open 的 JSON 阶段、初始单段 seek 的 416、HEAD 抑制、错误头清理、精确转义字节预算、未知错误不泄漏任意诊断，以及错误 Bytes 克隆保留原守卫。正文开始后的多段 seek 失败保持正文错误，不补成功结尾。普通定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_download::stream::tests::errors`；显式 Go 对照沿用下述参考二进制及 SANDPROOF_GUEST_DOWNLOAD_REFERENCE，并加 `-- --include-ignored --nocapture`。对照直接调用原 ServeContent、PathError、JSON Encoder，复用固定 envd jsonError/Error 和下载分支文本；Linux errno 表复制自 Go 1.26.8 原文件，只有运行于 Linux amd64 时再核对原 syscall.Errno。macOS 表驱动比较已运行，不能当作实际 Linux 文件错误、完整 HTTP 连接或 envd 双端验收。
+
+[Linux 协商下载检查](../sandbox-guest-service/src/file_transfer/download/tests.rs)检查实际文件/目录错误优先级和 gzip 请求下的范围回退；原[文件端口检查](../sandbox-guest-runtime/tests/file_transfer.rs)检查延迟 open 的路径替换、保留旧 stat 信息及删除后 open 失败。SDK 文件夹具已接统一下载，增加同步/异步合成 HTTP 的大小写/q、范围/条件、重复 Accept-Encoding、HEAD 及 stat/406 优先级；这里只统计固定 SDK 原调用和合成请求分别承担的证据；下载错误 JSON 已由同一组件交付，夹具核对 code/message、UTF-8 Content-Type、nosniff、换行及解析路径。真实 ENOTDIR/ELOOP、NUL→EINVAL、延迟 open 后删除和 File seek errno 另有 Linux 定向回归。以上 Linux 新组已交叉检查，实际运行待补。
+
+[下载账户准入检查](../sandbox-guest-service/src/file_transfer/download/tests/request.rs)覆盖同一槽位内的账户→路径→identity/gzip、range/HEAD，初始化默认值与显式用户名、原查询扩展名与解析路径分离、账户/路径失败先于 stat/编码。条件变量和显式通知确认账户调用已进入，再用取消/可推进时钟核对原授权与文件槽位保留、账户期限与请求期限取早、账户耗时不退还、最后正文副本占额及释放后的正常请求。入口 `cargo test -p sandproof-guest-service --locked file_transfer::download::tests::request`；已交叉检查，Linux 执行待补。固定 SDK 文件路由的全部下载已改用该入口，原调用集和请求计数不变；Linux SDK 组合须在此候选重跑，不借可移植编码检查核销该组。
+
+[下载 Go 参考适配](../tests/compat/guest_download_reference.go)直接调用 Go 1.26.8 原 `http.ParseTime` / `http.ServeContent`，使用合成字节、显式本地时区及 httptest writer；默认错误头开关固定为 `httpservecontentkeepheaders=0`。显式组逐项核对日期秒/纳秒，以及状态、选定实体头和完整正文，只把 Go 生成的随机多段边界等长规范化以便比较。覆盖旧日期/时区、条件组合、GET/HEAD/POST、零时间、范围边界和种子 0x311 的畸形输入。本地已运行，默认 ignored；不是完整 envd/SDK 双端、FD 失败、Linux 或 KVM 验收：
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/go1.26.8/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/download-reference tests/compat/guest_download_reference.go
+SANDPROOF_GUEST_DOWNLOAD_REFERENCE=/absolute/path/to/download-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  file_download::tests::reference::fixed_go_download_reference -- --ignored --nocapture
+```
+
+[下载 MIME 检查](../sandbox-guest-runtime/src/file_mime/tests.rs)和原[流执行检查](../sandbox-guest-service/src/file_download/stream/tests.rs)覆盖 basename/扩展名、filename 编码与精确头预算、内建/系统表优先级、大小写、空表/错误/超额，以及 304/412 和显式 Content-Type 跳过嗅探、512 字节上限、前缀读取错误、回绕与长度顺序、取消阻塞嗅探时守卫保留。本地可移植检查已运行。Linux 固定路径加载及实际 FD MIME 组已交叉检查，尚未实跑；受控源对照不能代替实际来宾 MIME 数据库证据。
+
+[下载 MIME Go 参考适配](../tests/compat/guest_file_mime_reference.go)直接调用固定 Go 1.26.8 的 DetectContentType、FormatMediaType、filepath.Base/Ext；目录查表复制该版本 mime/type.go 和 type_unix.go 的原函数体，仅变更 package/import 并增加驱动，六个路径指向适配器自己创建的临时文件，运行后仅删除自有目录，不读取宿主 MIME 表。显式组含签名截断/变异、种子 0x311 随机输入、原始文件名字节及受控数据库。已本地运行，默认 ignored，普通 CI 不代为执行；不是完整 envd/SDK 双端或 Linux 实测：
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/go1.26.8/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/file-mime-reference tests/compat/guest_file_mime_reference.go
+SANDPROOF_GUEST_FILE_MIME_REFERENCE=/absolute/path/to/file-mime-reference \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  file_mime::tests::fixed_go_file_mime_reference -- --ignored --nocapture
+```
+
+gzip 新增固定 Cargo 依赖须按[CI 可信预热](ci.md)制备，普通任务仍离线且缺料失败。源码/本地缓存更新不表示黄金盘完成制备；不临时联网、改弱检查或切换现役模板。
+
+[Go MIME 参考适配器](../tests/compat/guest_multipart_reference.go)仅调用固定 Go 1.26.8 标准库，不调用 envd HTTP/文件端点。它无需外部模块，必须使用经过校验的固定工具链；程序会拒绝其他版本。显式对照保存种子 0x311，以相同输入比较四种 Rust 分块下的文件名、正文前缀、part 完成与请求终态；MIME 头 EOF 的严格拒绝单独核对，其余差异使测试失败。普通 CI 不制备 Go，此参考组默认 ignored，不能把普通绿灯记为已运行；本地已显式运行该组。入口为：
+
+```sh
+CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/multipart-reference tests/compat/guest_multipart_reference.go
+SANDPROOF_GUEST_MULTIPART_REFERENCE=/absolute/path/to/multipart-reference \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  multipart::tests::fixed_go_multipart_reference -- --ignored --nocapture
+```
 
 [固定 Go 方法对照](../sandbox-guest-runtime/tests/file_reference.rs)为显式 opt-in，不执行时必须报未运行。以固定 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322`、该版要求的 Go 1.26.8 和锁定模块，采用 Go `-overlay` 把仓库[参考适配器](../tests/compat/guest_files_reference.go)映射为 `packages/envd/sandproof_files_reference.go`，使用 `CGO_ENABLED=0 GOTOOLCHAIN=local`、`build -mod=readonly -trimpath -buildvcs=false` 编译该虚拟文件。记录原源码/工具链与适配器二进制摘要，原 Go 源树须保持未改。该程序直接调用原文件服务方法，不启动 envd 主程序、MMDS、cgroup 或监听器。编译后显式运行：
 
@@ -69,7 +332,9 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
   cargo test -p sandproof-guest-runtime --locked --test file_reference -- --ignored --nocapture
 ```
 
-对照在同一路径重建相同文件树，核对属性、错误和最终路径/类型/模式/字节或链接目标；读取时间戳预先固定且精确比较，新建目录返回的动态 mtime 不比较。空 metadata 的省略与空 map 统一，其他字段不宽松忽略。它是原 Go 方法到 Rust 端口的组件对照，不能替代 E03 同 SDK 的完整双端 HTTP 对照，也不核销权限矩阵、磁盘满、流式传输、进程/VM 重启和 KVM 验收。
+参考适配器新增可选 Detailed 字段，直接返回原 connect.Error 的 code/message，未启用时维持原类别输出。[错误原方法对照](../sandbox-guest-service/src/file_rpc_http/tests/reference.rs)在相同临时路径及初始状态下比较原 Go 方法与 Rust HTTP 组件的十三种真实失败，含特殊字符、NUL、非目录、循环链接、父目录部分效果和 rename 目录冲突/同路径/源错误优先；显式运行 `SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter cargo test -p sandproof-guest-service --locked --lib original_go_methods_match_observed_unary_error_messages -- --ignored --nocapture`。需用新适配器重新构建固定源二进制；当前未实跑，不计为普通 CI 或双端 HTTP 验收。目录另有 original_go_list_dir_errors_match_http，比较十种 ListDir 原方法错误（含未清理路径、NUL、断链、循环与非目录）；同样显式运行并仍待 Linux 实跑。Remove 另有 original_go_remove_errors_match_http，比较九种末尾点、非目录父路径、循环、NUL/转义与斜杠失败；使用同一固定原方法适配器，尚未 Linux 实跑。
+
+对照在同一路径重建相同文件树，核对属性、错误和最终路径/类型/模式/字节或链接目标；读取时间戳预先固定且精确比较，新建目录返回的动态 mtime 不比较。参考现使用原 Connect 默认 protobuf JSON 选项，不再归一化空 metadata 与空 map，其他字段不宽松忽略。它是原 Go 方法到 Rust 端口的组件对照，不能替代 E03 同 SDK 的完整双端 HTTP 对照，也不核销权限矩阵、磁盘满、流式传输、进程/VM 重启和 KVM 验收。
 
 [初始化会话检查](../sandbox-guest-service/tests/session.rs)消费同一宿主初始化样例，检查默认值/环境替换、元数据身份、令牌原子更新、同令牌重试、旧授权拒绝、重启、恰好预算和取消后恢复。[HTTP 路由检查](../sandbox-guest-service/tests/http.rs)覆盖真实回环请求、慢正文、断流、共享槽位、重复鉴权头及错误脱敏；[MMDS 交换检查](../sandbox-guest-service/src/metadata/tests.rs)以实际 TCP 服务核对两次请求并接到初始化路由，拒绝重定向、畸形令牌/元数据及截断。屏障与可推进时钟控制取消/期限，服务端观察原连接 EOF，验证无遗留连接驱动。基础检查和 Linux SDK 合同脚本均运行这些组件；它们不是 Firecracker MMDS 实测、命令鉴权集成、固定 Go envd 双端对照或 KVM 验收。
 
@@ -91,7 +356,6 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 组件入口包括[缓存差分](../controller-service/src/controller/cache_tests.rs)、[身份分配](../controller-service/src/controller/allocator_tests.rs)、[API 耗尽](../sandbox-api/tests/managed_port/allocators.rs)、[有界位置与维护](../sandbox-api/tests/managed_port/bounded_slots.rs)及[模板发布](../sandbox-api/tests/managed_port/publication.rs)。实际宿主观察不能仅由这些测试替身代替。
 
 #292 的[原子本地映射与事实组件](../controller-service/src/controller/internal_inbox/tests.rs)纳入 `scripts/check-distributed-contract.sh` 的原收件测试步骤：准入提交前后与两种未知提交结果均重开真实 SQLite，检查实例/租户映射、原配额、固定位置和编号同进退；模板修订/摘要/形状/owner、期限及配额拒绝不产生本地责任；多租户映射单射且重复请求不重分配。销毁收件与原核心终止同事务，准备动作回执丢失时也不得继续旧创建。原工作流的受控证据只用于组件测试：Ready 使用原发布时刻，事实提交前后故障可重建原结果；Destroyed/逻辑回收还不是 Cleaned，必须核对原 ConfirmRelease；该实例的终局确认及保留位置退休完成前，本地维护不能删掉映射依赖。旧收件格式明确拒绝且不修复。这些不是原应用执行组装、KVM 或两题通过的证据，实机仍按 DK 场景验收。
-
 
 [宿主应用执行组件](../sandbox-host-service/tests/durable_https/execution.rs)在原 ControllerApplication 和真实 SQLite 上验收创建/重复/重开、丢激活回执恢复、销毁先到、原数据许可即时撤销及排空、物理释放未知保留 Stopped、中心断线后的原到期处理；取消由明确宿主屏障控制，实际工作结束前入口许可不归还。[真实 Redis/HTTPS 组合](../sandbox-center-store/tests/redis_ledger.rs)再检查原本地执行事实已持久而中心丢回执/重启，重发原请求得到同一 VM/寿命，只有收到原 Cleaned 才释放中心额度。宿主物理动作在这些组件中受控，不能记为 KVM、SDK 生产入口或 DK 用例通过。
 

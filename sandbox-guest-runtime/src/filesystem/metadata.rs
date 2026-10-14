@@ -4,20 +4,21 @@ use std::fs;
 use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
 use std::path::Path;
 
-use super::{FileError, FileLimits, io_error, path};
+use super::{FileError, FileFailure, FileLimits, path};
 use crate::accounts::{AccountError, lookup_local_ownership};
-use crate::file_protocol::{Entry, FileType, ModifiedTime};
+use crate::file_protocol::{Entry, FaultStage, FileType, ModifiedTime};
 
 pub(super) fn text(value: &OsStr) -> Result<String, FileError> {
     value.to_str().map(str::to_owned).ok_or(FileError::Internal)
 }
 
-pub(super) fn entry(path: &Path, limits: FileLimits) -> Result<Entry, FileError> {
-    let info = fs::symlink_metadata(path).map_err(io_error)?;
+pub(super) fn entry_detailed(path: &Path, limits: FileLimits) -> Result<Entry, FileFailure> {
+    let info = fs::symlink_metadata(path)
+        .map_err(|error| FileFailure::io(FaultStage::EntryStat, path, None, &error))?;
     let (symlink_target, target_info) = if info.file_type().is_symlink() {
         let target = match path::resolve(path, limits.path_bytes) {
             Ok(target) => target,
-            Err(FileError::ResourceExhausted) => return Err(FileError::ResourceExhausted),
+            Err(FileError::ResourceExhausted) => return Err(FileError::ResourceExhausted.into()),
             Err(_) => path.to_owned(),
         };
         let target_info = fs::metadata(&target).ok();
@@ -132,7 +133,7 @@ fn permissions(mode: u32) -> String {
 
 // Ordinary xattr I/O failures discard metadata (fixed Go best-effort policy).
 // Explicit capacity failures must remain observable, never truncated success.
-fn xattrs(path: &Path, limit: usize) -> Result<BTreeMap<String, String>, FileError> {
+pub(super) fn xattrs(path: &Path, limit: usize) -> Result<BTreeMap<String, String>, FileError> {
     let mut names = vec![0; limit];
     let len = match rustix::fs::listxattr(path, names.as_mut_slice()) {
         Ok(len) => len,

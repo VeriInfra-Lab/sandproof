@@ -6,8 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::HeaderMap;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use sandproof_guest_runtime::accounts::{Account, AccountError, AccountLimits, lookup_local_user};
 use sandproof_guest_runtime::protocol::StartRequest;
 use sandproof_guest_runtime::{LaunchSpec, PtySize};
@@ -94,19 +92,46 @@ impl<S: AccountSource> AccountPool<S> {
     }
 
     pub(crate) async fn lookup(&self, username: String) -> Result<Account, ContextError> {
+        let deadline = tokio::time::Instant::now()
+            .checked_add(self.timeout)
+            .ok_or(ContextError::InvalidArgument)?;
+        self.lookup_admitted(username, deadline, Arc::new(())).await
+    }
+
+    pub(crate) async fn lookup_admitted(
+        &self,
+        username: String,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<Account, ContextError> {
+        let deadline = deadline.min(
+            tokio::time::Instant::now()
+                .checked_add(self.timeout)
+                .ok_or(ContextError::InvalidArgument)?,
+        );
+        if tokio::time::Instant::now() >= deadline {
+            return Err(ContextError::DeadlineExceeded);
+        }
         let permit = Arc::clone(&self.slots)
             .try_acquire_owned()
             .map_err(|_| ContextError::ResourceExhausted)?;
         let source = Arc::clone(&self.source);
         let task = tokio::task::spawn_blocking(move || {
+            let _owner = owner;
             let _permit = permit;
-            source.lookup(&username)
+            if tokio::time::Instant::now() >= deadline {
+                return Err(ContextError::DeadlineExceeded);
+            }
+            source.lookup(&username).map_err(account_error)
         });
-        tokio::time::timeout(self.timeout, task)
+        let result = tokio::time::timeout_at(deadline, task)
             .await
             .map_err(|_| ContextError::DeadlineExceeded)?
-            .map_err(|_| ContextError::Unavailable)?
-            .map_err(account_error)
+            .map_err(|_| ContextError::Unavailable)?;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(ContextError::DeadlineExceeded);
+        }
+        result
     }
 }
 
@@ -249,34 +274,12 @@ pub(crate) fn selected_user_with_limits(
     username_bytes: usize,
     authorization_bytes: usize,
 ) -> Result<String, ContextError> {
-    let mut values = headers.get_all("authorization").iter();
-    let value = values.next();
-    if values.next().is_some() {
-        return Err(ContextError::Unauthenticated);
-    }
-    let mut user = None;
-    if let Some(value) = value {
-        if value.as_bytes().len() > authorization_bytes {
-            return Err(ContextError::ResourceExhausted);
-        }
-        if let Ok(value) = value.to_str() {
-            // Fixed Go BasicAuth returns ok=false for other schemes/malformed
-            // input, which then selects the initialized default username.
-            if value
-                .get(..6)
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("Basic "))
-                && let Ok(decoded) = STANDARD.decode(&value[6..])
-                && let Some(colon) = decoded.iter().position(|byte| *byte == b':')
-            {
-                user = Some(
-                    std::str::from_utf8(&decoded[..colon])
-                        .map_err(|_| ContextError::Unauthenticated)?
-                        .to_owned(),
-                );
-            }
-        }
-    }
-    let user = user.unwrap_or_else(|| fallback.into());
+    let user = crate::basic_auth::explicit_user(headers, username_bytes, authorization_bytes)
+        .map_err(|error| match error {
+            crate::basic_auth::Error::Unauthenticated => ContextError::Unauthenticated,
+            crate::basic_auth::Error::ResourceExhausted => ContextError::ResourceExhausted,
+        })?
+        .unwrap_or_else(|| fallback.into());
     if user.is_empty() || user.contains(['\0', '\n', '\r', ':']) {
         return Err(ContextError::Unauthenticated);
     }

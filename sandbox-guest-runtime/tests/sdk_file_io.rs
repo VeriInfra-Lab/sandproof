@@ -3,21 +3,25 @@
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 use axum::{
     Router,
-    body::Bytes,
-    extract::{DefaultBodyLimit, Path as RoutePath, State},
-    http::{HeaderMap, StatusCode},
+    body::{Body, Bytes},
+    extract::State,
+    http::{Request as HttpRequest, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
 };
 use sandproof_guest_runtime::{
-    accounts::{AccountLimits, lookup_local_ownership},
-    file_protocol::{Request, decode_request, encode_response},
+    accounts::{AccountError, AccountLimits, lookup_local_ownership, lookup_local_user},
+    file_protocol::Request,
     filesystem::FileLimits,
 };
 use sandproof_guest_service::{
     AccountPool, InitLimits, Metadata, MetadataSource, ServiceError, Session, SystemAccounts,
-    file_io::{FileDispatchError, FilePool},
+    file_io::{FileDispatchError, FilePool, RpcError},
+    file_rpc_http::{Error as HttpError, FileRpcHttp, Prepared},
+    file_rpc_requests::{FileRpcRequests, Limits as RequestLimits},
+    file_upload::HeaderLimits,
     files::{FileContextLimits, FileSettings},
+    upload_body::HttpBodyLimits,
 };
 use sha2::{Digest, Sha512};
 use std::{
@@ -43,43 +47,66 @@ impl MetadataSource for Meta {
 }
 struct Fixture {
     session: Session<Meta>,
-    accounts: AccountPool<SystemAccounts>,
-    files: FilePool,
+    http: FileRpcHttp<Meta, SystemAccounts>,
     root: PathBuf,
     seen: AtomicUsize,
+    rejected: AtomicUsize,
+    header_rejected: AtomicUsize,
+    gzip_responses: AtomicUsize,
+    gzip_requests: AtomicUsize,
+    gzip_rejected: AtomicUsize,
+    compression_rejected: AtomicUsize,
+    username: String,
 }
 
-async fn rpc(
-    State(fixture): State<Arc<Fixture>>,
-    RoutePath(method): RoutePath<String>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    let request = decode_request(&method, &body, 4096).unwrap();
-    let auth = fixture
-        .session
-        .authorize(headers.get("x-access-token").and_then(|v| v.to_str().ok()))
-        .await
-        .unwrap();
-    let context = auth
-        .resolve_file_rpc(
-            &request,
-            &headers,
-            &fixture.accounts,
-            &FileSettings {
-                daemon_workdir: fixture.root.to_str().unwrap().into(),
-                limits: FileContextLimits {
-                    path_bytes: 4096,
-                    username_bytes: 64,
-                    authorization_bytes: 256,
-                },
-            },
-        )
-        .await
-        .unwrap();
-    // This test fixture accepts only its generated absolute paths.
-    let inside = |p: &str| assert!(Path::new(p).starts_with(&fixture.root) && !p.contains(".."));
-    match &context.request {
+fn record_prepared_rejection(fixture: &Fixture, response: &Response, gzip_request: bool) {
+    if response.status() == StatusCode::UNAUTHORIZED {
+        fixture.rejected.fetch_add(1, Ordering::SeqCst);
+    } else if response.status() == StatusCode::NOT_IMPLEMENTED {
+        assert!(!response.headers().contains_key("content-encoding"));
+        fixture.compression_rejected.fetch_add(1, Ordering::SeqCst);
+    } else {
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        if gzip_request {
+            assert!(!response.headers().contains_key("content-encoding"));
+            fixture.gzip_rejected.fetch_add(1, Ordering::SeqCst);
+        } else {
+            fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+}
+
+async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
+    let gzip_request = request
+        .headers()
+        .get("content-encoding")
+        .is_some_and(|v| v == "gzip");
+    if gzip_request {
+        assert_eq!(request.headers()["accept-encoding"], "gzip,identity");
+        fixture.gzip_requests.fetch_add(1, Ordering::SeqCst);
+    }
+    let wants_gzip = gzip_request
+        || request
+            .headers()
+            .get("accept-encoding")
+            .is_some_and(|v| v == "gzip,identity");
+
+    let request = match fixture.http.prepare(request).await.unwrap() {
+        Prepared::Ready(ready) => ready,
+        Prepared::Response(response) => {
+            record_prepared_rejection(&fixture, &response, gzip_request);
+            return response;
+        }
+    };
+    // Only generated absolute paths and this literal unexpandable path enter
+    // the shared component; no arbitrary relative/home path is admitted.
+    let inside = |p: &str| {
+        assert!(
+            p == "~sandproof-other-311"
+                || (Path::new(p).starts_with(&fixture.root) && !p.contains(".."))
+        );
+    };
+    match request.request() {
         Request::Move {
             source,
             destination,
@@ -93,35 +120,70 @@ async fn rpc(
         | Request::ListDir { path: p, .. } => inside(p),
     }
     fixture.seen.fetch_add(1, Ordering::SeqCst);
-    match fixture.files.execute(auth, context).await {
-        Ok(reply) => (
-            [("content-type", "application/json")],
-            encode_response(reply.response().as_wire(), 65536).unwrap(),
-        )
-            .into_response(),
-        Err(FileDispatchError::Operation(error)) => {
-            let status = match error {
-                sandproof_guest_runtime::filesystem::FileError::NotFound => StatusCode::NOT_FOUND,
-                sandproof_guest_runtime::filesystem::FileError::AlreadyExists => {
-                    StatusCode::CONFLICT
+    match request.execute().await {
+        Ok(response) => {
+            if wants_gzip {
+                if response.status() == StatusCode::OK {
+                    assert_eq!(response.headers()["content-encoding"], "gzip");
+                    fixture.gzip_responses.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    assert!(!response.headers().contains_key("content-encoding"));
                 }
-                sandproof_guest_runtime::filesystem::FileError::InvalidArgument => {
-                    StatusCode::BAD_REQUEST
-                }
-                sandproof_guest_runtime::filesystem::FileError::ResourceExhausted => {
-                    StatusCode::TOO_MANY_REQUESTS
-                }
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
+            }
+            if response.status() == StatusCode::UNAUTHORIZED {
+                fixture.rejected.fetch_add(1, Ordering::SeqCst);
+            } else {
+                assert!(matches!(
+                    response.status(),
+                    StatusCode::OK
+                        | StatusCode::NOT_FOUND
+                        | StatusCode::CONFLICT
+                        | StatusCode::BAD_REQUEST
+                        | StatusCode::INTERNAL_SERVER_ERROR
+                ));
+            }
+            response
+        }
+        Err(failure) => {
+            assert_eq!(
+                failure.error(),
+                &HttpError::Execution(RpcError::Dispatch(FileDispatchError::Operation(
+                    sandproof_guest_runtime::filesystem::FileError::ResourceExhausted
+                ))),
+                "unexpected fixture HTTP dispatch failure: {failure:?}"
+            );
             (
-                status,
+                StatusCode::TOO_MANY_REQUESTS,
                 [("content-type", "application/json")],
-                serde_json::json!({"code":error.code(),"message":"file operation failed"})
-                    .to_string(),
+                Bytes::from_owner(ReplyBytes {
+                    bytes:
+                        serde_json::json!({"code":"resource_exhausted","message":"file operation failed"})
+                            .to_string()
+                            .into_bytes(),
+                    _owner: failure,
+                }),
             )
                 .into_response()
         }
-        Err(error) => panic!("unexpected fixture admission failure: {error:?}"),
+    }
+}
+
+fn response_limits() -> sandproof_guest_service::file_rpc_response::Limits {
+    sandproof_guest_service::file_rpc_response::Limits {
+        wire_bytes: 65536,
+        chunk_bytes: 17,
+    }
+}
+
+// Only the fixture directory quota uses the existing synthetic Connect text. Actual
+// records/failures and their original slots survive all transport Bytes clones.
+struct ReplyBytes<T> {
+    bytes: Vec<u8>,
+    _owner: T,
+}
+impl<T> AsRef<[u8]> for ReplyBytes<T> {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -147,7 +209,7 @@ fn prepare(root: &Path) {
     }
 }
 
-async fn fixture(root: PathBuf) -> Arc<Fixture> {
+async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
     let (username, _) = lookup_local_ownership(
         rustix::process::geteuid().as_raw(),
         rustix::process::getegid().as_raw(),
@@ -174,44 +236,110 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         )
         .await
         .unwrap();
+    let accounts = AccountPool::local(
+        AccountLimits {
+            file_bytes: 65536,
+            groups: 128,
+        },
+        2,
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let files = FilePool::new(
+        2,
+        FileLimits {
+            path_bytes: 4096,
+            entries: 4,
+            retained_bytes: 65536,
+            visited: 1024,
+            xattr_bytes: 65536,
+            account_bytes: 65536,
+        },
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let requests = FileRpcRequests::new(RequestLimits {
+        in_flight: 2,
+        timeout: Duration::from_secs(5),
+        headers: HeaderLimits {
+            bytes: 4096,
+            fields: 32,
+        },
+        body: HttpBodyLimits {
+            total_bytes: 4096,
+            frame_bytes: 4096,
+            frames: 256,
+            trailer_bytes: 1024,
+            trailer_fields: 16,
+        },
+    })
+    .unwrap();
+    let http = FileRpcHttp::new(
+        session.clone(),
+        requests,
+        files,
+        accounts,
+        FileSettings {
+            daemon_workdir: root.to_str().unwrap().into(),
+            limits: FileContextLimits {
+                path_bytes: 4096,
+                username_bytes: 64,
+                authorization_bytes: 256,
+            },
+        },
+        response_limits(),
+    );
     Arc::new(Fixture {
         session,
-        accounts: AccountPool::local(
-            AccountLimits {
-                file_bytes: 65536,
-                groups: 128,
-            },
-            2,
-            Duration::from_secs(5),
-        )
-        .unwrap(),
-        files: FilePool::new(
-            2,
-            FileLimits {
-                path_bytes: 4096,
-                entries: 4,
-                retained_bytes: 65536,
-                visited: 1024,
-                xattr_bytes: 65536,
-                account_bytes: 65536,
-            },
-            Duration::from_secs(5),
-        )
-        .unwrap(),
+        http,
         root,
         seen: AtomicUsize::new(0),
+        rejected: AtomicUsize::new(0),
+        header_rejected: AtomicUsize::new(0),
+        gzip_responses: AtomicUsize::new(0),
+        gzip_requests: AtomicUsize::new(0),
+        gzip_rejected: AtomicUsize::new(0),
+        compression_rejected: AtomicUsize::new(0),
+        username,
     })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pinned_sdk_uses_real_owned_unary_filesystem() {
+    const MISSING_USER: &str = "sandproof_missing_account_311";
     let directory = tempfile::tempdir().unwrap();
     prepare(directory.path());
-    let fixture = fixture(directory.path().to_owned()).await;
+    let fixture = new_fixture(directory.path().to_owned()).await;
+    for name in [MISSING_USER, "sandproof'<>&"] {
+        assert_eq!(
+            lookup_local_user(
+                name,
+                AccountLimits {
+                    file_bytes: 65536,
+                    groups: 128
+                }
+            )
+            .unwrap_err(),
+            AccountError::NotFound
+        );
+    }
+    let missing_default = new_fixture(directory.path().to_owned()).await;
+    missing_default
+        .session
+        .initialize(
+            serde_json::json!({"accessToken":"fixture-token","defaultUser":MISSING_USER})
+                .to_string()
+                .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let missing_router = Router::new()
+        .route("/filesystem.Filesystem/{method}", post(rpc))
+        .with_state(Arc::clone(&missing_default));
     let app = Router::new()
         .route("/filesystem.Filesystem/{method}", post(rpc))
-        .layer(DefaultBodyLimit::max(4096))
-        .with_state(Arc::clone(&fixture));
+        .with_state(Arc::clone(&fixture))
+        .nest("/missing-default", missing_router);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (stop, stopped) = oneshot::channel();
@@ -243,7 +371,7 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .take()
         .unwrap()
         .write_all(
-            serde_json::json!({"url":format!("http://{address}"),"root":directory.path()})
+            serde_json::json!({"url":format!("http://{address}"),"default_url":format!("http://{address}/missing-default"),"root":directory.path(),"username":fixture.username,"missing_user":MISSING_USER})
                 .to_string()
                 .as_bytes(),
         )
@@ -257,9 +385,27 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 40);
+    check_results(directory.path(), &fixture, &missing_default);
+}
+
+fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 62);
+    assert_eq!(fixture.gzip_responses.load(Ordering::SeqCst), 4);
+    assert_eq!(fixture.gzip_requests.load(Ordering::SeqCst), 14);
+    assert_eq!(fixture.gzip_rejected.load(Ordering::SeqCst), 10);
+    assert_eq!(fixture.compression_rejected.load(Ordering::SeqCst), 4);
+    assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
+    assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
+    assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
+    assert_eq!(missing_default.rejected.load(Ordering::SeqCst), 2);
+    assert_eq!(missing_default.header_rejected.load(Ordering::SeqCst), 0);
     for mode in ["sync", "async"] {
-        let dir = directory.path().join(mode);
+        let dir = root.join(mode);
+        assert!(!dir.join("gzip-refused").exists());
+        assert!(!dir.join("encoding-refused").exists());
+        assert!(!dir.join("path-refused").exists());
+        assert!(!dir.join("auth-refused").exists());
+        assert!(!dir.join("timeout-refused").exists());
         assert!(!dir.join("new").exists());
         assert!(!dir.join("partial").exists());
         assert!(!dir.join("file").exists());

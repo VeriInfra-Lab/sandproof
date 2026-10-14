@@ -138,7 +138,10 @@ async fn rpc(
     };
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     match encoded {
-        Ok(body) => ([("content-type", "application/json")], body).into_response(),
+        Ok(body) => {
+            check_default_fields(&path, &body);
+            ([("content-type", "application/json")], body).into_response()
+        }
         Err(error) => (
             StatusCode::TOO_MANY_REQUESTS,
             [("content-type", "application/json")],
@@ -251,4 +254,16 @@ async fn pinned_sdk_file_messages_and_context_roundtrip() {
         .unwrap();
     assert!(status.expect("SDK file probe timed out").unwrap().success());
     assert_eq!(fixture.seen.load(Ordering::SeqCst), 18);
+}
+
+fn check_default_fields(path: &str, body: &[u8]) {
+    if path.ends_with("/empty") {
+        assert_eq!(body, b"{}");
+    }
+    if path.ends_with("/link") {
+        let value: serde_json::Value = serde_json::from_slice(body).unwrap();
+        let fields = value["entry"].as_object().unwrap();
+        assert!(!fields.contains_key("type") && !fields.contains_key("mode"));
+        assert_eq!(fields["symlinkTarget"], "");
+    }
 }

@@ -1,10 +1,28 @@
-#![cfg(target_os = "linux")]
 use sandproof_guest_runtime::file_protocol::{
     Entry, FileType, ModifiedTime, Request, Response, decode_request, encode_response,
 };
 use sandproof_guest_runtime::protocol::ProtocolError;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+
+#[test]
+fn response_allocation_stays_within_wire_budget_including_small_and_escaped_payloads() {
+    assert_eq!(encode_response(Response::Empty, 2).unwrap().capacity(), 2);
+    for length in [0, 1, 7, 8, 9, 31, 32, 33, 1024] {
+        let mut entry = entry();
+        entry.name = "\"\\\n".repeat(length);
+        let expected = encode_response(Response::Entry(&entry), 65536).unwrap();
+        for limit in [expected.len(), expected.len() + 1, expected.len() + 256] {
+            let encoded = encode_response(Response::Entry(&entry), limit).unwrap();
+            assert!(encoded.capacity() <= limit);
+            assert_eq!(encoded, expected);
+        }
+        assert_eq!(
+            encode_response(Response::Entry(&entry), expected.len() - 1),
+            Err(ProtocolError::ResourceExhausted)
+        );
+    }
+}
 
 fn entry() -> Entry {
     Entry {
@@ -20,6 +38,52 @@ fn entry() -> Entry {
         symlink_target: None,
         metadata: BTreeMap::new(),
     }
+}
+
+#[test]
+fn zero_scalars_are_omitted_but_present_optional_and_map_values_are_preserved() {
+    let mut entry = Entry {
+        name: String::new(),
+        kind: FileType::Unspecified,
+        path: String::new(),
+        size: 0,
+        mode: 0,
+        permissions: String::new(),
+        owner: String::new(),
+        group: String::new(),
+        modified_time: None,
+        symlink_target: None,
+        metadata: BTreeMap::new(),
+    };
+    let empty = br#"{"entry":{}}"#;
+    let bytes = encode_response(Response::Entry(&entry), empty.len()).unwrap();
+    assert_eq!(bytes, empty);
+    assert!(bytes.capacity() <= empty.len());
+    assert_eq!(
+        encode_response(Response::Entry(&entry), empty.len() - 1),
+        Err(ProtocolError::ResourceExhausted)
+    );
+    entry.symlink_target = Some(String::new());
+    entry.modified_time = Some(ModifiedTime::new(0, 0).unwrap());
+    entry.metadata.insert(String::new(), String::new());
+    let bytes = encode_response(Response::Entry(&entry), 4096).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap(),
+        json!({"entry":{
+            "modifiedTime":"1970-01-01T00:00:00Z", "symlinkTarget":"", "metadata":{"":""}
+        }})
+    );
+    let entries = [entry];
+    assert_eq!(
+        serde_json::from_slice::<Value>(
+            &encode_response(Response::Entries(&entries), 4096).unwrap()
+        )
+        .unwrap()["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -97,13 +161,14 @@ fn missing_null_and_zero_do_not_lose_defaulting_intent() {
 }
 
 #[test]
-fn duplicate_array_unknown_and_stream_framed_messages_are_not_unary_requests() {
+fn duplicate_array_and_stream_framed_messages_are_not_unary_requests() {
     for body in [
         br#"{"path":"a","path":"b"}"#.as_slice(),
         b"[]",
         b"null",
         br#"{"path":1}"#,
-        br#"{"unknown":true}"#,
+        br#"{"path":null,"path":null}"#,
+        br#"{"path":null,"pa\u0074h":"b"}"#,
         b"{}{}",
         b"\0\0\0\0\x02{}",
     ] {
@@ -135,6 +200,160 @@ fn duplicate_array_unknown_and_stream_framed_messages_are_not_unary_requests() {
 }
 
 #[test]
+fn unknown_fields_are_discarded_but_their_json_and_unicode_must_be_valid() {
+    for body in [
+        br#"{"unknown":true,"unknown":null}"#.as_slice(),
+        br#"{"Path":1,"unknown":{"path":1,"path":false},"n":1e999999999999}"#,
+        br#"{"unknown":["\ud83d\ude00",{},[null,false]],"path":null}"#,
+    ] {
+        assert_eq!(
+            decode_request("Stat", body, body.len()),
+            Ok(Request::Stat(String::new()))
+        );
+    }
+    for body in [
+        br#"{"unknown":"\ud800"}"#.as_slice(),
+        br#"{"unknown":{"\udc00":true}}"#,
+        b"{\"unknown\":\"\xff\"}",
+        br#"{"unknown":[1,]}"#,
+        br#"{"unknown":01}"#,
+    ] {
+        assert_eq!(
+            decode_request("Stat", body, body.len()),
+            Err(ProtocolError::InvalidArgument)
+        );
+    }
+    // Unknown nesting is iterative, with the original protobuf recursion cap.
+    for (depth, accepted) in [(128, true), (9999, true), (10_000, false)] {
+        let body = format!(
+            "{{\"unknown\":{}0{}}}",
+            "[".repeat(depth),
+            "]".repeat(depth)
+        );
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len()).is_ok(),
+            accepted
+        );
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len() - 1),
+            Err(ProtocolError::ResourceExhausted)
+        );
+    }
+}
+
+#[test]
+fn depth_preserves_exact_decimal_integer_semantics_without_float_rounding() {
+    for (value, expected) in [
+        ("1.0", 1),
+        ("1e2", 100),
+        ("100e-2", 1),
+        ("42949672950000000000000000000e-19", u32::MAX),
+        ("4.294967295e9", u32::MAX),
+        ("-0", 0),
+        ("-0.000e999999999999999999999999999", 0),
+        ("0.00000000000000000001e20", 1),
+    ] {
+        for wire in [value.to_string(), serde_json::to_string(value).unwrap()] {
+            let body = format!("{{\"depth\":{wire}}}");
+            assert_eq!(
+                decode_request("ListDir", body.as_bytes(), body.len()),
+                Ok(Request::ListDir {
+                    path: String::new(),
+                    depth: expected
+                }),
+                "{wire}"
+            );
+        }
+    }
+    for value in [
+        "1.0000000000000000000000001",
+        "4294967295.0000000001",
+        "-1e-99999999",
+        "0.000000000000000000001e21",
+        "1e2147483648",
+        "1e-2147483649",
+        "4294967296",
+        "01",
+        "+1",
+        " 1",
+        "1 ",
+        "1e",
+        "1e+",
+        "NaN",
+        "null",
+        "[]",
+    ] {
+        let body = format!("{{\"depth\":{}}}", serde_json::to_string(value).unwrap());
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Err(ProtocolError::InvalidArgument),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn incomplete_exponents_match_fixed_number_tokens_without_repairing_strings_or_structure() {
+    for (value, expected) in [
+        ("1e", 1),
+        ("-0E", 0),
+        ("1.000e", 1),
+        ("4294967295E", u32::MAX),
+    ] {
+        let body = format!("{{\"depth\":{value}}}");
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Ok(Request::ListDir {
+                path: String::new(),
+                depth: expected
+            })
+        );
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len() - 1),
+            Err(ProtocolError::ResourceExhausted)
+        );
+    }
+    for value in ["1e+", "1e-", "-0e+", "1.5e", "4294967296e"] {
+        let body = format!("{{\"depth\":{value}}}");
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Err(ProtocolError::InvalidArgument)
+        );
+        let body = format!("{{\"future\":[{value}],\"path\":\"1e+\"}}");
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len()),
+            Ok(Request::Stat("1e+".into()))
+        );
+    }
+    for body in [
+        r#"{"depth":"1e"}"#,
+        r#"{"depth":01e}"#,
+        r#"{"future":1.e}"#,
+        r#"{"future":1e+_}"#,
+        r#"{"future":1e+"#,
+        r#"{"future":1e "path":"p"}"#,
+        r#"{"depth":1e,"depth":null}"#,
+    ] {
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Err(ProtocolError::InvalidArgument),
+            "{body}"
+        );
+    }
+    for depth in [9999, 10_000] {
+        let body = format!(
+            "{{\"future\":{}1e+{}}}",
+            "[".repeat(depth),
+            "]".repeat(depth)
+        );
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len()).is_ok(),
+            depth == 9999
+        );
+    }
+}
+
+#[test]
 fn byte_budgets_reject_before_decoding_and_never_emit_a_partial_response() {
     let body = br#"{"path":"x"}"#;
     assert_eq!(
@@ -161,10 +380,7 @@ fn byte_budgets_reject_before_decoding_and_never_emit_a_partial_response() {
         encode_response(Response::Empty, 1),
         Err(ProtocolError::ResourceExhausted)
     );
-    assert_eq!(
-        encode_response(Response::Entries(&[]), 14).unwrap(),
-        b"{\"entries\":[]}"
-    );
+    assert_eq!(encode_response(Response::Entries(&[]), 2).unwrap(), b"{}");
 }
 
 #[test]
@@ -178,7 +394,7 @@ fn int64_sizes_and_optional_symlink_presence_survive_encoding() {
     let value: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(value["entry"]["size"], i64::MAX.to_string());
     assert_eq!(value["entry"]["symlinkTarget"], "");
-    assert_eq!(value["entry"]["type"], "FILE_TYPE_UNSPECIFIED");
+    assert!(value["entry"].get("type").is_none());
     assert!(value["entry"].get("modifiedTime").is_none());
     assert!(value["entry"].get("metadata").is_none());
     entry.size = i64::MIN;
