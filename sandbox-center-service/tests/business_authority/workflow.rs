@@ -132,17 +132,25 @@ impl HostPort for Host {
             Intent::Destroy => LifecycleFact::Cleaned,
             Intent::Renew { .. } => panic!("publication does not renew its validation VM"),
         };
-        Ok(wire::response(
-            request,
-            self.observations.fetch_add(1, Ordering::SeqCst) + 1,
-            fact,
-        ))
+        // A durable no-admission result is replayed verbatim, not turned into
+        // a newer observation that invalidates its original confirmation.
+        let version = if fact == LifecycleFact::NotAccepted {
+            1
+        } else {
+            self.observations.fetch_add(1, Ordering::SeqCst) + 1
+        };
+        Ok(wire::response(request, version, fact))
     }
     fn confirm(
         &self,
         response: &LifecycleResponse,
         _: Duration,
     ) -> Result<LifecycleResponse, PortError> {
+        if self.capacity_refusal {
+            // Deterministic lost acknowledgement, independent of machine speed.
+            // The test delivers this exact trusted acknowledgement separately.
+            return Err(PortError::OutcomeUnknown);
+        }
         Ok(response.clone())
     }
     fn close(
@@ -378,7 +386,7 @@ fn actual_never_admitted_candidate_cleanup_settles_failed_then_allows_window_ret
 }
 
 #[test]
-fn actual_capacity_refused_candidate_settles_original_create_without_a_fake_destroy() {
+fn actual_capacity_refusal_waits_for_exact_confirmation_then_settles_without_a_fake_destroy() {
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let authority = authority(&fixture, &proxy);
@@ -388,7 +396,7 @@ fn actual_capacity_refused_candidate_settles_original_create_without_a_fake_dest
             .publish(&app, "8", &candidate().candidate_id)
             .unwrap()
             .state,
-        PublicationState::Failed
+        PublicationState::Checking
     );
     let settled = authority.snapshot().unwrap();
     let sandbox = &settled.center.sandboxes()[0];
@@ -396,7 +404,7 @@ fn actual_capacity_refused_candidate_settles_original_create_without_a_fake_dest
     assert_eq!(sandbox.operations[0].request.intent, Intent::Create);
     let response = sandbox.operations[0].response.as_ref().unwrap();
     assert_eq!(response.fact, LifecycleFact::NotAccepted);
-    assert_eq!(sandbox.terminal_confirmation.as_ref(), Some(response));
+    assert!(sandbox.terminal_confirmation.is_none());
     assert_eq!(
         settled.center.reserved(None, None),
         Some(sandproof_protocol::internal::lifecycle::Resources::ZERO)
@@ -406,6 +414,35 @@ fn actual_capacity_refused_candidate_settles_original_create_without_a_fake_dest
     assert!(record.value().validation_certificate.is_none());
     let link = record.validation().unwrap();
     assert!(link.local.is_none());
+    assert!(link.settlement.is_none());
+    assert!(record.value().failure.is_none());
+
+    let mut wrong = response.clone();
+    wrong.observation_version = 2.try_into().unwrap();
+    assert_eq!(authority.confirm_terminal(&wrong), Err(PortError::Conflict));
+    assert!(
+        authority.snapshot().unwrap().center.sandboxes()[0]
+            .terminal_confirmation
+            .is_none()
+    );
+    // Deliver the late original host acknowledgement through the protected
+    // authority entry, not by retrying publication or allocating a new create.
+    authority.confirm_terminal(response).unwrap();
+    assert_eq!(templates.reconcile_once(&app).unwrap(), 1);
+    let settled = authority.snapshot().unwrap();
+    let sandbox = &settled.center.sandboxes()[0];
+    assert_eq!(sandbox.operations.len(), 1);
+    assert_eq!(sandbox.operations[0].request.intent, Intent::Create);
+    let response = sandbox.operations[0].response.as_ref().unwrap();
+    assert_eq!(response.fact, LifecycleFact::NotAccepted);
+    assert_eq!(sandbox.terminal_confirmation.as_ref(), Some(response));
+    let record = &settled.metadata.registry().records()[0];
+    assert_eq!(record.value().state, PublicationState::Failed);
+    assert_eq!(
+        record.value().failure,
+        Some(PublicationFailure::ValidationRejected)
+    );
+    let link = record.validation().unwrap();
     let saved = link.settlement.as_ref().unwrap();
     assert_eq!(saved.original_create, sandbox.operations[0].request);
     assert_eq!(&saved.cleaned, response);
