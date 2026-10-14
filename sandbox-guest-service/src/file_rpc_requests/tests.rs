@@ -20,6 +20,7 @@ mod gzip_errors;
 mod headers;
 mod json_errors;
 mod protobuf;
+mod token;
 mod unsupported_compression;
 
 struct Meta;

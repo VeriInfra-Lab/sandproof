@@ -109,10 +109,22 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
             _ => return Err(Failure::retained(Error::Route, deadline, owner)),
         };
         let (parts, body) = request.into_parts();
-        let authenticated = admitted
-            .authenticate(&inner.session, parts.headers)
-            .await
-            .map_err(Failure::request)?;
+        let authenticated = match admitted.authenticate(&inner.session, parts.headers).await {
+            Ok(authenticated) => authenticated,
+            Err(failure) => {
+                if failure.has_response() {
+                    return failure
+                        .into_authorization_response(
+                            inner.response,
+                            parts.method == axum::http::Method::HEAD,
+                        )
+                        .await
+                        .map(Prepared::Response)
+                        .map_err(Failure::response);
+                }
+                return Err(Failure::request(failure));
+            }
+        };
         // Determine response format without returning a protocol rejection yet:
         // the original explicit Basic middleware must still run first.
         let codec = authenticated.json_codec();

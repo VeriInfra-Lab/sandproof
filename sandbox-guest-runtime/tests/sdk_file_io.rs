@@ -57,6 +57,7 @@ struct Fixture {
     gzip_rejected: AtomicUsize,
     compression_rejected: AtomicUsize,
     json_rejected: AtomicUsize,
+    token_rejected: AtomicUsize,
     username: String,
 }
 
@@ -67,7 +68,13 @@ fn record_prepared_rejection(
     json_request: bool,
 ) {
     if response.status() == StatusCode::UNAUTHORIZED {
-        fixture.rejected.fetch_add(1, Ordering::SeqCst);
+        if response.headers()["content-type"] == "application/json; charset=utf-8" {
+            assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+            assert!(!response.headers().contains_key("accept-encoding"));
+            fixture.token_rejected.fetch_add(1, Ordering::SeqCst);
+        } else {
+            fixture.rejected.fetch_add(1, Ordering::SeqCst);
+        }
     } else if response.status() == StatusCode::NOT_IMPLEMENTED {
         assert!(!response.headers().contains_key("content-encoding"));
         fixture.compression_rejected.fetch_add(1, Ordering::SeqCst);
@@ -86,6 +93,10 @@ fn record_prepared_rejection(
 }
 
 async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
+    let valid_token = request
+        .headers()
+        .get("x-access-token")
+        .is_some_and(|v| v == "fixture-token");
     let json_request = request
         .headers()
         .get("x-fixture-json-error")
@@ -112,6 +123,7 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
         }
     };
     assert!(!json_request, "invalid JSON reached file dispatch");
+    assert!(valid_token, "invalid access token reached file dispatch");
     // Only generated absolute paths and this literal unexpandable path enter
     // the shared component; no arbitrary relative/home path is admitted.
     let inside = |p: &str| {
@@ -315,6 +327,7 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         gzip_rejected: AtomicUsize::new(0),
         compression_rejected: AtomicUsize::new(0),
         json_rejected: AtomicUsize::new(0),
+        token_rejected: AtomicUsize::new(0),
         username,
     })
 }
@@ -410,6 +423,7 @@ fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
     assert_eq!(fixture.gzip_rejected.load(Ordering::SeqCst), 10);
     assert_eq!(fixture.compression_rejected.load(Ordering::SeqCst), 4);
     assert_eq!(fixture.json_rejected.load(Ordering::SeqCst), 8);
+    assert_eq!(fixture.token_rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
@@ -420,6 +434,7 @@ fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
         assert!(!dir.join("gzip-refused").exists());
         assert!(!dir.join("encoding-refused").exists());
         assert!(!dir.join("json-refused").exists());
+        assert!(!dir.join("token-refused").exists());
         assert!(!dir.join("path-refused").exists());
         assert!(!dir.join("auth-refused").exists());
         assert!(!dir.join("timeout-refused").exists());
