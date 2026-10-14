@@ -6,6 +6,9 @@ use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+#[path = "command_requests/streams.rs"]
+mod streams;
+
 fn decode(method: &str, payload: &[u8], limit: usize) -> Result<Request, ProtocolError> {
     let mut body = Vec::new();
     if matches!(method, "Start" | "Connect") {

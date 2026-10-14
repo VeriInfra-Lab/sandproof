@@ -76,7 +76,9 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #439 的八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38564633601) 通过：源 a0329fa9a899059f4a2ef56ced87d66f8f389e40，checkout 06fb36868fb3a37f39c3296cce50d56793241e0b；四项 CI、原命令/文件与封存 Redis 均通过。首轮测试错误要求 identity 头缺失而失败，修正为原客户端显式 identity 后实跑通过，生产代码未为测试改变语义。后续迁移到共用 HTTP 选择的候选须独立重跑。
 
-[命令空消息回归](../sandbox-guest-runtime/tests/protocol.rs)核对零长度完整帧、最小正预算、缺失/截断/错误 flags/多个消息和一元空正文的区别。[固定 Go F 对照](../sandbox-guest-runtime/tests/command_requests.rs)通过原 server-stream handler 回显生成 Start/Connect 请求，覆盖全部 256 个空帧 flags、JSON 形状、截断和多个数据消息，仅比较接受性与成功解码字段；错误码/全文和后续 EOS 元数据帧未据此验收。F 与 Q 的一元 JSON 回显分开报告，共用需重建的 SANDPROOF_GUEST_CONNECT_REFERENCE 并显式 --include-ignored；Linux 默认账户顺序测试加入零长度 Start 帧，执行待候选 CI。
+[命令空消息回归](../sandbox-guest-runtime/tests/protocol.rs)核对零长度完整帧、最小正预算、缺失/截断/错误 flags/多个消息和一元空正文的区别；EOS 回归另核对先解码首消息、两个载荷独立预算和不采纳客户端 error。[固定 Go F 对照](../sandbox-guest-runtime/tests/command_requests.rs)通过原 server-stream handler 回显生成 Start/Connect 请求，覆盖全部 256 个空帧 flags、JSON 形状、截断和多个数据消息。[后续 EOS 对照](../sandbox-guest-runtime/tests/command_requests/streams.rs)新增 3,948 组首消息存在性、所有尾帧 flags、完整 EOF、已知字段形状/null/重复/折叠、UTF-8/surrogate、base64 和深度边界；只比较接受性与成功解码字段，错误码/全文、压缩及完整服务未据此验收。
+
+F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFERENCE 并显式 --include-ignored；参考二进制须包含 F 入口。新增 EOS 本地对照及可移植规范化检查已执行；Linux 默认账户顺序测试加入零长度 Start 帧及带客户端 error 的合法 EOS，确认仍查询原默认账户，执行待候选 CI。
 
 [Start 默认账户回复检查](../sandbox-guest-service/src/command_requests/http/default_account/tests.rs)覆盖原始/压缩载荷独立限额、原期限、缺失观察/选择与最后字节副本。固定 Go D 入口用原生成 Start 消息及 Connect handler，比较 20 组 JSON 类型、identity/gzip、空/普通/转义/控制/长用户名的真实 HTTP 头、flags 和 JSON 原字节；失败表达来自固定 GetAuthUser，账户查询为受控失败，不运行进程。D 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。独立 gzip 编码通过不代表实际 gzip Start 已启用。
 

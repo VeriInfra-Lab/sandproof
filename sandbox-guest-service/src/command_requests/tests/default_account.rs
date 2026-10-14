@@ -13,7 +13,7 @@ async fn selected_start<S: AccountSource>(
     session: &Session<Meta>,
     accounts: &AccountPool<S>,
     content_type: &str,
-    payload: &[u8],
+    body: Body,
 ) -> Ready {
     let mut headers = headers();
     headers.insert("content-type", content_type.parse().unwrap());
@@ -27,9 +27,17 @@ async fn selected_start<S: AccountSource>(
         .unwrap()
         .select_json(&Method::POST, Rpc::Start)
         .unwrap()
-        .decode_identity(framed(payload))
+        .decode_identity(body)
         .await
         .unwrap()
+}
+
+fn empty_start_with_final_metadata() -> Body {
+    let metadata = br#"{"error":{"code":"not_found","message":"ignored"}}"#;
+    let mut wire = vec![0, 0, 0, 0, 0, 2];
+    wire.extend(u32::try_from(metadata.len()).unwrap().to_be_bytes());
+    wire.extend(metadata);
+    Body::from(wire)
 }
 
 #[tokio::test]
@@ -48,9 +56,14 @@ async fn selected_start_keeps_default_observation_format_and_capacity_without_sp
             "application/connect+json",
             "application/connect+json; charset=utf-8",
         ] {
-            for payload in [b"".as_slice(), b"{}", br#"{"process":{"cmd":"/bin/true"}}"#] {
+            for body in [
+                framed(b""),
+                framed(b"{}"),
+                framed(br#"{"process":{"cmd":"/bin/true"}}"#),
+                empty_start_with_final_metadata(),
+            ] {
                 let before = calls.load(Ordering::SeqCst);
-                let ready = selected_start(&pool, &session, &accounts, content_type, payload).await;
+                let ready = selected_start(&pool, &session, &accounts, content_type, body).await;
                 assert_eq!(calls.load(Ordering::SeqCst), before);
                 let deadline = ready.deadline();
                 let failure = ready
@@ -134,7 +147,7 @@ async fn default_source_faults_and_unselected_decoder_never_fabricate_a_stream_r
                 &session,
                 &accounts,
                 "application/connect+json",
-                b"{}",
+                framed(b"{}"),
             )
             .await
         };

@@ -13,6 +13,7 @@ use sandproof_guest_core::Channel;
 use serde::{Deserialize, Serialize};
 
 mod content_type;
+mod end_stream;
 mod request_json;
 use crate::file_protocol::request_json::{prepare_command, uint32};
 pub use content_type::canonical_content_type;
@@ -271,9 +272,10 @@ struct UpdateRequest {
 struct Empty {}
 
 /// Decode one complete HTTP body after bounded HTTP collection. Start/Connect
-/// require exactly one uncompressed Connect envelope, including its full
-/// declared length; unary methods use unframed JSON. Extra envelopes, flags,
-/// compression and trailing bytes are never silently discarded.
+/// require one uncompressed data envelope with its full declared length and
+/// optionally one final, validated Connect EOS metadata envelope. Unary methods
+/// use unframed JSON. More data messages, compression, malformed metadata and
+/// trailing bytes are never silently discarded.
 /// A complete zero-length standard envelope is the protobuf default message,
 /// as in Connect's stream decoder; an absent envelope is still malformed.
 ///
@@ -288,7 +290,7 @@ pub fn decode_request(
     if max_message_bytes == 0 {
         return Err(ProtocolError::ResourceExhausted);
     }
-    let payload = if matches!(method, "Start" | "Connect") {
+    let (payload, final_envelope) = if matches!(method, "Start" | "Connect") {
         let header: &[u8; 5] = body
             .get(..5)
             .and_then(|slice| slice.try_into().ok())
@@ -297,19 +299,19 @@ pub fn decode_request(
         if size > max_message_bytes {
             return Err(ProtocolError::ResourceExhausted);
         }
-        if header[0] != 0 || body.len().checked_sub(5) != Some(size) {
+        if header[0] != 0 {
             return Err(ProtocolError::InvalidArgument);
         }
-        if size == 0 {
-            b"{}".as_slice()
-        } else {
-            &body[5..]
-        }
+        let payload = body
+            .get(5..5 + size)
+            .ok_or(ProtocolError::InvalidArgument)?;
+        let payload = if size == 0 { b"{}".as_slice() } else { payload };
+        (payload, &body[5 + size..])
     } else {
         if body.len() > max_message_bytes {
             return Err(ProtocolError::ResourceExhausted);
         }
-        body
+        (body, b"".as_slice())
     };
     if !matches!(
         method,
@@ -317,6 +319,33 @@ pub fn decode_request(
     ) {
         return Err(ProtocolError::Unimplemented);
     }
+    let request = decode_message(method, payload)?;
+    // Validate the first message before the next envelope, preserving the
+    // original receive order. Metadata is checked but cannot alter this request.
+    if !final_envelope.is_empty() {
+        validate_final_envelope(final_envelope, max_message_bytes)?;
+    }
+    Ok(request)
+}
+
+fn validate_final_envelope(body: &[u8], limit: usize) -> Result<(), ProtocolError> {
+    let header: &[u8; 5] = body
+        .get(..5)
+        .and_then(|v| v.try_into().ok())
+        .ok_or(ProtocolError::InvalidArgument)?;
+    let size = u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
+    if size > limit {
+        return Err(ProtocolError::ResourceExhausted);
+    }
+    // Connect tests the end bit and compression bit; it does not reject other
+    // high flags on this final message. No compressed reader is selected here.
+    if header[0] & 2 == 0 || header[0] & 1 != 0 || body.len().checked_sub(5) != Some(size) {
+        return Err(ProtocolError::InvalidArgument);
+    }
+    end_stream::validate(&body[5..])
+}
+
+fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError> {
     let prepared = prepare_command(payload)?;
     let payload = prepared.as_ref();
     match method {

@@ -282,6 +282,44 @@ fn complete_zero_length_stream_message_preserves_protobuf_defaults_only() {
     }
 }
 
+#[test]
+fn final_metadata_is_validated_separately_and_cannot_change_the_request() {
+    for method in ["Start", "Connect"] {
+        let data = frame(br#"{"process":{"pid":17,"cmd":"/bin/true"}}"#);
+        let expected = decode_request(method, &data, 256).unwrap();
+        let metadata =
+            br#"{"error":{"code":"not_found","message":"ignored"},"metadata":{"a":["x"]}}"#;
+        let mut eos = frame(metadata);
+        eos[0] = 2;
+        let body = [data.as_slice(), &eos].concat();
+        // The per-message limit does not count either envelope header or the
+        // other message. The HTTP layer separately bounds total wire input.
+        assert_eq!(decode_request(method, &body, metadata.len()), Ok(expected));
+        assert_eq!(
+            decode_request(method, &body, metadata.len() - 1),
+            Err(ProtocolError::ResourceExhausted)
+        );
+        let mut invalid = body.clone();
+        invalid.push(0);
+        assert_eq!(
+            decode_request(method, &invalid, 256),
+            Err(ProtocolError::InvalidArgument)
+        );
+        for end in 1..eos.len() {
+            assert_eq!(
+                decode_request(method, &[data.as_slice(), &eos[..end]].concat(), 256),
+                Err(ProtocolError::InvalidArgument)
+            );
+        }
+        // A malformed first protobuf message wins over an oversized tail.
+        let invalid = [frame(b"[]"), vec![2, 255, 255, 255, 255]].concat();
+        assert_eq!(
+            decode_request(method, &invalid, 256),
+            Err(ProtocolError::InvalidArgument)
+        );
+    }
+}
+
 fn unpack(bytes: &[u8], flag: u8) -> Value {
     assert_eq!(bytes[0], flag);
     assert_eq!(
