@@ -32,7 +32,7 @@ async fn session() -> Session<Meta> {
         .unwrap();
     session
 }
-fn pool() -> FilePool {
+pub(super) fn pool() -> FilePool {
     FilePool::new(
         1,
         FileLimits {
@@ -198,4 +198,123 @@ async fn cancelled_before_dispatch_has_no_effect_and_invalid_settings_refuse() {
         Err(FileDispatchError::InvalidArgument)
     ));
     empty(&pool, &session).await.unwrap();
+}
+
+#[test]
+fn queued_operation_checks_original_deadline_before_any_effect() {
+    use std::{
+        future::Future,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let session = session().await;
+        let pool = pool();
+        let (entered, entry) = oneshot::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let occupied = tokio::task::spawn_blocking(move || {
+            entered.send(()).unwrap();
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        entry.await.unwrap();
+        let requests = Arc::new(Semaphore::new(1));
+        let owner: Owner = Arc::new(Arc::clone(&requests).try_acquire_owned().unwrap());
+        let lease = pool.reserve(owner).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let auth = Arc::new(session.authorize(Some("token")).await.unwrap());
+        let original = Instant::now() + Duration::from_secs(1);
+        let future = FilePool::dispatch_admitted(auth, lease, original, move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(FileResponse::Empty)
+        });
+        tokio::pin!(future);
+        assert!(
+            std::future::poll_fn(|cx| std::task::Poll::Ready(
+                future.as_mut().poll(cx).is_pending()
+            ))
+            .await
+        );
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert!(matches!(
+            future.await,
+            Err(FileDispatchError::DeadlineExceeded)
+        ));
+        tokio::time::resume();
+        assert_eq!(pool.slots.available_permits(), 0);
+        assert_eq!(requests.available_permits(), 0);
+        release.send(()).unwrap();
+        occupied.await.unwrap();
+        drop(
+            tokio::time::timeout(Duration::from_secs(5), pool.slots.acquire())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+        drop(
+            tokio::time::timeout(Duration::from_secs(5), requests.acquire())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        session
+            .initialize(br#"{"accessToken":"token"}"#)
+            .await
+            .unwrap();
+    });
+}
+
+#[tokio::test]
+async fn running_io_keeps_request_owner_after_its_original_deadline() {
+    let session = session().await;
+    let pool = pool();
+    let requests = Arc::new(Semaphore::new(1));
+    let owner: Owner = Arc::new(Arc::clone(&requests).try_acquire_owned().unwrap());
+    let lease = pool.reserve(owner).unwrap();
+    let auth = Arc::new(session.authorize(Some("token")).await.unwrap());
+    let (entered, entry) = oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let (effect, observed) = oneshot::channel();
+    let original = Instant::now() + Duration::from_secs(1);
+    let task = tokio::spawn(FilePool::dispatch_admitted(
+        auth,
+        lease,
+        original,
+        move || {
+            entered.send(()).unwrap();
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            effect.send(()).unwrap();
+            Ok(FileResponse::Empty)
+        },
+    ));
+    entry.await.unwrap();
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(2)).await;
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(FileDispatchError::DeadlineExceeded)
+    ));
+    tokio::time::resume();
+    assert_eq!(pool.slots.available_permits(), 0);
+    assert_eq!(requests.available_permits(), 0);
+    release.send(()).unwrap();
+    observed.await.unwrap();
+    drop(
+        tokio::time::timeout(Duration::from_secs(5), pool.slots.acquire())
+            .await
+            .unwrap()
+            .unwrap(),
+    );
+    drop(
+        tokio::time::timeout(Duration::from_secs(5), requests.acquire())
+            .await
+            .unwrap()
+            .unwrap(),
+    );
 }

@@ -149,6 +149,37 @@ impl AuthPermit {
         accounts: &AccountPool<S>,
         settings: &FileSettings,
     ) -> Result<FileContext, ContextError> {
+        self.resolve_file_rpc_with_origin(request, headers, accounts, settings, None)
+            .await
+    }
+
+    pub(crate) async fn resolve_file_rpc_admitted<S: AccountSource>(
+        &self,
+        request: &Request,
+        headers: &HeaderMap,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<FileContext, ContextError> {
+        self.resolve_file_rpc_with_origin(
+            request,
+            headers,
+            accounts,
+            settings,
+            Some((deadline, owner)),
+        )
+        .await
+    }
+
+    async fn resolve_file_rpc_with_origin<S: AccountSource>(
+        &self,
+        request: &Request,
+        headers: &HeaderMap,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        origin: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
+    ) -> Result<FileContext, ContextError> {
         settings.validate()?;
         match request {
             Request::Stat(path)
@@ -169,7 +200,7 @@ impl AuthPermit {
             settings.limits.username_bytes,
             settings.limits.authorization_bytes,
         )?;
-        let account = file_account(&name, accounts, settings, None).await?;
+        let account = file_account(&name, accounts, settings, origin).await?;
         let path = |value: &str| self.file_path(value, &account, settings);
         let request = match request {
             Request::Stat(value) => Request::Stat(path(value)?),

@@ -1,11 +1,15 @@
 //! Admitted blocking unary file operations. Cancellation stops waiting, not a
 //! dispatched syscall. The worker retains authorization until I/O settles;
 //! returned records retain their slot until dropped. No production route yet.
-use crate::{AuthPermit, files::FileContext};
+use crate::{AuthPermit, files::FileContext, owned_body::Owner};
 use sandproof_guest_runtime::filesystem::{self, FileError, FileLimits, FileResponse, Ownership};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::Instant;
+
+mod rpc;
+pub use rpc::{RpcError, RpcFailure, RpcRequest};
 
 #[cfg(test)]
 mod tests;
@@ -19,10 +23,20 @@ pub enum FileDispatchError {
     InvalidArgument,
 }
 
-#[derive(Debug)]
 pub struct FileReply {
     response: FileResponse,
+    _lease: Arc<Lease>,
+}
+impl std::fmt::Debug for FileReply {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileReply")
+            .field("response", &self.response)
+            .finish_non_exhaustive()
+    }
+}
+struct Lease {
     _slot: OwnedSemaphorePermit,
+    _owner: Owner,
 }
 impl FileReply {
     /// Borrow while the retained response remains charged to the pool. Wire
@@ -97,23 +111,63 @@ impl FilePool {
     where
         F: FnOnce() -> Result<FileResponse, FileError> + Send + 'static,
     {
+        let deadline = self.deadline()?;
+        let lease = self.reserve(Arc::new(()))?;
+        Self::dispatch_admitted(Arc::new(auth), lease, deadline, operation).await
+    }
+
+    fn deadline(&self) -> Result<Instant, FileDispatchError> {
+        Instant::now()
+            .checked_add(self.timeout)
+            .ok_or(FileDispatchError::InvalidArgument)
+    }
+
+    fn reserve(&self, owner: Owner) -> Result<Arc<Lease>, FileDispatchError> {
         let slot = Arc::clone(&self.slots)
             .try_acquire_owned()
             .map_err(|_| FileDispatchError::ResourceExhausted)?;
+        Ok(Arc::new(Lease {
+            _slot: slot,
+            _owner: owner,
+        }))
+    }
+
+    async fn dispatch_admitted<F>(
+        auth: Arc<AuthPermit>,
+        lease: Arc<Lease>,
+        deadline: Instant,
+        operation: F,
+    ) -> Result<FileReply, FileDispatchError>
+    where
+        F: FnOnce() -> Result<FileResponse, FileError> + Send + 'static,
+    {
+        check_deadline(deadline)?;
         let task = tokio::task::spawn_blocking(move || {
+            // A queued blocking job may start after its request has expired.
+            check_deadline(deadline)?;
             let result = operation();
             // Explicit lifetime through the last operation, including errors.
             drop(auth);
             result
                 .map(|response| FileReply {
                     response,
-                    _slot: slot,
+                    _lease: lease,
                 })
                 .map_err(FileDispatchError::Operation)
         });
-        tokio::time::timeout(self.timeout, task)
+        let result = tokio::time::timeout_at(deadline, task)
             .await
             .map_err(|_| FileDispatchError::DeadlineExceeded)?
-            .map_err(|_| FileDispatchError::Unavailable)?
+            .map_err(|_| FileDispatchError::Unavailable)?;
+        check_deadline(deadline)?;
+        result
+    }
+}
+
+fn check_deadline(deadline: Instant) -> Result<(), FileDispatchError> {
+    if Instant::now() >= deadline {
+        Err(FileDispatchError::DeadlineExceeded)
+    } else {
+        Ok(())
     }
 }
