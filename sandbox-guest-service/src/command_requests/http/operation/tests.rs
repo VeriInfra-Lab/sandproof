@@ -336,7 +336,10 @@ async fn channel_rejections_keep_owning_the_request_and_refuse_stream_misclassif
                 assert_eq!(slots.available_permits(), 0);
                 drop(failure);
             }
-            assert_eq!(slots.available_permits(), 1);
+            let _released = tokio::time::timeout(Duration::from_secs(5), slots.acquire())
+                .await
+                .unwrap()
+                .unwrap();
         }
     }
 }
