@@ -373,6 +373,21 @@ def sandproof_center_core.validation.number
 def sandproof_protocol.internal.lifecycle.MAX_OPTIONS_BYTES : Std.Usize :=
   65536#usize
 
+/-- [sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values]:
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 26:4-26:41
+    Name pattern: [sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values"]
+def sandproof_protocol.internal.lifecycle.Resources.values
+  (self : sandproof_protocol.internal.lifecycle.Resources) :
+  Result (Array Std.U64 4#usize)
+  := do
+  ok
+    (Array.make 4#usize [
+      self.instances, self.cpu, self.memory_bytes, self.disk_bytes
+      ])
+
 /-- [sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive]:
     Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 30:4-30:33
     Name pattern: [sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive]
@@ -551,6 +566,16 @@ def sandproof_protocol.internal.PositiveCounter.checked_next
   | some value =>
     sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from
       value
+
+/-- [sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from]:
+    Source: './sandbox-protocol/src/internal.rs', lines 95:4-95:43
+    Name pattern: [sandproof_protocol::internal::{core::convert::From<u64, sandproof_protocol::internal::PositiveCounter>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::{core::convert::From<u64, sandproof_protocol::internal::PositiveCounter>}::from"]
+def U64.Insts.CoreConvertFromPositiveCounter.from
+  (value : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
+  sandproof_protocol.internal.PositiveCounter.get value
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq]:
     Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
@@ -1812,8 +1837,15 @@ def counter_value
   (value : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
   sandproof_protocol.internal.PositiveCounter.get value
 
-/-- [sandproof_foundations_extract::lane_current]:
+/-- [sandproof_foundations_extract::counter_into_u64]:
     Source: 'src/lib.rs', lines 27:0-29:1
+    Visibility: public -/
+def counter_into_u64
+  (value : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
+  U64.Insts.CoreConvertFromPositiveCounter.from value
+
+/-- [sandproof_foundations_extract::lane_current]:
+    Source: 'src/lib.rs', lines 31:0-33:1
     Visibility: public -/
 def lane_current
   (lane : sandproof_center_core.model.RetentionLane) :
@@ -1822,7 +1854,7 @@ def lane_current
   sandproof_center_core.model.RetentionLane.current lane
 
 /-- [sandproof_foundations_extract::store_get_copy]:
-    Source: 'src/lib.rs', lines 31:0-33:1
+    Source: 'src/lib.rs', lines 35:0-37:1
     Visibility: public -/
 def store_get_copy
   (store : sandbox_controller_core.store.Store Std.U64 Std.U64) (key : Std.U64)
@@ -1833,7 +1865,7 @@ def store_get_copy
     core.marker.CopyU64 store key
 
 /-- [sandproof_foundations_extract::store_put]:
-    Source: 'src/lib.rs', lines 35:0-37:1
+    Source: 'src/lib.rs', lines 39:0-41:1
     Visibility: public -/
 def store_put
   (store : sandbox_controller_core.store.Store Std.U64 Std.U64) (key : Std.U64)
@@ -1843,7 +1875,7 @@ def store_put
   sandbox_controller_core.store.Store.put core.cmp.PartialEqU64 store key value
 
 /-- [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_mut]:
-    Source: 'src/lib.rs', lines 40:17-40:42 -/
+    Source: 'src/lib.rs', lines 44:17-44:42 -/
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool.call_mut
   (c : store_retain_above.closure) (tupled_args : (Std.U64 × Std.U64)) :
@@ -1853,7 +1885,7 @@ def
   ok (value > c, c)
 
 /-- [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_once]:
-    Source: 'src/lib.rs', lines 40:17-40:42 -/
+    Source: 'src/lib.rs', lines 44:17-44:42 -/
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool.call_once
   (c : store_retain_above.closure) (p : (Std.U64 × Std.U64)) :
@@ -1865,7 +1897,7 @@ def
   ok b
 
 /-- Trait implementation: [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}]
-    Source: 'src/lib.rs', lines 40:17-40:42 -/
+    Source: 'src/lib.rs', lines 44:17-44:42 -/
 @[reducible]
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool
@@ -1876,7 +1908,7 @@ def
 }
 
 /-- Trait implementation: [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}]
-    Source: 'src/lib.rs', lines 40:17-40:42 -/
+    Source: 'src/lib.rs', lines 44:17-44:42 -/
 @[reducible]
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool
@@ -1889,7 +1921,7 @@ def
 }
 
 /-- [sandproof_foundations_extract::store_retain_above]:
-    Source: 'src/lib.rs', lines 39:0-41:1
+    Source: 'src/lib.rs', lines 43:0-45:1
     Visibility: public -/
 def store_retain_above
   (store : sandbox_controller_core.store.Store Std.U64 Std.U64)
@@ -1901,13 +1933,13 @@ def store_retain_above
     store floor
 
 /-- [sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}::call_once]:
-    Source: 'src/lib.rs', lines 44:21-44:42 -/
+    Source: 'src/lib.rs', lines 48:21-48:42 -/
 def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
   (c : option_is_none_or.closure) (tupled_args : Std.U64) : Result Bool := do
   ok (tupled_args > c)
 
 /-- Trait implementation: [sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}]
-    Source: 'src/lib.rs', lines 44:21-44:42 -/
+    Source: 'src/lib.rs', lines 48:21-48:42 -/
 @[reducible]
 def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool :
   core.ops.function.FnOnce option_is_none_or.closure Std.U64 Bool := {
@@ -1916,7 +1948,7 @@ def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool :
 }
 
 /-- [sandproof_foundations_extract::option_is_none_or]:
-    Source: 'src/lib.rs', lines 43:0-45:1
+    Source: 'src/lib.rs', lines 47:0-49:1
     Visibility: public -/
 def option_is_none_or
   (value : Option Std.U64) (floor : Std.U64) : Result Bool := do
@@ -1925,7 +1957,7 @@ def option_is_none_or
     floor
 
 /-- [sandproof_foundations_extract::resource_add]:
-    Source: 'src/lib.rs', lines 47:0-49:1
+    Source: 'src/lib.rs', lines 51:0-53:1
     Visibility: public -/
 def resource_add
   (left : sandproof_protocol.internal.lifecycle.Resources)
@@ -1935,14 +1967,14 @@ def resource_add
   sandproof_protocol.internal.lifecycle.Resources.checked_add left right
 
 /-- [sandproof_foundations_extract::resource_positive]:
-    Source: 'src/lib.rs', lines 51:0-53:1
+    Source: 'src/lib.rs', lines 55:0-57:1
     Visibility: public -/
 def resource_positive
   (value : sandproof_protocol.internal.lifecycle.Resources) : Result Bool := do
   sandproof_protocol.internal.lifecycle.Resources.positive value
 
 /-- [sandproof_foundations_extract::resource_fits]:
-    Source: 'src/lib.rs', lines 55:0-57:1
+    Source: 'src/lib.rs', lines 59:0-61:1
     Visibility: public -/
 def resource_fits
   (value : sandproof_protocol.internal.lifecycle.Resources)
@@ -1951,8 +1983,17 @@ def resource_fits
   := do
   sandproof_protocol.internal.lifecycle.Resources.fits value limit
 
+/-- [sandproof_foundations_extract::resource_values]:
+    Source: 'src/lib.rs', lines 63:0-65:1
+    Visibility: public -/
+def resource_values
+  (value : sandproof_protocol.internal.lifecycle.Resources) :
+  Result (Array Std.U64 4#usize)
+  := do
+  sandproof_protocol.internal.lifecycle.Resources.values value
+
 /-- [sandproof_foundations_extract::create_binding_valid]:
-    Source: 'src/lib.rs', lines 59:0-61:1
+    Source: 'src/lib.rs', lines 67:0-69:1
     Visibility: public -/
 def create_binding_valid
   (value : sandproof_protocol.internal.lifecycle.CreateBinding) :
@@ -1961,7 +2002,7 @@ def create_binding_valid
   sandproof_protocol.internal.lifecycle.CreateBinding.is_valid value
 
 /-- [sandproof_foundations_extract::identity_response]:
-    Source: 'src/lib.rs', lines 63:0-68:1
+    Source: 'src/lib.rs', lines 71:0-76:1
     Visibility: public -/
 def identity_response
   (actual : sandproof_protocol.internal.ControlIdentity)
@@ -1971,14 +2012,14 @@ def identity_response
   sandproof_protocol.internal.ControlIdentity.validate_response actual expected
 
 /-- [sandproof_foundations_extract::retry_hint]:
-    Source: 'src/lib.rs', lines 70:0-72:1
+    Source: 'src/lib.rs', lines 78:0-80:1
     Visibility: public -/
 def retry_hint
   (outcome : sandproof_protocol.WorkOutcome Std.U64) : Result Bool := do
   sandproof_protocol.WorkOutcome.permits_new_attempt outcome
 
 /-- [sandproof_foundations_extract::outcome_observation]:
-    Source: 'src/lib.rs', lines 74:0-76:1
+    Source: 'src/lib.rs', lines 82:0-84:1
     Visibility: public -/
 def outcome_observation
   (outcome : sandproof_protocol.WorkOutcome Std.U64) :
@@ -1987,7 +2028,7 @@ def outcome_observation
   sandproof_protocol.WorkOutcome.observation outcome
 
 /-- [sandproof_foundations_extract::allocated_number]:
-    Source: 'src/lib.rs', lines 78:0-80:1
+    Source: 'src/lib.rs', lines 86:0-88:1
     Visibility: public -/
 def allocated_number
   (value : Str) («prefix» : Str) (highwater : Std.U64) :
@@ -1997,7 +2038,7 @@ def allocated_number
     highwater
 
 /-- [sandproof_foundations_extract::center_allocated_number]:
-    Source: 'src/lib.rs', lines 81:0-83:1
+    Source: 'src/lib.rs', lines 89:0-91:1
     Visibility: public -/
 def center_allocated_number
   (value : Str) («prefix» : Str) (highwater : Std.U64) :
@@ -2006,7 +2047,7 @@ def center_allocated_number
   sandproof_center_core.validation.number value «prefix» highwater
 
 /-- [sandproof_foundations_extract::tenant_from_string]:
-    Source: 'src/lib.rs', lines 85:0-87:1
+    Source: 'src/lib.rs', lines 93:0-95:1
     Visibility: public -/
 def tenant_from_string
   (value : String) :
@@ -2017,7 +2058,7 @@ def tenant_from_string
     value
 
 /-- [sandproof_foundations_extract::tenant_from_str]:
-    Source: 'src/lib.rs', lines 88:0-90:1
+    Source: 'src/lib.rs', lines 96:0-98:1
     Visibility: public -/
 def tenant_from_str
   (value : Str) :
@@ -2028,13 +2069,13 @@ def tenant_from_str
     value
 
 /-- [sandproof_foundations_extract::tenant_value]:
-    Source: 'src/lib.rs', lines 91:0-93:1
+    Source: 'src/lib.rs', lines 99:0-101:1
     Visibility: public -/
 def tenant_value (value : sandproof_protocol.TenantId) : Result Str := do
   sandproof_protocol.TenantId.as_str value
 
 /-- [sandproof_foundations_extract::tenant_into_string]:
-    Source: 'src/lib.rs', lines 94:0-96:1
+    Source: 'src/lib.rs', lines 102:0-104:1
     Visibility: public -/
 def tenant_into_string
   (value : sandproof_protocol.TenantId) : Result String := do
@@ -2042,7 +2083,7 @@ def tenant_into_string
     value
 
 /-- [sandproof_foundations_extract::sandbox_from_string]:
-    Source: 'src/lib.rs', lines 97:0-99:1
+    Source: 'src/lib.rs', lines 105:0-107:1
     Visibility: public -/
 def sandbox_from_string
   (value : String) :
@@ -2053,7 +2094,7 @@ def sandbox_from_string
     value
 
 /-- [sandproof_foundations_extract::sandbox_from_str]:
-    Source: 'src/lib.rs', lines 100:0-102:1
+    Source: 'src/lib.rs', lines 108:0-110:1
     Visibility: public -/
 def sandbox_from_str
   (value : Str) :
@@ -2064,13 +2105,13 @@ def sandbox_from_str
     value
 
 /-- [sandproof_foundations_extract::sandbox_value]:
-    Source: 'src/lib.rs', lines 103:0-105:1
+    Source: 'src/lib.rs', lines 111:0-113:1
     Visibility: public -/
 def sandbox_value (value : sandproof_protocol.SandboxId) : Result Str := do
   sandproof_protocol.SandboxId.as_str value
 
 /-- [sandproof_foundations_extract::sandbox_into_string]:
-    Source: 'src/lib.rs', lines 106:0-108:1
+    Source: 'src/lib.rs', lines 114:0-116:1
     Visibility: public -/
 def sandbox_into_string
   (value : sandproof_protocol.SandboxId) : Result String := do
@@ -2078,7 +2119,7 @@ def sandbox_into_string
     value
 
 /-- [sandproof_foundations_extract::operation_from_string]:
-    Source: 'src/lib.rs', lines 109:0-111:1
+    Source: 'src/lib.rs', lines 117:0-119:1
     Visibility: public -/
 def operation_from_string
   (value : String) :
@@ -2089,7 +2130,7 @@ def operation_from_string
     value
 
 /-- [sandproof_foundations_extract::operation_from_str]:
-    Source: 'src/lib.rs', lines 112:0-114:1
+    Source: 'src/lib.rs', lines 120:0-122:1
     Visibility: public -/
 def operation_from_str
   (value : Str) :
@@ -2100,13 +2141,13 @@ def operation_from_str
     value
 
 /-- [sandproof_foundations_extract::operation_value]:
-    Source: 'src/lib.rs', lines 115:0-117:1
+    Source: 'src/lib.rs', lines 123:0-125:1
     Visibility: public -/
 def operation_value (value : sandproof_protocol.OperationId) : Result Str := do
   sandproof_protocol.OperationId.as_str value
 
 /-- [sandproof_foundations_extract::operation_into_string]:
-    Source: 'src/lib.rs', lines 118:0-120:1
+    Source: 'src/lib.rs', lines 126:0-128:1
     Visibility: public -/
 def operation_into_string
   (value : sandproof_protocol.OperationId) : Result String := do
@@ -2114,7 +2155,7 @@ def operation_into_string
     alloc.string.String.Insts.CoreConvertFromOperationId value
 
 /-- [sandproof_foundations_extract::logical_action_from_string]:
-    Source: 'src/lib.rs', lines 121:0-123:1
+    Source: 'src/lib.rs', lines 129:0-131:1
     Visibility: public -/
 def logical_action_from_string
   (value : String) :
@@ -2125,7 +2166,7 @@ def logical_action_from_string
     value
 
 /-- [sandproof_foundations_extract::logical_action_from_str]:
-    Source: 'src/lib.rs', lines 124:0-126:1
+    Source: 'src/lib.rs', lines 132:0-134:1
     Visibility: public -/
 def logical_action_from_str
   (value : Str) :
@@ -2136,14 +2177,14 @@ def logical_action_from_str
     value
 
 /-- [sandproof_foundations_extract::logical_action_value]:
-    Source: 'src/lib.rs', lines 127:0-129:1
+    Source: 'src/lib.rs', lines 135:0-137:1
     Visibility: public -/
 def logical_action_value
   (value : sandproof_protocol.LogicalActionId) : Result Str := do
   sandproof_protocol.LogicalActionId.as_str value
 
 /-- [sandproof_foundations_extract::logical_action_into_string]:
-    Source: 'src/lib.rs', lines 130:0-132:1
+    Source: 'src/lib.rs', lines 138:0-140:1
     Visibility: public -/
 def logical_action_into_string
   (value : sandproof_protocol.LogicalActionId) : Result String := do
@@ -2151,7 +2192,7 @@ def logical_action_into_string
     alloc.string.String.Insts.CoreConvertFromLogicalActionId value
 
 /-- [sandproof_foundations_extract::resource_from_string]:
-    Source: 'src/lib.rs', lines 133:0-135:1
+    Source: 'src/lib.rs', lines 141:0-143:1
     Visibility: public -/
 def resource_from_string
   (value : String) :
@@ -2162,7 +2203,7 @@ def resource_from_string
     value
 
 /-- [sandproof_foundations_extract::resource_from_str]:
-    Source: 'src/lib.rs', lines 136:0-138:1
+    Source: 'src/lib.rs', lines 144:0-146:1
     Visibility: public -/
 def resource_from_str
   (value : Str) :
@@ -2173,13 +2214,13 @@ def resource_from_str
     value
 
 /-- [sandproof_foundations_extract::resource_value]:
-    Source: 'src/lib.rs', lines 139:0-141:1
+    Source: 'src/lib.rs', lines 147:0-149:1
     Visibility: public -/
 def resource_value (value : sandproof_protocol.ResourceId) : Result Str := do
   sandproof_protocol.ResourceId.as_str value
 
 /-- [sandproof_foundations_extract::resource_into_string]:
-    Source: 'src/lib.rs', lines 142:0-144:1
+    Source: 'src/lib.rs', lines 150:0-152:1
     Visibility: public -/
 def resource_into_string
   (value : sandproof_protocol.ResourceId) : Result String := do
@@ -2187,7 +2228,7 @@ def resource_into_string
     alloc.string.String.Insts.CoreConvertFromResourceId value
 
 /-- [sandproof_foundations_extract::client_request_from_string]:
-    Source: 'src/lib.rs', lines 145:0-147:1
+    Source: 'src/lib.rs', lines 153:0-155:1
     Visibility: public -/
 def client_request_from_string
   (value : String) :
@@ -2198,7 +2239,7 @@ def client_request_from_string
     value
 
 /-- [sandproof_foundations_extract::client_request_from_str]:
-    Source: 'src/lib.rs', lines 148:0-150:1
+    Source: 'src/lib.rs', lines 156:0-158:1
     Visibility: public -/
 def client_request_from_str
   (value : Str) :
@@ -2209,14 +2250,14 @@ def client_request_from_str
     value
 
 /-- [sandproof_foundations_extract::client_request_value]:
-    Source: 'src/lib.rs', lines 151:0-153:1
+    Source: 'src/lib.rs', lines 159:0-161:1
     Visibility: public -/
 def client_request_value
   (value : sandproof_protocol.ClientRequestId) : Result Str := do
   sandproof_protocol.ClientRequestId.as_str value
 
 /-- [sandproof_foundations_extract::client_request_into_string]:
-    Source: 'src/lib.rs', lines 154:0-156:1
+    Source: 'src/lib.rs', lines 162:0-164:1
     Visibility: public -/
 def client_request_into_string
   (value : sandproof_protocol.ClientRequestId) : Result String := do
@@ -2224,7 +2265,7 @@ def client_request_into_string
     alloc.string.String.Insts.CoreConvertFromClientRequestId value
 
 /-- [sandproof_foundations_extract::deployment_from_string]:
-    Source: 'src/lib.rs', lines 157:0-159:1
+    Source: 'src/lib.rs', lines 165:0-167:1
     Visibility: public -/
 def deployment_from_string
   (value : String) :
@@ -2235,7 +2276,7 @@ def deployment_from_string
     value
 
 /-- [sandproof_foundations_extract::deployment_from_str]:
-    Source: 'src/lib.rs', lines 160:0-162:1
+    Source: 'src/lib.rs', lines 168:0-170:1
     Visibility: public -/
 def deployment_from_str
   (value : Str) :
@@ -2246,14 +2287,14 @@ def deployment_from_str
     value
 
 /-- [sandproof_foundations_extract::deployment_value]:
-    Source: 'src/lib.rs', lines 163:0-165:1
+    Source: 'src/lib.rs', lines 171:0-173:1
     Visibility: public -/
 def deployment_value
   (value : sandproof_protocol.DeploymentId) : Result Str := do
   sandproof_protocol.DeploymentId.as_str value
 
 /-- [sandproof_foundations_extract::deployment_into_string]:
-    Source: 'src/lib.rs', lines 166:0-168:1
+    Source: 'src/lib.rs', lines 174:0-176:1
     Visibility: public -/
 def deployment_into_string
   (value : sandproof_protocol.DeploymentId) : Result String := do
@@ -2261,7 +2302,7 @@ def deployment_into_string
     alloc.string.String.Insts.CoreConvertFromDeploymentId value
 
 /-- [sandproof_foundations_extract::node_from_string]:
-    Source: 'src/lib.rs', lines 169:0-171:1
+    Source: 'src/lib.rs', lines 177:0-179:1
     Visibility: public -/
 def node_from_string
   (value : String) :
@@ -2272,7 +2313,7 @@ def node_from_string
     value
 
 /-- [sandproof_foundations_extract::node_from_str]:
-    Source: 'src/lib.rs', lines 172:0-174:1
+    Source: 'src/lib.rs', lines 180:0-182:1
     Visibility: public -/
 def node_from_str
   (value : Str) :
@@ -2283,13 +2324,13 @@ def node_from_str
     value
 
 /-- [sandproof_foundations_extract::node_value]:
-    Source: 'src/lib.rs', lines 175:0-177:1
+    Source: 'src/lib.rs', lines 183:0-185:1
     Visibility: public -/
 def node_value (value : sandproof_protocol.NodeId) : Result Str := do
   sandproof_protocol.NodeId.as_str value
 
 /-- [sandproof_foundations_extract::node_into_string]:
-    Source: 'src/lib.rs', lines 178:0-180:1
+    Source: 'src/lib.rs', lines 186:0-188:1
     Visibility: public -/
 def node_into_string (value : sandproof_protocol.NodeId) : Result String := do
   core.convert.IntoFrom.into alloc.string.String.Insts.CoreConvertFromNodeId

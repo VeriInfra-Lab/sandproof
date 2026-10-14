@@ -16,7 +16,52 @@ class FoundationsExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/foundations/translation.json').read_text())
 
     def test_real_checked_roots_are_present(self):
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 54)
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), 56)
+
+    def test_value_conversion_roots_cannot_disappear(self):
+        for name in ('sandproof_foundations_extract::counter_into_u64',
+                     'sandproof_foundations_extract::resource_values'):
+            with self.subTest(name=name):
+                inventory = copy.deepcopy(self.inventory)
+                inventory['functions'] = [f for f in inventory['functions'] if f['rust_name'] != name]
+                with self.assertRaisesRegex(ValueError, 'root was not generated'):
+                    check(ROOT, self.llbc, inventory)
+
+    def test_actual_value_conversions_cannot_disappear_or_become_opaque(self):
+        for name in (
+            'sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from',
+            'sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values',
+        ):
+            with self.subTest(name=name):
+                inventory = copy.deepcopy(self.inventory)
+                function = next(f for f in inventory['functions'] if f['rust_name'] == name)
+                inventory['functions'].remove(function)
+                with self.assertRaisesRegex(ValueError, 'root was not generated'):
+                    check(ROOT, self.llbc, inventory)
+                inventory = copy.deepcopy(self.inventory)
+                next(f for f in inventory['functions'] if f['rust_name'] == name)['is_opaque'] = True
+                with self.assertRaisesRegex(ValueError, 'owned body missing'):
+                    check(ROOT, self.llbc, inventory)
+                llbc = copy.deepcopy(self.llbc)
+                next(f for f in llbc['translated']['fun_decls']
+                     if f and f['def_id'] == function['def_id'])['body'] = 'Opaque'
+                with self.assertRaisesRegex(ValueError, 'owned body missing'):
+                    check(ROOT, llbc, self.inventory)
+
+    def test_value_conversion_roots_cannot_silently_reduce_coverage(self):
+        read_text = Path.read_text
+        for function in ('counter_into_u64', 'resource_values'):
+            def without_root(path, *args, **kwargs):
+                value = read_text(path, *args, **kwargs)
+                if path == ROOT / 'scripts/regenerate-foundations-lean.sh':
+                    return value.replace(f'  --start-from crate::{function} \\\n', '')
+                if path == ROOT / 'verification/extract-foundations/src/lib.rs':
+                    return value.replace(f'pub fn {function}', f'fn {function}')
+                return value
+
+            with patch.object(Path, 'read_text', without_root):
+                with self.assertRaisesRegex(ValueError, 'roots and script disagree'):
+                    check(ROOT, self.llbc, self.inventory)
 
     def test_destination_cannot_depend_on_the_checkout_or_another_output(self):
         for destination in ('/old-checkout/verification/aeneas/llbc/sandproof_foundations.llbc',

@@ -24,6 +24,10 @@ pub fn counter_value(value: PositiveCounter) -> u64 {
     value.get()
 }
 
+pub fn counter_into_u64(value: PositiveCounter) -> u64 {
+    u64::from(value)
+}
+
 pub fn lane_current(lane: &sandproof_center_core::RetentionLane) -> Option<PositiveCounter> {
     lane.current()
 }
@@ -54,6 +58,10 @@ pub fn resource_positive(value: Resources) -> bool {
 
 pub fn resource_fits(value: Resources, limit: Resources) -> bool {
     value.fits(limit)
+}
+
+pub fn resource_values(value: Resources) -> [u64; 4] {
+    value.values()
 }
 
 pub fn create_binding_valid(value: &CreateBinding) -> bool {
