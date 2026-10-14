@@ -11,7 +11,7 @@ use axum::{
 };
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
-    file_protocol::{Request, decode_request, encode_response},
+    file_protocol::{Request, decode_request},
     filesystem::FileLimits,
 };
 use sandproof_guest_service::{
@@ -109,14 +109,13 @@ async fn rpc(
         )
         .await
     {
-        Ok(reply) => (
-            [("content-type", "application/json")],
-            Bytes::from_owner(ReplyBytes {
-                bytes: encode_response(reply.response().as_wire(), 65536).unwrap(),
-                _owner: reply,
-            }),
-        )
-            .into_response(),
+        Ok(reply) => reply
+            .into_response(sandproof_guest_service::file_rpc_response::Limits {
+                wire_bytes: 65536,
+                chunk_bytes: 17,
+            })
+            .await
+            .unwrap(),
         Err(failure) => {
             let RpcError::Dispatch(FileDispatchError::Operation(error)) = failure.error() else {
                 panic!("unexpected fixture admission/context failure: {failure:?}")

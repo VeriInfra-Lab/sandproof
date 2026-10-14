@@ -1,10 +1,28 @@
-#![cfg(target_os = "linux")]
 use sandproof_guest_runtime::file_protocol::{
     Entry, FileType, ModifiedTime, Request, Response, decode_request, encode_response,
 };
 use sandproof_guest_runtime::protocol::ProtocolError;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+
+#[test]
+fn response_allocation_stays_within_wire_budget_including_small_and_escaped_payloads() {
+    assert_eq!(encode_response(Response::Empty, 2).unwrap().capacity(), 2);
+    for length in [0, 1, 7, 8, 9, 31, 32, 33, 1024] {
+        let mut entry = entry();
+        entry.name = "\"\\\n".repeat(length);
+        let expected = encode_response(Response::Entry(&entry), 65536).unwrap();
+        for limit in [expected.len(), expected.len() + 1, expected.len() + 256] {
+            let encoded = encode_response(Response::Entry(&entry), limit).unwrap();
+            assert!(encoded.capacity() <= limit);
+            assert_eq!(encoded, expected);
+        }
+        assert_eq!(
+            encode_response(Response::Entry(&entry), expected.len() - 1),
+            Err(ProtocolError::ResourceExhausted)
+        );
+    }
+}
 
 fn entry() -> Entry {
     Entry {

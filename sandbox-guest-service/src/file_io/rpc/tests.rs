@@ -298,3 +298,77 @@ async fn cancelled_or_expired_account_lookup_keeps_auth_request_and_file_slot_un
         assert!(!root.path().join("never").exists());
     }
 }
+
+#[tokio::test]
+async fn unary_response_uses_pool_clamped_deadline_and_keeps_both_slots_after_completed_io() {
+    use http_body_util::BodyExt;
+    for overflow in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let session = session().await;
+        let mut pool = super::super::tests::pool();
+        pool.timeout = Duration::from_secs(5);
+        let (accounts, _) = accounts(root.path(), None);
+        let (owner, requests) = request_owner();
+        let original = Instant::now() + Duration::from_secs(30);
+        let reply = pool
+            .execute_rpc(
+                request(
+                    &session,
+                    Request::MakeDir("created".into()),
+                    original,
+                    owner,
+                )
+                .await,
+                &accounts,
+                &settings(root.path()),
+            )
+            .await
+            .unwrap();
+        assert!(root.path().join("created").is_dir());
+        let effective = reply.deadline();
+        assert!(effective < original);
+        assert!(effective > Instant::now());
+        // The completed operation releases auth even while records remain.
+        session
+            .initialize(br#"{"accessToken":"token"}"#)
+            .await
+            .unwrap();
+        let response = reply
+            .into_response(crate::file_rpc_response::Limits {
+                wire_bytes: if overflow { 1 } else { 65536 },
+                chunk_bytes: 17,
+            })
+            .await;
+        if overflow {
+            let failure = response.unwrap_err();
+            assert_eq!(
+                failure.error(),
+                crate::file_rpc_response::Error::ResponseLimit
+            );
+            assert_eq!(failure.deadline(), effective);
+            assert_eq!(pool.slots.available_permits(), 0);
+            assert_eq!(requests.available_permits(), 0);
+            drop(failure);
+        } else {
+            let mut body = response.unwrap().into_body();
+            let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+            let copy = bytes.clone();
+            drop(bytes);
+            tokio::time::pause();
+            tokio::time::advance(
+                effective.saturating_duration_since(Instant::now()) + Duration::from_millis(1),
+            )
+            .await;
+            assert!(Instant::now() < original);
+            assert!(body.frame().await.unwrap().is_err());
+            tokio::time::resume();
+            drop(body);
+            assert_eq!(pool.slots.available_permits(), 0);
+            assert_eq!(requests.available_permits(), 0);
+            drop(copy);
+        }
+        released(&pool, &requests).await;
+        // A failed or undeliverable response neither undoes nor replays mkdir.
+        assert!(root.path().join("created").is_dir());
+    }
+}

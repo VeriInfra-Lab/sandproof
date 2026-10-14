@@ -17,6 +17,35 @@ pub(crate) trait Failure: std::error::Error + fmt::Debug + Send + Sync + 'static
 pub(crate) trait Source<E> {
     fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, E>;
 }
+/// An already bounded encoded payload, shared by upload and unary replies.
+pub(crate) struct Payload {
+    bytes: Vec<u8>,
+    offset: usize,
+    chunk_bytes: usize,
+}
+impl Payload {
+    pub(crate) fn new(bytes: Vec<u8>, chunk_bytes: usize) -> Self {
+        Self {
+            bytes,
+            offset: 0,
+            chunk_bytes,
+        }
+    }
+}
+impl<E> Source<E> for Payload {
+    fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, E> {
+        if self.offset == self.bytes.len() {
+            return Ok(None);
+        }
+        if self.offset == 0 && self.bytes.len() <= self.chunk_bytes {
+            return Ok(Some(std::mem::take(&mut self.bytes)));
+        }
+        let end = self.offset + (self.bytes.len() - self.offset).min(self.chunk_bytes);
+        let chunk = self.bytes[self.offset..end].to_vec();
+        self.offset = end;
+        Ok(Some(chunk))
+    }
+}
 fn check_deadline<E: Failure>(deadline: Instant) -> Result<(), E> {
     if Instant::now() >= deadline {
         Err(E::deadline())

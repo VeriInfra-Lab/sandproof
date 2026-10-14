@@ -481,6 +481,21 @@ impl Write for BoundedWriter {
         if bytes.len() > self.remaining {
             return Err(io::Error::other("message budget exceeded"));
         }
+        let required = self.bytes.len() + bytes.len();
+        if required > self.bytes.capacity() {
+            // Vec's implicit growth can exceed the configured wire budget.
+            // Grow geometrically only within it, before appending any bytes.
+            let limit = self.bytes.len() + self.remaining;
+            let capacity = self
+                .bytes
+                .capacity()
+                .saturating_mul(2)
+                .max(required)
+                .min(limit);
+            self.bytes
+                .try_reserve_exact(capacity - self.bytes.len())
+                .map_err(|_| io::Error::other("message allocation failed"))?;
+        }
         self.bytes.extend_from_slice(bytes);
         self.remaining -= bytes.len();
         Ok(bytes.len())

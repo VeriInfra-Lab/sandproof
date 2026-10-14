@@ -25,6 +25,7 @@ pub enum FileDispatchError {
 
 pub struct FileReply {
     response: FileResponse,
+    deadline: Instant,
     _lease: Arc<Lease>,
 }
 impl std::fmt::Debug for FileReply {
@@ -44,6 +45,29 @@ impl FileReply {
     #[must_use]
     pub const fn response(&self) -> &FileResponse {
         &self.response
+    }
+
+    #[must_use]
+    pub const fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
+    /// Send identity JSON using the same effective deadline and request/file
+    /// slots, including all encoded body copies. The caller selects protocol.
+    /// # Errors
+    /// Response preparation can fail after I/O succeeded; never replay it.
+    pub async fn into_response(
+        self,
+        limits: crate::file_rpc_response::Limits,
+    ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
+        let deadline = self.deadline;
+        crate::file_rpc_response::send(
+            Arc::new(self),
+            |reply| reply.response.as_wire(),
+            limits,
+            deadline,
+        )
+        .await
     }
 }
 
@@ -151,6 +175,7 @@ impl FilePool {
             result
                 .map(|response| FileReply {
                     response,
+                    deadline,
                     _lease: lease,
                 })
                 .map_err(FileDispatchError::Operation)

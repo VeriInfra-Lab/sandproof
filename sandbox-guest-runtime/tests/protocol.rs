@@ -1,5 +1,3 @@
-#![cfg(target_os = "linux")]
-
 use sandproof_guest_core::Channel;
 use sandproof_guest_runtime::protocol::{
     End, Event, Input, ProtocolError, Request, Selector, Signal, decode_request, encode_event,

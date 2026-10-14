@@ -9,7 +9,6 @@
 
 #[cfg(target_os = "linux")]
 pub mod accounts;
-#[cfg(target_os = "linux")]
 pub mod file_protocol;
 #[cfg(target_os = "linux")]
 pub mod filesystem;
@@ -24,7 +23,6 @@ pub mod multipart;
 
 #[cfg(target_os = "linux")]
 mod process;
-#[cfg(target_os = "linux")]
 pub mod protocol;
 #[cfg(target_os = "linux")]
 mod pty;
