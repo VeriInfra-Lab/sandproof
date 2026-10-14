@@ -99,6 +99,59 @@ async fn body_backpressure_and_final_byte_clone_retain_original_capacity() {
     assert_eq!(actual, expected);
     released(slots).await;
 }
+
+#[tokio::test]
+async fn known_length_reply_releases_on_last_byte_without_an_extra_eof_poll() {
+    let (guard, slots) = owner();
+    let response = success(
+        vec![result("/file")],
+        Limits {
+            chunk_bytes: 65536,
+            ..limits()
+        },
+        deadline(),
+        guard,
+    )
+    .await
+    .unwrap();
+    let length: usize = response.headers()["content-length"]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mut body = response.into_body();
+    let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    assert_eq!(bytes.len(), length);
+    let copy = bytes.clone();
+    drop(bytes);
+    assert_eq!(slots.available_permits(), 0);
+    drop(copy);
+    // HTTP may finish a known-length message without polling the body for EOF.
+    // The already-serialized source has no remaining I/O or codec to settle.
+    assert_eq!(slots.available_permits(), 1);
+    assert!(body.frame().await.is_none());
+}
+
+#[tokio::test]
+async fn cancelled_serialization_keeps_guard_until_the_encoder_really_returns() {
+    let (guard, slots) = owner();
+    let (entered, started) = tokio::sync::oneshot::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let mut response = Box::pin(send(limits(), deadline(), guard, move || {
+        let _ = entered.send(());
+        let _ = blocked.recv();
+        Ok(b"[]".to_vec())
+    }));
+    assert!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(response.as_mut().poll(cx).is_pending()))
+            .await
+    );
+    started.await.unwrap();
+    drop(response);
+    assert_eq!(slots.available_permits(), 0);
+    release.send(()).unwrap();
+    released(slots).await;
+}
 #[tokio::test]
 async fn dropped_body_and_original_expiry_keep_outstanding_bytes_and_never_fake_eof() {
     for (expire, chunk_bytes) in [(false, 17), (true, 17), (false, 65536), (true, 65536)] {

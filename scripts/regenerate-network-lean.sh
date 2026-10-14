@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+TOOL_ROOT="${SANDPROOF_PROOF_TOOL_ROOT:-$ROOT_DIR/.tools}"
+CHARON="$TOOL_ROOT/aeneas/charon/bin/charon"
+AENEAS="$TOOL_ROOT/aeneas/bin/aeneas"
+test "$(git -C "$TOOL_ROOT/aeneas" rev-parse HEAD)" = 505b6ca35217e7be5c96c3e2f8045edfbdf47291
+test "$(git -C "$TOOL_ROOT/aeneas/charon" rev-parse HEAD)" = b104e24fea7d721b71e6c39fd70f26ff20bc0980
+cd "$ROOT_DIR"
+LLBC=verification/aeneas/llbc/sandproof_network.llbc
+DEST=verification/aeneas/network
+mkdir -p "$(dirname "$LLBC")" "$DEST"
+mkdir -p artifacts
+PREVIOUS="$(mktemp -d artifacts/network-extraction.XXXXXX)"
+if [[ -f "$LLBC" ]]; then mv "$LLBC" "$PREVIOUS/previous.llbc"; fi
+test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
+# Cargo's driver runs in verification/extract-network. The relative
+# --dest-file below reaches the same LLBC and is portable across checkouts.
+RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
+"$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
+  --start-from crate::cidr_contains \
+  --start-from crate::protected_ipv4 \
+  --start-from crate::destination_allowed \
+  --start-from crate::parse_ipv4_bits \
+  --start-from crate::egress \
+  --start-from crate::ingress \
+  --start-from crate::clone_world \
+  --start-from crate::initial_world \
+  --start-from crate::runtime_crash \
+  --start-from crate::runtime_recover \
+  --start-from crate::slot_transition \
+  --start-from crate::controller_input \
+  --start-from crate::runtime \
+  --start-from crate::create \
+  --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_network.llbc \
+  -- --manifest-path verification/extract-network/Cargo.toml --lib --locked --offline
+test -s "$LLBC"
+"$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \
+  -emit-json -namespace SandproofNetworkRust -subdir SandproofNetwork \
+  -dest "$DEST" "$LLBC"
+# Editing templates are not library models and never become proof assumptions.
+rm -f "$DEST/SandproofNetwork/FunsExternal_Template.lean" \
+  "$DEST/SandproofNetwork/TypesExternal_Template.lean"

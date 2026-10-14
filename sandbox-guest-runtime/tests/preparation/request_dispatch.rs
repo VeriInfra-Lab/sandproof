@@ -258,7 +258,7 @@ async fn authenticated_pid_requests_list_write_close_and_reconnect_to_original_e
     .await;
     assert_eq!(
         json_frame(&frame(&mut body).await, 0),
-        json!({"event":{"end":{"exited":true}}})
+        json!({"event":{"end":{"exited":true,"status":"exit status 0"}}})
     );
     assert_eq!(json_frame(&frame(&mut body).await, 2), json!({}));
     assert!(body.next().await.is_none());
@@ -279,8 +279,8 @@ async fn authenticated_pid_requests_list_write_close_and_reconnect_to_original_e
         pid
     );
     assert_eq!(
-        json_frame(&frame(&mut late).await, 0)["event"]["end"]["exited"],
-        true
+        json_frame(&frame(&mut late).await, 0),
+        json!({"event":{"end":{"exited":true,"status":"exit status 0"}}})
     );
     assert_eq!(json_frame(&frame(&mut late).await, 2), json!({}));
     drop(late);

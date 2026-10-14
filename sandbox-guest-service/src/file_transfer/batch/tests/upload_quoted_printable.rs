@@ -255,3 +255,39 @@ async fn qp_response_keeps_original_slot_deadline_and_final_clone() {
         b"prefix"
     );
 }
+
+#[tokio::test]
+async fn qp_last_response_byte_settles_workers_and_allows_the_next_single_slot_request() {
+    let root = tempfile::tempdir().unwrap();
+    let f = Fixture::new(root.path()).await;
+    for compressed in [false, true] {
+        let input = partial(b"prefix\0tail\n");
+        let response = upload(&f, form(&input, compressed), response_limits())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 500);
+        let length: usize = response.headers()["content-length"]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let mut body = response.into_body();
+        let mut received = 0;
+        while received < length {
+            let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+            received += bytes.len();
+            let copy = bytes.clone();
+            drop(bytes);
+            assert_eq!(f.streams.slots.available_permits(), 0);
+            drop(copy);
+        }
+        // No EOF poll, sleep, retry or quiesce: model a known-length HTTP reply.
+        assert_eq!(f.streams.slots.available_permits(), 1);
+        assert_eq!(
+            std::fs::read(root.path().join("partial")).unwrap(),
+            b"prefix"
+        );
+        drop(f.batch(None, super::limits()).await);
+        assert!(body.frame().await.is_none());
+    }
+}

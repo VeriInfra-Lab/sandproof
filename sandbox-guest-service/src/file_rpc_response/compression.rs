@@ -25,12 +25,7 @@ pub(super) fn compress(
     .map_err(|error| map_error(&error))?;
     let mut output = Vec::new();
     loop {
-        if *cancelled.borrow() {
-            return Err(Error::Unavailable);
-        }
-        if Instant::now() >= deadline {
-            return Err(Error::DeadlineExceeded);
-        }
+        crate::owned_body::check_active::<Error>(deadline, cancelled)?;
         let Some(chunk) = encoder.next_chunk().map_err(|error| map_error(&error))? else {
             return Ok(output);
         };
