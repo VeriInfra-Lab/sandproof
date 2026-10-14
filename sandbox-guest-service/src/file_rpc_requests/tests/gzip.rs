@@ -212,7 +212,7 @@ async fn gzip_request_limits_and_real_failures_remain_distinct_and_keep_capacity
                 error: GzipError::Truncated,
             },
         ),
-        (Vec::new(), Error::Protocol(ProtocolError::InvalidArgument)),
+        (Vec::new(), json_error("Stat", b"")),
     ] {
         let auth = pool
             .admit()

@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 mod gzip;
+mod methods;
 mod protobuf;
 
 enum Records {

@@ -111,9 +111,9 @@ async fn real_upload_reply_and_download_chunks_retain_admission() {
     let bytes = axum::body::Bytes::from_owner(chunk);
     let transport_copy = bytes.clone();
     drop(download);
-    assert_eq!(pool.slots.available_permits(), 0);
+    assert_eq!(pool.available_slots(), 0);
     drop(bytes);
-    assert_eq!(pool.slots.available_permits(), 0);
+    assert_eq!(pool.available_slots(), 0);
     drop(transport_copy);
     let slot = pool.slots.acquire().await.unwrap();
     drop(slot);
@@ -339,7 +339,7 @@ async fn ready_replies_and_queued_bytes_cannot_succeed_after_deadline() {
     ));
     consumed.await.unwrap(); // Expired queued allocation is actually released.
     drop(download);
-    assert_eq!(pool.slots.available_permits(), 1);
+    assert_eq!(pool.available_slots(), 1);
 }
 
 #[tokio::test]

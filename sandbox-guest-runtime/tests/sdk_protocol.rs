@@ -3,6 +3,9 @@
 //! It is NOT a guest server: no auth/init, public registry, defaults or VM.
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 
+#[path = "sdk_protocol/owned.rs"]
+mod owned;
+
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
@@ -18,7 +21,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use sandproof_guest_runtime::protocol::{
-    End, Event, Request, decode_request, encode_event, encode_stream_end,
+    Event, ProcessConfig, ProcessInfo, Request, Response as CommandResponse, decode_request,
+    encode_event, encode_response, encode_stream_end,
 };
 use sandproof_guest_runtime::{
     CommandEvent, CommandProcess, LaunchObservation, LaunchSpec, ProcessLimits, ProcessSignal,
@@ -40,6 +44,8 @@ struct Fixture {
     truncate: bool,
     started: AtomicBool,
     completed: Arc<AtomicBool>,
+    owned_body: bool,
+    body_requests: Arc<tokio::sync::Semaphore>,
 }
 
 struct Owned(CommandProcess);
@@ -64,6 +70,49 @@ enum Stage {
     Start,
     Output,
     Finish,
+}
+
+// Preselected wire metadata only: this is not a live process registry. The
+// Python probe checks absent/default/present fields through both fixed clients.
+async fn list(headers: HeaderMap, body: Bytes) -> Response {
+    assert_eq!(headers["content-type"], "application/json");
+    assert_eq!(decode_request("List", &body, LIMIT).unwrap(), Request::List);
+    let empty = ProcessConfig::default();
+    let config = ProcessConfig {
+        cmd: "/bin/cat".into(),
+        args: vec![String::new(), "\"\\\n中💡".into()],
+        envs: BTreeMap::from([
+            (String::new(), String::new()),
+            ("KEY".into(), "value".into()),
+        ]),
+        cwd: Some(String::new()),
+    };
+    let entries = match headers["x-fixture-list"].to_str().unwrap() {
+        "empty" => vec![],
+        "absent" => vec![ProcessInfo {
+            config: None,
+            pid: 0,
+            tag: None,
+        }],
+        "present" => vec![
+            ProcessInfo {
+                config: Some(&empty),
+                pid: 123,
+                tag: None,
+            },
+            ProcessInfo {
+                config: Some(&config),
+                pid: u32::MAX,
+                tag: Some(""),
+            },
+        ],
+        _ => panic!("unknown controlled list"),
+    };
+    (
+        [("content-type", "application/json")],
+        encode_response(CommandResponse::List(&entries), LIMIT).unwrap(),
+    )
+        .into_response()
 }
 
 async fn start(State(fixture): State<Arc<Fixture>>, headers: HeaderMap, body: Bytes) -> Response {
@@ -94,22 +143,24 @@ async fn start(State(fixture): State<Arc<Fixture>>, headers: HeaderMap, body: By
     if fixture.started.swap(true, Ordering::SeqCst) {
         return StatusCode::CONFLICT.into_response();
     }
-    let mut process = Owned(
-        CommandProcess::prepare(
-            Path::new(WORKER),
-            fixture.directory.path(),
-            1,
-            1,
-            &fixture.spec,
-            ProcessLimits {
-                chunk_bytes: 4096,
-                launch_bytes: LIMIT,
-                handshake_timeout: Duration::from_secs(5),
-            },
-        )
-        .await
-        .unwrap(),
-    );
+    let process = CommandProcess::prepare(
+        Path::new(WORKER),
+        fixture.directory.path(),
+        1,
+        1,
+        &fixture.spec,
+        ProcessLimits {
+            chunk_bytes: 4096,
+            launch_bytes: LIMIT,
+            handshake_timeout: Duration::from_secs(5),
+        },
+    )
+    .await
+    .unwrap();
+    if fixture.owned_body {
+        return owned::response(process, &fixture).await;
+    }
+    let mut process = Owned(process);
     assert_eq!(
         process.0.release().await.unwrap(),
         LaunchObservation::NoExecErrorObserved
@@ -168,22 +219,17 @@ async fn next_frame(state: Option<Stream>) -> Option<(io::Result<Vec<u8>>, Optio
                 }
                 frame
             }
-            CommandEvent::End { code, signal } => {
-                let status = if let Some(signal) = signal {
-                    assert_eq!(signal, 9);
-                    "signal: killed".to_owned()
-                } else {
-                    format!("exit status {code}")
-                };
-                let mut frame = encode_event(
-                    Event::End(End {
-                        exit_code: code,
-                        exited: signal.is_none(),
-                        status: &status,
-                        error: (code != 0).then_some(status.as_str()),
-                    }),
-                    LIMIT,
-                )
+            CommandEvent::End {
+                code,
+                signal,
+                core_dumped,
+            } => {
+                let mut frame = sandproof_guest_service::command::CommandExit {
+                    code,
+                    signal,
+                    core_dumped,
+                }
+                .encode_end(LIMIT)
                 .unwrap();
                 assert!(state.process.0.next_event().await.unwrap().is_none());
                 state.completed.store(true, Ordering::SeqCst);
@@ -198,7 +244,7 @@ async fn next_frame(state: Option<Stream>) -> Option<(io::Result<Vec<u8>>, Optio
     Some((Ok(frame), Some(state)))
 }
 
-async fn probe(asynchronous: bool, mode: &str) {
+async fn probe(asynchronous: bool, mode: &str, owned_body: bool) {
     let script = match mode {
         "binary" | "truncated" => r"printf '\000\377A'; printf 'err' >&2; exit 17",
         "large" => "dd if=/dev/zero bs=8192 count=257 2>/dev/null",
@@ -222,9 +268,12 @@ async fn probe(asynchronous: bool, mode: &str) {
         truncate: mode == "truncated",
         started: AtomicBool::new(false),
         completed: Arc::clone(&completed),
+        owned_body,
+        body_requests: Arc::new(tokio::sync::Semaphore::new(1)),
     });
     let app = Router::new()
         .route("/process.Process/Start", post(start))
+        .route("/process.Process/List", post(list))
         .layer(DefaultBodyLimit::max(LIMIT + 5))
         .with_state(Arc::clone(&fixture));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -276,6 +325,9 @@ async fn probe(asynchronous: bool, mode: &str) {
         "{mode}, async={asynchronous}"
     );
     assert!(fixture.started.load(Ordering::SeqCst));
+    if owned_body {
+        owned::settled(&fixture).await;
+    }
     assert!(
         completed.load(Ordering::SeqCst),
         "real command not reaped/drained"
@@ -291,7 +343,10 @@ async fn probe(asynchronous: bool, mode: &str) {
 async fn pinned_sdk_streams_real_command_events() {
     for asynchronous in [false, true] {
         for mode in ["binary", "large", "signal", "truncated", "pty"] {
-            probe(asynchronous, mode).await;
+            probe(asynchronous, mode, false).await;
+        }
+        for mode in ["binary", "pty"] {
+            probe(asynchronous, mode, true).await;
         }
     }
 }

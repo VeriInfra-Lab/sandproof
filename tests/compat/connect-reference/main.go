@@ -1,6 +1,6 @@
 // Original Connect HTTP transport pinned by envd f455fd58fa3f289e78ce1de690c35968d8d29322.
-// Transport modes use a passthrough JSON codec. P/J use original generated
-// messages and the default codec for property/request observations. No mode
+// Transport modes use a passthrough JSON codec. P/J/K/O/Q use original generated
+// messages and the default codec for property/command observations. No mode
 // here executes real file operations or a complete envd compatibility test.
 package main
 
@@ -70,6 +70,8 @@ func main() {
 	mux.Handle(path, handler)
 	registerProperties(mux)
 	registerRequests(mux)
+	registerCommandResponses(mux)
+	registerCommandRequests(mux)
 	// The envd account failure observation is controlled here. Both wrappers
 	// below are the original authn/Connect implementation, not a replacement.
 	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
@@ -159,6 +161,7 @@ func main() {
 			panic(err)
 		}
 		target, body := path, data
+		commandStream := false
 		var compression struct {
 			Accept []string
 			Sent   []string
@@ -166,8 +169,14 @@ func main() {
 			Error  bool
 		}
 		switch mode {
-		case "J":
+		case "Q":
+			target, body = commandRequestEndpoint(data)
+		case "O":
+			target, body, commandStream = commandResponseEndpoint(data)
+		case "J", "K":
 			target, body = requestEndpoint(data)
+		case "M":
+			target, body = methodEndpoint(data)
 		case "P":
 			target, body = propertyEndpoint(data), []byte("{}")
 		case "A":
@@ -199,6 +208,15 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
+		if mode == "O" {
+			req.Header.Set("X-Fixture-Command", hex.EncodeToString(data))
+			if commandStream {
+				req.Header.Set("Content-Type", "application/connect+json")
+			}
+		}
+		if mode == "M" {
+			methodHeaders(req, data)
+		}
 		if mode == "G" || mode == "Z" {
 			req.Header.Del("Accept-Encoding")
 			for _, value := range compression.Accept {
@@ -252,12 +270,35 @@ func main() {
 		if err := res.Body.Close(); err != nil {
 			panic(err)
 		}
+		if mode == "O" {
+			fmt.Fprintln(out, commandResponseObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "Q" {
+			fmt.Fprintln(out, commandRequestObservation(res.StatusCode, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
 		if mode == "J" {
 			fmt.Fprintln(out, requestObservation(res.StatusCode, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}
 			continue
+		}
+		if mode == "K" {
+			if length := res.Header.Get("Content-Length"); length != "" {
+				if length != strconv.Itoa(len(responseBody)) {
+					panic("invalid JSON rejection response length")
+				}
+				res.Header.Set("Content-Length", "valid")
+			}
+			responseBody = normalizeRequestFailure(target, res.StatusCode, responseBody)
 		}
 		if mode == "P" {
 			// Original protojson deliberately varies insignificant whitespace.
@@ -323,6 +364,11 @@ func main() {
 			continue
 		}
 		values := []string{strconv.Itoa(res.StatusCode)}
+		if mode == "M" {
+			for _, name := range []string{"Allow", "Accept-Post"} {
+				values = append(values, hex.EncodeToString([]byte(res.Header.Get(name))))
+			}
+		}
 		for _, name := range []string{"Content-Type", "Content-Length", "Accept-Encoding", "Content-Encoding", "X-Content-Type-Options", "Vary"} {
 			values = append(values, hex.EncodeToString([]byte(res.Header.Get(name))))
 		}

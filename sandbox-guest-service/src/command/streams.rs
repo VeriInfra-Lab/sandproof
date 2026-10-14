@@ -31,8 +31,8 @@ pub enum OutputEvent {
 pub struct CommandSubscription {
     data: mpsc::Receiver<CommandOutput>,
     end: Option<oneshot::Receiver<Result<CommandExit, CommandError>>>,
-    _slot: Arc<OwnedSemaphorePermit>,
-    _record: Arc<Shared>,
+    pub(super) slot: Arc<OwnedSemaphorePermit>,
+    pub(super) record: Arc<Shared>,
 }
 
 impl CommandSubscription {
@@ -153,8 +153,8 @@ impl ManagedCommand {
         Ok(CommandSubscription {
             data,
             end: Some(end),
-            _slot: slot,
-            _record: Arc::clone(&self.shared),
+            slot,
+            record: Arc::clone(&self.shared),
         })
     }
 }

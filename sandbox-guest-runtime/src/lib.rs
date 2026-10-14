@@ -4,7 +4,8 @@
 //! This is not an envd server. The caller supplies trusted installation paths
 //! and must reserve public selector identity and process capacity BEFORE
 //! releasing a prepared worker. No public PID lookup, authentication,
-//! persistent registry, or restart adoption is implemented here. Numeric
+//! active process registry or restart adoption is implemented here. Durable PID
+//! claims are a separate port and do not themselves release a worker. Numeric
 //! account switching occurs only in the private single-thread worker.
 
 #[cfg(target_os = "linux")]
@@ -20,6 +21,8 @@ pub mod file_query;
 pub mod file_upload;
 pub mod gzip;
 pub mod multipart;
+#[cfg(unix)]
+pub mod pid_claims;
 
 #[cfg(target_os = "linux")]
 mod process;

@@ -23,6 +23,8 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::time::{Instant, timeout};
 
 const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
+#[path = "preparation/pid_registration.rs"]
+mod pid_registration;
 struct MetadataFixture;
 impl MetadataSource for MetadataFixture {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {

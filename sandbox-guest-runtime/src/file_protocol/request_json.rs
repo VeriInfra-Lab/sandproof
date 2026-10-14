@@ -1,5 +1,5 @@
-//! Fixed Connect `DiscardUnknown` / protobuf uint32 input semantics. Keep this
-//! separate from command decoding, whose complete protobuf contract is pending.
+//! Fixed Connect `DiscardUnknown` / protobuf uint32 input semantics. Keep the
+//! file and integer-only command schemas' rejection sentinels distinct.
 use crate::protocol::ProtocolError;
 use serde::{Deserialize, Deserializer, de};
 use serde_json::value::RawValue;
@@ -15,6 +15,14 @@ mod exponent;
 /// lazy copy of exactly the input length. No Value tree is built.
 /// The fixed protobuf default allows 10,000 containers including the message.
 pub(super) fn prepare(body: &[u8]) -> Result<Cow<'_, [u8]>, ProtocolError> {
+    prepare_inner(body, false)
+}
+
+pub(crate) fn prepare_command(body: &[u8]) -> Result<Cow<'_, [u8]>, ProtocolError> {
+    prepare_inner(body, true)
+}
+
+fn prepare_inner(body: &[u8], command: bool) -> Result<Cow<'_, [u8]>, ProtocolError> {
     let mut offset = 0;
     let mut depth = 0_usize;
     let mut normalized = None;
@@ -43,7 +51,7 @@ pub(super) fn prepare(body: &[u8]) -> Result<Cow<'_, [u8]>, ProtocolError> {
                 let (length, repair) = exponent::scan(&body[offset..]);
                 if let Some(repair) = repair {
                     let output = normalized.get_or_insert_with(|| body.to_vec());
-                    repair.apply(&mut output[offset..offset + length]);
+                    repair.apply(&mut output[offset..offset + length], command);
                 }
                 offset += length;
                 continue;
@@ -74,7 +82,7 @@ impl<'de> Deserialize<'de> for CheckedString {
     }
 }
 
-pub(super) fn uint32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+pub(crate) fn uint32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
     // Borrow the numeric spelling: conversion via f64 would round fractions
     // and would reject a large mantissa scaled back into range by its exponent.
     let raw = <&RawValue>::deserialize(deserializer)?.get();
@@ -91,7 +99,7 @@ pub(super) fn uint32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, 
     exact_uint32(number).ok_or_else(|| de::Error::custom("invalid protobuf uint32"))
 }
 
-fn exact_uint32(number: &str) -> Option<u32> {
+pub(crate) fn exact_uint32(number: &str) -> Option<u32> {
     // RawValue checks JSON number grammar without floating point conversion.
     // Equality rejects all surrounding JSON whitespace in a quoted number.
     if !matches!(number.as_bytes().first(), Some(b'-' | b'0'..=b'9')) {
