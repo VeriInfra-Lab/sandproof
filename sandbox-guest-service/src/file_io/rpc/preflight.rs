@@ -7,7 +7,8 @@ use super::{
 use crate::{
     basic_auth,
     file_rpc_requests::{Authenticated, Decoded, Failure},
-    files::file_account,
+    file_rpc_response::Rejection,
+    files::{SelectionError, file_account},
 };
 use axum::body::Body;
 use sandproof_guest_runtime::{accounts::Account, filesystem::FileLimits};
@@ -32,8 +33,8 @@ impl FilePool {
     /// Connect timeout/method/body decoding. Malformed/absent Basic defers the
     /// default account lookup until execution. No body is polled here.
     /// # Errors
-    /// Admission, settings, username or account failure. Classifications have
-    /// no wire status/text yet. The failure retains both acquired slots, while
+    /// Admission, settings, username or account failure. Known missing users
+    /// retain their fixed rejection. The failure holds both acquired slots, while
     /// any still-running account worker also retains the original authorization.
     pub async fn prepare_rpc<S: AccountSource>(
         &self,
@@ -43,6 +44,7 @@ impl FilePool {
     ) -> Result<PreparedRpc, RpcFailure> {
         let mut deadline = authenticated.deadline();
         let mut owner = authenticated.owner();
+        let mut rejection = None;
         let result = async {
             deadline = deadline.min(self.deadline().map_err(RpcError::Dispatch)?);
             check_deadline(deadline).map_err(RpcError::Dispatch)?;
@@ -71,7 +73,13 @@ impl FilePool {
                         Some((deadline, authenticated.clone())),
                     )
                     .await
-                    .map_err(|error| RpcError::Context(error.into()))?,
+                    .map_err(|error| match error {
+                        SelectionError::UnknownUser(user) => {
+                            rejection = Some(Rejection::ExplicitUser(user));
+                            RpcError::Context(ContextError::Unauthenticated)
+                        }
+                        SelectionError::Context(error) => RpcError::Context(error),
+                    })?,
                 )
             } else {
                 None
@@ -94,6 +102,7 @@ impl FilePool {
         .await;
         result.map_err(|error| RpcFailure {
             error,
+            rejection,
             deadline,
             _owner: owner,
         })
@@ -151,15 +160,16 @@ impl ReadyRpc {
             lease,
         } = self.selected;
         let owner: Owner = lease.clone();
+        let mut rejection = None;
         let result = async {
             check_deadline(deadline).map_err(RpcError::Dispatch)?;
             let auth = Arc::new(request.auth);
             let context = if let Some(account) = account {
                 auth.resolve_file_rpc_account(&request.request, account, &settings)
+                    .map_err(SelectionError::Context)
             } else {
-                auth.resolve_file_rpc_admitted(
+                auth.resolve_default_file_rpc_admitted(
                     &request.request,
-                    &request.headers,
                     accounts,
                     &settings,
                     deadline,
@@ -167,7 +177,13 @@ impl ReadyRpc {
                 )
                 .await
             }
-            .map_err(RpcError::Context)?;
+            .map_err(|error| match error {
+                SelectionError::UnknownUser(user) => {
+                    rejection = Some(Rejection::DefaultUser(user));
+                    RpcError::Context(ContextError::Unauthenticated)
+                }
+                SelectionError::Context(error) => RpcError::Context(error),
+            })?;
             FilePool::dispatch_admitted(auth, lease, deadline, move || {
                 filesystem::execute(
                     &context.request,
@@ -184,6 +200,7 @@ impl ReadyRpc {
         .await;
         result.map_err(|error| RpcFailure {
             error,
+            rejection,
             deadline,
             _owner: owner,
         })

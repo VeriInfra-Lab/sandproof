@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 )
 
@@ -40,7 +41,7 @@ func main() {
 		panic("build information required")
 	}
 	for path, version := range map[string]string{
-		"connectrpc.com/connect": "v1.18.1", "google.golang.org/protobuf": "v1.36.12",
+		"connectrpc.com/authn": "v0.1.0", "connectrpc.com/connect": "v1.18.1", "google.golang.org/protobuf": "v1.36.12",
 	} {
 		found := false
 		for _, dep := range info.Deps {
@@ -56,7 +57,25 @@ func main() {
 	handler := connect.NewUnaryHandler(path, func(_ context.Context, req *connect.Request[payload]) (*connect.Response[payload], error) {
 		return connect.NewResponse(req.Msg), nil
 	}, connect.WithCodec(codec{}))
-	server := httptest.NewServer(handler)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	// The envd account failure observation is controlled here. Both wrappers
+	// below are the original authn/Connect implementation, not a replacement.
+	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
+		username, _, ok := req.BasicAuth()
+		if !ok {
+			panic("reference explicit user required")
+		}
+		return nil, authn.Errorf("invalid username: '%s'", username)
+	}).Wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("rejected user reached method") })))
+	mux.Handle("/fixture.Filesystem/Default", connect.NewUnaryHandler("/fixture.Filesystem/Default", func(_ context.Context, req *connect.Request[payload]) (*connect.Response[payload], error) {
+		username, err := hex.DecodeString(req.Header().Get("X-Fixture-Username"))
+		if err != nil {
+			panic(err)
+		}
+		return nil, authn.Errorf("invalid default user: '%s'", username)
+	}, connect.WithCodec(codec{})))
+	server := httptest.NewServer(mux)
 	defer server.Close()
 	client := server.Client()
 	defer client.CloseIdleConnections()
@@ -108,22 +127,39 @@ func main() {
 			}
 			continue
 		}
-		data, err := hex.DecodeString(scanner.Text())
+		mode, input, special := strings.Cut(scanner.Text(), "\t")
+		if !special {
+			input = scanner.Text()
+		}
+		data, err := hex.DecodeString(input)
 		if err != nil {
 			panic(err)
 		}
-		req, err := http.NewRequest(http.MethodPost, server.URL+path, bytes.NewReader(data))
+		target, body := path, data
+		switch mode {
+		case "A":
+			target, body = "/fixture.Filesystem/Explicit", []byte("invalid JSON")
+		case "U":
+			target, body = "/fixture.Filesystem/Default", []byte("{}")
+		}
+		req, err := http.NewRequest(http.MethodPost, server.URL+target, bytes.NewReader(body))
 		if err != nil {
 			panic(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
+		if mode == "A" {
+			req.SetBasicAuth(string(data), "ignored-password")
+			req.Header.Set("Connect-Timeout-Ms", "invalid")
+		} else if mode == "U" {
+			req.Header.Set("X-Fixture-Username", hex.EncodeToString(data))
+		}
 		res, err := client.Do(req)
 		if err != nil {
 			panic(err)
 		}
-		body, err := io.ReadAll(res.Body)
+		responseBody, err := io.ReadAll(res.Body)
 		if err != nil {
 			panic(err)
 		}
@@ -134,7 +170,7 @@ func main() {
 		for _, name := range []string{"Content-Type", "Content-Length", "Accept-Encoding", "Content-Encoding", "X-Content-Type-Options", "Vary"} {
 			values = append(values, hex.EncodeToString([]byte(res.Header.Get(name))))
 		}
-		values = append(values, hex.EncodeToString(body))
+		values = append(values, hex.EncodeToString(responseBody))
 		fmt.Fprintln(out, strings.Join(values, "\t"))
 		if err := out.Flush(); err != nil {
 			panic(err)

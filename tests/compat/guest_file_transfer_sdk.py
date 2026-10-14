@@ -805,7 +805,9 @@ def check_range(response, method, status, expected):
         message = BytesParser(policy=policy.default).parsebytes(
             b'Content-Type: ' + response.headers['content-type'].encode() + b'\r\n\r\n' + response.content)
         parts = list(message.iter_parts())
-        assert all(part['content-type'] == 'text/plain; charset=utf-8' for part in parts)
+        # email.policy.default normalizes parameter quoting on parsed headers.
+        assert all(part.get_content_type() == 'text/plain'
+                   and part.get_content_charset() == 'utf-8' for part in parts)
         assert [part['content-range'] for part in parts] == ['bytes 0-0/3', 'bytes 2-2/3']
         assert [part.get_payload(decode=True) for part in parts] == [b'n', b'w']
         assert int(response.headers['content-length']) == len(response.content)

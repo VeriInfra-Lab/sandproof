@@ -12,6 +12,10 @@ impl UnknownUser {
         Self { name: name.into() }
     }
 
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
     pub(crate) fn parts(&self) -> [&[u8]; 4] {
         [
             b"error looking up user '",

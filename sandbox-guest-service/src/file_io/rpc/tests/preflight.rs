@@ -7,6 +7,8 @@ use crate::{
 use axum::body::Body;
 use std::{future::poll_fn, task::Poll};
 
+mod rejection;
+
 fn requests() -> FileRpcRequests {
     FileRpcRequests::new(file_rpc_requests::Limits {
         in_flight: 1,

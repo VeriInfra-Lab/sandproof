@@ -1,5 +1,6 @@
 //! One already admitted unary request, from account lookup through actual I/O.
-//! Parsing, authentication and wire error/response policy remain the caller's.
+//! Parsing and protocol selection remain the caller's. The opaque preflight
+//! carries known account rejections into the fixed unary JSON response sender.
 use super::{FileDispatchError, FilePool, FileReply, Owner, check_deadline};
 use crate::{AccountPool, AccountSource, AuthPermit, ContextError, files::FileSettings};
 use axum::http::HeaderMap;
@@ -34,13 +35,42 @@ pub enum RpcError {
 
 /// Retains the request responsibility and, once reserved, the unary file slot.
 /// A timed-out/cancelled blocking worker can independently hold both as well.
-/// No HTTP status or retry instruction is implied by this classified failure.
+/// Only an observed account rejection has a fixed response; other classified
+/// failures imply no HTTP status. No failure implies that I/O can be replayed.
 pub struct RpcFailure {
     error: RpcError,
+    rejection: Option<crate::file_rpc_response::Rejection>,
     deadline: Instant,
     _owner: Owner,
 }
 impl RpcFailure {
+    #[must_use]
+    pub const fn rejection(&self) -> Option<&crate::file_rpc_response::Rejection> {
+        self.rejection.as_ref()
+    }
+
+    /// Send a fixed account rejection for an already selected unary JSON
+    /// request under the original request/file slots and deadline.
+    /// # Errors
+    /// Unmapped context/I/O failures remain classified, or bounded response
+    /// preparation fails. No failure permits replaying a file operation.
+    pub async fn into_response(
+        mut self,
+        limits: crate::file_rpc_response::Limits,
+    ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
+        let rejection = self.rejection.take();
+        let deadline = self.deadline;
+        let owner: Owner = Arc::new(self);
+        match rejection {
+            Some(rejection) => {
+                crate::file_rpc_response::rejected(rejection, limits, deadline, owner).await
+            }
+            None => Err(crate::file_rpc_response::Failure::unclassified(
+                deadline, owner,
+            )),
+        }
+    }
+
     #[must_use]
     pub const fn error(&self) -> RpcError {
         self.error
@@ -109,6 +139,7 @@ impl FilePool {
         .await;
         result.map_err(|error| RpcFailure {
             error,
+            rejection: None,
             deadline,
             _owner: owner,
         })

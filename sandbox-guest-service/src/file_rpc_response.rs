@@ -1,10 +1,17 @@
 //! Identity JSON unary replies, charged to their already admitted records.
-//! HTTP request admission, protocol negotiation and RPC errors are separate.
+//! Fixed account rejections share the same owned JSON response transport.
+//! Request admission and protocol negotiation remain separate.
 use crate::owned_body::{self, OwnedBody, Owner, Payload};
-use axum::{http::HeaderValue, response::Response};
+use axum::{
+    http::{HeaderValue, StatusCode},
+    response::Response,
+};
 use sandproof_guest_runtime::{file_protocol, protocol::ProtocolError};
 use std::{fmt, sync::Arc};
 use tokio::time::Instant;
+
+mod rejection;
+pub use rejection::{Rejection, rejected};
 
 #[cfg(test)]
 mod tests;
@@ -24,6 +31,7 @@ pub enum Error {
     Encoding,
     DeadlineExceeded,
     Unavailable,
+    UnclassifiedFault,
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -40,14 +48,22 @@ impl owned_body::Failure for Error {
     }
 }
 
-/// Preparation failed after the file operation. Keep its original capacity
-/// while the caller decides how to deliver a failure; never replay the I/O.
+/// Response preparation failed. Keep original request/result capacity while
+/// the caller decides how to deliver a failure; never replay any completed I/O.
 pub struct Failure {
     error: Error,
     deadline: Instant,
     _owner: Owner,
 }
 impl Failure {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn unclassified(deadline: Instant, owner: Owner) -> Self {
+        Self {
+            error: Error::UnclassifiedFault,
+            deadline,
+            _owner: owner,
+        }
+    }
     #[must_use]
     pub const fn error(&self) -> Error {
         self.error
@@ -79,6 +95,25 @@ pub async fn send<T: Send + Sync + 'static>(
     deadline: Instant,
 ) -> Result<Response, Failure> {
     let owner: Owner = records.clone();
+    send_encoded(owner, limits, deadline, StatusCode::OK, true, move || {
+        file_protocol::encode_response(view(&records), limits.wire_bytes).map_err(|error| {
+            match error {
+                ProtocolError::ResourceExhausted => Error::ResponseLimit,
+                _ => Error::Encoding,
+            }
+        })
+    })
+    .await
+}
+
+async fn send_encoded(
+    owner: Owner,
+    limits: Limits,
+    deadline: Instant,
+    status: StatusCode,
+    accepts_gzip: bool,
+    encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Failure> {
     let result = async {
         if limits.wire_bytes == 0
             || limits.chunk_bytes == 0
@@ -88,24 +123,22 @@ pub async fn send<T: Send + Sync + 'static>(
             return Err(Error::InvalidConfiguration);
         }
         let (length, body) = OwnedBody::start(deadline, Arc::clone(&owner), move |_, _| {
-            let bytes = file_protocol::encode_response(view(&records), limits.wire_bytes).map_err(
-                |error| match error {
-                    ProtocolError::ResourceExhausted => Error::ResponseLimit,
-                    _ => Error::Encoding,
-                },
-            )?;
+            let bytes = encode()?;
             Ok((bytes.len(), Payload::new(bytes, limits.chunk_bytes)))
         })
         .await?;
         let mut response = Response::new(body.into_body());
+        *response.status_mut() = status;
         response
             .headers_mut()
             .insert("content-type", HeaderValue::from_static("application/json"));
-        // The original Connect handler advertises its default request decoder
-        // even when this particular response is explicitly identity encoded.
-        response
-            .headers_mut()
-            .insert("accept-encoding", HeaderValue::from_static("gzip"));
+        // The Connect handler advertises its request decoder. authn's outer
+        // ErrorWriter does not pass through that handler and adds no such header.
+        if accepts_gzip {
+            response
+                .headers_mut()
+                .insert("accept-encoding", HeaderValue::from_static("gzip"));
+        }
         if length <= 2048 {
             response.headers_mut().insert(
                 "content-length",

@@ -172,6 +172,29 @@ impl AuthPermit {
         .await
     }
 
+    // Only the opaque preflight's absent/malformed Basic branch enters here.
+    // It already validated Basic headers; retain the original default snapshot.
+    pub(crate) async fn resolve_default_file_rpc_admitted<S: AccountSource>(
+        &self,
+        request: &Request,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<FileContext, SelectionError> {
+        settings.validate()?;
+        check_request_paths(request, settings)?;
+        let account = file_account(
+            &self.defaults().user,
+            accounts,
+            settings,
+            Some((deadline, owner)),
+        )
+        .await?;
+        self.resolve_file_rpc_account(request, account, settings)
+            .map_err(Into::into)
+    }
+
     async fn resolve_file_rpc_with_origin<S: AccountSource>(
         &self,
         request: &Request,

@@ -10,7 +10,7 @@ use axum::{
     routing::post,
 };
 use sandproof_guest_runtime::{
-    accounts::{AccountLimits, lookup_local_ownership},
+    accounts::{AccountError, AccountLimits, lookup_local_ownership, lookup_local_user},
     file_protocol::Request,
     filesystem::FileLimits,
 };
@@ -51,6 +51,8 @@ struct Fixture {
     requests: FileRpcRequests,
     root: PathBuf,
     seen: AtomicUsize,
+    rejected: AtomicUsize,
+    username: String,
 }
 
 async fn rpc(
@@ -64,7 +66,7 @@ async fn rpc(
         .authenticate(&fixture.session, parts.headers)
         .await
         .unwrap();
-    let prepared = fixture
+    let preparation = fixture
         .files
         .prepare_rpc(
             authenticated,
@@ -78,12 +80,18 @@ async fn rpc(
                 },
             },
         )
-        .await
-        .unwrap();
-    // The selected SDK call set still uses JSON and the initialized default.
+        .await;
+    let prepared = match preparation {
+        Ok(prepared) => prepared,
+        Err(failure) => {
+            assert!(failure.rejection().is_some());
+            fixture.rejected.fetch_add(1, Ordering::SeqCst);
+            return failure.into_response(response_limits()).await.unwrap();
+        }
+    };
+    // This fixture selects unary JSON; explicit accounts use real preflight.
     // General protocol selection remains separate from this real preflight.
     assert_eq!(prepared.headers()["content-type"], "application/json");
-    assert!(!prepared.headers().contains_key("authorization"));
     assert!(
         prepared
             .headers()
@@ -109,14 +117,12 @@ async fn rpc(
     }
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     match request.execute(&fixture.accounts).await {
-        Ok(reply) => reply
-            .into_response(sandproof_guest_service::file_rpc_response::Limits {
-                wire_bytes: 65536,
-                chunk_bytes: 17,
-            })
-            .await
-            .unwrap(),
+        Ok(reply) => reply.into_response(response_limits()).await.unwrap(),
         Err(failure) => {
+            if failure.rejection().is_some() {
+                fixture.rejected.fetch_add(1, Ordering::SeqCst);
+                return failure.into_response(response_limits()).await.unwrap();
+            }
             let RpcError::Dispatch(FileDispatchError::Operation(error)) = failure.error() else {
                 panic!("unexpected fixture admission/context failure: {failure:?}")
             };
@@ -149,7 +155,14 @@ async fn rpc(
     }
 }
 
-// Only the fixture supplies its existing synthetic Connect error text. Actual
+fn response_limits() -> sandproof_guest_service::file_rpc_response::Limits {
+    sandproof_guest_service::file_rpc_response::Limits {
+        wire_bytes: 65536,
+        chunk_bytes: 17,
+    }
+}
+
+// Only remaining file I/O faults use the existing synthetic Connect text. Actual
 // records/failures and their original slots survive all transport Bytes clones.
 struct ReplyBytes<T> {
     bytes: Vec<u8>,
@@ -183,7 +196,7 @@ fn prepare(root: &Path) {
     }
 }
 
-async fn fixture(root: PathBuf) -> Arc<Fixture> {
+async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
     let (username, _) = lookup_local_ownership(
         rustix::process::geteuid().as_raw(),
         rustix::process::getegid().as_raw(),
@@ -252,17 +265,47 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         .unwrap(),
         root,
         seen: AtomicUsize::new(0),
+        rejected: AtomicUsize::new(0),
+        username,
     })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pinned_sdk_uses_real_owned_unary_filesystem() {
+    const MISSING_USER: &str = "sandproof_missing_account_311";
     let directory = tempfile::tempdir().unwrap();
     prepare(directory.path());
-    let fixture = fixture(directory.path().to_owned()).await;
+    let fixture = new_fixture(directory.path().to_owned()).await;
+    for name in [MISSING_USER, "sandproof'<>&"] {
+        assert_eq!(
+            lookup_local_user(
+                name,
+                AccountLimits {
+                    file_bytes: 65536,
+                    groups: 128
+                }
+            )
+            .unwrap_err(),
+            AccountError::NotFound
+        );
+    }
+    let missing_default = new_fixture(directory.path().to_owned()).await;
+    missing_default
+        .session
+        .initialize(
+            serde_json::json!({"accessToken":"fixture-token","defaultUser":MISSING_USER})
+                .to_string()
+                .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let missing_router = Router::new()
+        .route("/filesystem.Filesystem/{method}", post(rpc))
+        .with_state(Arc::clone(&missing_default));
     let app = Router::new()
         .route("/filesystem.Filesystem/{method}", post(rpc))
-        .with_state(Arc::clone(&fixture));
+        .with_state(Arc::clone(&fixture))
+        .nest("/missing-default", missing_router);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (stop, stopped) = oneshot::channel();
@@ -294,7 +337,7 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .take()
         .unwrap()
         .write_all(
-            serde_json::json!({"url":format!("http://{address}"),"root":directory.path()})
+            serde_json::json!({"url":format!("http://{address}"),"default_url":format!("http://{address}/missing-default"),"root":directory.path(),"username":fixture.username,"missing_user":MISSING_USER})
                 .to_string()
                 .as_bytes(),
         )
@@ -308,9 +351,13 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 40);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 42);
+    assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
+    assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
+    assert_eq!(missing_default.rejected.load(Ordering::SeqCst), 2);
     for mode in ["sync", "async"] {
         let dir = directory.path().join(mode);
+        assert!(!dir.join("auth-refused").exists());
         assert!(!dir.join("new").exists());
         assert!(!dir.join("partial").exists());
         assert!(!dir.join("file").exists());

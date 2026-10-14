@@ -1,5 +1,6 @@
 """Pinned SDK against real Rust unary file I/O; owned temporary fixtures only."""
 import asyncio
+import base64
 import json
 import sys
 
@@ -77,7 +78,25 @@ def check(response, failure, expected, root):
                 assert entry.permissions.startswith('L')
 
 
-def run_sync(url, root):
+def authorization(username):
+    value = base64.b64encode((username + ':ignored-password').encode()).decode()
+    return {**HEADERS, 'authorization': 'Basic ' + value}
+
+
+def account_cases(settings):
+    for username in ('', settings['missing_user'], "sandproof'<>&"):
+        yield settings['url'], authorization(username), f"invalid username: '{username}'"
+    username = settings['missing_user']
+    yield settings['default_url'], HEADERS, f"invalid default user: '{username}'"
+
+
+def account_failure(error, message):
+    assert error.code == Code.UNAUTHENTICATED, error
+    assert error.message == message, (error.message, message)
+
+
+def run_sync(settings, root):
+    url = settings['url']
     client = sync_client(clients.FilesystemClientSync, url, ConnectionConfig())
     for method, request, expected in cases(root):
         response, failure = None, None
@@ -87,8 +106,20 @@ def run_sync(url, root):
             failure = error
         check(response, failure, expected, root)
 
+    response = client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
+    check(response, None, 'child', root)
+    for target, headers, message in account_cases(settings):
+        selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
+        try:
+            selected.make_dir(pb.MakeDirRequest(path=root + '/auth-refused'), headers=headers, timeout_ms=5000)
+        except ConnectError as error:
+            account_failure(error, message)
+        else:
+            raise AssertionError('unknown account was accepted')
 
-async def run_async(url, root):
+
+async def run_async(settings, root):
+    url = settings['url']
     client = async_client(clients.FilesystemClient, url, ConnectionConfig())
     for method, request, expected in cases(root):
         response, failure = None, None
@@ -98,10 +129,21 @@ async def run_async(url, root):
             failure = error
         check(response, failure, expected, root)
 
+    response = await client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
+    check(response, None, 'child', root)
+    for target, headers, message in account_cases(settings):
+        selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
+        try:
+            await selected.make_dir(pb.MakeDirRequest(path=root + '/auth-refused'), headers=headers, timeout_ms=5000)
+        except ConnectError as error:
+            account_failure(error, message)
+        else:
+            raise AssertionError('unknown account was accepted')
+
 
 if __name__ == '__main__':
     settings = json.load(sys.stdin)
     with isolated_sdk_environment():
-        run_sync(settings['url'], settings['root'] + '/sync')
-        asyncio.run(run_async(settings['url'], settings['root'] + '/async'))
-    print('guest real unary files: 40 sync/async scenarios passed; no Go HTTP service or VM')
+        run_sync(settings, settings['root'] + '/sync')
+        asyncio.run(run_async(settings, settings['root'] + '/async'))
+    print('guest real unary files: 40 sync/async file scenarios + 10 account scenarios passed; no Go HTTP service or VM')
