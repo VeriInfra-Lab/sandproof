@@ -53,13 +53,19 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 ### A6 公共基础库模型使用登记
 
-`A6-foundations-stdlib` 只覆盖抽取前端 `nightly-2026-08-18` 中六个标准库函数：`Option::as_ref`、Option 的 `Try::branch`/`FromResidual::from_residual`、`Result::ok`、`String::eq`、`Vec::is_empty`。前提是有效、有限的 Rust 值/借用及容器表示；正常返回分别保持可选值、精确传播残余、将 Result 的成功值投影为 Some（错误为 None）、比较完整字符串、判断长度是否为零。这些函数没有 I/O、提交或物理证据，不提供 Ready/Cleaned/Committed，也不把外部未知转换为明确失败。`Result::ok` 不保留错误原因，不能据此区分未执行、明确失败或结果未知。失效后不得继续使用依赖它们的资源加法、身份判断、观察、窗口后继查询和创建参数对应。
+`A6-foundations-stdlib` 只覆盖抽取前端 `nightly-2026-08-18` 中八个标准库函数：`Option::as_ref/is_none_or`、Option 的 `Try::branch`/`FromResidual::from_residual`、`Result::ok`、`String::eq`、`Vec::is_empty/retain`。前提是有效、有限的 Rust 值/借用及容器表示；正常返回分别保持可选值、精确传播残余、将 Result 的成功值投影为 Some（错误为 None）、比较完整字符串、判断长度是否为零。这些函数没有 I/O、提交或物理证据，不提供 Ready/Cleaned/Committed，也不把外部未知转换为明确失败。`Result::ok` 不保留错误原因，不能据此区分未执行、明确失败或结果未知。失效后不得继续使用依赖它们的资源加法、身份判断、观察、窗口后继查询和创建参数对应。
 
 可计算模型位于 [FunsExternal](../../verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean)，精确源码/模型/脚本摘要及编译器、翻译器、Lean版本、目标和配置统一见[冻结清单](../../verification/foundations-environment.json)及其输入摘要。原语模型与实际标准库的协议一致性是显式外部条件，不因无占位或内核检查而变成已证明的标准库实现正确性；这些自有协议函数本身仍从生产源码抽取。内置整数、Result、Vec/Array 与容器模型由同修订 Aeneas 后端提供，同样属于工具/库可信链，不能遗漏。
 
 使用方：资源加法及创建参数守卫依赖 Option/Vec/整数模型；完整身份相等依赖 String/整数模型；结果观察依赖 Option 借用模型；`RetentionLane::current` 依赖 Option/Result/整数模型，并另证其成功后继非零，None 精确对应编号上限。部署不包含 Redis、SQLite、TLS 或宿主调用；它们不成为这一批的隐含前提。版本/模型/配置或源函数变更使输入摘要失配，重新抽取并重查这组对应定理、调用它们的邻接合同和未来 V9 实例化；不能只更新摘要后沿用旧结论。完整目标的自有编解码与 Lua 桥接仍分别由 V0/V2/V3 提供，未移入本合同。
 
 `Store::get_copy/put` 另使用同版 Vec 索引、可变索引回写、push、usize 运算和相等字典模型，不新增外部函数。循环终止、首次匹配、首次替换/缺失追加、完整列表保持及其他键查询不变是自有证明。泛型 `TableLawfulEq` 是调用模块需提供的相等对应，u64 实例已经连接实际内置字典；其他自有键比较不得整体放入 A6。写入模型保留顺序和重复行，唯一性只在原键唯一的前提下保持。替换不需追加余量；缺失追加需原长度小于 `Usize.max`，由调用模块提供，不假定实际物理内存无限。固定纯 Vec 模型仍不覆盖物理分配失败、OOM/abort；指纹变化须重查读取及写入闭包。这些定理不证明删除、业务额度、退休许可或 SQLite/Redis 持久提交。
+
+`Option::is_none_or` 的共享定义和 [OptionPredicates](../../SandboxModel/Foundations/OptionPredicates.lean) 区分 None 不调用回调、Some 恰调用原 FnOnce，并原样传播失败/效果/发散；缺失值返回 true 不代表权限或物理证据。真实 u64 探针根只连接标准库调用，不等于 V4 的创建守卫已实例化。
+
+`Vec::retain` 增加有限有序列表的可计算模型：每条原记录按原顺序调用一次 FnMut，更新的回调状态传入下一条，布尔结果决定保留，保留记录内容和顺序不变；空表不调用回调。自有 `Store::retain` 及其包装闭包保留实际生成体，由 [TableRetention](../../SandboxModel/Foundations/TableRetention.lean) 对应独立纯/状态化筛选模型。调用方必须证明自己的回调字典正常返回且符合给定状态转换，不把自有谓词正确性放入 A6。此合同只覆盖有效有限值的逻辑正常返回，不覆盖内含可变引用的外部堆效果、用户析构副作用、panic 后部分表的回滚或物理内存释放；回调失败不能伪造成功，也不据此保证表未部分修改。纯谓词的幂等性不推广到有状态谓词。
+
+两版真实标准库 `alloc/src/vec/mod.rs`、`core/src/option.rs` 摘要单列在同一环境清单并在工具审计中实查。源码审查、状态化回归和摘要不代替标准库形式化证明；这是有限库接口的显式合同，不是把自有退休/删除许可作为可信前提。源版本或模型变化须重查筛选、Option 判断、其 V4 调用字典及邻接证明闭包。
 
 ### A6 网络地址库模型使用登记
 

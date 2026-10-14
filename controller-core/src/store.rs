@@ -46,8 +46,8 @@ impl<K: PartialEq, V> Store<K, V> {
     }
 
     /// Remove only entries selected by the controller's checked maintenance path.
-    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&K, &V) -> bool) {
-        self.entries.retain(|(key, value)| keep(key, value));
+    pub fn retain(&mut self, mut keep: impl FnMut(&K, &V) -> bool) {
+        self.entries.retain(move |(key, value)| keep(key, value));
     }
 
     #[must_use]
@@ -111,5 +111,38 @@ mod tests {
         );
         assert_eq!(store.get_copy(&u64::MAX), Some(u64::MAX));
         assert_eq!(store.get_copy(&7), Some(11));
+    }
+
+    #[test]
+    fn retain_visits_each_original_row_once_in_order_and_preserves_survivors() {
+        let mut store = Store {
+            entries: vec![(1_u64, 10_u64), (7, 11), (7, 12), (2, 20)],
+        };
+        let mut visited = Vec::new();
+        store.retain(|key, value| {
+            visited.push((*key, *value));
+            *value > 11
+        });
+        assert_eq!(visited, [(1, 10), (7, 11), (7, 12), (2, 20)]);
+        assert_eq!(store.entries(), &[(7, 12), (2, 20)]);
+        assert_eq!(store.get_copy(&7), Some(12));
+    }
+
+    #[test]
+    fn retain_preserves_stateful_callback_results_including_empty_and_extreme_rows() {
+        let mut empty = Store::<u64, u64>::default();
+        empty.retain(|_, _| panic!("empty table must not invoke callback"));
+        let mut store = Store {
+            entries: vec![(0_u64, 0_u64), (u64::MAX, u64::MAX), (0, 9)],
+        };
+        let mut calls = 0;
+        store.retain(|_, _| {
+            calls += 1;
+            calls != 2
+        });
+        assert_eq!(calls, 3);
+        assert_eq!(store.entries(), &[(0, 0), (0, 9)]);
+        store.retain(|_, _| false);
+        assert!(store.entries().is_empty());
     }
 }

@@ -25,6 +25,15 @@ namespace SandproofFoundationsRust
 structure sandbox_controller_core.store.Store (K : Type) (V : Type) where
   entries : alloc.vec.Vec (K × V)
 
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}]
+    Source: './controller-core/src/store.rs', lines 50:28-50:47
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure] -/
+@[reducible, rust_type
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure"]
+def sandbox_controller_core.store.Store.retain.closure (K : Type) (V : Type)
+  (T2 : Type) :=
+  T2
+
 /-- [sandproof_center_core::model::LanePhase]
     Source: './sandbox-center-core/src/model.rs', lines 369:0-369:18
     Name pattern: [sandproof_center_core::model::LanePhase]
@@ -223,5 +232,15 @@ inductive sandproof_protocol.WorkOutcome (E : Type) where
   sandproof_protocol.UnknownReason →
   Option E →
   sandproof_protocol.WorkOutcome E
+
+/-- [sandproof_foundations_extract::store_retain_above::{closure}]
+    Source: 'src/lib.rs', lines 34:17-34:42 -/
+@[reducible]
+def store_retain_above.closure := Std.U64
+
+/-- [sandproof_foundations_extract::option_is_none_or::{closure}]
+    Source: 'src/lib.rs', lines 38:21-38:42 -/
+@[reducible]
+def option_is_none_or.closure := Std.U64
 
 end SandproofFoundationsRust

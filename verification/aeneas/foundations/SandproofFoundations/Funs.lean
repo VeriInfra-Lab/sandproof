@@ -86,6 +86,101 @@ def sandbox_controller_core.store.Store.put
       value 0#usize
   ok { entries := v }
 
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnMut<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}::call_mut]:
+    Source: './controller-core/src/store.rs', lines 50:28-50:47
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::{core::ops::function::FnMut<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>}::call_mut] -/
+@[rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::{core::ops::function::FnMut<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>}::call_mut"]
+def
+  sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairBool.call_mut
+  {K : Type} {V : Type} {T2 : Type} (corecmpPartialEqInst : core.cmp.PartialEq
+  K K) (coreopsfunctionFnMutT2PairShared0KShared1VBoolInst :
+  core.ops.function.FnMut T2 (K × V) Bool)
+  (c : sandbox_controller_core.store.Store.retain.closure K V T2)
+  (tupled_args : (K × V)) :
+  Result (Bool × (sandbox_controller_core.store.Store.retain.closure K V T2))
+  := do
+  let (b, t) ←
+    coreopsfunctionFnMutT2PairShared0KShared1VBoolInst.call_mut c tupled_args
+  ok (b, t)
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}::call_once]:
+    Source: './controller-core/src/store.rs', lines 50:28-50:47
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::{core::ops::function::FnOnce<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>}::call_once] -/
+@[rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::{core::ops::function::FnOnce<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>}::call_once"]
+def
+  sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairBool.call_once
+  {K : Type} {V : Type} {T2 : Type} (corecmpPartialEqInst : core.cmp.PartialEq
+  K K) (coreopsfunctionFnMutT2PairShared0KSharedVBoolInst :
+  core.ops.function.FnMut T2 (K × V) Bool)
+  (c : sandbox_controller_core.store.Store.retain.closure K V T2)
+  (p : (K × V)) :
+  Result Bool
+  := do
+  let (b, _) ←
+    sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairBool.call_mut
+      corecmpPartialEqInst coreopsfunctionFnMutT2PairShared0KSharedVBoolInst c
+      p
+  ok b
+
+/-- Trait implementation: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}]
+    Source: './controller-core/src/store.rs', lines 50:28-50:47
+    Name pattern: [core::ops::function::FnOnce<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>"]
+def
+  sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairBool
+  {K : Type} {V : Type} {T2 : Type} (corecmpPartialEqInst : core.cmp.PartialEq
+  K K) (coreopsfunctionFnMutT2PairShared0KSharedVBoolInst :
+  core.ops.function.FnMut T2 (K × V) Bool) : core.ops.function.FnOnce
+  (sandbox_controller_core.store.Store.retain.closure K V T2) (K × V) Bool
+  := {
+  call_once :=
+    sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairBool.call_once
+    corecmpPartialEqInst coreopsfunctionFnMutT2PairShared0KSharedVBoolInst
+}
+
+/-- Trait implementation: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnMut<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}]
+    Source: './controller-core/src/store.rs', lines 50:28-50:47
+    Name pattern: [core::ops::function::FnMut<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnMut<sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain::closure<@K, @V, @T2>, (&'_ (@K, @V)), bool>"]
+def
+  sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairBool
+  {K : Type} {V : Type} {T2 : Type} (corecmpPartialEqInst : core.cmp.PartialEq
+  K K) (coreopsfunctionFnMutT2PairShared0KSharedVBoolInst :
+  core.ops.function.FnMut T2 (K × V) Bool) : core.ops.function.FnMut
+  (sandbox_controller_core.store.Store.retain.closure K V T2) (K × V) Bool
+  := {
+  FnOnceInst :=
+    sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairBool
+    corecmpPartialEqInst coreopsfunctionFnMutT2PairShared0KSharedVBoolInst
+  call_mut :=
+    sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairBool.call_mut
+    corecmpPartialEqInst coreopsfunctionFnMutT2PairShared0KSharedVBoolInst
+}
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain]:
+    Source: './controller-core/src/store.rs', lines 49:4-49:66
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::retain"]
+def sandbox_controller_core.store.Store.retain
+  {K : Type} {V : Type} {T2 : Type} (corecmpPartialEqInst : core.cmp.PartialEq
+  K K) (coreopsfunctionFnMutT2PairShared0KSharedVBoolInst :
+  core.ops.function.FnMut T2 (K × V) Bool)
+  (self : sandbox_controller_core.store.Store K V) (keep : T2) :
+  Result (sandbox_controller_core.store.Store K V)
+  := do
+  let v ←
+    alloc.vec.Vec.retain Global
+      (sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairBool
+      corecmpPartialEqInst coreopsfunctionFnMutT2PairShared0KSharedVBoolInst)
+      self.entries keep
+  ok { entries := v }
+
 /-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop body 0:
     Source: './controller-core/src/store.rs', lines 66:8-73:5
     Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy]
@@ -736,8 +831,90 @@ def store_put
   := do
   sandbox_controller_core.store.Store.put core.cmp.PartialEqU64 store key value
 
-/-- [sandproof_foundations_extract::resource_add]:
+/-- [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_mut]:
+    Source: 'src/lib.rs', lines 34:17-34:42 -/
+def
+  store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool.call_mut
+  (c : store_retain_above.closure) (tupled_args : (Std.U64 × Std.U64)) :
+  Result (Bool × store_retain_above.closure)
+  := do
+  let (_, value) := tupled_args
+  ok (value > c, c)
+
+/-- [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_once]:
+    Source: 'src/lib.rs', lines 34:17-34:42 -/
+def
+  store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool.call_once
+  (c : store_retain_above.closure) (p : (Std.U64 × Std.U64)) :
+  Result Bool
+  := do
+  let (b, _) ←
+    store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool.call_mut
+      c p
+  ok b
+
+/-- Trait implementation: [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}]
+    Source: 'src/lib.rs', lines 34:17-34:42 -/
+@[reducible]
+def
+  store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool
+  : core.ops.function.FnOnce store_retain_above.closure (Std.U64 × Std.U64)
+  Bool := {
+  call_once :=
+    store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool.call_once
+}
+
+/-- Trait implementation: [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}]
+    Source: 'src/lib.rs', lines 34:17-34:42 -/
+@[reducible]
+def
+  store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool
+  : core.ops.function.FnMut store_retain_above.closure (Std.U64 × Std.U64)
+  Bool := {
+  FnOnceInst :=
+    store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool
+  call_mut :=
+    store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool.call_mut
+}
+
+/-- [sandproof_foundations_extract::store_retain_above]:
     Source: 'src/lib.rs', lines 33:0-35:1
+    Visibility: public -/
+def store_retain_above
+  (store : sandbox_controller_core.store.Store Std.U64 Std.U64)
+  (floor : Std.U64) :
+  Result (sandbox_controller_core.store.Store Std.U64 Std.U64)
+  := do
+  sandbox_controller_core.store.Store.retain core.cmp.PartialEqU64
+    store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool
+    store floor
+
+/-- [sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}::call_once]:
+    Source: 'src/lib.rs', lines 38:21-38:42 -/
+def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+  (c : option_is_none_or.closure) (tupled_args : Std.U64) : Result Bool := do
+  ok (tupled_args > c)
+
+/-- Trait implementation: [sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}]
+    Source: 'src/lib.rs', lines 38:21-38:42 -/
+@[reducible]
+def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool :
+  core.ops.function.FnOnce option_is_none_or.closure Std.U64 Bool := {
+  call_once :=
+    option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+}
+
+/-- [sandproof_foundations_extract::option_is_none_or]:
+    Source: 'src/lib.rs', lines 37:0-39:1
+    Visibility: public -/
+def option_is_none_or
+  (value : Option Std.U64) (floor : Std.U64) : Result Bool := do
+  core.option.Option.is_none_or
+    option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool value
+    floor
+
+/-- [sandproof_foundations_extract::resource_add]:
+    Source: 'src/lib.rs', lines 41:0-43:1
     Visibility: public -/
 def resource_add
   (left : sandproof_protocol.internal.lifecycle.Resources)
@@ -747,14 +924,14 @@ def resource_add
   sandproof_protocol.internal.lifecycle.Resources.checked_add left right
 
 /-- [sandproof_foundations_extract::resource_positive]:
-    Source: 'src/lib.rs', lines 37:0-39:1
+    Source: 'src/lib.rs', lines 45:0-47:1
     Visibility: public -/
 def resource_positive
   (value : sandproof_protocol.internal.lifecycle.Resources) : Result Bool := do
   sandproof_protocol.internal.lifecycle.Resources.positive value
 
 /-- [sandproof_foundations_extract::resource_fits]:
-    Source: 'src/lib.rs', lines 41:0-43:1
+    Source: 'src/lib.rs', lines 49:0-51:1
     Visibility: public -/
 def resource_fits
   (value : sandproof_protocol.internal.lifecycle.Resources)
@@ -764,7 +941,7 @@ def resource_fits
   sandproof_protocol.internal.lifecycle.Resources.fits value limit
 
 /-- [sandproof_foundations_extract::create_binding_valid]:
-    Source: 'src/lib.rs', lines 45:0-47:1
+    Source: 'src/lib.rs', lines 53:0-55:1
     Visibility: public -/
 def create_binding_valid
   (value : sandproof_protocol.internal.lifecycle.CreateBinding) :
@@ -773,7 +950,7 @@ def create_binding_valid
   sandproof_protocol.internal.lifecycle.CreateBinding.is_valid value
 
 /-- [sandproof_foundations_extract::identity_response]:
-    Source: 'src/lib.rs', lines 49:0-54:1
+    Source: 'src/lib.rs', lines 57:0-62:1
     Visibility: public -/
 def identity_response
   (actual : sandproof_protocol.internal.ControlIdentity)
@@ -783,14 +960,14 @@ def identity_response
   sandproof_protocol.internal.ControlIdentity.validate_response actual expected
 
 /-- [sandproof_foundations_extract::retry_hint]:
-    Source: 'src/lib.rs', lines 56:0-58:1
+    Source: 'src/lib.rs', lines 64:0-66:1
     Visibility: public -/
 def retry_hint
   (outcome : sandproof_protocol.WorkOutcome Std.U64) : Result Bool := do
   sandproof_protocol.WorkOutcome.permits_new_attempt outcome
 
 /-- [sandproof_foundations_extract::outcome_observation]:
-    Source: 'src/lib.rs', lines 60:0-62:1
+    Source: 'src/lib.rs', lines 68:0-70:1
     Visibility: public -/
 def outcome_observation
   (outcome : sandproof_protocol.WorkOutcome Std.U64) :

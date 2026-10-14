@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "source_anchor": "882427adfae74ee3933244b3e5e3c983996e86a3",
+  "source_anchor": "9f2a37d702897156f53503795f6267066a6a6014",
   "source_identity": "verification/foundations-inputs.sha256",
   "target": "x86_64-unknown-linux-gnu",
   "features": [],
@@ -79,5 +79,15 @@
     "lib",
     "not(test)"
   ],
+  "library_sources": {
+    "production": {
+      "alloc/src/vec/mod.rs": "93e3f8bad8de514ccd23c84d9c036405f32cf0b24c40e11f69f012b5264ad08e",
+      "core/src/option.rs": "ddba805a572e9cdbae5c1809bec07b36afdabd67a918bbccc7dab4cfe27cf067"
+    },
+    "extraction": {
+      "alloc/src/vec/mod.rs": "161d97d3549abee6416787475f3da48780f70a34065b333478e2b1f629fff2e9",
+      "core/src/option.rs": "2dab92cdbec51b006307496b24cc757d7b2bc4056eff156d0fff445f66c1d2f5"
+    }
+  },
   "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)"
 }
