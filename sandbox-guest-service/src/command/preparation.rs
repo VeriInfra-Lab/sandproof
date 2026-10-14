@@ -2,6 +2,7 @@
 //! grants no public PID policy: only its caller can confirm the required
 //! registration, and only then may the original worker be dispatched.
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use sandproof_guest_core::CommandIdentity;
@@ -24,6 +25,21 @@ pub struct PreparationSpec {
     pub command: u64,
     pub launch: LaunchSpec,
     pub process_limits: ProcessLimits,
+}
+
+/// Original request capacity and absolute deadline from the trusted admission
+/// boundary. This does not authenticate or reset command execution time.
+pub struct PreparationRequest {
+    pub deadline: Instant,
+    pub owner: Arc<dyn Send + Sync>,
+}
+
+struct Context {
+    authorization: AuthPermit,
+    execution: ExecutionDeadline,
+    limits: AdmissionLimits,
+    until: Instant,
+    request: Arc<dyn Send + Sync>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -100,6 +116,9 @@ pub struct PendingCommand {
     observer: AdmissionObserver,
     decision: Option<oneshot::Sender<Decision>>,
     reply: oneshot::Receiver<Reply>,
+    // The storage task owns this ticket. Even if preparation has already
+    // stopped, queued/running durable PID work retains original request credit.
+    _request: Arc<dyn Send + Sync>,
 }
 
 impl PendingCommand {
@@ -186,21 +205,58 @@ impl CommandOwners {
         execution: ExecutionDeadline,
         limits: AdmissionLimits,
     ) -> Result<PendingCommand, CommandError> {
+        let deadline = Instant::now()
+            .checked_add(limits.ready_timeout)
+            .ok_or(CommandError::InvalidArgument)?;
+        self.prepare_command_admitted(
+            spec,
+            authorization,
+            execution,
+            limits,
+            PreparationRequest {
+                deadline,
+                owner: Arc::new(()),
+            },
+        )
+    }
+
+    /// Same original preparation/registration owner, retaining caller admission
+    /// through actual preparation cleanup, persistent PID work and gate release.
+    /// The request deadline can only shorten the preparation/decision deadline;
+    /// after dispatch acceptance it does not replace the execution deadline.
+    /// The caller separately retains a clone through response transport.
+    /// # Errors
+    /// Invalid limits, expired admission or full process record capacity.
+    /// # Panics
+    /// Requires a running Tokio runtime.
+    pub fn prepare_command_admitted(
+        &self,
+        spec: PreparationSpec,
+        authorization: AuthPermit,
+        execution: ExecutionDeadline,
+        limits: AdmissionLimits,
+        request: PreparationRequest,
+    ) -> Result<PendingCommand, CommandError> {
         let start = Instant::now();
         let limits = limits.validate(start)?;
-        let until = execution.0.map_or(start + limits.ready_timeout, |at| {
-            at.min(start + limits.ready_timeout)
-        });
+        if start >= request.deadline {
+            return Err(CommandError::DeadlineExceeded);
+        }
+        let until = request.deadline.min(start + limits.ready_timeout);
+        let until = execution.0.map_or(until, |at| at.min(until));
         let reservation = self.reserve()?;
         let (status, observer) = watch::channel(AdmissionStatus::Preparing);
         let (decision, receive_decision) = oneshot::channel();
         let (reply, receive_reply) = oneshot::channel();
         owner::spawn(
             spec,
-            authorization,
-            execution,
-            limits,
-            until,
+            Context {
+                authorization,
+                execution,
+                limits,
+                until,
+                request: request.owner.clone(),
+            },
             receive_decision,
             owner::AdmissionOwner::new(reservation, status, reply),
         );
@@ -208,6 +264,7 @@ impl CommandOwners {
             observer: AdmissionObserver(observer),
             decision: Some(decision),
             reply: receive_reply,
+            _request: request.owner,
         })
     }
 }

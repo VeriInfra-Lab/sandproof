@@ -23,7 +23,8 @@ mod registration;
 mod registry;
 mod streams;
 pub use preparation::{
-    AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationSpec,
+    AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationRequest,
+    PreparationSpec,
 };
 pub use registration::{PidRegisteredCommand, PidRegistrar, RegistrationError};
 pub use registry::{
@@ -211,6 +212,16 @@ impl CommandReservation {
         authorization: AuthPermit,
         deadline: ExecutionDeadline,
     ) -> (ManagedCommand, CommandSubscription) {
+        self.start_registered_admitted(process, authorization, deadline, Arc::new(()))
+    }
+
+    fn start_registered_admitted(
+        self,
+        process: CommandProcess,
+        authorization: AuthPermit,
+        deadline: ExecutionDeadline,
+        request: Arc<dyn Send + Sync>,
+    ) -> (ManagedCommand, CommandSubscription) {
         let identity = process.identity();
         let control = process.control();
         let (status, _) = watch::channel(CommandStatus {
@@ -238,6 +249,7 @@ impl CommandReservation {
             process,
             authorization,
             deadline,
+            request,
             Arc::clone(&command.shared),
         );
         (command, output)

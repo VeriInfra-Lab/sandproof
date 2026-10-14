@@ -1,7 +1,6 @@
 use super::{
-    AdmissionLimits, AdmissionStatus, AuthPermit, CommandError, CommandPreparation,
-    CommandReservation, Decision, ExecutionDeadline, Instant, PreparationSpec, Reply, Worker,
-    oneshot, watch,
+    AdmissionLimits, AdmissionStatus, CommandError, CommandPreparation, CommandReservation,
+    Context, Decision, Instant, PreparationSpec, Reply, Worker, oneshot, watch,
 };
 
 /// Constructed before spawn, so even an unpolled task resolves its observers.
@@ -60,33 +59,26 @@ impl Drop for AdmissionOwner {
 
 pub(super) fn spawn(
     spec: PreparationSpec,
-    authorization: AuthPermit,
-    execution: ExecutionDeadline,
-    limits: AdmissionLimits,
-    until: Instant,
+    context: Context,
     decision: oneshot::Receiver<Decision>,
     owner: AdmissionOwner,
 ) {
-    tokio::spawn(run(
-        spec,
-        authorization,
-        execution,
-        limits,
-        until,
-        decision,
-        owner,
-    ));
+    tokio::spawn(run(spec, context, decision, owner));
 }
 
 async fn run(
     spec: PreparationSpec,
-    authorization: AuthPermit,
-    execution: ExecutionDeadline,
-    limits: AdmissionLimits,
-    until: Instant,
+    context: Context,
     mut decision: oneshot::Receiver<Decision>,
     mut owner: AdmissionOwner,
 ) {
+    let Context {
+        authorization,
+        execution,
+        limits,
+        until,
+        request,
+    } = context;
     if owner.reply.as_ref().is_none_or(oneshot::Sender::is_closed) {
         owner.stopped(CommandError::Cancelled);
         return;
@@ -163,7 +155,8 @@ async fn run(
         return;
     }
     if let Some(reservation) = owner.reservation.take() {
-        let launch = reservation.start_registered(process, authorization, execution);
+        let launch =
+            reservation.start_registered_admitted(process, authorization, execution, request);
         owner
             .status
             .send_replace(AdmissionStatus::Dispatched(identity));
