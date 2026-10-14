@@ -645,3 +645,68 @@ async fn fixed_go_file_authorization_reference() {
         count / 4
     );
 }
+
+#[tokio::test]
+#[ignore = "explicit fixed Go auth/jsonError HTTP oracle; set SANDPROOF_GUEST_AUTH_REFERENCE"]
+async fn fixed_go_file_authorization_http_reference() {
+    let mut oracle = Reference::from_env("SANDPROOF_GUEST_AUTH_REFERENCE");
+    for (denial, sig, header) in [
+        (Denial::MissingSignature, "-".into(), String::new()),
+        (
+            Denial::TokenMismatch,
+            "-".into(),
+            format!("\t{}", hex(b"wrong")),
+        ),
+        (
+            Denial::InvalidSignature,
+            format!("+{}", hex(b"bad")),
+            String::new(),
+        ),
+        (
+            Denial::ExpiredSignature,
+            format!(
+                "+{}",
+                hex(&signature(b"token", &query(), Operation::Read)[..])
+            ),
+            String::new(),
+        ),
+    ] {
+        for method in ["GET", "HEAD", "POST"] {
+            let response = crate::file_authorization::rejected_with_head(
+                denial,
+                crate::upload_response::Limits {
+                    wire_bytes: 4096,
+                    chunk_bytes: 4096,
+                },
+                deadline(),
+                Arc::new(()),
+                method == "HEAD",
+            )
+            .await
+            .unwrap();
+            let (parts, mut body) = response.into_parts();
+            let mut observed = vec![parts.status.as_u16().to_string()];
+            for name in ["content-type", "content-length", "x-content-type-options"] {
+                observed.push(hex(parts.headers.get(name).map_or(&[], |v| v.as_bytes())));
+            }
+            let mut bytes = Vec::new();
+            while let Some(frame) = body.frame().await {
+                bytes.extend_from_slice(&frame.unwrap().into_data().unwrap());
+            }
+            observed.push(hex(&bytes));
+            oracle.check(
+                &format!(
+                    "H{method}\t{}\t{}\t+{}\t100\tread\t{sig}\t101{header}",
+                    hex(b"token"),
+                    hex(b"/file"),
+                    hex(b"app")
+                ),
+                &observed.join("\t"),
+            );
+        }
+    }
+    oracle.finish();
+    eprintln!(
+        "Fixed Go signing/jsonError: 12 real loopback GET/HEAD/POST status/header/body cases."
+    );
+}

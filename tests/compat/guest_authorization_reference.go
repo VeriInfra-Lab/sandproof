@@ -11,13 +11,17 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const accessTokenHeader = "X-Access-Token"
@@ -156,6 +160,25 @@ func expiration(s string) *int {
 	n := int(v)
 	return &n
 }
+
+// Original api/error.go jsonError, using the same generated field types.
+// The transport observes its real GET/HEAD/POST wire behavior; authentication
+// below still comes from original validateSigning, not an injected message.
+type Error struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func jsonError(w http.ResponseWriter, code int, err error) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+	encodeErr := json.NewEncoder(w).Encode(Error{Code: code, Message: err.Error()})
+	if encodeErr != nil {
+		http.Error(w, errors.Join(encodeErr, err).Error(), http.StatusInternalServerError)
+	}
+}
+
 func main() {
 	if runtime.Version() != "go1.26.8" || strconv.IntSize != 64 {
 		panic("Go 1.26.8, 64-bit int required")
@@ -163,6 +186,12 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 65536), 2<<20)
 	out := bufio.NewWriter(os.Stdout)
+	var server *httptest.Server
+	defer func() {
+		if server != nil {
+			server.Close()
+		}
+	}()
 	for scanner.Scan() {
 		f := strings.Split(scanner.Text(), "\t")
 		if len(f) < 8 {
@@ -186,13 +215,42 @@ func main() {
 				panic(err)
 			}
 			fmt.Fprintln(out, value)
-		} else if f[0] == "V" {
+		} else if f[0] == "V" || strings.HasPrefix(f[0], "H") {
 			request := &http.Request{Header: make(http.Header)}
 			for _, header := range f[8:] {
 				request.Header.Add(accessTokenHeader, unhex(header))
 			}
 			err := a.validateSigning(request, optional(f[6]), exp, user, path, op)
-			if err == nil {
+			if f[0] != "V" {
+				if err == nil {
+					panic("HTTP mode requires actual signing denial")
+				}
+				if server == nil {
+					server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						message, failure := io.ReadAll(r.Body)
+						if failure != nil {
+							panic(failure)
+						}
+						jsonError(w, http.StatusUnauthorized, errors.New(string(message)))
+					}))
+				}
+				r, failure := http.NewRequest(strings.TrimPrefix(f[0], "H"), server.URL, strings.NewReader(err.Error()))
+				if failure != nil {
+					panic(failure)
+				}
+				client := server.Client()
+				client.Timeout = 5 * time.Second
+				response, failure := client.Do(r)
+				if failure != nil {
+					panic(failure)
+				}
+				data, failure := io.ReadAll(response.Body)
+				response.Body.Close()
+				if failure != nil {
+					panic(failure)
+				}
+				fmt.Fprintf(out, "%d\t%x\t%x\t%x\t%x\n", response.StatusCode, response.Header.Get("Content-Type"), response.Header.Get("Content-Length"), response.Header.Get("X-Content-Type-Options"), data)
+			} else if err == nil {
 				fmt.Fprintln(out, "OK")
 			} else {
 				fmt.Fprintln(out, "ERR\t"+hex.EncodeToString([]byte(err.Error())))

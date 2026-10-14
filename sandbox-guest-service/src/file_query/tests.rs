@@ -303,24 +303,33 @@ async fn fixed_go_query_http_reference() {
         cases.push(format!("signature_expiration={}", "x".repeat(n - fixed)).into_bytes());
     }
     for raw in &cases {
-        let response = rejected(failure(raw), response_limits(), deadline(), Arc::new(()))
+        for method in ["GET", "HEAD", "POST"] {
+            let response = rejected_with_head(
+                failure(raw),
+                response_limits(),
+                deadline(),
+                Arc::new(()),
+                method == "HEAD",
+            )
             .await
             .unwrap();
-        let (parts, body) = response.into_parts();
-        let header = |key| parts.headers.get(key).map_or("", |v| v.to_str().unwrap());
-        let observed = format!(
-            "{}\t{}\t{}\t{}\t{}",
-            parts.status.as_u16(),
-            header("content-type"),
-            header("content-length"),
-            header("x-content-type-options"),
-            hex(&drain(body).await)
-        );
-        oracle.check(&format!("H\t{}", hex(raw)), &observed);
+            let (parts, body) = response.into_parts();
+            let header = |key| parts.headers.get(key).map_or("", |v| v.to_str().unwrap());
+            let observed = format!(
+                "{}\t{}\t{}\t{}\t{}",
+                parts.status.as_u16(),
+                header("content-type"),
+                header("content-length"),
+                header("x-content-type-options"),
+                hex(&drain(body).await)
+            );
+            let mode = if method == "POST" { "H" } else { method };
+            oracle.check(&format!("{mode}\t{}", hex(raw)), &observed);
+        }
     }
     oracle.finish();
     eprintln!(
         "Fixed Go http.Error: {} real loopback status/header/body cases.",
-        cases.len()
+        cases.len() * 3
     );
 }

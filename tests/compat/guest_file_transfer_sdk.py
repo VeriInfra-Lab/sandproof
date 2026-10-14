@@ -134,11 +134,15 @@ def query_rejection_cases(root):
                'strconv.ParseInt: parsing ' + message + '\n')
 
 
-def assert_query_rejection(response, message):
+def assert_query_rejection(method, response, message):
     assert response.status_code == 400, response.text
-    assert response.text == message
     assert response.headers['content-type'] == 'text/plain; charset=utf-8'
     assert response.headers['x-content-type-options'] == 'nosniff'
+    assert int(response.headers['content-length']) == len(message.encode())
+    if method == 'HEAD':
+        assert response.content == b''
+        return
+    assert response.text == message
     error = _handle_filesystem_envd_api_exception(response)
     assert isinstance(error, InvalidArgumentException), error
     assert str(error) == message
@@ -150,11 +154,11 @@ def query_binding_sync(sandbox, url, root):
     assert bytes(sandbox.files.read(path, format='bytes')) == b'query'
     with httpx.Client(trust_env=False, timeout=10) as client:
         for raw, message in query_rejection_cases(root):
-            for method in ['GET', 'POST']:
+            for method in ['GET', 'HEAD', 'POST']:
                 # Binding must fail before authorization or any file effect.
                 response = client.request(method, f'{url}/files?{raw}',
                                           headers={'x-access-token': 'must-not-be-used'}, content=b'never')
-                assert_query_rejection(response, message)
+                assert_query_rejection(method, response, message)
 
 
 async def query_binding_async(sandbox, url, root):
@@ -163,10 +167,10 @@ async def query_binding_async(sandbox, url, root):
     assert bytes(await sandbox.files.read(path, format='bytes')) == b'query'
     async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
         for raw, message in query_rejection_cases(root):
-            for method in ['GET', 'POST']:
+            for method in ['GET', 'HEAD', 'POST']:
                 response = await client.request(method, f'{url}/files?{raw}',
                                                 headers={'x-access-token': 'must-not-be-used'}, content=b'never')
-                assert_query_rejection(response, message)
+                assert_query_rejection(method, response, message)
 
 
 def authorization_cases(sandbox, url, root):
@@ -202,10 +206,15 @@ def assert_authorization_response(method, response, message):
             assert response.content == b'authorized'
         return
     assert response.status_code == 401, response.text
-    assert response.json() == {'code': 401, 'message': message}
-    assert response.content.endswith(b'\n')
     assert response.headers['content-type'] == 'application/json; charset=utf-8'
     assert response.headers['x-content-type-options'] == 'nosniff'
+    if method == 'HEAD':
+        expected = json.dumps({'code': 401, 'message': message}, separators=(',', ':')) + '\n'
+        assert int(response.headers['content-length']) == len(expected.encode())
+        assert response.content == b''
+        return
+    assert response.json() == {'code': 401, 'message': message}
+    assert response.content.endswith(b'\n')
     error = _handle_filesystem_envd_api_exception(response)
     assert isinstance(error, AuthenticationException)
     assert str(error) == message
@@ -215,6 +224,8 @@ def authorization_sync(sandbox, url, root):
     with httpx.Client(trust_env=False, timeout=10) as client:
         for method, target, args, message in authorization_cases(sandbox, url, root):
             assert_authorization_response(method, client.request(method, target, **args), message)
+            if method == 'GET' and message is not None:
+                assert_authorization_response('HEAD', client.head(target, **args), message)
 
 
 def unknown_users(root):
@@ -269,6 +280,8 @@ async def authorization_async(sandbox, url, root):
     async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
         for method, target, args, message in authorization_cases(sandbox, url, root):
             assert_authorization_response(method, await client.request(method, target, **args), message)
+            if method == 'GET' and message is not None:
+                assert_authorization_response('HEAD', await client.head(target, **args), message)
 
 
 def header_rejections_sync(url, root):

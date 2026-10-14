@@ -269,3 +269,86 @@ async fn failed_error_encoding_does_not_leak_request_slot() {
     );
     released(&pool).await;
 }
+
+#[tokio::test]
+async fn head_rejections_keep_get_headers_validate_budget_and_release_only_on_finish() {
+    let session = session().await;
+    for query in [
+        b"path=a&path=b".as_slice(),
+        b"signature_expiration=%FF%0A",
+        b"",
+    ] {
+        let pool = FileRequests::new(limits()).unwrap();
+        let get = pool
+            .admit()
+            .unwrap()
+            .authorize(&session, &Method::GET, &HeaderMap::new(), query)
+            .await
+            .err()
+            .unwrap()
+            .into_response()
+            .await
+            .unwrap();
+        let (parts, mut body) = get.into_parts();
+        let mut size = 0;
+        while let Some(frame) = body.frame().await {
+            // Original owned-body backpressure requires releasing each chunk
+            // before asking for EOF; BodyExt::collect retains those chunks.
+            size += frame.unwrap().into_data().unwrap().len();
+        }
+        released(&pool).await;
+        for finish in 0..3 {
+            let response = pool
+                .admit()
+                .unwrap()
+                .authorize(&session, &Method::HEAD, &HeaderMap::new(), query)
+                .await
+                .err()
+                .unwrap()
+                .into_response()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), parts.status);
+            assert_eq!(response.headers(), &parts.headers);
+            full(&pool);
+            let mut body = response.into_body();
+            match finish {
+                0 => assert!(body.frame().await.is_none()),
+                1 => {} // Dropping an unpolled HEAD must also release its sender.
+                _ => {
+                    tokio::time::pause();
+                    tokio::time::advance(Duration::from_secs(31)).await;
+                    assert!(body.frame().await.unwrap().is_err());
+                    tokio::time::resume();
+                }
+            }
+            drop(body);
+            released(&pool).await;
+        }
+        for budget in [size, size - 1] {
+            let mut limits = limits();
+            limits.rejection.wire_bytes = budget;
+            let pool = FileRequests::new(limits).unwrap();
+            let response = pool
+                .admit()
+                .unwrap()
+                .authorize(&session, &Method::HEAD, &HeaderMap::new(), query)
+                .await
+                .err()
+                .unwrap()
+                .into_response()
+                .await;
+            if budget == size {
+                assert!(response.unwrap().into_body().frame().await.is_none());
+            } else {
+                assert_eq!(
+                    response.err(),
+                    Some(ResponseError::Delivery(
+                        upload_response::Error::ResponseLimit
+                    ))
+                );
+            }
+            released(&pool).await;
+        }
+    }
+}

@@ -58,9 +58,9 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [文件协议检查](../sandbox-guest-runtime/tests/file_protocol.rs)消费同一文件共享样例，核对重复/畸形消息、缺省/null、uint32 深度、int64 尺寸、可选链接字段、时间戳精度/边界和编码预算。[文件上下文测试](../sandbox-guest-service/src/files/tests.rs)覆盖 Basic 与 HTTP username 的分离、一次 Move 查询、默认值/环境不改变身份、词法路径、无效 UID 和展开后预算。Linux 兼容入口还运行[固定同步/异步 SDK 组合](../sandbox-guest-runtime/tests/sdk_files.rs)：原会话授权与路径解析接到文件编解码，核对各一元方法、大尺寸/纳秒/元数据/空列表/可选链接及超额错误。该测试只返回预定合成属性，没有实际 stat、目录修改或文件传输；真实文件权限、链接竞争、磁盘满、部分读写、Go 双端对照和 KVM 仍须独立执行。
 
-[查询绑定检查](../sandbox-guest-runtime/src/file_query/tests.rs)及[错误回执检查](../sandbox-guest-service/src/file_query/tests.rs)覆盖原字节/空值、畸形字段局部丢弃、固定字段顺序、int64 边界与 unsigned 溢出优先级、完整原始输入预算、非 UTF-8 显式拒绝、Go Quote 线长预算及原守卫/期限。可移植定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_query`。固定 SDK 文件测试路由也迁移至共用绑定：原 SDK 读写带加号/百分号/空格的文件名，合成 GET/POST 检查重复/非法过期时间先于鉴权和文件效果，plain text 400 经原 SDK 错误解析器核对；Linux 组合待实跑，不能计为完整 E03 或签名验证。
+[查询绑定检查](../sandbox-guest-runtime/src/file_query/tests.rs)及[错误回执检查](../sandbox-guest-service/src/file_query/tests.rs)覆盖原字节/空值、畸形字段局部丢弃、固定字段顺序、int64 边界与 unsigned 溢出优先级、完整原始输入预算、非 UTF-8 显式拒绝、Go Quote 线长预算及原守卫/期限。可移植定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_query`。固定 SDK 文件测试路由也迁移至共用绑定：原 SDK 读写带加号/百分号/空格的文件名，合成 GET/HEAD/POST 检查重复/非法过期时间先于鉴权和文件效果，HEAD 核对空正文与原长度头，GET/POST plain text 400 经原 SDK 错误解析器核对；Linux 组合待实跑，不能计为完整 E03 或签名验证。
 
-[查询参考适配器](../tests/compat/query-reference/main.go)使用独立锁定的 Go 模块，直接调用 Go 1.26.8 URL.Query 和 oapi runtime v1.6.0 原绑定函数，字段顺序、类型及错误包装来自固定 envd `f455fd58fa3f289e78ce1de690c35968d8d29322` 的 GetFiles/PostFiles 生成代码；main.go 的 HandlerFromMux 使用原默认 ErrorHandler。对照包含种子 0x311、任意百分号字节、非法/Unicode 输入及 2047/2048/2049 字节响应；HTTP 模式只调用 http.Error 的真实自有回环服务，不执行完整 envd 或文件操作。已本地显式运行，默认 ignored，普通 CI 不制备 Go 或下载模块。先按 go.mod/go.sum 准备固定依赖，再执行：
+[查询参考适配器](../tests/compat/query-reference/main.go)使用独立锁定的 Go 模块，直接调用 Go 1.26.8 URL.Query 和 oapi runtime v1.6.0 原绑定函数，字段顺序、类型及错误包装来自固定 envd `f455fd58fa3f289e78ce1de690c35968d8d29322` 的 GetFiles/PostFiles 生成代码；main.go 的 HandlerFromMux 使用原默认 ErrorHandler。对照包含种子 0x311、任意百分号字节、非法/Unicode 输入及 2047/2048/2049 字节响应；HTTP 模式比较 GET/HEAD/POST，只调用 http.Error 的真实自有回环服务，不执行完整 envd 或文件操作。已本地显式运行，默认 ignored，普通 CI 不制备 Go 或下载模块。先按 go.mod/go.sum 准备固定依赖，再执行：
 
 ```sh
 cd tests/compat/query-reference
@@ -71,9 +71,9 @@ SANDPROOF_GUEST_QUERY_REFERENCE=/absolute/path/to/query-reference \
   cargo test -p sandproof-guest-service --locked --lib file_query -- --include-ignored --nocapture
 ```
 
-[文件鉴权检查](../sandbox-guest-service/src/session/file_authorization/tests.rs)和[会话回归](../sandbox-guest-service/tests/session.rs)可在原 macOS/Linux 库运行；会话与初始化 HTTP 组合不依赖 Linux 系统调用，现不再按平台隐藏。覆盖令牌优先/空头回退、非法签名先于过期、相同到期秒、当前快照后读时钟、字段/操作绑定、全部头和保留字节预算、无初始化拒绝、候选轮换失败/取消、原许可阻止轮换和原绝对期限。401 JSON 与最后字节副本保留原守卫另行检查。定向入口为 `cargo test -p sandproof-guest-service --locked --lib session::file_authorization` 与 `cargo test -p sandproof-guest-service --locked --test session`。
+[文件鉴权检查](../sandbox-guest-service/src/session/file_authorization/tests.rs)和[会话回归](../sandbox-guest-service/tests/session.rs)可在原 macOS/Linux 库运行；会话与初始化 HTTP 组合不依赖 Linux 系统调用，现不再按平台隐藏。覆盖令牌优先/空头回退、非法签名先于过期、相同到期秒、当前快照后读时钟、字段/操作绑定、全部头和保留字节预算、无初始化拒绝、候选轮换失败/取消、原许可阻止轮换和原绝对期限。401 JSON 与最后字节副本保留原守卫另行检查。请求准入组件另检查 HEAD 的完整编码预算、空正文、原长度头、丢弃和到期释放；Linux 公共文件入口核对拒绝前不读正文/查账户。固定 SDK 组合增加合成 HEAD 鉴权拒绝，尚未 Linux 实跑；HEAD 不经 SDK 文件错误解析器断言不存在的响应正文。定向入口为 `cargo test -p sandproof-guest-service --locked --lib session::file_authorization` 与 `cargo test -p sandproof-guest-service --locked --test session`。
 
-[固定 Go 鉴权参考](../tests/compat/guest_authorization_reference.go)保留原 generateSignature/validateSigning 函数体和 SHA-256/base64 方法；仅将令牌存储/日志依赖换为测试替身，清零函数名及 Unix 时钟注入改变，不执行原存储实现或完整 envd。显式组比较签名和允许/拒绝文本，包括读写、缺省/空用户、Unicode/分隔符路径、无/负数/int64 边界到期时间、错误令牌与错误签名；本地已运行，默认 ignored。未初始化匿名回退和重复令牌差异由受保护配置测试单独核对，不能用此对照宣称两种配置完全一致。
+[固定 Go 鉴权参考](../tests/compat/guest_authorization_reference.go)保留原 generateSignature/validateSigning 函数体和 SHA-256/base64 方法；仅将令牌存储/日志依赖换为测试替身，清零函数名及 Unix 时钟注入改变，不执行原存储实现或完整 envd。显式组比较签名和允许/拒绝文本，包括读写、缺省/空用户、Unicode/分隔符路径、无/负数/int64 边界到期时间、错误令牌与错误签名；另经原 jsonError 和真实 Go 回环 HTTP 比较 GET/HEAD/POST 四种原签名拒绝；这些有限对照本地已运行，默认 ignored。未初始化匿名回退和重复令牌差异由受保护配置测试单独核对，不能用此对照宣称两种配置完全一致。
 
 ```sh
 GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build -trimpath -buildvcs=false \

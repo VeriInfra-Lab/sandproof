@@ -130,6 +130,7 @@ impl Admitted {
                 lease: self.lease,
                 deadline: self.deadline,
                 limits: self.limits.rejection,
+                head: *method == Method::HEAD,
             }),
         }
     }
@@ -183,6 +184,7 @@ pub struct Rejected {
     lease: Arc<Lease>,
     deadline: Instant,
     limits: upload_response::Limits,
+    head: bool,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub enum ResponseError {
@@ -198,6 +200,8 @@ impl Rejected {
     /// Render only frozen query binding and authentication denials. Other
     /// failures remain classified for the future listener's failure policy;
     /// this layer does not invent wire behavior for budgets or clock failures.
+    /// HEAD validates the full error payload and retains GET headers but emits
+    /// no body frames, keeping the original slot until EOF, drop or expiry.
     /// # Errors
     /// Unmapped failure or failed/expired/over-budget response generation.
     pub async fn into_response(self) -> Result<Response, ResponseError> {
@@ -205,9 +209,19 @@ impl Rejected {
             Error::Query(
                 error @ (file_query::BindingError::Duplicate(_)
                 | file_query::BindingError::Integer { .. }),
-            ) => file_query::rejected(error, self.limits, self.deadline, self.lease).await,
+            ) => {
+                file_query::rejected_with_head(
+                    error,
+                    self.limits,
+                    self.deadline,
+                    self.lease,
+                    self.head,
+                )
+                .await
+            }
             Error::Authorization(auth::Error::Denied(denial)) => {
-                auth::rejected(denial, self.limits, self.deadline, self.lease).await
+                auth::rejected_with_head(denial, self.limits, self.deadline, self.lease, self.head)
+                    .await
             }
             error => return Err(ResponseError::Unmapped(error)),
         };

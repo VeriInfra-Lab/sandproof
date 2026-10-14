@@ -352,7 +352,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 468);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 496);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 148);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 110);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);

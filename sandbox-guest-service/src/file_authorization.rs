@@ -131,11 +131,22 @@ pub async fn rejected(
     deadline: Instant,
     owner: Owner,
 ) -> Result<Response, upload_response::Error> {
-    upload_response::errors::send_error(
+    rejected_with_head(denial, limits, deadline, owner, false).await
+}
+
+pub(crate) async fn rejected_with_head(
+    denial: Denial,
+    limits: upload_response::Limits,
+    deadline: Instant,
+    owner: Owner,
+    head: bool,
+) -> Result<Response, upload_response::Error> {
+    upload_response::errors::send_error_with_head(
         StatusCode::UNAUTHORIZED,
         limits,
         deadline,
         owner,
+        head,
         move || {
             go_json::bounded(limits.wire_bytes as u64, |put| {
                 put(b"{\"code\":401,\"message\":\"")?;

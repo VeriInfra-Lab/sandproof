@@ -2,7 +2,7 @@
 // Runtime f455fd58fa3f289e78ce1de690c35968d8d29322 (Apache-2.0):
 // ../../../sandbox-guest-runtime/src/file_encoding/E2B-LICENSE.
 // xattr error spelling follows pkg/xattr v0.4.12; see XATTR-LICENSE.
-use super::{Error, Limits, Owner, Response, send};
+use super::{Error, Limits, Owner, Response, send_with_head};
 use crate::go_json;
 use axum::http::{HeaderValue, StatusCode};
 use sandproof_guest_runtime::{
@@ -41,7 +41,18 @@ pub(crate) async fn send_error(
     owner: Owner,
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Error> {
-    let mut response = send(limits, deadline, owner, encode).await?;
+    send_error_with_head(status, limits, deadline, owner, false, encode).await
+}
+
+pub(crate) async fn send_error_with_head(
+    status: StatusCode,
+    limits: Limits,
+    deadline: Instant,
+    owner: Owner,
+    head: bool,
+    encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Error> {
+    let mut response = send_with_head(limits, deadline, owner, head, encode).await?;
     *response.status_mut() = status;
     response.headers_mut().insert(
         "content-type",

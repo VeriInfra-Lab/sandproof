@@ -93,13 +93,25 @@ pub(crate) async fn send(
     owner: Owner,
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Error> {
+    send_with_head(limits, deadline, owner, false, encode).await
+}
+
+/// HEAD validates and sizes the same payload, then retains an empty source
+/// under the original owner/deadline. No encoded data frame can escape.
+pub(crate) async fn send_with_head(
+    limits: Limits,
+    deadline: Instant,
+    owner: Owner,
+    head: bool,
+    encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Error> {
     let limits = limits.validate()?;
     let (length, body) = OwnedBody::start(deadline, owner, move |_, _| {
         let bytes = encode()?;
         Ok((
             bytes.len(),
             Payload {
-                bytes,
+                bytes: if head { Vec::new() } else { bytes },
                 offset: 0,
                 chunk_bytes: limits.chunk_bytes,
             },

@@ -99,8 +99,16 @@ func main() {
 				result = "ERR\t" + hex.EncodeToString([]byte(err.Error()+"\n"))
 			}
 			fmt.Fprintln(out, result)
-		} else if fields[0] == "H" {
-			response, err := client.Post(server.URL, "application/octet-stream", strings.NewReader(string(raw)))
+		} else if fields[0] == "H" || fields[0] == "GET" || fields[0] == "HEAD" {
+			method := fields[0]
+			if method == "H" {
+				method = "POST"
+			}
+			request, err := http.NewRequest(method, server.URL, strings.NewReader(string(raw)))
+			if err != nil {
+				panic(err)
+			}
+			response, err := client.Do(request)
 			if err != nil {
 				panic(err)
 			}

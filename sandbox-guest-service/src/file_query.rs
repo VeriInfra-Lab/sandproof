@@ -27,7 +27,17 @@ pub async fn rejected(
     deadline: Instant,
     owner: Owner,
 ) -> Result<Response, ResponseError> {
-    let mut response = upload_response::send(limits, deadline, owner, move || {
+    rejected_with_head(error, limits, deadline, owner, false).await
+}
+
+pub(crate) async fn rejected_with_head(
+    error: BindingError,
+    limits: ResponseLimits,
+    deadline: Instant,
+    owner: Owner,
+    head: bool,
+) -> Result<Response, ResponseError> {
+    let mut response = upload_response::send_with_head(limits, deadline, owner, head, move || {
         payload(&error, limits.wire_bytes)
     })
     .await?;

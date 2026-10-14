@@ -223,7 +223,13 @@ fn request(method: Method, query: &str, body: Body) -> Request<Body> {
         .unwrap()
 }
 async fn collect(response: Response) -> Bytes {
-    response.into_body().collect().await.unwrap().to_bytes()
+    let mut body = response.into_body();
+    let mut bytes = Vec::new();
+    while let Some(frame) = body.frame().await {
+        // Each owned chunk must be released before requesting the next one.
+        bytes.extend_from_slice(&frame.unwrap().into_data().unwrap());
+    }
+    bytes.into()
 }
 
 #[tokio::test]
@@ -377,10 +383,11 @@ async fn missing_accounts_preserve_stage_order_and_response_capacity_without_fil
             let response = fixture.http.handle(req).await.unwrap();
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
             full(&fixture.requests);
-            let bytes = collect(response).await;
             if method == Method::HEAD {
-                assert!(bytes.is_empty());
+                assert!(response.into_body().frame().await.is_none());
             } else {
+                let mut body = response.into_body();
+                let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
                 let actual: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
                 assert_eq!(
                     actual,
@@ -388,12 +395,12 @@ async fn missing_accounts_preserve_stage_order_and_response_capacity_without_fil
                 );
                 let copy = bytes.clone();
                 drop(bytes);
+                drop(body);
                 full(&fixture.requests);
                 drop(copy);
                 released(&fixture.requests).await;
                 continue;
             }
-            drop(bytes);
             released(&fixture.requests).await;
         }
     }
@@ -419,6 +426,41 @@ async fn missing_accounts_preserve_stage_order_and_response_capacity_without_fil
     );
     released(&fixture.requests).await;
     assert_eq!(fixture.calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn head_preflight_failures_have_no_body_frames_or_account_lookup() {
+    let root = tempfile::tempdir().unwrap();
+    let fixture = fixture(root.path()).await;
+    for (query, status) in [
+        ("path=a&path=b", 400),
+        ("signature_expiration=bad", 400),
+        ("path=never", 401),
+    ] {
+        let unread = Body::from_stream(futures_util::stream::poll_fn(
+            |_| -> std::task::Poll<Option<Result<Bytes, std::io::Error>>> {
+                panic!("preflight must not read request")
+            },
+        ));
+        let mut req = request(Method::HEAD, query, unread);
+        req.headers_mut()
+            .insert("x-access-token", "wrong".parse().unwrap());
+        let response = fixture.http.handle(req).await.unwrap();
+        assert_eq!(response.status(), status);
+        assert!(
+            response.headers()["content-length"]
+                .to_str()
+                .unwrap()
+                .parse::<usize>()
+                .unwrap()
+                > 0
+        );
+        full(&fixture.requests);
+        assert!(response.into_body().frame().await.is_none());
+        released(&fixture.requests).await;
+    }
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
 }
 
 #[tokio::test]
