@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,6 +142,8 @@ func main() {
 			target, body = "/fixture.Filesystem/Explicit", []byte("invalid JSON")
 		case "U":
 			target, body = "/fixture.Filesystem/Default", []byte("{}")
+		case "H":
+			body = []byte("invalid JSON")
 		}
 		req, err := http.NewRequest(http.MethodPost, server.URL+target, bytes.NewReader(body))
 		if err != nil {
@@ -154,6 +157,27 @@ func main() {
 			req.Header.Set("Connect-Timeout-Ms", "invalid")
 		} else if mode == "U" {
 			req.Header.Set("X-Fixture-Username", hex.EncodeToString(data))
+		} else if mode == "H" {
+			var fields struct {
+				Version []string `json:"version"`
+				Timeout []string `json:"timeout"`
+			}
+			if err := json.Unmarshal(data, &fields); err != nil {
+				panic(err)
+			}
+			for name, values := range map[string][]string{
+				"Connect-Protocol-Version": fields.Version,
+				"Connect-Timeout-Ms":       fields.Timeout,
+			} {
+				req.Header.Del(name)
+				for _, value := range values {
+					raw, err := hex.DecodeString(value)
+					if err != nil {
+						panic(err)
+					}
+					req.Header.Add(name, string(raw))
+				}
+			}
 		}
 		res, err := client.Do(req)
 		if err != nil {

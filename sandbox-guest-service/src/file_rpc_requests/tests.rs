@@ -15,6 +15,8 @@ use std::{
     task::{Context, Poll},
 };
 
+mod headers;
+
 struct Meta;
 impl MetadataSource for Meta {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {

@@ -23,7 +23,9 @@ use tokio::{
 };
 
 mod timeout;
+mod version;
 pub use timeout::{InvalidTimeout, TimeoutReason};
+pub use version::InvalidVersion;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -170,20 +172,27 @@ impl Authenticated {
         self.admitted.deadline = self.admitted.deadline.min(deadline);
     }
 
-    /// Decode a selected unary file method after protocol/Basic middleware.
+    /// Decode a selected POST unary JSON file method after Basic middleware and
+    /// HTTP/codec/compression selection (identity request and response here).
     /// The trusted HTTP framing layer supplies the unconsumed Body; an exact
     /// size hint is its length, never a reparse of Content-Length. Applies the
     /// fixed Connect timeout now, capped by the admission's original deadline.
     /// # Errors
-    /// Invalid timeout, body length/frame/trailer/transport failures, malformed
+    /// Invalid version/timeout, body length/frame/trailer/transport failures, malformed
     /// JSON, unknown method, expiry or lost decoder. No file effects occur here.
     pub async fn decode(self, method: &str, body: Body) -> Result<Decoded, Failure> {
         let mut deadline = self.admitted.deadline;
         let owner: Owner = self.admitted.lease.clone();
         let result = async {
             check_deadline(deadline)?;
-            deadline = timeout::deadline(&self.headers, Instant::now(), deadline)
-                .map_err(Error::Timeout)?;
+            // Connect sets a valid timeout before NewConn, but reports a bad
+            // version before a timeout parse failure. Neither reads the body.
+            let timeout = timeout::deadline(&self.headers, Instant::now(), deadline);
+            if let Ok(end) = timeout {
+                deadline = end;
+            }
+            version::check(&self.headers).map_err(Error::Version)?;
+            deadline = timeout.map_err(Error::Timeout)?;
             check_deadline(deadline)?;
             let method = match method {
                 "Stat" => "Stat",
@@ -290,13 +299,15 @@ pub enum Error {
     DeadlineExceeded,
     HeaderLimit,
     Authorization(ServiceError),
+    Version(InvalidVersion),
     Timeout(InvalidTimeout),
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
     Unavailable,
 }
-/// Classified only. No invented RPC status/text and no automatic replay.
+/// Only observed version/timeout diagnostics have fixed RPC responses.
+/// Other classifications remain unmapped; no automatic replay.
 pub struct Failure {
     error: Error,
     deadline: Instant,
@@ -310,6 +321,34 @@ impl Failure {
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.deadline
+    }
+
+    /// Consume a selected POST unary JSON/identity failure and its original
+    /// capacity. Only version/timeout errors have known wire representations.
+    /// # Errors
+    /// Unmapped source failure, response budget, original expiry or lost worker.
+    /// Every failure retains the original owner; no fresh deadline is granted.
+    pub async fn into_response(
+        self,
+        limits: crate::file_rpc_response::Limits,
+    ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
+        use crate::file_rpc_response::{self, Rejection};
+        let Self {
+            error,
+            deadline,
+            _owner: owner,
+        } = self;
+        let rejection = match error {
+            Error::Version(error) => Rejection::Version(error),
+            Error::Timeout(error) => Rejection::Timeout(error),
+            error => {
+                return Err(file_rpc_response::Failure::unclassified(
+                    deadline,
+                    Arc::new((error, owner)),
+                ));
+            }
+        };
+        file_rpc_response::rejected(rejection, limits, deadline, owner).await
     }
 }
 impl fmt::Debug for Failure {

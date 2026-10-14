@@ -13,6 +13,7 @@ from e2b.envd.filesystem import filesystem_connect as clients, filesystem_pb as 
 from sdk_support import isolated_sdk_environment
 
 HEADERS = {'x-access-token': 'fixture-token'}
+TOO_LONG_TIMEOUT = 10_000_000_000
 
 
 def cases(root):
@@ -95,6 +96,11 @@ def account_failure(error, message):
     assert error.message == message, (error.message, message)
 
 
+def timeout_failure(error):
+    assert error.code == Code.INVALID_ARGUMENT, error
+    assert error.message == 'parse timeout: "10000000000" has >10 digits', error.message
+
+
 def run_sync(settings, root):
     url = settings['url']
     client = sync_client(clients.FilesystemClientSync, url, ConnectionConfig())
@@ -111,11 +117,19 @@ def run_sync(settings, root):
     for target, headers, message in account_cases(settings):
         selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
         try:
-            selected.make_dir(pb.MakeDirRequest(path=root + '/auth-refused'), headers=headers, timeout_ms=5000)
+            selected.make_dir(pb.MakeDirRequest(path=root + '/auth-refused'), headers=headers,
+                              timeout_ms=TOO_LONG_TIMEOUT if target == url else 5000)
         except ConnectError as error:
             account_failure(error, message)
         else:
             raise AssertionError('unknown account was accepted')
+
+    try:
+        client.make_dir(pb.MakeDirRequest(path=root + '/timeout-refused'), headers=HEADERS, timeout_ms=TOO_LONG_TIMEOUT)
+    except ConnectError as error:
+        timeout_failure(error)
+    else:
+        raise AssertionError('oversized Connect timeout was accepted')
 
 
 async def run_async(settings, root):
@@ -134,11 +148,19 @@ async def run_async(settings, root):
     for target, headers, message in account_cases(settings):
         selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
         try:
-            await selected.make_dir(pb.MakeDirRequest(path=root + '/auth-refused'), headers=headers, timeout_ms=5000)
+            await selected.make_dir(pb.MakeDirRequest(path=root + '/auth-refused'), headers=headers,
+                                    timeout_ms=TOO_LONG_TIMEOUT if target == url else 5000)
         except ConnectError as error:
             account_failure(error, message)
         else:
             raise AssertionError('unknown account was accepted')
+
+    try:
+        await client.make_dir(pb.MakeDirRequest(path=root + '/timeout-refused'), headers=HEADERS, timeout_ms=TOO_LONG_TIMEOUT)
+    except ConnectError as error:
+        timeout_failure(error)
+    else:
+        raise AssertionError('oversized Connect timeout was accepted')
 
 
 if __name__ == '__main__':
@@ -146,4 +168,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings, settings['root'] + '/sync')
         asyncio.run(run_async(settings, settings['root'] + '/async'))
-    print('guest real unary files: 40 sync/async file scenarios + 10 account scenarios passed; no Go HTTP service or VM')
+    print('guest real unary files: 40 sync/async file scenarios + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')

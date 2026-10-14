@@ -1,5 +1,5 @@
 //! Identity JSON unary replies, charged to their already admitted records.
-//! Fixed account rejections share the same owned JSON response transport.
+//! Fixed account/header rejections share the same owned JSON response transport.
 //! Request admission and protocol negotiation remain separate.
 use crate::owned_body::{self, OwnedBody, Owner, Payload};
 use axum::{
@@ -56,7 +56,6 @@ pub struct Failure {
     _owner: Owner,
 }
 impl Failure {
-    #[cfg(target_os = "linux")]
     pub(crate) fn unclassified(deadline: Instant, owner: Owner) -> Self {
         Self {
             error: Error::UnclassifiedFault,

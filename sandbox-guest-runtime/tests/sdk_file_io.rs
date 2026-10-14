@@ -52,6 +52,7 @@ struct Fixture {
     root: PathBuf,
     seen: AtomicUsize,
     rejected: AtomicUsize,
+    header_rejected: AtomicUsize,
     username: String,
 }
 
@@ -92,13 +93,18 @@ async fn rpc(
     // This fixture selects unary JSON; explicit accounts use real preflight.
     // General protocol selection remains separate from this real preflight.
     assert_eq!(prepared.headers()["content-type"], "application/json");
-    assert!(
-        prepared
-            .headers()
-            .get("connect-protocol-version")
-            .is_none_or(|value| value.is_empty() || value == "1")
-    );
-    let request = prepared.decode(&method, body).await.unwrap();
+    let request = match prepared.decode(&method, body).await {
+        Ok(request) => request,
+        Err(failure) => {
+            assert!(matches!(
+                failure.error(),
+                sandproof_guest_service::file_rpc_requests::Error::Version(_)
+                    | sandproof_guest_service::file_rpc_requests::Error::Timeout(_)
+            ));
+            fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
+            return failure.into_response(response_limits()).await.unwrap();
+        }
+    };
     // This test fixture accepts only generated absolute paths, before the
     // shared component resolves context or can perform any file operation.
     let inside = |p: &str| assert!(Path::new(p).starts_with(&fixture.root) && !p.contains(".."));
@@ -266,6 +272,7 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         root,
         seen: AtomicUsize::new(0),
         rejected: AtomicUsize::new(0),
+        header_rejected: AtomicUsize::new(0),
         username,
     })
 }
@@ -353,11 +360,14 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
     assert!(status.expect("file SDK deadline").unwrap().success());
     assert_eq!(fixture.seen.load(Ordering::SeqCst), 42);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
+    assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.rejected.load(Ordering::SeqCst), 2);
+    assert_eq!(missing_default.header_rejected.load(Ordering::SeqCst), 0);
     for mode in ["sync", "async"] {
         let dir = directory.path().join(mode);
         assert!(!dir.join("auth-refused").exists());
+        assert!(!dir.join("timeout-refused").exists());
         assert!(!dir.join("new").exists());
         assert!(!dir.join("partial").exists());
         assert!(!dir.join("file").exists());

@@ -10,7 +10,19 @@ async fn missing(
     default: bool,
 ) -> RpcFailure {
     let accounts = AccountPool::new(Missing, 1, Duration::from_secs(5)).unwrap();
-    let auth = authenticated(requests, session, !default, (!default).then_some("invalid")).await;
+    let mut headers = HeaderMap::new();
+    headers.insert("x-access-token", "token".parse().unwrap());
+    if !default {
+        headers.insert("authorization", "Basic dXNlcjo=".parse().unwrap());
+        headers.insert("connect-protocol-version", "2".parse().unwrap());
+        headers.insert("connect-timeout-ms", "invalid".parse().unwrap());
+    }
+    let auth = requests
+        .admit()
+        .unwrap()
+        .authenticate(session, headers)
+        .await
+        .unwrap();
     let prepared = pool.prepare_rpc(auth, &accounts, settings(root)).await;
     if default {
         prepared
@@ -22,8 +34,72 @@ async fn missing(
             .await
             .unwrap_err()
     } else {
-        // No decoder/body is reached, even with an invalid Connect timeout.
+        // No decoder/body is reached, even with invalid version and timeout.
         prepared.err().unwrap()
+    }
+}
+
+#[tokio::test]
+async fn header_rejection_precedes_default_lookup_and_keeps_both_slots_to_last_byte_copy() {
+    for explicit in [false, true] {
+        for version in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let session = session().await;
+            let pool = crate::file_io::tests::pool();
+            let requests = requests();
+            let (accounts, calls) = accounts(root.path(), None);
+            let mut headers = HeaderMap::new();
+            headers.insert("x-access-token", "token".parse().unwrap());
+            if explicit {
+                headers.insert("authorization", "Basic dXNlcjo=".parse().unwrap());
+            }
+            if version {
+                headers.insert("connect-protocol-version", "2".parse().unwrap());
+            }
+            headers.insert("connect-timeout-ms", "invalid".parse().unwrap());
+            let auth = requests
+                .admit()
+                .unwrap()
+                .authenticate(&session, headers)
+                .await
+                .unwrap();
+            let prepared = pool
+                .prepare_rpc(auth, &accounts, settings(root.path()))
+                .await
+                .unwrap();
+            let end = prepared.deadline();
+            let failure = prepared
+                .decode("MakeDir", Body::from(r#"{"path":"refused"}"#))
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(
+                matches!(failure.error(), file_rpc_requests::Error::Version(_)),
+                version
+            );
+            assert_eq!(
+                matches!(failure.error(), file_rpc_requests::Error::Timeout(_)),
+                !version
+            );
+            assert_eq!(failure.deadline(), end);
+            assert_eq!(calls.load(Ordering::SeqCst), usize::from(explicit));
+            session
+                .initialize(br#"{"accessToken":"token"}"#)
+                .await
+                .unwrap();
+            full(&pool, &requests);
+            let response = failure.into_response(response_limits()).await.unwrap();
+            assert_eq!(response.status(), 400);
+            let mut body = response.into_body();
+            let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+            let copy = bytes.clone();
+            drop(bytes);
+            drop(body);
+            full(&pool, &requests);
+            assert!(!root.path().join("refused").exists());
+            drop(copy);
+            free(&pool, &requests).await;
+        }
     }
 }
 fn response_limits() -> file_rpc_response::Limits {
