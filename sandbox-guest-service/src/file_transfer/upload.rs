@@ -261,7 +261,7 @@ impl FileStreams {
             Ok(mut reply) => {
                 // The completed result is not a live worker. Keep its original
                 // lease for response bytes, but do not wait on our own receipt.
-                reply.reservation.settlement.take();
+                reply.release_result_receipt();
                 settle(reservation.deadline, &mut settled).await?;
                 reply
                     .into_http_response(response)
