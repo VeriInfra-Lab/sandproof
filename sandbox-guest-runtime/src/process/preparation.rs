@@ -1,0 +1,254 @@
+use std::io;
+use std::os::fd::OwnedFd;
+use std::path::Path;
+use std::process::{ExitStatus, Stdio};
+use std::sync::Arc;
+
+use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
+use sandproof_guest_core::{CommandIdentity, CommandStream, OutputMode};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
+use tokio::process::{Child, Command};
+
+use super::{
+    CommandInput, CommandProcess, InputPort, LaunchState, accounting, encode, invalid, start_ticks,
+};
+use crate::pty::PtyMaster;
+use crate::{LaunchSpec, ProcessLimits};
+
+/// Owns a worker before its identity/gate handshake completes. Cancelling a
+/// borrowed finish future leaves this object available for actual abort/wait.
+/// Drop only requests a kill; it is never a cleanup receipt or capacity credit.
+pub struct CommandPreparation {
+    child: Option<Child>,
+    pty: Option<Arc<PtyMaster>>,
+    pidfd: Option<OwnedFd>,
+    kill_attempted: bool,
+    directory: Option<tempfile::TempDir>,
+    listener: UnixListener,
+    payload: Vec<u8>,
+    limits: ProcessLimits,
+    session: u64,
+    command: u64,
+    attempted: bool,
+    waited: Option<ExitStatus>,
+}
+
+impl Drop for CommandPreparation {
+    fn drop(&mut self) {
+        self.stop_original();
+    }
+}
+
+impl CommandPreparation {
+    /// Synchronous ownership boundary: no cancellation can strand a child
+    /// between spawn and return. All fallible identity/handshake work follows.
+    /// # Errors
+    /// Validation/path/socket/spawn failure occurs before owning a live child.
+    pub fn spawn(
+        worker: &Path,
+        private_directory: &Path,
+        session: u64,
+        command: u64,
+        spec: &LaunchSpec,
+        limits: ProcessLimits,
+    ) -> io::Result<Self> {
+        let limits = limits.validate()?;
+        spec.validate()?;
+        if session == 0 || command == 0 || !worker.is_absolute() {
+            return Err(invalid("missing command or worker identity"));
+        }
+        let payload = encode(spec, limits.launch_bytes)?;
+        let directory = tempfile::Builder::new()
+            .prefix("guest-gate-")
+            .tempdir_in(private_directory)?;
+        let socket = directory.path().join("launch");
+        let listener = UnixListener::bind(&socket)?;
+        let terminal = spec.pty.map(PtyMaster::open).transpose()?;
+        let mut builder = Command::new(worker);
+        builder
+            .arg("--gate")
+            .arg(&socket)
+            .arg("--limit")
+            .arg(limits.launch_bytes.to_string())
+            .env_clear();
+        let pty = if let Some((master, slave)) = terminal {
+            builder
+                .stdin(Stdio::from(slave.try_clone()?))
+                .stdout(Stdio::from(slave.try_clone()?))
+                .stderr(Stdio::from(slave));
+            Some(master)
+        } else {
+            builder
+                .stdin(if spec.stdin {
+                    Stdio::piped()
+                } else {
+                    Stdio::null()
+                })
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            None
+        };
+        let child = builder.spawn()?;
+        // Command retains configured Stdio descriptors for possible reuse;
+        // this one-shot builder must not keep the slave open across an await.
+        drop(builder);
+        Ok(Self {
+            child: Some(child),
+            pty,
+            pidfd: None,
+            kill_attempted: false,
+            directory: Some(directory),
+            listener,
+            payload,
+            limits,
+            session,
+            command,
+            attempted: false,
+            waited: None,
+        })
+    }
+
+    /// Complete the private handshake at most once; no user code is released.
+    /// # Errors
+    /// Retains the original child on cancellation or failure. The owner must
+    /// call abort and observe its wait before crediting process capacity.
+    pub async fn finish(&mut self) -> io::Result<CommandProcess> {
+        if self.attempted {
+            return Err(invalid("preparation already attempted or aborted"));
+        }
+        self.attempted = true;
+        let child = self
+            .child
+            .as_mut()
+            .ok_or_else(|| invalid("missing child"))?;
+        let pid = child.id().ok_or_else(|| invalid("missing live PID"))?;
+        let kernel_pid = Pid::from_raw(i32::try_from(pid).map_err(|_| invalid("PID range"))?)
+            .ok_or_else(|| invalid("zero PID"))?;
+        self.pidfd = Some(pidfd_open(kernel_pid, PidfdFlags::empty())?);
+        let start_ticks = start_ticks(pid)?;
+        let identity = CommandIdentity {
+            session: self.session,
+            command: self.command,
+            pid,
+            start_ticks,
+        };
+        let gate = tokio::time::timeout(self.limits.handshake_timeout, async {
+            let (mut stream, _) = self.listener.accept().await?;
+            let peer = rustix::net::sockopt::socket_peercred(&stream)?;
+            if peer.pid != kernel_pid || peer.uid != rustix::process::geteuid() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "wrong worker peer",
+                ));
+            }
+            let mut hello = [0; 4];
+            stream.read_exact(&mut hello).await?;
+            if &hello != crate::worker::HELLO || start_ticks != self::start_ticks(pid)? {
+                return Err(invalid("worker identity or protocol changed"));
+            }
+            let length = u32::try_from(self.payload.len()).map_err(|_| invalid("launch length"))?;
+            stream.write_all(&length.to_be_bytes()).await?;
+            stream.write_all(&self.payload).await?;
+            let mut ready = [0; 4];
+            stream.read_exact(&mut ready).await?;
+            if &ready != crate::worker::READY {
+                return Err(invalid("worker refused context"));
+            }
+            Ok(stream)
+        })
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "worker handshake"))??;
+        let (mode, stdout, stderr, input) = if let Some(pty) = &self.pty {
+            (
+                OutputMode::Pty,
+                None,
+                None,
+                Some(InputPort::Pty(Arc::clone(pty))),
+            )
+        } else {
+            (
+                OutputMode::Pipes,
+                Some(
+                    child
+                        .stdout
+                        .take()
+                        .ok_or_else(|| invalid("missing stdout"))?,
+                ),
+                Some(
+                    child
+                        .stderr
+                        .take()
+                        .ok_or_else(|| invalid("missing stderr"))?,
+                ),
+                child.stdin.take().map(InputPort::Pipe),
+            )
+        };
+        // Child::wait closes a stdin still stored in Child. Retain it separately
+        // so observing exit never silently closes a user's interactive input.
+        let stdin = Some(CommandInput {
+            identity,
+            port: input,
+        });
+        let stream = CommandStream::new(identity, mode, self.limits.chunk_bytes as u64)
+            .map_err(accounting)?;
+        Ok(CommandProcess {
+            child: self.child.take().ok_or_else(|| invalid("missing child"))?,
+            pidfd: Arc::new(self.pidfd.take().ok_or_else(|| invalid("missing pidfd"))?),
+            stdout,
+            stderr,
+            mode,
+            pty: self.pty.take(),
+            stdin,
+            gate: Some(gate),
+            _gate_directory: self
+                .directory
+                .take()
+                .ok_or_else(|| invalid("transferred gate"))?,
+            identity,
+            limits: self.limits,
+            stream,
+            launch: LaunchState::Prepared,
+            stdout_eof: false,
+            stderr_eof: mode == OutputMode::Pty,
+            waited: None,
+            end_delivered: false,
+        })
+    }
+
+    /// Kill and actually wait for this unreleased original child. Cancellation
+    /// leaves it here; retrying this cleanup never starts another worker.
+    /// # Errors
+    /// Transferred ownership and actual wait failures are explicit errors.
+    pub async fn abort(&mut self) -> io::Result<ExitStatus> {
+        self.attempted = true;
+        if let Some(status) = self.waited {
+            return Ok(status);
+        }
+        self.stop_original();
+        let child = self
+            .child
+            .as_mut()
+            .ok_or_else(|| invalid("worker transferred"))?;
+        // Even a kill error does not prove absence. Only actual wait settles.
+        let status = child.wait().await?;
+        self.waited = Some(status);
+        Ok(status)
+    }
+
+    fn stop_original(&mut self) {
+        if self.waited.is_some() || self.child.is_none() {
+            return;
+        }
+        if let Some(pidfd) = &self.pidfd {
+            let _ = pidfd_send_signal(pidfd, Signal::KILL);
+        } else if !self.kill_attempted {
+            // Prior to pidfd binding this Child has never been waited/reaped.
+            // Do not repeat numeric signalling after an uncertain wait error.
+            self.kill_attempted = true;
+            if let Some(child) = &mut self.child {
+                let _ = child.start_kill();
+            }
+        }
+    }
+}
