@@ -52,6 +52,10 @@ func framedCommandRequestObservation(res *http.Response, body []byte) string {
 		}
 		flag, payload := body[0], body[5:5+n]
 		body = body[5+n:]
+		if flag&1 != 0 {
+			payload = commandHeaderExpand(payload)
+			flag &= ^byte(1)
+		}
 		switch flag {
 		case 0:
 			if message != nil {

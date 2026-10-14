@@ -14,6 +14,9 @@ use std::{
 #[path = "default_account.rs"]
 mod default_account;
 
+#[path = "start/gzip.rs"]
+mod gzip;
+
 struct StartFixture {
     directory: tempfile::TempDir,
     owners: CommandOwners,

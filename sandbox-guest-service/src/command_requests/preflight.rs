@@ -115,6 +115,29 @@ impl Prepared {
             response: None,
         })
     }
+
+    pub(super) async fn decode_gzip(
+        self,
+        method: &'static str,
+        body: Body,
+        protocol_deadline: Instant,
+    ) -> Result<Ready, Failure> {
+        let chunk = self.authenticated.admitted.limits.body.frame_bytes;
+        Ok(Ready {
+            decoded: self
+                .authenticated
+                .decode_with(
+                    body,
+                    protocol_deadline,
+                    move |bytes, limit, deadline, cancelled| {
+                        super::compression::decode(method, bytes, limit, chunk, deadline, cancelled)
+                    },
+                )
+                .await?,
+            account: self.account,
+            response: None,
+        })
+    }
 }
 impl Ready {
     #[must_use]

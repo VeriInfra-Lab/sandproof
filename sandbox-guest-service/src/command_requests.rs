@@ -36,7 +36,10 @@ pub use start::StartPreparation;
 #[cfg(test)]
 mod tests;
 
+#[cfg(any(target_os = "linux", test))]
+mod compression;
 pub mod http;
+pub use crate::request_gzip::CompressionStage;
 
 /// Explicit component budgets. Wire bytes include the five-byte Start/Connect
 /// envelope; decoded JSON and input bytes have no larger budget. Socket/header
@@ -172,7 +175,7 @@ impl Authenticated {
         body: Body,
         deadline: Instant,
     ) -> Result<Decoded, Failure> {
-        self.decode_with(body, deadline, move |bytes, limit| {
+        self.decode_with(body, deadline, move |bytes, limit, _, _| {
             protocol::decode_request(method, bytes, limit).map_err(Error::Protocol)
         })
         .await
@@ -186,7 +189,14 @@ impl Authenticated {
         decode: F,
     ) -> Result<Decoded, Failure>
     where
-        F: FnOnce(&[u8], usize) -> Result<Request, Error> + Send + 'static,
+        F: FnOnce(
+                &[u8],
+                usize,
+                Instant,
+                &tokio::sync::watch::Receiver<bool>,
+            ) -> Result<Request, Error>
+            + Send
+            + 'static,
     {
         use axum::body::HttpBody;
         let deadline = deadline.min(self.deadline());
@@ -218,10 +228,10 @@ impl Authenticated {
             let (cancel, cancelled) = tokio::sync::watch::channel(false);
             let task = tokio::task::spawn_blocking(move || {
                 crate::owned_body::check_active::<Error>(deadline, &cancelled)?;
-                let request = decode(&payload, limit)?;
+                let request = decode(&payload, limit, deadline, &cancelled)?;
                 drop(payload);
                 crate::owned_body::check_active::<Error>(deadline, &cancelled)?;
-                Ok(Decoded {
+                Ok::<_, Error>(Decoded {
                     request,
                     authenticated: self,
                     deadline,
@@ -254,6 +264,10 @@ pub enum Error {
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
+    Compression {
+        stage: CompressionStage,
+        error: crate::upload_body::GzipError,
+    },
     Unavailable,
     #[cfg(target_os = "linux")]
     Context(crate::ContextError),
@@ -267,6 +281,11 @@ pub enum Error {
     Response(crate::command::CommandBodyError),
     /// Wrong dispatch entry or a tag requiring the unselected tag policy.
     UnsupportedOperation,
+}
+impl From<ProtocolError> for Error {
+    fn from(error: ProtocolError) -> Self {
+        Self::Protocol(error)
+    }
 }
 impl crate::owned_body::Failure for Error {
     fn deadline() -> Self {

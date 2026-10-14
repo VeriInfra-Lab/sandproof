@@ -1,5 +1,5 @@
 //! Selected Connect JSON headers after the original token/Basic preflight.
-//! No listener, request gzip codec or tag policy is installed.
+//! No listener or tag policy is installed.
 #[cfg(any(target_os = "linux", test))]
 use axum::http::{HeaderMap, Method};
 #[cfg(any(target_os = "linux", test))]
@@ -352,10 +352,39 @@ mod owned {
                     owner: self.prepared.authenticated.admitted.owner.clone(),
                 });
             }
+            self.decode(body).await
+        }
+
+        /// Expand the originally selected gzip encoding, if any, under the same
+        /// bounded collection, blocking owner, cancellation and absolute deadline.
+        /// Streaming data and optional EOS are expanded separately in receive
+        /// order; a valid request is never dispatched before all framing finishes.
+        /// # Errors
+        /// Original collection/JSON/codec failures, independent raw/expanded
+        /// limits or expiry. These are observations, not public error text.
+        pub async fn decode(self, body: Body) -> Result<Ready, Failure> {
+            if Instant::now() >= self.plan.deadline {
+                return Err(Failure {
+                    error: Error::Request(super::super::Error::DeadlineExceeded),
+                    deadline: self.plan.deadline,
+                    response: Some(self.plan.response()),
+                    owner: self.prepared.authenticated.admitted.owner.clone(),
+                });
+            }
             let response = self.plan.response();
-            self.prepared
-                .decode(self.plan.rpc.method(), body, self.plan.deadline)
-                .await
+            let decoded = match self.plan.request_encoding {
+                Encoding::Identity => {
+                    self.prepared
+                        .decode(self.plan.rpc.method(), body, self.plan.deadline)
+                        .await
+                }
+                Encoding::Gzip => {
+                    self.prepared
+                        .decode_gzip(self.plan.rpc.method(), body, self.plan.deadline)
+                        .await
+                }
+            };
+            decoded
                 .map(|mut ready| {
                     ready.response = Some(response);
                     ready

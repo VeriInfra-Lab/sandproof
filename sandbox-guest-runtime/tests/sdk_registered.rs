@@ -239,7 +239,7 @@ async fn dispatch(
     let stream = rpc.is_stream();
     selected_json(prepared.headers(), stream);
     let selected = prepared.select_json(&Method::POST, rpc).unwrap();
-    let ready = selected.decode_identity(body).await.unwrap();
+    let ready = selected.decode(body).await.unwrap();
     fixture.calls.fetch_add(1, Ordering::SeqCst);
     let limits = CommandBodyLimits {
         message_bytes: 4096,

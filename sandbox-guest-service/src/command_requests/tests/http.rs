@@ -2,6 +2,9 @@ use super::*;
 use crate::command_requests::http::{Error as SelectionError, Rpc};
 use axum::http::Method;
 
+#[path = "http/gzip.rs"]
+mod gzip;
+
 fn unread() -> Body {
     Body::from_stream(stream::poll_fn(
         |_| -> Poll<Option<Result<Bytes, std::io::Error>>> {

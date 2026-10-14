@@ -29,16 +29,15 @@ impl Reference {
         }
     }
     pub(crate) fn check(&mut self, input: &str, observed: &str) {
+        assert_eq!(observed, self.observe(input), "oracle input {input}");
+    }
+    pub(crate) fn observe(&mut self, input: &str) -> String {
         let writer = self.input.as_mut().unwrap();
         writeln!(writer, "{input}").unwrap();
         writer.flush().unwrap();
         let mut line = String::new();
         assert!(self.output.read_line(&mut line).unwrap() > 0);
-        assert_eq!(
-            observed,
-            line.strip_suffix('\n').unwrap(),
-            "oracle input {input}"
-        );
+        line.strip_suffix('\n').unwrap().to_owned()
     }
     pub(crate) fn finish(&mut self) {
         drop(self.input.take());

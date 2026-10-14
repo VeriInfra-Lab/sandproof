@@ -172,6 +172,8 @@ func main() {
 			Error  bool
 		}
 		switch mode {
+		case "E":
+			target, body = encodedCommandEndpoint(data)
 		case "F":
 			target, body = framedCommandRequestEndpoint(data)
 		case "D":
@@ -242,6 +244,9 @@ func main() {
 		}
 		if mode == "F" {
 			req.Header.Set("Content-Type", "application/connect+json")
+		}
+		if mode == "E" {
+			encodedCommandHeaders(req, data)
 		}
 		if mode == "G" || mode == "Z" {
 			req.Header.Del("Accept-Encoding")
@@ -319,6 +324,13 @@ func main() {
 		}
 		if mode == "F" {
 			fmt.Fprintln(out, framedCommandRequestObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "E" {
+			fmt.Fprintln(out, encodedCommandObservation(res, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}

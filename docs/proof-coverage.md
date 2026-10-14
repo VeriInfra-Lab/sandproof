@@ -398,6 +398,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [命令空消息语义](../sandbox-guest-runtime/src/protocol.rs)修正完整零长度标准流帧到默认 protobuf 请求的连接，不放宽一元空 JSON、原输入预算或截断拒绝。[可选 EOS 校验](../sandbox-guest-runtime/src/protocol/end_stream.rs)另增加首消息优先、完整终结帧/EOF、独立载荷预算、encoding/json 字段/null/重复/折叠语义、Unicode 替换及有界副本、已知形状与 base64 校验而不应用客户端错误的对应义务；不保留任意元数据树的空间界和未知深度遍历也尚未证明。有限原 Go server-stream 对照不覆盖压缩、公开错误全文或完整协议证明；纯核心和已证明 Rust/Lean 未改。
 
+[命令请求 gzip](../sandbox-guest-runtime/src/protocol/request_body.rs)增加原协商到逐帧解压、wire-empty 与展开为空的区分、首消息/尾帧错误顺序、原始与展开预算、EOS 规范化及已解码请求同时驻留的对应义务。命令和文件抽取为同一[有界解压器](../sandbox-guest-service/src/request_gzip.rs)，各自错误分类、原授权/取消/绝对期限、实际 worker 退出及请求容量保留仍须分别证明；可信 expander 接口本身不提供分配上界证明。有限固定 Go 接受性/值对照不证明公开错误全文或整套协议，新增 Selected::decode 与 SDK 迁移尚未抽取或证明。纯核心和已证明 Rust/Lean 未改。
+
 [命令请求 JSON](../sandbox-guest-runtime/src/protocol/request_json.rs)增加丢弃未知字段前的 Unicode/容器校验、null 与重复字段/oneof 的区分、环境键唯一性、精确 i32/uint32 归一化、未知枚举到实际拒绝、原始 bytes 长度/字母表到 padding 及尾位解码的自有义务。共用扫描器为命令选择非整数哨兵，文件选择原负整数哨兵；各已知类型拒绝与未知字段丢弃、原字节预算/按需副本上界的对应未抽取或证明。固定 Go Q 只比较有限解码结果/分类，不证明错误全文、鉴权或执行；纯核心与已证明 Rust 未改，旧结论不覆盖新解析逻辑。
 
 来宾 [PTY 内核端口](../sandbox-guest-runtime/src/pty.rs)、worker session/controlling terminal 设置、原身份 resize 和双输入通道连接只有工程测试，尚未抽取或证明。原纯来宾核心的 `OutputMode::Pty` 未改，但旧抽取不能证明新 master/slave FD 所有权、异步就绪与挂断判定、EIO/EOF 到真实 wait 的连接、取消部分效果或数值身份切换顺序。初始/更新尺寸的固定 uint16 转换和实际终端 line discipline 也须在 #101 区分自有判定与外部内核前提；组件及固定 SDK 回调通过不代表正式来宾服务或系统证明通过。
