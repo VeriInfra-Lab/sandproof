@@ -9,7 +9,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
 mod rpc;
-pub use rpc::{RpcError, RpcFailure, RpcRequest};
+pub use rpc::{PreparedRpc, ReadyRpc, RpcError, RpcFailure, RpcRequest};
 
 #[cfg(test)]
 mod tests;

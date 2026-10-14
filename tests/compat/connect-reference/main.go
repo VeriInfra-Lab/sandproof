@@ -64,6 +64,24 @@ func main() {
 	scanner.Buffer(make([]byte, 65536), 2<<20)
 	out := bufio.NewWriter(os.Stdout)
 	for scanner.Scan() {
+		if value, ok := strings.CutPrefix(scanner.Text(), "B\t"); ok {
+			raw, err := hex.DecodeString(value)
+			if err != nil {
+				panic(err)
+			}
+			req := &http.Request{Header: make(http.Header)}
+			req.Header.Set("Authorization", string(raw))
+			user, _, valid := req.BasicAuth()
+			if valid {
+				fmt.Fprintf(out, "OK\t%s\n", hex.EncodeToString([]byte(user)))
+			} else {
+				fmt.Fprintln(out, "NONE")
+			}
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
 		if value, ok := strings.CutPrefix(scanner.Text(), "T\t"); ok {
 			raw, err := hex.DecodeString(value)
 			if err != nil {

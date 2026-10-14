@@ -17,6 +17,8 @@ use std::{
 };
 use tokio::sync::{Semaphore, oneshot};
 
+mod preflight;
+
 struct Meta;
 impl MetadataSource for Meta {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {

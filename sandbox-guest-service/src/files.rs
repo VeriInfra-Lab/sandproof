@@ -27,7 +27,7 @@ pub struct FileSettings {
 }
 
 impl FileSettings {
-    fn validate(&self) -> Result<(), ContextError> {
+    pub(crate) fn validate(&self) -> Result<(), ContextError> {
         if self.limits.path_bytes == 0
             || self.limits.path_bytes > isize::MAX as usize / 2
             || self.limits.username_bytes == 0
@@ -181,19 +181,7 @@ impl AuthPermit {
         origin: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
     ) -> Result<FileContext, ContextError> {
         settings.validate()?;
-        match request {
-            Request::Stat(path)
-            | Request::MakeDir(path)
-            | Request::Remove(path)
-            | Request::ListDir { path, .. } => check_path_size(path, settings)?,
-            Request::Move {
-                source,
-                destination,
-            } => {
-                check_path_size(source, settings)?;
-                check_path_size(destination, settings)?;
-            }
-        }
+        check_request_paths(request, settings)?;
         let name = selected_user_with_limits(
             headers,
             &self.defaults().user,
@@ -201,6 +189,16 @@ impl AuthPermit {
             settings.limits.authorization_bytes,
         )?;
         let account = file_account(&name, accounts, settings, origin).await?;
+        self.resolve_file_rpc_account(request, account, settings)
+    }
+
+    pub(crate) fn resolve_file_rpc_account(
+        &self,
+        request: &Request,
+        account: Account,
+        settings: &FileSettings,
+    ) -> Result<FileContext, ContextError> {
+        check_request_paths(request, settings)?;
         let path = |value: &str| self.file_path(value, &account, settings);
         let request = match request {
             Request::Stat(value) => Request::Stat(path(value)?),
@@ -337,7 +335,7 @@ fn check_path_size(path: &str, settings: &FileSettings) -> Result<(), ContextErr
     Ok(())
 }
 
-async fn file_account<S: AccountSource>(
+pub(crate) async fn file_account<S: AccountSource>(
     name: &str,
     accounts: &AccountPool<S>,
     settings: &FileSettings,
@@ -382,4 +380,21 @@ fn owner(account: Account) -> FileOwner {
         uid: account.credentials.uid,
         gid: account.credentials.gid,
     }
+}
+
+fn check_request_paths(request: &Request, settings: &FileSettings) -> Result<(), ContextError> {
+    match request {
+        Request::Stat(path)
+        | Request::MakeDir(path)
+        | Request::Remove(path)
+        | Request::ListDir { path, .. } => check_path_size(path, settings)?,
+        Request::Move {
+            source,
+            destination,
+        } => {
+            check_path_size(source, settings)?;
+            check_path_size(destination, settings)?;
+        }
+    }
+    Ok(())
 }

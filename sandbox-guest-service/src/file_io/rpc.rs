@@ -10,8 +10,10 @@ use sandproof_guest_runtime::{
 use std::{fmt, sync::Arc};
 use tokio::time::Instant;
 
+mod preflight;
 #[cfg(test)]
 mod tests;
+pub use preflight::{PreparedRpc, ReadyRpc};
 
 /// An authenticated, decoded and bounded request plus its original admission.
 /// Only the trusted caller creates this envelope; it must reserve the request

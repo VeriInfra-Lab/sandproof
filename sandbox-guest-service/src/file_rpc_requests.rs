@@ -1,7 +1,7 @@
 //! Unary file admission, token wait and bounded identity JSON body decoding.
 //! This is a component of the future RPC handler, not protocol negotiation or
-//! Basic account middleware. The caller must select the route/codec and run
-//! explicit Basic-user preflight before invoking `Authenticated::decode`.
+//! Basic account middleware. Linux `FilePool::prepare_rpc` supplies the explicit
+//! account preflight; the caller must still select the supported route/codec.
 use crate::{
     AuthPermit, MetadataSource, ServiceError, Session,
     file_upload::{self, HeaderLimits},
@@ -91,7 +91,7 @@ struct Lease {
     _slot: OwnedSemaphorePermit,
 }
 pub struct Admitted {
-    lease: Arc<Lease>,
+    lease: Owner,
     limits: Limits,
     deadline: Instant,
 }
@@ -157,6 +157,17 @@ impl Authenticated {
     #[must_use]
     pub const fn authorization(&self) -> &AuthPermit {
         &self.auth
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn owner(&self) -> Owner {
+        self.admitted.lease.clone()
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn retain(&mut self, owner: Owner, deadline: Instant) {
+        self.admitted.lease = owner;
+        self.admitted.deadline = self.admitted.deadline.min(deadline);
     }
 
     /// Decode a selected unary file method after protocol/Basic middleware.

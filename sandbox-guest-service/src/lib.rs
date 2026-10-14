@@ -18,6 +18,8 @@ mod owned_body;
 pub mod upload_body;
 pub mod upload_response;
 
+#[cfg(any(target_os = "linux", test))]
+mod basic_auth;
 #[cfg(target_os = "linux")]
 pub mod command;
 #[cfg(target_os = "linux")]

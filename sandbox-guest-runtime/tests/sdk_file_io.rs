@@ -64,18 +64,33 @@ async fn rpc(
         .authenticate(&fixture.session, parts.headers)
         .await
         .unwrap();
-    // This selected SDK fixture uses only JSON and the initialized default
-    // account. General protocol selection and explicit Basic-user middleware
-    // are separate obligations, not emulated by this test route.
-    assert_eq!(authenticated.headers()["content-type"], "application/json");
-    assert!(!authenticated.headers().contains_key("authorization"));
+    let prepared = fixture
+        .files
+        .prepare_rpc(
+            authenticated,
+            &fixture.accounts,
+            FileSettings {
+                daemon_workdir: fixture.root.to_str().unwrap().into(),
+                limits: FileContextLimits {
+                    path_bytes: 4096,
+                    username_bytes: 64,
+                    authorization_bytes: 256,
+                },
+            },
+        )
+        .await
+        .unwrap();
+    // The selected SDK call set still uses JSON and the initialized default.
+    // General protocol selection remains separate from this real preflight.
+    assert_eq!(prepared.headers()["content-type"], "application/json");
+    assert!(!prepared.headers().contains_key("authorization"));
     assert!(
-        authenticated
+        prepared
             .headers()
             .get("connect-protocol-version")
             .is_none_or(|value| value.is_empty() || value == "1")
     );
-    let request = authenticated.decode(&method, body).await.unwrap();
+    let request = prepared.decode(&method, body).await.unwrap();
     // This test fixture accepts only generated absolute paths, before the
     // shared component resolves context or can perform any file operation.
     let inside = |p: &str| assert!(Path::new(p).starts_with(&fixture.root) && !p.contains(".."));
@@ -93,22 +108,7 @@ async fn rpc(
         | Request::ListDir { path: p, .. } => inside(p),
     }
     fixture.seen.fetch_add(1, Ordering::SeqCst);
-    match fixture
-        .files
-        .execute_rpc(
-            request.into_rpc(),
-            &fixture.accounts,
-            &FileSettings {
-                daemon_workdir: fixture.root.to_str().unwrap().into(),
-                limits: FileContextLimits {
-                    path_bytes: 4096,
-                    username_bytes: 64,
-                    authorization_bytes: 256,
-                },
-            },
-        )
-        .await
-    {
+    match request.execute(&fixture.accounts).await {
         Ok(reply) => reply
             .into_response(sandproof_guest_service::file_rpc_response::Limits {
                 wire_bytes: 65536,
