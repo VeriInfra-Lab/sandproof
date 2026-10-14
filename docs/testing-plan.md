@@ -52,6 +52,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [持久 PID 检查](../sandbox-guest-runtime/src/pid_claims/tests.rs)以真实私有临时文件覆盖回执丢弃/启动失败后的永久占用、重开及新会话不复用、有限范围/全满、VM/范围错配、缺失/截断/坏校验/非规范位、权限/链接/多写者和原名称替换。写前、位写后、摘要后和同步后故障点以及 panic 验证未知结果不返回回执，旧位保持，损坏文件不自动修复；六项可移植测试已在 macOS 运行，不冒充断电/故障磁盘实测。入口为 `cargo test -p sandproof-guest-runtime --locked --lib pid_claims::`。Linux [真实准备连接](../sandbox-guest-runtime/tests/preparation/pid_registration.rs)新增三项测试：保存后才实际 exec、结束/重开仍拒绝 PID，重复/错 VM/繁忙/丢弃不执行，单阻塞线程排队取消不写记录，并在原 worker 超时且进程额度已归还后继续保留独立存储名额、拒绝并发登记；使用原 pidfd、明确屏障及实际 wait/私有 gate 清理。Linux 交叉 Clippy 已通过，实际组合须由候选 CI 运行；尚无公开命令注册表、PID 复用内核交错、服务强杀/重启仍存活的完整 E04 或 KVM 证据。
 
+#428 首次 CI（源 e7447ac4e4f0b7ef9bad331ed3af80b74c8bc209，实际 checkout a01e833）在旧文件传输 SDK 用例的 QP 上传错误后立即读取时失败，未运行到 PID 连接测试：收到错误响应并不保证被取消的阻塞写者已经归还唯一传输名额。单槽顺序夹具现通过 FileStreams::available_slots 的真实池快照，在下一次请求前及结束后限时等待实际归还；没有固定 sleep、请求重放或增加池容量。该屏障只属于回环测试，生产准入仍立即 try-acquire；快照不是文件持久化或 VM 清理回执。修正后的候选仍须通过 Linux CI，不能把前一轮失败记为通过。
+
 #311 来宾替换先复用 S02/S03/S11/S12：固定同步/异步 SDK 对固定 envd 与 Rust 实现执行同一合同样例，区分主进程退出、管道结束、输出排空、请求超时和 VM 停止；保留 stdin/PTY、非零退出、部分文件写入、断线/重启/旧 PID 及预算边界。真实模板切换还须通过 S01/S04/S05/S09/S13 的相关路径和原身份清理，不用组件样例代替实机。
 
 [PTY 实进程检查](../sandbox-guest-runtime/tests/pty.rs)通过真实终端核对登记前无副作用、主 PID/session/三个标准描述符、窗口尺寸及 SIGWINCH、原字节大块双向传输、错误输入通道、CloseStdin 拒绝和 canonical Ctrl+D。取消输入保留实际前缀，放行诊断丢失保持未知且不重执行；终端 EOF 先于主进程退出时不得 End。管理组件覆盖断线/重连、输入堵塞时独立 resize、原期限及挂断后的收尾，防止满终端输入上的就绪忙转。SIGSTOP/waitid、受控 socket 和可推进时钟建立观察顺序。基础检查和 Linux 兼容脚本均运行该组；固定 SDK 另核对 PTY 字节回调和非零退出，不代替 Go 双端对照、全部公开 PTY 路由、后代/整机压力或 KVM。
