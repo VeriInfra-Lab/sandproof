@@ -12,6 +12,8 @@ use tokio::time::Instant;
 
 mod rejection;
 pub use rejection::{Rejection, rejected};
+mod io;
+pub use io::io_failure;
 
 #[cfg(test)]
 mod tests;

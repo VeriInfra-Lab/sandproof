@@ -2,7 +2,9 @@
 //! dispatched syscall. The worker retains authorization until I/O settles;
 //! returned records retain their slot until dropped. No production route yet.
 use crate::{AuthPermit, files::FileContext, owned_body::Owner};
-use sandproof_guest_runtime::filesystem::{self, FileError, FileLimits, FileResponse, Ownership};
+use sandproof_guest_runtime::filesystem::{
+    self, FileError, FileFailure, FileLimits, FileResponse, Ownership,
+};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -33,6 +35,20 @@ impl std::fmt::Debug for FileReply {
         f.debug_struct("FileReply")
             .field("response", &self.response)
             .finish_non_exhaustive()
+    }
+}
+struct DispatchFailure {
+    error: FileDispatchError,
+    fault: Option<sandproof_guest_runtime::file_protocol::FileFault>,
+    _lease: Option<Arc<Lease>>,
+}
+impl From<FileDispatchError> for DispatchFailure {
+    fn from(error: FileDispatchError) -> Self {
+        Self {
+            error,
+            fault: None,
+            _lease: None,
+        }
     }
 }
 struct Lease {
@@ -165,6 +181,22 @@ impl FilePool {
     where
         F: FnOnce() -> Result<FileResponse, FileError> + Send + 'static,
     {
+        Self::dispatch_observed(auth, lease, deadline, move || {
+            operation().map_err(Into::into)
+        })
+        .await
+        .map_err(|failure| failure.error)
+    }
+
+    async fn dispatch_observed<F>(
+        auth: Arc<AuthPermit>,
+        lease: Arc<Lease>,
+        deadline: Instant,
+        operation: F,
+    ) -> Result<FileReply, DispatchFailure>
+    where
+        F: FnOnce() -> Result<FileResponse, FileFailure> + Send + 'static,
+    {
         check_deadline(deadline)?;
         let task = tokio::task::spawn_blocking(move || {
             // A queued blocking job may start after its request has expired.
@@ -172,13 +204,20 @@ impl FilePool {
             let result = operation();
             // Explicit lifetime through the last operation, including errors.
             drop(auth);
-            result
-                .map(|response| FileReply {
+            match result {
+                Ok(response) => Ok(FileReply {
                     response,
                     deadline,
                     _lease: lease,
-                })
-                .map_err(FileDispatchError::Operation)
+                }),
+                Err(failure) => Err(DispatchFailure {
+                    error: FileDispatchError::Operation(failure.error),
+                    fault: failure.fault,
+                    // Even an unconsumed/detached worker result retains its
+                    // diagnostic path allocations until the result is dropped.
+                    _lease: Some(lease),
+                }),
+            }
         });
         let result = tokio::time::timeout_at(deadline, task)
             .await

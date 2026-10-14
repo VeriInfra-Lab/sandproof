@@ -47,10 +47,20 @@ def cases(root):
     ]
 
 
-def check(response, failure, expected, root):
+def check(response, failure, expected, root, method=None, request=None):
     if isinstance(expected, Code):
         assert isinstance(failure, ConnectError) and failure.code == expected, (failure, expected)
         assert response is None
+        if expected != Code.RESOURCE_EXHAUSTED:
+            if method == 'stat':
+                message = f'file not found: lstat {request.path}: no such file or directory'
+            elif method == 'move':
+                message = f'source file not found: rename {request.source} {request.destination}: no such file or directory'
+            elif expected == Code.ALREADY_EXISTS:
+                message = f'directory already exists: {request.path}'
+            else:
+                message = f'path already exists but it is not a directory: {request.path}'
+            assert failure.message == message, (failure.message, message)
         return
     assert failure is None, repr(failure)
     if expected == 'empty':
@@ -110,7 +120,7 @@ def run_sync(settings, root):
             response = getattr(client, method)(request, headers=HEADERS, timeout_ms=5000)
         except ConnectError as error:
             failure = error
-        check(response, failure, expected, root)
+        check(response, failure, expected, root, method, request)
 
     response = client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)
@@ -141,7 +151,7 @@ async def run_async(settings, root):
             response = await getattr(client, method)(request, headers=HEADERS, timeout_ms=5000)
         except ConnectError as error:
             failure = error
-        check(response, failure, expected, root)
+        check(response, failure, expected, root, method, request)
 
     response = await client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)

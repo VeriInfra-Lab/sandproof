@@ -35,21 +35,27 @@ pub enum RpcError {
 
 /// Retains the request responsibility and, once reserved, the unary file slot.
 /// A timed-out/cancelled blocking worker can independently hold both as well.
-/// Only an observed account rejection has a fixed response; other classified
+/// Only observed account or mapped I/O failures have fixed responses; other
 /// failures imply no HTTP status. No failure implies that I/O can be replayed.
 pub struct RpcFailure {
     error: RpcError,
     rejection: Option<crate::file_rpc_response::Rejection>,
+    fault: Option<sandproof_guest_runtime::file_protocol::FileFault>,
     deadline: Instant,
     _owner: Owner,
 }
 impl RpcFailure {
     #[must_use]
+    pub const fn fault(&self) -> Option<&sandproof_guest_runtime::file_protocol::FileFault> {
+        self.fault.as_ref()
+    }
+
+    #[must_use]
     pub const fn rejection(&self) -> Option<&crate::file_rpc_response::Rejection> {
         self.rejection.as_ref()
     }
 
-    /// Send a fixed account rejection for an already selected unary JSON
+    /// Send a fixed account or observed file failure for a selected unary JSON
     /// request under the original request/file slots and deadline.
     /// # Errors
     /// Unmapped context/I/O failures remain classified, or bounded response
@@ -59,13 +65,17 @@ impl RpcFailure {
         limits: crate::file_rpc_response::Limits,
     ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
         let rejection = self.rejection.take();
+        let fault = self.fault.take();
         let deadline = self.deadline;
         let owner: Owner = Arc::new(self);
-        match rejection {
-            Some(rejection) => {
+        match (rejection, fault) {
+            (Some(rejection), _) => {
                 crate::file_rpc_response::rejected(rejection, limits, deadline, owner).await
             }
-            None => Err(crate::file_rpc_response::Failure::unclassified(
+            (None, Some(fault)) => {
+                crate::file_rpc_response::io_failure(fault, limits, deadline, owner).await
+            }
+            (None, None) => Err(crate::file_rpc_response::Failure::unclassified(
                 deadline, owner,
             )),
         }
@@ -103,6 +113,7 @@ impl FilePool {
     ) -> Result<FileReply, RpcFailure> {
         let mut deadline = request.deadline;
         let mut owner = request.owner;
+        let mut fault = None;
         let result = async {
             deadline = deadline.min(self.deadline().map_err(RpcError::Dispatch)?);
             check_deadline(deadline).map_err(RpcError::Dispatch)?;
@@ -123,8 +134,8 @@ impl FilePool {
                 .await
                 .map_err(RpcError::Context)?;
             let limits = self.limits;
-            Self::dispatch_admitted(auth, lease, deadline, move || {
-                filesystem::execute(
+            Self::dispatch_observed(auth, lease, deadline, move || {
+                filesystem::execute_detailed(
                     &context.request,
                     Ownership {
                         uid: context.owner.uid,
@@ -134,12 +145,16 @@ impl FilePool {
                 )
             })
             .await
-            .map_err(RpcError::Dispatch)
+            .map_err(|failure| {
+                fault = failure.fault;
+                RpcError::Dispatch(failure.error)
+            })
         }
         .await;
         result.map_err(|error| RpcFailure {
             error,
             rejection: None,
+            fault,
             deadline,
             _owner: owner,
         })

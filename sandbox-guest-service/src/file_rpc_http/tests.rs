@@ -461,3 +461,167 @@ async fn cancelled_http_body_wait_releases_auth_and_both_slots_before_another_re
     released(&f).await;
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
 }
+
+fn prepare_error_tree(root: &Path) {
+    std::fs::write(root.join("file"), b"original").unwrap();
+    std::fs::create_dir(root.join("dir")).unwrap();
+    std::os::unix::fs::symlink("loop", root.join("loop")).unwrap();
+    std::fs::create_dir(root.join("source-dir")).unwrap();
+    std::fs::write(root.join("source-dir/keep"), b"keep").unwrap();
+}
+
+type ErrorCase = (&'static str, serde_json::Value, u16, &'static str);
+fn observed_cases() -> Vec<ErrorCase> {
+    vec![
+        (
+            "Stat",
+            serde_json::json!({"path":"missing"}),
+            404,
+            "file not found: lstat ROOT/missing: no such file or directory",
+        ),
+        (
+            "Stat",
+            serde_json::json!({"path":"file/child"}),
+            500,
+            "error getting file info: lstat ROOT/file/child: not a directory",
+        ),
+        (
+            "MakeDir",
+            serde_json::json!({"path":"dir"}),
+            409,
+            "directory already exists: ROOT/dir",
+        ),
+        (
+            "MakeDir",
+            serde_json::json!({"path":"file"}),
+            400,
+            "path already exists but it is not a directory: ROOT/file",
+        ),
+        (
+            "MakeDir",
+            serde_json::json!({"path":"loop"}),
+            500,
+            "error getting file info: stat ROOT/loop: too many levels of symbolic links",
+        ),
+        (
+            "Move",
+            serde_json::json!({"source":"missing","destination":"partial/dest"}),
+            404,
+            "source file not found: rename ROOT/missing ROOT/partial/dest: no such file or directory",
+        ),
+        (
+            "Move",
+            serde_json::json!({"source":"file","destination":"file/child"}),
+            500,
+            "path is a file: ROOT/file",
+        ),
+        (
+            "Move",
+            serde_json::json!({"source":"file","destination":"dir"}),
+            500,
+            "error renaming: rename ROOT/file ROOT/dir: file exists",
+        ),
+        (
+            "Move",
+            serde_json::json!({"source":"dir","destination":"dir"}),
+            500,
+            "error renaming: rename ROOT/dir ROOT/dir: file exists",
+        ),
+        (
+            "Move",
+            serde_json::json!({"source":"missing","destination":"dir"}),
+            404,
+            "source file not found: rename ROOT/missing ROOT/dir: no such file or directory",
+        ),
+        (
+            "Move",
+            serde_json::json!({"source":"source-dir","destination":"dir"}),
+            500,
+            "error renaming: rename ROOT/source-dir ROOT/dir: file exists",
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn observed_file_faults_keep_exact_paths_and_partial_effects() {
+    let root = tempfile::tempdir().unwrap();
+    let f = fixture(root.path(), 65536).await;
+    prepare_error_tree(root.path());
+    for (method, value, status, text) in observed_cases() {
+        let response = f
+            .http
+            .handle(request(method, Body::from(value.to_string())))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        full(&f);
+        file_full(&f).await;
+        // Response ownership does not retain the authorization read lock.
+        f.session
+            .initialize(br#"{"accessToken":"token","defaultUser":"user"}"#)
+            .await
+            .unwrap();
+        let bytes = drain(response.into_body()).await;
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            value["message"],
+            text.replace("ROOT", root.path().to_str().unwrap())
+        );
+        released(&f).await;
+    }
+    assert_eq!(
+        std::fs::read(root.path().join("source-dir/keep")).unwrap(),
+        b"keep"
+    );
+    // Distinct absolute strings resolving to the same directory are passed to
+    // the syscall, as Go does; Path equality must not collapse this into EEXIST.
+    let alias = serde_json::json!({
+        "source": format!("{}/dir/../dir", root.path().display()),
+        "destination": root.path().join("dir").to_str().unwrap(),
+    });
+    let response = f
+        .http
+        .handle(request("Move", Body::from(alias.to_string())))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    drain(response.into_body()).await;
+    released(&f).await;
+    assert!(root.path().join("partial").is_dir());
+    assert!(!root.path().join("partial/dest").exists());
+    assert_eq!(
+        std::fs::read(root.path().join("file")).unwrap(),
+        b"original"
+    );
+}
+
+#[tokio::test]
+async fn failed_error_encoding_keeps_original_deadline_and_created_move_parent() {
+    let root = tempfile::tempdir().unwrap();
+    let f = fixture(root.path(), 1).await;
+    let Prepared::Ready(ready) = f
+        .http
+        .prepare(request(
+            "Move",
+            Body::from(r#"{"source":"missing","destination":"partial/dest"}"#),
+        ))
+        .await
+        .unwrap()
+    else {
+        panic!("unexpected response")
+    };
+    let end = ready.deadline();
+    let failure = ready.execute().await.unwrap_err();
+    assert_eq!(
+        failure.error(),
+        &Error::Response(file_rpc_response::Error::ResponseLimit)
+    );
+    assert_eq!(failure.deadline(), Some(end));
+    assert!(root.path().join("partial").is_dir());
+    full(&f);
+    file_full(&f).await;
+    drop(failure);
+    released(&f).await;
+}
+
+mod reference;

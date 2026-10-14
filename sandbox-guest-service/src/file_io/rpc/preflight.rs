@@ -103,6 +103,7 @@ impl FilePool {
         result.map_err(|error| RpcFailure {
             error,
             rejection,
+            fault: None,
             deadline,
             _owner: owner,
         })
@@ -165,6 +166,7 @@ impl ReadyRpc {
         } = self.selected;
         let owner: Owner = lease.clone();
         let mut rejection = None;
+        let mut fault = None;
         let result = async {
             check_deadline(deadline).map_err(RpcError::Dispatch)?;
             let auth = Arc::new(request.auth);
@@ -188,8 +190,8 @@ impl ReadyRpc {
                 }
                 SelectionError::Context(error) => RpcError::Context(error),
             })?;
-            FilePool::dispatch_admitted(auth, lease, deadline, move || {
-                filesystem::execute(
+            FilePool::dispatch_observed(auth, lease, deadline, move || {
+                filesystem::execute_detailed(
                     &context.request,
                     Ownership {
                         uid: context.owner.uid,
@@ -199,12 +201,16 @@ impl ReadyRpc {
                 )
             })
             .await
-            .map_err(RpcError::Dispatch)
+            .map_err(|failure| {
+                fault = failure.fault;
+                RpcError::Dispatch(failure.error)
+            })
         }
         .await;
         result.map_err(|error| RpcFailure {
             error,
             rejection,
+            fault,
             deadline,
             _owner: owner,
         })

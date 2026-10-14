@@ -4,16 +4,6 @@ use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
-pub(super) fn ensure_dirs(
-    path: &Path,
-    owner: Ownership,
-    budget: &mut Budget,
-) -> Result<(), FileError> {
-    ensure_dirs_detailed(path, owner, budget).map_err(|error| match error {
-        EnsureError::Budget(error) => error,
-        _ => FileError::Internal,
-    })
-}
 pub(super) enum EnsureOperation {
     Stat,
     Create,

@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -27,6 +28,7 @@ type request struct {
 	Source      string
 	Destination string
 	Depth       uint32
+	Detailed    bool
 }
 
 func main() {
@@ -45,7 +47,15 @@ func main() {
 		}
 		message, err := call(service, input)
 		if err != nil {
-			b, _ := json.Marshal(map[string]string{"error": connect.CodeOf(err).String()})
+			result := map[string]string{"error": connect.CodeOf(err).String()}
+			if input.Detailed {
+				var observed *connect.Error
+				if !errors.As(err, &observed) {
+					panic(err)
+				}
+				result = map[string]string{"code": observed.Code().String(), "message": observed.Message()}
+			}
+			b, _ := json.Marshal(result)
 			fmt.Println(string(b))
 			continue
 		}

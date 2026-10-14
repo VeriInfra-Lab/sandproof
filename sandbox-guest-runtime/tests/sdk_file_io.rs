@@ -90,35 +90,30 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
             if response.status() == StatusCode::UNAUTHORIZED {
                 fixture.rejected.fetch_add(1, Ordering::SeqCst);
             } else {
-                assert_eq!(response.status(), StatusCode::OK);
+                assert!(matches!(
+                    response.status(),
+                    StatusCode::OK
+                        | StatusCode::NOT_FOUND
+                        | StatusCode::CONFLICT
+                        | StatusCode::BAD_REQUEST
+                ));
             }
             response
         }
         Err(failure) => {
-            let HttpError::Execution(RpcError::Dispatch(FileDispatchError::Operation(error))) =
-                failure.error()
-            else {
-                panic!("unexpected fixture HTTP dispatch failure: {failure:?}")
-            };
-            let status = match error {
-                sandproof_guest_runtime::filesystem::FileError::NotFound => StatusCode::NOT_FOUND,
-                sandproof_guest_runtime::filesystem::FileError::AlreadyExists => {
-                    StatusCode::CONFLICT
-                }
-                sandproof_guest_runtime::filesystem::FileError::InvalidArgument => {
-                    StatusCode::BAD_REQUEST
-                }
-                sandproof_guest_runtime::filesystem::FileError::ResourceExhausted => {
-                    StatusCode::TOO_MANY_REQUESTS
-                }
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
+            assert_eq!(
+                failure.error(),
+                &HttpError::Execution(RpcError::Dispatch(FileDispatchError::Operation(
+                    sandproof_guest_runtime::filesystem::FileError::ResourceExhausted
+                ))),
+                "unexpected fixture HTTP dispatch failure: {failure:?}"
+            );
             (
-                status,
+                StatusCode::TOO_MANY_REQUESTS,
                 [("content-type", "application/json")],
                 Bytes::from_owner(ReplyBytes {
                     bytes:
-                        serde_json::json!({"code":error.code(),"message":"file operation failed"})
+                        serde_json::json!({"code":"resource_exhausted","message":"file operation failed"})
                             .to_string()
                             .into_bytes(),
                     _owner: failure,
@@ -136,7 +131,7 @@ fn response_limits() -> sandproof_guest_service::file_rpc_response::Limits {
     }
 }
 
-// Only remaining file I/O faults use the existing synthetic Connect text. Actual
+// Only the fixture directory quota uses the existing synthetic Connect text. Actual
 // records/failures and their original slots survive all transport Bytes clones.
 struct ReplyBytes<T> {
     bytes: Vec<u8>,

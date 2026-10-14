@@ -196,7 +196,7 @@ impl<M: MetadataSource, S: AccountSource> Ready<M, S> {
                 Ok(response)
             }
             Err(failure) => {
-                if failure.rejection().is_some() {
+                if failure.rejection().is_some() || failure.fault().is_some() {
                     failure
                         .into_response(inner.response)
                         .await
