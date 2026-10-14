@@ -2,6 +2,9 @@ use super::*;
 use sandproof_guest_runtime::protocol::ProcessConfig;
 use sandproof_guest_service::command::{PidRegistry, RegistryError, RegistryLimits};
 
+#[path = "request_dispatch.rs"]
+mod requests;
+
 fn registry() -> PidRegistry {
     PidRegistry::new(
         binding(),

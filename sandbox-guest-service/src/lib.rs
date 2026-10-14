@@ -5,6 +5,7 @@
 //! The bounded listener is explicitly configured by its caller; health does
 //! not certify authorization or readiness.
 
+pub mod command_requests;
 pub mod file_authorization;
 pub mod file_download;
 pub mod file_encoding;
