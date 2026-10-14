@@ -59,7 +59,9 @@ func main() {
 			fmt.Println(string(b))
 			continue
 		}
-		b, err := (protojson.MarshalOptions{EmitDefaultValues: true}).Marshal(message)
+		// Match the original Connect default JSON codec: zero scalar fields and
+		// empty repeated/maps are absent, while present optional values remain.
+		b, err := (protojson.MarshalOptions{}).Marshal(message)
 		if err != nil {
 			fmt.Println(`{"error":"internal"}`)
 			continue

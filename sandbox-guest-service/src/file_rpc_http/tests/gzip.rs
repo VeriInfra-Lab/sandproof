@@ -56,8 +56,7 @@ async fn unary_gzip_success_and_identity_errors_keep_original_http_ownership() {
         file_full(&f).await;
         let value = decoded(&drain(response.into_body()).await);
         match method {
-            "Remove" => assert_eq!(value, serde_json::json!({})),
-            "ListDir" => assert_eq!(value, serde_json::json!({"entries":[]})),
+            "Remove" | "ListDir" => assert_eq!(value, serde_json::json!({})),
             _ => assert!(value["entry"]["name"].is_string()),
         }
         released(&f).await;

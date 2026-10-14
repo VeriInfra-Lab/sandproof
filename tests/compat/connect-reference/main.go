@@ -67,6 +67,7 @@ func main() {
 	}, connect.WithCodec(codec{}), connect.WithCodec(codec{name: "json; charset=utf-8"}))
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
+	registerProperties(mux)
 	// The envd account failure observation is controlled here. Both wrappers
 	// below are the original authn/Connect implementation, not a replacement.
 	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
@@ -163,6 +164,8 @@ func main() {
 			Error  bool
 		}
 		switch mode {
+		case "P":
+			target, body = propertyEndpoint(data), []byte("{}")
 		case "A":
 			target, body = "/fixture.Filesystem/Explicit", []byte("invalid JSON")
 		case "U":
@@ -201,7 +204,9 @@ func main() {
 				req.Header.Add("Content-Encoding", value)
 			}
 		}
-		if mode == "C" {
+		if mode == "P" {
+			req.Header.Set("X-Fixture-Properties", hex.EncodeToString(data))
+		} else if mode == "C" {
 			req.Header.Set("Content-Type", string(data))
 		} else if mode == "A" {
 			req.SetBasicAuth(string(data), "ignored-password")
@@ -242,6 +247,22 @@ func main() {
 		}
 		if err := res.Body.Close(); err != nil {
 			panic(err)
+		}
+		if mode == "P" {
+			// Original protojson deliberately varies insignificant whitespace.
+			// Check actual wire length first, then compare compact JSON. This does
+			// not claim identical near-2048 Content-Length header thresholds.
+			if length := res.Header.Get("Content-Length"); length != "" {
+				if length != strconv.Itoa(len(responseBody)) {
+					panic("invalid property response length")
+				}
+				res.Header.Set("Content-Length", "valid")
+			}
+			var compact bytes.Buffer
+			if err := json.Compact(&compact, responseBody); err != nil {
+				panic(err)
+			}
+			responseBody = compact.Bytes()
 		}
 		if mode == "G" || mode == "Z" {
 			// Compare semantic gzip completion, never DEFLATE implementation bytes.

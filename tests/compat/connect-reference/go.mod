@@ -7,4 +7,4 @@ require (
 	connectrpc.com/authn v0.1.0
 )
 
-require google.golang.org/protobuf v1.36.12 // indirect
+require google.golang.org/protobuf v1.36.12

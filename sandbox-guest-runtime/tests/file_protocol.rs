@@ -41,6 +41,52 @@ fn entry() -> Entry {
 }
 
 #[test]
+fn zero_scalars_are_omitted_but_present_optional_and_map_values_are_preserved() {
+    let mut entry = Entry {
+        name: String::new(),
+        kind: FileType::Unspecified,
+        path: String::new(),
+        size: 0,
+        mode: 0,
+        permissions: String::new(),
+        owner: String::new(),
+        group: String::new(),
+        modified_time: None,
+        symlink_target: None,
+        metadata: BTreeMap::new(),
+    };
+    let empty = br#"{"entry":{}}"#;
+    let bytes = encode_response(Response::Entry(&entry), empty.len()).unwrap();
+    assert_eq!(bytes, empty);
+    assert!(bytes.capacity() <= empty.len());
+    assert_eq!(
+        encode_response(Response::Entry(&entry), empty.len() - 1),
+        Err(ProtocolError::ResourceExhausted)
+    );
+    entry.symlink_target = Some(String::new());
+    entry.modified_time = Some(ModifiedTime::new(0, 0).unwrap());
+    entry.metadata.insert(String::new(), String::new());
+    let bytes = encode_response(Response::Entry(&entry), 4096).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap(),
+        json!({"entry":{
+            "modifiedTime":"1970-01-01T00:00:00Z", "symlinkTarget":"", "metadata":{"":""}
+        }})
+    );
+    let entries = [entry];
+    assert_eq!(
+        serde_json::from_slice::<Value>(
+            &encode_response(Response::Entries(&entries), 4096).unwrap()
+        )
+        .unwrap()["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn fixed_shared_file_requests_and_stat_response_are_consumed() {
     let fixtures: Value = serde_json::from_str(include_str!(
         "../../tests/compat/guest-service-contract.json"
@@ -179,10 +225,7 @@ fn byte_budgets_reject_before_decoding_and_never_emit_a_partial_response() {
         encode_response(Response::Empty, 1),
         Err(ProtocolError::ResourceExhausted)
     );
-    assert_eq!(
-        encode_response(Response::Entries(&[]), 14).unwrap(),
-        b"{\"entries\":[]}"
-    );
+    assert_eq!(encode_response(Response::Entries(&[]), 2).unwrap(), b"{}");
 }
 
 #[test]
@@ -196,7 +239,7 @@ fn int64_sizes_and_optional_symlink_presence_survive_encoding() {
     let value: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(value["entry"]["size"], i64::MAX.to_string());
     assert_eq!(value["entry"]["symlinkTarget"], "");
-    assert_eq!(value["entry"]["type"], "FILE_TYPE_UNSPECIFIED");
+    assert!(value["entry"].get("type").is_none());
     assert!(value["entry"].get("modifiedTime").is_none());
     assert!(value["entry"].get("metadata").is_none());
     entry.size = i64::MIN;

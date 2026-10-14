@@ -109,9 +109,6 @@ fn prepare_case(root: &Path, request: &Request) {
 fn normalize(value: &mut Value, mutation: bool) {
     match value {
         Value::Object(fields) => {
-            if fields.get("metadata") == Some(&json!({})) {
-                fields.remove("metadata");
-            }
             if mutation {
                 fields.remove("modifiedTime");
             }

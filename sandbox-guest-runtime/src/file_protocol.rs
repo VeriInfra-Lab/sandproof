@@ -89,6 +89,15 @@ pub enum FileType {
     #[serde(rename = "FILE_TYPE_SYMLINK")]
     Symlink,
 }
+impl FileType {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Serde skip_serializing_if passes a field reference"
+    )]
+    fn is_unspecified(&self) -> bool {
+        *self == Self::Unspecified
+    }
+}
 
 /// A valid protobuf timestamp, not a guess based on request or wall-clock time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -132,15 +141,21 @@ impl ModifiedTime {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub name: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", skip_serializing_if = "FileType::is_unspecified")]
     pub kind: FileType,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub path: String,
-    #[serde(serialize_with = "int64")]
+    #[serde(serialize_with = "int64", skip_serializing_if = "is_zero")]
     pub size: i64,
+    #[serde(skip_serializing_if = "is_zero")]
     pub mode: u32,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub permissions: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub owner: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub group: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modified_time: Option<ModifiedTime>,
@@ -148,6 +163,10 @@ pub struct Entry {
     pub symlink_target: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, String>,
+}
+
+fn is_zero<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 #[expect(
@@ -176,6 +195,7 @@ pub fn encode_response(response: Response<'_>, limit: usize) -> Result<Vec<u8>, 
     }
     #[derive(Serialize)]
     struct Many<'a> {
+        #[serde(skip_serializing_if = "<[Entry]>::is_empty")]
         entries: &'a [Entry],
     }
     #[derive(Serialize)]
