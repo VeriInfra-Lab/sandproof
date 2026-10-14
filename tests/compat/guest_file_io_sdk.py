@@ -6,6 +6,7 @@ import sys
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
+from connectrpc.compression.gzip import GzipCompression
 from e2b.connection_config import ConnectionConfig
 from e2b.envd.client_async import create_rpc_client as async_client
 from e2b.envd.client_sync import create_rpc_client as sync_client
@@ -127,6 +128,14 @@ def timeout_failure(error):
     assert error.message == 'parse timeout: "10000000000" has >10 digits', error.message
 
 
+def accepting_gzip(client_cls):
+    """Use the generated client option; per-call compression headers are overwritten."""
+    def create(url, **kwargs):
+        kwargs['accept_compression'] = [GzipCompression()]
+        return client_cls(url, **kwargs)
+    return create
+
+
 def run_sync(settings, root):
     url = settings['url']
     client = sync_client(clients.FilesystemClientSync, url, ConnectionConfig())
@@ -140,14 +149,15 @@ def run_sync(settings, root):
 
     response = client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)
-    for path, expected in [('dir/a/child', 'child'), ('missing', Code.NOT_FOUND)]:
-        request = pb.StatRequest(path=f'{root}/{path}')
-        response, failure = None, None
-        try:
-            response = client.stat(request, headers={**HEADERS, 'accept-encoding': 'gzip'}, timeout_ms=5000)
-        except ConnectError as error:
-            failure = error
-        check(response, failure, expected, root, 'stat', request, settings['username'])
+    with sync_client(accepting_gzip(clients.FilesystemClientSync), url, ConnectionConfig()) as gzip_client:
+        for path, expected in [('dir/a/child', 'child'), ('missing', Code.NOT_FOUND)]:
+            request = pb.StatRequest(path=f'{root}/{path}')
+            response, failure = None, None
+            try:
+                response = gzip_client.stat(request, headers=HEADERS, timeout_ms=5000)
+            except ConnectError as error:
+                failure = error
+            check(response, failure, expected, root, 'stat', request, settings['username'])
     for target, headers, message in account_cases(settings):
         selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
         try:
@@ -179,14 +189,15 @@ async def run_async(settings, root):
 
     response = await client.stat(pb.StatRequest(path=root + '/dir/a/child'), headers=authorization(settings['username']), timeout_ms=5000)
     check(response, None, 'child', root)
-    for path, expected in [('dir/a/child', 'child'), ('missing', Code.NOT_FOUND)]:
-        request = pb.StatRequest(path=f'{root}/{path}')
-        response, failure = None, None
-        try:
-            response = await client.stat(request, headers={**HEADERS, 'accept-encoding': 'gzip'}, timeout_ms=5000)
-        except ConnectError as error:
-            failure = error
-        check(response, failure, expected, root, 'stat', request, settings['username'])
+    async with async_client(accepting_gzip(clients.FilesystemClient), url, ConnectionConfig()) as gzip_client:
+        for path, expected in [('dir/a/child', 'child'), ('missing', Code.NOT_FOUND)]:
+            request = pb.StatRequest(path=f'{root}/{path}')
+            response, failure = None, None
+            try:
+                response = await gzip_client.stat(request, headers=HEADERS, timeout_ms=5000)
+            except ConnectError as error:
+                failure = error
+            check(response, failure, expected, root, 'stat', request, settings['username'])
     for target, headers, message in account_cases(settings):
         selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
         try:

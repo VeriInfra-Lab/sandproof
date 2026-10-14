@@ -60,7 +60,7 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
     let wants_gzip = request
         .headers()
         .get("accept-encoding")
-        .is_some_and(|v| v == "gzip");
+        .is_some_and(|v| v == "gzip,identity");
     let request = match fixture.http.prepare(request).await.unwrap() {
         Prepared::Ready(ready) => ready,
         Prepared::Response(response) => {
