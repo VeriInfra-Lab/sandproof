@@ -276,6 +276,7 @@ pub enum Error {
     Protocol(ProtocolError),
     Framing(sandproof_guest_runtime::protocol::FramingError),
     Json(sandproof_guest_runtime::protocol::JsonError),
+    EndStream(sandproof_guest_runtime::protocol::EndStreamError),
     Compression {
         stage: CompressionStage,
         error: crate::upload_body::GzipError,
@@ -307,6 +308,11 @@ impl From<sandproof_guest_runtime::protocol::FramingError> for Error {
 impl From<sandproof_guest_runtime::protocol::JsonError> for Error {
     fn from(error: sandproof_guest_runtime::protocol::JsonError) -> Self {
         Self::Json(error)
+    }
+}
+impl From<sandproof_guest_runtime::protocol::EndStreamError> for Error {
+    fn from(error: sandproof_guest_runtime::protocol::EndStreamError) -> Self {
+        Self::EndStream(error)
     }
 }
 impl crate::owned_body::Failure for Error {

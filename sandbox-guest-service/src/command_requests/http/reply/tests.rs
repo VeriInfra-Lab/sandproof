@@ -9,6 +9,7 @@ use sandproof_guest_runtime::gzip::{DecodeLimits, Decoder};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+mod end_stream;
 mod framing;
 mod gzip;
 mod json;

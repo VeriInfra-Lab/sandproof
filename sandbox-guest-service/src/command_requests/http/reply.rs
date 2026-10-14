@@ -1,4 +1,4 @@
-//! Bounded replies for observed Connect method, header, framing, JSON and gzip failures. No
+//! Bounded replies for observed Connect method, header, framing, JSON/EOS and gzip failures. No
 //! arbitrary diagnostics, codec policy or command-operation errors are mapped.
 use super::Error as SelectionError;
 #[cfg(any(target_os = "linux", test))]
@@ -14,6 +14,8 @@ use axum::{
 use std::{fmt, sync::Arc};
 use tokio::time::Instant;
 
+#[cfg(any(target_os = "linux", test))]
+mod end_stream;
 #[cfg(test)]
 mod tests;
 #[cfg(any(target_os = "linux", test))]
@@ -110,9 +112,10 @@ impl Plan {
             SelectionError::Version(_) | SelectionError::Timeout(_) => StatusCode::BAD_REQUEST,
             error if observed_compression(error).is_some() => StatusCode::BAD_REQUEST,
             error if observed_framing(error).is_some() => StatusCode::BAD_REQUEST,
-            SelectionError::Request(crate::command_requests::Error::Json(_)) => {
-                StatusCode::BAD_REQUEST
-            }
+            SelectionError::Request(
+                crate::command_requests::Error::Json(_)
+                | crate::command_requests::Error::EndStream(_),
+            ) => StatusCode::BAD_REQUEST,
             _ => return Err(Error::UnclassifiedFault),
         };
         let format = format.ok_or(Error::UnclassifiedFault)?;
@@ -125,7 +128,13 @@ impl Plan {
         {
             return Err(Error::UnclassifiedFault);
         }
-        if observed_framing(error).is_some() && !stream {
+        if (observed_framing(error).is_some()
+            || matches!(
+                error,
+                SelectionError::Request(crate::command_requests::Error::EndStream(_))
+            ))
+            && !stream
+        {
             return Err(Error::UnclassifiedFault);
         }
         Ok(Self {

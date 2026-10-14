@@ -18,6 +18,7 @@ mod request_body;
 pub(crate) mod request_json;
 use crate::file_protocol::request_json::{prepare_command, uint32};
 pub use content_type::canonical_content_type;
+pub use end_stream::{EndStreamError, EndStreamReason};
 pub use request_body::FramingError;
 use request_json::{bytes, envs, signal};
 
@@ -297,7 +298,7 @@ pub fn decode_request(
         false,
         |_| Err(ProtocolError::InvalidArgument),
         |_| ProtocolError::InvalidArgument,
-        decode_message,
+        &(decode_message, end_stream::validate),
     )
 }
 
@@ -321,18 +322,23 @@ pub fn decode_request_with_gzip<E: From<ProtocolError>>(
         true,
         expand,
         |_| ProtocolError::InvalidArgument.into(),
-        |method, payload| decode_message(method, payload).map_err(Into::into),
+        &(
+            |method: &str, payload: &[u8]| decode_message(method, payload).map_err(Into::into),
+            |payload: &[u8]| end_stream::validate(payload).map_err(Into::into),
+        ),
     )
 }
 
-/// Decode the selected command encoding and retain bounded framing/JSON
-/// observations at their actual receive stage. Protobuf diagnostics are observed
+/// Decode the selected command encoding and retain bounded framing, protobuf
+/// JSON and EOS JSON observations at their actual receive stage. Diagnostics are observed
 /// only after actual decode failure; diagnostic disagreement stays unclassified.
 /// The expander has the same trusted allocation/cancellation obligations as
 /// `decode_request_with_gzip`; gzip is the already selected HTTP request encoding.
 /// # Errors
-/// Original protocol/budget, framing/JSON observation or unchanged gzip error.
-pub fn decode_request_observed<E: From<ProtocolError> + From<FramingError> + From<JsonError>>(
+/// Original protocol/budget, framing/JSON/EOS observation or unchanged gzip error.
+pub fn decode_request_observed<
+    E: From<ProtocolError> + From<FramingError> + From<JsonError> + From<EndStreamError>,
+>(
     method: &str,
     body: &[u8],
     max_message_bytes: usize,
@@ -346,17 +352,20 @@ pub fn decode_request_observed<E: From<ProtocolError> + From<FramingError> + Fro
         gzip,
         expand,
         E::from,
-        |method, payload| {
-            decode_message(method, payload).map_err(|error| {
-                if error == ProtocolError::InvalidArgument
-                    && let Some(observed) =
-                        crate::file_protocol::diagnosis::observe_command(method, payload)
-                {
-                    return E::from(observed);
-                }
-                E::from(error)
-            })
-        },
+        &(
+            |method: &str, payload: &[u8]| {
+                decode_message(method, payload).map_err(|error| {
+                    if error == ProtocolError::InvalidArgument
+                        && let Some(observed) =
+                            crate::file_protocol::diagnosis::observe_command(method, payload)
+                    {
+                        return E::from(observed);
+                    }
+                    E::from(error)
+                })
+            },
+            end_stream::validate_observed,
+        ),
     )
 }
 

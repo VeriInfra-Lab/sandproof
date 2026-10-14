@@ -5,6 +5,8 @@ use sandproof_guest_service::command_http::{
     CommandHttp, Failure, Prepared, Processes, RequestPools, ResponseLimits,
 };
 
+#[path = "end_stream_http.rs"]
+mod end_stream;
 #[path = "framing_http.rs"]
 mod framing;
 #[path = "json_http.rs"]

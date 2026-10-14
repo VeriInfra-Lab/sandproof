@@ -105,7 +105,10 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         SelectionError::Compression(_)
             | SelectionError::Version(_)
             | SelectionError::Timeout(_)
-            | SelectionError::Request(crate::command_requests::Error::Json(_))
+            | SelectionError::Request(
+                crate::command_requests::Error::Json(_)
+                    | crate::command_requests::Error::EndStream(_)
+            )
     ) && super::observed_compression(error).is_none()
         && super::observed_framing(error).is_none()
     {
@@ -118,6 +121,7 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         put(br#"{"code":""#)?;
         put(match error {
             SelectionError::Compression(_) => b"unimplemented",
+            SelectionError::Request(crate::command_requests::Error::EndStream(_)) => b"internal",
             error if super::observed_framing(error).is_some() => {
                 framing_code(super::observed_framing(error).expect("observed framing"))
             }
@@ -126,6 +130,9 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match error {
+            SelectionError::Request(crate::command_requests::Error::EndStream(error)) => {
+                super::end_stream::message(*error, &mut message)?;
+            }
             SelectionError::Request(crate::command_requests::Error::Json(error)) => {
                 crate::file_rpc_response::command_json_message(error, &mut message)?;
             }

@@ -4,7 +4,7 @@ use crate::file_download::tests::reference::{Reference, hex};
 use crate::file_rpc_requests::tests::gzip::compressed;
 use sandproof_guest_runtime::protocol::{FramingError as F, ProtocolError};
 
-fn frame(flag: u8, bytes: &[u8]) -> Vec<u8> {
+pub(super) fn frame(flag: u8, bytes: &[u8]) -> Vec<u8> {
     let mut result = vec![flag];
     result.extend(u32::try_from(bytes.len()).unwrap().to_be_bytes());
     result.extend(bytes);
@@ -15,7 +15,7 @@ fn observed(rpc: Rpc, wire: &[u8], gzip: bool) -> RequestError {
     compression::decode_selected(rpc.method(), wire, 16384, 13, deadline(), &cancelled, gzip)
         .unwrap_err()
 }
-fn format(rpc: Rpc, gzip: bool, utf8: bool) -> ResponseFormat {
+pub(super) fn format(rpc: Rpc, gzip: bool, utf8: bool) -> ResponseFormat {
     let mut headers = HeaderMap::new();
     headers.insert(
         "content-type",
@@ -88,10 +88,10 @@ fn framing_observations_follow_actual_receive_and_decode_order() {
         ] {
             assert!(matches!(observed(rpc, &wire, false), RequestError::Json(_)));
         }
-        assert_eq!(
+        assert!(matches!(
             observed(rpc, &frame(2, b"bad"), false),
-            RequestError::Protocol(ProtocolError::InvalidArgument)
-        );
+            RequestError::EndStream(_)
+        ));
         assert!(matches!(
             observed(rpc, &[frame(3, b"bad"), vec![7]].concat(), true),
             RequestError::Compression { .. }

@@ -12,7 +12,9 @@ use serde::{
 };
 use std::fmt;
 
+mod diagnosis;
 mod normalize;
+pub use diagnosis::{EndStreamError, EndStreamReason};
 #[cfg(test)]
 mod tests;
 
@@ -23,6 +25,19 @@ pub(super) fn validate(payload: &[u8]) -> Result<(), ProtocolError> {
         .deserialize(&mut decoder)
         .map_err(|_| ProtocolError::InvalidArgument)?;
     decoder.end().map_err(|_| ProtocolError::InvalidArgument)
+}
+
+pub(super) fn validate_observed<E: From<ProtocolError> + From<EndStreamError>>(
+    payload: &[u8],
+) -> Result<(), E> {
+    validate(payload).map_err(|error| {
+        if error == ProtocolError::InvalidArgument
+            && let Some(observed) = diagnosis::observe(payload)
+        {
+            return E::from(observed);
+        }
+        E::from(error)
+    })
 }
 
 #[derive(Clone, Copy)]

@@ -2,7 +2,7 @@ use super::framing::{expanded, frame};
 use super::*;
 use sandproof_guest_runtime::gzip::{EncodeLimits, Encoder};
 
-fn compressed(input: &[u8]) -> Vec<u8> {
+pub(super) fn compressed(input: &[u8]) -> Vec<u8> {
     let mut encoder = Encoder::new(
         input,
         EncodeLimits {
