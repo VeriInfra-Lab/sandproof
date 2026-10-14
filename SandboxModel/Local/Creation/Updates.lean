@@ -186,4 +186,3 @@ theorem initial_operation_store_realizable (input : sandbox_controller_core.requ
     executed, represented⟩
 
 end SandboxModel.Local.Creation
-
