@@ -70,6 +70,10 @@ struct State {
 }
 
 impl PidRegistry {
+    pub(crate) fn matches_session(&self, binding: Binding, session: u64) -> bool {
+        self.inner.binding == binding && self.inner.session == session
+    }
+
     /// One trusted VM binding and service session; no production defaults.
     /// # Errors
     /// Invalid/overflowing budgets or zero session, before any task is started.

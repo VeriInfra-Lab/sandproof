@@ -4,6 +4,9 @@ use sandproof_guest_runtime::Credentials;
 use sandproof_guest_service::{ExecutionSettings, command_requests::StartPreparation};
 use std::path::Path;
 
+#[path = "http_dispatch.rs"]
+mod http_dispatch;
+
 struct CurrentAccount(String);
 impl AccountSource for CurrentAccount {
     fn lookup(&self, name: &str) -> Result<Account, AccountError> {

@@ -140,6 +140,10 @@ impl Prepared {
     }
 }
 impl Ready {
+    pub(crate) fn owner(&self) -> crate::owned_body::Owner {
+        self.decoded.authenticated.admitted.owner.clone()
+    }
+
     #[must_use]
     pub const fn request(&self) -> &Request {
         &self.decoded.request

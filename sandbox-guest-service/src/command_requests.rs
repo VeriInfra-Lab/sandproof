@@ -62,6 +62,11 @@ pub struct CommandRequests {
     limits: Limits,
 }
 impl CommandRequests {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn shares_capacity(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.slots, &other.slots)
+    }
+
     /// # Errors
     /// Invalid or unrepresentable budgets; no tasks or commands are created.
     pub fn new(limits: Limits) -> Result<Self, AdmissionError> {
@@ -110,6 +115,11 @@ pub struct Admitted {
     owner: Owner,
 }
 impl Admitted {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn owner(&self) -> Owner {
+        self.owner.clone()
+    }
+
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.deadline

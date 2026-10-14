@@ -387,6 +387,12 @@ EOS 按固定 Go encoding/json 校验已知 error/details/metadata 的形状、n
 
 [命令请求准入与 PID 分派](../sandbox-guest-service/src/command_requests.rs)增加独立请求池：在 token、Basic 账户等待和正文读取前无队列占额，保存原绝对期限；逐项头部、单帧/总字节、帧数及 trailers 先限额，再收集单个已选定的 identity/gzip JSON 请求。Start/Connect 保留原五字节 envelope，不能把压缩帧当 JSON。显式 Basic 账户先于协议解码查询，缺省/畸形 Basic 的默认账户查询留给 Start；账户来源仍由可信装配提供。阻塞查询和 JSON 解码取消后，原授权与请求名额持续到实际闭包退出；账户池自己的期限只能缩短原期限，调用方提供的已评估协议期限也只能缩短原期限。Ready 保留不可替换的原请求、授权和已选账户。
 
+[共用命令 HTTP 派发](../sandbox-guest-service/src/command_http.rs)按七个精确 process.Process 路径连接原准入、token、显式 Basic、HTTP 选择、identity/gzip 解码和原执行/回复组件。Start/Connect/List/SendInput 使用普通请求池，CloseStdin/SendSignal/Update 使用独立控制池；构造时拒绝两个句柄实际共用同一信号量。所有池无队列准入且先于鉴权/账户/正文工作；已占普通名额不消耗保留控制名额，账户池、运行时与 socket 仍是共享资源，这不保证控制延迟或整机资源上界。
+
+CommandHttp 固定同一 Session、账户池、上下文设置、VM/服务会话、PID 注册表/持久登记器、worker 路径和显式预算；构造核对注册表的 VM/会话，持久登记仍在原 claim 时核对。prepare 返回已观察的回复或不可修改的 Ready；外层可检查原请求施加测试限制，不能替换其身份/资源/期限，execute 消费一次原请求。Start 在该装配及全部克隆之间分配递增非零命令编号，失败不回收、耗尽不回绕；同一注册表/会话必须以一个装配作为唯一 Start 入口，不能和底层直接准备的编号混用。原始 PID 永不复用规则仍由持久 PID 集负责，内部编号不替代它。
+
+共用入口只发送现有已观察的 token/Basic/头部/gzip/默认账户/PID 参数拒绝及正常回复；未知路由、tag、未覆盖的 JSON/操作故障和编码失败保持有类型的原失败、容量与绝对期限，不重新鉴权/查表/执行，不创造公开错误文本。请求取消或回复失败不成为进程退出/副作用未发生的回执。keepalive 暂沿调用方显式组件配置，完整头语义、正式监听/初始化装配及生产默认值仍待接通；该模块没有安装服务或选择 tag 政策。
+
 [命令 token 错误响应](../sandbox-guest-service/src/command_requests/http/authorization.rs)由 Admitted::authenticate_http 保留原方法，执行同一头预算及 Session 鉴权；仅真实 Authorization(Unauthenticated) 消费为外层 API 的 401、数字 code/message JSON、UTF-8 类型、nosniff 和末尾换行。它在 Basic、方法/压缩/版本/期限解释和正文读取之前，不沿 Connect 流或 gzip 规则；未初始化及重复 token 的本地拒绝政策不变。HEAD 同样检查完整载荷限额，保留长度头后抑制正文。共享原文件 token 发送器，不复制错误文本；编码/到期失败和最后字节副本保留原请求名额、分类及期限，完成的鉴权不继续占读锁。头预算、原期限等其他错误保持未分类，不伪装为 token 拒绝；没有新增公开路由或初始化入口。
 
 List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用原登记句柄；每个后续请求重新鉴权，缺失 PID 先于输入/信号参数拒绝，未知信号不替换成终止信号。Connect 只取得原订阅，不重新执行或改原执行期限。控制成功只确认该次操作；取消输入可能已交付前缀，不重放。派发后释放授权，响应及其最后 Bytes 引用继续占原请求额度；一元正文首次轮询也检查原期限。tag 查找/重复仲裁、完整 HTTP 路由及解码/操作错误全文仍未接通；头部选择和指定头错误响应见下文，组件的 UnsupportedOperation 不定义公开状态码。调用方须把同一受信任 VM/会话的 Session 与 PidRegistry 装配在一起，并独立配置监听器、控制请求容量和输出预算；此组件不是部署入口或整机内存上界。

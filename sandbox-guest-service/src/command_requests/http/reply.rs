@@ -174,7 +174,7 @@ async fn send_inner(
 }
 
 #[cfg(any(target_os = "linux", test))]
-pub(super) fn check_limits(limits: Limits) -> Result<(), Error> {
+pub(crate) fn check_limits(limits: Limits) -> Result<(), Error> {
     if limits.wire_bytes == 0
         || limits.chunk_bytes == 0
         || limits.wire_bytes > u32::MAX as usize

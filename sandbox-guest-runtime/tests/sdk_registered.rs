@@ -1,4 +1,4 @@
-//! Fixed SDK -> restricted loopback fixture -> authenticated PID components.
+//! Fixed SDK -> restricted loopback fixture -> shared command HTTP dispatch.
 //! One preselected command per fixture; not a production HTTP router or Go oracle.
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 
@@ -18,7 +18,7 @@ use axum::{
     Router,
     body::Body,
     extract::{OriginalUri, State},
-    http::{HeaderMap, Method},
+    http::{HeaderMap, Method, Request as HttpRequest},
     response::Response,
     routing::post,
 };
@@ -35,7 +35,8 @@ use sandproof_guest_service::{
         AdmissionLimits, CommandBodyLimits, CommandOwners, ManagedCommand, OwnerLimits,
         PidRegistrar, PidRegistry, RegistryError, RegistryLimits,
     },
-    command_requests::{self, CommandRequests, StartPreparation, http::Rpc},
+    command_http::{CommandHttp, Prepared, Processes, RequestPools, ResponseLimits},
+    command_requests::{self, CommandRequests},
     file_upload::HeaderLimits,
     upload_body::HttpBodyLimits,
 };
@@ -95,14 +96,13 @@ impl Drop for Stop {
 }
 struct Fixture {
     directory: tempfile::TempDir,
-    session: Session<MetadataFixture>,
-    accounts: AccountPool<CurrentAccount>,
+    http: CommandHttp<MetadataFixture, CurrentAccount>,
     lookups: Arc<AtomicUsize>,
     calls: AtomicUsize,
     requests: CommandRequests,
+    controls: CommandRequests,
     owners: CommandOwners,
     registry: PidRegistry,
-    registrar: PidRegistrar,
     expected: Request,
     started: AtomicBool,
     command: Mutex<Option<Stop>>,
@@ -122,6 +122,44 @@ fn settings() -> ExecutionSettings {
             authorization_bytes: 256,
         },
     }
+}
+fn request_pool() -> CommandRequests {
+    CommandRequests::new(command_requests::Limits {
+        in_flight: REQUESTS,
+        timeout: Duration::from_secs(15),
+        headers: HeaderLimits {
+            bytes: 4096,
+            fields: 32,
+        },
+        body: HttpBodyLimits {
+            total_bytes: LIMIT as u64,
+            frame_bytes: LIMIT,
+            frames: 32,
+            trailer_bytes: 64,
+            trailer_fields: 2,
+        },
+    })
+    .unwrap()
+}
+fn response_limits() -> ResponseLimits {
+    ResponseLimits {
+        message: CommandBodyLimits {
+            message_bytes: 4096,
+            keepalive: Duration::from_secs(5),
+        },
+        http: command_requests::http::reply::Limits {
+            wire_bytes: 8192,
+            chunk_bytes: 2048,
+        },
+        account_headers: 4096,
+    }
+}
+fn expected(request: &Value) -> Request {
+    let bytes = serde_json::to_vec(request).unwrap();
+    let mut framed = vec![0];
+    framed.extend_from_slice(&u32::try_from(bytes.len()).unwrap().to_be_bytes());
+    framed.extend(bytes);
+    decode_request("Start", &framed, LIMIT).unwrap()
 }
 impl Fixture {
     async fn new(request: &Value) -> Self {
@@ -158,52 +196,66 @@ impl Fixture {
             Duration::from_secs(5),
         )
         .unwrap();
-        let bytes = serde_json::to_vec(request).unwrap();
-        let mut framed = vec![0];
-        framed.extend_from_slice(&u32::try_from(bytes.len()).unwrap().to_be_bytes());
-        framed.extend(bytes);
+        let requests = request_pool();
+        let controls = request_pool();
+        let owners = CommandOwners::new(OwnerLimits {
+            records: 1,
+            subscribers: 3,
+            queued_chunks: 16,
+            output_bytes: 8192,
+            stdin_bytes: 8192,
+        })
+        .unwrap();
+        let registry = PidRegistry::new(
+            binding(),
+            1,
+            RegistryLimits {
+                records: 1,
+                metadata_bytes: 4096,
+                retention: Duration::from_secs(30),
+            },
+        )
+        .unwrap();
+        let http = CommandHttp::new(
+            session,
+            RequestPools {
+                ordinary: requests.clone(),
+                control: controls.clone(),
+            },
+            accounts,
+            settings(),
+            Processes {
+                owners: owners.clone(),
+                registry: registry.clone(),
+                registrar: PidRegistrar::new(claims),
+                binding: binding(),
+                session: 1,
+                worker: WORKER.into(),
+                private_directory: directory.path().join("gates"),
+                process_limits: ProcessLimits {
+                    chunk_bytes: 1024,
+                    launch_bytes: LIMIT,
+                    handshake_timeout: Duration::from_secs(5),
+                },
+                admission_limits: AdmissionLimits {
+                    ready_timeout: Duration::from_secs(5),
+                    cleanup_timeout: Duration::from_secs(5),
+                    retry_delay: Duration::from_secs(1),
+                },
+            },
+            response_limits(),
+        )
+        .unwrap();
         Self {
             directory,
-            session,
-            accounts,
+            http,
             lookups,
             calls: AtomicUsize::new(0),
-            requests: CommandRequests::new(command_requests::Limits {
-                in_flight: REQUESTS,
-                timeout: Duration::from_secs(15),
-                headers: HeaderLimits {
-                    bytes: 4096,
-                    fields: 32,
-                },
-                body: HttpBodyLimits {
-                    total_bytes: LIMIT as u64,
-                    frame_bytes: LIMIT,
-                    frames: 32,
-                    trailer_bytes: 64,
-                    trailer_fields: 2,
-                },
-            })
-            .unwrap(),
-            owners: CommandOwners::new(OwnerLimits {
-                records: 1,
-                subscribers: 3,
-                queued_chunks: 16,
-                output_bytes: 8192,
-                stdin_bytes: 8192,
-            })
-            .unwrap(),
-            registry: PidRegistry::new(
-                binding(),
-                1,
-                RegistryLimits {
-                    records: 1,
-                    metadata_bytes: 4096,
-                    retention: Duration::from_secs(30),
-                },
-            )
-            .unwrap(),
-            registrar: PidRegistrar::new(claims),
-            expected: decode_request("Start", &framed, LIMIT).unwrap(),
+            requests,
+            controls,
+            owners,
+            registry,
+            expected: expected(request),
             started: AtomicBool::new(false),
             command: Mutex::new(None),
         }
@@ -216,94 +268,30 @@ async fn dispatch(
     headers: HeaderMap,
     body: Body,
 ) -> Response {
-    let rpc = match uri.path() {
-        "/process.Process/Start" => Rpc::Start,
-        "/process.Process/Connect" => Rpc::Connect,
-        "/process.Process/List" => Rpc::List,
-        "/process.Process/SendInput" => Rpc::SendInput,
-        "/process.Process/CloseStdin" => Rpc::CloseStdin,
-        "/process.Process/SendSignal" => Rpc::SendSignal,
-        "/process.Process/Update" => Rpc::Update,
-        _ => panic!("unexpected fixture method"),
-    };
-    let prepared = fixture
-        .requests
-        .admit()
-        .unwrap()
-        .authenticate_http(&fixture.session, &Method::POST, headers)
-        .await
-        .unwrap()
-        .prepare_http(&Method::POST, &fixture.accounts, settings().limits)
-        .await
-        .unwrap();
-    let stream = rpc.is_stream();
-    selected_json(prepared.headers(), stream);
-    let selected = prepared.select_json(&Method::POST, rpc).unwrap();
-    let ready = selected.decode(body).await.unwrap();
+    let start = uri.path() == "/process.Process/Start";
+    let stream = start || uri.path() == "/process.Process/Connect";
+    selected_json(&headers, stream);
+    let mut request = HttpRequest::new(body);
+    *request.method_mut() = Method::POST;
+    *request.uri_mut() = uri;
+    *request.headers_mut() = headers;
+    let prepared = fixture.http.prepare(request).await.unwrap();
     fixture.calls.fetch_add(1, Ordering::SeqCst);
-    let limits = CommandBodyLimits {
-        message_bytes: 4096,
-        keepalive: Duration::from_secs(5),
+    let Prepared::Ready(ready) = prepared else {
+        panic!("unexpected fixture preflight rejection");
     };
-    let reply = if rpc == Rpc::Start {
+    if start {
         assert_eq!(ready.request(), &fixture.expected);
         assert!(!fixture.started.swap(true, Ordering::SeqCst));
-        let gates = fixture.directory.path().join("gates");
-        let reply = ready
-            .start_pid(
-                &fixture.accounts,
-                &settings(),
-                StartPreparation {
-                    owners: &fixture.owners,
-                    registry: &fixture.registry,
-                    registrar: &fixture.registrar,
-                    binding: binding(),
-                    session: 1,
-                    command: 1,
-                    worker: Path::new(WORKER),
-                    private_directory: &gates,
-                    process_limits: ProcessLimits {
-                        chunk_bytes: 1024,
-                        launch_bytes: LIMIT,
-                        handshake_timeout: Duration::from_secs(5),
-                    },
-                    admission_limits: AdmissionLimits {
-                        ready_timeout: Duration::from_secs(5),
-                        cleanup_timeout: Duration::from_secs(5),
-                        retry_delay: Duration::from_secs(1),
-                    },
-                },
-                limits,
-            )
-            .await
-            .unwrap();
+    }
+    let response = ready.execute().await.unwrap();
+    if start {
         let listed: Value =
             serde_json::from_slice(&fixture.registry.list_json(4096).unwrap()).unwrap();
         let pid = u32::try_from(listed["processes"][0]["pid"].as_u64().unwrap()).unwrap();
         *fixture.command.lock().unwrap() = Some(Stop(fixture.registry.connectable(pid).unwrap()));
-        reply
-    } else {
-        match ready.execute_pid(&fixture.registry, limits).await {
-            Ok(reply) => reply,
-            Err(failure) => {
-                return failure
-                    .into_operation_response(command_requests::http::reply::Limits {
-                        wire_bytes: 8192,
-                        chunk_bytes: 2048,
-                    })
-                    .await
-                    .unwrap();
-            }
-        }
-    };
-    assert_eq!(reply.is_stream(), stream);
-    reply
-        .into_http_response(command_requests::http::response::Limits {
-            wire_bytes: 8192,
-            chunk_bytes: 2048,
-        })
-        .await
-        .unwrap()
+    }
+    response
 }
 
 fn selected_json(headers: &HeaderMap, stream: bool) {
@@ -379,10 +367,10 @@ async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
     })
     .await
     .expect("original command/registry capacity leaked");
-    let slots: Vec<_> = (0..REQUESTS)
-        .map(|_| fixture.requests.admit().unwrap())
-        .collect();
-    drop(slots);
+    for pool in [&fixture.requests, &fixture.controls] {
+        let slots: Vec<_> = (0..REQUESTS).map(|_| pool.admit().unwrap()).collect();
+        drop(slots);
+    }
     assert_eq!(
         std::fs::read_dir(fixture.directory.path().join("gates"))
             .unwrap()

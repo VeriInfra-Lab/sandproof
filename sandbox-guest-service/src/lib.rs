@@ -29,6 +29,8 @@ mod basic_auth;
 #[cfg(target_os = "linux")]
 pub mod command;
 #[cfg(target_os = "linux")]
+pub mod command_http;
+#[cfg(target_os = "linux")]
 mod execution;
 #[cfg(target_os = "linux")]
 pub mod file_http;
