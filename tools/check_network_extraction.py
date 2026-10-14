@@ -16,11 +16,17 @@ CRATE = 'sandproof_network_extract'
 ROOTS = ('cidr_contains', 'protected_ipv4', 'destination_allowed', 'parse_ipv4_bits',
          'egress', 'ingress', 'clone_world', 'initial_world',
          'runtime_crash', 'runtime_recover', 'slot_transition',
-         'controller_input', 'runtime')
+         'controller_input', 'runtime', 'create')
 OWNERS = {'sandbox_controller_core', CRATE}
 FUNCTION_FILE = 'SandproofNetwork/Funs.lean'
 TYPE_FILE = 'SandproofNetwork/Types.lean'
 EXTERNALS = {
+    'core::option::{core::option::Option<T>}::as_ref': 'core.option.Option.as_ref',
+    'core::option::{core::option::Option<T>}::is_none_or': 'core.option.Option.is_none_or',
+    'core::option::{core::option::Option<T>}::unwrap_or_default': 'core.option.Option.unwrap_or_default',
+    "core::option::{core::option::Option<&'_0 T>}::cloned": 'core.option.OptionShared0T.cloned',
+    'alloc::vec::{impl core::default::Default for alloc::vec::Vec<T>}::default':
+        'alloc.vec.Vec.Insts.CoreDefaultDefault.default',
     'core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq':
         'core.option.Option.Insts.CoreCmpPartialEqOption.eq',
     'core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne':
@@ -44,6 +50,9 @@ EXTERNAL_TYPES = {
     'core::net::parser::AddrParseError': 'core.net.parser.AddrParseError',
 }
 LOOPS = {
+    'sandbox_controller_core::transition::insert_unique': {(0, (0,)), (1, (0, 0))},
+    'sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put':
+        {(0, (0,))},
     'sandbox_controller_core::network::ipv4_list_contains': {(0, (0,))},
     'sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed':
         {(0, (0,))},
@@ -70,12 +79,24 @@ DROP_GLUE_TYPES = {
     'request::Request', 'effect::EffectInput', 'model::EffectId',
     'auxiliary::AccessInput', 'recovery_monitor::RuntimeEvent',
     'request::CreateRequest', 'request::ReplayRequest', 'request::CompensationRequest',
+    'model::World', 'model::Event', 'model::OperationPlan', 'model::SandboxRecord',
+    # The generated identity-check closure only captures primitive identity
+    # references. It is still subject to the same no-custom-call AST audit.
+    'maintenance::fresh_identity',
 }
 U64_NEWTYPE_ALIASES = {f'sandbox_controller_core::ids::{name}' for name in (
     'TenantId', 'SandboxId', 'PolicyDigest', 'FsId', 'VmId', 'ManifestDigest',
     'SnapshotId', 'NetSlotId', 'OperationId', 'ResultDigest')}
 U64_NEWTYPE_ALIASES |= {'sandbox_controller_core::maintenance::windows::WindowId',
                        'sandbox_controller_core::maintenance::slots::HostSlotId'}
+
+# The fixed backend represents these immutable scalar-capture closures as
+# tuples/scalars. Check every capture instead of permitting arbitrary def types.
+SCALAR_CLOSURE_ALIASES = {
+    'sandbox_controller_core::maintenance::fresh_identity::{closure}': 2,
+    'sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure}': 1,
+    'sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure#1}': 1,
+}
 
 
 def scalar_u64_ids(value):
@@ -91,6 +112,38 @@ def scalar_u64_ids(value):
         for child in value:
             ids.update(scalar_u64_ids(child))
     return ids
+
+
+def shared_u64_ids(value, scalar_ids):
+    ids = set()
+    if isinstance(value, dict):
+        encoded = value.get('Value')
+        if isinstance(encoded, list) and len(encoded) == 2:
+            reference = encoded[1].get('Ref') if isinstance(encoded[1], dict) else None
+            if (isinstance(reference, list) and len(reference) == 3
+                    and reference[1] in [{'Deduplicated': index} for index in scalar_ids]
+                    and reference[2] == 'Shared'):
+                ids.add(encoded[0])
+        for child in value.values():
+            ids.update(shared_u64_ids(child, scalar_ids))
+    elif isinstance(value, list):
+        for child in value:
+            ids.update(shared_u64_ids(child, scalar_ids))
+    return ids
+
+
+def check_scalar_closure(declaration, captures, reference_ids):
+    fields = (declaration['kind'].get('Struct', [])
+              if declaration and isinstance(declaration['kind'], dict) else [])
+    if len(fields) != captures:
+        raise ValueError('closure capture alias differs from frozen scalar references')
+    for index, field in enumerate(fields):
+        ty = field['ty']
+        encoded_id = ty.get('Deduplicated')
+        if encoded_id is None and isinstance(ty.get('Value'), list) and len(ty['Value']) == 2:
+            encoded_id = ty['Value'][0]
+        if field['name'] != f'_{index}' or encoded_id not in reference_ids:
+            raise ValueError('closure capture alias differs from frozen scalar references')
 
 
 def drop_glue_name(declaration):
@@ -358,11 +411,15 @@ def check(root, llbc, inventory):
     type_declarations = declaration_map(llbc['translated']['type_decls'])
     own_types = set()
     u64_ids = scalar_u64_ids(llbc)
+    reference_ids = shared_u64_ids(llbc, u64_ids)
     for entry in types:
         declaration = type_declarations.get(entry['def_id'])
         if owned_name(entry['rust_name']):
             alias = entry['rust_name'] in U64_NEWTYPE_ALIASES
-            if alias:
+            closure = entry['rust_name'] in SCALAR_CLOSURE_ALIASES
+            if closure:
+                check_scalar_closure(declaration, SCALAR_CLOSURE_ALIASES[entry['rust_name']], reference_ids)
+            elif alias:
                 fields = (declaration['kind'].get('Struct', [])
                           if declaration and isinstance(declaration['kind'], dict) else [])
                 if (len(fields) != 1 or fields[0]['name'] != '_0'
@@ -373,7 +430,7 @@ def check(root, llbc, inventory):
                     or entry['def_id'] not in ordered_ids(llbc, 'Type')
                     or entry['lean_file'] != TYPE_FILE
                     or not has_definition(root, TYPE_FILE, entry['lean_name'],
-                        'def' if alias else 'structure|inductive')):
+                        'def' if alias or closure else 'structure|inductive')):
                 raise ValueError(f'owned type definition missing: {entry["rust_name"]}')
             own_types.add(entry['def_id'])
         elif (declaration is None or declaration['kind'] != 'Opaque'

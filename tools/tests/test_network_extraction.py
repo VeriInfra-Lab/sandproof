@@ -60,13 +60,23 @@ class NetworkExtractionTests(unittest.TestCase):
             check(ROOT, self.llbc, inventory)
 
     def test_current_state_and_input_roots_cannot_disappear(self):
-        for name in ('runtime_crash', 'runtime_recover', 'slot_transition', 'runtime', 'controller_input'):
+        for name in ('runtime_crash', 'runtime_recover', 'slot_transition', 'runtime', 'controller_input', 'create'):
             with self.subTest(root=name):
                 inventory = copy.deepcopy(self.inventory)
                 inventory['functions'] = [function for function in inventory['functions']
                     if function['rust_name'] != f'sandproof_network_extract::{name}']
                 with self.assertRaisesRegex(ValueError, 'root was not generated'):
                     check(ROOT, self.llbc, inventory)
+
+    def test_creation_scalar_closure_cannot_hide_a_different_capture(self):
+        llbc = copy.deepcopy(self.llbc)
+        closure = next(entry for entry in self.inventory['types']
+                       if entry['rust_name'] == 'sandbox_controller_core::maintenance::fresh_identity::{closure}')
+        declaration = next(entry for entry in llbc['translated']['type_decls']
+                           if entry and entry['def_id'] == closure['def_id'])
+        declaration['kind']['Struct'][0]['ty'] = {'Deduplicated': -1}
+        with self.assertRaisesRegex(ValueError, 'closure capture alias'):
+            check(ROOT, llbc, self.inventory)
 
     def test_owned_body_missing_and_opacity_are_rejected(self):
         inventory = copy.deepcopy(self.inventory)

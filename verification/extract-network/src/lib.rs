@@ -82,3 +82,11 @@ pub fn runtime(
 ) -> Result<RuntimeDecision, RuntimeReject> {
     sandbox_controller_core::recovery_monitor::handle_runtime(world, input)
 }
+
+/// The production creation handler, including its ordered admission checks.
+pub fn create(
+    world: &World,
+    input: sandbox_controller_core::request::CreateRequest,
+) -> Result<sandbox_controller_core::request::Decision, sandbox_controller_core::request::Reject> {
+    sandbox_controller_core::request::handle_create(world, input)
+}

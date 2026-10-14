@@ -1318,6 +1318,146 @@ inductive sandbox_controller_core.maintenance.slots.SlotReject where
 | StaleIdentity : sandbox_controller_core.maintenance.slots.SlotReject
 | IdentityAlreadyBound : sandbox_controller_core.maintenance.slots.SlotReject
 
+/-- [sandbox_controller_core::maintenance::fresh_identity::{closure}]
+    Source: './controller-core/src/maintenance.rs', lines 129:42-129:49
+    Name pattern: [sandbox_controller_core::maintenance::fresh_identity::closure] -/
+@[rust_type "sandbox_controller_core::maintenance::fresh_identity::closure"]
+def sandbox_controller_core.maintenance.fresh_identity.closure :=
+  Std.U64 × Std.U64
+
+/-- [sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure#1}]
+    Source: './controller-core/src/maintenance.rs', lines 133:28-133:34
+    Name pattern: [sandbox_controller_core::maintenance::fresh_identity::closure::closure#1] -/
+@[reducible, rust_type
+  "sandbox_controller_core::maintenance::fresh_identity::closure::closure#1"]
+def sandbox_controller_core.maintenance.fresh_identity.closure.closure_1 :=
+  Std.U64
+
+/-- [sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure}]
+    Source: './controller-core/src/maintenance.rs', lines 130:42-130:48
+    Name pattern: [sandbox_controller_core::maintenance::fresh_identity::closure::closure] -/
+@[reducible, rust_type
+  "sandbox_controller_core::maintenance::fresh_identity::closure::closure"]
+def sandbox_controller_core.maintenance.fresh_identity.closure.closure :=
+  Std.U64
+
+/-- [sandbox_controller_core::model::Event]
+    Source: './controller-core/src/model.rs', lines 560:0-560:14
+    Name pattern: [sandbox_controller_core::model::Event]
+    Visibility: public -/
+@[discriminant isize, rust_type "sandbox_controller_core::model::Event"]
+inductive sandbox_controller_core.model.Event where
+| AcceptCreate :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.TenantId →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.FsId →
+  sandbox_controller_core.model.FilePolicyRef →
+  sandbox_controller_core.model.NetworkPolicy →
+  sandbox_controller_core.ids.OperationId →
+  sandbox_controller_core.model.Event
+| AcceptPause :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.OperationId →
+  sandbox_controller_core.model.Event
+| AcceptResume :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.OperationId →
+  sandbox_controller_core.model.Event
+| AcceptKill :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.OperationId →
+  sandbox_controller_core.model.Event
+| RetryOperation :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.OperationId →
+  sandbox_controller_core.model.OperationKind →
+  sandbox_controller_core.model.OperationInput →
+  sandbox_controller_core.model.Event
+| QueryOperation :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.OperationId →
+  sandbox_controller_core.model.OperationStatus →
+  Option sandbox_controller_core.model.OperationResult →
+  sandbox_controller_core.model.Event
+| BeginCompensation :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.model.FailureKind →
+  sandbox_controller_core.model.Event
+| ReserveStartupResources :
+  sandbox_controller_core.model.OperationKey →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.model.Event
+| ReservePauseSnapshot :
+  sandbox_controller_core.model.OperationKey →
+  sandbox_controller_core.ids.SnapshotId →
+  sandbox_controller_core.model.SnapshotManifestRef →
+  sandbox_controller_core.model.Event
+| DispatchPrepare :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.ids.NetSlotId →
+  Option sandbox_controller_core.model.RestoreSource →
+  sandbox_controller_core.model.Event
+| ScheduleSealSnapshot :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.SnapshotId →
+  sandbox_controller_core.model.SnapshotManifestRef →
+  sandbox_controller_core.model.Event
+| ScheduleCommitSnapshot :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.SnapshotId →
+  sandbox_controller_core.model.Event
+| ScheduleStopVm :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.model.Event
+| ScheduleAbortPrepare :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.model.Event
+| ScheduleCleanupVm :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.model.Event
+| ScheduleCleanupSlot :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.model.Event
+| DispatchEffect :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.Event
+| AcknowledgeEffect :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.EffectOutcome →
+  sandbox_controller_core.model.Event
+| EffectTimeout :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.Event
+| StartNextAttempt :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.Event
+| FinalizeEffectFailure :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.FailureKind →
+  sandbox_controller_core.model.Event
+| RetireActivation :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.Event
+
 /-- [sandbox_controller_core::recovery_monitor::RuntimeEvent]
     Source: './controller-core/src/recovery_monitor.rs', lines 15:0-15:21
     Name pattern: [sandbox_controller_core::recovery_monitor::RuntimeEvent]
@@ -1350,6 +1490,41 @@ inductive sandbox_controller_core.recovery_monitor.RuntimeReject where
 @[rust_type "sandbox_controller_core::recovery_monitor::RuntimeDecision"]
 structure sandbox_controller_core.recovery_monitor.RuntimeDecision where
   event : sandbox_controller_core.recovery_monitor.RuntimeEvent
+  next : sandbox_controller_core.model.World
+
+/-- [sandbox_controller_core::request::Reject]
+    Source: './controller-core/src/request.rs', lines 13:0-13:15
+    Name pattern: [sandbox_controller_core::request::Reject]
+    Visibility: public -/
+@[discriminant isize, rust_type "sandbox_controller_core::request::Reject"]
+inductive sandbox_controller_core.request.Reject where
+| ControllerDown : sandbox_controller_core.request.Reject
+| SandboxExists : sandbox_controller_core.request.Reject
+| SandboxNotFound : sandbox_controller_core.request.Reject
+| WorkspaceExists : sandbox_controller_core.request.Reject
+| OperationExists : sandbox_controller_core.request.Reject
+| OperationPlanExists : sandbox_controller_core.request.Reject
+| Unauthorized : sandbox_controller_core.request.Reject
+| WrongPhase : sandbox_controller_core.request.Reject
+| Terminal : sandbox_controller_core.request.Reject
+| NoCurrentVm : sandbox_controller_core.request.Reject
+| SnapshotUnavailable : sandbox_controller_core.request.Reject
+| OperationUnavailable : sandbox_controller_core.request.Reject
+| OperationNotCompensable : sandbox_controller_core.request.Reject
+| OperationAlreadyFinal : sandbox_controller_core.request.Reject
+| LedgerMismatch : sandbox_controller_core.request.Reject
+| FailureUnjustified : sandbox_controller_core.request.Reject
+| CounterExhausted : sandbox_controller_core.request.Reject
+| RetiredIdentity : sandbox_controller_core.request.Reject
+| ResultExpired : sandbox_controller_core.request.Reject
+
+/-- [sandbox_controller_core::request::Decision]
+    Source: './controller-core/src/request.rs', lines 36:0-36:19
+    Name pattern: [sandbox_controller_core::request::Decision]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::Decision"]
+structure sandbox_controller_core.request.Decision where
+  event : sandbox_controller_core.model.Event
   next : sandbox_controller_core.model.World
 
 end SandproofNetworkRust

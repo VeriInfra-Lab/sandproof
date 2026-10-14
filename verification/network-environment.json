@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "source_anchor": "882427adfae74ee3933244b3e5e3c983996e86a3",
+  "source_anchor": "a48b3a4fd6df83dbcb816d021832ebfd0f9e11d7",
   "source_identity": "verification/network-inputs.sha256",
   "target": "x86_64-unknown-linux-gnu",
   "artifact_destination": "verification/aeneas/llbc/sandproof_network.llbc",
@@ -19,7 +19,8 @@
     "runtime_recover",
     "slot_transition",
     "controller_input",
-    "runtime"
+    "runtime",
+    "create"
   ],
   "cfg": [
     "debug_assertions",
@@ -130,7 +131,9 @@
     "builtin Vec/tuple clone correspondence restricted to concrete owned value-preserving clone dictionaries; no arbitrary callback claim; physical allocation failure excluded from pure allocation model",
     "Borrowed Store::get retains first match; u64 tuple-newtype erasure is checked structurally; aliases do not imply validity or nonzero identities",
     "primitive bool PartialEq::ne returns exact inequality on both fixed compilers",
-    "Option PartialEq::eq compares constructors first and calls the provided equality exactly once only for Some/Some"
+    "Option PartialEq::eq compares constructors first and calls the provided equality exactly once only for Some/Some",
+    "Option::as_ref reuses the fixed V0 model; is_none_or returns true without a callback for None, calls the provided FnOnce exactly once for Some and propagates its result",
+    "Option::cloned delegates to the registered concrete clone model; unwrap_or_default invokes default only for None; Vec::default returns the empty logical vector"
   ],
   "excludes": [
     "proof of Rust standard library or compiler implementation",
@@ -152,19 +155,24 @@
       "ids::NetSlotId",
       "ids::VmId",
       "maintenance::MaintenanceState",
+      "maintenance::fresh_identity",
       "maintenance::slots::SlotReject",
       "maintenance::windows::WindowState",
       "model::Authority",
       "model::Command",
       "model::Endpoint",
+      "model::Event",
       "model::EffectId",
       "model::LogicalEffectId",
       "model::NetworkPolicy",
       "model::Operation",
       "model::OperationInput",
       "model::OperationLedgerRecord",
+      "model::OperationPlan",
       "model::OperationResult",
       "model::RestoreSource",
+      "model::SandboxRecord",
+      "model::World",
       "recovery_monitor::RuntimeEvent",
       "recovery_monitor::RuntimeInput",
       "request::CompensationRequest",

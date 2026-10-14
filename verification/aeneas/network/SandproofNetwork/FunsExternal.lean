@@ -1,4 +1,5 @@
 import SandproofNetwork.Types
+import SandproofFoundations.FunsExternal
 
 /-! Fixed standard-library models; correspondence to both reviewed Rust
 libraries is dependency A6-network-stdlib, not an internally proved fact.
@@ -92,5 +93,34 @@ def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
   | none, none => .ok true
   | some left, some right => dictionary.eq left right
   | _, _ => .ok false
+
+/- Minimal library bindings for real creation. Generic laws remain V0's
+   responsibility; the fixed Rust sources and A6 register these semantics. -/
+@[simp, rust_fun "core::option::{core::option::Option<@T>}::as_ref"]
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  SandproofFoundationsRust.core.option.Option.as_ref value
+
+@[simp, rust_fun "core::option::{core::option::Option<@T>}::is_none_or"]
+def core.option.Option.is_none_or {T C : Type}
+    (dictionary : core.ops.function.FnOnce C T Bool) (value : Option T) (closure : C) : Result Bool :=
+  match value with
+  | none => .ok true
+  | some item => dictionary.call_once closure item
+
+@[simp, rust_fun "core::option::{core::option::Option<@T>}::unwrap_or_default"]
+def core.option.Option.unwrap_or_default {T : Type} (dictionary : core.default.Default T)
+    (value : Option T) : Result T :=
+  match value with
+  | some item => .ok item
+  | none => dictionary.default
+
+@[simp, rust_fun "core::option::{core::option::Option<&'0 @T>}::cloned"]
+def core.option.OptionShared0T.cloned {T : Type} (dictionary : core.clone.Clone T)
+    (value : Option T) : Result (Option T) :=
+  core.option.Option.Insts.CoreCloneClone.clone dictionary value
+
+@[simp, rust_fun "alloc::vec::{core::default::Default<alloc::vec::Vec<@T>>}::default"]
+def alloc.vec.Vec.Insts.CoreDefaultDefault.default (T : Type) : Result (alloc.vec.Vec T) :=
+  .ok (alloc.vec.Vec.new T)
 
 end SandproofNetworkRust

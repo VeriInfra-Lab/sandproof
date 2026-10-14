@@ -133,3 +133,26 @@ import SandboxModel.ProofAuditCommand
 #audit_controller_proof SandboxModel.Local.CurrentRuntime.root_accepted_frame
 #audit_controller_proof SandboxModel.Local.CurrentRuntime.model_crash_recover_roundtrip
 #audit_controller_proof SandboxModel.Local.CurrentRuntime.model_duplicate_never_updates
+
+#audit_controller_proof SandboxModel.Local.Creation.check_accepts_iff
+#audit_controller_proof SandboxModel.Local.Creation.rejects_iff
+#audit_controller_proof SandboxModel.Local.Creation.accepts_iff
+#audit_controller_proof SandboxModel.Local.Creation.accepted_exact
+#audit_controller_proof SandboxModel.Local.Creation.begin_sandbox
+#audit_controller_proof SandboxModel.Local.Creation.create_closed
+#audit_controller_proof SandboxModel.Local.Creation.begin_frame
+#audit_controller_proof SandboxModel.Local.Creation.begin_maintenance_frame
+#audit_controller_proof SandboxModel.Local.Creation.begin_filesystem
+#audit_controller_proof SandboxModel.Local.Creation.begin_ledger
+#audit_controller_proof SandboxModel.Local.Creation.begin_plan
+#audit_controller_proof SandboxModel.Local.Creation.operation_equality_lawful
+#audit_controller_proof SandboxModel.Local.Creation.authorization_exact
+#audit_controller_proof SandboxModel.Local.Creation.workspace_equality_lawful
+#audit_controller_proof SandboxModel.Local.Creation.fresh_identity_exact
+#audit_controller_proof SandboxModel.Local.Creation.guards_exact
+#audit_controller_proof SandboxModel.Local.Creation.reject_value_injective
+#audit_controller_proof SandboxModel.Local.Creation.root_rejection_iff
+#audit_controller_proof SandboxModel.Local.Creation.root_rejection_has_model_reason
+#audit_controller_proof SandboxModel.Local.Creation.root_rejection_represented
+#audit_controller_proof SandboxModel.Local.Creation.root_success_after_update
+#audit_controller_proof SandboxModel.Local.Creation.initial_admission_realizable

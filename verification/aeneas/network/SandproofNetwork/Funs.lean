@@ -2145,20 +2145,6 @@ impl_def sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId :
     sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId
 }
 
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}]
-    Source: './controller-core/src/ids.rs', lines 3:37-3:46
-    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>] -/
-@[reducible, rust_trait_impl
-  "core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>"]
-impl_def sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
-  : core.cmp.PartialEq sandbox_controller_core.ids.NetSlotId
-  sandbox_controller_core.ids.NetSlotId := {
-  eq :=
-    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
-}
-
 /-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::FsId> for sandbox_controller_core::ids::FsId}::eq]:
     Source: './controller-core/src/ids.rs', lines 3:37-3:46
     Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::FsId, sandbox_controller_core::ids::FsId>}::eq]
@@ -2183,6 +2169,20 @@ impl_def sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId :
   eq := sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq
   ne := core.cmp.PartialEq.ne.trait_default
     sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}]
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>"]
+impl_def sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+  : core.cmp.PartialEq sandbox_controller_core.ids.NetSlotId
+  sandbox_controller_core.ids.NetSlotId := {
+  eq :=
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
 }
 
 /-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}::eq]:
@@ -2212,6 +2212,20 @@ impl_def
   ne := core.cmp.PartialEq.ne.trait_default
     sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
 }
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::OperationId> for sandbox_controller_core::ids::OperationId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::OperationId, sandbox_controller_core::ids::OperationId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::OperationId, sandbox_controller_core::ids::OperationId>}::eq"]
+def
+  sandbox_controller_core.ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq
+  (self : sandbox_controller_core.ids.OperationId)
+  (other : sandbox_controller_core.ids.OperationId) :
+  Result Bool
+  := do
+  ok (self = other)
 
 /-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest> for sandbox_controller_core::ids::PolicyDigest}::eq]:
     Source: './controller-core/src/ids.rs', lines 3:37-3:46
@@ -2503,6 +2517,139 @@ def sandbox_controller_core.maintenance.slots.reduce_slot
         (core.convert.FromSame
         sandbox_controller_core.maintenance.slots.SlotReject) residual
 
+/-- [sandbox_controller_core::maintenance::fresh_identity::{closure}::{impl core::ops::function::FnOnce<(u64,), bool> for sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure#1}<'_0>}::call_once]:
+    Source: './controller-core/src/maintenance.rs', lines 133:28-133:34
+    Name pattern: [sandbox_controller_core::maintenance::fresh_identity::closure::{core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure#1<'0>, (u64), bool>}::call_once] -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::fresh_identity::closure::{core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure#1<'0>, (u64), bool>}::call_once"]
+def
+  sandbox_controller_core.maintenance.fresh_identity.closure.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+  (c : sandbox_controller_core.maintenance.fresh_identity.closure.closure_1)
+  (tupled_args : Std.U64) :
+  Result Bool
+  := do
+  ok (c > tupled_args)
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::fresh_identity::{closure}::{impl core::ops::function::FnOnce<(u64,), bool> for sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure#1}<'_0>}]
+    Source: './controller-core/src/maintenance.rs', lines 133:28-133:34
+    Name pattern: [core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure#1<'0>, (u64), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure#1<'0>, (u64), bool>"]
+def
+  sandbox_controller_core.maintenance.fresh_identity.closure.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64Bool
+  : core.ops.function.FnOnce
+  sandbox_controller_core.maintenance.fresh_identity.closure.closure_1 Std.U64
+  Bool := {
+  call_once :=
+    sandbox_controller_core.maintenance.fresh_identity.closure.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+}
+
+/-- [sandbox_controller_core::maintenance::fresh_identity::{closure}::{impl core::ops::function::FnOnce<(u64,), bool> for sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure}<'_0>}::call_once]:
+    Source: './controller-core/src/maintenance.rs', lines 130:42-130:48
+    Name pattern: [sandbox_controller_core::maintenance::fresh_identity::closure::{core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure<'0>, (u64), bool>}::call_once] -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::fresh_identity::closure::{core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure<'0>, (u64), bool>}::call_once"]
+def
+  sandbox_controller_core.maintenance.fresh_identity.closure.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+  (c : sandbox_controller_core.maintenance.fresh_identity.closure.closure)
+  (tupled_args : Std.U64) :
+  Result Bool
+  := do
+  ok (c > tupled_args)
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::fresh_identity::{closure}::{impl core::ops::function::FnOnce<(u64,), bool> for sandbox_controller_core::maintenance::fresh_identity::{closure}::{closure}<'_0>}]
+    Source: './controller-core/src/maintenance.rs', lines 130:42-130:48
+    Name pattern: [core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure<'0>, (u64), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure::closure<'0>, (u64), bool>"]
+def
+  sandbox_controller_core.maintenance.fresh_identity.closure.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool
+  : core.ops.function.FnOnce
+  sandbox_controller_core.maintenance.fresh_identity.closure.closure Std.U64
+  Bool := {
+  call_once :=
+    sandbox_controller_core.maintenance.fresh_identity.closure.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+}
+
+/-- [sandbox_controller_core::maintenance::fresh_identity::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::maintenance::MaintenanceState,), bool> for sandbox_controller_core::maintenance::fresh_identity::{closure}<'_0, '_1>}::call_once]:
+    Source: './controller-core/src/maintenance.rs', lines 129:42-129:49
+    Name pattern: [sandbox_controller_core::maintenance::fresh_identity::{core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure<'0, '1>, (&'_ sandbox_controller_core::maintenance::MaintenanceState), bool>}::call_once] -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::fresh_identity::{core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure<'0, '1>, (&'_ sandbox_controller_core::maintenance::MaintenanceState), bool>}::call_once"]
+def
+  sandbox_controller_core.maintenance.fresh_identity.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool.call_once
+  (c : sandbox_controller_core.maintenance.fresh_identity.closure)
+  (tupled_args : sandbox_controller_core.maintenance.MaintenanceState) :
+  Result Bool
+  := do
+  let (i, i1) := c
+  let b ←
+    core.option.Option.is_none_or
+      sandbox_controller_core.maintenance.fresh_identity.closure.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool
+      tupled_args.sandbox_frontier i
+  if b
+  then
+    core.option.Option.is_none_or
+      sandbox_controller_core.maintenance.fresh_identity.closure.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64Bool
+      tupled_args.workspace_frontier i1
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::fresh_identity::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::maintenance::MaintenanceState,), bool> for sandbox_controller_core::maintenance::fresh_identity::{closure}<'_0, '_1>}]
+    Source: './controller-core/src/maintenance.rs', lines 129:42-129:49
+    Name pattern: [core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure<'0, '1>, (&'_ sandbox_controller_core::maintenance::MaintenanceState), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandbox_controller_core::maintenance::fresh_identity::closure<'0, '1>, (&'_ sandbox_controller_core::maintenance::MaintenanceState), bool>"]
+def
+  sandbox_controller_core.maintenance.fresh_identity.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool
+  : core.ops.function.FnOnce
+  sandbox_controller_core.maintenance.fresh_identity.closure
+  sandbox_controller_core.maintenance.MaintenanceState Bool := {
+  call_once :=
+    sandbox_controller_core.maintenance.fresh_identity.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool.call_once
+}
+
+/-- [sandbox_controller_core::maintenance::fresh_identity]:
+    Source: './controller-core/src/maintenance.rs', lines 128:0-128:88
+    Name pattern: [sandbox_controller_core::maintenance::fresh_identity] -/
+@[rust_fun "sandbox_controller_core::maintenance::fresh_identity"]
+def sandbox_controller_core.maintenance.fresh_identity
+  (world : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (workspace : sandbox_controller_core.ids.FsId) :
+  Result Bool
+  := do
+  let o ← core.option.Option.as_ref world.maintenance
+  core.option.Option.is_none_or
+    sandbox_controller_core.maintenance.fresh_identity.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool
+    o (sandbox, workspace)
+
+/-- [sandbox_controller_core::maintenance::record_identity]:
+    Source: './controller-core/src/maintenance.rs', lines 137:0-137:85
+    Name pattern: [sandbox_controller_core::maintenance::record_identity] -/
+@[rust_fun "sandbox_controller_core::maintenance::record_identity"]
+def sandbox_controller_core.maintenance.record_identity
+  (world : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (workspace : sandbox_controller_core.ids.FsId) :
+  Result sandbox_controller_core.model.World
+  := do
+  match world.maintenance with
+  | none => ok world
+  | some state =>
+    ok
+      {
+        world
+          with
+          maintenance :=
+            (some
+              {
+                state
+                  with
+                  sandbox_frontier := (some sandbox),
+                  workspace_frontier := (some workspace)
+              })
+      }
+
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}::eq]:
     Source: './controller-core/src/model.rs', lines 48:29-48:38
     Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef, sandbox_controller_core::model::FilePolicyRef>}::eq]
@@ -2598,6 +2745,22 @@ impl_def
   ne := core.cmp.PartialEq.ne.trait_default
     sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource
 }
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}::eq]:
+    Source: './controller-core/src/model.rs', lines 171:29-171:38
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::OperationKind, sandbox_controller_core::model::OperationKind>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::OperationKind, sandbox_controller_core::model::OperationKind>}::eq"]
+def
+  sandbox_controller_core.model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
+  (self : sandbox_controller_core.model.OperationKind)
+  (other : sandbox_controller_core.model.OperationKind) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Command> for sandbox_controller_core::model::Command}::eq]:
     Source: './controller-core/src/model.rs', lines 228:23-228:32
@@ -3114,6 +3277,71 @@ def sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq
         else ok false
   else ok false
 
+/-- [sandbox_controller_core::model::{sandbox_controller_core::model::Command}::sandbox]:
+    Source: './controller-core/src/model.rs', lines 314:4-314:44
+    Name pattern: [sandbox_controller_core::model::{sandbox_controller_core::model::Command}::sandbox]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{sandbox_controller_core::model::Command}::sandbox"]
+def sandbox_controller_core.model.Command.sandbox
+  (self : sandbox_controller_core.model.Command) :
+  Result sandbox_controller_core.ids.SandboxId
+  := do
+  match self with
+  | sandbox_controller_core.model.Command.InstallFence sandbox _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.PrepareVm sandbox _ _ _ _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.ConfigureNetwork sandbox _ _ _ _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.ActivateVm sandbox _ _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.FreezeVm sandbox _ _ _ => ok sandbox
+  | sandbox_controller_core.model.Command.ApplyFilePolicy sandbox _ _ _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.SealSnapshot sandbox _ _ _ _ _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.CommitSnapshot sandbox _ _ _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.StopVm sandbox _ _ _ => ok sandbox
+  | sandbox_controller_core.model.Command.AbortPrepare sandbox _ _ _ _ =>
+    ok sandbox
+  | sandbox_controller_core.model.Command.CleanupVm sandbox _ _ => ok sandbox
+  | sandbox_controller_core.model.Command.CleanupSlot sandbox _ _ => ok sandbox
+
+/-- [sandbox_controller_core::model::{sandbox_controller_core::model::Command}::epoch]:
+    Source: './controller-core/src/model.rs', lines 332:4-332:46
+    Name pattern: [sandbox_controller_core::model::{sandbox_controller_core::model::Command}::epoch]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{sandbox_controller_core::model::Command}::epoch"]
+def sandbox_controller_core.model.Command.epoch
+  (self : sandbox_controller_core.model.Command) :
+  Result (Option Std.U64)
+  := do
+  match self with
+  | sandbox_controller_core.model.Command.InstallFence _ epoch _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.PrepareVm _ epoch _ _ _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.ConfigureNetwork _ epoch _ _ _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.ActivateVm _ epoch _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.FreezeVm _ epoch _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.ApplyFilePolicy _ epoch _ _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.SealSnapshot _ epoch _ _ _ _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.CommitSnapshot _ epoch _ _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.StopVm _ epoch _ _ => ok (some epoch)
+  | sandbox_controller_core.model.Command.AbortPrepare _ epoch _ _ _ =>
+    ok (some epoch)
+  | sandbox_controller_core.model.Command.CleanupVm _ _ _ => ok none
+  | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => ok none
+
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}::eq]:
     Source: './controller-core/src/model.rs', lines 349:23-349:32
     Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId, sandbox_controller_core::model::LogicalEffectId>}::eq]
@@ -3128,6 +3356,21 @@ def
   := do
   sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq
     self.command other.command
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}]
+    Source: './controller-core/src/model.rs', lines 349:23-349:32
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId, sandbox_controller_core::model::LogicalEffectId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId, sandbox_controller_core::model::LogicalEffectId>"]
+impl_def
+  sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+  : core.cmp.PartialEq sandbox_controller_core.model.LogicalEffectId
+  sandbox_controller_core.model.LogicalEffectId := {
+  eq :=
+    sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+}
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}::eq]:
     Source: './controller-core/src/model.rs', lines 355:23-355:32
@@ -3159,6 +3402,85 @@ impl_def sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
     sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
   ne := core.cmp.PartialEq.ne.trait_default
     sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+}
+
+/-- [sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::initial]:
+    Source: './controller-core/src/model.rs', lines 364:4-364:44
+    Name pattern: [sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::initial]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::initial"]
+def sandbox_controller_core.model.EffectId.initial
+  (command : sandbox_controller_core.model.Command) :
+  Result sandbox_controller_core.model.EffectId
+  := do
+  ok { logical := { command }, attempt := 0#u64 }
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKey> for sandbox_controller_core::model::OperationKey}::eq]:
+    Source: './controller-core/src/model.rs', lines 406:29-406:38
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::OperationKey, sandbox_controller_core::model::OperationKey>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::OperationKey, sandbox_controller_core::model::OperationKey>}::eq"]
+def
+  sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
+  (self : sandbox_controller_core.model.OperationKey)
+  (other : sandbox_controller_core.model.OperationKey) :
+  Result Bool
+  := do
+  let b ←
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+      self.sandbox other.sandbox
+  if b
+  then
+    sandbox_controller_core.ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq
+      self.operation other.operation
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKey> for sandbox_controller_core::model::OperationKey}]
+    Source: './controller-core/src/model.rs', lines 406:29-406:38
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::OperationKey, sandbox_controller_core::model::OperationKey>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::OperationKey, sandbox_controller_core::model::OperationKey>"]
+impl_def
+  sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+  : core.cmp.PartialEq sandbox_controller_core.model.OperationKey
+  sandbox_controller_core.model.OperationKey := {
+  eq :=
+    sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+}
+
+/-- [sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::ResourceIndex}::default]:
+    Source: './controller-core/src/model.rs', lines 429:23-429:30
+    Name pattern: [sandbox_controller_core::model::{core::default::Default<sandbox_controller_core::model::ResourceIndex>}::default]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::default::Default<sandbox_controller_core::model::ResourceIndex>}::default"]
+def
+  sandbox_controller_core.model.ResourceIndex.Insts.CoreDefaultDefault.default
+  : Result sandbox_controller_core.model.ResourceIndex := do
+  let v ←
+    alloc.vec.Vec.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.VmId
+  let v1 ←
+    alloc.vec.Vec.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.NetSlotId
+  let v2 ←
+    alloc.vec.Vec.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.SnapshotId
+  ok { vms := v, slots := v1, snapshots := v2 }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::ResourceIndex}]
+    Source: './controller-core/src/model.rs', lines 429:23-429:30
+    Name pattern: [core::default::Default<sandbox_controller_core::model::ResourceIndex>] -/
+@[reducible, rust_trait_impl
+  "core::default::Default<sandbox_controller_core::model::ResourceIndex>"]
+def sandbox_controller_core.model.ResourceIndex.Insts.CoreDefaultDefault :
+  core.default.Default sandbox_controller_core.model.ResourceIndex := {
+  default :=
+    sandbox_controller_core.model.ResourceIndex.Insts.CoreDefaultDefault.default
 }
 
 /-- [sandbox_controller_core::store::{impl core::default::Default for sandbox_controller_core::store::Store<K, V>}::default]:
@@ -3259,6 +3581,27 @@ def sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default
 def sandbox_controller_core.model.initial_world
   : Result sandbox_controller_core.model.World := do
   sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default
+
+/-- [sandbox_controller_core::model::{sandbox_controller_core::model::World}::resource_index]:
+    Source: './controller-core/src/model.rs', lines 772:4-772:69
+    Name pattern: [sandbox_controller_core::model::{sandbox_controller_core::model::World}::resource_index]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{sandbox_controller_core::model::World}::resource_index"]
+def sandbox_controller_core.model.World.resource_index
+  (self : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId) :
+  Result sandbox_controller_core.model.ResourceIndex
+  := do
+  let o ←
+    sandbox_controller_core.store.Store.get
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      self.resource_indexes sandbox
+  let o1 ←
+    core.option.OptionShared0T.cloned
+      sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone o
+  core.option.Option.unwrap_or_default
+    sandbox_controller_core.model.ResourceIndex.Insts.CoreDefaultDefault o1
 
 /-- [sandbox_controller_core::recovery_monitor::handle_controller_crash]:
     Source: './controller-core/src/recovery_monitor.rs', lines 42:0-42:87
@@ -3381,6 +3724,549 @@ def sandbox_controller_core.recovery_monitor.handle_runtime
     effect =>
     sandbox_controller_core.recovery_monitor.handle_duplicate_or_late_delivery
       world effect
+
+/-- [sandbox_controller_core::transition::operation_key]:
+    Source: './controller-core/src/transition.rs', lines 15:0-15:93
+    Name pattern: [sandbox_controller_core::transition::operation_key]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::operation_key"]
+def sandbox_controller_core.transition.operation_key
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (operation : sandbox_controller_core.ids.OperationId) :
+  Result sandbox_controller_core.model.OperationKey
+  := do
+  ok { sandbox, operation }
+
+/-- [sandbox_controller_core::transition::inferred_effect_origin]:
+    Source: './controller-core/src/transition.rs', lines 101:0-101:79
+    Name pattern: [sandbox_controller_core::transition::inferred_effect_origin]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::inferred_effect_origin"]
+def sandbox_controller_core.transition.inferred_effect_origin
+  (world : sandbox_controller_core.model.World)
+  (command : sandbox_controller_core.model.Command) :
+  Result sandbox_controller_core.model.EffectOrigin
+  := do
+  let sandbox ← sandbox_controller_core.model.Command.sandbox command
+  let o ← sandbox_controller_core.model.Command.epoch command
+  let o1 ←
+    sandbox_controller_core.store.Store.get
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      world.sandboxes sandbox
+  match o with
+  | none => ok (sandbox_controller_core.model.EffectOrigin.Maintenance sandbox)
+  | some epoch =>
+    match o1 with
+    | none =>
+      ok (sandbox_controller_core.model.EffectOrigin.Maintenance sandbox)
+    | some record =>
+      match record.current_operation with
+      | none =>
+        ok (sandbox_controller_core.model.EffectOrigin.Maintenance sandbox)
+      | some operation =>
+        if operation.epoch = epoch
+        then
+          let ok1 ←
+            sandbox_controller_core.transition.operation_key sandbox
+              operation.id
+          ok (sandbox_controller_core.model.EffectOrigin.Operation ok1)
+        else
+          ok (sandbox_controller_core.model.EffectOrigin.Maintenance sandbox)
+
+/-- [sandbox_controller_core::transition::insert_unique]: loop body 1:
+    Source: './controller-core/src/transition.rs', lines 35:4-38:5
+    Name pattern: [sandbox_controller_core::transition::insert_unique] -/
+@[rust_loop_body, rust_fun
+  "sandbox_controller_core::transition::insert_unique"]
+def sandbox_controller_core.transition.insert_unique_loop0_loop0.body
+  {T : Type} (corecloneCloneInst : core.clone.Clone T)
+  (values : alloc.vec.Vec T) (updated : alloc.vec.Vec T)
+  (old_index : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec T) × Std.Usize) (alloc.vec.Vec T))
+  := do
+  let i := alloc.vec.Vec.len values
+  if old_index < i
+  then
+    let t ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice T) values
+        old_index
+    let t1 ← corecloneCloneInst.clone t
+    let updated1 ← alloc.vec.Vec.push updated t1
+    let old_index1 ← old_index + 1#usize
+    ok (cont (updated1, old_index1))
+  else ok (done updated)
+
+/-- [sandbox_controller_core::transition::insert_unique]: loop 1:
+    Source: './controller-core/src/transition.rs', lines 35:4-38:5
+    Name pattern: [sandbox_controller_core::transition::insert_unique] -/
+@[rust_loop, rust_fun "sandbox_controller_core::transition::insert_unique"]
+def sandbox_controller_core.transition.insert_unique_loop0_loop0
+  {T : Type} (corecloneCloneInst : core.clone.Clone T)
+  (values : alloc.vec.Vec T) (updated : alloc.vec.Vec T)
+  (old_index : Std.Usize) :
+  Result (alloc.vec.Vec T)
+  := do
+  loop
+    (fun (updated1, old_index1) =>
+      sandbox_controller_core.transition.insert_unique_loop0_loop0.body
+      corecloneCloneInst values updated1 old_index1)
+    (updated, old_index)
+
+/-- [sandbox_controller_core::transition::insert_unique]: loop body 0:
+    Source: './controller-core/src/transition.rs', lines 26:4-40:1
+    Name pattern: [sandbox_controller_core::transition::insert_unique] -/
+@[rust_loop_body, rust_fun
+  "sandbox_controller_core::transition::insert_unique"]
+def sandbox_controller_core.transition.insert_unique_loop0.body
+  {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
+  core.cmp.PartialEq T T) (values : alloc.vec.Vec T) (value : T)
+  (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (alloc.vec.Vec T))
+  := do
+  let i := alloc.vec.Vec.len values
+  if index < i
+  then
+    let t ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice T) values
+        index
+    let b ← corecmpPartialEqInst.eq t value
+    if b
+    then ok (done values)
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else
+    let updated ← alloc.vec.Vec.push (alloc.vec.Vec.new T) value
+    let updated1 ←
+      sandbox_controller_core.transition.insert_unique_loop0_loop0
+        corecloneCloneInst values updated 0#usize
+    ok (done updated1)
+
+/-- [sandbox_controller_core::transition::insert_unique]: loop 0:
+    Source: './controller-core/src/transition.rs', lines 26:4-40:1
+    Name pattern: [sandbox_controller_core::transition::insert_unique] -/
+@[rust_loop, rust_fun "sandbox_controller_core::transition::insert_unique"]
+def sandbox_controller_core.transition.insert_unique_loop0
+  {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
+  core.cmp.PartialEq T T) (values : alloc.vec.Vec T) (value : T)
+  (index : Std.Usize) :
+  Result (alloc.vec.Vec T)
+  := do
+  loop
+    (fun index1 => sandbox_controller_core.transition.insert_unique_loop0.body
+      corecloneCloneInst corecmpPartialEqInst values value index1)
+    index
+
+/-- [sandbox_controller_core::transition::insert_unique]:
+    Source: './controller-core/src/transition.rs', lines 24:0-24:69
+    Name pattern: [sandbox_controller_core::transition::insert_unique] -/
+@[reducible, rust_fun "sandbox_controller_core::transition::insert_unique"]
+def sandbox_controller_core.transition.insert_unique
+  {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
+  core.cmp.PartialEq T T) (values : alloc.vec.Vec T) (value : T) :
+  Result (alloc.vec.Vec T)
+  := do
+  sandbox_controller_core.transition.insert_unique_loop0 corecloneCloneInst
+    corecmpPartialEqInst values value 0#usize
+
+/-- [sandbox_controller_core::transition::DEFAULT_RETRY_LIMIT]
+    Source: './controller-core/src/transition.rs', lines 12:0-12:34
+    Name pattern: [sandbox_controller_core::transition::DEFAULT_RETRY_LIMIT]
+    Visibility: public -/
+@[global_simps, irreducible, rust_const
+  "sandbox_controller_core::transition::DEFAULT_RETRY_LIMIT"]
+def sandbox_controller_core.transition.DEFAULT_RETRY_LIMIT : Std.U64 := 3#u64
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop body 0:
+    Source: './controller-core/src/store.rs', lines 38:8-46:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put]
+    Visibility: public -/
+@[rust_loop_body, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put"]
+def sandbox_controller_core.store.Store.put_loop.body
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) (value : V)
+  (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (alloc.vec.Vec (K × V)))
+  := do
+  let i := alloc.vec.Vec.len self.entries
+  if index < i
+  then
+    let (t, _) ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
+        self.entries index
+    let b ← corecmpPartialEqInst.eq t key
+    if b
+    then
+      let ((t1, _), index_mut_back) ←
+        alloc.vec.Vec.index_mut (core.slice.index.SliceIndexUsizeSlice (K ×
+          V)) self.entries index
+      let v := index_mut_back (t1, value)
+      ok (done v)
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else let v ← alloc.vec.Vec.push self.entries (key, value)
+       ok (done v)
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop 0:
+    Source: './controller-core/src/store.rs', lines 38:8-46:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put]
+    Visibility: public -/
+@[rust_loop, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put"]
+def sandbox_controller_core.store.Store.put_loop
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) (value : V)
+  (index : Std.Usize) :
+  Result (alloc.vec.Vec (K × V))
+  := do
+  loop
+    (fun index1 => sandbox_controller_core.store.Store.put_loop.body
+      corecmpPartialEqInst self key value index1)
+    index
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]:
+    Source: './controller-core/src/store.rs', lines 36:4-36:43
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put"]
+def sandbox_controller_core.store.Store.put
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) (value : V) :
+  Result (sandbox_controller_core.store.Store K V)
+  := do
+  let v ←
+    sandbox_controller_core.store.Store.put_loop corecmpPartialEqInst self key
+      value 0#usize
+  ok { entries := v }
+
+/-- [sandbox_controller_core::transition::commit_effect]:
+    Source: './controller-core/src/transition.rs', lines 112:0-112:57
+    Name pattern: [sandbox_controller_core::transition::commit_effect]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::commit_effect"]
+def sandbox_controller_core.transition.commit_effect
+  (world : sandbox_controller_core.model.World)
+  (command : sandbox_controller_core.model.Command) :
+  Result sandbox_controller_core.model.World
+  := do
+  let c ←
+    sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone command
+  let id ← sandbox_controller_core.model.EffectId.initial c
+  let b ←
+    sandbox_controller_core.store.Store.contains_key
+      sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+      world.effects id
+  if b
+  then ok world
+  else
+    let ei ←
+      sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone id
+    let s ←
+      sandbox_controller_core.store.Store.put
+        sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+        world.effects ei sandbox_controller_core.model.EffectStatus.Committed
+    let v ←
+      sandbox_controller_core.transition.insert_unique
+        sandbox_controller_core.model.EffectId.Insts.CoreCloneClone
+        sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+        world.effect_keys id
+    let b1 ←
+      sandbox_controller_core.store.Store.contains_key
+        sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+        world.logical_effects { command }
+    let s1 ←
+      if b1
+      then ok world.logical_effects
+      else
+        do
+        let origin ←
+          sandbox_controller_core.transition.inferred_effect_origin
+            { world with effect_keys := v, effects := s } command
+        sandbox_controller_core.store.Store.put
+          sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+          world.logical_effects { command }
+          ({
+             origin,
+             current_attempt := 0#u64,
+             remaining_retries :=
+               sandbox_controller_core.transition.DEFAULT_RETRY_LIMIT,
+             result := none
+           } : sandbox_controller_core.model.LogicalEffectRecord)
+    if b1
+    then
+      ok { world with logical_effects := s1, effect_keys := v, effects := s }
+    else
+      ok { world with logical_effects := s1, effect_keys := v, effects := s }
+
+/-- [sandbox_controller_core::transition::enqueue]:
+    Source: './controller-core/src/transition.rs', lines 136:0-136:51
+    Name pattern: [sandbox_controller_core::transition::enqueue]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::enqueue"]
+def sandbox_controller_core.transition.enqueue
+  (world : sandbox_controller_core.model.World)
+  (command : sandbox_controller_core.model.Command) :
+  Result sandbox_controller_core.model.World
+  := do
+  let c ←
+    sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone command
+  let id ← sandbox_controller_core.model.EffectId.initial c
+  let world1 ← sandbox_controller_core.transition.commit_effect world command
+  let v ←
+    sandbox_controller_core.transition.insert_unique
+      sandbox_controller_core.model.EffectId.Insts.CoreCloneClone
+      sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+      world1.inflight id
+  ok { world1 with inflight := v }
+
+/-- [sandbox_controller_core::transition::initial_operation_plan]:
+    Source: './controller-core/src/transition.rs', lines 43:0-48:18
+    Name pattern: [sandbox_controller_core::transition::initial_operation_plan]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::initial_operation_plan"]
+def sandbox_controller_core.transition.initial_operation_plan
+  (world : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (operation : sandbox_controller_core.model.Operation)
+  (input : sandbox_controller_core.model.OperationInput) :
+  Result sandbox_controller_core.model.OperationPlan
+  := do
+  let index ←
+    sandbox_controller_core.model.World.resource_index world sandbox
+  let generation ←
+    match input with
+    | sandbox_controller_core.model.OperationInput.Create _ _ _ => ok 1#u64
+    | sandbox_controller_core.model.OperationInput.Pause generation1 =>
+      ok generation1
+    | sandbox_controller_core.model.OperationInput.Resume _ =>
+      do
+      let o ←
+        sandbox_controller_core.store.Store.get
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+          world.sandboxes sandbox
+      match o with
+      | none => ok 0#u64
+      | some record => ok record.generation
+    | sandbox_controller_core.model.OperationInput.Kill generation1 =>
+      ok generation1
+  let restore_from ←
+    match input with
+    | sandbox_controller_core.model.OperationInput.Create _ _ _ => ok none
+    | sandbox_controller_core.model.OperationInput.Pause _ => ok none
+    | sandbox_controller_core.model.OperationInput.Resume source =>
+      ok (some source)
+    | sandbox_controller_core.model.OperationInput.Kill _ => ok none
+  let ok1 ←
+    sandbox_controller_core.transition.operation_key sandbox operation.id
+  let b ←
+    sandbox_controller_core.model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
+      operation.kind sandbox_controller_core.model.OperationKind.Kill
+  ok
+    {
+      key := ok1,
+      epoch := operation.epoch,
+      generation,
+      vm := none,
+      slot := none,
+      restore_from,
+      target_snapshot := none,
+      stop_vms := index.vms,
+      close_slots := index.slots,
+      retry_limit := sandbox_controller_core.transition.DEFAULT_RETRY_LIMIT,
+      sealed := b
+    }
+
+/-- [sandbox_controller_core::transition::store_new_operation]:
+    Source: './controller-core/src/transition.rs', lines 80:0-85:1
+    Name pattern: [sandbox_controller_core::transition::store_new_operation]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::store_new_operation"]
+def sandbox_controller_core.transition.store_new_operation
+  (world : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (operation : sandbox_controller_core.model.Operation)
+  (input : sandbox_controller_core.model.OperationInput) :
+  Result sandbox_controller_core.model.World
+  := do
+  let key ←
+    sandbox_controller_core.transition.operation_key sandbox operation.id
+  let plan ←
+    sandbox_controller_core.transition.initial_operation_plan world sandbox
+      operation input
+  let s ←
+    sandbox_controller_core.store.Store.put
+      sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+      world.operations key ({ sandbox, operation, input, result := none } :
+      sandbox_controller_core.model.OperationLedgerRecord)
+  let s1 ←
+    sandbox_controller_core.store.Store.put
+      sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+      world.operation_plans key plan
+  ok { world with operations := s, operation_plans := s1 }
+
+/-- [sandbox_controller_core::transition::begin_create]:
+    Source: './controller-core/src/transition.rs', lines 143:0-151:10
+    Name pattern: [sandbox_controller_core::transition::begin_create]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::begin_create"]
+def sandbox_controller_core.transition.begin_create
+  (world : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (owner : sandbox_controller_core.ids.TenantId)
+  (workspace : sandbox_controller_core.ids.FsId)
+  (file_policy : sandbox_controller_core.model.FilePolicyRef)
+  (policy : sandbox_controller_core.model.NetworkPolicy)
+  (operation_id : sandbox_controller_core.ids.OperationId) :
+  Result sandbox_controller_core.model.World
+  := do
+  let next ←
+    sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
+  let next1 ←
+    sandbox_controller_core.maintenance.record_identity next sandbox workspace
+  let np ←
+    sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+      policy
+  let s ←
+    sandbox_controller_core.store.Store.put
+      sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId
+      next1.filesystems workspace
+      ({ owner, sandbox, created_generation := 1#u64 } :
+      sandbox_controller_core.model.Filesystem)
+  let s1 ←
+    sandbox_controller_core.store.Store.put
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      next1.sandboxes sandbox
+      ({
+         owner,
+         phase := sandbox_controller_core.model.Phase.Starting,
+         terminal := false,
+         epoch := 1#u64,
+         generation := 1#u64,
+         current_vm := none,
+         workspace,
+         workspace_access :=
+           sandbox_controller_core.model.WorkspaceApiAccess.ManagedReadWrite,
+         file_policy,
+         durable_snapshot := none,
+         restore_from := none,
+         net_slot := none,
+         policy := np,
+         desired := sandbox_controller_core.model.Authority.Closed,
+         effective := sandbox_controller_core.model.Authority.Closed,
+         current_operation :=
+           (some
+             {
+               id := operation_id,
+               epoch := 1#u64,
+               kind := sandbox_controller_core.model.OperationKind.Create,
+               status := sandbox_controller_core.model.OperationStatus.Pending
+             })
+       } : sandbox_controller_core.model.SandboxRecord)
+  let next2 ←
+    sandbox_controller_core.transition.store_new_operation
+      { next1 with sandboxes := s1, filesystems := s } sandbox
+      {
+        id := operation_id,
+        epoch := 1#u64,
+        kind := sandbox_controller_core.model.OperationKind.Create,
+        status := sandbox_controller_core.model.OperationStatus.Pending
+      } (sandbox_controller_core.model.OperationInput.Create workspace policy
+      file_policy)
+  sandbox_controller_core.transition.enqueue next2
+    (sandbox_controller_core.model.Command.InstallFence sandbox 1#u64 false)
+
+/-- [sandbox_controller_core::request::handle_create]:
+    Source: './controller-core/src/request.rs', lines 200:0-200:85
+    Name pattern: [sandbox_controller_core::request::handle_create]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::request::handle_create"]
+def sandbox_controller_core.request.handle_create
+  (world : sandbox_controller_core.model.World)
+  (input : sandbox_controller_core.request.CreateRequest) :
+  Result (core.result.Result sandbox_controller_core.request.Decision
+    sandbox_controller_core.request.Reject)
+  := do
+  if world.controller_up
+  then
+    let b ←
+      sandbox_controller_core.store.Store.contains_key
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        world.sandboxes input.sandbox
+    if b
+    then
+      ok (core.result.Result.Err
+        sandbox_controller_core.request.Reject.SandboxExists)
+    else
+      let b1 ←
+        sandbox_controller_core.store.Store.contains_key
+          sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId
+          world.filesystems input.workspace
+      if b1
+      then
+        ok (core.result.Result.Err
+          sandbox_controller_core.request.Reject.WorkspaceExists)
+      else
+        let key ←
+          sandbox_controller_core.transition.operation_key input.sandbox
+            input.operation
+        let b2 ←
+          sandbox_controller_core.store.Store.contains_key
+            sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+            world.operations key
+        if b2
+        then
+          ok (core.result.Result.Err
+            sandbox_controller_core.request.Reject.OperationExists)
+        else
+          let b3 ←
+            sandbox_controller_core.store.Store.contains_key
+              sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+              world.operation_plans key
+          if b3
+          then
+            ok (core.result.Result.Err
+              sandbox_controller_core.request.Reject.OperationPlanExists)
+          else
+            let b4 ←
+              sandbox_controller_core.transition.authorized input.actor
+                input.owner
+            if b4
+            then
+              let b5 ←
+                sandbox_controller_core.maintenance.fresh_identity world
+                  input.sandbox input.workspace
+              if b5
+              then
+                let np ←
+                  sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+                    input.policy
+                let w ←
+                  sandbox_controller_core.transition.begin_create world
+                    input.sandbox input.owner input.workspace input.file_policy
+                    input.policy input.operation
+                ok (core.result.Result.Ok
+                  {
+                    event :=
+                      (sandbox_controller_core.model.Event.AcceptCreate
+                        input.actor
+                        input.owner
+                        input.sandbox
+                        input.workspace
+                        input.file_policy
+                        np
+                        input.operation),
+                    next := w
+                  })
+              else
+                ok (core.result.Result.Err
+                  sandbox_controller_core.request.Reject.RetiredIdentity)
+            else
+              ok (core.result.Result.Err
+                sandbox_controller_core.request.Reject.Unauthorized)
+  else
+    ok (core.result.Result.Err
+      sandbox_controller_core.request.Reject.ControllerDown)
 
 /-- [sandproof_network_extract::cidr_contains]:
     Source: 'src/lib.rs', lines 9:0-11:1
@@ -3521,5 +4407,16 @@ def runtime
     sandbox_controller_core.recovery_monitor.RuntimeReject)
   := do
   sandbox_controller_core.recovery_monitor.handle_runtime world input
+
+/-- [sandproof_network_extract::create]:
+    Source: 'src/lib.rs', lines 87:0-92:1
+    Visibility: public -/
+def create
+  (world : sandbox_controller_core.model.World)
+  (input : sandbox_controller_core.request.CreateRequest) :
+  Result (core.result.Result sandbox_controller_core.request.Decision
+    sandbox_controller_core.request.Reject)
+  := do
+  sandbox_controller_core.request.handle_create world input
 
 end SandproofNetworkRust
