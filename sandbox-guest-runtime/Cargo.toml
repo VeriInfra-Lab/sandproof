@@ -8,6 +8,11 @@ rust-version.workspace = true
 [features]
 sdk-contract-tests = []
 
+[dependencies]
+crc32fast = "=1.5.2"
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
+time = "=0.3.44"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 base64 = "=0.22.1"
 sandproof-guest-core = { path = "../sandbox-guest-core" }
@@ -15,7 +20,6 @@ rustix = { version = "=1.1.5", features = ["process", "net", "thread", "fs", "pt
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.142"
 tempfile = "=3.23.0"
-time = "=0.3.44"
 tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]

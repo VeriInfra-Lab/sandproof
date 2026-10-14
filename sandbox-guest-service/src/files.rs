@@ -20,6 +20,7 @@ pub struct FileContextLimits {
     pub authorization_bytes: usize,
 }
 
+#[derive(Clone)]
 pub struct FileSettings {
     pub daemon_workdir: String,
     pub limits: FileContextLimits,
@@ -62,6 +63,79 @@ pub struct HttpFileContext {
     pub path: String,
 }
 
+/// One account/default snapshot for a sequential HTTP upload. The dispatcher
+/// must keep the exact original authorization alive; this is not a credential.
+pub struct HttpFileSelection {
+    account: Account,
+    workdir: Option<String>,
+    settings: FileSettings,
+}
+
+pub(crate) enum SelectionError {
+    UnknownUser(crate::upload_response::UnknownUser),
+    Context(ContextError),
+}
+impl From<ContextError> for SelectionError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<SelectionError> for ContextError {
+    fn from(error: SelectionError) -> Self {
+        match error {
+            SelectionError::UnknownUser(_) => Self::Unauthenticated,
+            SelectionError::Context(error) => error,
+        }
+    }
+}
+
+pub(crate) enum PathError {
+    Expansion(crate::upload_response::PathExpansion),
+    Context(ContextError),
+}
+impl From<ContextError> for PathError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<PathError> for ContextError {
+    fn from(error: PathError) -> Self {
+        match error {
+            PathError::Expansion(_) => Self::InvalidArgument,
+            PathError::Context(error) => error,
+        }
+    }
+}
+
+impl HttpFileSelection {
+    pub(crate) fn check_input(&self, path: &str) -> Result<(), ContextError> {
+        check_path_size(path, &self.settings)
+    }
+
+    /// Resolve an already decoded full filename (not its basename).
+    /// # Errors
+    /// Invalid or oversized paths, before any file effect.
+    pub fn resolve(&self, path: &str) -> Result<HttpFileContext, ContextError> {
+        self.resolve_detailed(path).map_err(Into::into)
+    }
+
+    pub(crate) fn resolve_detailed(&self, path: &str) -> Result<HttpFileContext, PathError> {
+        Ok(HttpFileContext {
+            owner: FileOwner {
+                username: self.account.name.clone(),
+                uid: self.account.credentials.uid,
+                gid: self.account.credentials.gid,
+            },
+            path: resolve_file_path_detailed(
+                path,
+                self.workdir.as_deref(),
+                &self.account,
+                &self.settings,
+            )?,
+        })
+    }
+}
+
 impl AuthPermit {
     /// RPC files use Basic username, with the same fallback as commands. Both
     /// Move paths share one lookup/snapshot; an invalid second path never
@@ -74,6 +148,37 @@ impl AuthPermit {
         headers: &HeaderMap,
         accounts: &AccountPool<S>,
         settings: &FileSettings,
+    ) -> Result<FileContext, ContextError> {
+        self.resolve_file_rpc_with_origin(request, headers, accounts, settings, None)
+            .await
+    }
+
+    pub(crate) async fn resolve_file_rpc_admitted<S: AccountSource>(
+        &self,
+        request: &Request,
+        headers: &HeaderMap,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<FileContext, ContextError> {
+        self.resolve_file_rpc_with_origin(
+            request,
+            headers,
+            accounts,
+            settings,
+            Some((deadline, owner)),
+        )
+        .await
+    }
+
+    async fn resolve_file_rpc_with_origin<S: AccountSource>(
+        &self,
+        request: &Request,
+        headers: &HeaderMap,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        origin: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
     ) -> Result<FileContext, ContextError> {
         settings.validate()?;
         match request {
@@ -95,7 +200,7 @@ impl AuthPermit {
             settings.limits.username_bytes,
             settings.limits.authorization_bytes,
         )?;
-        let account = file_account(&name, accounts, settings).await?;
+        let account = file_account(&name, accounts, settings, origin).await?;
         let path = |value: &str| self.file_path(value, &account, settings);
         let request = match request {
             Request::Stat(value) => Request::Stat(path(value)?),
@@ -134,12 +239,46 @@ impl AuthPermit {
         settings.validate()?;
         let path = path.unwrap_or("");
         check_path_size(path, settings)?;
+        self.resolve_http_files(username, accounts, settings)
+            .await?
+            .resolve(path)
+    }
+
+    /// Resolve the account once for all files in one HTTP request. Initialization
+    /// must remain blocked by the original permit until actual writes settle.
+    /// # Errors
+    /// Invalid settings, unknown/invalid account or query budget/timeout.
+    pub async fn resolve_http_files<S: AccountSource>(
+        &self,
+        username: Option<&str>,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+    ) -> Result<HttpFileSelection, ContextError> {
+        settings.validate()?;
         let name = username.unwrap_or(&self.defaults().user);
-        let account = file_account(name, accounts, settings).await?;
-        let path = self.file_path(path, &account, settings)?;
-        Ok(HttpFileContext {
-            owner: owner(account),
-            path,
+        let account = file_account(name, accounts, settings, None).await?;
+        Ok(HttpFileSelection {
+            account,
+            workdir: self.defaults().workdir.clone(),
+            settings: settings.clone(),
+        })
+    }
+
+    pub(crate) async fn resolve_http_files_admitted<S: AccountSource>(
+        &self,
+        username: Option<&str>,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<HttpFileSelection, SelectionError> {
+        settings.validate()?;
+        let name = username.unwrap_or(&self.defaults().user);
+        let account = file_account(name, accounts, settings, Some((deadline, owner))).await?;
+        Ok(HttpFileSelection {
+            account,
+            workdir: self.defaults().workdir.clone(),
+            settings: settings.clone(),
         })
     }
 
@@ -149,20 +288,46 @@ impl AuthPermit {
         account: &Account,
         settings: &FileSettings,
     ) -> Result<String, ContextError> {
-        let path = if path.is_empty() {
-            self.defaults().workdir.as_deref().unwrap_or("")
-        } else {
-            path
-        };
-        check_path_size(path, settings)?;
-        // Keep absolute spelling, relative lexical cleaning and ~ expansion.
-        // Do not resolve symlinks or pre-check filesystem existence. NUL also
-        // survives here: fixed envd rejects it at the operation's I/O boundary,
-        // not as an ExpandAndResolve error. No CString/syscall occurs here.
-        let resolved = expand_path(path, &account.home, &settings.daemon_workdir)?;
-        check_path_size(&resolved, settings)?;
-        Ok(resolved)
+        resolve_file_path(path, self.defaults().workdir.as_deref(), account, settings)
     }
+}
+
+fn resolve_file_path(
+    path: &str,
+    workdir: Option<&str>,
+    account: &Account,
+    settings: &FileSettings,
+) -> Result<String, ContextError> {
+    resolve_file_path_detailed(path, workdir, account, settings).map_err(Into::into)
+}
+
+fn resolve_file_path_detailed(
+    path: &str,
+    workdir: Option<&str>,
+    account: &Account,
+    settings: &FileSettings,
+) -> Result<String, PathError> {
+    let path = if path.is_empty() {
+        workdir.unwrap_or("")
+    } else {
+        path
+    };
+    check_path_size(path, settings)?;
+    // Keep absolute spelling, relative lexical cleaning and ~ expansion.
+    // Do not resolve symlinks or pre-check filesystem existence. NUL also
+    // survives here: fixed envd rejects it at the operation's I/O boundary,
+    // not as an ExpandAndResolve error. No CString/syscall occurs here.
+    let resolved = expand_path(path, &account.home, &settings.daemon_workdir).map_err(|error| {
+        // This pure function returns InvalidArgument only for ~other, after
+        // the path budget above. Settings/account validation happens earlier.
+        if error == ContextError::InvalidArgument {
+            PathError::Expansion(crate::upload_response::PathExpansion::new(&account.name))
+        } else {
+            PathError::Context(error)
+        }
+    })?;
+    check_path_size(&resolved, settings)?;
+    Ok(resolved)
 }
 
 fn check_path_size(path: &str, settings: &FileSettings) -> Result<(), ContextError> {
@@ -176,20 +341,34 @@ async fn file_account<S: AccountSource>(
     name: &str,
     accounts: &AccountPool<S>,
     settings: &FileSettings,
-) -> Result<Account, ContextError> {
-    if name.is_empty() || name.contains(['\0', '\n', '\r', ':']) {
-        return Err(ContextError::Unauthenticated);
-    }
+    admitted: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
+) -> Result<Account, SelectionError> {
     if name.len() > settings.limits.username_bytes {
-        return Err(ContextError::ResourceExhausted);
+        return Err(ContextError::ResourceExhausted.into());
     }
-    let account = accounts.lookup(name.to_owned()).await?;
+    let missing = || SelectionError::UnknownUser(crate::upload_response::UnknownUser::new(name));
+    if name.is_empty() || name.contains(['\0', '\n', '\r', ':']) {
+        return Err(missing());
+    }
+    let account = match admitted {
+        Some((deadline, owner)) => {
+            accounts
+                .lookup_admitted(name.to_owned(), deadline, owner)
+                .await
+        }
+        None => accounts.lookup(name.to_owned()).await,
+    }
+    .map_err(|error| match error {
+        // AccountPool maps only AccountError::NotFound to Unauthenticated.
+        ContextError::Unauthenticated => missing(),
+        other => SelectionError::Context(other),
+    })?;
     if account.name != name
         || account.home.contains('\0')
         || account.credentials.uid == u32::MAX
         || account.credentials.gid == u32::MAX
     {
-        return Err(ContextError::Unavailable);
+        return Err(ContextError::Unavailable.into());
     }
     // Source allocation is bounded by AccountPool's source contract. Check
     // before joining so a long home cannot allocate an unbudgeted result.

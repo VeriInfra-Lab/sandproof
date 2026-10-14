@@ -1,5 +1,3 @@
-#![cfg(target_os = "linux")]
-
 use std::future::{Future, poll_fn};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

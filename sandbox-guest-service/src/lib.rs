@@ -4,29 +4,41 @@
 //! integration, listener admission and immutable-template integration remain
 //! separate obligations; health does not certify authorization or readiness.
 
+pub mod file_authorization;
+pub mod file_download;
+pub mod file_encoding;
+pub mod file_query;
+pub mod file_requests;
+pub mod file_upload;
+mod go_json;
+mod go_quote;
+mod owned_body;
+pub mod upload_body;
+pub mod upload_response;
+
 #[cfg(target_os = "linux")]
 pub mod command;
 #[cfg(target_os = "linux")]
 mod execution;
 #[cfg(target_os = "linux")]
+pub mod file_http;
+#[cfg(target_os = "linux")]
 pub mod file_io;
 #[cfg(target_os = "linux")]
-pub mod files;
+pub mod file_transfer;
 #[cfg(target_os = "linux")]
+pub mod files;
 mod http;
 #[cfg(target_os = "linux")]
 mod metadata;
-#[cfg(target_os = "linux")]
 mod session;
 #[cfg(target_os = "linux")]
 pub use execution::{
     AccountPool, AccountSource, ContextError, ContextLimits, ExecutionSettings, SystemAccounts,
 };
-#[cfg(target_os = "linux")]
 pub use http::initialization_routes;
 #[cfg(target_os = "linux")]
 pub use metadata::{MetadataLimits, MmdsClient};
-#[cfg(target_os = "linux")]
 pub use session::{
     AuthPermit, Defaults, InitLimits, Metadata, MetadataSource, ServiceError, Session,
 };

@@ -106,7 +106,7 @@
 
 负载取已预留并发、CPU、宿主内存、磁盘各自除以正上限的最大比例，升序选择，同负载按 node_id 升序；检查溢出的整数比较，不使用浮点。物理空闲可否决，不替代预留。不可表达配置启动拒绝；无候选明确暂不可用，不替换模板。
 
-仅明确“未接受且无副作用”的节点拒绝可解除原预留并记录失败，同次创建不自动换宿主。当前 `NotAccepted` 只由原应用明确的准入前容量拒绝产生：仍持有同一工作许可和应用锁，在原 SQLite 事务复核完整当前 Create、未准入且无本地映射，才保存终局事实。中心将该唯一原因映射为 429；模板、I/O、忙碌及提交未知不得转换成这种事实。模板验证和私有构建另按原创建身份、宿主无准入证据及完整终局确认结算引用，不能伪造 Cleaned。超时、丢回执、心跳过期和失联保持未知、固定绑定及占用，不迁移、不释额、不标销毁。
+仅明确“未接受且无副作用”的节点拒绝可解除原预留并记录失败，同次创建不自动换宿主。当前 `NotAccepted` 只由原应用明确的准入前容量拒绝产生：仍持有同一工作许可和应用锁，在原 SQLite 事务复核完整当前 Create、未准入且无本地映射，才保存终局事实。中心将该唯一原因映射为 429；模板、I/O、忙碌及提交未知不得转换成这种事实。模板验证和私有构建另按原创建身份、宿主无准入证据及完整终局确认结算引用，不能伪造 Cleaned。模板验证已保存容量拒绝而原终局确认未到时保持 `Checking`，不尝试结算或把这一待确认状态误报为共享存储故障；随后仅精确确认同一原回执才能结算，不增加创建或伪造销毁。超时、丢回执、心跳过期和失联保持未知、固定绑定及占用，不迁移、不释额、不标销毁。
 
 运行起点来自节点首次持久就绪，中心晚收不重算。中心保存固定续期意图，节点按原参数合法应用并持久保存后才确认；重放不从新的 now 反复加时。各机使用可信时钟与误差/安全裕量，具体数值在合同实现批次冻结；超偏差停止相关新准入/续期，回退不延长已持久期限，节点独立执行到期。
 
@@ -383,7 +383,7 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 会话从未初始化状态开始，接受完整 token/defaults 替换才原子提交；失败不部分轮换，提交后响应丢失仍是宿主未知结果。同令牌重试沿用已绑定身份，不要求 MMDS 再次可用；服务重启须重新核验，不恢复旧授权或接管旧进程。鉴权拒绝缺失、重复、非文本、超长或过期的 `X-Access-Token`，对固定长度摘要作常量时间比较。`AuthPermit` 持有同一默认上下文快照，调用方须保留到操作准入/副作用派发完成；初始化等待这些派发结束，后续请求重新核对令牌。该约束已有上下文到 worker 的定向组合测试，尚未接到正式命令/文件路由，不能据组件通过宣称完整执行路径已经受保护。
 
-默认用户初始为 root；用户/工作目录缺省、null 或空字符串保留原值。`envVars` 给出时替换用户环境，空对象清除用户项；MMDS 的 `E2B_SANDBOX_ID`、`E2B_TEMPLATE_ID` 随后加入，初始化不得覆盖。宿主原有模板/创建环境合并保持不变；初始化本身不解析账户或执行命令，也不写上游元数据文件；账户与逐命令上下文由下面的独立组件处理。令牌不加入默认环境或公开错误，解析后的令牌副本在释放时清零；不声称传输库及原始正文的全部副本被清零。
+默认用户初始为 root；用户/工作目录缺省、null 或空字符串保留原值。`envVars` 给出时替换用户环境，空对象清除用户项；MMDS 的 `E2B_SANDBOX_ID`、`E2B_TEMPLATE_ID` 随后加入，初始化不得覆盖。宿主原有模板/创建环境合并保持不变；初始化本身不解析账户或执行命令，也不写上游元数据文件；账户与逐命令上下文由下面的独立组件处理。令牌不加入默认环境或公开错误。为支持固定文件签名，核验后的原始令牌现在从初始化请求移动到私有会话状态，与摘要和 defaults 同次提交；它单独受 token_bytes 约束，未计入 defaults 的 state_bytes。取消/失败的候选和已替换状态释放时清零，不复制原令牌到 AuthPermit；原始正文、传输库及哈希实现的内部副本不在该清零声明内。
 
 初始化的正文/令牌字节、保留默认值字节、环境项数、在途正文数和期限均为显式参数，没有生产默认值。正文额度由同一会话的所有路由共享，收集正文前占额；重叠状态更新不排队，超额、超时和畸形请求显式失败，取消释放原槽位。保留字节计数包括两个元数据环境项，但不等于分配器、连接、库缓冲或整机 RAM 上界；正式监听器仍须接入连接/请求头/任务及收尾预算。健康路由不占初始化正文槽位。
 
@@ -391,13 +391,179 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 [文件账户/路径上下文](../sandbox-guest-service/src/files.rs)从同一 `AuthPermit` 快照解析：RPC 沿用 Basic 用户规则，HTTP 文件操作仅从解码后的 `username` 查询选择账号，缺省才使用初始化用户；不把 `user` 别名或 Basic 头当作 HTTP 选择器。显式空/未知账号失败，环境 HOME/USER 不参与账号或 home 选择。Move 的两个路径共用一次账户查询，完整解析后才能交给后续派发；本组件不创建目录、重命名或打开文件。返回的 UID/GID 是创建对象的目标归属，不是文件 worker 的降权凭据，保持既有 daemon/root 文件 I/O 边界。
 
-文件空路径先取初始化工作目录，再按账号 home 展开；已有绝对路径保留原拼写，相对路径只做原词法整理，不提前解析链接或断言权限。NUL 在路径解析阶段保留，由后续实际 I/O 产生该操作的错误，不能冒充已通过路径检查。用户名、Authorization 和输入/展开后每条路径有显式组件预算，Move 至多两条路径；不把这些参数当成正式用户上限或全内存预算。原账户池继续约束取消/超时后仍在运行的查询；HTTP `/files` 路由与流式正文尚未接通。
+文件空路径先取初始化工作目录，再按账号 home 展开；已有绝对路径保留原拼写，相对路径只做原词法整理，不提前解析链接或断言权限。NUL 在路径解析阶段保留，由后续实际 I/O 产生该操作的错误，不能冒充已通过路径检查。用户名、Authorization 和输入/展开后每条路径有显式组件预算，Move 至多两条路径；不把这些参数当成正式用户上限或全内存预算。原账户池继续约束取消/超时后仍在运行的查询；正式 HTTP `/files` 路由尚未接通，流式端口的当前边界见下文。
+
+[文件查询绑定](../sandbox-guest-runtime/src/file_query.rs)共用于 GET/POST `/files`，按固定 envd 生成的 path、username、signature、signature_expiration 顺序绑定，重复标量先于后续字段错误。缺省与显式空串分别保留，过期时间使用 Go 十进制 int64 的符号、语法及溢出顺序。遵循 URL.Query 的部分结果：包含原始分号或坏百分号转义的整对字段丢弃，其他有效字段保留；加号只解一次为空格，编码的加号保留为加号。解析结果保留原字节，文本转换显式拒绝非 UTF-8，不能有损替换；文件鉴权先消费签名字节，仅把 path/username 交给现有文本适配。
+
+原始查询字节及全部非空 ampersand 字段分别受显式预算约束，包括未知、无效和重复字段；预算先于绑定错误。组件不读取正文、解析账户或访问文件，也不授予签名/令牌权限。对应[绑定错误响应](../sandbox-guest-service/src/file_query.rs)仅映射重复参数与实际整数错误，按原默认 ErrorHandler 返回 400、plain text、nosniff 与末尾换行；整数原字节使用共用 Go Quote，两遍计长覆盖转义后完整响应。沿用调用方提供的原守卫/绝对期限和有界块发送，完整载荷不超过 2048 字节才加 Content-Length；配置、预算和非 UTF-8 拒绝不冒充原绑定错误。下述请求准入组件在查询绑定前取得名额；正式认证路由和监听器仍待接通，SDK 测试路由的迁移不构成生产启用。
+
+[文件鉴权](../sandbox-guest-service/src/session/file_authorization.rs)在完整头/解码值预算通过后取得当前会话快照：非空 X-Access-Token 优先，匹配时忽略签名和过期时间，错误令牌不回退签名；缺少或显式空令牌才验证签名。沿固定原冒号拼接格式，对原 path、read/write、原 username（缺省为空）、私有令牌和可选十进制到期秒做 SHA-256，再用无填充标准 base64 与 v1_ 前缀作常量时间比较；不改用展开路径、默认用户名或 URL-safe base64。签名不符先于过期；只在验签之后读取当前 Unix 秒，恰好到期仍有效。原格式的分隔符语义照旧，不宣称新的密码协议或跨元组唯一性。未初始化和重复令牌继续按原受保护配置拒绝，区别于 Go 的匿名回退/第一头规则。
+
+返回[文件专用许可](../sandbox-guest-service/src/file_authorization.rs)，携带同一 AuthPermit/defaults 快照、固定 query、操作和原绝对期限；外部调用方不能取出通用 AuthPermit、替换查询路径/用户或把读许可用于上传；这里绑定的是 query，path 缺省的 multipart 仍按原 filename 规则选目标，正文与 metadata 不包含在原签名中。download_authorized / upload_authorized 消费该许可，文件池期限取原期限与自身期限的较早者，账户/正文/回执不会返还鉴权耗时。取消锁等待不遗留读者，许可及派发后的原持有者仍阻止令牌/defaults 轮换；已经通过签名验证的传输不因签名到期重新授时或改为重复校验。鉴权拒绝通过有界原格式 401 JSON 返回固定文本，不反射令牌、签名或路径；预算/时钟/期限/文本错误仍为独立分类。低层鉴权仍要求调用方管理请求容量；下述入口已在鉴权前取得容量，未安装生产路由，也不改变中心/宿主网关必须持有其令牌的规则。
+
+[文件请求准入](../sandbox-guest-service/src/file_requests.rs)在已解析 HTTP 头之后、查询绑定及会话锁等待之前立即占用有限名额；池的所有克隆共用容量，不建立等待队列。完整头预算先于查询绑定，绑定仍先于鉴权；GET/HEAD 对应读许可，POST 对应写许可，其他方法显式分类拒绝。准入时建立原绝对期限，取消或超时的锁等待不遗留读者。成功时名额移动到不可克隆的文件许可，再进入原文件传输租约；取消 HTTP 等待不能提前归还仍在实际账户查询/文件工作中的名额，结果、响应正文及最后字节副本同样保留它。到期只限制等待/后续可控工作，不强制打断内核调用或回收仍被持有的字节；未知工作继续保守占额。
+
+查询绑定/鉴权拒绝对象也保留原名额，400/401 经现有有界发送器沿用原期限交付。HEAD 保留同一 GET 状态及错误头，先检查完整转义后编码预算，再抑制所有正文帧；2048 字节以内仍按原长度设置 Content-Length。空正文的发送任务沿用原名额与期限，至 EOF、丢弃或到期收尾才归还；不能因 HEAD 跳过预算，也不依赖外层路由器移除已生成的数据帧。超额、方法、时钟及其他尚未冻结的失败只返回分类，不发明 HTTP 文本；未准入的请求不在此池启动拒绝任务，由未来监听器用自己的有限连接/响应预算处理。这里不接收或解析套接字、不限制已经分配的 HTTP 头/URI/正文帧，也不替代账户池和文件池各自的预算。参数仍为显式组件配置，无生产默认值；SDK 测试路由已使用此入口，正式路由、连接/头读取/任务预算和停止收尾的预留容量仍待接通与验收。
+
+[文件 HTTP 编排入口](../sandbox-guest-service/src/file_http.rs)已把 `/files` 的 GET/HEAD/POST 连接到同一请求准入、查询/签名/令牌、账户和上传/下载组件。入口接受可信 HTTP framing 层尚未消费的 Body，以其精确 size hint 取得已知长度；不重新解析 Content-Length，不把未知长度改为零，也不预读/整包缓冲正文。GET/HEAD 丢弃未使用的请求正文。MIME 原查询路径与 Content-Disposition 由原许可/解析路径派生，客户端不能指定回复头或 Range boundary；MIME 目录、daemon 工作目录、本地时区及各预算仍来自显式可信配置。
+
+[未知文件账号错误](../sandbox-guest-service/src/upload_response/account.rs)把已观测的不存在账户（包括原有空串/NUL/换行/冒号快速拒绝）连接到固定 401 JSON：`error looking up user '<name>': user: unknown user <name>`。只反射原已限长用户名，不公开源错误文本；用户名预算先于诊断副本分配，账户数据库不可用、坏记录、配置、超额和超时不套用该响应。上传仍先做编码/gzip 首头检查，再查账户，后续 metadata/正文模式/文件打开不执行；下载先查账户，后续 stat/编码协商不执行。缺省用户名来自初始化，显式空串不会回退到默认值。上传保留原传输名额，下载保留原授权和名额，响应及最后字节副本沿用原绝对期限；HEAD 抑制正文但仍检查编码预算。此错误的 Go HTTP 小响应自动 Content-Length（2048 字节缓冲界限）与头/正文有可移植对照。旧粗分类上传/上下文入口仍返回 Unauthenticated；HTTP 上传和下载请求入口返回该 401。其他路径/账户故障及最终监听器策略仍待补齐。
+
+[路径展开拒绝](../sandbox-guest-service/src/upload_response/path.rs)把实际词法展开遇到 `~other` 的失败连接到原 400。GET/HEAD 外层保留原查询 path（默认工作目录触发时仍为空串），内层按固定 Go 赋值顺序报告空路径及原账户用户名；raw/multipart 上传使用 `error resolving path` 包装，不添加未发生的 I/O 诊断。路径预算先于诊断分配，其他配置/预算错误不套用此响应。账户先于展开；上传的编码首头、metadata、模式及实际 MIME 部分读取顺序保持不变。查询 path 存在时继续覆盖 multipart 文件名，包括空串；无查询时逐文件展开，后续非法路径不会回滚先前完成文件，也不处理更晚的 part。原请求/传输容量及期限继续沿用有界发送器，HEAD 仍检查完整错误编码预算。低层批次新增明确 PathExpansion 分类；旧 upload_request/上下文入口保持 InvalidArgument 粗分类。只覆盖指定用户 home 语法拒绝，不代表所有路径/文件系统故障已映射。
+
+支持的固定拒绝和真实完成结果沿用原有界响应；其他准备/账户/传输/交付失败保持分类，失败对象保留原请求名额与期限，后台任务还可能独立保留同一名额。入口没有通用 HTTP 错误兜底、生产监听器或部署默认值，调用方须实现有界的最终失败策略。固定 SDK 回环夹具只保留测试目录前置条件、计数和监听，将实际文件处理交给该入口；未映射错误使测试直接失败，不能以夹具自造 JSON 算作兼容。
+
+流式下载在实际多范围计划需要时才于原阻塞 worker 获取 30 字节 OS 随机数，转为 Go 格式的 60 位小写十六进制 boundary；条件提前结束、完整/单范围或范围拒绝不调用随机源。熵失败显式分类，没有常量回退；系统随机源阻塞/失败仍受原工作所有权与后续期限检查约束，不宣称能打断不可返回的系统调用。底层显式 boundary 接口保留供受控对照，纯计划 finish 不自行获取熵；正式编排使用按需生成路径。固定 getrandom 版本沿用 workspace 已锁定版本，OS 熵质量仍为外部前提。
 
 [一元文件端口](../sandbox-guest-runtime/src/filesystem/mod.rs)执行已解析绝对路径的 Stat、MakeDir、ListDir、Move、Remove。属性保留固定 Go 的 lstat 大小/归属/权限字符串与链接目标类型/权限数值；断链保留原路径目标和未知类型，epoch 零时间不生成时间戳。纯本地 UID/GID 显示查询失败退回数值，不参与授权。`user.e2b.*` xattr 跟随原路径，忽略非 UTF-8 键/值，普通读取错误按原 best-effort 行为放弃元数据；显式预算耗尽必须报 ResourceExhausted。RPC 无法表示的文件名/目标字符串报 Internal，不有损替换。
 
 目录创建沿固定词法父路径逐级检查，新建或观察到创建竞争后设置目标归属，不修改原有目录权限。Move 先建立目的父目录，再 rename 并读取属性；失败可能已留下父目录或已完成重命名。ListDir 按固定 Go 的最多 255 次链接解析、零深度默认 1、词法深度优先顺序工作，不遍历子链接，返回路径保留请求别名；边界深度目录的读取失败仍可使调用失败。Remove 使用父目录句柄和不跟随最终链接的逐层打开/删除，删除链接本身；不把并发路径替换下的局部效果称作目录约束、快照或事务。缺失删除成功，其他失败/预算耗尽可留下部分删除；不得重放以消除丢失回复的不确定性。
 
+[一元请求编排](../sandbox-guest-service/src/file_io/rpc.rs)接收已鉴权、已解码并限长的请求与调用方原名额/绝对期限，在账户查询之前预留一次文件池槽位。账户查询、路径解析和实际 I/O 共用较早的请求/池期限；Move 两个路径来自同次账户快照。取消/超时后尚未返回的账户查询继续持有原授权、请求名额和文件池槽位；阻塞文件任务实际开始前再查期限，已排队但过期的任务不开始副作用。已派发系统调用仍须实际返回，结果及分类错误保留原请求责任到调用方丢弃，实际 I/O 结束后不继续阻止初始化。入口不解析套接字、正文或 HTTP 头期限，不生成 RPC 状态/错误文本，也不为序列化副本取得新容量；调用方须在解码前准入并让响应字节保留结果/失败所有者。当前只迁移固定 SDK 测试路由，正式 RPC 路由及错误映射仍待接通，Linux 新组合待实跑。
+
 [文件工作池](../sandbox-guest-service/src/file_io.rs)在提交阻塞工作前占额；调用者交入同一原授权与上下文，原许可持有至实际 I/O 结束，包括请求取消、等待超时和失败。已返回的属性/列表继续占据原槽位，直到结果丢弃。等待期限不打断系统调用，不回滚已执行操作；文件仍使用 daemon 凭据，UID/GID 只控制创建目录的归属。路径、遍历工作数、结果条数/字符串、xattr 和账户源有独立组件上限，超额不返回截断成功。遍历暂存路径受 `visited × path_bytes` 约束，目录 FD 数受遍历数约束；库/内核分配、全线程池、序列化副本、网络在途字节及请求入口另有义务。参数无生产默认值，E01 正式预算、完整服务停止/重启、磁盘满和流式部分传输仍待验收。
+
+[流式文件端口](../sandbox-guest-runtime/src/filesystem/transfer.rs)已实现单文件正文的阻塞读写组件，已有 Linux 组件及固定 SDK 测试路由检查。上传先校验已知长度和元数据，再沿固定 envd 的父目录、已有文件 chown、truncate 和必要 fchown 顺序打开；跟随来宾链接，使用 daemon 凭据。按实际短写量推进原 `Transfer`；中断、超额、提前 EOF 或写入错误可留下已创建目录、归属变化和文件前缀，不重试、不回滚，不产生完整成功。完整输入后才通过原 FD 替换 `user.e2b.*`：清除未指定键，保留其他命名空间，元数据键/值遵守固定 printable ASCII 与 4096 字节合同；不支持 xattr 时沿用原忽略行为。回执元数据仍经原路径读取，路径并发替换不构成快照或 inode 身份保证；完成不表示 fsync 耐久提交。
+
+[上传详细 I/O 错误](../sandbox-guest-runtime/src/filesystem/transfer/upload.rs)保留原 open/write/finish 算法，新增 detailed 入口返回预算/输入拒绝或[结构化故障](../sandbox-guest-runtime/src/file_upload/fault.rs)。故障记录实际阶段、失败操作的路径、可选 Linux errno 和 xattr 原始名字节；父目录错误保留父路径，未知错误不编造 errno 或保存任意诊断字符串。路径拷贝受 path_bytes 约束，属性名受原 xattr 暂存或 metadata 键长约束；库分配仍另计。runtime 原入口仍可显式降回粗分类；service worker 已改用 detailed 入口，经 FileStreamError::UploadFault 传递原观察，见下述错误回执。
+
+固定 processFile 的状态区分阶段：目标是目录为 400，open/write 的 ENOSPC 为 507，metadata 的 ENOSPC/EDQUOT 为 507，其余记录的 I/O 故障为 500；父目录创建 ENOSPC 和文件 open/write 的 EDQUOT 不升为 507。预算拒绝独立于这些内核错误。metadata 仍忽略不支持 xattr 和删除时已不存在的属性；短写后失败保留前缀并拒绝重放，零写单独记录。固定 Go 原函数受控故障状态对照已有本地运行；真实 Linux 路径/FD 故障检查待实跑，不代表磁盘满或完整 HTTP 端点验收。
+
+identity 下载持有原 FD 与打开后 seek 得到的初始长度，按块读取；后续增长不附加，提前 EOF 报不完整，文件并发修改不保证内容快照。[流式工作池](../sandbox-guest-service/src/file_transfer.rs)准入后才提交阻塞工作，授权保留至实际工作结束；等待超时或调用取消不提前归还原工作槽位。每个传输最多拥有一个正文块，上传需确认实际写入并释放该块后才接收下一块，下载需已交付块实际丢弃后才继续读。句柄、在途块和成功结果仍保留原槽位；取消中的读写使原句柄不可复用，工作者消失不能冒充正常 EOF。绝对期限覆盖打开、正文与收尾，过期的已就绪回复也不能返回成功；期限不强制中断内核阻塞调用，授权及容量可继续占用到它实际返回。
+
+[顺序批量上传组件](../sandbox-guest-service/src/file_transfer/batch.rs)为整个请求保留同一授权、一次账户/defaults 快照、一个池槽位及原绝对期限；每个文件共享原预留，不因文件数量耗尽工作槽位或重置期限。完整文件名保留路径，存在的查询 `path`（包括空串）覆盖各文件名；按既有词法规则解析后，以结果路径原字符串判重，不声称识别硬链接/符号链接指向同一 inode。重复目标在再次打开前拒绝，先前成功文件保留。正在处理的文件独占借用批次，取消、丢弃、写入或结果预算失败后整批不可继续/成功；完整输入才允许相应 part/request finish，合法空批次返回空结果。调用方仍负责从原 HTTP 正文验证这些结束事实。
+
+批次另有文件数、文件正文总量和累计结果路径/元数据字节预算；结果保留至批次回执释放，单个待追加结果仍受原单文件预算约束。未知字段、MIME 头、边界与传输帧不计入文件正文预算，必须由后续解码入口另行约束。该组件及账号快照重构已有 Linux 批量回归，仍只接收已解码文件名/正文。该池及批次的并发、块大小、总量及文件预算均须显式配置，没有生产默认值。调用者输入、序列化副本及内核/库分配另行计费，不能用组件的一块内存约束替代 E01 全服务预算。当前 HTTP 测试适配支持原始字节/multipart 上传及 identity 下载，multipart 组合已有原提交 Linux 组件证据，后续候选仍须重跑；gzip 上传/下载组件已增加但待 Linux 实跑；正式头部/错误映射、range/conditional、磁盘满与故障文件系统、服务重启和模板切换仍待实现或独立验收。
+
+[增量 multipart 解码器](../sandbox-guest-runtime/src/multipart/mod.rs)已有可移植组件实现和固定 Go 1.26.8 MIME reader 对照，现由下述上传连接交付给上述批次。按消费事件后再输入的顺序处理，不累计完整文件；边界跨块、近似边界正文、CRLF/LF、前导/尾随内容、折叠和重复头遵循固定 Go 行为。文件名保留完整路径，缺少参数与显式空串分开；支持 RFC 2231 编码/续段和 quoted-printable。无法表示为 UTF-8 的参数明确拒绝，不有损替换。quoted-printable 错误可同时交出已解码前缀；上游失败通过 abort 交付剩余可解码前缀，不能调用成功 finish。
+
+解码预算显式覆盖输入块、边界、每个 part 的全部原始 MIME 头/字段数、前导/分隔符行、全部 part 数以及整个输入字节（含未知字段、framing 和尾随内容），没有生产默认值。解析缓冲容量由配置预先确定且不增长，数据事件至多一个输入块；quoted-printable 另留固定 4096 字节物理行和至多输入块加一行的解码结果。调用者必须及时释放事件/头部/结果副本，HTTP 帧、请求准入和实际写入仍由后续组合另行占额。显式 PartEnd 仅说明原文件正文已结束，之后的边界行仍可能无效；只有显式 End 才允许 multipart 请求完成，实际 HTTP EOF/传输错误还须分别处理。为维持完整输入合同，MIME 头中截断一律失败；这是比 Go 某些 io.EOF 成功路径更严格的已记录差异。组件预算、UTF-8 拒绝和该差异不等于固定 Go 全协议兼容。
+
+[multipart 上传连接](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)消费一个新批次和 identity 编码的 HTTP Body，保持原授权、账号快照、容量与绝对期限。接受固定 Go MultipartReader 所用的 multipart/form-data 或 multipart/mixed；仅 name=file 的字段打开文件，查询 path 存在时覆盖文件名，缺少文件名在无查询覆盖时拒绝。未知字段通过下述 Discard 消费原始或 QP reader，不打开文件；仍消耗 MIME part、头、总量和期限预算。文件字段的 quoted-printable 前缀按实际文件块大小顺序写入，错误不清除先前效果。
+
+HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再切入固定解码块；声明 Content-Length 超额在当前文件打开前拒绝，观测长度不符也不能成功。尾随内容仍计入总量，HTTP trailers 另有字段/字节预算，重复 trailers 或其后的数据拒绝。必须同时取得 MIME End、实际 HTTP EOF 和声明长度一致才允许批次回执；仅看到结束标记仍持有原批次，随后断流、超额或原期限到达使整批失败。取消持有中的 future 不使已经派发的 I/O 提前归还授权/容量。该连接不新增监听器、不解析原请求认证/metadata 头、不处理 gzip，也不把已接受帧的长度上限当作 HTTP 库之前分配的内存证明；传输库、响应序列化/发送仍另行计费。实现和真实文件/SDK 组合入口已有原提交 Linux 组件证据，后续候选仍须重跑，完整基础和系统验收分别报告。
+
+[gzip 编解码组件](../sandbox-guest-runtime/src/gzip/mod.rs)提供阻塞 `BufRead` 到有界正文块的独立连接，现由下述上传及下载适配连接 HTTP/文件。解码构造先检查首个头部，调用者须在成功之后才打开或截断目标；逐段核对 DEFLATE 结束、CRC32 与模 2³² 长度，再检查下一段或真实源 EOF。空输入不能初始化，首头完全未读到字节的实际 EOF 记为 EmptyHeader，部分头的 EOF 仍为 Truncated，首读探测保留原 read_exact 的 Interrupted 重试；尾随非 gzip、截断、校验失败和源错误均不能成功；错误前已交出字节不回滚，错误后不可复用。头部只以固定栈缓冲检查并丢弃，不按额外字段长度分配；名称/注释的 512 字节含 NUL 上限、保留 flag 行为和多段语义遵循固定 Go reader。显式预算另限单次输入/输出块、全部编码/展开字节、每段头部字节及段数，无生产默认值；精确总量上限仍核对真实 EOF，最多一个私有探测字节不向调用者交付。
+
+编码单段 gzip，固定压缩级别、零时间戳及无名称/注释，按源真实 EOF 结束；源错误和预算超限不产生完成回执。不同 DEFLATE 实现的压缩字节不要求等同，解码结果须一致。只由 `Ok(None)` 表示完整成功，drop 仅为取消。调用者持有的源缓冲/未释放结果、固定压缩库工作区及 HTTP 分配须另计入服务预算；授权/容量仍须保留至实际阻塞工作结束，源读取须检查原绝对期限。固定 `flate2`/`zlib-rs`/`crc32fast` 的版本及摘要在 Cargo 锁内，库实现不在已证明范围；完整 HTTP 内容编码选择和生产启用仍待后续实现/验收。
+
+[HTTP gzip 输入](../sandbox-guest-service/src/upload_body/mod.rs)与[批次连接](../sandbox-guest-service/src/file_transfer/batch/gzip.rs)支持 gzip raw/multipart 上传组件。每个原已准入批次至多增加一个阻塞解压任务，与当前文件 worker 共用原授权/容量和绝对期限，没有第二次准入或重起期限。首个头部检查完成后才允许文件打开；压缩的 Content-Length 只核对压缩 HTTP 字节，不传作展开后的文件长度。HTTP 帧/空帧/尾部的原预算检查已抽为 identity 与 gzip 共用入口，解压后的 MIME/file/result 预算仍独立计算。
+
+压缩输入最多保留一个已接受帧；每次消费请求才解下一块，前一块的全部 `Bytes` 副本释放前不预读。块持有原责任守卫，释放数据之后才确认消费；取消唤醒待处理 HTTP 读取和通道等待，已经进入的同步源轮询或系统调用仍持有守卫直到实际退出。预检失败与正文中途失败分开返回，错误不被 Body 包装成 EOF。raw 只有全部 gzip 段、校验、声明长度及真实 HTTP EOF 完成后才应用 metadata；multipart 已完成文件的 metadata 保留，之后 gzip/HTTP 失败仍使整批失败。缺少查询 path 的 raw 拒绝，显式空串仍按原路径规则处理。
+
+上述底层连接消费已授权、已解析账号/metadata 的批次；下述请求组件已连接内容编码、账户与 metadata 的拒绝顺序，完整鉴权/签名和正式 HTTP 入口仍待接通，不声明固定 Go 端点全等价。可移植传输所有权测试已有本地运行；实际 Linux 文件及扩展 SDK 回读组合待此候选实跑。库分配、调用方持有的源帧、MIME 缓冲及文件写入副本仍另计费；同一请求的两个阻塞任务不表示整个服务任务预算已经冻结。
+
+[上传请求组件](../sandbox-guest-service/src/file_transfer/upload.rs)接受原 AuthPermit、已解码的可选 username/path、HTTP HeaderMap 与带原始声明长度的 Body。完整头字段/字节预算包含重复和忽略字段，在复制前检查；随后一次准入，在同一原绝对期限内依次执行第一 Content-Encoding 选择、gzip 首头预检、账户查询、metadata 验证、Content-Type 选择和原上传批次。初始化已保证默认用户名非空；显式空用户名在 gzip 预检后拒绝。阻塞账户查询另占自身工作槽位，并持有原上传授权/容量直到实际退出；取消或等待超时不能提前归还，后续批次不二次准入、不重置期限。
+
+[上传头决策](../sandbox-guest-runtime/src/file_upload.rs)保留固定 Go ParseMediaType 的返回类型：普通畸形可选参数可保留 raw/multipart 类型，冲突的重复参数使类型无效。metadata 取规范化同名头的首值，忽略空后缀，复用真实写入的可打印 ASCII、键长和总量验证；原始头预算与保存后的 metadata 预算分开计算。raw 需要查询 path，multipart 继续用原边界解析器及完整文件名规则；非 UTF-8 multipart 参数仍明确拒绝。identity raw 也使用共用 HTTP 帧/长度/EOF 校验，失败保留已写前缀且不完成 metadata。固定 Go 有限头部对照已本地运行；实际 Linux 四种正文组合和账户阻塞取消待实跑。组件不承担查询解码、请求签名或完整上传错误 JSON；成功回执的序列化/发送接下述组件，SDK 夹具的通用拒绝响应不代表正式错误合同。
+
+[上传成功回执](../sandbox-guest-service/src/upload_response.rs)消费已完成的原 BatchReply，在原槽位与绝对期限内序列化并按需发送。保留固定 Go 的数组顺序、metadata/name/path/type 字段顺序、metadata 键排序、空 metadata 省略、空批次 `[]` 及无尾随换行；name 来自原解析路径的 Linux basename，不重新访问文件。复用下载错误的 Go JSON 转义，以同一编码器先计算精确线长、检查独立 wire_bytes 后分配。原结果路径/metadata、完整编码载荷及一个输出块分别计费，不能把 chunk_bytes 宣称为全部驻留内存。
+
+上传回包前在原绝对期限内等待同一批次的实际文件/解压持有者收尾；等待取消或到期不释放仍在运行的工作、不回滚或重放前缀。序列化仍在原守卫内执行，完成后的有限内存载荷直接按需分块，不保留等待下一次读取的回包工作器。HTTP 已知长度收完最后一块后即使不再轮询 EOF，也不额外占额；最后字节副本仍占原名额，前一块未释放前不交付下一块。此修正不改变名额数量、各项预算或超时，不增加正式监听器和新的部署入口。
+
+固定 HTTP/1.1 成功写入的 JSON 数组由 Go 自动嗅探为 `text/plain; charset=utf-8`；本组件显式保留该头，载荷不超过 2048 字节时带 Content-Length，更大时由 HTTP/1.1 传输分块。未新增错误响应所用的 nosniff。输出块及全部 Bytes 副本释放前不继续发送下一块；取消/过期不能伪造 EOF，原工作槽位保留到实际序列化/销毁和最后字节副本释放。文件 I/O 完成后的原初始化可继续，回执不重新获取授权；序列化预算或发送失败不撤销已完成文件及 metadata，也不自动重放。可移植所有权与固定 Go 真实回环 HTTP 成功头/正文对照已运行；Linux 原文件池连接及 SDK 回读组合待实跑，文件 I/O 错误响应接下述组件，其余上传拒绝和正式监听器仍待完成。
+
+[上传 I/O 错误回执](../sandbox-guest-service/src/upload_response/errors.rs)将原阶段/路径/errno/属性名按固定 processFile、permissions.EnsureDirs 与 pkg/xattr 0.4.12 错误包装格式生成 JSON。code/message 顺序、Go JSON 转义、末尾换行、application/json; charset=utf-8 和 nosniff 保持原样；HTTP/1.1 完整载荷不超过 2048 字节才带自动 Content-Length。write ENOSPC 的诊断使用原请求声明长度，包括 multipart framing 或 gzip 压缩长度，不使用已写/展开字节数；未声明或零长度不增加 attempted 文本。缺少必要 errno 或属性名返回不可分类错误，不编造公开诊断。
+
+upload_request_response 复用原首头预检与一次准入，将成功数组和实际文件故障交给同一有界发送器；故障在原 worker/batch 中移动，不新增 I/O 或重放。路径/属性的原预算、完整编码线长及输出块预算分别计费；生成错误载荷前先计算精确线长。原槽位/绝对期限覆盖处理与发送，直到最后 Bytes 副本释放；仍在运行的 I/O 自持原授权，实际完成后初始化可继续。编码或发送失败保留所有已发生的文件效果。每个响应至多新增一个阻塞发送任务，可与取消中的解压/文件析构重叠，但始终持有同一原槽位；全服务任务/库分配预算仍待冻结。FileStreamError、UploadBodyError、UploadRequestError 及包含它的 IdentityDownloadError 因拥有详细故障不再 Copy；调用方须借用或显式 clone，上传文件故障匹配 UploadFault，预算拒绝仍匹配 Operation 等原分类。SDK 夹具所有 POST 已连接这一入口；身份/查询/解码/传输拒绝的完整公开错误仍待连接，未匹配错误仍显式返回，不把夹具通用拒绝当正式合同。可移植原 Go 对照已运行，Linux 文件/SDK 错误组合待实跑。
+
+[上传头与模式拒绝](../sandbox-guest-service/src/upload_response/rejection.rs)复用同一 JSON 错误发送器，对不支持的 Content-Encoding、Content-Type、raw 缺失 path 和 HTTP metadata 校验失败返回固定 400 文本。仅在原完整头预算/一次准入通过后保留实际首字段字节；后续重复字段不替换首值，原始不透明字节按 Go JSON 规则转义。编码/账户/metadata/模式的已有处理顺序不变；其余预算、配置及未映射账户/正文错误仍显式返回，不能套用这些四类错误。旧 upload_request 与 metadata 入口保留粗分类；内部详细失败供 upload_request_response 发送，不要求旧调用方迁移。
+
+HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检查，记录规范化键与首个无效字节/原字节偏移，不保存整个无效值。所有条目先校验，再比较包含 user.e2b. 前缀的完整总大小；单条错误优先于总量超限，成功后才复制值。Go map 在多个无效条目时的首错误顺序不固定，本组件选择实际遇到的条目；不保证跨实现同一首键，对照使用单个无效条目或唯一总量错误。HTTP HeaderName 已限定 ASCII token，所以 %q 键引用只需外侧双引号。拒绝响应的原容量保留至最后字节副本释放，初始化可在实际前置工作结束后继续；不读取尚未进入正文阶段的 identity 输入或打开文件。可移植原方法/错误分支与真实 Go HTTP 对照已有本地运行，Linux 请求连接与合成头请求经固定 SDK 错误解析仍待实跑；不代表完整 PostFiles、正式监听器或 E03 验收。
+
+[gzip 首头拒绝](../sandbox-guest-service/src/upload_response/gzip_header.rs)仅在 GzipBody::open 的准备失败处连接公开响应：实际空输入、截断首头、无效魔数/压缩方法/名称长度/头 CRC 分别保留固定 Go 的 EOF、unexpected EOF、gzip: invalid header，再加原 getDecompressedBody/PostFiles 包装，返回原格式 400。读取仍受原 HTTP 声明长度、帧/压缩/首头预算及绝对期限约束；长度不符、源错误、预算和期限不能伪装成空输入。后续 gzip 段、DEFLATE、trailer 校验和及 multipart 正文错误不使用此首头映射。
+
+拒绝发生在账户查询、metadata 和文件打开之前，实际解码工作自持原授权至退出，响应保留原槽位直到最后字节副本释放。源/header/响应失败不重试、不改文件。runtime gzip::Error 与 service GzipError 新增 EmptyHeader，原来匹配空输入 Truncated 的调用方须显式处理 EmptyHeader；Rejection 新增 GzipHeader 分支。固定 Go 首头准备与 HTTP 错误对照已有本地运行，Linux 请求/授权与合成 gzip 输入经固定 SDK 错误解析待实跑；不代表完整压缩上传故障或端点验收。
+
+[multipart 路径拒绝](../sandbox-guest-service/src/file_transfer/batch.rs)在原文件数量/总量/期限检查与路径展开后检测重复，打开目标之前返回固定 400。错误观察移走已有结果中的路径，不重读文件、不复制 metadata，保留原完成顺序并排除重复目标；其余路径超过 1 个时才按原 resolvePath 加入错误消息，恰好 1 个仍省略。已有字符串受 retained_bytes 约束，临时源/目标向量的描述符由 files 约束；序列化使用可重复迭代器先计算转义后线长，不预先分配 joined 消息。响应仍占原槽位、使用原绝对期限；编码/交付失败不撤销已完成文件。
+
+仅 name=file、没有查询 path 且缺少 filename 的 part 返回原 CustomPart 的缺失文件名 400；未知字段仍忽略，显式查询 path（包括空串）仍覆盖 filename。FileStreamError 新增 DuplicatePath，UploadBodyError 新增 MissingFilename，Rejection 新增对应两种分支；旧 upload_request 也返回这两个细分类，调用方须更新穷尽匹配，不再将它们全部视为 InvalidArgument。其他解析/传输/预算错误保持明确分类。固定原 resolvePath/CustomPart 与 HTTP 输出对照已有本地运行；Linux 文件效果、槽位/期限与原 SDK 批次/合成缺失文件名解析组合待实跑，不能记作完整 multipart 或端点验收。
+
+[multipart 准备拒绝](../sandbox-guest-runtime/src/multipart/headers.rs)另保留固定 Request.MultipartReader 的非接受类型/坏参数、缺少 boundary 与首次 NextPart 的显式空 boundary 三种分类；前两种使用原 `error parsing multipart form` 包装，空 boundary 使用 `error reading form`，均经原发送器返回 500。空 boundary 在 Go reader 建立后、首个 part 前失败，但不读取正文；本组件在同一零正文读取阶段返回。完整请求的编码/首头、账户、metadata、类型选择及显式 HTTP/MIME 预算优先级不变，重复 Content-Type 仍选首值；合法 boundary 才进入原解码器。
+
+旧 runtime boundary() 继续返回粗 Malformed，新增 boundary_detailed() 区分 BoundaryRejection 与 Decode(Error)，非 UTF-8 解码参数和资源拒绝不伪造为 Go 500。service UploadBodyError/Rejection 新增 MultipartSetup，旧 upload_request 的准备错误也返回该细分类，调用方须更新穷尽匹配。原请求槽位、绝对期限、最后字节副本和初始化规则沿用；解析准备不打开文件。固定 Go 原标准库方法与真实 HTTP 输出已本地对照，Linux 请求连接及合成坏 Content-Type 经固定 SDK 解析为 SandboxException 的组合待实跑，正文 MIME/传输错误不在此次公开映射内。
+
+[raw gzip 正文错误](../sandbox-guest-service/src/upload_response/gzip_read.rs)仅在已通过首头准备且已进入 raw gzip 文件复制的失败路径映射：截断、trailer CRC/尺寸校验及后续成员无效头分别生成 `error writing file: unexpected EOF`、`error writing file: gzip: invalid checksum` 和 `error writing file: gzip: invalid header`，状态 500。阶段由请求原内容编码和 raw 模式共同确定；首头、multipart 及 identity 输入不套用该包装。缺少精确损坏位置的 DEFLATE 错误、源/长度/预算/期限仍显式返回原错误，不编造诊断。
+
+已交出的解压前缀继续留在文件中，错误前不执行 metadata 完成，所以原 metadata 保留；文件关闭与原实际阻塞任务按原责任退出，响应仍持有原槽位/期限至最后字节副本释放。响应失败不回滚或重放。Rejection 新增 RawGzipBody(GzipReadError)，穷尽匹配须补该分支；旧 upload_request 保留原 UploadBodyError::Gzip 分类。固定原 getDecompressedBody/processFile 使用实际 Go gzip reader 与内存复制目标的前缀/HTTP 对照已本地运行，Linux 文件/metadata/SDK 组合待实跑；不代表真实磁盘故障、全部 gzip 错误或完整上传端点验收。
+
+[multipart framing 错误](../sandbox-guest-runtime/src/multipart/framing.rs)通过新增 next_event_detailed() 保留正文截断、NextPart 行读取 EOF 及无效边界行。旧 next_event() 仍返回原粗 Error 且保持 Copy 接口；诊断只在行预算检查后复制实际行，额外观察最多 line_bytes。service UploadBodyError/Rejection 新增 MultipartRead(FramingError)，调用方须补穷尽匹配；旧 upload_request 将其还原为 Decode(Truncated/Malformed)，直接批次入口返回新细分类。quoted-printable abort 的具体诊断与源/本地失败顺序见下项。
+
+[公开 framing 响应](../sandbox-guest-service/src/upload_response/multipart_read.rs)按原读取阶段返回 500：文件正文截断用 `error writing file: unexpected EOF`，前导/后续 part 行读取 EOF 用 `error reading form: multipart: NextPart: EOF`；被忽略字段排空中的原始正文 EOF 按 Go Close 忽略原 Read 错误后的 NextPart EOF 包装。无效边界行按是否消费分隔换行保留两种原诊断，Go %q 再经 JSON 转义；固定 Go 1.26.8 的 IsPrint 表与非法 UTF-8 规则在两遍计长/输出中使用，不提前拼接转义消息。PartEnd 已完成文件及其 metadata，之后边界失败不回滚；当前正文截断保留前缀与旧 metadata。原响应槽位/期限/最后副本责任沿用。
+
+有效 MIME 头中截断、HTTP 源/预算和 MIME End 后的传输/校验故障仍保持显式分类，不能仅凭粗 Malformed/Truncated 伪造 Go 500。固定原 handleMultipartUpload/handlePart/processFile 与内存文件观察、真实 HTTP 输出对照已本地运行；Linux 文件/metadata/SDK 组合待实跑，组件与模板未启用。
+
+[MIME 头错误](../sandbox-guest-runtime/src/multipart/header_error.rs)按固定 Go textproto 的顺序保留首行缩进、物理行缺少冒号、逻辑行字段名/值非法三类诊断；首行缩进的源行超过原 80 字节诊断限额时返回原 `multipart: message too large`。其他诊断行分别使用原物理行或去掉行尾/折叠缩进后的逻辑行。合法 token 字段名在值验证前按 Go 规范化大小写；含空格的字段名不规范化。公开响应加原 `error reading form` 包装并返回 500，沿用固定 Go Quote/JSON 两遍预算和原发送责任。
+
+原始 header_bytes 先检查；增量检查合法/未完成前缀不分配，失败最多保留该预算内的一条诊断。字段数仍有独立限额，完成块仅在验证后构造 Part。缺少冒号或首行缩进已有完整物理行时立即拒绝；非法字段/值等到逻辑行结束、下一个非折叠字节或实际源结束才确定诊断。旧 fail_input 完结已有物理/逻辑头的验证并立即 poison；文件连接改用下述 fail_source 排出缓冲字节，保留实际原因与阶段，不合成 EOF。HTTP 输入另标记实际 frame 读取失败，声明长度/帧/预算/期限检查不能冒充该事实；gzip 的读取错误参与头验证，本地预算错误不参与。新增 ReadError::Headers(HeaderError)、UploadBodyError/Rejection::MultipartHeaders，穷尽匹配须更新。旧 next_event / upload_request 将新诊断降为 Malformed；由于提前识别，不再总是等到头终止空行，部分此前得到 TruncatedHeaders 的坏头现在报告 Malformed。合法但不完整的头仍为严格 TruncatedHeaders 差异，不支持 UTF-8 参数及本地预算保持独立分类，不套用 Go 错误。
+
+头失败不产生当前 Part、不打开其文件，前一个已完成文件/metadata 保留。原 Go 方法/HTTP 对照已有本地运行；Linux 真实文件、提前拒绝后的输入轮询、授权/槽位/期限与固定 SDK 解析组合待实跑。该组件未启用，不代表完整上传端点。
+
+[QP 详细诊断](../sandbox-guest-runtime/src/multipart/quoted_printable.rs)新增 feed_detailed / finish_detailed / abort_detailed，返回已解码字节和可选 QuotedPrintableReadError，区分组件预算/误用与实际编码诊断。短转义、非法十六进制/裸字节、软换行尾部及满行失败由解码事实产生；软换行诊断仅保留原行内去掉前导 SP/TAB 的后缀，最多 4096 字节，不复制文件。原行缓冲与至多输入块加一行的输出限制不变；响应复用两遍 Go Quote/JSON 预算，按原 processFile 阶段加 error writing file 包装并返回 500。
+
+UploadBodyError / Rejection 新增 QuotedPrintable，穷尽匹配须更新。文件连接先写已解码前缀，再报告诊断，实际写入失败优先；当前文件不 finish、不更新 metadata，之前完成文件保留。实际源失败或 MIME 正文截断可通过 abort 触发已有坏 QP 行诊断；本地长度/预算/期限不作为 Go 读取失败，保留自身分类。已完成的坏行不再轮询正文。旧 QP feed/finish/abort 与 upload_request 仍使用粗 Error，编码诊断降为 Malformed；恰好满 4096 字节后才报告源失败时现在按 buffer full 分类，旧粗入口由 Truncated 变为 Malformed。
+
+[按源读取保留边界](../sandbox-guest-runtime/src/multipart/read_buffer.rs)通过 new_read_buffered / source_read_capacity / feed_read 表示固定 Go MIME 的 4096 字节读窗口；它复用原解析缓冲并增加固定 4096 字节预读额度，不缓存完整文件。每个输入片段和输出事件仍不超过 chunk_bytes，一次实际读取可以跨多个片段，最后片段 complete 后才允许推进解析；提前解析、超过请求读取量/输入总额或失败后复用均拒绝。物理头行、折叠缩进和满行末尾 CR 的消费位置单独记录，不拿尚未形成完整 Part 的原始头长度冒充 Go 缓冲游标。原头字节/字段数、分隔行、part 数、总输入与 HTTP 帧预算继续执行；预读字节同样计入总输入。
+
+Data 后的 data_read_end 保留同次原始 part 读取是否已携带 EOF/失败，终态只随最后一个数据片段交付。QP feed_reader 在物理行满 4096 字节且同次读取未带 EOF/失败时立即报告 buffer full，不再轮询下一次源读取；同次 EOF 或错误按原 ReadSlice 顺序参与解码。service 已连接这些入口；此前正文起始偏移 4095/4096 处的满行差异已改为固定 Go 的一致回归。来源读取大小与内部事件分块分别对照，不能用扩大内部块大小掩盖时机差异。旧 Decoder::new 和 QP feed/finish 仍保留原事件式 API；需要原读取边界时须成组迁移到新入口，旧 upload_request 的粗错误形状不变，但沿用新文件连接的实际满行失败时机。
+
+FramingError 新增 ReadBufferFull，穷尽匹配须更新；原 NextPart 的 4096 字节 ReadSlice 满行失败映射为 error reading form: multipart: NextPart: bufio: buffer full 的 500，粗分类为 Malformed，独立于调用者的行/输入预算。实际源失败中的歧义边界尾部按下述来源终态处理。固定原方法对照以相同的源读取事实为前提，不证明真实 HTTP/gzip 两端底层分块节奏相同；E03 完整端点对照仍待执行。Linux 实际文件/metadata/所有权/SDK 回读待实跑，模块与模板未启用。
+
+[multipart 内 gzip 读取失败](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)保留原内容编码和实际 Body 读取失败，截断、校验及后续成员坏头按 MIME 所处阶段生成固定 500：NextPart 使用 error reading form: multipart: NextPart 包装，头读取使用 error reading form，文件复制使用 error writing file。忽略字段的 Close 丢弃读取错误后，粘滞 gzip 错误按 NextPart 报告。已有坏 MIME 头或 QP 诊断按原顺序优先；写入失败又先于编码诊断。identity 输入即使携带同型错误也不能套用 gzip 包装；未知 DEFLATE 细节、传输/长度/预算/期限保持独立分类。
+
+Decoder::fail_source 只接受等待输入且无未提交片段、EOF 或此前源失败的状态；调用方保存原因，并继续消费已缓冲事件，最终取得 ReadError::Source(SourceStage)。Open/EOF/失败互斥；之后不能再 feed，也不把失败改成 EOF。失败可确认缓冲中的完整边界前缀，从而先交付 PartEnd/完成 metadata，再在下一 part 报错；不匹配的近似边界全部释放到当前文件，只有耗尽可读字节才携带失败终态。MIME End 后的严格 gzip/HTTP 排空仍沿用原显式错误，不伪造原 Go 已不再读取的 500。
+
+ReadError 新增 Source，UploadBodyError/Rejection 新增 MultipartGzip，穷尽匹配须迁移。详细 parser 调用方须保留并关联来源原因；单独把 Source 转为 UploadBodyError 会报告 Poisoned，不能构造虚假的 EOF 原因。旧 next_event 将 Source 降为 Truncated，旧 fail_input 保留立即 poison 接口；旧 upload_request 将新 gzip 拒绝降回 Body(Gzip)，直接批次入口则返回新增详细变体。相同读取事实的固定 Go 对照已有本地运行，Linux 文件/metadata/所有权及 SDK 组合仍待实跑。
+
+[忽略字段的读取收尾](../sandbox-guest-runtime/src/multipart/discard.rs)按固定 Part.Close 消费原 reader。QP 编码错误在 Close 中被忽略，但仅丢弃同次原始读取已预读的剩余字节，不额外排空整个字段；下一 part 从该真实位置读取，可能报告原 unexpected line / expecting a new Part / buffer full，也可能继续处理后续文件。解析器保留同次 part 读取的剩余字节及终态，QP 预读量受 4096 字节物理行剩余空间约束；内部 Data 分片大小不改变原始读取位置，预读字节不重复计费，也不能绕过原总量/头/part/期限预算。
+
+Discard 只用于 new_read_buffered 解码器，接收已有 Part 后推进；NeedInput 才能继续 feed，Complete 仅表示忽略 reader 的 Close 停止，不表示原始 part 成功结束。无效顺序、复用、预算和源失败仍使解码器不可复用；忽略字段的实际正文 EOF/来源错误按下一 part 阶段报告。service 已连接，原文件字段处理接口和错误变体不变。identity 固定读大小及 gzip 实际解压读取序列的原方法对照本地通过；块上限不等于真实读取大小，此证据不证明真实 HTTP/gzip 两端分块节奏一致。Linux 实际文件/metadata/取消/SDK 组合待实跑。
+
+[gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
+
+[阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)与上传共用按需消费、Bytes 最后副本释放和取消通道。打开成功不预读正文；每个请求只有一个编码 worker、一个显式块大小的源缓冲和一个交付块，压缩库工作区及 HTTP 分配另计。原始/压缩字节预算独立，缓冲可预读至一个源块，超出累计消费预算不能成功。每次源填充前后及缓冲消费时均检查原期限/取消；已进入的 open/read/destructor 不能被超时强制终止，其原守卫保留至真正返回。句柄、worker 与已交出块分别保留原容量，Bytes 副本还保留原授权；没有 Content-Length 或重新准入。
+
+只有实际 EOF、编码尾部及预算检查全部完成才返回成功。源错误、超额、取消或过期传播为正文错误，不补成功尾部；这比固定 Go 下载在 `io.Copy` 失败后仍 defer `gzip.Close` 更严格，须在 E01 全端点对照保留差异。SDK 测试路由经下述单 worker 下载连接按固定头部规则选择 gzip/identity，gzip 响应无压缩长度；该测试路由已按原查询扩展名使用受控 MIME 表，未知类型回退 application/octet-stream，并在成功 open 后格式化解析路径的 Content-Disposition；gzip 不嗅探正文。编码、range/conditional 与 stat/open 顺序已有组件连接，完整正式路由/错误映射仍未接通。可移植编码所有权检查已有本地运行；Linux 实际 FD/授权和固定 SDK `gzip=True` 组合仍待验证，未启用到模板。
+
+[文件内容编码选择](../sandbox-guest-runtime/src/file_encoding/mod.rs)和[HTTP 头连接](../sandbox-guest-service/src/file_encoding.rs)已实现固定 Go 的 Content-Encoding / Accept-Encoding 局部规则，尚未接正式文件入口。只取每个字段的第一值（即使它为空），不合并重复值；保留非 UTF-8 字节，按 Go Unicode 空白及大小写识别编码名。Content-Encoding 缺失/精确空值为 identity，否则去掉分号参数后只接受 identity/gzip，不把逗号编码链拆开或按 q=0 拒绝 gzip。
+
+Accept-Encoding 默认 q=1，重复 q 参数取最后一个可解析值，非法参数保留此前值；沿固定 `strconv.ParseFloat` 接受十六进制/下划线、NaN/Inf、负值及大于 1 的值，溢出参数作为无效值忽略。只跳过精确零；identity 显式拒绝、wildcard 与重复项仍各按固定算法处理。长列表同权重选择会受 Go 不稳定排序影响，已移植固定 Go 1.26.8 排序及十六进制舍入辅助，并用原函数显式对照，不能擅自改成稳定排序或新的严格 RFC q 校验器。
+
+下载先选可接受编码，随后仅当第一值非空的 Range / If-Modified-Since / If-None-Match / If-Range 存在时强制 identity；仅空白或畸形条件值也进入此分支。If-Match / If-Unmodified-Since 不参与这个预选。若 identity 被拒绝则返回 NotAcceptable；HTTP 连接保留 Vary 的阶段区别：初次编码选择失败前还未设置 Vary，之后的条件回退失败保留 Vary。原端点相应错误为 406，上传不支持编码为 400；预算错误的正式映射另须冻结。
+
+参数显式限制首字段原始字节和逗号项数，先计数后分配固定容量的项数组；q 临时规范化至多一个原字段大小，排序只保留有界递归，不保留整个 HTTP 请求。所有重复字段/其他请求头、传输库先行分配、全请求授权/期限仍由调用者约束。上传编码/首 gzip 头先于账号/metadata 的完整顺序仍待正式路由连接。下载在 stat/目录拒绝之后、open 之前选编码，已由下述单 worker 组件连接实际文件与响应；独立选择函数本身不执行这些 I/O，也不把局部选择一致当作 E01/E03 全端点验收。
+
+[下载条件/范围决策](../sandbox-guest-runtime/src/file_download/mod.rs)及[分阶段响应计划](../sandbox-guest-service/src/file_download.rs)另实现固定 Go 1.26.8 `http.ServeContent` 的局部 identity 行为。`prepare` 的调用前提是原 stat/编码选择/open 已成功；它按 If-Match → If-Unmodified-Since → If-None-Match → If-Modified-Since 顺序决定 304/412，非空 If-Match/If-None-Match 各自抑制对应日期检查。标签保留弱/强比较、畸形值、逗号及通配符的原语义。只有返回 Continue 才允许调用者嗅探/回绕和探测长度；随后 `finish` 才解析 Range。计划不执行文件 I/O，也不证明调用方已保持该顺序。
+
+HTTP 日期接受固定 Go 的三种布局、小数秒、大小写和旧两位年份规则。Last-Modified 使用 UTC，精确 year-1 零值和 Unix epoch 零纳秒不设置该头；带纳秒的 epoch 仍设置。旧格式的命名时区依赖显式可信 `LocalZone` 快照，未知名字沿 Go 保留 nominal UTC 秒值，不能直接当作固定数字偏移；正式 daemon 本地时区解析尚待连接，不得默认以 UTC 冒充部署环境。日期转换限现有 `time` 库的 -9999..9999 年，超出范围明确组件错误；该限制须列入 E01 差异。
+
+Range 保留区间顺序、重叠、重复、后缀零长度、空列表、空文件的无交集例外和超过文件大小的区间总量回退。If-Range 只在 GET/HEAD 的非空 Range 下检查，失败忽略 Range；单段 206 在发送任何头之前仍要求成功 seek（HEAD 也一样）。多段使用调用者提供的 Go 形状、60 字节小写十六进制随机边界，逐段计划 MIME 头/文件区间及结尾，线长包含全部 MIME 字节；边界必须由可信熵产生，不接收用户字段。正文执行者必须在 seek/read 失败或短读时立即结束错误，不能继续生成后续段或成功结尾；该执行连接见下项，Linux 组合尚待实跑。
+
+响应计划保留 200/206/304/412/416 头的差异，以及 416 对 Cache-Control、Content-Encoding、ETag、Last-Modified 的默认清除，保留 Vary/Disposition。这里只实现 `httpservecontentkeepheaders=0` 的固定默认行为；不声称支持 Go 环境开关。错误正文计划仍包含 HEAD 时原 writer 尝试写入的字节，传输层的 HEAD 正文抑制尚由 HTTP 连接承担。显式预算覆盖选中请求字段总字节、扫描项数、响应头及含 MIME 的线长（HEAD 也检查所声明长度）；超额或 int64 长度溢出明确拒绝，不复现 Go 整数回绕。全头解析分配、响应库自动头、原授权/期限/容量、MIME 查表/嗅探、Content-Disposition 及 seek 错误映射仍需正式连接；这些局部预算拒绝尚未冻结为端点状态码。
+
+[identity 范围执行](../sandbox-guest-service/src/file_download/stream.rs)与 gzip 复用[受所有权约束的阻塞正文任务](../sandbox-guest-service/src/owned_body.rs)。每个请求一个 worker，准备、同一 FD 的 seek/read 和销毁都在其中完成；304/412 不探测长度、不读正文。长度探测和回绕、单段范围初始 seek 在返回响应头之前完成，多段每一段在发完该段 MIME 头后 seek。只在消费者请求时生成一个输出块，最后一个 Bytes 副本释放前不继续读；保留一个有界 MIME 头、范围列表和一个输出块，不缓存整文件。原期限及取消在每次系统调用前后检查，取消不能中断已派发调用，原授权/容量保留到实际调用与 FD 销毁结束；保留的下载句柄和在途字节也持有原守卫。
+
+该执行器把增长限制在计划长度内，提前 EOF、读取或后续 seek 失败成为正文错误，不补后续 MIME 段/结尾。HEAD 在执行必需的单段初始 seek 后抑制全部正文，含 416 错误正文；保留声明线长和所选文件字节的预算检查。原单独 identity 入口在响应开始前仍返回长度 seek / range seek 组件错误；下述协商入口负责已知的 Go 500/416 错误响应。正式路由与完整故障验收仍未接通。
+
+[Linux 文件池连接](../sandbox-guest-service/src/file_transfer/identity_download.rs)复用单次准入、原 AuthPermit、绝对期限与解析路径；保留原 pre-open stat 的 mtime，不在打开后重新 stat 替换其时间。路径替换后仍读原 FD，这不是一致快照。池总量限制所选文件字节，MIME 线长另有限额，完整文件过大时合格小范围仍可执行。当前入口接受预先已知类型或原查询路径与不可变 MIME 表，以及可信边界/时区参数。成功 open 后格式化解析路径的 Content-Disposition，再执行条件判断；304/412 不查表或嗅探。继续响应时，已有 Content-Type（含显式空值）跳过查表/嗅探，否则先查原查询路径最后扩展名，未知/空类型才在原 worker 读取至多 512 字节并回绕，再探测长度。读取错误按固定 Go 使用已有嗅探前缀，回绕失败保留 SniffSeek 错误；后续正文读取错误仍不能成功结束。嗅探每次 read/seek 前后检查原期限/取消，且始终持有原授权/容量，调用方不得提前在守卫外嗅探。固定 SDK 测试路由已使用该连接，并有合成 range/conditional/HEAD 请求；可移植故障/所有权测试已有本地运行，Linux 文件/HTTP 扩展待实跑，模板未启用。
+
+[下载 MIME 组件](../sandbox-guest-runtime/src/file_mime/mod.rs)对齐固定 Go 1.26.8 的扩展名查表、DetectContentType 和 inline filename 格式。查表先精确大小写再 Unicode 小写；内建表之后按固定 Linux 路径顺序取首个成功打开的 globs2（空文件也停止），没有 globs2 才顺序应用全部可打开的 mime.types。globs2 不覆盖已有精确扩展名，mime.types 后项覆盖；文本默认 charset、无效条目和原 Go 格式化边界由显式原函数对照检查。加载结果不可变，不随请求重读或自动刷新；生产须在有准入的阻塞启动任务中加载实际来宾文件，并把来源/指纹绑定模板验收，不能用开发宿主或仅内建表代替。Linux 固定路径加载入口已有实现及交叉检查，实际运行待补。
+
+配置显式限制全部源字节、原始行字节、扩展名/值、两张表的合计条目与键值字节，内建条目也计费。原始行限额至多 65535 字节（含换行），比 Go Scanner 缓冲边界保守；超额、非 UTF-8 数据库/解码参数或打开后的读取失败拒绝加载，不发布部分表。路径和格式化头长度也在分配前检查。filename 取 Linux basename，保留点、反斜线及原始字节，非 ASCII/控制字节按 RFC 2231 编码，不做有损 UTF-8 转换。嗅探无堆分配，只看前 512 字节并保持原签名顺序；这些有限对照与严格预算差异不表示全协议等价。下载 stat→编码选择→open 顺序与通用嗅探/长度 seek 错误已由下述组件连接；初始 range seek 的已知 Linux errno 文本也已由下述协商组件连接；真实本地时区及全服务预算仍待连接。
+
+[协商下载](../sandbox-guest-service/src/file_download/stream/negotiated.rs)在同一个原已准入 worker 中执行 stat/目录拒绝→编码选择→open→Disposition→identity/gzip 准备与正文；[Linux 文件池](../sandbox-guest-service/src/file_transfer/download.rs)只取得一次 AuthPermit/容量/绝对期限。stat 返回的原 mtime 与延迟打开的同一路径分别保留，选择失败不 open，open 后不 restat；路径在两阶段间被替换时仍按固定 Go 打开新对象而保留旧 stat 信息，不宣称 inode 固定或一致快照。stat/open 的阻塞取消仍持有原守卫到调用与源销毁结束。
+
+[下载请求连接](../sandbox-guest-service/src/file_transfer/download.rs)的 download_request 在账户查询之前取得文件池槽位和绝对期限，原 AuthPermit 快照、槽位及期限经账户查询、路径解析移交上述同一下载 worker。账户池自己的期限只能缩短原请求等待；取消或超时不停止已派发查询，其阻塞任务继续持有原授权和文件池容量，直到真实退出。账户解析失败不 stat/open，原查询缺省用户及空路径工作目录规则沿用；MIME Detect 的原路径取本次查询，缺省/空串不改用展开后的默认目录扩展名。初始化在这些持有者及最后响应 Bytes 副本释放前等待。
+
+新入口接受已认证、已解码的查询，返回明确的 Admission/Context/Download 分类；未知账号 401 已连接，其他账户/预算错误的完整 HTTP 映射及正式路由仍待连接；签名许可见前述共用入口。旧 download_negotiated 继续接受调用方已解析的上下文，只为下载部分准入，调用方须自行保留此前账户查询的授权/预算。固定 SDK 测试路由已迁移到新入口；Linux 账户阻塞/期限/真实文件/SDK 组合仅交叉检查，执行待补。
+
+编码解析失败与四类条件字段强制 identity 失败保留不同的 Vary 阶段；If-Match/If-Unmodified-Since 本身不强制回退。identity 复用原条件/嗅探/范围执行，gzip 复用原有界编码器而不再准入或重新计时。准备期 SniffSeek/LengthSeek 变为固定 `500 seeker can't seek`，清除原实体缓存头、保留 Vary/Disposition 并抑制 HEAD 正文；原单独 identity 入口仍返回组件错误。初始单段 range seek 的已知 Linux errno 变为 `416 seek <解析路径>: <errno 文本>`，不带成功范围计划尚未应设置的 Content-Range/Accept-Ranges/Content-Length；默认清除实体缓存头，保留此前已有头。未知 I/O 错误仍返回组件失败；多段正文开始后的 seek/read 失败仍为正文错误，不能改写已经发送的状态。gzip HEAD 仍消费/压缩至实际 EOF，在同一 worker 丢弃输出后返回空正文，避免 HTTP 不轮询 HEAD body 时完全省略读取；本组件延后交出 HEAD 响应头，编码/源失败仍显式失败，这一发送时机及原 gzip 失败差异须保留在端点验收中，不能称已与 Go 故障路径等价。
+
+协商连接的 identity 响应计划、原文件字节、压缩字节/线长、MIME 表及路径预算分别生效；成功选择后的响应头及一份 identity 准备错误所需头副本受显式头预算约束。完整请求解析前分配、认证/签名、账户错误的 HTTP 映射、上传错误、自动 HTTP 头、本地时区及监听器仍为正式入口义务。可移植顺序/取消/seek 错误检查与固定 Go 有限对照已有本地运行，Linux 实际文件和 SDK 扩展待实跑；没有更换模板。
+
+[下载错误响应](../sandbox-guest-service/src/file_download/stream/errors.rs)在原 worker 内构造有界正文并通过同一 OwnedBody 交付，响应和在途 Bytes 副本继续持有授权/容量/绝对期限。stat 的 ENOENT 映射 404，已确认目录映射 400，其他已知 stat errno（含 ENOTDIR）及 open errno 映射 500；编码不可接受映射 406，保留编码解析失败前无新增 Vary、条件回退和 open 失败有 Vary 的阶段区别。上述 JSON 使用固定 envd 的 code/message 顺序、UTF-8 Content-Type、nosniff 和末尾换行，沿 Go 默认转义控制字节、HTML 字符、U+2028/U+2029 及非法 UTF-8；HEAD 仍核对预算后抑制正文。stat/编码/open 失败不提前生成 Disposition。
+
+Linux 文件端口只携带已知操作的结构化 errno；文本来自固定 Go 1.26.8 Linux amd64 表及未知编号的 `errno N`，不用开发宿主 locale/strerror 或任意 I/O 异常字符串。文件路径取原已解析、限额路径，不从异常文本提取；Rust 在 syscall 前拒绝的 NUL 路径按 Go 的 EINVAL 处理。错误格式化先用同一编码器计算精确线长并检查原 wire_bytes，随后才分配正文；执行阶段至多另有一份受同预算限制的错误段副本和一个输出块，不能将 wire_bytes 称为整个进程的内存上界。路径、响应头、原期限和组件预算仍分别生效，超额/未知错误的正式端点映射尚待冻结。可移植对照使用固定 Linux errno 表的受控错误，不代表 Linux 内核故障已实测。
 
 [本地账户端口](../sandbox-guest-runtime/src/accounts.rs)读取固定 `/etc/passwd`、`/etc/group`，对应固定 envd 的无 CGO 构建，不新增 NSS/网络查询或数字用户名回退。普通文件按打开的 inode 核对，符号链接至普通文件保留；非阻塞打开后拒绝 FIFO/设备等类型。未知账号和选中记录的坏 UID/GID 拒绝，`u32::MAX` 不得成为“保留原身份”。组文件不可读时按固定端点只保留已解析的主组，不继承 daemon 附加组；成功组查询保留固定实现的重复主组项，超过 Go 组扫描行界限则丢弃附加结果。文件字节和组数量另有显式预算，超额拒绝而非截断。非 UTF-8 home 无法进入当前 JSON 执行上下文，明确失败；不是完整 NSS/POSIX 账号数据库的兼容声明。
 

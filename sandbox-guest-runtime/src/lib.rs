@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Linux execution ports for the guest service under development.
+//! Guest wire decoding and Linux execution ports under development.
 //!
 //! This is not an envd server. The caller supplies trusted installation paths
 //! and must reserve public selector identity and process capacity BEFORE
@@ -13,6 +13,14 @@ pub mod accounts;
 pub mod file_protocol;
 #[cfg(target_os = "linux")]
 pub mod filesystem;
+
+pub mod file_download;
+pub mod file_encoding;
+pub mod file_mime;
+pub mod file_query;
+pub mod file_upload;
+pub mod gzip;
+pub mod multipart;
 
 #[cfg(target_os = "linux")]
 mod process;

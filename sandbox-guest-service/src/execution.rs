@@ -94,19 +94,46 @@ impl<S: AccountSource> AccountPool<S> {
     }
 
     pub(crate) async fn lookup(&self, username: String) -> Result<Account, ContextError> {
+        let deadline = tokio::time::Instant::now()
+            .checked_add(self.timeout)
+            .ok_or(ContextError::InvalidArgument)?;
+        self.lookup_admitted(username, deadline, Arc::new(())).await
+    }
+
+    pub(crate) async fn lookup_admitted(
+        &self,
+        username: String,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<Account, ContextError> {
+        let deadline = deadline.min(
+            tokio::time::Instant::now()
+                .checked_add(self.timeout)
+                .ok_or(ContextError::InvalidArgument)?,
+        );
+        if tokio::time::Instant::now() >= deadline {
+            return Err(ContextError::DeadlineExceeded);
+        }
         let permit = Arc::clone(&self.slots)
             .try_acquire_owned()
             .map_err(|_| ContextError::ResourceExhausted)?;
         let source = Arc::clone(&self.source);
         let task = tokio::task::spawn_blocking(move || {
+            let _owner = owner;
             let _permit = permit;
-            source.lookup(&username)
+            if tokio::time::Instant::now() >= deadline {
+                return Err(ContextError::DeadlineExceeded);
+            }
+            source.lookup(&username).map_err(account_error)
         });
-        tokio::time::timeout(self.timeout, task)
+        let result = tokio::time::timeout_at(deadline, task)
             .await
             .map_err(|_| ContextError::DeadlineExceeded)?
-            .map_err(|_| ContextError::Unavailable)?
-            .map_err(account_error)
+            .map_err(|_| ContextError::Unavailable)?;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(ContextError::DeadlineExceeded);
+        }
+        result
     }
 }
 

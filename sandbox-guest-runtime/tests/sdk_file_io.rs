@@ -16,7 +16,7 @@ use sandproof_guest_runtime::{
 };
 use sandproof_guest_service::{
     AccountPool, InitLimits, Metadata, MetadataSource, ServiceError, Session, SystemAccounts,
-    file_io::{FileDispatchError, FilePool},
+    file_io::{FileDispatchError, FilePool, RpcError, RpcRequest},
     files::{FileContextLimits, FileSettings},
 };
 use sha2::{Digest, Sha512};
@@ -29,7 +29,13 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{io::AsyncWriteExt, net::TcpListener, process::Command, sync::oneshot, time::timeout};
+use tokio::{
+    io::AsyncWriteExt,
+    net::TcpListener,
+    process::Command,
+    sync::{Semaphore, oneshot},
+    time::{Instant, timeout},
+};
 
 struct Meta;
 impl MetadataSource for Meta {
@@ -45,6 +51,7 @@ struct Fixture {
     session: Session<Meta>,
     accounts: AccountPool<SystemAccounts>,
     files: FilePool,
+    requests: Arc<Semaphore>,
     root: PathBuf,
     seen: AtomicUsize,
 }
@@ -55,31 +62,18 @@ async fn rpc(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let owner = Arc::new(Arc::clone(&fixture.requests).try_acquire_owned().unwrap());
     let request = decode_request(&method, &body, 4096).unwrap();
     let auth = fixture
         .session
         .authorize(headers.get("x-access-token").and_then(|v| v.to_str().ok()))
         .await
         .unwrap();
-    let context = auth
-        .resolve_file_rpc(
-            &request,
-            &headers,
-            &fixture.accounts,
-            &FileSettings {
-                daemon_workdir: fixture.root.to_str().unwrap().into(),
-                limits: FileContextLimits {
-                    path_bytes: 4096,
-                    username_bytes: 64,
-                    authorization_bytes: 256,
-                },
-            },
-        )
-        .await
-        .unwrap();
-    // This test fixture accepts only its generated absolute paths.
+    // This test fixture accepts only generated absolute paths, before the
+    // shared component resolves context or can perform any file operation.
     let inside = |p: &str| assert!(Path::new(p).starts_with(&fixture.root) && !p.contains(".."));
-    match &context.request {
+    match &request {
         Request::Move {
             source,
             destination,
@@ -93,13 +87,40 @@ async fn rpc(
         | Request::ListDir { path: p, .. } => inside(p),
     }
     fixture.seen.fetch_add(1, Ordering::SeqCst);
-    match fixture.files.execute(auth, context).await {
+    match fixture
+        .files
+        .execute_rpc(
+            RpcRequest {
+                auth,
+                request,
+                headers,
+                deadline,
+                owner,
+            },
+            &fixture.accounts,
+            &FileSettings {
+                daemon_workdir: fixture.root.to_str().unwrap().into(),
+                limits: FileContextLimits {
+                    path_bytes: 4096,
+                    username_bytes: 64,
+                    authorization_bytes: 256,
+                },
+            },
+        )
+        .await
+    {
         Ok(reply) => (
             [("content-type", "application/json")],
-            encode_response(reply.response().as_wire(), 65536).unwrap(),
+            Bytes::from_owner(ReplyBytes {
+                bytes: encode_response(reply.response().as_wire(), 65536).unwrap(),
+                _owner: reply,
+            }),
         )
             .into_response(),
-        Err(FileDispatchError::Operation(error)) => {
+        Err(failure) => {
+            let RpcError::Dispatch(FileDispatchError::Operation(error)) = failure.error() else {
+                panic!("unexpected fixture admission/context failure: {failure:?}")
+            };
             let status = match error {
                 sandproof_guest_runtime::filesystem::FileError::NotFound => StatusCode::NOT_FOUND,
                 sandproof_guest_runtime::filesystem::FileError::AlreadyExists => {
@@ -116,12 +137,28 @@ async fn rpc(
             (
                 status,
                 [("content-type", "application/json")],
-                serde_json::json!({"code":error.code(),"message":"file operation failed"})
-                    .to_string(),
+                Bytes::from_owner(ReplyBytes {
+                    bytes:
+                        serde_json::json!({"code":error.code(),"message":"file operation failed"})
+                            .to_string()
+                            .into_bytes(),
+                    _owner: failure,
+                }),
             )
                 .into_response()
         }
-        Err(error) => panic!("unexpected fixture admission failure: {error:?}"),
+    }
+}
+
+// Only the fixture supplies its existing synthetic Connect error text. Actual
+// records/failures and their original slots survive all transport Bytes clones.
+struct ReplyBytes<T> {
+    bytes: Vec<u8>,
+    _owner: T,
+}
+impl<T> AsRef<[u8]> for ReplyBytes<T> {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -198,6 +235,7 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
             Duration::from_secs(5),
         )
         .unwrap(),
+        requests: Arc::new(Semaphore::new(2)),
         root,
         seen: AtomicUsize::new(0),
     })

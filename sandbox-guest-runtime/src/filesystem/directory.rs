@@ -9,10 +9,34 @@ pub(super) fn ensure_dirs(
     owner: Ownership,
     budget: &mut Budget,
 ) -> Result<(), FileError> {
+    ensure_dirs_detailed(path, owner, budget).map_err(|error| match error {
+        EnsureError::Budget(error) => error,
+        _ => FileError::Internal,
+    })
+}
+pub(super) enum EnsureOperation {
+    Stat,
+    Create,
+    Chown,
+}
+pub(super) enum EnsureError {
+    Budget(FileError),
+    NotDirectory(PathBuf),
+    Io {
+        operation: EnsureOperation,
+        path: PathBuf,
+        errno: Option<crate::file_download::LinuxErrno>,
+    },
+}
+pub(super) fn ensure_dirs_detailed(
+    path: &Path,
+    owner: Ownership,
+    budget: &mut Budget,
+) -> Result<(), EnsureError> {
     let mut pending = Vec::new();
     let mut current = path.to_owned();
     loop {
-        budget.visit()?;
+        budget.visit().map_err(EnsureError::Budget)?;
         pending.push(current.clone());
         current = path::parent_clean(&current);
         if current == Path::new("/") {
@@ -23,19 +47,36 @@ pub(super) fn ensure_dirs(
         match fs::metadata(&path) {
             Ok(info) if info.is_dir() => continue,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Ok(_) | Err(_) => return Err(FileError::Internal),
+            Ok(_) => return Err(EnsureError::NotDirectory(path)),
+            Err(error) => {
+                return Err(EnsureError::Io {
+                    operation: EnsureOperation::Stat,
+                    path,
+                    errno: super::transfer::linux_errno(&error),
+                });
+            }
         }
         match fs::DirBuilder::new().mode(0o755).create(&path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(_) => return Err(FileError::Internal),
+            Err(error) => {
+                return Err(EnsureError::Io {
+                    operation: EnsureOperation::Create,
+                    path,
+                    errno: super::transfer::linux_errno(&error),
+                });
+            }
         }
         rustix::fs::chown(
             &path,
             Some(rustix::process::Uid::from_raw(owner.uid)),
             Some(rustix::process::Gid::from_raw(owner.gid)),
         )
-        .map_err(|_| FileError::Internal)?;
+        .map_err(|error| EnsureError::Io {
+            operation: EnsureOperation::Chown,
+            path,
+            errno: Some(crate::file_download::LinuxErrno(error.raw_os_error())),
+        })?;
     }
     Ok(())
 }

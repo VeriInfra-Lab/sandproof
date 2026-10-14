@@ -4,6 +4,8 @@
 
 ## 适用版本与边界
 
+本批 envd 文件组件及模板验证待确认守卫只有工程检查，没有新增对应证明。合并基线中已有的公共基础局部证明仍只适用于其登记输入；来宾依赖改变工作区 `Cargo.lock` 后，不能将旧输入摘要用于当前组合背书，也不能仅改摘要宣称重新验收。模板子系统整体继续排除证明，但原终局回执精确确认后才结算自有引用的连接义务保留。
+
 已有纯核心成果基线为 `0f1901a210e24da50d259e07df75e8c2cb9d181f`；历史本地生成 Lean 最近一次源码更新为 `8612ef1bf99e1ecbddcbd61e8b5fdeedd69e58fe`。历史表记录指定版本的具体对应定理，**不为当前 Rust 服务或当前二进制背书**。当前公共协议的局部对应范围见下节；新版本地核心、持久化、寿命、宿主执行及网关仍未完成当前版本的全套对应证明。逐批工程测试结果查相关 PR，不在这里复制实验日志。
 
 ## V0 公共基础：指定输入的局部证明
@@ -277,7 +279,77 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 文件[一元编解码](../sandbox-guest-runtime/src/file_protocol.rs)及[授权路径解析](../sandbox-guest-service/src/files.rs)尚未抽取或证明。共享 JSON 解析/有界输出和 Basic/路径辅助函数供命令、文件两端复用，工程回归核对原命令行为；纯来宾核心未修改。字段缺省/精度、编码预算、账号选择、路径展开、授权快照到实际 I/O 的连接均须在 #101 后续证明，固定 SDK 与合成属性通过不证明真实文件操作、DAC、整个服务或系统正确。
 
-新增[真实一元文件端口](../sandbox-guest-runtime/src/filesystem/mod.rs)、账户显示反查及[阻塞文件所有权](../sandbox-guest-service/src/file_io.rs)只有工程回归与固定参考对照，尚未抽取或证明。链接解析与实际 inode/FD、Go 属性对应、遍历/暂存/结果预算、非原子副作用与错误、原授权到派发/完成、取消后容量及结果保留均是新增自有义务，不整体列为外部前提。系统调用、目录变更、xattr、线程池和序列化的实际连接另须最小外部合同。纯来宾核心和历史已证明 Rust 未改，旧定理不覆盖这些新增实现；组件对照也不证明 POSIX/ACL 隔离或整套部署系统。
+新增[真实一元文件端口](../sandbox-guest-runtime/src/filesystem/mod.rs)、账户显示反查及[阻塞文件所有权](../sandbox-guest-service/src/file_io.rs)只有工程回归与固定参考对照，尚未抽取或证明。链接解析与实际 inode/FD、Go 属性对应、遍历/暂存/结果预算、非原子副作用与错误、原授权到派发/完成、取消后容量及结果保留均是新增自有义务，不整体列为外部前提。一元请求编排新增准入到账户/路径/I/O 的同一责任、较早绝对期限、阻塞队列到期检查和返回结果/分类错误的保留义务；账户阻塞取消后原授权仍须有效，已经开始的操作不能因等待超时被解释为未发生。新增候选的 Linux 组合待实跑，尚无证明。系统调用、目录变更、xattr、线程池和序列化的实际连接另须最小外部合同。纯来宾核心和历史已证明 Rust 未改，旧定理不覆盖这些新增实现；组件对照也不证明 POSIX/ACL 隔离或整套部署系统。
+
+新增[流式文件 I/O](../sandbox-guest-runtime/src/filesystem/transfer.rs)和[传输所有权](../sandbox-guest-service/src/file_transfer.rs)已有单文件 Linux 组件及原 SDK 测试路由检查，未抽取或证明。原 `Transfer` 的输入/实际写入计费被接到真实 FD，但纯来宾核心源码未改，原抽取试验不覆盖这个连接。待证义务包括短写量到真实副作用、完整输入/元数据到成功、取消/期限与晚到回复、块释放到背压/容量、原授权到实际阻塞工作结束，以及打开后 FD 与可变路径的区别。xattr、内核读写、异步通道/取消和内存分配须逐项最小外部合同；历史控制器定理不能背书新增适配或整个 HTTP 服务。
+
+#401 的上传收尾修正另须连接：原批次收尾回执覆盖全部实际文件/解压持有者，取消/原期限到达不提前归还；有限响应的序列化与已完成载荷分块分离，最后字节副本释放不依赖 HTTP 再次轮询 EOF。新增屏障及单名额回归属于工程证据，尚未抽取或证明；未改变纯核心、LLBC/Lean、功能及证明边界，也不把此修复记为正式来宾服务或 KVM 验收。
+
+[顺序批量编排](../sandbox-guest-service/src/file_transfer/batch.rs)和一次账户/defaults 快照解析另增加请求级授权、容量及期限共享、排他 part 借用、路径判重、累计正文/结果预算、失败后不可继续和正常结束证据的自有连接。实现已有 Linux 批量回归，尚未证明；单文件测试或原纯核心结论不覆盖该组合，HTTP/MIME 解析及正式服务仍是后续义务。
+
+[增量 multipart/MIME 解码](../sandbox-guest-runtime/src/multipart/mod.rs)已有本地可移植测试和固定 Go 标准库对照，未抽取或证明。新增义务包括跨块边界与字节前缀、原始/解码计费、UTF-8/续段参数、错误后不可复用以及有效结束到批次成功的连接。明确拒绝 Go 可误作 EOF 成功的 MIME 头截断，不能沿用纯 `Transfer` 或历史控制器定理覆盖解析器。其与 HTTP 传输、账户授权、实际文件副作用及请求总预算的组合见下项，尚未证明。
+
+[multipart 到上传批次的连接](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)已实现，真实文件/固定 SDK 组合已有原提交 Linux 组件证据，后续候选仍须重跑。它增加原授权/容量/期限跨 parser、HTTP frame 和实际 I/O 的所有权链；End 与 HTTP EOF/长度的联合判据、QP 错误前缀、未知字段/尾部预算以及取消后的资源保留均是新的自有义务。该组合未抽取或证明，之前解码器/单文件/批次测试和 `Transfer` 抽取不能代为背书；HTTP 库的先行分配和响应序列化/发送仍须最小外部合同及独立计费。
+
+[gzip 编解码组件](../sandbox-guest-runtime/src/gzip/mod.rs)新增头部预检、DEFLATE/CRC32 外部库连接、逐段结束与真实源 EOF、编码/展开预算及失败前缀义务。已有本地组件和固定 Go 对照，现已连接下述 HTTP/文件批次，未抽取或证明；`flate2`/`zlib-rs`/`crc32fast` 及调用者缓冲/期限/授权所有权仍须外部合同和组合连接。原纯来宾核心及历史已证明 Rust 未改变，旧定理不覆盖本模块或依赖实现。
+
+[HTTP gzip worker](../sandbox-guest-service/src/upload_body/mod.rs)与[文件连接](../sandbox-guest-service/src/file_transfer/batch/gzip.rs)复用原批次，新增压缩头到文件打开的先后关系、压缩长度/展开预算、阻塞解压/实际文件两个任务的原授权守卫、Bytes 最后副本释放到下一读取、取消后的实际退出以及 raw/multipart 不同 metadata 完成点。共享 HTTP 帧校验重构和该所有权连接均未抽取/证明；可移植测试已有本地运行，Linux 授权/文件和合成压缩 POST＋固定 SDK 回读待验证，不能用组件测试或纯 `Transfer` 定理代替组合义务。
+
+[gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)和[阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)增加同一原授权/容量到实际 open/read/销毁、实际 EOF 而非初始长度、源缓冲与编解码预算、响应 Bytes 最后副本释放及错误不伪装成功的义务。与上传共用的 worker/取消重构及 FD 打开辅助也未抽取或证明。原纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不背书这些连接；可移植测试与 Linux 交叉检查不等于 Linux 组合或系统证明通过。
+
+[内容编码选择](../sandbox-guest-runtime/src/file_encoding/mod.rs)和[HTTP 字段连接](../sandbox-guest-service/src/file_encoding.rs)增加原字段字节/重复值、Go 浮点及排序、预算分配和条件回退/Vary 阶段义务，尚未抽取或证明。固定 Go 函数的有限对照是工程证据，不证明解析器对全部输入等价，也不证明请求鉴权/stat/open 顺序或完整 HTTP 服务。纯来宾核心、历史 Rust 与 LLBC/Lean 未改；所移植 Go 排序/浮点辅助和 Rust 十进制转换仍需对应及最小库合同。
+
+[下载条件/范围](../sandbox-guest-runtime/src/file_download/mod.rs)与[响应计划](../sandbox-guest-service/src/file_download.rs)增加日期/时区转换、条件优先级、区间整数边界、MIME 线长、头变换和阶段执行义务，尚未抽取或证明。固定 Go 日期/ServeContent 的有限原函数对照只验证所列样例；计划中的文件区间不是已完成读取的证据，seek/read 错误、原授权/容量及响应发送的组合另由执行器承担，仍待完整验收。纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不背书该计划器或第三方 `time` 库。
+
+[范围正文执行器](../sandbox-guest-service/src/file_download/stream.rs)、[Linux FD 连接](../sandbox-guest-service/src/file_transfer/identity_download.rs)及[共用阻塞正文任务](../sandbox-guest-service/src/owned_body.rs)新增条件提前结束、准备期/正文期 seek、按计划读取与短读错误、MIME 分段、HEAD 抑制、原期限及最后字节副本到容量释放的义务。共用任务从 gzip 所有权代码抽出，旧路径回归通过仅属工程证据；Linux mtime/同一 FD/原 AuthPermit 组合尚待实跑。这些模块未抽取或证明，不能用纯 `Transfer` 或原历史版本定理覆盖新增执行连接；纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改。
+
+[下载 MIME](../sandbox-guest-runtime/src/file_mime/mod.rs)新增不可变数据库来源/优先级、Unicode 查表、原始 filename 编码、512 字节签名顺序及配置计费义务；[identity 执行](../sandbox-guest-service/src/file_download/stream.rs)新增条件先于嗅探、忽略读取错误但保留前缀、回绕失败与阻塞取消期间原守卫保留的组合义务。有限固定 Go 对照及本地组件通过只属工程证据，Linux 固定路径/原 FD 和模板来源验证尚待实跑。这些模块未抽取或证明；现有 multipart 参数解析仅开放 crate 内复用，算法未改，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 均未改，旧定理不覆盖新增路径。
+
+[协商下载](../sandbox-guest-service/src/file_download/stream/negotiated.rs)与[Linux 延迟打开](../sandbox-guest-runtime/src/filesystem/transfer.rs)新增 stat/选择/open 拒绝顺序、旧 metadata 与后续路径变化、单 worker 身份及期限、Vary 阶段、准备期错误响应和 gzip HEAD 消费/发送时机义务。可移植有限故障对照不代表真实 Linux 或完整端点验收；这些新增及重构代码均未抽取或证明。纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新的文件连接。
+
+[下载账户准入](../sandbox-guest-service/src/file_transfer/download.rs)新增账户查询前预留文件槽位、原授权/期限跨阻塞查询与下载 worker 移交、取消后真实退出才释放、账户耗时不退还和原查询路径到 MIME 选择的对应义务。账户/路径失败仍为显式组件错误；Linux 新连接与 SDK 迁移已交叉检查，执行待补。来宾适配未抽取或证明，纯核心、历史已证明 Rust 与 LLBC/Lean 未改，旧结论不覆盖新增组合。
+
+[下载错误格式化](../sandbox-guest-service/src/file_download/stream/errors.rs)及结构化 Linux errno 新增操作阶段/状态对应、可信解析路径、Go JSON 转义与精确线长、初始范围失败前头部回退，以及错误正文继续持有原授权/容量的义务。有限原 Go 受控错误对照只属工程证据；Linux 真实 errno 与 NUL 适配回归尚待实跑。修改的来宾 runtime/service 均未抽取或证明，纯来宾核心、历史已证明 Rust 和 LLBC/Lean 未改，旧定理不覆盖新增错误响应。
+
+[上传请求连接](../sandbox-guest-service/src/file_transfer/upload.rs)、[可移植头决策](../sandbox-guest-runtime/src/file_upload.rs)及账户池原期限/所有权重构新增编码预检与账户/metadata/类型的拒绝顺序、单次准入、阻塞查询取消后守卫保持和 raw 实际 EOF 的组合义务。共享 metadata 验证已替换真实写入中的相同校验，MIME 大小写辅助仅开放 crate 内复用；这些来宾实现均未抽取或证明。有限固定 Go 头部对照只属工程证据，Linux 文件/账户取消组合待实跑。纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖本候选的新增连接。
+
+[上传成功回执](../sandbox-guest-service/src/upload_response.rs)及原 BatchReply 的响应连接新增完成文件效果与响应交付的分离、原槽位/期限延续、最后字节副本释放、精确编码预算和 Go HTTP 成功头对应义务。下载错误转义/计数抽为共用内部函数，UploadResult 只迁移到可移植类型并保留旧路径重导出；原错误对照须一起重跑。这些来宾实现均未抽取或证明，固定 Go 回环 HTTP 只属有限工程证据；Linux 文件池/SDK 连接待实跑。纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新回执连接。
+
+[上传详细错误](../sandbox-guest-runtime/src/filesystem/transfer/upload.rs)及父目录准备重构新增实际操作阶段/路径/errno/xattr 名的准确记录、粗分类兼容、部分写入计数及失败后不重放的连接义务。原输入/预算拒绝仍独立，固定 processFile 的有限故障状态对照只属工程证据，Linux 真实路径与 FD 错误待实跑；文件 I/O 错误响应现接下述组件，其余拒绝映射仍待补。这些来宾模块未抽取或证明，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖本候选。
+
+[上传错误发送](../sandbox-guest-service/src/upload_response/errors.rs)及请求入口新增实际故障经原 worker/批次传递、阶段/errno/属性名与固定 JSON 对应、原声明长度诊断、编码上界与原槽位/期限延续的义务。错误发送失败不回滚文件，实际 I/O 与响应保留分别持有原责任；这些组合均未抽取或证明，原 Go 受控错误和 HTTP 对照只属工程证据，Linux 文件/SDK 连接待实跑。纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖本候选。
+
+[上传头拒绝](../sandbox-guest-service/src/upload_response/rejection.rs)及共享 metadata 详细验证新增首字段字节/键/偏移保留、单条校验优先于总量、先校验再分配、公开错误与原容量/期限连接的对应义务。旧粗分类入口保持，多个无效 metadata 键的 Go map 顺序不固定；有限原方法/错误表达式和 HTTP 对照不是全请求证明。Linux 连接/SDK 错误解析仍待实跑。纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，来宾适配仍未抽取或证明，旧定理不覆盖这些诊断及响应。
+
+[gzip 首头错误](../sandbox-guest-service/src/upload_response/gzip_header.rs)新增真实零字节 EOF 与截断/源/预算失败的区分、首头阶段到固定错误包装及原响应责任的连接义务。编码器及正文解码/校验算法未改变；这些来宾适配未抽取或证明，有限 Go 首头/HTTP 对照不证明完整 gzip 上传，Linux 请求/授权和 SDK 解析组合待实跑。纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖该新增错误分类。
+
+[multipart 路径拒绝](../sandbox-guest-service/src/file_transfer/batch.rs)及错误响应新增完成路径的移动/顺序/排除规则、重复前预算与文件未打开、filename 闸门、两遍迭代编码预算及原响应责任的义务。有限原 resolvePath/CustomPart 与 HTTP 对照只属工程证据；路径展开使用注入观察，Linux 文件副作用/授权/SDK 组合待实跑。来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖新增错误分类和发送。
+
+[multipart 准备错误](../sandbox-guest-runtime/src/multipart/headers.rs)及原上传入口新增三种零正文读取拒绝的阶段分类、旧粗入口兼容、显式预算与不支持文本的独立处理、500 包装和原发送责任延续义务。MIME 参数/正文解析算法未改，固定标准库方法/HTTP 有限对照仅为工程证据，Linux 请求与 SDK 解析待实跑。来宾适配未抽取或证明；纯核心、历史已证明 Rust、LLBC/Lean 未改，旧结论不覆盖新增分类。
+
+[raw gzip 正文错误](../sandbox-guest-service/src/upload_response/gzip_read.rs)新增请求模式/编码共同限定的失败阶段、已交付解压前缀到写入效果、失败前不完成 metadata、已知诊断与资源/源错误分离以及原错误响应责任的对应义务。gzip 算法和纯核心未改；内存复制目标上的固定 Go 原方法/HTTP 对照只属工程证据，Linux 文件/metadata/SDK 组合待实跑。来宾适配未抽取或证明，历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新连接。
+
+[multipart framing 诊断](../sandbox-guest-runtime/src/multipart/framing.rs)和[错误发送](../sandbox-guest-service/src/upload_response/multipart_read.rs)新增读取阶段/换行观察、受行预算约束的错误字节、QP 优先级、两遍 Go Quote/JSON 计长、PartEnd 与当前前缀效果、粗入口兼容及原响应责任的对应义务。固定 Go 表/方法与内存观察对照只属工程证据，Linux 文件/metadata/SDK 组合待补。来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖本候选。
+
+[MIME 头观察](../sandbox-guest-runtime/src/multipart/header_error.rs)新增完整物理/逻辑行确定时机、原验证顺序/折叠/键规范化、诊断源字节预算、真实源失败后已有头验证与本地长度/预算/期限事实分离、当前 Part 未创建及旧粗入口分类迁移的对应义务。原 Go/内存文件观察/HTTP 对照仅为工程证据，Linux 文件/SDK 与原响应责任连接待实跑。来宾适配未抽取或证明；纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新诊断。
+
+[QP 诊断与前缀](../sandbox-guest-runtime/src/multipart/quoted_printable.rs)新增详细编码错误、固定物理行/后缀预算、源失败与本地检查事实分离、写入先于诊断、旧粗分类迁移及原响应责任的对应义务。新增固定源读窗口、物理行/折叠缩进/末尾 CR 游标、分段读取提交、最后片段终态和满行错误时机的对应义务。原满行缓冲对齐差异已通过保留实际读取事实消除并转为一致回归；相同源读取事实上的原方法对照不是通用精化关系或全端点证明。Linux 文件/metadata/SDK 连接待实跑；来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该行为。
+
+[multipart 源失败阶段](../sandbox-guest-runtime/src/multipart/framing.rs)及 gzip 错误连接新增 Open/EOF/失败互斥、来源原因与阶段关联、失败后缓冲字节排出、歧义边界的完成点、近似边界最后字节才携带错误、QP/头/写入优先级和 MIME End 后严格排空的对应义务。原内容编码门控、忽略字段的粘滞错误包装、旧粗入口与原响应责任延续均须保留。固定 Go gzip/MIME/QP 与内存文件观察的有限对照只属工程证据；Linux 文件/metadata/SDK 组合待补。来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧结论不能背书本候选。
+
+[忽略字段的 Close](../sandbox-guest-runtime/src/multipart/discard.rs)新增原始读取预留、事件分片与消费位置的对应、固定 QP 预读/物理行预算、编码错误后只丢弃已预读字节、Close 完成与原始 part/请求成功分离、下一 part 阶段及原授权/期限延续义务。有限对照使用 identity 受控读大小或 gzip 实际记录的读取序列，不是全网络分块等价或通用精化证明。Linux 文件/metadata/SDK 与取消组合待实跑；来宾适配未抽取或证明，纯核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新路径。
+
+[文件查询绑定](../sandbox-guest-runtime/src/file_query.rs)及[公开错误响应](../sandbox-guest-service/src/file_query.rs)新增完整原始查询/字段预算、部分 URL 解码与固定参数拒绝顺序、字节到文本边界、整数溢出顺序、Go Quote 两遍线长预算及错误字节保留原守卫/期限的对应义务。签名字段解析不构成授权；生产准入/鉴权路由尚未接通。固定 Go 原绑定函数和 http.Error 对照仅属有限工程证据，Linux SDK 组合待补；来宾适配未抽取或证明，纯核心、历史已证明 Rust 与 LLBC/Lean 未改。
+
+[文件专用鉴权](../sandbox-guest-service/src/session/file_authorization.rs)新增私有原令牌与摘要/defaults 同次提交、候选失败清零、头/查询预算、令牌优先和签名参数表示、恒定时间比较及锁后时钟读取义务；SHA-256/base64 为外部密码原语，不因此证明原冒号拼接格式的元组唯一性。专用许可不能由调用方转换为通用命令授权，绑定的 query/操作和原绝对期限须经下载/上传入口一直移交到原账户/文件/响应所有权。会话可移植回归及固定 Go 对照只是工程证据，Linux 新组合待实跑。自有会话与鉴权逻辑未抽取或证明，纯核心、历史已证明 Rust 与 LLBC/Lean 未改；旧定理不覆盖本候选。
+
+[文件请求准入](../sandbox-guest-service/src/file_requests.rs)新增共享容量无等待队列、头/查询/鉴权顺序、准入时原期限、取消锁等待及分类拒绝的所有权义务。专用许可携带的原请求名额已连接上传/下载租约，须证明后台阻塞工作、结果和最后响应字节实际释放之前不会提前归还；拒绝编码失败/取消同样沿用原名额和期限。HEAD 早期拒绝新增完整编码预算先于抑制正文、原头部长度及空发送器直到 EOF/丢弃/期限的所有权义务；有限 Go HTTP 对照不构成全输入或传输组合证明。套接字与已解析头/URI/传输缓冲、正式拒绝策略及停止预留不在本组件的已实现预算内。可移植测试只是工程证据，Linux 账户/文件/SDK 连接待实跑；无新增抽取或证明，纯核心、历史已证明 Rust 与 LLBC/Lean 未改。
+
+[共用文件 HTTP 编排](../sandbox-guest-service/src/file_http.rs)新增准入到固定方法派发、可信未消费 Body 的 framing 长度、授权查询到 MIME/路径和上传/下载参数、未映射失败持续占额的组合义务。多范围响应在原 worker 按需生成 boundary，须区分自有 30 字节编码/生成阶段/错误处理与 getrandom/OS 熵的外部前提；取消/超时不能提前释放仍未返回的熵调用。组件及可移植检查不证明完整监听器、最终失败策略或端到端文件行为；Linux 新组合待实跑，无新增抽取/Lean 证明，纯核心和历史已证明 Rust 未改。
+
+[未知文件账号响应](../sandbox-guest-service/src/upload_response/account.rs)新增缺失账户分类与预算先于诊断分配、拒绝阶段、Go JSON/小响应头/HEAD 以及原容量/期限交付的自有义务。可移植有限 Go 对照不证明完整账户源或 POSIX 语义，Linux 请求/SDK 组合待实跑；这些适配未抽取或证明，历史已证明 Rust、纯核心及 LLBC/Lean 未改。
+
+[路径展开错误](../sandbox-guest-service/src/upload_response/path.rs)新增真实词法失败到原 HTTP 包装、原查询与默认路径区分、诊断分配预算、批次中先前副作用保留与更晚 part 不执行的自有连接义务。共享下载上下文错误发送器的重构有可移植回归；固定 Go 原函数有限对照不证明文件系统解析/竞态或全输入等价，Linux 请求/SDK 组合待实跑。未抽取或证明，历史已证明 Rust、纯核心及 LLBC/Lean 未改。
 
 ### 当前串行实现的模块交接
 
