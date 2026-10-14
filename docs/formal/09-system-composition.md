@@ -51,6 +51,100 @@ V9在V0接口阶段就开始维护Σ、共同不变量和依赖图；不等所�
 
 进展证明选阶段/剩余必要工作/有限尝试的良基组合度量，并证明等待依赖无环；消息可丢失的模型只有另加“原操作最终可被投递/确认”等前提才有最终完成性。公平只对已启用工作成立，不能提供启用、预算或外部成功，也不能承诺期限内成功或永久分区下完成。
 
+### 4.1 #342 第一批：组合审查与责任投影模型
+
+本批从工程提交 `9eeb815054a0b37d17bff831c23ea34004122892` 定位实际调用。它交付**独立的最小系统模型及模型定理**，不是当前 Rust 的精化，也不是本节首链全部分支已经闭合。精确验收和未完成项只见[覆盖记录](../proof-coverage.md#v9-首链责任投影模型)。实现不改动，不依赖未合入的 V0 分支。
+
+模型入口为 [Record](../../SandboxModel/FirstChain/Record.lean)、[System](../../SandboxModel/FirstChain/System.lean)、[Scenarios](../../SandboxModel/FirstChain/Scenarios.lean)；它们只导入固定 Lean 标准库。`Binding` 是完整**实例绑定**的类型参数，`Config.nodeOf` 是其固定节点投影，不另定义生产编号或编解码。操作编号、意图版本、尝试、原参数及本地映射尚待 V0/V1/V3/V4 接入，不能把参数化键称为已证明的全身份校验。
+
+#### 首链事件与真实提交点
+
+| 模型事件/状态 | 实际入口与边界 | 必须由相邻模块提供的义务 |
+|---|---|---|
+| `accept`：中心接受 | [CenterAuthority::decide/create](../../sandbox-center-store/src/authority.rs) → [RedisLedger::commit](../../sandbox-center-store/src/store.rs)；原责任经 CAS 与耐久确认后可派发 | V1 创建/预留；V2 原字节提交、未知结果及缓存 |
+| `send create/terminate`：形成原消息 | `dispatch_batch` 先 `reaffirm`，返回原 `Dispatch`；发送在中心锁外 | V2 提交先于派发；V3 编码、认证和原完整参数 |
+| `receive`：节点持久收件 | [record_internal_intent](../../controller-service/src/controller/internal_inbox.rs)，`WorldTransaction` 内保存原请求；`Recorded` 不是执行许可 | V3 原请求/终止记忆；V5 SQL 提交及未知结果 |
+| `admitLocal`：本地准入 | [admit_internal_create](../../controller-service/src/controller/internal_inbox/admission.rs)，原本地映射和资源/寿命/outbox 在原准入事务连接 | V3 映射唯一；V4 准入；V5 原子保存；不能与收件合并 |
+| `claim`：认领原工作 | [dispatch](../../controller-service/src/dispatch.rs)及控制器派发入口，先保存原尝试认领再调用宿主 | V4 工作资格与尝试；V5 认领/派发顺序 |
+| `effect`：可能已有物理效果 | [LinuxWorker::execute](../../sandbox-node/src/linux/execution.rs) 与 [恢复观察](../../sandbox-node/src/linux/recovery.rs)；部分效果或回执丢失仍可能占用资源 | V6 原登记、原对象及部分失败；不能由账本没有成功推断未执行 |
+| `ready` / `saveReady` | 本地就绪发布后，[capture_internal_progress](../../controller-service/src/controller/internal_inbox/facts.rs) 事务保存事实；中心 `apply_response` 另行耐久保存 | V4/V5/V6 原就绪证据；V2/V3 原结果、意图/观察版本；V7 公开成功 |
+| `terminate` / `receiveTerminal` | 中心 `destroy` 提交；节点 `record_internal_intent` 在同事务 `attach_terminal`，有原本地映射才连接对应终止 | V1/V2 中心终止；V3/V5 原节点终止，不假设跨库瞬时生效 |
+| `fence` / `stop` / `clean` | V4 调度，经 V5 派发到 V6 原围栏、停止、虚拟机/网络清理 | 每个事件分别需要真实证据；未启动实例的空集合停止与清理也须证明，不能凭空调用不存在的 VM |
+| `acquire/drain` 与引用增减 | [data_access](../../controller-service/src/application/coordinator/data_access.rs)、[relay_child](../../controller-service/src/application/relay_child.rs) 和维护引用 | V5/V8 授权登记、实际退出/排空；引用解除不等于物理清理，取消不等于退出 |
+| `release` / `saveRelease` | [release_reclaimed_slots](../../controller-service/src/application/coordinator/recovery.rs) → [release_host_slot](../../sandbox-node/src/host_slots.rs) → 本地 `ConfirmRelease`；`capture_internal_progress` 才可产生原 `Cleaned`，中心再保存 | V5/V6/V8 无旧工作、原资源清理、通道排空和引用结算；V1/V2 解除中心责任 |
+| `send acknowledgement` / `confirm` | 中心保存原终局后，节点 [confirm_internal_result](../../controller-service/src/controller/internal_inbox/confirmation.rs) 事务保存原结果确认 | V2/V3/V5 双向确认；发送不等于投递。窗口关闭和历史退休尚未进入本模型 |
+
+`Step` 的记录动作分别代表以上规定后置事实成立的抽象步骤，不代表整段真实函数原子执行。`clean` 是原资源清理已被证实的事件，不是“发起删除”或“删除命令返回了任意响应”。必须由对应模块把真实调用、失败、观察及事务微步骤连接到这些事件；这批没有把这些义务列为外部正确性假设。
+
+#### 最小状态及故障含义
+
+- 中心记录：接受、终止、曾保存就绪、曾保存释放；节点记录：收件、本地准入、原工作认领、就绪、终止、释放和终局确认。历史事实与当前运行健康分开，`ready` 不是永远存活。
+- 宿主责任：`potential` 表示可能残留物理效果，不表示 VM 个数、唯一性或实时健康。`fenced/stopped/cleaned` 分别代表原对象的历史证据。
+- `leases` 表示尚未确认退出的数据/中继持有者，`references` 表示阻止释放的引用；都是证明侧计数。重启观察进程不能把它们清零。它们没有被宣称为实际持久 SQL 字段，也不提供机器整数/内存预算定理。
+- 系统状态为任意绑定到记录的映射、有限在途消息、中心/Redis 可用状态、中心耐久确认资格及逐节点可用状态。有限登记节点列表是参数，不写死测试节点数；每条有限轨迹只触及有限绑定。
+- 消息按任意顺序投递，可延迟、重复或丢失；投递后保留原包以允许重复。`network` 只能重排、删去或复制已在途的消息，不能产生伪造身份。实际认证与坏消息拒绝的连接仍归 V3/V7。
+- 中心或 Redis 独立崩溃取消中心派发资格，保留原持久责任和消息/宿主效果。重启后须有 `reaffirm` 的成功耐久重确认事件才能再派发，读成功不够。中心写入已发生但回复未知由 `known=false` 表示；`unknownNoWrite` 保留未写入这一可能，两者都关闭新派发资格。
+- 节点崩溃仅改变该节点可用性，保留原责任、可能物理效果、连接持有者及其他节点。`restartNode` 代表**完成规定核验后的恢复就绪**，不代表进程启动就自动获得许可。实际恢复核验由 V3/V5/V6/V8 提供。
+- 正常运行可以暂时出现 `potential=true`、`ready=true` 而 `readySaved=false`，例如节点已就绪但中心丢失回复。各层状态不必相等。
+
+#### 本批共同不变量与证明结果的含义
+
+`Invariant` 由逐绑定 `Safe`、已接受绑定属于登记节点、在途消息有原历史事实三部分组成。它不是 `advance/Step` 的守卫；通过逐动作保持及可达历史归纳证明，不能以“只允许安全后继”直接假设结论。
+
+1. 本地收件依赖中心责任，本地准入依赖收件，工作认领依赖本地准入，可能物理效果依赖原认领。
+2. 可能存在资源时，两端原责任仍存在，本地和中心均未声明释放。
+3. 中心释放依赖节点释放；节点释放依赖原清理、零连接持有者和零阻塞引用；清理证据连接停止和围栏。
+4. 终止不能倒退；节点终止后不再接受迟到创建或授予本模型的新本地数据许可；围栏生效后不能再产生本模型的旧启动效果。
+5. 消息只能携带对应绑定曾建立的事实；更新一个绑定不改另一个绑定的模型记录。
+
+`initial_invariant` 证明抽象初态合法；丢就绪回复＋中心崩溃的可达见证证明模型不是空的。`original_ready_recoverable` 证明在原节点可用、原就绪事实存在且未终止时，**存在**一条重确认并接回原结果的路径，不证明所有公平执行都最终完成，也没有从物理健康推断客户端永远可用。
+
+禁止轨迹包括：只收件就认领工作、连接/引用未退出就释放、终止先到后再次创建、凭未知状态编造就绪、直接抹去未清理责任。正例包含正常启动、部分效果未公开就绪、停止但未清理、排空后完成清理与确认。样例检查定义，一般安全结论来自 `reachable_invariant`，不是从样例数量归纳。
+
+#### 尚待接入的组合义务
+
+| 编号 | 必须接入的实际义务 | 提供方 |
+|---|---|---|
+| FC-ID | V0 完整类型/编码与实例、操作、意图版本、尝试及原参数的表示；真实节点选择与唯一全局→本地映射 | V0/V1/V3/V4；当前类型参数和一次 `claim` 不证明无重复真实 VM |
+| FC-COMMIT | Redis/Lua、SQLite、原收件/准入共享事务、缓存/未知提交及实际崩溃点 | V2/V3/V5；两个数据库没有共同提交点 |
+| FC-EVIDENCE | `effect/ready/fence/stop/clean/release` 的原对象证据、所有部分效果及观察错误 | V4/V5/V6；本模型事件不是可信 Rust 回执构造器 |
+| FC-DRAIN | 实际授权及原资格、持有者/引用的完整计费、取消到真实退出，引用等待无环 | V5/V6/V7/V8；一个 Nat 计数不是许可实现或资源上界证明 |
+| FC-INIT | 真实新部署/恢复初始化、受保护配置和登记到模型初态/可达态；坏输入的精确拒绝 | 各模块及 V9；抽象空初态不等于真实启动已证 |
+| FC-EXTEND | 有限重试、明确拒绝/NotAccepted、创建失败终局、期限/竞争、窗口关闭/退休/复用及首链全部允许交错 | 各模块及 #342 后续批次；本批只是一层责任投影，不能提前关闭首链 |
+| FC-IMPLEMENT | 实际事件投影、每模块表示关系、互斥/回调/取消和组装对应；已启用工作及条件推进 | V1–V8 → V9；不能以假设实现遵守本模型冒充已完成精化 |
+
+本批不更改 V0 的公共目录、抽取物和工具脚本，不借用其未合入结论；待接口稳定后为参数化 `Binding/Node` 接入适用表示关系。只新增 `SandboxModel/FirstChain/` 与本模块计划、覆盖段落及独立检查入口。局部检查通过不替代现有完整证明入口，也不更改其失败判据。
+
+### 4.2 首链身份连接合同
+
+[Identity](../../SandboxModel/FirstChain/Identity.lean) 复用 V0 的真实 `ControlIdentity::validate_response` 抽取及对应定理，将完整线协议身份投影到首链的实例记录键。实例键为节点绑定、租户和全局沙箱；节点绑定包含部署、节点编号及节点代际。操作、意图版本、收件位置与窗口仍参加完整回复检查，但不作为另建实例记录的理由。源版本、实际验收和未完成项统一见[覆盖记录](../proof-coverage.md#v9-首链身份连接)。
+
+`IdentityAccepted` 是真实抽取检查函数成功的命题。证明其成功充要条件，并连接完整字段相等、原实例及操作/意图/位置/窗口保留；跨实例或旧意图、旧窗口不能通过该检查。合法身份的可实现见证避免只拒绝输入的空结论。标识构造、编码/解码和字段非零约束仍由 V0/V3 的相应入口提供，不从被擦除的整数包装推断。
+
+`IdentityDelivery` 是显式前提的邻接合同：实际身份检查通过，加上登记节点、原在途消息、参与方资格和本地事实转换，才能对应首链的一次投递；身份拒绝在该合同内保持原状态。由此连接既有不变量、可达性、其他实例记录不变、终止后就绪更新阻断和释放所需的清理/排空条件。合同不充当生产处理函数，也不将其前提假设成已证明的自有实现。
+
+完整 `CenterState::apply_response` 经 `LifecycleResponse::validate_for` 使用该身份子检查，还检查事实种类、原寿命、观察版本及事实顺序；中心必须从最后一个原持久操作取得预期请求。上述选择与检查、重复回复、Redis 提交/缓存、节点事实的真实性、授权和宿主证据继续由 V1–V8 提供。当前连接只落实 FC-ID 的身份子检查及 FC-IMPLEMENT 的这一条件合同，未闭合这两项或完整首链。验收入口同时核对本节源码摘要与 V0 真实根的重新抽取，不能只编译历史生成物。
+
+### 4.3 生命周期回执的纯检查合同
+
+Linux 批次直接抽取生产 `ControlIdentity::validate_response` 与 `LifecycleResponse::validate_for`，仅调用它们的自由入口不复制业务算法。复用 V0 的数学 `Binding/checkResponse`，Linux 生成类型、工具二进制及目标配置独立冻结，不修改 V0 在途工作或将 Mac 抽取结论直接标为 Linux 对应。
+
+[生命周期规约](../../SandboxModel/FirstChainLinux/Lifecycle.lean) 的 `FactCompatible` 用自然数给出接受条件：收件事实可用于任意意图；未准入只能用于创建；停止/清理只能用于销毁；续期完成必须等于原续期目标。创建就绪则要求启动时间严格早于原启动期限，两项原寿命加法不超过 u64 上限，并精确等于报告的到期与最大到期时间。不接受其余意图/事实组合，也不允许溢出后回绕匹配。
+
+`checkLifecycle` 先执行完整身份检查，身份错误立即返回其原错误；只有身份通过才判断事实与寿命。对应定理必须比较整个结果，包括 UnsupportedVersion/BindingMismatch 和全部拒绝分支，不能只证明成功后时间相等。检查是只读函数，没有持久化、实例选择、授权或宿主动作。
+
+`observation_version` 不参与此纯检查。实际 `CenterState::apply_response` 还选择最后一个原操作，优先处理完全相同的重复回执，并检查观察版本及事实等级后更新状态；恢复校验也核对历史顺序。上述真实选择、更新、提交与物理事实仍由 V1/V2/V3/V5/V6 提供，本批不把它们移为外部假设。Linux 回执合同尚未实例化原 `IdentityDelivery`，不得由纯检查成功推导中心已提交就绪或已释放。
+
+局部验收入口为 `bash scripts/verify-first-chain-linux.sh`；完整入口仍保留原 V0 和历史本地核心检查并接入此入口。目标/生成物不匹配时退出失败，分别报告局部与整套结果；适用版本及完成状态只记[覆盖记录](../proof-coverage.md)。
+
+### 4.4 中心真实回执分类的连接边界
+
+首链接入生产 `Operation::classify_response`，复用生命周期检查并比较完整回执；规则和判定对应的权威定义见 [V1 子批次](01-center-core.md#首链回执分类子批次)。实际调用发生在中心选择原操作之后、更新候选状态之前，不维护验证专用替代算法。
+
+这个局部连接提供原操作的 Duplicate/Advance/Stale 判定及其条件，不提供原操作选择的正确性、中心全状态后继、耐久结果或真实宿主证据。接入旧 `IdentityDelivery` 仍需将 Linux 类型、真实选择、观察/更新和提交微步骤共同连接；不能直接把分类成功当成抽象投递或持久就绪事件。
+
+完整入口遇到转换限制时保留失败证据，依照既有工作流将有清晰职责的判定从生产调用中分离；不同抽取模式与失败阶段分别记录，不把预检成功当作对应证明。本批保留完整入口未解项和原验收门槛，不引入整个中心校验器正确的外部假设；V0/本地共享证明只复用固定已提交快照，版本及局部/整套结果统一记入覆盖记录。
+
 ## 5 验收与覆盖闭合
 
 定义、实现、提取、版本、前提、邻接和全局定理依赖必须在同一候选闭合。依据 [V0开工表](00-foundations.md#5-开工与完成条件) 和 [证明工作流](../proof-workflow.md) 建立每个实际入口的抽取/编译/定理审计清单；现有 verify-controller 仅有本地抽取根，不能把旧根通过说成新增系统验证通过。

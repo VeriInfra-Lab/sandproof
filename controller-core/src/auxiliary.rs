@@ -94,45 +94,7 @@ fn allows_network(record: &SandboxRecord, sandbox: SandboxId, vm: VmId, slot: Ne
 }
 
 fn destination_allowed(record: &SandboxRecord, destination: &Endpoint) -> bool {
-    match &record.policy {
-        crate::NetworkPolicy::DenyAll => false,
-        crate::NetworkPolicy::StaticAllowlist(endpoints) => {
-            let mut cursor = 0;
-            let mut allowed = false;
-            while cursor < endpoints.len() && !allowed {
-                if &endpoints[cursor] == destination {
-                    allowed = true;
-                }
-                cursor += 1;
-            }
-            allowed
-        }
-        crate::NetworkPolicy::Ipv4 {
-            internet_access,
-            allow_out,
-            deny_out,
-        } => {
-            // This pure decision does not model the host's changing local
-            // addresses. The deployed host must additionally enforce those.
-            let Ok(address) = destination.address.parse::<std::net::Ipv4Addr>() else {
-                return false;
-            };
-            if destination.prefix_length != 32 {
-                return false;
-            }
-            let address = u32::from(address);
-            if crate::platform_protected_ipv4(address) {
-                return false;
-            }
-            if allow_out.iter().any(|range| range.contains(address)) {
-                return true;
-            }
-            if deny_out.iter().any(|range| range.contains(address)) {
-                return false;
-            }
-            *internet_access
-        }
-    }
+    record.policy.destination_allowed(destination)
 }
 
 /// Record client-side uncertainty without inventing an adapter result.

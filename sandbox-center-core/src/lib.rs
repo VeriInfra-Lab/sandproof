@@ -7,6 +7,7 @@ mod decision;
 mod model;
 mod validation;
 mod window;
+pub use decision::ResponseDisposition;
 pub use model::*;
 #[cfg(test)]
 mod tests;

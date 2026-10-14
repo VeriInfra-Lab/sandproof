@@ -2,7 +2,7 @@ use crate::{CenterState, DecisionError, NodeMode, NodeRole, Operation, Sandbox};
 use sandproof_protocol::internal::lifecycle::{
     CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
 };
-use sandproof_protocol::internal::{ControlIdentity, INTERNAL_PROTOCOL_VERSION};
+use sandproof_protocol::internal::{ControlIdentity, INTERNAL_PROTOCOL_VERSION, PositiveCounter};
 use sandproof_protocol::{SandboxId, TenantId};
 
 fn ratio(used: Resources, limit: Resources) -> (u64, u64) {
@@ -19,6 +19,48 @@ fn fact_rank(fact: LifecycleFact) -> u8 {
         LifecycleFact::Recorded => 0,
         LifecycleFact::Stopped => 1,
         _ => 2,
+    }
+}
+
+/// Classification of a response for an already selected original operation.
+/// This does not authenticate its sender, select a sandbox, or commit a result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResponseDisposition {
+    Duplicate,
+    Advance,
+}
+
+impl Operation {
+    /// Check the original request before recognizing a duplicate or newer fact.
+    /// # Errors
+    /// Wrong identity/parameters, old observations and non-advancing facts are stale.
+    pub fn classify_response(
+        &self,
+        observed: Option<PositiveCounter>,
+        response: &LifecycleResponse,
+    ) -> Result<ResponseDisposition, DecisionError> {
+        match response.validate_for(&self.request) {
+            Ok(()) => {}
+            Err(_) => return Err(DecisionError::Stale),
+        }
+        if self.response.as_ref() == Some(response) {
+            return Ok(ResponseDisposition::Duplicate);
+        }
+        let old_observation = match observed {
+            Some(version) => response.observation_version.get() <= version.get(),
+            None => false,
+        };
+        if old_observation {
+            return Err(DecisionError::Stale);
+        }
+        let old_fact = match &self.response {
+            Some(prior) => fact_rank(response.fact) <= fact_rank(prior.fact),
+            None => false,
+        };
+        if old_fact {
+            return Err(DecisionError::Stale);
+        }
+        Ok(ResponseDisposition::Advance)
     }
 }
 impl CenterState {
@@ -320,21 +362,9 @@ impl CenterState {
         let index = self.index(&response.identity.tenant_id, &response.identity.sandbox_id)?;
         let record = &self.sandboxes[index];
         let operation = record.operations.last().ok_or(DecisionError::Invalid)?;
-        response
-            .validate_for(&operation.request)
-            .map_err(|_| DecisionError::Stale)?;
-        if operation.response.as_ref() == Some(response) {
-            return Ok(self.clone());
-        }
-        if record
-            .observation_version
-            .is_some_and(|v| response.observation_version.get() <= v.get())
-            || operation
-                .response
-                .as_ref()
-                .is_some_and(|r| fact_rank(response.fact) <= fact_rank(r.fact))
-        {
-            return Err(DecisionError::Stale);
+        match operation.classify_response(record.observation_version, response)? {
+            ResponseDisposition::Duplicate => return Ok(self.clone()),
+            ResponseDisposition::Advance => {}
         }
         let mut next = self.clone();
         let record = &mut next.sandboxes[index];

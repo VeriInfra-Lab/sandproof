@@ -7,10 +7,16 @@ AENEAS="$TOOL_ROOT/aeneas/bin/aeneas"
 test "$(git -C "$TOOL_ROOT/aeneas" rev-parse HEAD)" = 505b6ca35217e7be5c96c3e2f8045edfbdf47291
 test "$(git -C "$TOOL_ROOT/aeneas/charon" rev-parse HEAD)" = b104e24fea7d721b71e6c39fd70f26ff20bc0980
 cd "$ROOT_DIR"
-LLBC="$ROOT_DIR/verification/aeneas/llbc/sandproof_foundations.llbc"
-DEST="$ROOT_DIR/verification/aeneas/foundations"
+LLBC=verification/aeneas/llbc/sandproof_foundations.llbc
+DEST=verification/aeneas/foundations
 mkdir -p "$(dirname "$LLBC")" "$DEST"
+# Require a newly emitted input; never translate a leftover from a failed run.
+mkdir -p artifacts
+PREVIOUS="$(mktemp -d artifacts/foundations-extraction.XXXXXX)"
+if [[ -f "$LLBC" ]]; then mv "$LLBC" "$PREVIOUS/previous.llbc"; fi
 test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
+# Cargo's driver runs in verification/extract-foundations. The relative
+# --dest-file below reaches the same LLBC and is portable across checkouts.
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
   --start-from crate::counter_from_u64 \
@@ -18,6 +24,9 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::counter_value \
   --start-from crate::lane_current \
   --start-from crate::store_get_copy \
+  --start-from crate::store_put \
+  --start-from crate::store_retain_above \
+  --start-from crate::option_is_none_or \
   --start-from crate::resource_add \
   --start-from crate::resource_positive \
   --start-from crate::resource_fits \
@@ -26,8 +35,9 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::retry_hint \
   --start-from crate::outcome_observation \
   --include sandproof_protocol --include sandproof_center_core \
-  --include sandbox_controller_core --dest-file "$LLBC" \
+  --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_foundations.llbc \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline
+test -s "$LLBC"
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \
   -emit-json -namespace SandproofFoundationsRust -subdir SandproofFoundations \
   -dest "$DEST" "$LLBC"
