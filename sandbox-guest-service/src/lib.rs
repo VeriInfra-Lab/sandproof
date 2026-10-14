@@ -5,6 +5,8 @@
 //! install an envd replacement; trusted configuration and immutable-template
 //! integration remain separate obligations. Health does not certify readiness.
 
+#[cfg(any(target_os = "linux", test))]
+mod command_clock;
 pub mod command_requests;
 mod connect_timeout;
 pub mod file_authorization;
