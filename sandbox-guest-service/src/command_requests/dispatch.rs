@@ -2,7 +2,7 @@
 //! failures preserve their actual observation for the separate HTTP sender.
 use super::http::operation::{ChannelRejection, Rejection};
 use super::{Body, Error, Failure, Instant, Owner, Ready, Request, check_deadline};
-use crate::command::{CommandBodyLimits, CommandError, ManagedCommand, PidRegistry};
+use crate::command::{CommandBodyLimits, CommandError, InputFailure, ManagedCommand, PidRegistry};
 use sandproof_guest_runtime::{
     ProcessSignal, PtySize,
     protocol::{self, Input, Response, Selector, Signal},
@@ -177,12 +177,26 @@ async fn control(
         Request::SendInput { process, input } => {
             let command = live(registry, process.as_ref(), observed)?;
             match input {
-                Some(Input::Stdin(bytes)) => channel_result(
-                    command.write_input(command.identity(), bytes).await,
-                    command.has_pty(),
-                    ChannelRejection::StdinOnPty,
-                    observed,
-                ),
+                Some(Input::Stdin(bytes)) => {
+                    let result = command
+                        .write_input_observed(command.identity(), bytes)
+                        .await;
+                    match &result {
+                        Err(InputFailure::StdinClosed) => {
+                            *observed = Some(Rejection::StdinClosed);
+                        }
+                        Err(InputFailure::StdinDisabled) => {
+                            *observed = Some(Rejection::StdinDisabled);
+                        }
+                        _ => (),
+                    }
+                    channel_result(
+                        result.map_err(InputFailure::error),
+                        command.has_pty(),
+                        ChannelRejection::StdinOnPty,
+                        observed,
+                    )
+                }
                 Some(Input::Pty(bytes)) => channel_result(
                     command.write_pty(command.identity(), bytes).await,
                     !command.has_pty(),

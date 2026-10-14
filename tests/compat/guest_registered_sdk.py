@@ -176,6 +176,15 @@ async def run(settings):
         await peer.rejected('update', process_pb.UpdateRequest,
                             selector | {'pty': {}}, Code.INTERNAL,
                             'error resizing tty: tty not assigned to process')
+    if mode in ('term', 'kill'):
+        # The preselected command waits on its private FIFO, so closing stdin
+        # cannot race its exit. Repeated close is accepted before both writes.
+        for _ in range(2):
+            await peer.unary('close_stdin', process_pb.CloseStdinRequest, selector)
+        for value in ('', base64.b64encode(b'not-delivered').decode()):
+            await peer.rejected('send_input', process_pb.SendInputRequest,
+                                selector | {'input': {'stdin': value}}, Code.INTERNAL,
+                                'error writing to stdin: stdin not enabled or closed')
     stream = peer.call('connect', process_pb.ConnectRequest.from_json(json.dumps(selector)))
     try:
         first = (await peer.next(stream)).event.event
@@ -222,4 +231,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         asyncio.run(run(settings))
     print(f"authenticated PID SDK: {settings['mode']}, async={settings['asynchronous']} passed; "
-          "nine operation rejections passed")
+          f"{11 if settings['mode'] in ('term', 'kill') else 9} operation rejections passed")

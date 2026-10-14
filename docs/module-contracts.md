@@ -419,6 +419,8 @@ List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用�
 
 原 Failure::into_operation_response 使用同一回复格式、绝对期限和请求责任：PID 缺失为 not_found，一元 404；缺少选择器/输入或不支持信号为 unimplemented，一元 501；一元错误始终 identity application/json。Connect 错误为 200、原 charset/协商编码的唯一 EOS，无进程事件。文本保持固定 getProcess/handleInput/SendSignal 的类型名、无符号 PID 和枚举名称/有符号数字，按 Go JSON 转义；数值临时字符串大小固定有界。原 JSON、编码副本和传输块各计入有界工作区，编码失败/最后副本继续持有同一责任。tag、Start/工作进程、I/O 细节和缺失格式/观察仍未分类，不能由这些错误推断旧进程不存在或已清理。
 
+管道 stdin 禁用或已关闭后的写入返回一元 identity 500 / internal、固定文本 error writing to stdin: stdin not enabled or closed，但须保存同次实际拒绝的确切事实：禁用情况由原启动交接仍持有的闭合输入标记确认，只在已启动检查通过且原独占输入锁内没有写句柄时使用；关闭情况由同一原锁内的端口缺失和同一次 write_input 的 BrokenPipe 确认。空写入同样拒绝；重复 CloseStdin 仍可成功。旧组件写入接口继续返回原粗粒度错误，HTTP 发送不重新查 PID/状态、不重放操作。保留着原写端但子进程已关闭读端的真实 EPIPE、完成/owner 丢失、忙写及超限均不能冒充该事实；它不证明进程已退出。原期限、预算、鉴权释放与最后副本容量继续适用。
+
 同一次控制操作实际返回 InvalidArgument 且原句柄不可变 PTY 能力证明通道不匹配时，另保留四项固定事实：PTY 写 stdin、管道写 PTY、PTY CloseStdin、管道 resize。前两项及 resize 返回 internal，CloseStdin 返回 unknown，均为一元 identity 500；文本沿固定 handleInput/CloseStdin/Update 与 handler 错误，仍由原有限发送器承担期限、预算和最后副本所有权。能力查询不证明命令存活，不重新取得 PID 或执行操作；输入关闭、并发写入、完成竞争、真实 I/O/PTY ioctl 失败不能仅凭 InvalidArgument 套用该分类。流式误用保持未分类，不改变旧组件 CommandError 或选择 tag 政策。
 
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)消费同一 Basic 预检结果，先选择已知命令的 POST 与两个 Connect JSON 类型，复用有界 MIME 参数解析。其他原协议为未选定分类，不据此公开返回 415。一元与 Start/Connect 分别选择原 Content-Encoding/Accept-Encoding 和 Connect-Content-Encoding/Connect-Accept-Encoding 的第一值；空值/identity/gzip、逗号或 ASCII 空格分割及不解释 q 权重遵循固定协商。方法/媒体类型先于压缩，压缩错误先于版本，版本先于期限语法错误；有效期限先收紧原准入上限，失败保留已选回复格式/编码及原期限，不刷新容量或时钟。诊断只复制完整头预算后的对应首值，Debug 不暴露原值。

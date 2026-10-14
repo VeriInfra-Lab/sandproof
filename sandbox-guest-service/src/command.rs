@@ -50,6 +50,28 @@ pub enum CommandError {
     Unavailable,
 }
 
+/// A precise observation from the original input attempt. Existing component
+/// callers retain their original coarse error; HTTP may consume the fact.
+pub(crate) enum InputFailure {
+    Command(CommandError),
+    StdinClosed,
+    StdinDisabled,
+}
+impl InputFailure {
+    pub(crate) const fn error(self) -> CommandError {
+        match self {
+            Self::Command(error) => error,
+            Self::StdinClosed => CommandError::Unavailable,
+            Self::StdinDisabled => CommandError::ClosedInput,
+        }
+    }
+}
+impl From<CommandError> for InputFailure {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CommandExit {
     pub code: i32,
@@ -224,6 +246,7 @@ impl CommandReservation {
     ) -> (ManagedCommand, CommandSubscription) {
         let identity = process.identity();
         let control = process.control();
+        let stdin_disabled = !control.has_pty() && process.has_closed_input();
         let (status, _) = watch::channel(CommandStatus {
             launch: LaunchStatus::Pending,
             completion: None,
@@ -234,6 +257,7 @@ impl CommandReservation {
         let shared = Arc::new(Shared {
             identity,
             control,
+            stdin_disabled,
             status,
             streams: Mutex::new(streams::Subscribers::default()),
             subscriber_slots: Arc::new(Semaphore::new(self.limits.subscribers)),
@@ -259,6 +283,7 @@ impl CommandReservation {
 struct Shared {
     identity: CommandIdentity,
     control: CommandControl,
+    stdin_disabled: bool,
     status: watch::Sender<CommandStatus>,
     streams: Mutex<streams::Subscribers>,
     subscriber_slots: Arc<Semaphore>,
@@ -351,6 +376,16 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
     ) -> Result<(), CommandError> {
+        self.write_input_observed(identity, bytes)
+            .await
+            .map_err(InputFailure::error)
+    }
+
+    pub(crate) async fn write_input_observed(
+        &self,
+        identity: CommandIdentity,
+        bytes: &[u8],
+    ) -> Result<(), InputFailure> {
         self.write_channel(identity, bytes, false).await
     }
 
@@ -362,7 +397,9 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
     ) -> Result<(), CommandError> {
-        self.write_channel(identity, bytes, true).await
+        self.write_channel(identity, bytes, true)
+            .await
+            .map_err(InputFailure::error)
     }
 
     /// Resize the original terminal independently of a blocked input writer.
@@ -382,10 +419,10 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
         pty: bool,
-    ) -> Result<(), CommandError> {
+    ) -> Result<(), InputFailure> {
         self.check(identity)?;
         if bytes.len() > self.shared.limits.stdin_bytes {
-            return Err(CommandError::ResourceExhausted);
+            return Err(CommandError::ResourceExhausted.into());
         }
         let mut input = self
             .shared
@@ -393,17 +430,34 @@ impl ManagedCommand {
             .try_lock()
             .map_err(|_| CommandError::ResourceExhausted)?;
         self.require_started()?;
-        let writer = input.as_mut().ok_or(CommandError::ClosedInput)?;
+        let writer = input.as_mut().ok_or_else(|| {
+            if !pty && self.shared.stdin_disabled {
+                InputFailure::StdinDisabled
+            } else {
+                InputFailure::Command(CommandError::ClosedInput)
+            }
+        })?;
         tokio::select! {
             biased;
             () = input_finished(&self.shared) => {
                 input.take();
-                Err(CommandError::ClosedInput)
+                Err(CommandError::ClosedInput.into())
             }
             result = async {
-                if pty { writer.write_pty(identity, bytes).await }
-                else { writer.write_input(identity, bytes).await }
-            } => result.map_err(|error| input_error(&error)),
+                // Borrowed under the original exclusive writer lock; the
+                // actual attempt still runs once. No later PID/state lookup
+                // may infer this reason from a generic BrokenPipe/Unavailable.
+                let closed_stdin = !pty && !self.has_pty() && writer.is_closed();
+                let result = if pty { writer.write_pty(identity, bytes).await }
+                    else { writer.write_input(identity, bytes).await };
+                result.map_err(|error| {
+                    if closed_stdin && error.kind() == std::io::ErrorKind::BrokenPipe {
+                        InputFailure::StdinClosed
+                    } else {
+                        InputFailure::Command(input_error(&error))
+                    }
+                })
+            } => result,
         }
     }
 

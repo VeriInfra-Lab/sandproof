@@ -48,6 +48,8 @@ func operationError(headers http.Header) error {
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("invalid signal: %s", rpc.Signal(input.Number)))
 	case "stdin-on-pty":
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("error writing to stdin: %w", errors.New("tty assigned to process — input should be written to the pty, not the stdin")))
+	case "stdin-closed":
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("error writing to stdin: %w", errors.New("stdin not enabled or closed")))
 	case "pty-on-pipe":
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("error writing to tty: %w", errors.New("tty not assigned to process — input should be written to the stdin, not the tty")))
 	case "close-pty":

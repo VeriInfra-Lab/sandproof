@@ -162,6 +162,7 @@ fn operation_failures(rpc: Rpc) -> Vec<(Rejection, &'static str, i64)> {
     );
     if rpc == Rpc::SendInput {
         failures.push((Rejection::MissingInput, "input", 0));
+        failures.push((Rejection::StdinClosed, "stdin-closed", 0));
         failures.extend([
             (
                 Rejection::Channel(ChannelRejection::StdinOnPty),
@@ -277,8 +278,11 @@ async fn channel_rejections_keep_owning_the_request_and_refuse_stream_misclassif
         ChannelRejection::PtyOnPipe,
         ChannelRejection::ClosePty,
         ChannelRejection::ResizePipe,
-    ] {
-        let rejection = Rejection::Channel(rejection);
+    ]
+    .map(Rejection::Channel)
+    .into_iter()
+    .chain([Rejection::StdinClosed, Rejection::StdinDisabled])
+    {
         let raw = payload(rejection, false, 4096).unwrap();
         for (stream, budget, expired) in [
             (false, raw.len(), false),

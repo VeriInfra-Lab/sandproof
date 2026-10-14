@@ -7,6 +7,8 @@ use sandproof_guest_service::command_http::{
 
 #[path = "channel_http.rs"]
 mod channels;
+#[path = "closed_stdin_http.rs"]
+mod closed_stdin;
 #[path = "end_stream_http.rs"]
 mod end_stream;
 #[path = "framing_http.rs"]

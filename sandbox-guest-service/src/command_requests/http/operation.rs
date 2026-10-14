@@ -16,6 +16,8 @@ pub(crate) enum Rejection {
     MissingInput,
     Signal(i32),
     Channel(ChannelRejection),
+    StdinClosed,
+    StdinDisabled,
 }
 #[derive(Clone, Copy)]
 pub(crate) enum ChannelRejection {
@@ -45,6 +47,12 @@ impl Rejection {
     #[cfg(target_os = "linux")]
     pub(crate) fn matches(self, error: &RequestError) -> bool {
         match self {
+            Self::StdinDisabled => {
+                error == &RequestError::Command(crate::command::CommandError::ClosedInput)
+            }
+            Self::StdinClosed => {
+                error == &RequestError::Command(crate::command::CommandError::Unavailable)
+            }
             Self::Channel(_) => {
                 error == &RequestError::Command(crate::command::CommandError::InvalidArgument)
             }
@@ -115,14 +123,18 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
     let result = async {
         let format = source.format.ok_or(reply::Error::UnclassifiedFault)?;
         let rejection = source.rejection.ok_or(reply::Error::UnclassifiedFault)?;
-        if matches!(rejection, Rejection::Channel(_))
-            && format.content_type().starts_with("application/connect+")
+        if matches!(
+            rejection,
+            Rejection::Channel(_) | Rejection::StdinClosed | Rejection::StdinDisabled
+        ) && format.content_type().starts_with("application/connect+")
         {
             return Err(reply::Error::UnclassifiedFault);
         }
         let status = match rejection {
             Rejection::PidNotFound(_) => StatusCode::NOT_FOUND,
-            Rejection::Channel(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Rejection::Channel(_) | Rejection::StdinClosed | Rejection::StdinDisabled => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             _ => StatusCode::NOT_IMPLEMENTED,
         };
         reply::send_error(
@@ -147,12 +159,16 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
         put(match rejection {
             Rejection::PidNotFound(_) => b"not_found",
             Rejection::Channel(channel) => channel.code(),
+            Rejection::StdinClosed | Rejection::StdinDisabled => b"internal",
             _ => b"unimplemented",
         })?;
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| crate::go_json::string_content(bytes, put);
         match rejection {
             Rejection::Channel(channel) => message(channel.message())?,
+            Rejection::StdinClosed | Rejection::StdinDisabled => {
+                message(b"error writing to stdin: stdin not enabled or closed")?;
+            }
             Rejection::MissingSelector => message(b"invalid input type *process.ProcessSelector")?,
             Rejection::MissingInput => message(b"invalid input type <nil>")?,
             Rejection::PidNotFound(pid) => {

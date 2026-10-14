@@ -389,8 +389,9 @@ async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
 
 async fn probe(asynchronous: bool, mode: &str) {
     let script = match mode {
-        "pipe" | "term" | "kill" => {
-            "printf once >> effect; printf '%s|ready' \"$VALUE\"; exec /bin/cat"
+        "pipe" => "printf once >> effect; printf '%s|ready' \"$VALUE\"; exec /bin/cat",
+        "term" | "kill" => {
+            "printf once >> effect; mkfifo hold; printf '%s|ready' \"$VALUE\"; read value < hold"
         }
         "pty" => {
             "printf once >> effect; stty -echo; stty size; read value; stty size; printf 'got:%s' \"$value\""
