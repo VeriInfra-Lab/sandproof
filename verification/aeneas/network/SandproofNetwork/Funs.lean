@@ -34,6 +34,19 @@ def core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError :
     core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError.from_str
 }
 
+/-- Trait implementation: [core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}]
+    Source: '/rustc/library/core/src/option.rs', lines 2434:0-2434:56
+    Name pattern: [core::cmp::PartialEq<core::option::Option<@T>, core::option::Option<@T>>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<core::option::Option<@T>, core::option::Option<@T>>"]
+impl_def core.option.Option.Insts.CoreCmpPartialEqOption {T : Type}
+  (cmpPartialEqInst : core.cmp.PartialEq T T) : core.cmp.PartialEq (Option T)
+  (Option T) := {
+  eq := core.option.Option.Insts.CoreCmpPartialEqOption.eq cmpPartialEqInst
+  ne := core.cmp.PartialEq.ne.trait_default
+    (core.option.Option.Insts.CoreCmpPartialEqOption cmpPartialEqInst)
+}
+
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}::eq]:
     Source: './controller-core/src/model.rs', lines 97:29-97:38
     Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr, sandbox_controller_core::model::Ipv4Cidr>}::eq]
@@ -2119,6 +2132,115 @@ def sandbox_controller_core.auxiliary.handle_egress
       ok (core.result.Result.Err
         sandbox_controller_core.auxiliary.AuxiliaryReject.CapabilityDenied)
 
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}]
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>"]
+impl_def sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId :
+  core.cmp.PartialEq sandbox_controller_core.ids.VmId
+  sandbox_controller_core.ids.VmId := {
+  eq := sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}]
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>"]
+impl_def sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+  : core.cmp.PartialEq sandbox_controller_core.ids.NetSlotId
+  sandbox_controller_core.ids.NetSlotId := {
+  eq :=
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+}
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::FsId> for sandbox_controller_core::ids::FsId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::FsId, sandbox_controller_core::ids::FsId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::FsId, sandbox_controller_core::ids::FsId>}::eq"]
+def sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq
+  (self : sandbox_controller_core.ids.FsId)
+  (other : sandbox_controller_core.ids.FsId) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::FsId> for sandbox_controller_core::ids::FsId}]
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::FsId, sandbox_controller_core::ids::FsId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::ids::FsId, sandbox_controller_core::ids::FsId>"]
+impl_def sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId :
+  core.cmp.PartialEq sandbox_controller_core.ids.FsId
+  sandbox_controller_core.ids.FsId := {
+  eq := sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId
+}
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId, sandbox_controller_core::ids::SnapshotId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId, sandbox_controller_core::ids::SnapshotId>}::eq"]
+def sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
+  (self : sandbox_controller_core.ids.SnapshotId)
+  (other : sandbox_controller_core.ids.SnapshotId) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}]
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId, sandbox_controller_core::ids::SnapshotId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId, sandbox_controller_core::ids::SnapshotId>"]
+impl_def
+  sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId :
+  core.cmp.PartialEq sandbox_controller_core.ids.SnapshotId
+  sandbox_controller_core.ids.SnapshotId := {
+  eq :=
+    sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
+}
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest> for sandbox_controller_core::ids::PolicyDigest}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest, sandbox_controller_core::ids::PolicyDigest>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest, sandbox_controller_core::ids::PolicyDigest>}::eq"]
+def
+  sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq
+  (self : sandbox_controller_core.ids.PolicyDigest)
+  (other : sandbox_controller_core.ids.PolicyDigest) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ManifestDigest> for sandbox_controller_core::ids::ManifestDigest}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::ManifestDigest, sandbox_controller_core::ids::ManifestDigest>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::ManifestDigest, sandbox_controller_core::ids::ManifestDigest>}::eq"]
+def
+  sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq
+  (self : sandbox_controller_core.ids.ManifestDigest)
+  (other : sandbox_controller_core.ids.ManifestDigest) :
+  Result Bool
+  := do
+  ok (self = other)
+
 /-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}::eq]:
     Source: './controller-core/src/maintenance/slots.rs', lines 10:29-10:38
     Name pattern: [sandbox_controller_core::maintenance::slots::{core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding, sandbox_controller_core::maintenance::slots::HostBinding>}::eq]
@@ -2381,6 +2503,664 @@ def sandbox_controller_core.maintenance.slots.reduce_slot
         (core.convert.FromSame
         sandbox_controller_core.maintenance.slots.SlotReject) residual
 
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}::eq]:
+    Source: './controller-core/src/model.rs', lines 48:29-48:38
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef, sandbox_controller_core::model::FilePolicyRef>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef, sandbox_controller_core::model::FilePolicyRef>}::eq"]
+def
+  sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
+  (self : sandbox_controller_core.model.FilePolicyRef)
+  (other : sandbox_controller_core.model.FilePolicyRef) :
+  Result Bool
+  := do
+  sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq
+    self.digest other.digest
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}]
+    Source: './controller-core/src/model.rs', lines 48:29-48:38
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef, sandbox_controller_core::model::FilePolicyRef>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef, sandbox_controller_core::model::FilePolicyRef>"]
+impl_def
+  sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef
+  : core.cmp.PartialEq sandbox_controller_core.model.FilePolicyRef
+  sandbox_controller_core.model.FilePolicyRef := {
+  eq :=
+    sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef> for sandbox_controller_core::model::SnapshotManifestRef}::eq]:
+    Source: './controller-core/src/model.rs', lines 54:29-54:38
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef, sandbox_controller_core::model::SnapshotManifestRef>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef, sandbox_controller_core::model::SnapshotManifestRef>}::eq"]
+def
+  sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+  (self : sandbox_controller_core.model.SnapshotManifestRef)
+  (other : sandbox_controller_core.model.SnapshotManifestRef) :
+  Result Bool
+  := do
+  sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq
+    self.digest other.digest
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef> for sandbox_controller_core::model::SnapshotManifestRef}]
+    Source: './controller-core/src/model.rs', lines 54:29-54:38
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef, sandbox_controller_core::model::SnapshotManifestRef>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef, sandbox_controller_core::model::SnapshotManifestRef>"]
+impl_def
+  sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef
+  : core.cmp.PartialEq sandbox_controller_core.model.SnapshotManifestRef
+  sandbox_controller_core.model.SnapshotManifestRef := {
+  eq :=
+    sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}::eq]:
+    Source: './controller-core/src/model.rs', lines 60:29-60:38
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource, sandbox_controller_core::model::RestoreSource>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource, sandbox_controller_core::model::RestoreSource>}::eq"]
+def
+  sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
+  (self : sandbox_controller_core.model.RestoreSource)
+  (other : sandbox_controller_core.model.RestoreSource) :
+  Result Bool
+  := do
+  let b ←
+    sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
+      self.snapshot other.snapshot
+  if b
+  then
+    sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+      self.manifest other.manifest
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}]
+    Source: './controller-core/src/model.rs', lines 60:29-60:38
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource, sandbox_controller_core::model::RestoreSource>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource, sandbox_controller_core::model::RestoreSource>"]
+impl_def
+  sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource
+  : core.cmp.PartialEq sandbox_controller_core.model.RestoreSource
+  sandbox_controller_core.model.RestoreSource := {
+  eq :=
+    sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Command> for sandbox_controller_core::model::Command}::eq]:
+    Source: './controller-core/src/model.rs', lines 228:23-228:32
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Command, sandbox_controller_core::model::Command>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Command, sandbox_controller_core::model::Command>}::eq"]
+def sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq
+  (self : sandbox_controller_core.model.Command)
+  (other : sandbox_controller_core.model.Command) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | sandbox_controller_core.model.Command.InstallFence __self_0 __self_1
+      __self_2 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence __arg1_0 __arg1_1
+        __arg1_2 =>
+        let b ← core.cmp.impls.PartialEqBool.eq __self_2 __arg1_2
+        if b
+        then
+          let b1 ←
+            sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+              __self_0 __arg1_0
+          if b1
+          then lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.PrepareVm __self_0 __self_1
+      __self_2 __self_3 __self_4 __self_5 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm __arg1_0 __arg1_1
+        __arg1_2 __arg1_3 __arg1_4 __arg1_5 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              let b3 ←
+                sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                  __self_3 __arg1_3
+              if b3
+              then
+                let b4 ←
+                  sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+                    __self_4 __arg1_4
+                if b4
+                then
+                  core.option.Option.Insts.CoreCmpPartialEqOption.eq
+                    sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource
+                    __self_5 __arg1_5
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.ConfigureNetwork __self_0 __self_1
+      __self_2 __self_3 __self_4 __self_5 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork __arg1_0
+        __arg1_1 __arg1_2 __arg1_3 __arg1_4 __arg1_5 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              let b3 ←
+                sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                  __self_3 __arg1_3
+              if b3
+              then
+                let b4 ←
+                  sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+                    __self_4 __arg1_4
+                if b4
+                then
+                  sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
+                    __self_5 __arg1_5
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.ActivateVm __self_0 __self_1
+      __self_2 __self_3 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm __arg1_0 __arg1_1
+        __arg1_2 __arg1_3 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                __self_3 __arg1_3
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.FreezeVm __self_0 __self_1 __self_2
+      __self_3 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm __arg1_0 __arg1_1
+        __arg1_2 __arg1_3 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                __self_3 __arg1_3
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.ApplyFilePolicy __self_0 __self_1
+      __self_2 __self_3 __self_4 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy __arg1_0 __arg1_1
+        __arg1_2 __arg1_3 __arg1_4 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              let b3 ←
+                sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq
+                  __self_3 __arg1_3
+              if b3
+              then
+                sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
+                  __self_4 __arg1_4
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.SealSnapshot __self_0 __self_1
+      __self_2 __self_3 __self_4 __self_5 __self_6 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot __arg1_0 __arg1_1
+        __arg1_2 __arg1_3 __arg1_4 __arg1_5 __arg1_6 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              let b3 ←
+                sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                  __self_3 __arg1_3
+              if b3
+              then
+                let b4 ←
+                  sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq
+                    __self_4 __arg1_4
+                if b4
+                then
+                  let b5 ←
+                    sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
+                      __self_5 __arg1_5
+                  if b5
+                  then
+                    sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+                      __self_6 __arg1_6
+                  else ok false
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.CommitSnapshot __self_0 __self_1
+      __self_2 __self_3 __self_4 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot __arg1_0 __arg1_1
+        __arg1_2 __arg1_3 __arg1_4 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              let b3 ←
+                sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
+                  __self_3 __arg1_3
+              if b3
+              then
+                sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+                  __self_4 __arg1_4
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.StopVm __self_0 __self_1 __self_2
+      __self_3 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm __arg1_0 __arg1_1 __arg1_2
+        __arg1_3 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                __self_3 __arg1_3
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.AbortPrepare __self_0 __self_1
+      __self_2 __self_3 __self_4 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare __arg1_0 __arg1_1
+        __arg1_2 __arg1_3 __arg1_4 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            let b2 ← lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+            if b2
+            then
+              let b3 ←
+                sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                  __self_3 __arg1_3
+              if b3
+              then
+                sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+                  __self_4 __arg1_4
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.CleanupVm __self_0 __self_1
+      __self_2 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm __arg1_0 __arg1_1
+        __arg1_2 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+              __self_2 __arg1_2
+          else ok false
+        else ok false
+      | sandbox_controller_core.model.Command.CleanupSlot _ _ _ => fail panic
+    | sandbox_controller_core.model.Command.CleanupSlot __self_0 __self_1
+      __self_2 =>
+      match other with
+      | sandbox_controller_core.model.Command.InstallFence _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.PrepareVm _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ConfigureNetwork _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.ActivateVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.FreezeVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.ApplyFilePolicy _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.SealSnapshot _ _ _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CommitSnapshot _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.StopVm _ _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.AbortPrepare _ _ _ _ _ =>
+        fail panic
+      | sandbox_controller_core.model.Command.CleanupVm _ _ _ => fail panic
+      | sandbox_controller_core.model.Command.CleanupSlot __arg1_0 __arg1_1
+        __arg1_2 =>
+        let b ←
+          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+            __self_0 __arg1_0
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then
+            sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+              __self_2 __arg1_2
+          else ok false
+        else ok false
+  else ok false
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}::eq]:
+    Source: './controller-core/src/model.rs', lines 349:23-349:32
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId, sandbox_controller_core::model::LogicalEffectId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId, sandbox_controller_core::model::LogicalEffectId>}::eq"]
+def
+  sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
+  (self : sandbox_controller_core.model.LogicalEffectId)
+  (other : sandbox_controller_core.model.LogicalEffectId) :
+  Result Bool
+  := do
+  sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq
+    self.command other.command
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}::eq]:
+    Source: './controller-core/src/model.rs', lines 355:23-355:32
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::EffectId, sandbox_controller_core::model::EffectId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::EffectId, sandbox_controller_core::model::EffectId>}::eq"]
+def sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
+  (self : sandbox_controller_core.model.EffectId)
+  (other : sandbox_controller_core.model.EffectId) :
+  Result Bool
+  := do
+  let b ←
+    sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
+      self.logical other.logical
+  if b
+  then ok (self.attempt = other.attempt)
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}]
+    Source: './controller-core/src/model.rs', lines 355:23-355:32
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::EffectId, sandbox_controller_core::model::EffectId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::EffectId, sandbox_controller_core::model::EffectId>"]
+impl_def sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+  : core.cmp.PartialEq sandbox_controller_core.model.EffectId
+  sandbox_controller_core.model.EffectId := {
+  eq :=
+    sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+}
+
 /-- [sandbox_controller_core::store::{impl core::default::Default for sandbox_controller_core::store::Store<K, V>}::default]:
     Source: './controller-core/src/store.rs', lines 11:4-11:24
     Name pattern: [sandbox_controller_core::store::{core::default::Default<sandbox_controller_core::store::Store<@K, @V>>}::default]
@@ -2532,6 +3312,76 @@ def sandbox_controller_core.recovery_monitor.handle_controller_recover
         next := { next with controller_up := true }
       })
 
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::contains_key]:
+    Source: './controller-core/src/store.rs', lines 32:4-32:47
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::contains_key]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::contains_key"]
+def sandbox_controller_core.store.Store.contains_key
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) :
+  Result Bool
+  := do
+  let o ←
+    sandbox_controller_core.store.Store.get corecmpPartialEqInst self key
+  ok (core.option.Option.is_some o)
+
+/-- [sandbox_controller_core::recovery_monitor::handle_duplicate_or_late_delivery]:
+    Source: './controller-core/src/recovery_monitor.rs', lines 84:0-87:43
+    Name pattern: [sandbox_controller_core::recovery_monitor::handle_duplicate_or_late_delivery]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::recovery_monitor::handle_duplicate_or_late_delivery"]
+def sandbox_controller_core.recovery_monitor.handle_duplicate_or_late_delivery
+  (world : sandbox_controller_core.model.World)
+  (effect : sandbox_controller_core.model.EffectId) :
+  Result (core.result.Result
+    sandbox_controller_core.recovery_monitor.RuntimeDecision
+    sandbox_controller_core.recovery_monitor.RuntimeReject)
+  := do
+  let b ←
+    sandbox_controller_core.store.Store.contains_key
+      sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+      world.effects effect
+  if b
+  then
+    let w ←
+      sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
+    ok (core.result.Result.Ok
+      {
+        event :=
+          (sandbox_controller_core.recovery_monitor.RuntimeEvent.DuplicateOrLateDelivery
+            effect),
+        next := w
+      })
+  else
+    ok (core.result.Result.Err
+      sandbox_controller_core.recovery_monitor.RuntimeReject.EffectNotFound)
+
+/-- [sandbox_controller_core::recovery_monitor::handle_runtime]:
+    Source: './controller-core/src/recovery_monitor.rs', lines 103:0-106:43
+    Name pattern: [sandbox_controller_core::recovery_monitor::handle_runtime]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::recovery_monitor::handle_runtime"]
+def sandbox_controller_core.recovery_monitor.handle_runtime
+  (world : sandbox_controller_core.model.World)
+  (input : sandbox_controller_core.recovery_monitor.RuntimeInput) :
+  Result (core.result.Result
+    sandbox_controller_core.recovery_monitor.RuntimeDecision
+    sandbox_controller_core.recovery_monitor.RuntimeReject)
+  := do
+  match input with
+  | sandbox_controller_core.recovery_monitor.RuntimeInput.Crash =>
+    sandbox_controller_core.recovery_monitor.handle_controller_crash world
+  | sandbox_controller_core.recovery_monitor.RuntimeInput.Recover =>
+    sandbox_controller_core.recovery_monitor.handle_controller_recover world
+  |
+    sandbox_controller_core.recovery_monitor.RuntimeInput.DuplicateOrLateDelivery
+    effect =>
+    sandbox_controller_core.recovery_monitor.handle_duplicate_or_late_delivery
+      world effect
+
 /-- [sandproof_network_extract::cidr_contains]:
     Source: 'src/lib.rs', lines 9:0-11:1
     Visibility: public -/
@@ -2650,5 +3500,26 @@ def slot_transition
     sandbox_controller_core.maintenance.slots.SlotReject)
   := do
   sandbox_controller_core.maintenance.slots.reduce_slot previous input
+
+/-- [sandproof_network_extract::controller_input]:
+    Source: 'src/lib.rs', lines 73:0-77:1
+    Visibility: public -/
+def controller_input
+  (input : sandbox_controller_core.controller.ControllerInput) :
+  Result sandbox_controller_core.controller.ControllerInput
+  := do
+  ok input
+
+/-- [sandproof_network_extract::runtime]:
+    Source: 'src/lib.rs', lines 79:0-84:1
+    Visibility: public -/
+def runtime
+  (world : sandbox_controller_core.model.World)
+  (input : sandbox_controller_core.recovery_monitor.RuntimeInput) :
+  Result (core.result.Result
+    sandbox_controller_core.recovery_monitor.RuntimeDecision
+    sandbox_controller_core.recovery_monitor.RuntimeReject)
+  := do
+  sandbox_controller_core.recovery_monitor.handle_runtime world input
 
 end SandproofNetworkRust

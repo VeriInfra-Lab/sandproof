@@ -82,4 +82,15 @@ def core.option.Option.Insts.CoreCloneClone.clone {T : Type} (dictionary : core.
       let copied ← dictionary.clone item
       .ok (some copied)
 
+/- The fixed backend expects the method name, whereas its builtin exposes
+   only the dictionary. Match both constructors before invoking the supplied
+   equality; in particular None/Some never calls an arbitrary callback. -/
+@[rust_fun "core::option::{core::cmp::PartialEq<core::option::Option<@T>, core::option::Option<@T>>}::eq"]
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
 end SandproofNetworkRust

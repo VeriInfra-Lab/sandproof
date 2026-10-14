@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "source_anchor": "b7cfc9dc45712223f1dbc9da320481e50890fa9b",
+  "source_anchor": "882427adfae74ee3933244b3e5e3c983996e86a3",
   "source_identity": "verification/network-inputs.sha256",
   "target": "x86_64-unknown-linux-gnu",
   "artifact_destination": "verification/aeneas/llbc/sandproof_network.llbc",
@@ -17,7 +17,9 @@
     "initial_world",
     "runtime_crash",
     "runtime_recover",
-    "slot_transition"
+    "slot_transition",
+    "controller_input",
+    "runtime"
   ],
   "cfg": [
     "debug_assertions",
@@ -127,7 +129,8 @@
     "String normal-return clone preserves exact value; Option clone invokes given dictionary only for Some",
     "builtin Vec/tuple clone correspondence restricted to concrete owned value-preserving clone dictionaries; no arbitrary callback claim; physical allocation failure excluded from pure allocation model",
     "Borrowed Store::get retains first match; u64 tuple-newtype erasure is checked structurally; aliases do not imply validity or nonzero identities",
-    "primitive bool PartialEq::ne returns exact inequality on both fixed compilers"
+    "primitive bool PartialEq::ne returns exact inequality on both fixed compilers",
+    "Option PartialEq::eq compares constructors first and calls the provided equality exactly once only for Some/Some"
   ],
   "excludes": [
     "proof of Rust standard library or compiler implementation",
@@ -143,6 +146,9 @@
     "scope": "compiler-produced field drop glue; pure allocator/drop boundary, no custom destructor",
     "types": [
       "auxiliary::AuxiliaryEvent",
+      "auxiliary::AccessInput",
+      "controller::ControllerInput",
+      "effect::EffectInput",
       "ids::NetSlotId",
       "ids::VmId",
       "maintenance::MaintenanceState",
@@ -151,6 +157,7 @@
       "model::Authority",
       "model::Command",
       "model::Endpoint",
+      "model::EffectId",
       "model::LogicalEffectId",
       "model::NetworkPolicy",
       "model::Operation",
@@ -158,6 +165,12 @@
       "model::OperationLedgerRecord",
       "model::OperationResult",
       "model::RestoreSource",
+      "recovery_monitor::RuntimeEvent",
+      "recovery_monitor::RuntimeInput",
+      "request::CompensationRequest",
+      "request::CreateRequest",
+      "request::ReplayRequest",
+      "request::Request",
       "store::Store"
     ]
   }

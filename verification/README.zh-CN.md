@@ -20,10 +20,10 @@ Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两�
 - `extract-foundations/`：仅调用生产函数的公共基础抽取根，不复制业务算法；
 - `aeneas/foundations/`：公共基础的生成语义和独立命名空间的最小库模型；
 - `extract-first-chain/`、`aeneas/first-chain/`：Linux 实际身份、生命周期回执检查及生产中心分类根；不代表完整中心状态更新已抽取或已证明；
-- `extract-network/` 与 `aeneas/network/`：共享当前完整 Rust 类型的真实调用根与固定库模型，包含网络判断/准入、World 克隆/初始化、纯可用标志切换与资源位置转换；保留原目录名，不表示完整控制器输入已覆盖；
+- `extract-network/` 与 `aeneas/network/`：共享当前完整 Rust 类型的真实调用根与固定库模型，包含网络判断/准入、World 克隆/初始化、三类运行输入与资源位置转换；输入值根还保留九组公开输入的完整类型，不调用或证明统一派发；保留原目录名，不表示完整控制器行为已覆盖；
 - `SandboxModel/Access/`：当前查询/相等/克隆、按序网络准入、完整状态保持及历史两模式策略嵌入；
 - `SandboxModel/Foundations/`：公共身份/数值、有限表查询与写入对应，以及可复用的有限扫描、值保持克隆和参数化修改范围引理；
-- `SandboxModel/Local/`：当前本地组件的纯模型、表示关系、实现对应和性质，按组件分目录维护；
+- `SandboxModel/Local/`：当前本地组件的纯模型、表示关系、实现对应和性质；`State/` 维护自然数/有序列表的完整当前值模型、全部输入及无丢字段表示，运行/位置等组件按各自目录连接，不等于所有更新流程已迁移；
 - `SandboxModel/RustRefinement/`：生成语义与协议规范之间的表示关系和一致性证明。
 
 `FunsExternal.lean` 是少量 Rust 标准库函数的可计算模型。Aeneas 同时会

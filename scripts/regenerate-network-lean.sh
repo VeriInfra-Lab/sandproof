@@ -29,6 +29,8 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::runtime_crash \
   --start-from crate::runtime_recover \
   --start-from crate::slot_transition \
+  --start-from crate::controller_input \
+  --start-from crate::runtime \
   --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_network.llbc \
   -- --manifest-path verification/extract-network/Cargo.toml --lib --locked --offline
 test -s "$LLBC"

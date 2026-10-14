@@ -15,11 +15,14 @@ else:
 CRATE = 'sandproof_network_extract'
 ROOTS = ('cidr_contains', 'protected_ipv4', 'destination_allowed', 'parse_ipv4_bits',
          'egress', 'ingress', 'clone_world', 'initial_world',
-         'runtime_crash', 'runtime_recover', 'slot_transition')
+         'runtime_crash', 'runtime_recover', 'slot_transition',
+         'controller_input', 'runtime')
 OWNERS = {'sandbox_controller_core', CRATE}
 FUNCTION_FILE = 'SandproofNetwork/Funs.lean'
 TYPE_FILE = 'SandproofNetwork/Types.lean'
 EXTERNALS = {
+    'core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq':
+        'core.option.Option.Insts.CoreCmpPartialEqOption.eq',
     'core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne':
         'Bool.Insts.CoreCmpPartialEqBool.ne',
     'core::net::ip_addr::{impl core::convert::From<core::net::ip_addr::Ipv4Addr> for u32}::from':
@@ -63,6 +66,10 @@ DROP_GLUE_TYPES = {
     'model::Operation', 'model::OperationResult', 'model::OperationInput',
     'model::LogicalEffectId', 'model::OperationLedgerRecord', 'model::Command',
     'maintenance::slots::SlotReject',
+    'controller::ControllerInput', 'recovery_monitor::RuntimeInput',
+    'request::Request', 'effect::EffectInput', 'model::EffectId',
+    'auxiliary::AccessInput', 'recovery_monitor::RuntimeEvent',
+    'request::CreateRequest', 'request::ReplayRequest', 'request::CompensationRequest',
 }
 U64_NEWTYPE_ALIASES = {f'sandbox_controller_core::ids::{name}' for name in (
     'TenantId', 'SandboxId', 'PolicyDigest', 'FsId', 'VmId', 'ManifestDigest',
