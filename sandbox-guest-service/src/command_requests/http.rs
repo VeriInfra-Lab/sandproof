@@ -269,8 +269,8 @@ mod owned {
             self.into_response(limits).await
         }
 
-        /// Emit an observed method/header failure or recognized request gzip
-        /// failure. Stream errors preserve the original negotiated format;
+        /// Emit an observed method/header/framing failure or recognized request
+        /// gzip failure. Stream errors preserve the original negotiated format;
         /// unary errors use identity JSON. No process is dispatched or retried.
         /// # Errors
         /// Unclassified faults, limits, expiry or encoder loss, retaining the
@@ -388,18 +388,15 @@ mod owned {
                 });
             }
             let response = self.plan.response();
-            let decoded = match self.plan.request_encoding {
-                Encoding::Identity => {
-                    self.prepared
-                        .decode(self.plan.rpc.method(), body, self.plan.deadline)
-                        .await
-                }
-                Encoding::Gzip => {
-                    self.prepared
-                        .decode_gzip(self.plan.rpc.method(), body, self.plan.deadline)
-                        .await
-                }
-            };
+            let decoded = self
+                .prepared
+                .decode_selected(
+                    self.plan.rpc.method(),
+                    body,
+                    self.plan.deadline,
+                    self.plan.request_encoding == Encoding::Gzip,
+                )
+                .await;
             decoded
                 .map(|mut ready| {
                     ready.response = Some(response);

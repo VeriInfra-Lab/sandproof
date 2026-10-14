@@ -63,7 +63,7 @@ fn compressed_command_data_and_eos_keep_empty_wire_and_first_failure_semantics()
                 &[frame(0, b"{}"), frame(3, &compressed(b"{}")), vec![0]].concat(),
                 1024
             ),
-            Err(Error::Protocol(ProtocolError::InvalidArgument))
+            Err(Error::Framing(protocol::FramingError::ExtraBytes(1)))
         );
     }
     for wire in [b"".to_vec(), compressed(b"")] {

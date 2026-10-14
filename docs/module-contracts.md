@@ -383,7 +383,11 @@ live 只取已启动未终结的原控制句柄，connectable 另允许保留期
 
 命令 Start/Connect 的完整 flags=0（或已协商 gzip 的 flags=1）、长度=0 消息帧按固定 Connect 解析为默认 protobuf 请求；缺失整个消息、截断首部/载荷及多个数据消息仍拒绝。一元空 JSON 正文不沿此默认规则。首个数据消息之后可有一个[EOS 元数据帧](../sandbox-guest-runtime/src/protocol/end_stream.rs)，按原 Connect 检查终结位、压缩位须已协商 gzip、完整声明长度和 EOF；其他高 flags 不自行拒绝，结束后多余字节不忽略。首消息解码先于 EOS，两个载荷分别受原单消息预算，HTTP 总输入预算另行约束。
 
-EOS 按固定 Go encoding/json 校验已知 error/details/metadata 的形状、null、重复键、字段折叠及 detail value 的标准 base64；有效客户端 error 只表示请求流结束，不能覆盖原命令或变成命令执行错误。该 JSON 的字符串允许原库的无效 UTF-8/未配对 surrogate 替换，规范化副本至多为已准入载荷三倍，容器深度上限为含顶层 10,000；只遍历校验，不保留元数据树。临时字符串及 base64 工作区另受原载荷约束，不宣称整个进程的内存上界。此宽容规则仅用于 EOS，不放宽 protobuf 请求 JSON；完整帧错误码/全文仍待接通。
+EOS 按固定 Go encoding/json 校验已知 error/details/metadata 的形状、null、重复键、字段折叠及 detail value 的标准 base64；有效客户端 error 只表示请求流结束，不能覆盖原命令或变成命令执行错误。该 JSON 的字符串允许原库的无效 UTF-8/未配对 surrogate 替换，规范化副本至多为已准入载荷三倍，容器深度上限为含顶层 10,000；只遍历校验，不保留元数据树。临时字符串及 base64 工作区另受原载荷约束，不宣称整个进程的内存上界。此宽容规则仅用于 EOS，不放宽 protobuf 请求 JSON；帧错误观察见下文，JSON/EOS JSON 错误全文仍待接通。
+
+[帧错误观察](../sandbox-guest-runtime/src/protocol/request_body.rs)在实际接收/解码步骤保留有限标量：零条/多条消息、包头截断、声明与实际载荷长度、未协商压缩、结束帧后的剩余字节和非法 flags。低层旧解码入口仍映射为原 ProtocolError；已选 HTTP identity/gzip 请求使用 decode_request_observed，将该事实连同原请求责任交给已有失败发送器。读取完整 envelope 先于压缩支持判断，非空载荷展开先于特殊帧剩余字节/flags/EOS JSON 检查；第一条 protobuf 消息先于第二条接收，第二条标准消息先解析成功才报告消息过多。第二条必然拒绝时先释放第一条已解码字段，不保留两个命令请求；正文总量和逐消息原始/展开预算不变。
+
+Start/Connect 的帧拒绝回复保留原协商 charset/identity/gzip，HTTP 200 且只有错误 EOS：消息数量错误为 unimplemented，截断为 invalid_argument，未协商压缩、结束后数据及非法 flags 为 internal，文本/数值沿固定 Connect。原始/压缩完整帧预算、编码期限/失败和最后副本仍保持原请求名额；此类事实不能套在一元回复上。JSON/EOS JSON 诊断、真实传输 I/O、资源/期限失败仍保持其原分类，不能冒充已观察的帧错误；完整命令协议和任意错误全文尚未验收。
 
 [命令请求准入与 PID 分派](../sandbox-guest-service/src/command_requests.rs)增加独立请求池：在 token、Basic 账户等待和正文读取前无队列占额，保存原绝对期限；逐项头部、单帧/总字节、帧数及 trailers 先限额，再收集单个已选定的 identity/gzip JSON 请求。Start/Connect 保留原五字节 envelope，不能把压缩帧当 JSON。显式 Basic 账户先于协议解码查询，缺省/畸形 Basic 的默认账户查询留给 Start；账户来源仍由可信装配提供。阻塞查询和 JSON 解码取消后，原授权与请求名额持续到实际闭包退出；账户池自己的期限只能缩短原期限，调用方提供的已评估协议期限也只能缩短原期限。Ready 保留不可替换的原请求、授权和已选账户。
 

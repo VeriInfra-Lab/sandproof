@@ -1,4 +1,4 @@
-//! Bounded replies for observed Connect method, header and gzip failures. No
+//! Bounded replies for observed Connect method, header, framing and gzip failures. No
 //! arbitrary diagnostics, codec policy or command-operation errors are mapped.
 use super::Error as SelectionError;
 #[cfg(any(target_os = "linux", test))]
@@ -109,10 +109,14 @@ impl Plan {
             SelectionError::Compression(_) => StatusCode::NOT_IMPLEMENTED,
             SelectionError::Version(_) | SelectionError::Timeout(_) => StatusCode::BAD_REQUEST,
             error if observed_compression(error).is_some() => StatusCode::BAD_REQUEST,
+            error if observed_framing(error).is_some() => StatusCode::BAD_REQUEST,
             _ => return Err(Error::UnclassifiedFault),
         };
         let format = format.ok_or(Error::UnclassifiedFault)?;
         let stream = format.content_type().starts_with("application/connect+");
+        if observed_framing(error).is_some() && !stream {
+            return Err(Error::UnclassifiedFault);
+        }
         Ok(Self {
             method_head: None,
             stream,
@@ -137,6 +141,16 @@ fn observed_compression(error: &SelectionError) -> Option<crate::file_rpc_respon
         crate::file_rpc_response::GzipRejection::observed(*stage, *error)
     } else {
         None
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn observed_framing(
+    error: &SelectionError,
+) -> Option<sandproof_guest_runtime::protocol::FramingError> {
+    match error {
+        SelectionError::Request(crate::command_requests::Error::Framing(error)) => Some(*error),
+        _ => None,
     }
 }
 

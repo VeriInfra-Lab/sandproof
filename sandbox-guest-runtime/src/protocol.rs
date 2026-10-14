@@ -18,6 +18,7 @@ mod request_body;
 mod request_json;
 use crate::file_protocol::request_json::{prepare_command, uint32};
 pub use content_type::canonical_content_type;
+pub use request_body::FramingError;
 use request_json::{bytes, envs, signal};
 
 pub use crate::file_protocol::JsonContentType;
@@ -288,9 +289,14 @@ pub fn decode_request(
     body: &[u8],
     max_message_bytes: usize,
 ) -> Result<Request, ProtocolError> {
-    request_body::decode(method, body, max_message_bytes, false, |_| {
-        Err(ProtocolError::InvalidArgument)
-    })
+    request_body::decode(
+        method,
+        body,
+        max_message_bytes,
+        false,
+        |_| Err(ProtocolError::InvalidArgument),
+        |_| ProtocolError::InvalidArgument,
+    )
 }
 
 /// Decode a request whose HTTP layer selected gzip. Streaming envelopes may
@@ -306,7 +312,26 @@ pub fn decode_request_with_gzip<E: From<ProtocolError>>(
     max_message_bytes: usize,
     expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
 ) -> Result<Request, E> {
-    request_body::decode(method, body, max_message_bytes, true, expand)
+    request_body::decode(method, body, max_message_bytes, true, expand, |_| {
+        ProtocolError::InvalidArgument.into()
+    })
+}
+
+/// Decode the selected command encoding and retain bounded framing observations
+/// at their actual receive stage. Unlike the legacy entry points, this preserves
+/// cardinality, truncation and special-envelope failures separately from JSON.
+/// The expander has the same trusted allocation/cancellation obligations as
+/// `decode_request_with_gzip`; gzip is the already selected HTTP request encoding.
+/// # Errors
+/// Original protocol/JSON/budget, framing observation or unchanged gzip error.
+pub fn decode_request_observed<E: From<ProtocolError> + From<FramingError>>(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    gzip: bool,
+    expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
+) -> Result<Request, E> {
+    request_body::decode(method, body, max_message_bytes, gzip, expand, E::from)
 }
 
 fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError> {

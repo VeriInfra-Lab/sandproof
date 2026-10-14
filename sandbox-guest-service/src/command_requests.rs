@@ -274,6 +274,7 @@ pub enum Error {
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
+    Framing(sandproof_guest_runtime::protocol::FramingError),
     Compression {
         stage: CompressionStage,
         error: crate::upload_body::GzipError,
@@ -295,6 +296,11 @@ pub enum Error {
 impl From<ProtocolError> for Error {
     fn from(error: ProtocolError) -> Self {
         Self::Protocol(error)
+    }
+}
+impl From<sandproof_guest_runtime::protocol::FramingError> for Error {
+    fn from(error: sandproof_guest_runtime::protocol::FramingError) -> Self {
+        Self::Framing(error)
     }
 }
 impl crate::owned_body::Failure for Error {

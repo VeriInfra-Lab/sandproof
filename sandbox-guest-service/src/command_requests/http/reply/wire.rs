@@ -104,6 +104,7 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         error,
         SelectionError::Compression(_) | SelectionError::Version(_) | SelectionError::Timeout(_)
     ) && super::observed_compression(error).is_none()
+        && super::observed_framing(error).is_none()
     {
         return Err(Error::UnclassifiedFault);
     }
@@ -111,11 +112,15 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         if stream {
             put(br#"{"error":"#)?;
         }
-        put(if matches!(error, SelectionError::Compression(_)) {
-            br#"{"code":"unimplemented","message":""#
-        } else {
-            br#"{"code":"invalid_argument","message":""#
+        put(br#"{"code":""#)?;
+        put(match error {
+            SelectionError::Compression(_) => b"unimplemented",
+            error if super::observed_framing(error).is_some() => {
+                framing_code(super::observed_framing(error).expect("observed framing"))
+            }
+            _ => b"invalid_argument",
         })?;
+        put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match error {
             SelectionError::Compression(value) => {
@@ -146,9 +151,54 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
                     message(part)?;
                 }
             }
+            error if super::observed_framing(error).is_some() => {
+                framing_message(
+                    super::observed_framing(error).expect("observed framing"),
+                    &mut message,
+                )?;
+            }
             _ => unreachable!("classified before encoding"),
         }
         put(if stream { br#""}}"# } else { br#""}"# })
     })
     .map_err(|_| Error::ResponseLimit)
+}
+
+fn framing_code(error: sandproof_guest_runtime::protocol::FramingError) -> &'static [u8] {
+    use sandproof_guest_runtime::protocol::FramingError as F;
+    match error {
+        F::ZeroMessages | F::MultipleMessages => b"unimplemented",
+        F::IncompleteEnvelope | F::Promised { .. } => b"invalid_argument",
+        F::CompressedWithoutSupport | F::ExtraBytes(_) | F::InvalidFlags(_) => b"internal",
+    }
+}
+fn framing_message<E>(
+    error: sandproof_guest_runtime::protocol::FramingError,
+    put: &mut impl FnMut(&[u8]) -> Result<(), E>,
+) -> Result<(), E> {
+    use sandproof_guest_runtime::protocol::FramingError as F;
+    match error {
+        F::ZeroMessages => put(b"unary request has zero messages"),
+        F::MultipleMessages => put(b"unary request has multiple messages"),
+        F::IncompleteEnvelope => put(b"protocol error: incomplete envelope: unexpected EOF"),
+        F::Promised { expected, received } => {
+            put(b"protocol error: promised ")?;
+            put(expected.to_string().as_bytes())?;
+            put(b" bytes in enveloped message, got ")?;
+            put(received.to_string().as_bytes())?;
+            put(b" bytes")
+        }
+        F::CompressedWithoutSupport => {
+            put(b"protocol error: sent compressed message without compression support")
+        }
+        F::ExtraBytes(bytes) => {
+            put(b"corrupt response: ")?;
+            put(bytes.to_string().as_bytes())?;
+            put(b" extra bytes after end of stream")
+        }
+        F::InvalidFlags(flags) => {
+            put(b"protocol error: invalid envelope flags ")?;
+            put(flags.to_string().as_bytes())
+        }
+    }
 }

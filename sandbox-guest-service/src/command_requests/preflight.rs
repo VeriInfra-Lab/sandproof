@@ -116,11 +116,12 @@ impl Prepared {
         })
     }
 
-    pub(super) async fn decode_gzip(
+    pub(super) async fn decode_selected(
         self,
         method: &'static str,
         body: Body,
         protocol_deadline: Instant,
+        gzip: bool,
     ) -> Result<Ready, Failure> {
         let chunk = self.authenticated.admitted.limits.body.frame_bytes;
         Ok(Ready {
@@ -130,7 +131,9 @@ impl Prepared {
                     body,
                     protocol_deadline,
                     move |bytes, limit, deadline, cancelled| {
-                        super::compression::decode(method, bytes, limit, chunk, deadline, cancelled)
+                        super::compression::decode_selected(
+                            method, bytes, limit, chunk, deadline, cancelled, gzip,
+                        )
                     },
                 )
                 .await?,

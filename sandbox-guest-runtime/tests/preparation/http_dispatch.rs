@@ -5,6 +5,9 @@ use sandproof_guest_service::command_http::{
     CommandHttp, Failure, Prepared, Processes, RequestPools, ResponseLimits,
 };
 
+#[path = "framing_http.rs"]
+mod framing;
+
 type Http = CommandHttp<MetadataFixture, CurrentAccount>;
 fn processes(fixture: &Fixture, registry: &PidRegistry, registrar: &PidRegistrar) -> Processes {
     Processes {
