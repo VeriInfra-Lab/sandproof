@@ -3,6 +3,9 @@
 //! It is NOT a guest server: no auth/init, public registry, defaults or VM.
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 
+#[path = "sdk_protocol/owned.rs"]
+mod owned;
+
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
@@ -18,7 +21,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use sandproof_guest_runtime::protocol::{
-    End, Event, ProcessConfig, ProcessInfo, Request, Response as CommandResponse, decode_request,
+    Event, ProcessConfig, ProcessInfo, Request, Response as CommandResponse, decode_request,
     encode_event, encode_response, encode_stream_end,
 };
 use sandproof_guest_runtime::{
@@ -41,6 +44,8 @@ struct Fixture {
     truncate: bool,
     started: AtomicBool,
     completed: Arc<AtomicBool>,
+    owned_body: bool,
+    body_requests: Arc<tokio::sync::Semaphore>,
 }
 
 struct Owned(CommandProcess);
@@ -138,22 +143,24 @@ async fn start(State(fixture): State<Arc<Fixture>>, headers: HeaderMap, body: By
     if fixture.started.swap(true, Ordering::SeqCst) {
         return StatusCode::CONFLICT.into_response();
     }
-    let mut process = Owned(
-        CommandProcess::prepare(
-            Path::new(WORKER),
-            fixture.directory.path(),
-            1,
-            1,
-            &fixture.spec,
-            ProcessLimits {
-                chunk_bytes: 4096,
-                launch_bytes: LIMIT,
-                handshake_timeout: Duration::from_secs(5),
-            },
-        )
-        .await
-        .unwrap(),
-    );
+    let process = CommandProcess::prepare(
+        Path::new(WORKER),
+        fixture.directory.path(),
+        1,
+        1,
+        &fixture.spec,
+        ProcessLimits {
+            chunk_bytes: 4096,
+            launch_bytes: LIMIT,
+            handshake_timeout: Duration::from_secs(5),
+        },
+    )
+    .await
+    .unwrap();
+    if fixture.owned_body {
+        return owned::response(process, &fixture).await;
+    }
+    let mut process = Owned(process);
     assert_eq!(
         process.0.release().await.unwrap(),
         LaunchObservation::NoExecErrorObserved
@@ -212,22 +219,17 @@ async fn next_frame(state: Option<Stream>) -> Option<(io::Result<Vec<u8>>, Optio
                 }
                 frame
             }
-            CommandEvent::End { code, signal } => {
-                let status = if let Some(signal) = signal {
-                    assert_eq!(signal, 9);
-                    "signal: killed".to_owned()
-                } else {
-                    format!("exit status {code}")
-                };
-                let mut frame = encode_event(
-                    Event::End(End {
-                        exit_code: code,
-                        exited: signal.is_none(),
-                        status: &status,
-                        error: (code != 0).then_some(status.as_str()),
-                    }),
-                    LIMIT,
-                )
+            CommandEvent::End {
+                code,
+                signal,
+                core_dumped,
+            } => {
+                let mut frame = sandproof_guest_service::command::CommandExit {
+                    code,
+                    signal,
+                    core_dumped,
+                }
+                .encode_end(LIMIT)
                 .unwrap();
                 assert!(state.process.0.next_event().await.unwrap().is_none());
                 state.completed.store(true, Ordering::SeqCst);
@@ -242,7 +244,7 @@ async fn next_frame(state: Option<Stream>) -> Option<(io::Result<Vec<u8>>, Optio
     Some((Ok(frame), Some(state)))
 }
 
-async fn probe(asynchronous: bool, mode: &str) {
+async fn probe(asynchronous: bool, mode: &str, owned_body: bool) {
     let script = match mode {
         "binary" | "truncated" => r"printf '\000\377A'; printf 'err' >&2; exit 17",
         "large" => "dd if=/dev/zero bs=8192 count=257 2>/dev/null",
@@ -266,6 +268,8 @@ async fn probe(asynchronous: bool, mode: &str) {
         truncate: mode == "truncated",
         started: AtomicBool::new(false),
         completed: Arc::clone(&completed),
+        owned_body,
+        body_requests: Arc::new(tokio::sync::Semaphore::new(1)),
     });
     let app = Router::new()
         .route("/process.Process/Start", post(start))
@@ -321,6 +325,9 @@ async fn probe(asynchronous: bool, mode: &str) {
         "{mode}, async={asynchronous}"
     );
     assert!(fixture.started.load(Ordering::SeqCst));
+    if owned_body {
+        owned::settled(&fixture).await;
+    }
     assert!(
         completed.load(Ordering::SeqCst),
         "real command not reaped/drained"
@@ -336,7 +343,10 @@ async fn probe(asynchronous: bool, mode: &str) {
 async fn pinned_sdk_streams_real_command_events() {
     for asynchronous in [false, true] {
         for mode in ["binary", "large", "signal", "truncated", "pty"] {
-            probe(asynchronous, mode).await;
+            probe(asynchronous, mode, false).await;
+        }
+        for mode in ["binary", "pty"] {
+            probe(asynchronous, mode, true).await;
         }
     }
 }

@@ -167,24 +167,21 @@ async fn run(
         retry = None;
         match observation {
             Ok(Some(CommandEvent::Output { channel, bytes })) => {
-                let count = bytes.len();
-                shared
-                    .streams
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .publish(&shared, channel, bytes);
-                if process
-                    .consume_output(shared.identity, channel, count)
-                    .is_err()
-                {
+                if !publish_output(&mut process, &shared, channel, bytes) {
                     failure = Some(CommandError::Unavailable);
                 }
             }
-            Ok(Some(CommandEvent::End { code, signal })) => {
-                finish(
-                    &shared,
-                    failure.map_or(Ok(CommandExit { code, signal }), Err),
-                );
+            Ok(Some(CommandEvent::End {
+                code,
+                signal,
+                core_dumped,
+            })) => {
+                let exit = CommandExit {
+                    code,
+                    signal,
+                    core_dumped,
+                };
+                finish(&shared, failure.map_or(Ok(exit), Err));
                 guard.settled = true;
                 return;
             }
@@ -205,6 +202,23 @@ async fn run(
     }
 }
 
+fn publish_output(
+    process: &mut CommandProcess,
+    shared: &Arc<Shared>,
+    channel: super::Channel,
+    bytes: Vec<u8>,
+) -> bool {
+    let count = bytes.len();
+    shared
+        .streams
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .publish(shared, channel, bytes);
+    process
+        .consume_output(shared.identity, channel, count)
+        .is_ok()
+}
+
 async fn observe(
     process: &mut CommandProcess,
     failure: Option<CommandError>,
@@ -219,6 +233,7 @@ async fn observe(
         Ok(Some(CommandEvent::End {
             code: status.code().unwrap_or(-1),
             signal: status.signal(),
+            core_dumped: status.core_dumped(),
         }))
     } else {
         process.next_event().await

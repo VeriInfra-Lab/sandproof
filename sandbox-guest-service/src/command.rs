@@ -15,7 +15,9 @@ use tokio::time::Instant;
 
 use crate::AuthPermit;
 
+mod body;
 mod driver;
+mod end;
 mod preparation;
 mod registration;
 mod registry;
@@ -29,6 +31,7 @@ pub use registry::{
 };
 #[cfg(test)]
 mod tests;
+pub use body::{CommandBodyError, CommandBodyLimits};
 pub use streams::{CommandOutput, CommandSubscription, OutputEvent};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +53,8 @@ pub enum CommandError {
 pub struct CommandExit {
     pub code: i32,
     pub signal: Option<i32>,
+    /// The kernel wait-status flag; not evidence that a core file was saved.
+    pub core_dumped: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
