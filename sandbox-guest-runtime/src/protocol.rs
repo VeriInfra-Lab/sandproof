@@ -8,9 +8,13 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 
 use base64::Engine;
-use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::STANDARD;
 use sandproof_guest_core::Channel;
 use serde::{Deserialize, Serialize};
+
+mod request_json;
+use crate::file_protocol::request_json::{prepare_command, uint32};
+use request_json::{bytes, envs, signal};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProtocolError {
@@ -42,9 +46,10 @@ pub enum Selector {
 impl<'de> Deserialize<'de> for Selector {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
         struct Fields {
+            #[serde(default, deserialize_with = "null_default")]
             pid: Option<Uint32>,
+            #[serde(default, deserialize_with = "null_default")]
             tag: Option<String>,
         }
         let fields = Object::<Fields>::deserialize(deserializer)?.0;
@@ -57,27 +62,72 @@ impl<'de> Deserialize<'de> for Selector {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ProcessConfig {
     #[serde(default, deserialize_with = "null_default")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub cmd: String,
     #[serde(default, deserialize_with = "null_default")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
-    #[serde(default, deserialize_with = "null_default")]
+    #[serde(default, deserialize_with = "envs")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub envs: BTreeMap<String, String>,
+    #[serde(default, deserialize_with = "null_default")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
 }
 
+/// Borrowed list metadata, already selected by the active command registry.
+/// This encoder does not infer liveness or reconstruct execution defaults.
+#[derive(Serialize)]
+pub struct ProcessInfo<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<&'a ProcessConfig>,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub pid: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<&'a str>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Response<'a> {
+    List(&'a [ProcessInfo<'a>]),
+    /// Successful `SendInput`, `CloseStdin`, `SendSignal` or Update acknowledgement.
+    /// Empty is not a process-exit or complete-resource-cleanup receipt.
+    Empty,
+}
+
+/// Encode one complete unary reply without cloning process metadata. The
+/// caller separately owns the registry snapshot and the transport capacity.
+/// List order is supplied by that snapshot, not a new ordering guarantee.
+/// # Errors
+/// Returns no partial success when the full JSON cannot fit the explicit budget.
+pub fn encode_response(response: Response<'_>, limit: usize) -> Result<Vec<u8>, ProtocolError> {
+    #[derive(Serialize)]
+    struct List<'a> {
+        #[serde(skip_serializing_if = "<[ProcessInfo<'_>]>::is_empty")]
+        processes: &'a [ProcessInfo<'a>],
+    }
+    #[derive(Serialize)]
+    struct Empty {}
+    match response {
+        Response::List(processes) => encode_json(&List { processes }, limit),
+        Response::Empty => encode_json(&Empty {}, limit),
+    }
+}
+
+fn is_zero<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct Pty {
     #[serde(default, deserialize_with = "optional_object")]
     pub size: Option<PtySize>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct PtySize {
     #[serde(default, deserialize_with = "uint32")]
     pub cols: u32,
@@ -86,13 +136,14 @@ pub struct PtySize {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct StartRequest {
     #[serde(default, deserialize_with = "optional_object")]
     pub process: Option<ProcessConfig>,
     #[serde(default, deserialize_with = "optional_object")]
     pub pty: Option<Pty>,
+    #[serde(default, deserialize_with = "null_default")]
     pub tag: Option<String>,
+    #[serde(default, deserialize_with = "null_default")]
     pub stdin: Option<bool>,
 }
 
@@ -115,9 +166,10 @@ pub enum Input {
 impl<'de> Deserialize<'de> for Input {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
         struct Fields {
+            #[serde(default, deserialize_with = "null_default")]
             stdin: Option<Bytes>,
+            #[serde(default, deserialize_with = "null_default")]
             pty: Option<Bytes>,
         }
         let fields = Object::<Fields>::deserialize(deserializer)?.0;
@@ -161,14 +213,12 @@ pub enum Request {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct SelectRequest {
     #[serde(default, deserialize_with = "optional_object")]
     process: Option<Selector>,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct InputRequest {
     #[serde(default, deserialize_with = "optional_object")]
     process: Option<Selector>,
@@ -177,7 +227,6 @@ struct InputRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct SignalRequest {
     #[serde(default, deserialize_with = "optional_object")]
     process: Option<Selector>,
@@ -186,7 +235,6 @@ struct SignalRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct UpdateRequest {
     #[serde(default, deserialize_with = "optional_object")]
     process: Option<Selector>,
@@ -195,7 +243,6 @@ struct UpdateRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Empty {}
 
 /// Decode one complete HTTP body after bounded HTTP collection. Start/Connect
@@ -233,6 +280,14 @@ pub fn decode_request(
         }
         body
     };
+    if !matches!(
+        method,
+        "Start" | "Connect" | "List" | "SendInput" | "CloseStdin" | "SendSignal" | "Update"
+    ) {
+        return Err(ProtocolError::Unimplemented);
+    }
+    let prepared = prepare_command(payload)?;
+    let payload = prepared.as_ref();
     match method {
         "Start" => Ok(Request::Start(parse(payload)?)),
         "Connect" => Ok(Request::Connect(parse::<SelectRequest>(payload)?.process)),
@@ -318,58 +373,16 @@ struct Uint32(#[serde(deserialize_with = "uint32")] u32);
 #[derive(Deserialize)]
 struct Bytes(#[serde(deserialize_with = "bytes")] Vec<u8>);
 
-pub(crate) fn uint32<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Number {
-        Integer(u32),
-        String(String),
-    }
-    match Option::<Number>::deserialize(deserializer)? {
-        None => Ok(0),
-        Some(Number::Integer(value)) => Ok(value),
-        Some(Number::String(value)) => value.parse().map_err(serde::de::Error::custom),
-    }
-}
-
-fn bytes<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
-    let encoded = String::deserialize(deserializer)?;
-    // ProtoJSON accepts both alphabets, with or without padding.
-    [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD]
-        .iter()
-        .find_map(|engine| engine.decode(&encoded).ok())
-        .ok_or_else(|| serde::de::Error::custom("invalid bytes"))
-}
-
-fn signal<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Signal>, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Wire {
-        Number(i32),
-        Name(String),
-    }
-    Ok(match Option::<Wire>::deserialize(deserializer)? {
-        None => None,
-        Some(Wire::Number(0)) => Some(Signal::Unspecified),
-        Some(Wire::Number(15)) => Some(Signal::Terminate),
-        Some(Wire::Number(9)) => Some(Signal::Kill),
-        Some(Wire::Number(value)) => Some(Signal::Unknown(value)),
-        Some(Wire::Name(name)) => Some(match name.as_str() {
-            "SIGNAL_UNSPECIFIED" => Signal::Unspecified,
-            "SIGNAL_SIGTERM" => Signal::Terminate,
-            "SIGNAL_SIGKILL" => Signal::Kill,
-            _ => return Err(serde::de::Error::custom("invalid signal")),
-        }),
-    })
-}
-
 /// Already observed, not inferred from EOF or transport success. On Linux a
 /// signal exit has code -1 and exited=false. Nonzero exits retain their error.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct End<'a> {
+    #[serde(skip_serializing_if = "is_zero")]
     pub exit_code: i32,
+    #[serde(skip_serializing_if = "is_zero")]
     pub exited: bool,
+    #[serde(skip_serializing_if = "str::is_empty")]
     pub status: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<&'a str>,
@@ -395,7 +408,10 @@ pub fn encode_event(event: Event<'_>, limit: usize) -> Result<Vec<u8>, ProtocolE
     #[derive(Serialize)]
     #[serde(rename_all = "lowercase")]
     enum EncodedEvent<'a> {
-        Start { pid: u32 },
+        Start {
+            #[serde(skip_serializing_if = "is_zero")]
+            pid: u32,
+        },
         Data(EncodedOutput),
         End(End<'a>),
         Keepalive {},

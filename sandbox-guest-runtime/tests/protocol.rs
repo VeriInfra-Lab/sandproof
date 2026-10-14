@@ -142,17 +142,13 @@ fn defaults_presence_and_oneofs_do_not_change_execution_intent() {
 #[test]
 fn malformed_fields_never_fall_back_to_another_operation() {
     for (method, value) in [
-        ("Start", json!({"process": {"command": "/bin/sh"}})),
         ("Start", json!({"stdin": "false"})),
         ("Start", json!({"pty": {"size": {"rows": -1}}})),
-        ("Start", json!({"envs": {"SECRET": "do not echo"}})),
         ("Connect", json!({"process": {"pid": 1, "tag": "other"}})),
         ("Connect", json!({"process": {"pid": 4_294_967_296_u64}})),
         ("Connect", json!({"process": {"pid": -1}})),
         ("SendInput", json!({"input": {"stdin": "", "pty": ""}})),
         ("SendInput", json!({"input": {"stdin": "not base64"}})),
-        ("SendSignal", json!({"signal": "SIGKILL"})),
-        ("List", json!({"unexpected": "value"})),
         ("List", json!(null)),
         ("List", json!([])),
         ("Start", json!([null, null, null, false])),
@@ -293,7 +289,7 @@ fn binary_output_and_end_framing_preserve_observations() {
     .unwrap();
     assert_eq!(
         unpack(&end, 0),
-        json!({"event": {"end": {"exitCode": -1, "exited": false, "status": "signal: killed", "error": "signal: killed"}}})
+        json!({"event": {"end": {"exitCode": -1, "status": "signal: killed", "error": "signal: killed"}}})
     );
     assert_eq!(unpack(&encode_stream_end(None, 2).unwrap(), 2), json!({}));
     assert_eq!(

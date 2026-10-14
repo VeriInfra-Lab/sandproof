@@ -126,6 +126,15 @@ def account_failure(error, message):
     assert error.message == message, (error.message, message)
 
 
+TOKEN_MESSAGE = 'unauthorized access, please provide a valid access token or method signing if supported'
+
+
+def token_cases(settings):
+    basic = authorization(settings['missing_user'])['authorization']
+    for headers in [{}, {'x-access-token': ''}, {'x-access-token': 'wrong-token'}]:
+        yield {**headers, 'authorization': basic}
+
+
 def timeout_failure(error):
     assert error.code == Code.INVALID_ARGUMENT, error
     assert error.message == 'parse timeout: "10000000000" has >10 digits', error.message
@@ -177,9 +186,32 @@ def unsupported_encoding_cases():
         yield headers, f'unknown compression "{encoding}": supported encodings are gzip'
 
 
+JSON_ERROR_HEADERS = {**HEADERS, 'content-type': 'application/json', 'connect-protocol-version': '1',
+                      'accept-encoding': 'gzip,identity', 'x-fixture-json-error': 'true'}
+
+
+def json_error_cases(root):
+    """Synthetic invalid JSON; parsed by the unmodified SDK error decoder."""
+    prefix = 'unmarshal message: unmarshal into *filesystem.MakeDirRequest: proto: '
+    first = '{"path":' + json.dumps(root + '/json-refused') + ','
+    return [
+        (b'', 'unmarshal message: zero-length payload is not a valid JSON object'),
+        (b'{"path":1}', prefix + '(line 1:9): invalid value for string field path: 1'),
+        (b'{"path":"\\ud800"}', prefix + 'unexpected EOF'),
+        ((first + '"path":null}').encode(), prefix + f'(line 1:{len(first) + 1}): duplicate field "path"'),
+    ]
+
+
 def run_sync(settings, root):
     url = settings['url']
     client = sync_client(clients.FilesystemClientSync, url, ConnectionConfig())
+    for headers in token_cases(settings):
+        try:
+            client.make_dir(pb.MakeDirRequest(path=root + '/token-refused'), headers=headers, timeout_ms=TOO_LONG_TIMEOUT)
+        except ConnectError as error:
+            account_failure(error, TOKEN_MESSAGE)
+        else:
+            raise AssertionError('invalid access token was accepted')
     for method, request, expected in cases(root):
         response, failure = None, None
         try:
@@ -207,6 +239,9 @@ def run_sync(settings, root):
         for headers, expected in unsupported_encoding_cases():
             response = transport.post(url + '/filesystem.Filesystem/MakeDir', json={'path': root + '/encoding-refused'}, headers=headers)
             connect_failure(response, expected, status=501, code=Code.UNIMPLEMENTED)
+        for data, expected in json_error_cases(root):
+            response = transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=JSON_ERROR_HEADERS)
+            connect_failure(response, expected)
     for target, headers, message in account_cases(settings):
         selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
         try:
@@ -228,6 +263,13 @@ def run_sync(settings, root):
 async def run_async(settings, root):
     url = settings['url']
     client = async_client(clients.FilesystemClient, url, ConnectionConfig())
+    for headers in token_cases(settings):
+        try:
+            await client.make_dir(pb.MakeDirRequest(path=root + '/token-refused'), headers=headers, timeout_ms=TOO_LONG_TIMEOUT)
+        except ConnectError as error:
+            account_failure(error, TOKEN_MESSAGE)
+        else:
+            raise AssertionError('invalid access token was accepted')
     for method, request, expected in cases(root):
         response, failure = None, None
         try:
@@ -255,6 +297,9 @@ async def run_async(settings, root):
         for headers, expected in unsupported_encoding_cases():
             response = await transport.post(url + '/filesystem.Filesystem/MakeDir', json={'path': root + '/encoding-refused'}, headers=headers)
             connect_failure(response, expected, status=501, code=Code.UNIMPLEMENTED)
+        for data, expected in json_error_cases(root):
+            response = await transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=JSON_ERROR_HEADERS)
+            connect_failure(response, expected)
     for target, headers, message in account_cases(settings):
         selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
         try:
@@ -281,3 +326,5 @@ if __name__ == '__main__':
     print('guest real unary files: 60 sync/async file scenarios (including 4 gzip negotiation and 4 explicit generated-client gzip request cases) + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')
     print('guest unary gzip failures: 10 synthetic sync/async HTTP inputs parsed by the original Connect error parser; not original SDK request encoding')
     print('guest unary unsupported encoding: 4 synthetic sync/async HTTP inputs parsed by the original Connect error parser; before invalid version/timeout')
+    print('guest unary JSON failures: 8 synthetic sync/async HTTP inputs parsed by the original Connect error parser; not original SDK request encoding')
+    print('guest unary token failures: 6 original SDK sync/async calls, missing/empty/wrong tokens before Basic and timeout; original unauthenticated code/message')

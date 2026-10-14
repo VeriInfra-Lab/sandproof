@@ -18,7 +18,9 @@ use std::{
 pub(crate) mod gzip;
 mod gzip_errors;
 mod headers;
+mod json_errors;
 mod protobuf;
+mod token;
 mod unsupported_compression;
 
 struct Meta;
@@ -77,6 +79,14 @@ fn full(pool: &FileRpcRequests) {
         pool.admit(),
         Err(AdmissionError::ResourceExhausted)
     ));
+}
+fn json_error(method: &str, body: &[u8]) -> Error {
+    match file_protocol::decode_request_observed(method, body, body.len().max(1)).unwrap_err() {
+        file_protocol::DecodeFailure::Json(error) => Error::Json(error),
+        other @ file_protocol::DecodeFailure::Protocol(_) => {
+            panic!("JSON observation required: {other:?}")
+        }
+    }
 }
 async fn released(pool: &FileRpcRequests) {
     drop(
@@ -311,11 +321,7 @@ async fn complete_framing_and_all_body_budgets_precede_json_success() {
             None,
             Error::BodyLimit,
         ),
-        (
-            vec![data(b"{")],
-            None,
-            Error::Protocol(ProtocolError::InvalidArgument),
-        ),
+        (vec![data(b"{")], None, json_error("Stat", b"{")),
     ] {
         let (body, polls) = body(frames, expected);
         let auth = pool

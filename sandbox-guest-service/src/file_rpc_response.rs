@@ -19,6 +19,9 @@ mod io;
 pub use io::io_failure;
 mod compression;
 pub use compression::Encoding;
+mod method;
+pub use method::method_not_allowed;
+pub(crate) mod token;
 
 #[cfg(test)]
 mod tests;

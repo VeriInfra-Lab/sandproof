@@ -19,8 +19,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +45,7 @@ func wipeBytes(b []byte) { clear(b) }
 type logger struct{}
 
 func (l logger) Error() logger    { return l }
+func (l logger) Warn() logger     { return l }
 func (l logger) Err(error) logger { return l }
 func (logger) Msg(string)         {}
 
@@ -50,7 +53,71 @@ type API struct {
 	accessToken tokenStore
 	now         int64
 	logger      logger
+	handover    *struct{}
+	initialized atomic.Bool
 }
+
+var authExcludedPaths = []string{
+	"GET/health",
+	"GET/files",
+	"POST/files",
+	"POST/init",
+}
+
+// handoverPreInitAllowedPaths is the MINIMAL set reachable on a live-upgraded
+// envd before its post-upgrade /init has restored the access token: only /init
+// (which restores auth and lifts this gate, self-authenticated via MMDS) and
+// the health check. It deliberately omits /files — unlike authExcludedPaths —
+// so a re-adopted (possibly hostile) guest process can't reach the
+// root-privileged file API unauthenticated in that window. The orchestrator
+// delivers the upgrade over /upgrade's body, not /files, so nothing legitimate
+// needs /files before /init.
+var handoverPreInitAllowedPaths = []string{
+	"GET/health",
+	"POST/init",
+}
+
+func (a *API) WithAuthorization(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// check if this path is allowed without authentication (e.g., health check, endpoints supporting signing)
+		allowedPath := slices.Contains(authExcludedPaths, req.Method+req.URL.Path)
+
+		switch {
+		case a.accessToken.IsSet():
+			authHeader := req.Header.Get(accessTokenHeader)
+
+			if !a.accessToken.Equals(authHeader) && !allowedPath {
+				a.logger.Error().Msg("Trying to access secured envd without correct access token")
+
+				err := errors.New("unauthorized access, please provide a valid access token or method signing if supported")
+				jsonError(w, http.StatusUnauthorized, err)
+
+				return
+			}
+
+		case a.handover != nil && !a.initialized.Load() && !slices.Contains(handoverPreInitAllowedPaths, req.Method+req.URL.Path):
+			// A live-upgraded envd serves before its post-upgrade /init has
+			// restored the access token — and the fallback thaw may already be
+			// running the re-adopted workload. The sandbox HAD a token (it is a
+			// resume), so treat the unset token as "not yet restored" and fail
+			// CLOSED here rather than falling through to the open path below,
+			// which would let a re-adopted (and possibly hostile) guest process
+			// reach control endpoints unauthenticated in this window. Only the
+			// minimal handoverPreInitAllowedPaths (/init, /health) get through —
+			// notably NOT /files, whose root file API is otherwise unauthenticated
+			// (it is in authExcludedPaths). /init self-authenticates via MMDS and
+			// lifts this gate.
+			a.logger.Warn().Msg("blocking pre-init request on live-upgraded envd (auth not yet restored)")
+
+			jsonError(w, http.StatusUnauthorized, errors.New("envd not initialized"))
+
+			return
+		}
+
+		handler.ServeHTTP(w, req)
+	})
+}
+
 type Sha256Hashing struct{}
 
 func NewSHA256Hashing() *Sha256Hashing { return &Sha256Hashing{} }
@@ -179,6 +246,55 @@ func jsonError(w http.ResponseWriter, code int, err error) {
 	}
 }
 
+// RPC mode exercises the original outer middleware over real HTTP with a
+// controlled initialized token store; no MMDS/account/filesystem code runs.
+func rpcAuthorizationHTTP(data []byte) string {
+	var input struct {
+		Method  string
+		Headers []string
+	}
+	if err := json.Unmarshal(data, &input); err != nil {
+		panic(err)
+	}
+	a := API{accessToken: tokenStore("token")}
+	server := httptest.NewServer(a.WithAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("reference token rejection reached protected handler")
+	})))
+	defer server.Close()
+	req, err := http.NewRequest(input.Method, server.URL+"/filesystem.Filesystem/MakeDir", strings.NewReader("invalid JSON"))
+	if err != nil {
+		panic(err)
+	}
+	for _, value := range input.Headers {
+		req.Header.Add(accessTokenHeader, unhex(value))
+	}
+	req.Header.Set("Authorization", "Basic bWlzc2luZzo=")
+	req.Header.Set("Content-Type", "application/grpc")
+	req.Header.Set("Content-Encoding", "br")
+	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("Connect-Protocol-Version", "bad")
+	req.Header.Set("Connect-Timeout-Ms", "bad")
+	client := server.Client()
+	client.Timeout = 5 * time.Second
+	res, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		panic(err)
+	}
+	if res.StatusCode != http.StatusUnauthorized {
+		panic("expected outer token rejection")
+	}
+	values := []string{strconv.Itoa(res.StatusCode)}
+	for _, name := range []string{"Content-Type", "Content-Length", "X-Content-Type-Options", "Accept-Encoding", "Content-Encoding"} {
+		values = append(values, hex.EncodeToString([]byte(res.Header.Get(name))))
+	}
+	return strings.Join(append(values, hex.EncodeToString(body)), "\t")
+}
+
 func main() {
 	if runtime.Version() != "go1.26.8" || strconv.IntSize != 64 {
 		panic("Go 1.26.8, 64-bit int required")
@@ -193,6 +309,13 @@ func main() {
 		}
 	}()
 	for scanner.Scan() {
+		if input, ok := strings.CutPrefix(scanner.Text(), "R\t"); ok {
+			fmt.Fprintln(out, rpcAuthorizationHTTP([]byte(unhex(input))))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
 		f := strings.Split(scanner.Text(), "\t")
 		if len(f) < 8 {
 			panic("mode, token, path, username, expiration, operation, signature, now[,headers...] required")

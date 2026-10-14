@@ -51,6 +51,7 @@ struct Fixture {
     root: PathBuf,
     username: String,
     endpoint: FileHttp<Meta, SystemAccounts, sandproof_guest_runtime::file_download::date::Utc>,
+    streams: FileStreams,
     seen: AtomicUsize,
     multipart_seen: AtomicUsize,
     gzip_seen: AtomicUsize,
@@ -64,6 +65,12 @@ async fn connect() -> Json<serde_json::Value> {
 }
 
 async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> Response {
+    // This sequential SDK fixture uses one transfer slot. An error response
+    // can arrive before its cancelled blocking writer actually releases it.
+    // Synchronize on the real pool, not the client's receipt or a fixed sleep.
+    // This is a test-only barrier before a new operation, never a production
+    // admission queue, retry of a write, or a claim about filesystem durability.
+    wait_for_transfer_settlement(&fixture.streams).await;
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     // Test-only path precondition. The shared guest endpoint intentionally
     // permits guest absolute paths and does not enforce this fixture tree.
@@ -218,16 +225,33 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         Duration::from_secs(30),
     )
     .unwrap();
-    let endpoint = FileHttp::new(session, requests, streams, accounts, http_settings(&root));
+    let endpoint = FileHttp::new(
+        session,
+        requests,
+        streams.clone(),
+        accounts,
+        http_settings(&root),
+    );
     Arc::new(Fixture {
         root,
         username,
         endpoint,
+        streams,
         seen: AtomicUsize::new(0),
         multipart_seen: AtomicUsize::new(0),
         gzip_seen: AtomicUsize::new(0),
         gzip_download_seen: AtomicUsize::new(0),
     })
+}
+
+async fn wait_for_transfer_settlement(streams: &FileStreams) {
+    timeout(Duration::from_secs(5), async {
+        while streams.available_slots() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("previous transfer still owns the fixture's only slot");
 }
 
 fn http_settings(root: &Path) -> HttpSettings<sandproof_guest_runtime::file_download::date::Utc> {
@@ -352,6 +376,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
+    wait_for_transfer_settlement(&fixture.streams).await;
     assert_eq!(fixture.seen.load(Ordering::SeqCst), 496);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 148);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 110);
