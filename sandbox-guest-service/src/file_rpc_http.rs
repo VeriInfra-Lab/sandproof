@@ -76,7 +76,7 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
     /// fixed JSON codec, decode once, execute once and return an owned response.
     /// Settings and all pools are trusted daemon inputs, with no defaults here.
     /// # Errors
-    /// Admission, unsupported route/format/compression, unmapped context/body/I/O
+    /// Admission, unsupported route/format, unmapped context/body/I/O
     /// error or failed response preparation. Acquired slots and original expiry
     /// remain owned by the failure; the listener needs a bounded failure policy.
     pub async fn handle(&self, request: Request<Body>) -> Result<Response, Failure> {
@@ -135,13 +135,32 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
                 return Err(Failure::execution(failure));
             }
         };
-        let codec = selection.map_err(|error| {
-            Failure::retained(
-                Error::Selection(error),
-                prepared.deadline(),
-                prepared.owner(),
-            )
-        })?;
+        let codec = match selection {
+            Ok(codec) => codec,
+            Err(SelectionError::Method) => {
+                let deadline = prepared.deadline();
+                let owner = prepared.owner();
+                // Preflight has finished: response retention keeps capacity,
+                // but must not keep its authorization read lock or account.
+                drop(prepared);
+                return file_rpc_response::method_not_allowed(
+                    parts.method == axum::http::Method::HEAD,
+                    inner.response,
+                    deadline,
+                    owner,
+                )
+                .await
+                .map(Prepared::Response)
+                .map_err(Failure::response);
+            }
+            Err(error) => {
+                return Err(Failure::retained(
+                    Error::Selection(error),
+                    prepared.deadline(),
+                    prepared.owner(),
+                ));
+            }
+        };
         let ready = match prepared.decode(method, body).await {
             Ok(ready) => ready,
             Err(failure) => {

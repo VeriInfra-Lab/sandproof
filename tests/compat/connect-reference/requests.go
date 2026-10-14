@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	rpc "sandproof.local/connect-reference/filesystem"
 )
 
@@ -19,7 +20,7 @@ func requestEcho[T any](mux *http.ServeMux, method string) {
 	path := "/fixture.Requests/" + method
 	mux.Handle(path, connect.NewUnaryHandler(path, func(_ context.Context, req *connect.Request[T]) (*connect.Response[T], error) {
 		return connect.NewResponse(req.Msg), nil
-	}))
+	}, connect.WithSchema(rpc.File_filesystem_filesystem_proto.Services().ByName("Filesystem").Methods().ByName(protoreflect.Name(method)))))
 }
 
 func normalizeRequestFailure(target string, status int, body []byte) []byte {

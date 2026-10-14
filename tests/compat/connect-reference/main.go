@@ -168,6 +168,8 @@ func main() {
 		switch mode {
 		case "J", "K":
 			target, body = requestEndpoint(data)
+		case "M":
+			target, body = methodEndpoint(data)
 		case "P":
 			target, body = propertyEndpoint(data), []byte("{}")
 		case "A":
@@ -199,6 +201,9 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
+		if mode == "M" {
+			methodHeaders(req, data)
+		}
 		if mode == "G" || mode == "Z" {
 			req.Header.Del("Accept-Encoding")
 			for _, value := range compression.Accept {
@@ -332,6 +337,11 @@ func main() {
 			continue
 		}
 		values := []string{strconv.Itoa(res.StatusCode)}
+		if mode == "M" {
+			for _, name := range []string{"Allow", "Accept-Post"} {
+				values = append(values, hex.EncodeToString([]byte(res.Header.Get(name))))
+			}
+		}
 		for _, name := range []string{"Content-Type", "Content-Length", "Accept-Encoding", "Content-Encoding", "X-Content-Type-Options", "Vary"} {
 			values = append(values, hex.EncodeToString([]byte(res.Header.Get(name))))
 		}
