@@ -1,6 +1,7 @@
 // Original Connect HTTP transport pinned by envd f455fd58fa3f289e78ce1de690c35968d8d29322.
-// The passthrough JSON codec isolates transport from protobuf encoding and
-// actual file operations. This is not a full envd/protobuf compatibility test.
+// Transport modes use a passthrough JSON codec. P/J use original generated
+// messages and the default codec for property/request observations. No mode
+// here executes real file operations or a complete envd compatibility test.
 package main
 
 import (
@@ -68,6 +69,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	registerProperties(mux)
+	registerRequests(mux)
 	// The envd account failure observation is controlled here. Both wrappers
 	// below are the original authn/Connect implementation, not a replacement.
 	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
@@ -164,6 +166,8 @@ func main() {
 			Error  bool
 		}
 		switch mode {
+		case "J":
+			target, body = requestEndpoint(data)
 		case "P":
 			target, body = propertyEndpoint(data), []byte("{}")
 		case "A":
@@ -247,6 +251,13 @@ func main() {
 		}
 		if err := res.Body.Close(); err != nil {
 			panic(err)
+		}
+		if mode == "J" {
+			fmt.Fprintln(out, requestObservation(res.StatusCode, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
 		}
 		if mode == "P" {
 			// Original protojson deliberately varies insignificant whitespace.

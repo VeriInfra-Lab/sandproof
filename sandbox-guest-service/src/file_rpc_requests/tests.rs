@@ -18,6 +18,7 @@ use std::{
 pub(crate) mod gzip;
 mod gzip_errors;
 mod headers;
+mod protobuf;
 mod unsupported_compression;
 
 struct Meta;

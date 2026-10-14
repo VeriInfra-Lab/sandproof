@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{ProtocolError, encode_json, null_default, parse, uint32};
+use crate::protocol::{ProtocolError, encode_json, null_default, parse};
+
+mod request_json;
+use request_json::uint32;
 
 mod content_type;
 pub use content_type::{JsonContentType, json_content_type};
@@ -22,14 +25,12 @@ pub enum Request {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct PathRequest {
     #[serde(default, deserialize_with = "null_default")]
     path: String,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ListRequest {
     #[serde(default, deserialize_with = "null_default")]
     path: String,
@@ -38,7 +39,6 @@ struct ListRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct MoveRequest {
     #[serde(default, deserialize_with = "null_default")]
     source: String,
@@ -54,6 +54,10 @@ pub fn decode_request(method: &str, body: &[u8], limit: usize) -> Result<Request
     if limit == 0 || body.len() > limit {
         return Err(ProtocolError::ResourceExhausted);
     }
+    if !matches!(method, "Stat" | "MakeDir" | "Remove" | "ListDir" | "Move") {
+        return Err(ProtocolError::Unimplemented);
+    }
+    request_json::validate(body)?;
     match method {
         "Stat" => Ok(Request::Stat(parse::<PathRequest>(body)?.path)),
         "MakeDir" => Ok(Request::MakeDir(parse::<PathRequest>(body)?.path)),

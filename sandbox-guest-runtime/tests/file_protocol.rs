@@ -161,13 +161,14 @@ fn missing_null_and_zero_do_not_lose_defaulting_intent() {
 }
 
 #[test]
-fn duplicate_array_unknown_and_stream_framed_messages_are_not_unary_requests() {
+fn duplicate_array_and_stream_framed_messages_are_not_unary_requests() {
     for body in [
         br#"{"path":"a","path":"b"}"#.as_slice(),
         b"[]",
         b"null",
         br#"{"path":1}"#,
-        br#"{"unknown":true}"#,
+        br#"{"path":null,"path":null}"#,
+        br#"{"path":null,"pa\u0074h":"b"}"#,
         b"{}{}",
         b"\0\0\0\0\x02{}",
     ] {
@@ -194,6 +195,99 @@ fn duplicate_array_unknown_and_stream_framed_messages_are_not_unary_requests() {
         assert_eq!(
             decode_request(method, b"{}", 1024),
             Err(ProtocolError::Unimplemented)
+        );
+    }
+}
+
+#[test]
+fn unknown_fields_are_discarded_but_their_json_and_unicode_must_be_valid() {
+    for body in [
+        br#"{"unknown":true,"unknown":null}"#.as_slice(),
+        br#"{"Path":1,"unknown":{"path":1,"path":false},"n":1e999999999999}"#,
+        br#"{"unknown":["\ud83d\ude00",{},[null,false]],"path":null}"#,
+    ] {
+        assert_eq!(
+            decode_request("Stat", body, body.len()),
+            Ok(Request::Stat(String::new()))
+        );
+    }
+    for body in [
+        br#"{"unknown":"\ud800"}"#.as_slice(),
+        br#"{"unknown":{"\udc00":true}}"#,
+        b"{\"unknown\":\"\xff\"}",
+        br#"{"unknown":[1,]}"#,
+        br#"{"unknown":01}"#,
+    ] {
+        assert_eq!(
+            decode_request("Stat", body, body.len()),
+            Err(ProtocolError::InvalidArgument)
+        );
+    }
+    // Unknown nesting is iterative, with the original protobuf recursion cap.
+    for (depth, accepted) in [(128, true), (9999, true), (10_000, false)] {
+        let body = format!(
+            "{{\"unknown\":{}0{}}}",
+            "[".repeat(depth),
+            "]".repeat(depth)
+        );
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len()).is_ok(),
+            accepted
+        );
+        assert_eq!(
+            decode_request("Stat", body.as_bytes(), body.len() - 1),
+            Err(ProtocolError::ResourceExhausted)
+        );
+    }
+}
+
+#[test]
+fn depth_preserves_exact_decimal_integer_semantics_without_float_rounding() {
+    for (value, expected) in [
+        ("1.0", 1),
+        ("1e2", 100),
+        ("100e-2", 1),
+        ("42949672950000000000000000000e-19", u32::MAX),
+        ("4.294967295e9", u32::MAX),
+        ("-0", 0),
+        ("-0.000e999999999999999999999999999", 0),
+        ("0.00000000000000000001e20", 1),
+    ] {
+        for wire in [value.to_string(), serde_json::to_string(value).unwrap()] {
+            let body = format!("{{\"depth\":{wire}}}");
+            assert_eq!(
+                decode_request("ListDir", body.as_bytes(), body.len()),
+                Ok(Request::ListDir {
+                    path: String::new(),
+                    depth: expected
+                }),
+                "{wire}"
+            );
+        }
+    }
+    for value in [
+        "1.0000000000000000000000001",
+        "4294967295.0000000001",
+        "-1e-99999999",
+        "0.000000000000000000001e21",
+        "1e2147483648",
+        "1e-2147483649",
+        "4294967296",
+        "01",
+        "+1",
+        " 1",
+        "1 ",
+        "1e",
+        "1e+",
+        "NaN",
+        "null",
+        "[]",
+    ] {
+        let body = format!("{{\"depth\":{}}}", serde_json::to_string(value).unwrap());
+        assert_eq!(
+            decode_request("ListDir", body.as_bytes(), body.len()),
+            Err(ProtocolError::InvalidArgument),
+            "{value}"
         );
     }
 }
