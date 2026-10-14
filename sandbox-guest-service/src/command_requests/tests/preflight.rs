@@ -164,8 +164,22 @@ async fn timed_out_account_lookup_holds_request_and_auth_until_actual_exit() {
     let task = tokio::spawn(async move { auth.prepare(&accounts, context_limits()).await });
     started.await.unwrap();
     tokio::time::pause();
-    tokio::time::advance(deadline.saturating_duration_since(Instant::now())).await;
-    let failure = task.await.unwrap().err().unwrap();
+    // Tokio rounds timer deadlines up to milliseconds. This deliberately
+    // blocked worker also inhibits paused-clock auto-advance, so stopping
+    // exactly at the original Instant can leave the timeout asleep forever.
+    tokio::time::advance(
+        deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(1),
+    )
+    .await;
+    tokio::time::resume();
+    // Bound failure of the test itself without changing the request deadline
+    // or releasing the blocked worker before the retention assertions.
+    let failure = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .expect("original account deadline did not fire")
+        .unwrap()
+        .err()
+        .unwrap();
     assert_eq!(
         failure.error(),
         Error::Context(ContextError::DeadlineExceeded)
@@ -175,7 +189,6 @@ async fn timed_out_account_lookup_holds_request_and_auth_until_actual_exit() {
     full(&pool);
     let mut init = Box::pin(session.initialize(br#"{"accessToken":"token"}"#));
     pending(init.as_mut()).await;
-    tokio::time::resume();
     gate.release();
     released(&pool).await;
     init.await.unwrap();

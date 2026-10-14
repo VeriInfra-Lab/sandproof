@@ -1,8 +1,8 @@
 //! Fixed upload envelopes, under the original retained upload capacity.
 //! It reports observed file outcomes; delivery failure never rolls them back.
 use crate::{
-    go_json,
-    owned_body::{self, OwnedBody, Owner, Payload},
+    finite_body, go_json,
+    owned_body::{self, Owner},
 };
 use axum::{http::HeaderValue, response::Response};
 use sandproof_guest_runtime::{file_mime::basename, file_upload::UploadResult};
@@ -106,15 +106,9 @@ pub(crate) async fn send_with_head(
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Error> {
     let limits = limits.validate()?;
-    let (length, body) = OwnedBody::start(deadline, owner, move |_, _| {
-        let bytes = encode()?;
-        Ok((
-            bytes.len(),
-            Payload::new(if head { Vec::new() } else { bytes }, limits.chunk_bytes),
-        ))
-    })
-    .await?;
-    let mut response = Response::new(body.into_body());
+    let payload = finite_body::prepare(deadline, owner, move |_| encode()).await?;
+    let length = payload.length();
+    let mut response = Response::new(payload.into_body(limits.chunk_bytes, deadline, head));
     // The pinned handler writes JSON with no explicit Content-Type. Go's HTTP
     // writer sniffs this array as text/plain. Its 2048-byte buffer adds a length
     // only when the complete payload fits; larger HTTP/1.1 replies are chunked.
