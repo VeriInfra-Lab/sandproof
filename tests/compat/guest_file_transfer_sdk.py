@@ -239,7 +239,12 @@ def check_range(response, method, status, expected):
         message = BytesParser(policy=policy.default).parsebytes(
             b'Content-Type: ' + response.headers['content-type'].encode() + b'\r\n\r\n' + response.content)
         parts = list(message.iter_parts())
-        assert all(part['content-type'] == 'text/plain; charset=utf-8' for part in parts)
+        # HeaderRegistry adds quotes around charset when it formats this header.
+        # Compare the original field instead; retain exact wire-value checking
+        # and reject duplicate Content-Type fields rather than normalizing them.
+        for part in parts:
+            assert [value for name, value in part.raw_items()
+                    if name.lower() == 'content-type'] == ['text/plain; charset=utf-8']
         assert [part['content-range'] for part in parts] == ['bytes 0-0/3', 'bytes 2-2/3']
         assert [part.get_payload(decode=True) for part in parts] == [b'n', b'w']
         assert int(response.headers['content-length']) == len(response.content)
