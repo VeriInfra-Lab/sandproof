@@ -25,6 +25,8 @@ def cases(root):
         return pb.RemoveRequest(path=f'{root}/{name}')
     return [
         ('stat', stat('file'), 'file'),
+        ('remove', remove('dir/.'), Code.INTERNAL),
+        ('remove', remove('file/child'), Code.INTERNAL),
         ('list_dir', pb.ListDirRequest(path=f'{root}/missing'), Code.NOT_FOUND),
         ('list_dir', pb.ListDirRequest(path=f'{root}/file'), Code.INVALID_ARGUMENT),
         ('stat', stat('link'), 'link'),
@@ -61,6 +63,10 @@ def check(response, failure, expected, root, method=None, request=None):
             elif method == 'list_dir':
                 message = (f'path not found: lstat {request.path}: no such file or directory'
                            if expected == Code.NOT_FOUND else f'path is not a directory: {request.path}')
+            elif method == 'remove':
+                detail = (f'RemoveAll {request.path}: invalid argument' if request.path.endswith('/.')
+                          else f'unlinkat {request.path}: not a directory')
+                message = f'error removing file or directory: {detail}'
             elif expected == Code.ALREADY_EXISTS:
                 message = f'directory already exists: {request.path}'
             else:
@@ -183,4 +189,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings, settings['root'] + '/sync')
         asyncio.run(run_async(settings, settings['root'] + '/async'))
-    print('guest real unary files: 44 sync/async file scenarios + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')
+    print('guest real unary files: 48 sync/async file scenarios + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')

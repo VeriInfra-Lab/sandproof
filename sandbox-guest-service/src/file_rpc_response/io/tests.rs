@@ -15,6 +15,7 @@ fn fault(stage: FaultStage, errno: Option<i32>) -> FileFault {
             | FaultStage::WalkRead
             | FaultStage::WalkType
             | FaultStage::WalkEntryStat => Some(FaultContext::WalkRoot(b"/root".to_vec())),
+            FaultStage::RemoveRead => Some(FaultContext::RemoveReadName(b"leaf".to_vec())),
             _ => None,
         },
         errno: errno.map(LinuxErrno),
@@ -29,6 +30,41 @@ async fn drain(mut body: Body) -> Vec<u8> {
     result
 }
 const CASES: &[(FaultStage, Option<i32>, u16, &str, &str)] = &[
+    (
+        FaultStage::RemoveAll,
+        Some(22),
+        500,
+        "internal",
+        "error removing file or directory: RemoveAll /from: invalid argument",
+    ),
+    (
+        FaultStage::RemoveParentOpen,
+        Some(20),
+        500,
+        "internal",
+        "error removing file or directory: open /from: not a directory",
+    ),
+    (
+        FaultStage::RemoveUnlink,
+        Some(13),
+        500,
+        "internal",
+        "error removing file or directory: unlinkat /from: permission denied",
+    ),
+    (
+        FaultStage::RemoveOpenDir,
+        Some(13),
+        500,
+        "internal",
+        "error removing file or directory: openfdat /from: permission denied",
+    ),
+    (
+        FaultStage::RemoveRead,
+        Some(5),
+        500,
+        "internal",
+        "error removing file or directory: readdirnames /from: readdirent leaf: input/output error",
+    ),
     (
         FaultStage::EntryStat,
         Some(2),
@@ -329,6 +365,7 @@ fn cycle_quoting_and_context_roles_do_not_invent_missing_paths() {
     for mut observed in [
         fault(FaultStage::Rename, Some(2)),
         fault(FaultStage::WalkOpen, Some(13)),
+        fault(FaultStage::RemoveRead, Some(5)),
         cycle,
     ] {
         observed.context = match observed.stage {

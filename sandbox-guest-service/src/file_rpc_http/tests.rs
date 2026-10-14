@@ -627,3 +627,4 @@ async fn failed_error_encoding_keeps_original_deadline_and_created_move_parent()
 mod reference;
 
 mod directory;
+mod remove;

@@ -114,23 +114,23 @@ async fn original_go_list_dir_errors_match_http() {
         "dir/../missing",
     ] {
         let value = serde_json::json!({"path":format!("{}/{path}", root.path().display())});
-        compare_directory(&binary, &f, value).await;
+        compare_failure(&binary, &f, "ListDir", value).await;
     }
     let value = serde_json::json!({"path":format!("/../{}/missing", root.path().display())});
-    compare_directory(&binary, &f, value).await;
+    compare_failure(&binary, &f, "ListDir", value).await;
 }
 
-async fn compare_directory(binary: &str, f: &Fixture, mut value: serde_json::Value) {
+async fn compare_failure(binary: &str, f: &Fixture, method: &str, mut value: serde_json::Value) {
     let response = f
         .http
-        .handle(request("ListDir", Body::from(value.to_string())))
+        .handle(request(method, Body::from(value.to_string())))
         .await
         .unwrap();
     assert!(response.status().is_client_error() || response.status().is_server_error());
     let actual: serde_json::Value =
         serde_json::from_slice(&drain(response.into_body()).await).unwrap();
     released(f).await;
-    value["Method"] = "ListDir".into();
+    value["Method"] = method.into();
     value["Detailed"] = true.into();
     let mut child = Command::new(binary)
         .stdin(Stdio::piped())
@@ -146,5 +146,35 @@ async fn compare_directory(binary: &str, f: &Fixture, mut value: serde_json::Val
         String::from_utf8_lossy(&output.stderr)
     );
     let expected: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(actual, expected, "ListDir {value}");
+    assert_eq!(actual, expected, "{method} {value}");
+}
+
+#[tokio::test]
+#[ignore = "requires SANDPROOF_GUEST_GO_FILES_REFERENCE built from pinned envd"]
+async fn original_go_remove_errors_match_http() {
+    let binary = std::env::var("SANDPROOF_GUEST_GO_FILES_REFERENCE")
+        .expect("original Go reference required");
+    let root = tempfile::tempdir().unwrap();
+    let f = fixture(root.path(), 65536).await;
+    prepare_error_tree(root.path());
+    for suffix in [
+        "dir/.",
+        "missing/.",
+        "file/child",
+        "file/child/deeper",
+        "file//child///",
+        "loop/child",
+        "nul\0",
+        "file/<>&\"\n",
+    ] {
+        let value = serde_json::json!({"path":format!("{}/{suffix}", root.path().display())});
+        compare_failure(&binary, &f, "Remove", value).await;
+    }
+    let value = serde_json::json!({"path":format!("///{}/file/child///", root.path().display())});
+    compare_failure(&binary, &f, "Remove", value).await;
+    assert_eq!(
+        std::fs::read(root.path().join("file")).unwrap(),
+        b"original"
+    );
+    assert!(root.path().join("dir").is_dir());
 }

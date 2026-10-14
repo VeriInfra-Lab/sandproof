@@ -24,6 +24,11 @@ pub enum FaultStage {
     WalkRead,
     WalkType,
     WalkEntryStat,
+    RemoveAll,
+    RemoveParentOpen,
+    RemoveUnlink,
+    RemoveOpenDir,
+    RemoveRead,
 }
 
 /// Exactly one additional path, with its role fixed by the observed stage.
@@ -31,6 +36,7 @@ pub enum FaultStage {
 pub enum FaultContext {
     RenameDestination(Vec<u8>),
     WalkRoot(Vec<u8>),
+    RemoveReadName(Vec<u8>),
 }
 
 /// Construct only from an actual operation observation or a controlled test.

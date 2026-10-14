@@ -1,4 +1,4 @@
-//! Fixed envd f455fd58 filesystem/{utils,dir,move}.go and permissions/path.go.
+//! Fixed envd f455fd58 filesystem/{utils,dir,move,remove}.go and permissions/path.go.
 //! Apache-2.0: sandbox-guest-runtime/src/file_encoding/E2B-LICENSE.
 use super::{Error, Failure, Limits, Owner, Response, StatusCode, send_encoded};
 use crate::{go_json, go_quote};
@@ -101,6 +101,11 @@ fn message_parts(fault: &FileFault) -> (&'static [u8], &'static [u8]) {
         FaultStage::WalkRead => (b"", b"readdirent"),
         FaultStage::WalkType => (b"", b"fstatat"),
         FaultStage::WalkEntryStat => (b"internal: error getting file info: ", b"lstat"),
+        FaultStage::RemoveAll => (b"error removing file or directory: ", b"RemoveAll"),
+        FaultStage::RemoveParentOpen => (b"error removing file or directory: ", b"open"),
+        FaultStage::RemoveUnlink => (b"error removing file or directory: ", b"unlinkat"),
+        FaultStage::RemoveOpenDir => (b"error removing file or directory: ", b"openfdat"),
+        FaultStage::RemoveRead => (b"error removing file or directory: ", b"readdirnames"),
     }
 }
 
@@ -138,6 +143,10 @@ fn payload(fault: &FileFault, limit: usize) -> Result<Vec<u8>, Error> {
             message(b" ")?;
             message(destination)?;
         }
+        if let Some(name) = context.filter(|_| fault.stage == FaultStage::RemoveRead) {
+            message(b": readdirent ")?;
+            message(name)?;
+        }
         if let Some(errno) = &errno {
             message(b": ")?;
             message(errno.as_bytes())?;
@@ -150,6 +159,7 @@ fn payload(fault: &FileFault, limit: usize) -> Result<Vec<u8>, Error> {
 fn context(fault: &FileFault) -> Result<Option<&[u8]>, Error> {
     match (&fault.stage, &fault.context) {
         (FaultStage::Rename, Some(FaultContext::RenameDestination(path)))
+        | (FaultStage::RemoveRead, Some(FaultContext::RemoveReadName(path)))
         | (
             FaultStage::WalkStat
             | FaultStage::WalkOpen
@@ -160,6 +170,7 @@ fn context(fault: &FileFault) -> Result<Option<&[u8]>, Error> {
         ) => Ok(Some(path)),
         (
             FaultStage::Rename
+            | FaultStage::RemoveRead
             | FaultStage::WalkStat
             | FaultStage::WalkOpen
             | FaultStage::WalkRead

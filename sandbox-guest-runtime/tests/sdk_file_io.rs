@@ -96,6 +96,7 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
                         | StatusCode::NOT_FOUND
                         | StatusCode::CONFLICT
                         | StatusCode::BAD_REQUEST
+                        | StatusCode::INTERNAL_SERVER_ERROR
                 ));
             }
             response
@@ -337,7 +338,7 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 46);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 50);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
