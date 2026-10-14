@@ -18,7 +18,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use sandproof_guest_runtime::protocol::{
-    End, Event, Request, decode_request, encode_event, encode_stream_end,
+    End, Event, ProcessConfig, ProcessInfo, Request, Response as CommandResponse, decode_request,
+    encode_event, encode_response, encode_stream_end,
 };
 use sandproof_guest_runtime::{
     CommandEvent, CommandProcess, LaunchObservation, LaunchSpec, ProcessLimits, ProcessSignal,
@@ -64,6 +65,49 @@ enum Stage {
     Start,
     Output,
     Finish,
+}
+
+// Preselected wire metadata only: this is not a live process registry. The
+// Python probe checks absent/default/present fields through both fixed clients.
+async fn list(headers: HeaderMap, body: Bytes) -> Response {
+    assert_eq!(headers["content-type"], "application/json");
+    assert_eq!(decode_request("List", &body, LIMIT).unwrap(), Request::List);
+    let empty = ProcessConfig::default();
+    let config = ProcessConfig {
+        cmd: "/bin/cat".into(),
+        args: vec![String::new(), "\"\\\n中💡".into()],
+        envs: BTreeMap::from([
+            (String::new(), String::new()),
+            ("KEY".into(), "value".into()),
+        ]),
+        cwd: Some(String::new()),
+    };
+    let entries = match headers["x-fixture-list"].to_str().unwrap() {
+        "empty" => vec![],
+        "absent" => vec![ProcessInfo {
+            config: None,
+            pid: 0,
+            tag: None,
+        }],
+        "present" => vec![
+            ProcessInfo {
+                config: Some(&empty),
+                pid: 123,
+                tag: None,
+            },
+            ProcessInfo {
+                config: Some(&config),
+                pid: u32::MAX,
+                tag: Some(""),
+            },
+        ],
+        _ => panic!("unknown controlled list"),
+    };
+    (
+        [("content-type", "application/json")],
+        encode_response(CommandResponse::List(&entries), LIMIT).unwrap(),
+    )
+        .into_response()
 }
 
 async fn start(State(fixture): State<Arc<Fixture>>, headers: HeaderMap, body: Bytes) -> Response {
@@ -225,6 +269,7 @@ async fn probe(asynchronous: bool, mode: &str) {
     });
     let app = Router::new()
         .route("/process.Process/Start", post(start))
+        .route("/process.Process/List", post(list))
         .layer(DefaultBodyLimit::max(LIMIT + 5))
         .with_state(Arc::clone(&fixture));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

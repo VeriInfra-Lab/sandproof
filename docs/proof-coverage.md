@@ -232,7 +232,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 新 [Linux 进程适配](../sandbox-guest-runtime/src/process.rs)已把原 `CommandStream` 接到真实 wait、管道与消费确认，并实现单次私有 worker 放行及 pidfd 控制。该适配及 [worker](../sandbox-guest-runtime/src/worker.rs)只有组件测试，未抽取或证明；纯核心源码未变，原抽取试验不能背书异步与系统调用。待证连接包括：容量/公开身份先于放行、取消后的原进程责任、私有协议未知结果、真实 PID/创建证据与稳定句柄、stdin 部分效果、管道消费与实际分配/释放。内核、Tokio 与 exec 外部前提须逐项登记；自有状态和协议逻辑不能整体列为可信假设。
 
-新增的[命令 JSON/Connect 编解码](../sandbox-guest-runtime/src/protocol.rs)只有固定 SDK 样例、畸形输入及真实进程组合测试，未抽取或证明。请求存在性/选择器、帧边界、字节保真、预算到实际分配、End 到真实观察及传输完成的连接均为 #101 后续义务；Serde/base64/HTTP 库的使用不使自有适配逻辑自动成为可信前提。原纯核心和已证明控制器源码未变，旧证明不覆盖该新增模块。
+新增的[命令 JSON/Connect 编解码](../sandbox-guest-runtime/src/protocol.rs)已有固定 SDK 样例、畸形输入、有限的原 Go 响应编解码对照及真实进程组合测试，未抽取或证明。请求存在性/选择器、帧边界、字节保真、预算到实际分配、End 到真实观察及传输完成的连接均为 #101 后续义务；新增 List 借用元数据到有界 JSON、默认标量省略和 optional/oneof 存在性保持也未证明；Serde/base64/HTTP 库的使用不使自有适配逻辑自动成为可信前提。原纯核心和已证明控制器源码未变，旧证明不覆盖该新增模块。
 
 新增的[初始化、鉴权与 MMDS 组件](../sandbox-guest-service/src/lib.rs)只有会话及真实 HTTP/TCP 组件测试，未抽取或证明。#101 待证义务包括：元数据来源与实例绑定、令牌/defaults 原子发布、许可持有与实际派发的顺序、取消/超时的未知边界、重复初始化收敛、正文准入与实际资源释放。SHA-512、常量时间库、HTTP/异步库及内核是逐项外部前提，不覆盖自有头部判定、元数据解析、锁/预算与连接收尾。当前还未接到正式命令/文件路由；原已证明 Rust 与纯核心源码未变，已有定理或抽取记录不能背书此模块。
 

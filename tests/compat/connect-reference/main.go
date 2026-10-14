@@ -70,6 +70,7 @@ func main() {
 	mux.Handle(path, handler)
 	registerProperties(mux)
 	registerRequests(mux)
+	registerCommandResponses(mux)
 	// The envd account failure observation is controlled here. Both wrappers
 	// below are the original authn/Connect implementation, not a replacement.
 	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
@@ -159,6 +160,7 @@ func main() {
 			panic(err)
 		}
 		target, body := path, data
+		commandStream := false
 		var compression struct {
 			Accept []string
 			Sent   []string
@@ -166,6 +168,8 @@ func main() {
 			Error  bool
 		}
 		switch mode {
+		case "O":
+			target, body, commandStream = commandResponseEndpoint(data)
 		case "J", "K":
 			target, body = requestEndpoint(data)
 		case "M":
@@ -201,6 +205,12 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
+		if mode == "O" {
+			req.Header.Set("X-Fixture-Command", hex.EncodeToString(data))
+			if commandStream {
+				req.Header.Set("Content-Type", "application/connect+json")
+			}
+		}
 		if mode == "M" {
 			methodHeaders(req, data)
 		}
@@ -256,6 +266,13 @@ func main() {
 		}
 		if err := res.Body.Close(); err != nil {
 			panic(err)
+		}
+		if mode == "O" {
+			fmt.Fprintln(out, commandResponseObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
 		}
 		if mode == "J" {
 			fmt.Fprintln(out, requestObservation(res.StatusCode, responseBody))

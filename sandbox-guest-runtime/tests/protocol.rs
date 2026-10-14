@@ -293,7 +293,7 @@ fn binary_output_and_end_framing_preserve_observations() {
     .unwrap();
     assert_eq!(
         unpack(&end, 0),
-        json!({"event": {"end": {"exitCode": -1, "exited": false, "status": "signal: killed", "error": "signal: killed"}}})
+        json!({"event": {"end": {"exitCode": -1, "status": "signal: killed", "error": "signal: killed"}}})
     );
     assert_eq!(unpack(&encode_stream_end(None, 2).unwrap(), 2), json!({}));
     assert_eq!(

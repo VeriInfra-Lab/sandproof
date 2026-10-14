@@ -57,16 +57,63 @@ impl<'de> Deserialize<'de> for Selector {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProcessConfig {
     #[serde(default, deserialize_with = "null_default")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub cmd: String,
     #[serde(default, deserialize_with = "null_default")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     #[serde(default, deserialize_with = "null_default")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub envs: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+}
+
+/// Borrowed list metadata, already selected by the active command registry.
+/// This encoder does not infer liveness or reconstruct execution defaults.
+#[derive(Serialize)]
+pub struct ProcessInfo<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<&'a ProcessConfig>,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub pid: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<&'a str>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Response<'a> {
+    List(&'a [ProcessInfo<'a>]),
+    /// Successful `SendInput`, `CloseStdin`, `SendSignal` or Update acknowledgement.
+    /// Empty is not a process-exit or complete-resource-cleanup receipt.
+    Empty,
+}
+
+/// Encode one complete unary reply without cloning process metadata. The
+/// caller separately owns the registry snapshot and the transport capacity.
+/// List order is supplied by that snapshot, not a new ordering guarantee.
+/// # Errors
+/// Returns no partial success when the full JSON cannot fit the explicit budget.
+pub fn encode_response(response: Response<'_>, limit: usize) -> Result<Vec<u8>, ProtocolError> {
+    #[derive(Serialize)]
+    struct List<'a> {
+        #[serde(skip_serializing_if = "<[ProcessInfo<'_>]>::is_empty")]
+        processes: &'a [ProcessInfo<'a>],
+    }
+    #[derive(Serialize)]
+    struct Empty {}
+    match response {
+        Response::List(processes) => encode_json(&List { processes }, limit),
+        Response::Empty => encode_json(&Empty {}, limit),
+    }
+}
+
+fn is_zero<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -368,8 +415,11 @@ fn signal<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Si
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct End<'a> {
+    #[serde(skip_serializing_if = "is_zero")]
     pub exit_code: i32,
+    #[serde(skip_serializing_if = "is_zero")]
     pub exited: bool,
+    #[serde(skip_serializing_if = "str::is_empty")]
     pub status: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<&'a str>,
@@ -395,7 +445,10 @@ pub fn encode_event(event: Event<'_>, limit: usize) -> Result<Vec<u8>, ProtocolE
     #[derive(Serialize)]
     #[serde(rename_all = "lowercase")]
     enum EncodedEvent<'a> {
-        Start { pid: u32 },
+        Start {
+            #[serde(skip_serializing_if = "is_zero")]
+            pid: u32,
+        },
         Data(EncodedOutput),
         End(End<'a>),
         Keepalive {},

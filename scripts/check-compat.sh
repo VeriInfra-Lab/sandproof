@@ -16,7 +16,7 @@ if [[ "$(uname -s)" == Linux ]]; then
     data_gateway::sdk_tests:: -- --test-threads=1 --nocapture
   echo "SDK/gateway composition checks passed; authorization, host relay and VM are not tested."
   cargo clippy -p sandproof-guest-runtime --all-targets --features sdk-contract-tests --locked -- -D warnings
-  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_protocol -- --nocapture
+  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_protocol --test protocol --test command_responses -- --nocapture
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_files -- --nocapture
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_io -- --nocapture
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_transfer -- --nocapture

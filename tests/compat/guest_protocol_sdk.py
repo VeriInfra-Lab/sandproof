@@ -69,8 +69,32 @@ def check(events, mode, failure, terminal):
         raise AssertionError(mode)
 
 
+def check_list(reply, shape):
+    # Controlled Rust codec observations, not an active-process table.
+    if shape == 'empty':
+        assert reply.processes == []
+    elif shape == 'absent':
+        assert len(reply.processes) == 1
+        item = reply.processes[0]
+        assert item.config is None and item.pid == 0 and not item.has_field('tag')
+    else:
+        assert len(reply.processes) == 2
+        first, item = reply.processes
+        assert first.pid == 123 and not first.has_field('tag')
+        assert first.config is not None and first.config.cmd == ''
+        assert first.config.args == [] and first.config.envs == {}
+        assert not first.config.has_field('cwd')
+        assert item.pid == 4294967295 and item.has_field('tag') and item.tag == ''
+        assert item.config.cmd == '/bin/cat'
+        assert item.config.args == ['', '"\\\n中💡']
+        assert item.config.envs == {'': '', 'KEY': 'value'}
+        assert item.config.has_field('cwd') and item.config.cwd == ''
+
+
 def run_sync(settings):
     client = sync_client(process_connect.ProcessClientSync, settings['url'], ConnectionConfig())
+    for shape in ('empty', 'absent', 'present'):
+        check_list(client.list(process_pb.ListRequest(), headers={'x-fixture-list': shape}, timeout_ms=10000), shape)
     request = process_pb.StartRequest.from_json(json.dumps(settings['request']))
     stream = client.start(request, timeout_ms=10000)
     first = next(stream)
@@ -97,6 +121,8 @@ def run_sync(settings):
 
 async def run_async(settings):
     client = async_client(process_connect.ProcessClient, settings['url'], ConnectionConfig())
+    for shape in ('empty', 'absent', 'present'):
+        check_list(await client.list(process_pb.ListRequest(), headers={'x-fixture-list': shape}, timeout_ms=10000), shape)
     request = process_pb.StartRequest.from_json(json.dumps(settings['request']))
     stream = client.start(request, timeout_ms=10000)
     first = await anext(stream)
@@ -128,4 +154,4 @@ if __name__ == '__main__':
             asyncio.run(run_async(settings))
         else:
             run_sync(settings)
-    print(f"guest wire/real process: {settings['mode']}, async={settings['asynchronous']} passed")
+    print(f"guest wire/real process: {settings['mode']}, async={settings['asynchronous']} passed; 3 synthetic List replies decoded")
