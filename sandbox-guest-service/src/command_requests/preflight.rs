@@ -29,6 +29,7 @@ impl Authenticated {
     ) -> Result<Prepared, Failure> {
         let deadline = self.deadline();
         let owner = self.admitted.owner.clone();
+        let mut unknown_user = None;
         let result = async {
             check_deadline(deadline)?;
             if limits.username_bytes == 0 || limits.authorization_bytes == 0 {
@@ -48,12 +49,18 @@ impl Authenticated {
             let authenticated = Arc::new(self);
             let account = if let Some(name) = name {
                 if name.is_empty() || name.contains(['\0', '\r', '\n', ':']) {
+                    unknown_user = Some(crate::upload_response::UnknownUser::new(&name));
                     return Err(Error::Context(ContextError::Unauthenticated));
                 }
                 let account = accounts
                     .lookup_admitted(name.clone(), deadline, authenticated.clone())
                     .await
-                    .map_err(Error::Context)?;
+                    .map_err(|error| {
+                        if error == ContextError::Unauthenticated {
+                            unknown_user = Some(crate::upload_response::UnknownUser::new(&name));
+                        }
+                        Error::Context(error)
+                    })?;
                 if account.name != name {
                     return Err(Error::Context(ContextError::Unavailable));
                 }
@@ -69,7 +76,11 @@ impl Authenticated {
             })
         }
         .await;
-        result.map_err(|error| Failure::new(error, deadline, owner))
+        result.map_err(|error| {
+            let mut failure = Failure::new(error, deadline, owner);
+            failure.unknown_user = unknown_user;
+            failure
+        })
     }
 }
 impl Prepared {

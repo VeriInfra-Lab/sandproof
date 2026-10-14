@@ -102,7 +102,7 @@ pub fn disposition(path: &[u8], path_bytes: usize, header_bytes: usize) -> Resul
     append_value(&mut out, value);
     Ok(out)
 }
-pub(super) fn media_type(
+pub(crate) fn media_type(
     kind: &str,
     params: &BTreeMap<String, String>,
     limit: usize,

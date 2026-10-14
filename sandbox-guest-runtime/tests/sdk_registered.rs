@@ -233,7 +233,7 @@ async fn dispatch(
         .authenticate(&fixture.session, headers)
         .await
         .unwrap()
-        .prepare(&fixture.accounts, settings().limits)
+        .prepare_http(&Method::POST, &fixture.accounts, settings().limits)
         .await
         .unwrap();
     let stream = rpc.is_stream();

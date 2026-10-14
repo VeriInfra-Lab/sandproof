@@ -12,6 +12,8 @@ use tokio::time::Instant;
 use crate::connect_timeout;
 use crate::connect_timeout::InvalidTimeout;
 
+#[cfg(any(target_os = "linux", test))]
+pub mod account;
 pub mod reply;
 #[cfg(test)]
 mod tests;

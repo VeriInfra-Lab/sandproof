@@ -12,8 +12,10 @@ use base64::engine::general_purpose::STANDARD;
 use sandproof_guest_core::Channel;
 use serde::{Deserialize, Serialize};
 
+mod content_type;
 mod request_json;
 use crate::file_protocol::request_json::{prepare_command, uint32};
+pub use content_type::canonical_content_type;
 use request_json::{bytes, envs, signal};
 
 pub use crate::file_protocol::JsonContentType;

@@ -285,6 +285,8 @@ impl std::error::Error for Error {}
 pub struct Failure {
     error: Error,
     deadline: Instant,
+    #[cfg(target_os = "linux")]
+    unknown_user: Option<crate::upload_response::UnknownUser>,
     _owner: Owner,
 }
 impl Failure {
@@ -292,6 +294,8 @@ impl Failure {
         Self {
             error,
             deadline,
+            #[cfg(target_os = "linux")]
+            unknown_user: None,
             _owner: owner,
         }
     }

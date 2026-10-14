@@ -80,6 +80,10 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 同一 W 入口另有 126 组非 POST 对照：七种命令、六种 HTTP 方法与三种媒体类型，同时叠加坏压缩/版本/期限，核对最先返回的 405、Allow: POST、空正文及 HEAD 的长度头差异。可移植检查覆盖空 body 在 EOF、丢弃或原期限到期后的名额释放；Linux 原 Basic 预检到 HEAD/GET 回复的连接用例待候选 CI，不能从父分支通过推算。
 
+[显式账户响应检查](../sandbox-guest-service/src/command_requests/http/account/tests.rs)覆盖中间件独立格式、空/错误版本、动态类型头和正文副本共同持有容量、原期限/预算与未分类故障；共享 MIME 规范化另在 runtime 检查额外参数、RFC 2231、原坏语法及表示边界。固定 Go Y 入口通过原 authn/Connect 对照 720 组方法/类型/版本/用户名组合，比较真实 HTTP 状态、头、终结 flags 和 JSON 原字节，包含重复字段首值、控制/非 ASCII 字符、空名及超出自动长度阈值的错误；账号查询失败为受控结果，不等于真实 NSS 对照。Y 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，须重建并显式 --include-ignored。
+
+[Linux 账户连接](../sandbox-guest-service/src/command_requests/tests/account.rs)检查原 token/Basic 到回复的拒绝顺序、查询次数、鉴权释放、头/正文名额和未分类源故障；原阻塞账户超时场景及八轮 SDK/PID 测试路由迁移至 prepare_http。新增及迁移后的 Linux 执行待候选 CI，不能把本地 Go 或静态检查记为已实跑；不覆盖默认账户 Start 错误、正式服务或完整 E03。
+
 [命令 HTTP 选择检查](../sandbox-guest-service/src/command_requests/http/tests.rs)覆盖七种方法的一元/流式 JSON、重复头首值、MIME 参数、压缩字段分离及 q 非权重、拒绝顺序、期限与失败格式。显式固定 Go V 入口经原生成消息和 Connect v1.18.1 真实回环对照 329 组选择/状态/错误文本；handler 为受控回复，不执行命令，也不证明原 Start 在零/负期限没有副作用。[Linux 所有权检查](../sandbox-guest-service/src/command_requests/tests/http.rs)核对失败持有原请求但释放完成的鉴权锁，gzip/过期不读正文，成功解码保留同一 Ready/期限；该提交已在下述 #440 CI 实跑，后续候选仍须独立重跑。identity 入口未实现请求 gzip 或完整错误映射，不能计完整 E03。V 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，需重建参考二进制并显式 --include-ignored。
 
 #440 的 HTTP 选择和八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38567961659) 通过：源 411c9fec8f511eedb3141dc01ff60fe098cbe050，checkout 8756de4a0c3ec2b20892e88fd966c16d2bb7d1d8；新增两项选择所有权检查、preparation 28 项、service lib 349 passed / 51 ignored、八轮 SDK 实进程及四项 CI 均通过。显式固定 Go 对照另在本地运行，不能由 CI 的 ignored 推算通过；此父提交不覆盖新增头错误响应。

@@ -386,6 +386,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [命令头错误回复](../sandbox-guest-service/src/command_requests/http/reply.rs)增加原选择观察到一元/流式固定错误的映射、原方法与 HEAD 的 405 空回复、协商 gzip 终结帧、原始和压缩载荷独立限额，以及编码失败/取消/最后字节引用到原请求容量和期限的连接义务。有限原 Go 字节对照及所有权测试不证明任意错误、完整命令协议或整机内存上界；这部分适配尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
 
+[显式 Basic 账户回复](../sandbox-guest-service/src/command_requests/http/account.rs)新增有界缺失账户观察来源、原首值/方法不可替换、账户失败先于协议解释、外层 authn 与 handler 格式区分、MIME 规范化及动态头/正文引用到原容量的对应义务。共享 MIME 格式器仅开放 crate 内复用，新的 Connect 规范化及原预检/SDK 测试路由连接均未证明。有限 Go 原字节与本地所有权测试不涵盖 NSS 的任意故障、gRPC、默认账户、正式监听或整机上界；纯核心与已证明 Rust/Lean 未改。
+
 [命令请求准入/PID 分派](../sandbox-guest-service/src/command_requests.rs)增加原请求额度到 token/Basic/JSON 阻塞工作的所有权连接、取消/超时后实际闭包退出、单次解码和不可替换请求到原注册句柄、部分输入不重放、原响应期限与最后 Bytes 引用释放的自有义务，尚未抽取或证明。真实账户/进程适配沿用现有端口，不把其有限测试提升为 HTTP 路由、跨服务恢复、整机容量或 Go 双端证据；纯核心及已证明 Rust 未改，旧定理不覆盖新编排。
 
 [命令请求 JSON](../sandbox-guest-runtime/src/protocol/request_json.rs)增加丢弃未知字段前的 Unicode/容器校验、null 与重复字段/oneof 的区分、环境键唯一性、精确 i32/uint32 归一化、未知枚举到实际拒绝、原始 bytes 长度/字母表到 padding 及尾位解码的自有义务。共用扫描器为命令选择非整数哨兵，文件选择原负整数哨兵；各已知类型拒绝与未知字段丢弃、原字节预算/按需副本上界的对应未抽取或证明。固定 Go Q 只比较有限解码结果/分类，不证明错误全文、鉴权或执行；纯核心与已证明 Rust 未改，旧结论不覆盖新解析逻辑。
