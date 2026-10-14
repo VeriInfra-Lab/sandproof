@@ -1,6 +1,7 @@
 //! Authenticated default/context composition. This does not register a public
 //! command or release a process. The caller retains `AuthPermit` through actual
 //! admission/dispatch and separately owns process/public-selector capacity.
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -230,6 +231,7 @@ impl AuthPermit {
             return Err(ContextError::ResourceExhausted);
         }
         Ok(LaunchSpec {
+            envd_wrapper_path: Some(settings.daemon_path.clone()),
             program: process.cmd.clone(),
             args: process.args.clone(),
             cwd: cwd.into(),
@@ -264,17 +266,14 @@ pub(crate) fn validate_command_settings(settings: &ExecutionSettings) -> Result<
 fn command_process<'a>(
     request: &'a StartRequest,
     settings: &ExecutionSettings,
-) -> Result<&'a ProcessConfig, ContextError> {
+) -> Result<Cow<'a, ProcessConfig>, ContextError> {
     validate_command_settings(settings)?;
     let limit = settings.limits;
     let process = request
         .process
         .as_ref()
-        .ok_or(ContextError::InvalidArgument)?;
-    if process.cmd.is_empty()
-        || process.cmd.contains('\0')
-        || process.args.iter().any(|arg| arg.contains('\0'))
-    {
+        .map_or_else(|| Cow::Owned(ProcessConfig::default()), Cow::Borrowed);
+    if process.cmd.contains('\0') || process.args.iter().any(|arg| arg.contains('\0')) {
         return Err(ContextError::InvalidArgument);
     }
     if process.args.len() > limit.arguments {

@@ -164,6 +164,13 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		if mode == "L" {
+			fmt.Fprintln(out, string(launchWrapper(data)))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
 		target, body := path, data
 		commandStream := false
 		var compression struct {

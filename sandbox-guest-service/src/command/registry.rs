@@ -60,7 +60,7 @@ struct Record {
     _slot: OwnedSemaphorePermit,
 }
 struct Metadata {
-    config: ProcessConfig,
+    config: Option<ProcessConfig>,
     tag: Option<String>,
 }
 #[derive(Default)]
@@ -117,6 +117,16 @@ impl PidRegistry {
         config: &ProcessConfig,
         tag: Option<&str>,
     ) -> Result<RegistryReservation, RegistryError> {
+        self.reserve_optional(Some(config), tag)
+    }
+
+    // The original Start process field may be absent. Preserve that presence
+    // separately from the empty command used by Go getters for execution.
+    pub(crate) fn reserve_optional(
+        &self,
+        config: Option<&ProcessConfig>,
+        tag: Option<&str>,
+    ) -> Result<RegistryReservation, RegistryError> {
         let slot = self
             .inner
             .slots
@@ -126,7 +136,7 @@ impl PidRegistry {
         // Include the widest possible public PID before accepting metadata, so
         // later registration cannot increase the promised record wire size.
         let entries = [ProcessInfo {
-            config: Some(config),
+            config,
             pid: u32::MAX,
             tag,
         }];
@@ -136,7 +146,7 @@ impl PidRegistry {
             inner: self.inner.clone(),
             slot,
             metadata: Metadata {
-                config: config.clone(),
+                config: config.cloned(),
                 tag: tag.map(str::to_owned),
             },
         })
@@ -232,7 +242,7 @@ impl PidRegistry {
                     && status.completion.is_none()
                 {
                     entries.push(ProcessInfo {
-                        config: Some(&record.metadata.config),
+                        config: record.metadata.config.as_ref(),
                         pid: record.identity.pid,
                         tag: record.metadata.tag.as_deref(),
                     });

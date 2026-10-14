@@ -78,14 +78,9 @@ impl Ready {
             // Later actual PID width cannot invalidate the initial frame budget.
             encode_event(Event::Start(u32::MAX), response.message_bytes)
                 .map_err(|_| Error::Response(CommandBodyError::ResourceExhausted))?;
-            let config = resolved
-                .request
-                .process
-                .as_ref()
-                .ok_or(Error::Context(ContextError::InvalidArgument))?;
             let reservation = preparation
                 .registry
-                .reserve(config, None)
+                .reserve_optional(resolved.request.process.as_ref(), None)
                 .map_err(Error::Registry)?;
             check_deadline(deadline)?;
             let pending = preparation

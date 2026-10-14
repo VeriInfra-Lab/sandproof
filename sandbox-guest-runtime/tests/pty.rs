@@ -34,6 +34,7 @@ fn limits() -> ProcessLimits {
 }
 fn spec(directory: &Path, script: &str) -> LaunchSpec {
     LaunchSpec {
+        envd_wrapper_path: None,
         program: "/usr/bin/python3".into(),
         args: vec!["-c".into(), format!("{PRELUDE}{script}")],
         cwd: directory.into(),

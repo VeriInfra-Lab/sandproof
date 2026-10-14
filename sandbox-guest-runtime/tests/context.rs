@@ -206,6 +206,7 @@ async fn numeric_identity_is_applied_even_when_environment_claims_root() {
     .unwrap()
     .credentials;
     let spec = sandproof_guest_runtime::LaunchSpec {
+        envd_wrapper_path: None,
         program: "/bin/sh".into(),
         args: vec![
             "-c".into(),
@@ -261,6 +262,7 @@ async fn numeric_identity_is_applied_even_when_environment_claims_root() {
 async fn sentinel_uid_cannot_mean_keep_daemon_identity() {
     let directory = tempfile::tempdir().unwrap();
     let spec = sandproof_guest_runtime::LaunchSpec {
+        envd_wrapper_path: None,
         program: "/bin/sh".into(),
         args: vec!["-c".into(), "printf ran > effect".into()],
         cwd: directory.path().into(),

@@ -609,7 +609,7 @@ fn accounting(error: sandproof_guest_core::CommandError) -> io::Error {
     io::Error::other(format!("guest stream accounting: {error:?}"))
 }
 
-fn encode(spec: &LaunchSpec, maximum: usize) -> io::Result<Vec<u8>> {
+pub(crate) fn encode(spec: &LaunchSpec, maximum: usize) -> io::Result<Vec<u8>> {
     struct Bounded {
         bytes: Vec<u8>,
         maximum: usize,

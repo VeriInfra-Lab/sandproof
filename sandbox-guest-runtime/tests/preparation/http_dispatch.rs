@@ -17,6 +17,8 @@ mod framing;
 mod guest;
 #[path = "json_http.rs"]
 mod json_errors;
+#[path = "launch_http.rs"]
+mod launch;
 
 type Http = CommandHttp<MetadataFixture, CurrentAccount>;
 fn processes(fixture: &Fixture, registry: &PidRegistry, registrar: &PidRegistrar) -> Processes {

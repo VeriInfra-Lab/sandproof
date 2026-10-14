@@ -24,6 +24,8 @@ pub mod multipart;
 #[cfg(unix)]
 pub mod pid_claims;
 
+#[cfg(any(target_os = "linux", test))]
+mod launch_wrapper;
 #[cfg(target_os = "linux")]
 mod process;
 pub mod protocol;

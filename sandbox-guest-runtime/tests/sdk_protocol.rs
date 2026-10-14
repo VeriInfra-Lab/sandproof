@@ -256,6 +256,7 @@ async fn probe(asynchronous: bool, mode: &str, owned_body: bool) {
     let fixture = Arc::new(Fixture {
         directory: tempfile::tempdir().unwrap(),
         spec: LaunchSpec {
+            envd_wrapper_path: None,
             program: "/bin/sh".into(),
             args: vec!["-c".into(), script.into()],
             cwd: "/tmp".into(),

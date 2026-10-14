@@ -102,6 +102,7 @@ async fn prepare(directory: &Path, script: &str) -> CommandProcess {
         7,
         13,
         &LaunchSpec {
+            envd_wrapper_path: None,
             program: "/bin/sh".into(),
             args: vec!["-c".into(), script.into()],
             cwd: directory.into(),
@@ -699,6 +700,7 @@ async fn private_exec_failure_is_not_a_successful_exit_or_public_output() {
         1,
         1,
         &LaunchSpec {
+            envd_wrapper_path: None,
             program: "/nonexistent-guest-owner-fixture".into(),
             args: vec![],
             cwd: directory.path().into(),

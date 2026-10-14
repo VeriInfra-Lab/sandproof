@@ -471,6 +471,10 @@ Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不�
 
 [账户与执行上下文](../sandbox-guest-service/src/execution.rs)从原 `AuthPermit` 解析用户名和默认值：Basic 用户名存在时选该账号，否则沿用初始化用户；按固定 Go 行为，非 Basic 或畸形 Basic 选择默认用户，显式空用户名拒绝。共用 Basic 解析器接受大小写混合的 scheme、标准 Base64 的非零尾部填充位和首个冒号；临时解码/密码缓冲释放时清零，原 HTTP HeaderMap 的副本不在该清零声明内。非 UTF-8 用户名在账户适配处拒绝；原 Go 的任意字节用户名不在支持范围。重复 Authorization 头、超长用户名/头、无效命令和预算超额明确拒绝；用户名不是数值 UID，HOME/USER 环境覆盖不改变内核身份。环境顺序为受信任 daemon PATH、账号 HOME/USER/LOGNAME → 初始化环境 → 单次 envs；不继承其余 daemon 环境。相对路径按账号 home 连接并作词法清理，`~` 只展开自身 home，已有绝对路径保留；不把词法清理当作符号链接或目录访问证明，实际 chdir/exec 仍须成功。
 
+[命令启动包装](../sandbox-guest-runtime/src/launch_wrapper.rs)在受信任的单线程 worker 内采用固定 Go 的 /bin/sh -c 包装：先写自身 oom_score_adj=100，再 exec 可用的 ionice（best-effort/4）及 nice（从继承值调整到 0），最后以独立位置参数传递原 cmd/argv。可选工具只按捕获的 daemon PATH、原 daemon 身份和工作目录查找；请求 env PATH 只用于用户程序。采用固定 Go 的词法路径整理、有效身份可执行检查及默认相对命中拒绝规则；工具缺失则省略，实际工具或 shell 失败由原进程退出报告。未设置包装标记的低层 LaunchSpec 继续直接 exec，公开命令上下文始终携带该标记。
+
+查找和有界包装构造在 READY 前完成；shell、工具与用户代码均等待同一原 PID 持久 claim 和放行，exec 不另建公开进程身份。原始及包装后的序列化上下文各自受同一 launch_bytes 上限约束；二次校验有一个有界编码临时副本，不将编码预算当作全部 RSS。阻塞查找仍由原准备所有者、握手期限和精确子进程收尾负责。缺失/null process 与空 cmd 采用固定 Go getter 的空命令执行语义，启动后报告 shell 的真实非零 End；List 元数据保留原 process 缺失或显式空对象。此包装不补造 cwd Stat、启动错误映射或正式 daemon 部署的验收。
+
 [文件账户/路径上下文](../sandbox-guest-service/src/files.rs)从同一 `AuthPermit` 快照解析：RPC 沿用 Basic 用户规则，HTTP 文件操作仅从解码后的 `username` 查询选择账号，缺省才使用初始化用户；不把 `user` 别名或 Basic 头当作 HTTP 选择器。显式空/未知账号失败，环境 HOME/USER 不参与账号或 home 选择。Move 的两个路径共用一次账户查询，完整解析后才能交给后续派发；本组件不创建目录、重命名或打开文件。返回的 UID/GID 是创建对象的目标归属，不是文件 worker 的降权凭据，保持既有 daemon/root 文件 I/O 边界。
 
 文件空路径先取初始化工作目录，再按账号 home 展开；已有绝对路径保留原拼写，相对路径只做原词法整理，不提前解析链接或断言权限。NUL 在路径解析阶段保留，由后续实际 I/O 产生该操作的错误，不能冒充已通过路径检查。用户名、Authorization 和输入/展开后每条路径有显式组件预算，Move 至多两条路径；不把这些参数当成正式用户上限或全内存预算。原账户池继续约束取消/超时后仍在运行的查询；正式 HTTP `/files` 路由尚未接通，流式端口的当前边界见下文。

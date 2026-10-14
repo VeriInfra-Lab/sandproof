@@ -82,6 +82,27 @@ fn request() -> StartRequest {
 }
 
 #[tokio::test]
+async fn missing_or_empty_process_keeps_execution_defaults_and_trusted_wrapper_path() {
+    let session = session().await;
+    let auth = session.authorize(Some("token")).await.unwrap();
+    for process in [None, Some(ProcessConfig::default())] {
+        let request = StartRequest {
+            process: process.clone(),
+            ..request()
+        };
+        let launch = auth
+            .compose_command(&request, account("alice"), &settings())
+            .unwrap();
+        assert!(launch.program.is_empty());
+        assert!(launch.args.is_empty());
+        assert_eq!(launch.envd_wrapper_path.as_deref(), Some("/daemon/bin"));
+        assert_eq!(launch.env["PATH"], "/default/bin");
+        assert_eq!(launch.cwd.to_str(), Some("/home/alice/work"));
+        assert_eq!(request.process, process);
+    }
+}
+
+#[tokio::test]
 async fn auth_snapshot_selects_account_then_merges_environment_without_changing_uid() {
     let session = session().await;
     let permit = session.authorize(Some("token")).await.unwrap();

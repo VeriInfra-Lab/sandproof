@@ -39,8 +39,13 @@ fn execute(gate: &mut UnixStream, maximum: usize) -> io::Result<()> {
     }
     let mut data = vec![0; length];
     gate.read_exact(&mut data)?;
-    let spec: LaunchSpec = serde_json::from_slice(&data)?;
+    let mut spec: LaunchSpec = serde_json::from_slice(&data)?;
     spec.validate()?;
+    // Resolve only optional trusted priority helpers while still gated and
+    // under the daemon identity/cwd. The shell and all user code wait for the
+    // original durable PID claim and release. Parent cancellation can kill
+    // this exact unreleased worker even if filesystem lookup blocks.
+    crate::launch_wrapper::prepare(&mut spec, maximum)?;
     gate.write_all(READY)?;
     let mut release = [0];
     gate.read_exact(&mut release)?;
