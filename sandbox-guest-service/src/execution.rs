@@ -6,8 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::HeaderMap;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use sandproof_guest_runtime::accounts::{Account, AccountError, AccountLimits, lookup_local_user};
 use sandproof_guest_runtime::protocol::StartRequest;
 use sandproof_guest_runtime::{LaunchSpec, PtySize};
@@ -276,34 +274,12 @@ pub(crate) fn selected_user_with_limits(
     username_bytes: usize,
     authorization_bytes: usize,
 ) -> Result<String, ContextError> {
-    let mut values = headers.get_all("authorization").iter();
-    let value = values.next();
-    if values.next().is_some() {
-        return Err(ContextError::Unauthenticated);
-    }
-    let mut user = None;
-    if let Some(value) = value {
-        if value.as_bytes().len() > authorization_bytes {
-            return Err(ContextError::ResourceExhausted);
-        }
-        if let Ok(value) = value.to_str() {
-            // Fixed Go BasicAuth returns ok=false for other schemes/malformed
-            // input, which then selects the initialized default username.
-            if value
-                .get(..6)
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("Basic "))
-                && let Ok(decoded) = STANDARD.decode(&value[6..])
-                && let Some(colon) = decoded.iter().position(|byte| *byte == b':')
-            {
-                user = Some(
-                    std::str::from_utf8(&decoded[..colon])
-                        .map_err(|_| ContextError::Unauthenticated)?
-                        .to_owned(),
-                );
-            }
-        }
-    }
-    let user = user.unwrap_or_else(|| fallback.into());
+    let user = crate::basic_auth::explicit_user(headers, username_bytes, authorization_bytes)
+        .map_err(|error| match error {
+            crate::basic_auth::Error::Unauthenticated => ContextError::Unauthenticated,
+            crate::basic_auth::Error::ResourceExhausted => ContextError::ResourceExhausted,
+        })?
+        .unwrap_or_else(|| fallback.into());
     if user.is_empty() || user.contains(['\0', '\n', '\r', ':']) {
         return Err(ContextError::Unauthenticated);
     }

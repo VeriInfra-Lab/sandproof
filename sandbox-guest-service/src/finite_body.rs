@@ -1,11 +1,11 @@
 //! Bounded serialization is blocking; transmitting its finished bytes is not.
 //! A known-length transport need not poll EOF after the final data frame.
-use super::Error;
-use crate::owned_body::Owner;
+use crate::owned_body::{self, Failure, Owner};
 use axum::body::{Body, Bytes};
 use futures_util::stream;
+use std::marker::PhantomData;
 use tokio::{
-    sync::oneshot,
+    sync::{oneshot, watch},
     time::{Instant, timeout_at},
 };
 
@@ -15,17 +15,20 @@ struct Prepared {
     owner: Owner,
 }
 
-pub(super) async fn prepare(
+pub(crate) async fn prepare<E: Failure>(
     deadline: Instant,
     owner: Owner,
-    encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
-) -> Result<PreparedBody, Error> {
+    encode: impl FnOnce(watch::Receiver<bool>) -> Result<Vec<u8>, E> + Send + 'static,
+) -> Result<PreparedBody<E>, E> {
     let (send, receive) = oneshot::channel();
+    // Dropping the original preparation future cancels its worker. The worker
+    // retains capacity until the encoder actually returns, not just until cancel.
+    let (signal, cancelled) = watch::channel(false);
     tokio::task::spawn_blocking(move || {
         let result = (|| {
-            check(deadline)?;
-            let bytes = encode()?;
-            check(deadline)?;
+            owned_body::check_active::<E>(deadline, &cancelled)?;
+            let bytes = encode(cancelled.clone())?;
+            owned_body::check_active::<E>(deadline, &cancelled)?;
             Ok(bytes)
         })()
         .map(|bytes| Prepared { bytes, owner });
@@ -34,25 +37,32 @@ pub(super) async fn prepare(
     });
     let prepared = timeout_at(deadline, receive)
         .await
-        .map_err(|_| Error::DeadlineExceeded)?
-        .map_err(|_| Error::Unavailable)??;
-    check(deadline)?;
-    Ok(PreparedBody(prepared))
+        .map_err(|_| E::deadline())?
+        .map_err(|_| E::unavailable())??;
+    check::<E>(deadline)?;
+    drop(signal);
+    Ok(PreparedBody {
+        prepared,
+        _error: PhantomData,
+    })
 }
 
-pub(super) struct PreparedBody(Prepared);
-impl PreparedBody {
-    pub(super) fn length(&self) -> usize {
-        self.0.bytes.len()
+pub(crate) struct PreparedBody<E> {
+    prepared: Prepared,
+    _error: PhantomData<E>,
+}
+impl<E: Failure> PreparedBody<E> {
+    pub(crate) fn length(&self) -> usize {
+        self.prepared.bytes.len()
     }
 
-    pub(super) fn into_body(mut self, chunk_bytes: usize, deadline: Instant, head: bool) -> Body {
+    pub(crate) fn into_body(mut self, chunk_bytes: usize, deadline: Instant, head: bool) -> Body {
         if head {
-            self.0.bytes.clear();
+            self.prepared.bytes.clear();
         }
         Body::from_stream(stream::unfold(
             Some(State::Data {
-                prepared: self.0,
+                prepared: self.prepared,
                 offset: 0,
                 consumed: None,
             }),
@@ -65,13 +75,13 @@ impl PreparedBody {
                         consumed,
                     } => (prepared, offset, consumed),
                     State::End(consumed) => {
-                        return match consume(deadline, Some(consumed)).await {
+                        return match consume::<E>(deadline, Some(consumed)).await {
                             Ok(()) => None,
                             Err(error) => Some((Err(error), None)),
                         };
                     }
                 };
-                if let Err(error) = consume(deadline, consumed).await {
+                if let Err(error) = consume::<E>(deadline, consumed).await {
                     return Some((Err(error), None));
                 }
                 if offset == prepared.bytes.len() {
@@ -131,20 +141,23 @@ impl AsRef<[u8]> for Chunk {
     }
 }
 
-async fn consume(deadline: Instant, consumed: Option<oneshot::Receiver<()>>) -> Result<(), Error> {
-    check(deadline)?;
+async fn consume<E: Failure>(
+    deadline: Instant,
+    consumed: Option<oneshot::Receiver<()>>,
+) -> Result<(), E> {
+    check::<E>(deadline)?;
     if let Some(consumed) = consumed {
         // Sender destruction, including cancellation, is the consumption ack.
         timeout_at(deadline, consumed)
             .await
-            .map_err(|_| Error::DeadlineExceeded)
+            .map_err(|_| E::deadline())
             .map(|_| ())?;
     }
     check(deadline)
 }
-fn check(deadline: Instant) -> Result<(), Error> {
+fn check<E: Failure>(deadline: Instant) -> Result<(), E> {
     if Instant::now() >= deadline {
-        Err(Error::DeadlineExceeded)
+        Err(E::deadline())
     } else {
         Ok(())
     }

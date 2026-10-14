@@ -9,13 +9,18 @@ pub mod file_download;
 pub mod file_encoding;
 pub mod file_query;
 pub mod file_requests;
+pub mod file_rpc_requests;
+pub mod file_rpc_response;
 pub mod file_upload;
+mod finite_body;
 mod go_json;
 mod go_quote;
 mod owned_body;
 pub mod upload_body;
 pub mod upload_response;
 
+#[cfg(any(target_os = "linux", test))]
+mod basic_auth;
 #[cfg(target_os = "linux")]
 pub mod command;
 #[cfg(target_os = "linux")]
@@ -24,6 +29,8 @@ mod execution;
 pub mod file_http;
 #[cfg(target_os = "linux")]
 pub mod file_io;
+#[cfg(target_os = "linux")]
+pub mod file_rpc_http;
 #[cfg(target_os = "linux")]
 pub mod file_transfer;
 #[cfg(target_os = "linux")]

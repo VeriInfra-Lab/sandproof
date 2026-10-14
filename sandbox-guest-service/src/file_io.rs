@@ -2,14 +2,16 @@
 //! dispatched syscall. The worker retains authorization until I/O settles;
 //! returned records retain their slot until dropped. No production route yet.
 use crate::{AuthPermit, files::FileContext, owned_body::Owner};
-use sandproof_guest_runtime::filesystem::{self, FileError, FileLimits, FileResponse, Ownership};
+use sandproof_guest_runtime::filesystem::{
+    self, FileError, FileFailure, FileLimits, FileResponse, Ownership,
+};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
 mod rpc;
-pub use rpc::{RpcError, RpcFailure, RpcRequest};
+pub use rpc::{PreparedRpc, ReadyRpc, RpcError, RpcFailure, RpcRequest};
 
 #[cfg(test)]
 mod tests;
@@ -25,6 +27,7 @@ pub enum FileDispatchError {
 
 pub struct FileReply {
     response: FileResponse,
+    deadline: Instant,
     _lease: Arc<Lease>,
 }
 impl std::fmt::Debug for FileReply {
@@ -32,6 +35,20 @@ impl std::fmt::Debug for FileReply {
         f.debug_struct("FileReply")
             .field("response", &self.response)
             .finish_non_exhaustive()
+    }
+}
+struct DispatchFailure {
+    error: FileDispatchError,
+    fault: Option<sandproof_guest_runtime::file_protocol::FileFault>,
+    _lease: Option<Arc<Lease>>,
+}
+impl From<FileDispatchError> for DispatchFailure {
+    fn from(error: FileDispatchError) -> Self {
+        Self {
+            error,
+            fault: None,
+            _lease: None,
+        }
     }
 }
 struct Lease {
@@ -44,6 +61,39 @@ impl FileReply {
     #[must_use]
     pub const fn response(&self) -> &FileResponse {
         &self.response
+    }
+
+    #[must_use]
+    pub const fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
+    /// Send identity JSON using the same effective deadline and request/file
+    /// slots, including all encoded body copies. The caller selects protocol.
+    /// # Errors
+    /// Response preparation can fail after I/O succeeded; never replay it.
+    pub async fn into_response(
+        self,
+        limits: crate::file_rpc_response::Limits,
+    ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
+        self.into_response_with_encoding(limits, crate::file_rpc_response::Encoding::Identity)
+            .await
+    }
+
+    pub(crate) async fn into_response_with_encoding(
+        self,
+        limits: crate::file_rpc_response::Limits,
+        encoding: crate::file_rpc_response::Encoding,
+    ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
+        let deadline = self.deadline;
+        crate::file_rpc_response::send_with_encoding(
+            Arc::new(self),
+            |reply| reply.response.as_wire(),
+            limits,
+            deadline,
+            encoding,
+        )
+        .await
     }
 }
 
@@ -141,6 +191,22 @@ impl FilePool {
     where
         F: FnOnce() -> Result<FileResponse, FileError> + Send + 'static,
     {
+        Self::dispatch_observed(auth, lease, deadline, move || {
+            operation().map_err(Into::into)
+        })
+        .await
+        .map_err(|failure| failure.error)
+    }
+
+    async fn dispatch_observed<F>(
+        auth: Arc<AuthPermit>,
+        lease: Arc<Lease>,
+        deadline: Instant,
+        operation: F,
+    ) -> Result<FileReply, DispatchFailure>
+    where
+        F: FnOnce() -> Result<FileResponse, FileFailure> + Send + 'static,
+    {
         check_deadline(deadline)?;
         let task = tokio::task::spawn_blocking(move || {
             // A queued blocking job may start after its request has expired.
@@ -148,12 +214,20 @@ impl FilePool {
             let result = operation();
             // Explicit lifetime through the last operation, including errors.
             drop(auth);
-            result
-                .map(|response| FileReply {
+            match result {
+                Ok(response) => Ok(FileReply {
                     response,
+                    deadline,
                     _lease: lease,
-                })
-                .map_err(FileDispatchError::Operation)
+                }),
+                Err(failure) => Err(DispatchFailure {
+                    error: FileDispatchError::Operation(failure.error),
+                    fault: failure.fault,
+                    // Even an unconsumed/detached worker result retains its
+                    // diagnostic path allocations until the result is dropped.
+                    _lease: Some(lease),
+                }),
+            }
         });
         let result = tokio::time::timeout_at(deadline, task)
             .await

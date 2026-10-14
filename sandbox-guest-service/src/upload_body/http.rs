@@ -13,6 +13,22 @@ pub struct HttpBodyLimits {
     pub trailer_bytes: usize,
     pub trailer_fields: usize,
 }
+impl HttpBodyLimits {
+    pub(crate) fn validate(self) -> Result<Self, GzipError> {
+        if [
+            self.frame_bytes,
+            self.frames,
+            self.trailer_bytes,
+            self.trailer_fields,
+        ]
+        .into_iter()
+        .any(|n| n == 0 || n > isize::MAX as usize / 16)
+        {
+            return Err(GzipError::InvalidConfiguration);
+        }
+        Ok(self)
+    }
+}
 
 pub(crate) struct Input {
     body: Body,
@@ -33,17 +49,7 @@ impl Input {
         limits: HttpBodyLimits,
         deadline: Instant,
     ) -> Result<Self, GzipError> {
-        if [
-            limits.frame_bytes,
-            limits.frames,
-            limits.trailer_bytes,
-            limits.trailer_fields,
-        ]
-        .into_iter()
-        .any(|n| n == 0 || n > isize::MAX as usize / 16)
-        {
-            return Err(GzipError::InvalidConfiguration);
-        }
+        let limits = limits.validate()?;
         if expected.is_some_and(|n| n > limits.total_bytes) {
             return Err(GzipError::InputLimit);
         }

@@ -318,3 +318,41 @@ async fn running_io_keeps_request_owner_after_its_original_deadline() {
             .unwrap(),
     );
 }
+
+#[tokio::test]
+async fn observed_worker_error_itself_retains_paths_and_capacity_after_auth_release() {
+    use sandproof_guest_runtime::{
+        file_download::LinuxErrno,
+        file_protocol::{FaultStage, Request},
+    };
+    let session = session().await;
+    let pool = pool();
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("missing");
+    let request = Request::Stat(path.to_str().unwrap().into());
+    let limits = pool.limits;
+    let failure = FilePool::dispatch_observed(
+        Arc::new(session.authorize(Some("token")).await.unwrap()),
+        pool.reserve(Arc::new(())).unwrap(),
+        pool.deadline().unwrap(),
+        move || filesystem::execute_detailed(&request, Ownership { uid: 0, gid: 0 }, limits),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(pool.slots.available_permits(), 0);
+    session
+        .initialize(br#"{"accessToken":"token","defaultUser":"bob"}"#)
+        .await
+        .unwrap();
+    std::fs::write(&path, b"replacement after original failure").unwrap();
+    let fault = failure.fault.as_ref().unwrap();
+    assert_eq!(fault.stage, FaultStage::EntryStat);
+    assert_eq!(fault.errno, Some(LinuxErrno(2)));
+    assert_eq!(fault.path, path.to_str().unwrap().as_bytes());
+    assert!(matches!(
+        empty(&pool, &session).await,
+        Err(FileDispatchError::ResourceExhausted)
+    ));
+    drop(failure);
+    empty(&pool, &session).await.unwrap();
+}

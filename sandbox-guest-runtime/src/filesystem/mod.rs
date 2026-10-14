@@ -4,11 +4,14 @@
 use std::fs;
 use std::path::Path;
 
-use crate::file_protocol::{Entry, Request, Response};
+use crate::file_protocol::{Entry, FaultStage, Request, Response};
+mod failure;
+pub use failure::FileFailure;
 mod directory;
 mod metadata;
 mod path;
 mod remove;
+mod rename;
 pub mod transfer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,7 +41,9 @@ impl FileError {
 /// `visited` bounds directory work/stack entries, `entries` bounds results,
 /// and `retained_bytes` bounds result string/metadata payload. Traversal paths
 /// are separately bounded by `visited * path_bytes`; xattr/account scratch by
-/// their named limits. Kernel/stdlib allocations remain external obligations.
+/// their named limits. A detailed failure retains at most two path payloads,
+/// each at most `path_bytes`, until its response/failure owner is released.
+/// Kernel/stdlib allocations remain external obligations.
 #[derive(Clone, Copy, Debug)]
 pub struct FileLimits {
     pub path_bytes: usize,
@@ -148,9 +153,21 @@ pub fn execute(
     owner: Ownership,
     limits: FileLimits,
 ) -> Result<FileResponse, FileError> {
+    execute_detailed(request, owner, limits).map_err(|failure| failure.error)
+}
+
+/// Execute once and preserve observed failures from `Stat`, `MakeDir`, `Move` and `ListDir`.
+/// Other failures retain their category without inventing a public message.
+/// # Errors
+/// Same categories as execute, with at most two bounded original paths.
+pub fn execute_detailed(
+    request: &Request,
+    owner: Ownership,
+    limits: FileLimits,
+) -> Result<FileResponse, FileFailure> {
     let limits = limits.validate()?;
     if owner.uid == u32::MAX || owner.gid == u32::MAX {
-        return Err(FileError::InvalidArgument);
+        return Err(FileError::InvalidArgument.into());
     }
     let mut budget = Budget {
         limits,
@@ -179,33 +196,47 @@ pub fn execute(
         }
     }
     let entry = match request {
-        Request::Stat(p) => metadata::entry(Path::new(p), limits)?,
+        Request::Stat(p) => metadata::entry_detailed(Path::new(p), limits)?,
         Request::MakeDir(p) => {
             match fs::metadata(p) {
                 Ok(m) => {
-                    return Err(if m.is_dir() {
-                        FileError::AlreadyExists
+                    let (error, stage) = if m.is_dir() {
+                        (FileError::AlreadyExists, FaultStage::MakeDirExists)
                     } else {
-                        FileError::InvalidArgument
-                    });
+                        (FileError::InvalidArgument, FaultStage::MakeDirNotDirectory)
+                    };
+                    return Err(FileFailure::observed(
+                        error,
+                        stage,
+                        Path::new(p),
+                        None,
+                        None,
+                    ));
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => return Err(FileError::Internal),
+                Err(error) => {
+                    return Err(FileFailure::io(
+                        FaultStage::MakeDirStat,
+                        Path::new(p),
+                        None,
+                        &error,
+                    ));
+                }
             }
-            directory::ensure_dirs(Path::new(p), owner, &mut budget)?;
-            metadata::entry(Path::new(p), limits)?
+            directory::ensure_dirs_detailed(Path::new(p), owner, &mut budget)?;
+            metadata::entry_detailed(Path::new(p), limits)?
         }
         Request::Move {
             source,
             destination,
         } => {
-            directory::ensure_dirs(
+            directory::ensure_dirs_detailed(
                 &path::parent_clean(Path::new(destination)),
                 owner,
                 &mut budget,
             )?;
-            fs::rename(source, destination).map_err(io_error)?;
-            metadata::entry(Path::new(destination), limits)?
+            rename::rename(source, destination)?;
+            metadata::entry_detailed(Path::new(destination), limits)?
         }
         Request::ListDir { path, depth } => {
             return directory::list(Path::new(path), (*depth).max(1), &mut budget)
@@ -218,16 +249,4 @@ pub fn execute(
     };
     budget.retain(&entry)?;
     Ok(FileResponse::Entry(entry))
-}
-
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "map_err consumes the original I/O error"
-)]
-fn io_error(error: std::io::Error) -> FileError {
-    if error.kind() == std::io::ErrorKind::NotFound {
-        FileError::NotFound
-    } else {
-        FileError::Internal
-    }
 }

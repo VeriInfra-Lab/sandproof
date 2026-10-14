@@ -1,19 +1,9 @@
-use super::{Budget, FileError, Ownership, io_error, metadata, path};
-use crate::file_protocol::Entry;
+use super::{Budget, FileError, FileFailure, Ownership, metadata, path};
+use crate::file_protocol::{Entry, FaultStage};
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
-pub(super) fn ensure_dirs(
-    path: &Path,
-    owner: Ownership,
-    budget: &mut Budget,
-) -> Result<(), FileError> {
-    ensure_dirs_detailed(path, owner, budget).map_err(|error| match error {
-        EnsureError::Budget(error) => error,
-        _ => FileError::Internal,
-    })
-}
 pub(super) enum EnsureOperation {
     Stat,
     Create,
@@ -93,15 +83,32 @@ fn children(
     relative: &Path,
     depth: u32,
     budget: &mut Budget,
-) -> Result<Vec<Child>, FileError> {
+    walk_root: &Path,
+) -> Result<Vec<Child>, FileFailure> {
     let mut children = Vec::new();
-    for child in fs::read_dir(root).map_err(|_| FileError::Internal)? {
-        let child = child.map_err(|_| FileError::Internal)?;
+    for child in fs::read_dir(root)
+        .map_err(|error| FileFailure::walk(FaultStage::WalkOpen, root, walk_root, &error))?
+    {
+        let child = child
+            .map_err(|error| FileFailure::walk(FaultStage::WalkRead, root, walk_root, &error))?;
         budget.visit()?;
         let path = child.path();
         budget.path(&path)?;
         let relative = relative.join(child.file_name());
-        let directory = child.file_type().map_err(|_| FileError::Internal)?.is_dir();
+        let directory = match child.file_type() {
+            Ok(kind) => kind.is_dir(),
+            // Go ReadDir ignores disappearing entries during unknown-type
+            // fstatat, whose PathError names the opened parent directory.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(FileFailure::walk(
+                    FaultStage::WalkType,
+                    root,
+                    walk_root,
+                    &error,
+                ));
+            }
+        };
         children.push(Child {
             path,
             relative,
@@ -118,16 +125,63 @@ pub(super) fn list(
     requested: &Path,
     depth: u32,
     budget: &mut Budget,
-) -> Result<Vec<Entry>, FileError> {
-    let resolved = path::resolve(requested, budget.limits.path_bytes)?;
-    if !fs::metadata(&resolved).map_err(io_error)?.is_dir() {
-        return Err(FileError::InvalidArgument);
+) -> Result<Vec<Entry>, FileFailure> {
+    list_with(requested, depth, budget, |_| {})
+}
+
+fn list_with(
+    requested: &Path,
+    depth: u32,
+    budget: &mut Budget,
+    after_resolution: impl FnOnce(&Path),
+) -> Result<Vec<Entry>, FileFailure> {
+    let resolved = path::resolve_detailed(requested, budget.limits.path_bytes)?;
+    after_resolution(&resolved);
+    if !fs::metadata(&resolved)
+        .map_err(|error| FileFailure::io(FaultStage::DirectoryStat, &resolved, None, &error))?
+        .is_dir()
+    {
+        return Err(FileFailure::observed(
+            FileError::InvalidArgument,
+            FaultStage::DirectoryNotDirectory,
+            &resolved,
+            None,
+            None,
+        ));
     }
+    walk(requested, &resolved, depth, budget)
+}
+
+fn walk(
+    requested: &Path,
+    resolved: &Path,
+    depth: u32,
+    budget: &mut Budget,
+) -> Result<Vec<Entry>, FileFailure> {
+    walk_with(requested, resolved, depth, budget, |_| {})
+}
+
+fn walk_with(
+    requested: &Path,
+    resolved: &Path,
+    depth: u32,
+    budget: &mut Budget,
+    mut before_entry: impl FnMut(&Path),
+) -> Result<Vec<Entry>, FileFailure> {
     budget.visit()?;
-    let mut pending = children(&resolved, Path::new(""), 1, budget)?;
+    // filepath.WalkDir independently lstats its root after checkIfDirectory.
+    // A root replaced by a link/file is visited but never traversed.
+    if !fs::symlink_metadata(resolved)
+        .map_err(|error| FileFailure::walk(FaultStage::WalkStat, resolved, resolved, &error))?
+        .is_dir()
+    {
+        return Ok(Vec::new());
+    }
+    let mut pending = children(resolved, Path::new(""), 1, budget, resolved)?;
     let mut result = Vec::new();
     while let Some(child) = pending.pop() {
-        match metadata::entry(&child.path, budget.limits) {
+        before_entry(&child.path);
+        match metadata::entry_detailed(&child.path, budget.limits) {
             Ok(mut entry) => {
                 let public_path = path::clean(&requested.join(&child.relative));
                 budget.path(&public_path)?;
@@ -135,9 +189,9 @@ pub(super) fn list(
                 budget.retain(&entry)?;
                 result.push(entry);
             }
-            Err(FileError::NotFound) => {}
-            Err(FileError::ResourceExhausted) => return Err(FileError::ResourceExhausted),
-            Err(_) => return Err(FileError::Internal),
+            Err(failure) if failure.error == FileError::NotFound => {}
+            Err(failure) if failure.error == FileError::ResourceExhausted => return Err(failure),
+            Err(failure) => return Err(failure.in_walk(resolved)),
         }
         if child.directory {
             // WalkDir reads even a boundary directory before its first
@@ -147,6 +201,7 @@ pub(super) fn list(
                 &child.relative,
                 child.depth.saturating_add(1),
                 budget,
+                resolved,
             )?;
             if child.depth < depth {
                 pending.extend(descendants);
@@ -155,3 +210,6 @@ pub(super) fn list(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests;

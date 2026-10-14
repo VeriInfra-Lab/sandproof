@@ -17,6 +17,8 @@ use std::{
 };
 use tokio::sync::{Semaphore, oneshot};
 
+mod preflight;
+
 struct Meta;
 impl MetadataSource for Meta {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {
@@ -297,4 +299,154 @@ async fn cancelled_or_expired_account_lookup_keeps_auth_request_and_file_slot_un
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(!root.path().join("never").exists());
     }
+}
+
+#[tokio::test]
+async fn unary_response_uses_pool_clamped_deadline_and_keeps_both_slots_after_completed_io() {
+    use http_body_util::BodyExt;
+    for overflow in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let session = session().await;
+        let mut pool = super::super::tests::pool();
+        pool.timeout = Duration::from_secs(5);
+        let (accounts, _) = accounts(root.path(), None);
+        let (owner, requests) = request_owner();
+        let original = Instant::now() + Duration::from_secs(30);
+        let reply = pool
+            .execute_rpc(
+                request(
+                    &session,
+                    Request::MakeDir("created".into()),
+                    original,
+                    owner,
+                )
+                .await,
+                &accounts,
+                &settings(root.path()),
+            )
+            .await
+            .unwrap();
+        assert!(root.path().join("created").is_dir());
+        let effective = reply.deadline();
+        assert!(effective < original);
+        assert!(effective > Instant::now());
+        // The completed operation releases auth even while records remain.
+        session
+            .initialize(br#"{"accessToken":"token"}"#)
+            .await
+            .unwrap();
+        let response = reply
+            .into_response(crate::file_rpc_response::Limits {
+                wire_bytes: if overflow { 1 } else { 65536 },
+                chunk_bytes: 17,
+            })
+            .await;
+        if overflow {
+            let failure = response.unwrap_err();
+            assert_eq!(
+                failure.error(),
+                crate::file_rpc_response::Error::ResponseLimit
+            );
+            assert_eq!(failure.deadline(), effective);
+            assert_eq!(pool.slots.available_permits(), 0);
+            assert_eq!(requests.available_permits(), 0);
+            drop(failure);
+        } else {
+            let mut body = response.unwrap().into_body();
+            let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+            let copy = bytes.clone();
+            drop(bytes);
+            tokio::time::pause();
+            tokio::time::advance(
+                effective.saturating_duration_since(Instant::now()) + Duration::from_millis(1),
+            )
+            .await;
+            assert!(Instant::now() < original);
+            assert!(body.frame().await.unwrap().is_err());
+            tokio::time::resume();
+            drop(body);
+            assert_eq!(pool.slots.available_permits(), 0);
+            assert_eq!(requests.available_permits(), 0);
+            drop(copy);
+        }
+        released(&pool, &requests).await;
+        // A failed or undeliverable response neither undoes nor replays mkdir.
+        assert!(root.path().join("created").is_dir());
+    }
+}
+
+#[tokio::test]
+async fn direct_rpc_keeps_expansion_observation_and_request_slots() {
+    let root = tempfile::tempdir().unwrap();
+    let session = session().await;
+    let pool = super::super::tests::pool();
+    let (accounts, calls) = accounts(root.path(), None);
+    let (owner, requests) = request_owner();
+    let failure = pool
+        .execute_rpc(
+            request(
+                &session,
+                Request::Move {
+                    source: "~other".into(),
+                    destination: "partial/dest".into(),
+                },
+                Instant::now() + Duration::from_secs(30),
+                owner,
+            )
+            .await,
+            &accounts,
+            &settings(root.path()),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        failure.error(),
+        RpcError::Context(ContextError::InvalidArgument)
+    );
+    assert!(matches!(
+        failure.rejection(),
+        Some(crate::file_rpc_response::Rejection::PathExpansion(_))
+    ));
+    assert!(failure.fault().is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(!root.path().join("partial").exists());
+    assert_eq!(pool.slots.available_permits(), 0);
+    assert_eq!(requests.available_permits(), 0);
+    session
+        .initialize(br#"{"accessToken":"token"}"#)
+        .await
+        .unwrap();
+    drop(failure);
+    released(&pool, &requests).await;
+}
+
+#[tokio::test]
+async fn path_budget_failure_does_not_invent_an_expansion_rejection() {
+    let root = tempfile::tempdir().unwrap();
+    let session = session().await;
+    let pool = super::super::tests::pool();
+    let (accounts, calls) = accounts(root.path(), None);
+    let (owner, requests) = request_owner();
+    let failure = pool
+        .execute_rpc(
+            request(
+                &session,
+                Request::Stat(format!("~{}", "x".repeat(4096))),
+                Instant::now() + Duration::from_secs(30),
+                owner,
+            )
+            .await,
+            &accounts,
+            &settings(root.path()),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        failure.error(),
+        RpcError::Context(ContextError::ResourceExhausted)
+    );
+    assert!(failure.rejection().is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    drop(failure);
+    released(&pool, &requests).await;
 }

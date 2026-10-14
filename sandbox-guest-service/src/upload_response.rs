@@ -1,7 +1,7 @@
 //! Fixed upload envelopes, under the original retained upload capacity.
 //! It reports observed file outcomes; delivery failure never rolls them back.
 use crate::{
-    go_json,
+    finite_body, go_json,
     owned_body::{self, Owner},
 };
 use axum::{http::HeaderValue, response::Response};
@@ -9,7 +9,6 @@ use sandproof_guest_runtime::{file_mime::basename, file_upload::UploadResult};
 use std::fmt;
 use tokio::time::Instant;
 
-mod body;
 #[cfg(test)]
 mod tests;
 
@@ -107,7 +106,7 @@ pub(crate) async fn send_with_head(
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Error> {
     let limits = limits.validate()?;
-    let payload = body::prepare(deadline, owner, encode).await?;
+    let payload = finite_body::prepare(deadline, owner, move |_| encode()).await?;
     let length = payload.length();
     let mut response = Response::new(payload.into_body(limits.chunk_bytes, deadline, head));
     // The pinned handler writes JSON with no explicit Content-Type. Go's HTTP
