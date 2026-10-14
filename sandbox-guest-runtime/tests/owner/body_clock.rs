@@ -1,11 +1,19 @@
 use super::*;
 
 async fn ready(body: &mut BodyDataStream) -> Bytes {
-    let mut next = Box::pin(body.next());
-    match std::future::poll_fn(|cx| Poll::Ready(next.as_mut().poll(cx))).await {
-        Poll::Ready(Some(Ok(bytes))) => bytes,
-        _ => panic!("already-due keepalive was postponed or failed"),
-    }
+    // Tokio's millisecond timer wheel may wake one millisecond after the exact
+    // Instant. Virtual time may advance only this resolution, never a fresh
+    // ten-second interval; the previous implementation still fails this check.
+    timeout(Duration::from_millis(2), body.next())
+        .await
+        .expect("due keepalive postponed beyond timer resolution")
+        .expect("missing keepalive")
+        .expect("failed keepalive")
+}
+fn at_tick(expected: Instant) {
+    let now = Instant::now();
+    assert!(now >= expected);
+    assert!(now.duration_since(expected) <= Duration::from_millis(2));
 }
 fn ping(bytes: &Bytes) {
     assert_eq!(json_frame(bytes, 0), json!({"event":{"keepalive":{}}}));
@@ -60,7 +68,7 @@ async fn held_start_delayed_poll_and_keepalive_release_keep_one_periodic_schedul
     idle(&mut body).await;
     tokio::time::advance(Duration::from_secs(1)).await;
     ping(&ready(&mut body).await); // t=55, not release+10=61.
-    assert_eq!(Instant::now(), start + Duration::from_secs(55));
+    at_tick(start + Duration::from_secs(55));
     drop(body);
     finish(&command).await;
 }
@@ -100,7 +108,7 @@ async fn data_last_owner_restarts_clock_even_when_body_is_not_polled_at_release(
     idle(&mut body).await;
     tokio::time::advance(Duration::from_secs(1)).await;
     ping(&ready(&mut body).await); // t=25, independent of delayed poll at 24.
-    assert_eq!(Instant::now(), start + Duration::from_secs(25));
+    at_tick(start + Duration::from_secs(25));
     drop(body);
     finish(&command).await;
 }
