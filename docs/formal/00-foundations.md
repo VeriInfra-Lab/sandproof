@@ -14,6 +14,8 @@
 | [本地类型](../../controller-core/src/model.rs)、[编号](../../controller-core/src/ids.rs) | 本地 generation、epoch、逻辑工作、attempt 与全局编号明确分开 |
 | [中心保留位置](../../sandbox-center-core/src/model.rs)的 `RetentionLane::current` | 原退休高水位的严格后继及耗尽边界；退休推进、关闭与复用授权仍由 V1/V2/V3 提供 |
 | [身份构造](../../sandbox-protocol/src/lib.rs)、[规范编号解析](../../sandbox-protocol/src/identifiers.rs)及[中心恢复检查](../../sandbox-center-core/src/validation.rs)的纯解析入口 | 八类不透明字符串的原值与构造域；中心已分配编号的精确前缀、非零、高水位和规范十进制文本；完整恢复状态与退休许可仍由 V1/V2 提供 |
+| [共享动作与回执](../../sandbox-protocol/src/lib.rs)的 `ActionIdentity::validate_version`、`WorkReceipt::validate_for` | 完整动作/资源表示与输入域、版本→全文身份→可选观察资源的顺序；观察 getter 是自有提供方义务，回执检查接受不等于工作成功 |
+| [公共数值](../../sandbox-protocol/src/numeric.rs) | 秒到毫秒的溢出拒绝、字节向上取整为 MiB 的 U32 边界、逻辑剩余与现场报告的交集；时钟、期限、准入及观察真实性由调用模块提供 |
 | [有限表](../../controller-core/src/store.rs)的 `Store::get_copy/put/retain` | 首次匹配查询、首次替换或缺失追加、有限遍历终止；删除、唯一性和修改范围分别证明，自有键比较由调用模块实例化 |
 | [协议样例](../../sandbox-protocol/tests/contract_examples.rs)、[依赖锁](../../Cargo.lock) | 编解码/数值边界的固定输入，库模型版本登记 |
 | [抽取入口](../../scripts/regenerate-rust-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前本地入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
@@ -84,6 +86,12 @@ V0–V9 是证明责任模块，不是顺序版本。V0 完成条件只包含本
 事件分类、具体/模型观察和投影都由自有模块/V9 实例化并审计，不是可任意选择的环境前提。实际启动、副作用、授权/撤销、耐久提交、用户响应、流结束及异常/未知的公开含义按所属合同连接，不能把它们伪装成纯内部步。只有确实不改变所声明观察的计算步才可为空；瞬时、历史和已提交事实不混用。
 
 这些接口只覆盖有限前缀，不排除无限内部空转，也不自动推出请求最终完成。后者须由所属模块/V9 另证工作启用、预算/出队、良基度量和无环等待，再使用明确的外部最终可用与公平条件；不把自有推进义务藏进公平假设。
+
+### 有限字节流公共合同
+
+[StreamHistory](../../SandboxModel/Foundations/StreamHistory.lean)定义单方向的源、已读、已写、待写及结束类别；源和历史是证明侧记录，不要求运行时保存全部字节。读追加原源的下段，确认短写只消费待写前缀，保持 `Read = Written ++ pending` 和源序列的内容/次序。驻留上限约束待写队列，可选累计预算单独约束历史；无限累计输出不能被错误替换为无限驻留。
+
+完成要求真实提供方认可的源结束证据、全部源已读及待写为空；HTTP 状态、EOF、时间到期不自行充当结束证据。失败、取消和未知不构造完成，终态不继续产生该方向步骤。V0 的一步/有限历史性质及可实现完成轨迹不等于公平调度进展；V8 须连接实际 I/O、所有缓冲、协议结束、原绑定和机器计数，V9 再提供组合及条件推进。
 
 ## 5 开工与完成条件
 

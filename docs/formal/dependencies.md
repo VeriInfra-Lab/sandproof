@@ -53,7 +53,7 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 ### A6 公共基础库模型使用登记
 
-`A6-foundations-stdlib` 只覆盖抽取前端 `nightly-2026-08-18` 中八个标准库函数：`Option::as_ref/is_none_or`、Option 的 `Try::branch`/`FromResidual::from_residual`、`Result::ok`、`String::eq`、`Vec::is_empty/retain`。前提是有效、有限的 Rust 值/借用及容器表示；正常返回分别保持可选值、精确传播残余、将 Result 的成功值投影为 Some（错误为 None）、比较完整字符串、判断长度是否为零。这些库接口不自行构造提交或物理证据，不提供 Ready/Cleaned/Committed，也不把外部未知转换为明确失败；用户回调的失败、效果或发散必须原样传播，具体回调语义由调用方证明。`Result::ok` 不保留错误原因，不能据此区分未执行、明确失败或结果未知。失效后不得继续使用依赖它们的资源加法、身份判断、观察、窗口后继查询和创建参数对应。
+`A6-foundations-stdlib` 只覆盖抽取前端 `nightly-2026-08-18` 中九个标准库函数：`Option::as_ref/is_none_or/is_some_and`、Option 的 `Try::branch`/`FromResidual::from_residual`、`Result::ok`、`String::eq`、`Vec::is_empty/retain`。前提是有效、有限的 Rust 值/借用及容器表示；正常返回分别保持可选值、精确传播残余、将 Result 的成功值投影为 Some（错误为 None）、比较完整字符串、判断长度是否为零。这些库接口不自行构造提交或物理证据，不提供 Ready/Cleaned/Committed，也不把外部未知转换为明确失败；用户回调的失败、效果或发散必须原样传播，具体回调语义由调用方证明。`Result::ok` 不保留错误原因，不能据此区分未执行、明确失败或结果未知。失效后不得继续使用依赖它们的资源加法、身份判断、回执检查、观察、窗口后继查询和创建参数对应。
 
 可计算模型位于 [FunsExternal](../../verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean)，精确源码/模型/脚本摘要及编译器、翻译器、Lean版本、目标和配置统一见[冻结清单](../../verification/foundations-environment.json)及其输入摘要。原语模型与实际标准库的协议一致性是显式外部条件，不因无占位或内核检查而变成已证明的标准库实现正确性；这些自有协议函数本身仍从生产源码抽取。内置整数、Result、Vec/Array 与容器模型由同修订 Aeneas 后端提供，同样属于工具/库可信链，不能遗漏。
 
@@ -63,13 +63,15 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 `Option::is_none_or` 的共享定义和 [OptionPredicates](../../SandboxModel/Foundations/OptionPredicates.lean) 区分 None 不调用回调、Some 恰调用原 FnOnce，并原样传播失败/效果/发散；缺失值返回 true 不代表权限或物理证据。调用方还须将回调捕获状态限制在已登记的纯值/析构擦除范围，不覆盖自定义 Drop 的外部副作用；不能由 None 没有调用 FnOnce 推出 Rust 没有析构捕获值。真实 u64 探针根只连接标准库调用，不等于 V4 的创建守卫已实例化。
 
+`Option::is_some_and` 使用相同的 FnOnce 合同，但 None 返回 false、不调用回调，Some 恰调用一次原回调，保留其失败及结果。公共 `WorkReceipt::validate_for` 的版本、完整身份和观察资源检查从真实生产函数抽取；观察的 `ResourceEvidence::resource` 字典须由具体观察类型的提供方证明，不能把任意自有 getter 归入 A6。没有观察只表示无需资源比较，不表示成功、停止、清理或外部效果不存在。析构和可变外部效果的限制与 `is_none_or` 相同。
+
 `Vec::retain` 增加有限有序列表的可计算模型：每条原记录按原顺序调用一次 FnMut，更新的回调状态传入下一条，布尔结果决定保留，保留记录内容和顺序不变；空表不调用回调。自有 `Store::retain` 及其包装闭包保留实际生成体，由 [TableRetention](../../SandboxModel/Foundations/TableRetention.lean) 对应独立纯/状态化筛选模型。调用方必须证明自己的回调字典正常返回且符合给定状态转换，不把自有谓词正确性放入 A6。此合同只覆盖有效有限值的逻辑正常返回，不覆盖内含可变引用的外部堆效果、用户析构副作用、panic 后部分表的回滚或物理内存释放；回调失败不能伪造成功，也不据此保证表未部分修改。纯谓词的幂等性不推广到有状态谓词。
 
 两版真实标准库 `alloc/src/vec/mod.rs`、`core/src/option.rs` 摘要单列在同一环境清单并在工具审计中实查。源码审查、状态化回归和摘要不代替标准库形式化证明；这是有限库接口的显式合同，不是把自有退休/删除许可作为可信前提。源版本或模型变化须重查筛选、Option 判断、其 V4 调用字典及邻接证明闭包。
 
 ### A6 身份字符串与规范编号库模型使用登记
 
-`A6-foundations-identifiers` 增加 14 个精确库接口，连同上述 8 个合为 22 个不透明函数模型；实际清单由[抽取审计器](../../tools/check_foundations_extraction.py)检查，不允许把自有身份构造器、谓词、闭包或中心解析包装改为不透明调用。模型分为：
+`A6-foundations-identifiers` 增加 14 个精确库接口，连同上述 9 个合为 23 个不透明函数模型；实际清单由[抽取审计器](../../tools/check_foundations_extraction.py)检查，不允许把自有身份构造器、谓词、闭包或中心解析包装改为不透明调用。模型分为：
 
 | 库观察 | 合同和调用边界 |
 |---|---|

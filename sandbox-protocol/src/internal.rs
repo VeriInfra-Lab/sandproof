@@ -41,12 +41,26 @@ pub mod lifecycle;
 pub mod window;
 
 /// Independent of the local core's epoch/generation and Redis revision.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u64", into = "u64")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(into = "u64")]
 // The field remains private: every public construction and deserialization
 // goes through TryFrom. A plain integer avoids the fixed extractor's unsupported
 // NonZero associated-type representation without changing the wire contract.
 pub struct PositiveCounter(u64);
+
+impl<'de> Deserialize<'de> for PositiveCounter {
+    #[expect(
+        clippy::redundant_closure,
+        reason = "The fixed Aeneas translator cannot represent Error::custom as a trait-method function value"
+    )]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = <u64 as Deserialize>::deserialize(deserializer)?;
+        Self::try_from(value).map_err(|error| serde::de::Error::custom(error))
+    }
+}
 
 impl PositiveCounter {
     #[must_use]

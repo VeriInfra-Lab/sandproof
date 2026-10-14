@@ -68,6 +68,11 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::node_value \
   --start-from crate::node_into_string \
   --start-from crate::center_allocated_number \
+  --start-from crate::numeric::seconds_to_milliseconds \
+  --start-from crate::numeric::bytes_to_mebibytes \
+  --start-from crate::numeric::available_resource \
+  --start-from crate::receipts::action_version \
+  --start-from crate::receipts::receipt_validate \
   --include sandproof_protocol --include sandproof_center_core \
   --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_foundations.llbc \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline

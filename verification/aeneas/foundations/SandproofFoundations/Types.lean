@@ -54,14 +54,14 @@ inductive sandproof_center_core.model.LanePhase where
 | Exhausted : sandproof_center_core.model.LanePhase
 
 /-- [sandproof_protocol::NodeId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::NodeId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::NodeId"]
 def sandproof_protocol.NodeId := String
 
 /-- [sandproof_protocol::DeploymentId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::DeploymentId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::DeploymentId"]
@@ -75,7 +75,7 @@ def sandproof_protocol.DeploymentId := String
 def sandproof_protocol.internal.PositiveCounter := Std.U64
 
 /-- [sandproof_protocol::internal::NodeIdentity]
-    Source: './sandbox-protocol/src/internal.rs', lines 89:0-89:23
+    Source: './sandbox-protocol/src/internal.rs', lines 103:0-103:23
     Name pattern: [sandproof_protocol::internal::NodeIdentity]
     Visibility: public -/
 @[rust_type "sandproof_protocol::internal::NodeIdentity"]
@@ -85,28 +85,28 @@ structure sandproof_protocol.internal.NodeIdentity where
   node_generation : sandproof_protocol.internal.PositiveCounter
 
 /-- [sandproof_protocol::OperationId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::OperationId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::OperationId"]
 def sandproof_protocol.OperationId := String
 
 /-- [sandproof_protocol::SandboxId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::SandboxId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::SandboxId"]
 def sandproof_protocol.SandboxId := String
 
 /-- [sandproof_protocol::TenantId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::TenantId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::TenantId"]
 def sandproof_protocol.TenantId := String
 
 /-- [sandproof_protocol::internal::ControlIdentity]
-    Source: './sandbox-protocol/src/internal.rs', lines 100:0-100:26
+    Source: './sandbox-protocol/src/internal.rs', lines 114:0-114:26
     Name pattern: [sandproof_protocol::internal::ControlIdentity]
     Visibility: public -/
 @[rust_type "sandproof_protocol::internal::ControlIdentity"]
@@ -161,7 +161,7 @@ structure sandproof_center_core.model.RetentionLane where
   last_retired : Option sandproof_protocol.internal.lifecycle.LifecycleResponse
 
 /-- [sandproof_protocol::internal::InternalError]
-    Source: './sandbox-protocol/src/internal.rs', lines 211:0-211:22
+    Source: './sandbox-protocol/src/internal.rs', lines 225:0-225:22
     Name pattern: [sandproof_protocol::internal::InternalError]
     Visibility: public -/
 @[discriminant isize, rust_type "sandproof_protocol::internal::InternalError"]
@@ -182,7 +182,7 @@ structure sandproof_protocol.internal.lifecycle.Resources where
   disk_bytes : Std.U64
 
 /-- [sandproof_protocol::ResourceId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::ResourceId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::ResourceId"]
@@ -203,7 +203,7 @@ structure sandproof_protocol.internal.lifecycle.CreateBinding where
   max_lifetime_ms : Std.U64
 
 /-- [sandproof_protocol::ContractError]
-    Source: './sandbox-protocol/src/lib.rs', lines 30:0-30:22
+    Source: './sandbox-protocol/src/lib.rs', lines 31:0-31:22
     Name pattern: [sandproof_protocol::ContractError]
     Visibility: public -/
 @[discriminant isize, rust_type "sandproof_protocol::ContractError"]
@@ -214,27 +214,72 @@ inductive sandproof_protocol.ContractError where
 | MismatchedObservation : sandproof_protocol.ContractError
 
 /-- [sandproof_protocol::valid_identifier::{closure}]
-    Source: './sandbox-protocol/src/lib.rs', lines 61:17-61:23
+    Source: './sandbox-protocol/src/lib.rs', lines 62:17-62:23
     Name pattern: [sandproof_protocol::valid_identifier::closure] -/
 @[reducible, rust_type "sandproof_protocol::valid_identifier::closure"]
 def sandproof_protocol.valid_identifier.closure := Unit
 
 /-- [sandproof_protocol::LogicalActionId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::LogicalActionId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::LogicalActionId"]
 def sandproof_protocol.LogicalActionId := String
 
 /-- [sandproof_protocol::ClientRequestId]
-    Source: './sandbox-protocol/src/lib.rs', lines 68:8-68:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::ClientRequestId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::ClientRequestId"]
 def sandproof_protocol.ClientRequestId := String
 
+/-- [sandproof_protocol::ResourceKind]
+    Source: './sandbox-protocol/src/lib.rs', lines 184:0-184:21
+    Name pattern: [sandproof_protocol::ResourceKind]
+    Visibility: public -/
+@[discriminant isize, rust_type "sandproof_protocol::ResourceKind"]
+inductive sandproof_protocol.ResourceKind where
+| Sandbox : sandproof_protocol.ResourceKind
+| Vm : sandproof_protocol.ResourceKind
+| Workspace : sandproof_protocol.ResourceKind
+| NetworkSlot : sandproof_protocol.ResourceKind
+
+/-- [sandproof_protocol::ResourceRef]
+    Source: './sandbox-protocol/src/lib.rs', lines 194:0-194:22
+    Name pattern: [sandproof_protocol::ResourceRef]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::ResourceRef"]
+structure sandproof_protocol.ResourceRef where
+  kind : sandproof_protocol.ResourceKind
+  id : sandproof_protocol.ResourceId
+
+/-- [sandproof_protocol::ActionIdentity]
+    Source: './sandbox-protocol/src/lib.rs', lines 202:0-202:25
+    Name pattern: [sandproof_protocol::ActionIdentity]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::ActionIdentity"]
+structure sandproof_protocol.ActionIdentity where
+  protocol_version : Std.U16
+  owner : sandproof_protocol.TenantId
+  sandbox : sandproof_protocol.SandboxId
+  operation : sandproof_protocol.OperationId
+  epoch : Std.U64
+  generation : Std.U64
+  logical_action : sandproof_protocol.LogicalActionId
+  attempt : Std.U64
+  resource : sandproof_protocol.ResourceRef
+
+/-- [sandproof_protocol::WorkAction]
+    Source: './sandbox-protocol/src/lib.rs', lines 233:0-233:24
+    Name pattern: [sandproof_protocol::WorkAction]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::WorkAction"]
+structure sandproof_protocol.WorkAction (C : Type) where
+  identity : sandproof_protocol.ActionIdentity
+  command : C
+
 /-- [sandproof_protocol::FailureCode]
-    Source: './sandbox-protocol/src/lib.rs', lines 227:0-227:20
+    Source: './sandbox-protocol/src/lib.rs', lines 240:0-240:20
     Name pattern: [sandproof_protocol::FailureCode]
     Visibility: public -/
 @[discriminant isize, rust_type "sandproof_protocol::FailureCode"]
@@ -247,7 +292,7 @@ inductive sandproof_protocol.FailureCode where
 | InternalFailure : sandproof_protocol.FailureCode
 
 /-- [sandproof_protocol::UnknownReason]
-    Source: './sandbox-protocol/src/lib.rs', lines 238:0-238:22
+    Source: './sandbox-protocol/src/lib.rs', lines 251:0-251:22
     Name pattern: [sandproof_protocol::UnknownReason]
     Visibility: public -/
 @[discriminant isize, rust_type "sandproof_protocol::UnknownReason"]
@@ -257,7 +302,7 @@ inductive sandproof_protocol.UnknownReason where
 | WorkerRestarted : sandproof_protocol.UnknownReason
 
 /-- [sandproof_protocol::WorkOutcome]
-    Source: './sandbox-protocol/src/lib.rs', lines 252:0-252:23
+    Source: './sandbox-protocol/src/lib.rs', lines 265:0-265:23
     Name pattern: [sandproof_protocol::WorkOutcome]
     Visibility: public -/
 @[discriminant isize, rust_type "sandproof_protocol::WorkOutcome"]
@@ -273,13 +318,39 @@ inductive sandproof_protocol.WorkOutcome (E : Type) where
   Option E →
   sandproof_protocol.WorkOutcome E
 
+/-- Trait declaration: [sandproof_protocol::ResourceEvidence]
+    Source: './sandbox-protocol/src/lib.rs', lines 307:0-307:26
+    Name pattern: [sandproof_protocol::ResourceEvidence]
+    Visibility: public -/
+@[rust_trait "sandproof_protocol::ResourceEvidence"]
+structure sandproof_protocol.ResourceEvidence (Self : Type) where
+  resource : Self → Result sandproof_protocol.ResourceRef
+
+/-- [sandproof_protocol::WorkReceipt]
+    Source: './sandbox-protocol/src/lib.rs', lines 313:0-313:25
+    Name pattern: [sandproof_protocol::WorkReceipt]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::WorkReceipt"]
+structure sandproof_protocol.WorkReceipt (E : Type) where
+  identity : sandproof_protocol.ActionIdentity
+  outcome : sandproof_protocol.WorkOutcome E
+
+/-- [sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 333:25-333:38
+    Name pattern: [sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::closure"]
+def sandproof_protocol.WorkReceipt.validate_for.closure (E : Type) (C : Type)
+  :=
+  sandproof_protocol.WorkAction C
+
 /-- [sandproof_foundations_extract::store_retain_above::{closure}]
-    Source: 'src/lib.rs', lines 38:17-38:42 -/
+    Source: 'src/lib.rs', lines 40:17-40:42 -/
 @[reducible]
 def store_retain_above.closure := Std.U64
 
 /-- [sandproof_foundations_extract::option_is_none_or::{closure}]
-    Source: 'src/lib.rs', lines 42:21-42:42 -/
+    Source: 'src/lib.rs', lines 44:21-44:42 -/
 @[reducible]
 def option_is_none_or.closure := Std.U64
 
