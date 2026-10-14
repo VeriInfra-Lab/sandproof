@@ -162,6 +162,20 @@ async def run(settings):
                         Code.UNIMPLEMENTED, 'invalid input type <nil>')
     await peer.rejected('send_signal', process_pb.SendSignalRequest, selector,
                         Code.UNIMPLEMENTED, 'invalid signal: SIGNAL_UNSPECIFIED')
+    if mode == 'pty':
+        await peer.rejected('send_input', process_pb.SendInputRequest,
+                            selector | {'input': {'stdin': ''}}, Code.INTERNAL,
+                            'error writing to stdin: tty assigned to process — input should be written to the pty, not the stdin')
+        await peer.rejected('close_stdin', process_pb.CloseStdinRequest, selector,
+                            Code.UNKNOWN,
+                            'error closing stdin: cannot close stdin for PTY process — send Ctrl+D (0x04) instead')
+    else:
+        await peer.rejected('send_input', process_pb.SendInputRequest,
+                            selector | {'input': {'pty': ''}}, Code.INTERNAL,
+                            'error writing to tty: tty not assigned to process — input should be written to the stdin, not the tty')
+        await peer.rejected('update', process_pb.UpdateRequest,
+                            selector | {'pty': {}}, Code.INTERNAL,
+                            'error resizing tty: tty not assigned to process')
     stream = peer.call('connect', process_pb.ConnectRequest.from_json(json.dumps(selector)))
     try:
         first = (await peer.next(stream)).event.event
@@ -208,4 +222,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         asyncio.run(run(settings))
     print(f"authenticated PID SDK: {settings['mode']}, async={settings['asynchronous']} passed; "
-          "seven operation rejections passed")
+          "nine operation rejections passed")

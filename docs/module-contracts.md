@@ -403,7 +403,7 @@ EOS 语法、类型或 base64 拒绝经原选定 Start/Connect 回复为 200 / i
 
 CommandHttp 固定同一 Session、账户池、上下文设置、VM/服务会话、PID 注册表/持久登记器、worker 路径和显式预算；构造核对注册表的 VM/会话，持久登记仍在原 claim 时核对。prepare 返回已观察的回复或不可修改的 Ready；外层可检查原请求施加测试限制，不能替换其身份/资源/期限，execute 消费一次原请求。Start 在该装配及全部克隆之间分配递增非零命令编号，失败不回收、耗尽不回绕；同一注册表/会话必须以一个装配作为唯一 Start 入口，不能和底层直接准备的编号混用。原始 PID 永不复用规则仍由持久 PID 集负责，内部编号不替代它。
 
-共用入口发送现有已观察的 token/Basic/头部/gzip/帧/JSON/EOS/默认账户/PID 参数拒绝及正常回复；未知路由、tag、未分类操作故障和编码失败保持有类型的原失败、容量与绝对期限，不重新鉴权/查表/执行，不创造公开错误文本。请求取消或回复失败不成为进程退出/副作用未发生的回执。keepalive 暂沿调用方显式组件配置，完整头语义和生产默认值仍待接通；该模块没有安装服务或选择 tag 政策。
+共用入口发送现有已观察的 token/Basic/头部/gzip/帧/JSON/EOS/默认账户/PID 参数及通道模式拒绝和正常回复；未知路由、tag、未分类操作故障和编码失败保持有类型的原失败、容量与绝对期限，不重新鉴权/查表/执行，不创造公开错误文本。请求取消或回复失败不成为进程退出/副作用未发生的回执。keepalive 暂沿调用方显式组件配置，完整头语义和生产默认值仍待接通；该模块没有安装服务或选择 tag 政策。
 
 [来宾 HTTP 装配](../sandbox-guest-service/src/guest_http.rs)以同一个 Session 连接原 /health、/init、CommandHttp、FileRpcHttp 与 /files。构造时逐项核对共享认证状态的对象身份，不能用相同 token/元数据的独立 Session 替代；账户、资源池、worker、VM/PID 集、MIME/时区和预算仍由可信调用方提供。只分派原路径，不预读/复制/归一化正文；各命名空间继续执行原路由、准入、鉴权、解析、效果及有限回复。装配克隆共享原命令编号序列和各资源池，原三类请求/控制容量不合并；health/init 不占命令或文件槽位，但仍受连接预算约束。
 
@@ -418,6 +418,8 @@ List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用�
 [PID 操作拒绝回复](../sandbox-guest-service/src/command_requests/http/operation.rs)只消费原 execute_pid 已保存的有限事实：缺失/空选择器、实际 NotFound 的 u32 PID、成功取得存活句柄后缺失输入或不支持信号。Connect 先使用原可连接记录（包括有效保留终局），控制操作只查存活记录；未知/未准备好/锁失败不伪装成 PID 不存在。缺失 PID 仍先于输入/信号参数拒绝，失败不重新查表或影响原进程；超时不把先前事实升级为另一个公开错误。
 
 原 Failure::into_operation_response 使用同一回复格式、绝对期限和请求责任：PID 缺失为 not_found，一元 404；缺少选择器/输入或不支持信号为 unimplemented，一元 501；一元错误始终 identity application/json。Connect 错误为 200、原 charset/协商编码的唯一 EOS，无进程事件。文本保持固定 getProcess/handleInput/SendSignal 的类型名、无符号 PID 和枚举名称/有符号数字，按 Go JSON 转义；数值临时字符串大小固定有界。原 JSON、编码副本和传输块各计入有界工作区，编码失败/最后副本继续持有同一责任。tag、Start/工作进程、I/O 细节和缺失格式/观察仍未分类，不能由这些错误推断旧进程不存在或已清理。
+
+同一次控制操作实际返回 InvalidArgument 且原句柄不可变 PTY 能力证明通道不匹配时，另保留四项固定事实：PTY 写 stdin、管道写 PTY、PTY CloseStdin、管道 resize。前两项及 resize 返回 internal，CloseStdin 返回 unknown，均为一元 identity 500；文本沿固定 handleInput/CloseStdin/Update 与 handler 错误，仍由原有限发送器承担期限、预算和最后副本所有权。能力查询不证明命令存活，不重新取得 PID 或执行操作；输入关闭、并发写入、完成竞争、真实 I/O/PTY ioctl 失败不能仅凭 InvalidArgument 套用该分类。流式误用保持未分类，不改变旧组件 CommandError 或选择 tag 政策。
 
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)消费同一 Basic 预检结果，先选择已知命令的 POST 与两个 Connect JSON 类型，复用有界 MIME 参数解析。其他原协议为未选定分类，不据此公开返回 415。一元与 Start/Connect 分别选择原 Content-Encoding/Accept-Encoding 和 Connect-Content-Encoding/Connect-Accept-Encoding 的第一值；空值/identity/gzip、逗号或 ASCII 空格分割及不解释 q 权重遵循固定协商。方法/媒体类型先于压缩，压缩错误先于版本，版本先于期限语法错误；有效期限先收紧原准入上限，失败保留已选回复格式/编码及原期限，不刷新容量或时钟。诊断只复制完整头预算后的对应首值，Debug 不暴露原值。
 

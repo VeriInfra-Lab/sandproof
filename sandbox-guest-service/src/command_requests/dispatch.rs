@@ -1,8 +1,8 @@
 //! PID-only dispatch under the original request. Known selector/parameter
 //! failures preserve their actual observation for the separate HTTP sender.
-use super::http::operation::Rejection;
+use super::http::operation::{ChannelRejection, Rejection};
 use super::{Body, Error, Failure, Instant, Owner, Ready, Request, check_deadline};
-use crate::command::{CommandBodyLimits, ManagedCommand, PidRegistry};
+use crate::command::{CommandBodyLimits, CommandError, ManagedCommand, PidRegistry};
 use sandproof_guest_runtime::{
     ProcessSignal, PtySize,
     protocol::{self, Input, Response, Selector, Signal},
@@ -177,8 +177,18 @@ async fn control(
         Request::SendInput { process, input } => {
             let command = live(registry, process.as_ref(), observed)?;
             match input {
-                Some(Input::Stdin(bytes)) => command.write_input(command.identity(), bytes).await,
-                Some(Input::Pty(bytes)) => command.write_pty(command.identity(), bytes).await,
+                Some(Input::Stdin(bytes)) => channel_result(
+                    command.write_input(command.identity(), bytes).await,
+                    command.has_pty(),
+                    ChannelRejection::StdinOnPty,
+                    observed,
+                ),
+                Some(Input::Pty(bytes)) => channel_result(
+                    command.write_pty(command.identity(), bytes).await,
+                    !command.has_pty(),
+                    ChannelRejection::PtyOnPipe,
+                    observed,
+                ),
                 _ => {
                     *observed = Some(Rejection::MissingInput);
                     return Err(Error::Protocol(protocol::ProtocolError::Unimplemented));
@@ -187,7 +197,12 @@ async fn control(
         }
         Request::CloseStdin(process) => {
             let command = live(registry, process.as_ref(), observed)?;
-            command.close_input(command.identity())
+            channel_result(
+                command.close_input(command.identity()),
+                command.has_pty(),
+                ChannelRejection::ClosePty,
+                observed,
+            )
         }
         Request::SendSignal { process, signal } => {
             let command = live(registry, process.as_ref(), observed)?;
@@ -210,7 +225,12 @@ async fn control(
                 let size = pty.size.as_ref().map_or_else(PtySize::default, |size| {
                     PtySize::from_wire(size.cols, size.rows)
                 });
-                command.resize_pty(command.identity(), size)
+                channel_result(
+                    command.resize_pty(command.identity(), size),
+                    !command.has_pty(),
+                    ChannelRejection::ResizePipe,
+                    observed,
+                )
             } else {
                 Ok(())
             }
@@ -219,6 +239,21 @@ async fn control(
     };
     result.map_err(Error::Command)
 }
+// The original operation must actually reject, and its immutable terminal
+// capability must establish the precise reason. A live PTY ioctl EINVAL,
+// completion race, busy writer, closed input or I/O failure is not this fact.
+fn channel_result(
+    result: Result<(), CommandError>,
+    wrong_mode: bool,
+    rejection: ChannelRejection,
+    observed: &mut Option<Rejection>,
+) -> Result<(), CommandError> {
+    if wrong_mode && result == Err(CommandError::InvalidArgument) {
+        *observed = Some(Rejection::Channel(rejection));
+    }
+    result
+}
+
 struct Unary {
     bytes: Vec<u8>,
     _owner: Owner,
@@ -226,5 +261,56 @@ struct Unary {
 impl AsRef<[u8]> for Unary {
     fn as_ref(&self) -> &[u8] {
         &self.bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_observation_requires_original_mode_and_actual_rejection() {
+        let outcomes = [
+            Ok(()),
+            Err(CommandError::InvalidArgument),
+            Err(CommandError::Cancelled),
+            Err(CommandError::StaleIdentity),
+            Err(CommandError::ResourceExhausted),
+            Err(CommandError::NotStarted),
+            Err(CommandError::ClosedInput),
+            Err(CommandError::DeadlineExceeded),
+            Err(CommandError::LaunchUnknown),
+            Err(CommandError::ExecFailed(22)),
+            Err(CommandError::Lagged),
+            Err(CommandError::Unavailable),
+        ];
+        for wrong_mode in [false, true] {
+            for result in outcomes {
+                let mut observed = None;
+                assert_eq!(
+                    channel_result(
+                        result,
+                        wrong_mode,
+                        ChannelRejection::ResizePipe,
+                        &mut observed
+                    ),
+                    result
+                );
+                assert_eq!(
+                    matches!(
+                        observed,
+                        Some(Rejection::Channel(ChannelRejection::ResizePipe))
+                    ),
+                    wrong_mode && result == Err(CommandError::InvalidArgument)
+                );
+                if let Some(observed) = observed {
+                    assert!(observed.matches(&Error::Command(CommandError::InvalidArgument)));
+                    assert!(!observed.matches(&Error::Command(CommandError::Unavailable)));
+                    assert!(
+                        !observed.matches(&Error::Protocol(protocol::ProtocolError::Unimplemented))
+                    );
+                }
+            }
+        }
     }
 }

@@ -1,5 +1,6 @@
 // Controlled failure observations from runtime f455fd58fa3f289e78ce1de690c35968d8d29322:
-// process/service.go getProcess, input.go handleInput, signal.go SendSignal.
+// process/service.go getProcess, input.go handleInput/CloseStdin, signal.go
+// SendSignal, update.go Update, and handler/handler.go terminal capabilities.
 // Original fmt/generated enum/Connect perform rendering; this does not execute
 // those service methods, query an OS process table or validate their ordering.
 package main
@@ -9,6 +10,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	rpc "sandproof.local/connect-reference/process"
@@ -44,6 +46,14 @@ func operationError(headers http.Header) error {
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("invalid input type %T", input.GetInput()))
 	case "signal":
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("invalid signal: %s", rpc.Signal(input.Number)))
+	case "stdin-on-pty":
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("error writing to stdin: %w", errors.New("tty assigned to process — input should be written to the pty, not the stdin")))
+	case "pty-on-pipe":
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("error writing to tty: %w", errors.New("tty not assigned to process — input should be written to the stdin, not the tty")))
+	case "close-pty":
+		return connect.NewError(connect.CodeUnknown, fmt.Errorf("error closing stdin: %w", errors.New("cannot close stdin for PTY process — send Ctrl+D (0x04) instead")))
+	case "resize-pipe":
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("error resizing tty: %w", errors.New("tty not assigned to process")))
 	default:
 		panic("unknown operation failure")
 	}

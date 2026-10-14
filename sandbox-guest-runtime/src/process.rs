@@ -33,6 +33,13 @@ pub struct CommandControl {
 }
 
 impl CommandControl {
+    /// Whether this original capability owns a terminal. This immutable fact
+    /// does not establish launch, liveness or success of an operation.
+    #[must_use]
+    pub fn has_pty(&self) -> bool {
+        self.pty.is_some()
+    }
+
     /// Resize this original terminal without waiting for input/output locks.
     /// # Errors
     /// Stale identity, a pipe command or actual terminal ioctl failure.

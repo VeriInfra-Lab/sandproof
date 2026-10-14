@@ -154,6 +154,49 @@ async fn missing_operation_observation_selection_and_expiry_do_not_invent_a_repl
     }
 }
 
+fn operation_failures(rpc: Rpc) -> Vec<(Rejection, &'static str, i64)> {
+    let mut failures = vec![(Rejection::MissingSelector, "selector", 0_i64)];
+    failures.extend(
+        [0, 1, 123, 2_147_483_648, u32::MAX]
+            .map(|pid| (Rejection::PidNotFound(pid), "pid", i64::from(pid))),
+    );
+    if rpc == Rpc::SendInput {
+        failures.push((Rejection::MissingInput, "input", 0));
+        failures.extend([
+            (
+                Rejection::Channel(ChannelRejection::StdinOnPty),
+                "stdin-on-pty",
+                0,
+            ),
+            (
+                Rejection::Channel(ChannelRejection::PtyOnPipe),
+                "pty-on-pipe",
+                0,
+            ),
+        ]);
+    }
+    if rpc == Rpc::CloseStdin {
+        failures.push((
+            Rejection::Channel(ChannelRejection::ClosePty),
+            "close-pty",
+            0,
+        ));
+    }
+    if rpc == Rpc::Update {
+        failures.push((
+            Rejection::Channel(ChannelRejection::ResizePipe),
+            "resize-pipe",
+            0,
+        ));
+    }
+    if rpc == Rpc::SendSignal {
+        failures.extend(
+            [0, -1, 1, i32::MIN, i32::MAX].map(|n| (Rejection::Signal(n), "signal", i64::from(n))),
+        );
+    }
+    failures
+}
+
 #[tokio::test]
 #[ignore = "explicit fixed Go operation failure rendering; set SANDPROOF_GUEST_CONNECT_REFERENCE"]
 async fn fixed_go_pid_parameter_failure_status_headers_and_payloads_match() {
@@ -166,20 +209,7 @@ async fn fixed_go_pid_parameter_failure_status_headers_and_payloads_match() {
         Rpc::CloseStdin,
         Rpc::Update,
     ] {
-        let mut failures = vec![(Rejection::MissingSelector, "selector", 0_i64)];
-        failures.extend(
-            [0, 1, 123, 2_147_483_648, u32::MAX]
-                .map(|pid| (Rejection::PidNotFound(pid), "pid", i64::from(pid))),
-        );
-        if rpc == Rpc::SendInput {
-            failures.push((Rejection::MissingInput, "input", 0));
-        }
-        if rpc == Rpc::SendSignal {
-            failures.extend(
-                [0, -1, 1, i32::MIN, i32::MAX]
-                    .map(|n| (Rejection::Signal(n), "signal", i64::from(n))),
-            );
-        }
+        let failures = operation_failures(rpc);
         for gzip in [false, true] {
             for utf8 in [false, true] {
                 for (rejection, kind, number) in &failures {
@@ -238,4 +268,75 @@ async fn fixed_go_pid_parameter_failure_status_headers_and_payloads_match() {
     eprintln!(
         "{count} fixed Go operation failure rendering cases; process lookup and ordering are separate Linux tests."
     );
+}
+
+#[tokio::test]
+async fn channel_rejections_keep_owning_the_request_and_refuse_stream_misclassification() {
+    for rejection in [
+        ChannelRejection::StdinOnPty,
+        ChannelRejection::PtyOnPipe,
+        ChannelRejection::ClosePty,
+        ChannelRejection::ResizePipe,
+    ] {
+        let rejection = Rejection::Channel(rejection);
+        let raw = payload(rejection, false, 4096).unwrap();
+        for (stream, budget, expired) in [
+            (false, raw.len(), false),
+            (false, raw.len() - 1, false),
+            (true, 4096, false),
+            (false, 4096, true),
+        ] {
+            let slots = Arc::new(Semaphore::new(1));
+            let owner: Owner = Arc::new(slots.clone().try_acquire_owned().unwrap());
+            let mut source = source(
+                Some(rejection),
+                Some(format(
+                    if stream { Rpc::Connect } else { Rpc::SendInput },
+                    true,
+                    true,
+                )),
+                owner,
+            );
+            if expired {
+                source.deadline = Instant::now();
+            }
+            let deadline = source.deadline;
+            let result = send(
+                source,
+                reply::Limits {
+                    wire_bytes: budget,
+                    ..limits()
+                },
+            )
+            .await;
+            if !stream && !expired && budget == raw.len() {
+                let response = result.unwrap();
+                assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+                let mut body = response.into_body();
+                let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+                assert_eq!(bytes, raw);
+                let last = bytes.clone();
+                drop(bytes);
+                drop(body);
+                assert_eq!(slots.available_permits(), 0);
+                drop(last);
+            } else {
+                let failure = result.unwrap_err();
+                assert_eq!(failure.deadline(), deadline);
+                assert_eq!(
+                    failure.error(),
+                    if stream {
+                        reply::Error::UnclassifiedFault
+                    } else if expired {
+                        reply::Error::DeadlineExceeded
+                    } else {
+                        reply::Error::ResponseLimit
+                    }
+                );
+                assert_eq!(slots.available_permits(), 0);
+                drop(failure);
+            }
+            assert_eq!(slots.available_permits(), 1);
+        }
+    }
 }

@@ -275,6 +275,10 @@ pub struct ManagedCommand {
 }
 
 impl ManagedCommand {
+    pub(crate) fn has_pty(&self) -> bool {
+        self.shared.control.has_pty()
+    }
+
     #[must_use]
     pub fn identity(&self) -> CommandIdentity {
         self.shared.identity
