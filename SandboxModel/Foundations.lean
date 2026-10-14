@@ -12,3 +12,5 @@ import SandboxModel.Foundations.Composition
 import SandboxModel.Foundations.Cloning
 import SandboxModel.Foundations.Focused
 import SandboxModel.Foundations.FiniteScan
+import SandboxModel.Foundations.FiniteCopy
+import SandboxModel.Foundations.FiniteInsert

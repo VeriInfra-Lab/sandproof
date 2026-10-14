@@ -46,6 +46,12 @@
 
 后续：容器写入、删除与修改范围、序列化界限、窗口/代次比较、查询投影和流历史公共引理。查询接口使用独立的首次匹配语义，泛型键的相等合同由实际键类型的对应定理提供；不能把任意自有比较函数列为外部假设。下方 I2 的判定接口分别由 V7（normalize/page）、V5（lifetime）、V4（identity/publication/capacity）、V6（observation/release）、V8（transfer end）提供，V0 不复制其实现。
 
+### 公共循环复用接口
+
+[FiniteCopy](../../SandboxModel/Foundations/FiniteCopy.lean)提供原顺序复制、前置一元素及有限终止的参数化合同；[FiniteInsert](../../SandboxModel/Foundations/FiniteInsert.lean)提供首次匹配短路、缺失时前置复制，以及独立的成员、顺序、长度、唯一性和投影性质。它们不导入完整业务状态或历史生成命名空间。
+
+调用模块须证明真实抽取的循环体及包装与公共算法对应，再使用 `vectorCopyLoop_transport` / `vectorInsert_transport`；连接条件是自有证明义务，不是库合同或环境假设。复制需要自有类型的 `CloneExact`，比较需要 `ValueEqExact`。已有元素分支既不需要追加余量，也不需要克隆合同；缺失时需原长度小于 `Usize.max`。这只约束纯模型的可表示长度，不保证实际分配永不失败，也不承诺自定义析构效果或外部状态的失败回滚。实际调用者的额度、表示关系和状态不变量由所属模块证明。
+
 ### 范围和模块验收
 
 V0–V9 是证明责任模块，不是顺序版本。V0 完成条件只包含本模块公共定义、实际公共实现的对应、依赖登记和公共组合接口；不能把历史控制器全部业务证明迁移加入其前置条件。
