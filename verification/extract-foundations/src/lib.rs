@@ -2,6 +2,8 @@
 
 //! Free roots avoid the fixed frontend's associated-method root discovery gap.
 //! There is deliberately no copy of a production algorithm in this crate.
+pub mod numeric;
+pub mod receipts;
 use sandproof_protocol::WorkOutcome;
 use sandproof_protocol::internal::lifecycle::{CreateBinding, Resources};
 use sandproof_protocol::internal::{ControlIdentity, InternalError, PositiveCounter};

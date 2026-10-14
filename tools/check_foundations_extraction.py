@@ -17,6 +17,7 @@ EXTERNALS = {
     "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
     "alloc::vec::{alloc::vec::Vec<T>}::retain",
     "core::option::{core::option::Option<T>}::is_none_or",
+    "core::option::{core::option::Option<T>}::is_some_and",
     "core::bool::{bool}::then_some",
     "core::num::{u8}::is_ascii_alphanumeric",
     "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}::from_str",
@@ -50,11 +51,20 @@ ROOTS = {
     "client_request_from_string", "client_request_from_str", "client_request_value", "client_request_into_string",
     "deployment_from_string", "deployment_from_str", "deployment_value", "deployment_into_string",
     "node_from_string", "node_from_str", "node_value", "node_into_string",
+    "numeric::seconds_to_milliseconds", "numeric::bytes_to_mebibytes",
+    "numeric::available_resource", "receipts::action_version", "receipts::receipt_validate",
 }
+ROOT_MODULES = {'numeric', 'receipts'}
 REQUIRED_IDENTITY_CALLS = {
     "sandproof_protocol::valid_identifier",
     "sandproof_protocol::identifiers::parse_allocated_number",
     "sandproof_center_core::validation::number",
+    "sandproof_protocol::numeric::seconds_to_milliseconds",
+    "sandproof_protocol::numeric::bytes_to_mebibytes",
+    "sandproof_protocol::numeric::available_resource",
+    "sandproof_protocol::{sandproof_protocol::ActionIdentity}::validate_version",
+    "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for",
+    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}::eq",
 }
 LIBRARY_SOURCES = {
     'alloc/src/vec/mod.rs', 'core/src/option.rs', 'alloc/src/string.rs',
@@ -101,9 +111,17 @@ def check(root, llbc, inventory):
             or llbc['translated']['options']['dest_file'] != environment.get('driver_destination')):
         raise ValueError('extraction artifact destination must be the frozen project-relative path')
     script = (root / 'scripts/regenerate-foundations-lean.sh').read_text()
-    roots = re.findall(r'--start-from crate::([a-z0-9_]+)', script)
+    roots = re.findall(r'--start-from crate::([a-z0-9_:]+)', script)
     source = (root / 'verification/extract-foundations/src/lib.rs').read_text()
     public = re.findall(r'pub fn ([a-z0-9_]+)\(', source)
+    modules = re.findall(r'pub mod ([a-z0-9_]+);', source)
+    if len(modules) != len(set(modules)) or set(modules) != ROOT_MODULES:
+        raise ValueError('unreviewed or missing public root module')
+    for module in sorted(ROOT_MODULES):
+        module_source = (root / f'verification/extract-foundations/src/{module}.rs').read_text()
+        # Include generic roots without treating their type parameters as names.
+        names = re.findall(r'pub fn ([a-z0-9_]+)(?:<[^\n{]*>)?\s*\(', module_source)
+        public.extend(f'{module}::{name}' for name in names)
     all_roots = re.findall(r'--start-from ([a-z0-9_:]+)', script)
     expected_roots = {'crate::' + name for name in ROOTS}
     if (len(roots) != len(set(roots)) or len(public) != len(set(public))

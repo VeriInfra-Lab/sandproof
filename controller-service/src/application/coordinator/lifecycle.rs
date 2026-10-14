@@ -173,8 +173,8 @@ impl<H: ControllerHost> ControllerApplication<H> {
             }),
             memory_mb: template.map_or(self.config.memory_mb, |value| value.resources.memory_mib),
             disk_size_mb: template.map_or(Ok(self.config.disk_size_mb), |value| {
-                u32::try_from(value.resources.disk_bytes.div_ceil(1024 * 1024))
-                    .map_err(|_| ApplicationError::Invalid)
+                sandproof_protocol::numeric::bytes_to_mebibytes(value.resources.disk_bytes)
+                    .ok_or(ApplicationError::Invalid)
             })?,
         })
     }

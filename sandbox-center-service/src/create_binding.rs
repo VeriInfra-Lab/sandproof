@@ -3,6 +3,7 @@ use crate::{CenterConfig, PublicTemplate};
 use sandproof_api::PortError;
 use sandproof_controller_service::CreateOptions;
 use sandproof_protocol::internal::lifecycle::{CreateBinding, Resources};
+use sandproof_protocol::numeric::seconds_to_milliseconds;
 use serde::{Deserialize, Serialize};
 
 /// Immutable per-role lifecycle limits, without transport or public API state.
@@ -20,8 +21,8 @@ impl LifecyclePolicy {
         self.max_timeout_secs > 0
             && self.max_timeout_secs <= self.max_lifetime_secs
             && self.startup_timeout_secs > 0
-            && self.max_lifetime_secs.checked_mul(1000).is_some()
-            && self.startup_timeout_secs.checked_mul(1000).is_some()
+            && seconds_to_milliseconds(self.max_lifetime_secs).is_some()
+            && seconds_to_milliseconds(self.startup_timeout_secs).is_some()
     }
 }
 impl From<&CenterConfig> for LifecyclePolicy {
@@ -65,16 +66,11 @@ pub(crate) fn create_binding(
         options: serde_json::to_vec(options).map_err(|_| PortError::Invalid)?,
         startup_deadline_ms: now_ms
             .checked_add(
-                policy
-                    .startup_timeout_secs
-                    .checked_mul(1000)
-                    .ok_or(PortError::Invalid)?,
+                seconds_to_milliseconds(policy.startup_timeout_secs).ok_or(PortError::Invalid)?,
             )
             .ok_or(PortError::Invalid)?,
-        timeout_ms: timeout_secs.checked_mul(1000).ok_or(PortError::Invalid)?,
-        max_lifetime_ms: policy
-            .max_lifetime_secs
-            .checked_mul(1000)
+        timeout_ms: seconds_to_milliseconds(timeout_secs).ok_or(PortError::Invalid)?,
+        max_lifetime_ms: seconds_to_milliseconds(policy.max_lifetime_secs)
             .ok_or(PortError::Invalid)?,
     })
 }

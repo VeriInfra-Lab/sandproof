@@ -13,6 +13,10 @@ import SandboxModel.Foundations.Composition
 import SandboxModel.Foundations.Observations
 import SandboxModel.Foundations.Identifiers
 import SandboxModel.Foundations.AllocatedNumbers
+import SandboxModel.Foundations.NumberCompleteness
+import SandboxModel.Foundations.Numeric
+import SandboxModel.Foundations.Receipts
+import SandboxModel.Foundations.StreamHistory
 import SandboxModel.Foundations.IdentityDomain
 import SandboxModel.Foundations.Cloning
 import SandboxModel.Foundations.Focused

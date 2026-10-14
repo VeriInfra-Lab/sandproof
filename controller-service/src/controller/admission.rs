@@ -6,6 +6,7 @@ use crate::templates::ComputeLimits;
 use crate::{CrashInjector, CrashPoint, JournalError};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
+use sandproof_protocol::numeric::seconds_to_milliseconds;
 
 pub use crate::host_contract::{
     AdmissionError, AdmissionLimits, CreateOptions, DEFAULT_TIMEOUT_SECS,
@@ -111,9 +112,7 @@ fn checked_deadline(now_ms: i64, seconds: u64) -> Result<i64, AdmissionError> {
     if seconds == 0 {
         return Err(AdmissionError::InvalidTimeout);
     }
-    let milliseconds = seconds
-        .checked_mul(1000)
-        .ok_or(AdmissionError::TimeOverflow)?;
+    let milliseconds = seconds_to_milliseconds(seconds).ok_or(AdmissionError::TimeOverflow)?;
     now_ms
         .checked_add(i64::try_from(milliseconds).map_err(|_| AdmissionError::TimeOverflow)?)
         .ok_or(AdmissionError::TimeOverflow)

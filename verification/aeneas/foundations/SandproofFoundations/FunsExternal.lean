@@ -21,6 +21,14 @@ def core.option.Option.is_none_or {T F : Type}
   | none => .ok true
   | some entry => callback.call_once state entry
 
+@[rust_fun "core::option::{core::option::Option<@T>}::is_some_and"]
+def core.option.Option.is_some_and {T F : Type}
+    (callback : Aeneas.Std.core.ops.function.FnOnce F T Bool)
+    (value : Option T) (state : F) : Result Bool :=
+  match value with
+  | none => .ok false
+  | some entry => callback.call_once state entry
+
 @[simp, rust_fun "core::option::{core::ops::try_trait::Try<core::option::Option<@T>>}::branch"]
 def core.option.Option.Insts.CoreOpsTry_traitTry.branch {T : Type}
     (value : Option T) :
