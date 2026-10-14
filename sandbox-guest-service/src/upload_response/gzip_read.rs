@@ -29,7 +29,7 @@ impl From<GzipReadError> for GzipError {
     }
 }
 impl GzipReadError {
-    pub(super) fn message(self) -> &'static [u8] {
+    pub(crate) fn message(self) -> &'static [u8] {
         match self {
             Self::Truncated => b"unexpected EOF",
             Self::InvalidMember => b"gzip: invalid header",

@@ -16,6 +16,7 @@ use std::{
 };
 
 pub(crate) mod gzip;
+mod gzip_errors;
 mod headers;
 
 struct Meta;

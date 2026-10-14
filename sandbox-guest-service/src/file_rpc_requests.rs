@@ -367,7 +367,7 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
-/// Only observed version/timeout diagnostics have fixed RPC responses.
+/// Observed version/timeout and known gzip diagnostics have fixed RPC responses.
 /// Other classifications remain unmapped; no automatic replay.
 pub struct Failure {
     error: Error,
@@ -375,6 +375,19 @@ pub struct Failure {
     _owner: Owner,
 }
 impl Failure {
+    fn gzip_rejection(&self) -> Option<crate::file_rpc_response::GzipRejection> {
+        match self.error {
+            Error::Compression { stage, error } => {
+                crate::file_rpc_response::GzipRejection::observed(stage, error)
+            }
+            _ => None,
+        }
+    }
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn has_response(&self) -> bool {
+        matches!(self.error, Error::Version(_) | Error::Timeout(_))
+            || self.gzip_rejection().is_some()
+    }
     #[must_use]
     pub const fn error(&self) -> &Error {
         &self.error
@@ -384,8 +397,8 @@ impl Failure {
         self.deadline
     }
 
-    /// Consume a selected POST unary JSON/identity failure and its original
-    /// capacity. Only version/timeout errors have known wire representations.
+    /// Consume a selected POST unary JSON failure and its original capacity.
+    /// Known version/timeout/gzip errors use identity response encoding.
     /// # Errors
     /// Unmapped source failure, response budget, original expiry or lost worker.
     /// Every failure retains the original owner; no fresh deadline is granted.
@@ -394,15 +407,17 @@ impl Failure {
         limits: crate::file_rpc_response::Limits,
     ) -> Result<axum::response::Response, crate::file_rpc_response::Failure> {
         use crate::file_rpc_response::{self, Rejection};
+        let gzip = self.gzip_rejection();
         let Self {
             error,
             deadline,
             _owner: owner,
         } = self;
-        let rejection = match error {
-            Error::Version(error) => Rejection::Version(error),
-            Error::Timeout(error) => Rejection::Timeout(error),
-            error => {
+        let rejection = match (error, gzip) {
+            (Error::Version(error), _) => Rejection::Version(error),
+            (Error::Timeout(error), _) => Rejection::Timeout(error),
+            (_, Some(error)) => Rejection::Gzip(error),
+            (error, None) => {
                 return Err(file_rpc_response::Failure::unclassified(
                     deadline,
                     Arc::new((error, owner)),

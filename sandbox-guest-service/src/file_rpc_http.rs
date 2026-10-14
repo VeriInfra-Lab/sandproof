@@ -145,10 +145,7 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
         let ready = match prepared.decode(method, body).await {
             Ok(ready) => ready,
             Err(failure) => {
-                if matches!(
-                    failure.error(),
-                    file_rpc_requests::Error::Version(_) | file_rpc_requests::Error::Timeout(_)
-                ) {
+                if failure.has_response() {
                     return failure
                         .into_response(inner.response)
                         .await

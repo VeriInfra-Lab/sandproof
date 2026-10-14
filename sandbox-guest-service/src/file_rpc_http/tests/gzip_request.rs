@@ -78,13 +78,7 @@ async fn invalid_compressed_request_never_dispatches_and_releases_capacity_after
         ),
         (compressed(big.as_bytes()), InputError::BodyLimit),
     ] {
-        let failure = f
-            .http
-            .handle(encoded_request("MakeDir", data))
-            .await
-            .unwrap_err();
-        assert_eq!(failure.error(), &Error::Request(expected));
-        assert!(failure.deadline().is_some());
+        let result = f.http.handle(encoded_request("MakeDir", data)).await;
         assert_eq!(f.calls.load(Ordering::SeqCst), 0);
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
         full(&f);
@@ -93,7 +87,34 @@ async fn invalid_compressed_request_never_dispatches_and_releases_capacity_after
             .initialize(br#"{"accessToken":"token","defaultUser":"user"}"#)
             .await
             .unwrap();
-        drop(failure);
+        if expected == InputError::BodyLimit {
+            let failure = result.unwrap_err();
+            assert_eq!(failure.error(), &Error::Request(expected));
+            assert!(failure.deadline().is_some());
+            drop(failure);
+        } else {
+            let response = result.unwrap();
+            assert_eq!(response.status(), 400);
+            assert_eq!(response.headers()["content-type"], "application/json");
+            assert!(!response.headers().contains_key("content-encoding"));
+            let body: serde_json::Value =
+                serde_json::from_slice(&drain(response.into_body()).await).unwrap();
+            assert_eq!(body["code"], "invalid_argument");
+            assert_eq!(
+                body["message"],
+                if matches!(
+                    expected,
+                    InputError::Compression {
+                        error: GzipError::Checksum,
+                        ..
+                    }
+                ) {
+                    "decompress: gzip: invalid checksum"
+                } else {
+                    "decompress: unexpected EOF"
+                }
+            );
+        }
         released(&f).await;
     }
     let mut req = encoded_request("MakeDir", b"invalid gzip".to_vec());
@@ -116,4 +137,32 @@ async fn invalid_compressed_request_never_dispatches_and_releases_capacity_after
     drop(drain(response.into_body()).await);
     released(&f).await;
     assert!(root.path().join("recovered").is_dir());
+}
+
+#[tokio::test]
+async fn gzip_error_encoding_failure_retains_original_deadline_and_both_slots() {
+    let root = tempfile::tempdir().unwrap();
+    let f = fixture(root.path(), 2).await;
+    let failure = f
+        .http
+        .handle(encoded_request("MakeDir", b"invalid gzip header".to_vec()))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        failure.error(),
+        &Error::Response(file_rpc_response::Error::ResponseLimit)
+    );
+    let end = failure.deadline().unwrap();
+    assert!(end <= tokio::time::Instant::now() + Duration::from_secs(5));
+    assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    full(&f);
+    file_full(&f).await;
+    f.session
+        .initialize(br#"{"accessToken":"token","defaultUser":"user"}"#)
+        .await
+        .unwrap();
+    assert_eq!(failure.deadline(), Some(end));
+    drop(failure);
+    released(&f).await;
 }

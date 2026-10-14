@@ -54,6 +54,7 @@ struct Fixture {
     header_rejected: AtomicUsize,
     gzip_responses: AtomicUsize,
     gzip_requests: AtomicUsize,
+    gzip_rejected: AtomicUsize,
     username: String,
 }
 
@@ -79,7 +80,12 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
                 fixture.rejected.fetch_add(1, Ordering::SeqCst);
             } else {
                 assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-                fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
+                if gzip_request {
+                    assert!(!response.headers().contains_key("content-encoding"));
+                    fixture.gzip_rejected.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
+                }
             }
             return response;
         }
@@ -284,6 +290,7 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         header_rejected: AtomicUsize::new(0),
         gzip_responses: AtomicUsize::new(0),
         gzip_requests: AtomicUsize::new(0),
+        gzip_rejected: AtomicUsize::new(0),
         username,
     })
 }
@@ -371,10 +378,8 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
     assert!(status.expect("file SDK deadline").unwrap().success());
     assert_eq!(fixture.seen.load(Ordering::SeqCst), 62);
     assert_eq!(fixture.gzip_responses.load(Ordering::SeqCst), 4);
-    assert_eq!(fixture.gzip_requests.load(Ordering::SeqCst), 4);
-    for client in ["sync", "async"] {
-        assert!(!directory.path().join(client).join("path-refused").exists());
-    }
+    assert_eq!(fixture.gzip_requests.load(Ordering::SeqCst), 14);
+    assert_eq!(fixture.gzip_rejected.load(Ordering::SeqCst), 10);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
@@ -382,6 +387,8 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
     assert_eq!(missing_default.header_rejected.load(Ordering::SeqCst), 0);
     for mode in ["sync", "async"] {
         let dir = directory.path().join(mode);
+        assert!(!dir.join("gzip-refused").exists());
+        assert!(!dir.join("path-refused").exists());
         assert!(!dir.join("auth-refused").exists());
         assert!(!dir.join("timeout-refused").exists());
         assert!(!dir.join("new").exists());

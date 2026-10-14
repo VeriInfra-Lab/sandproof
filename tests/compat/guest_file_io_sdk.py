@@ -1,12 +1,15 @@
 """Pinned SDK against real Rust unary file I/O; owned temporary fixtures only."""
 import asyncio
 import base64
+import gzip
 import json
 import sys
+import httpx
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.compression.gzip import GzipCompression
+from connectrpc._protocol import ConnectWireError
 from e2b.connection_config import ConnectionConfig
 from e2b.envd.client_async import create_rpc_client as async_client
 from e2b.envd.client_sync import create_rpc_client as sync_client
@@ -138,6 +141,35 @@ def accepting_gzip(client_cls, *, send=False):
     return create
 
 
+def gzip_error_cases(root):
+    """Synthetic corrupted inputs; the original Connect client never emits these."""
+    raw = json.dumps({'path': root + '/gzip-refused'}).encode()
+    member = gzip.compress(raw, mtime=0)
+    crc = bytearray(member)
+    crc[-8] ^= 1
+    return [
+        (b'\x1f', 'get decompressor: unexpected EOF'),
+        (b'invalid gzip header', 'get decompressor: gzip: invalid header'),
+        (member[:-1], 'decompress: unexpected EOF'),
+        (bytes(crc), 'decompress: gzip: invalid checksum'),
+        (member + b'invalid gzip member', 'decompress: gzip: invalid header'),
+    ]
+
+
+def gzip_failure(response, expected):
+    assert response.status_code == 400, response.text
+    assert response.headers['content-type'] == 'application/json'
+    assert 'content-encoding' not in response.headers
+    assert int(response.headers['content-length']) == len(response.content)
+    error = ConnectWireError.from_dict(response.json(), response.status_code, Code.UNAVAILABLE).to_exception()
+    assert error.code == Code.INVALID_ARGUMENT, error
+    assert error.message == expected, (error.message, expected)
+
+
+GZIP_ERROR_HEADERS = {**HEADERS, 'content-encoding': 'gzip', 'accept-encoding': 'gzip,identity',
+                      'content-type': 'application/json', 'connect-protocol-version': '1'}
+
+
 def run_sync(settings, root):
     url = settings['url']
     client = sync_client(clients.FilesystemClientSync, url, ConnectionConfig())
@@ -161,6 +193,10 @@ def run_sync(settings, root):
                 except ConnectError as error:
                     failure = error
                 check(response, failure, expected, root, 'stat', request, settings['username'])
+    with httpx.Client(trust_env=False, timeout=10) as transport:
+        for data, expected in gzip_error_cases(root):
+            response = transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=GZIP_ERROR_HEADERS)
+            gzip_failure(response, expected)
     for target, headers, message in account_cases(settings):
         selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
         try:
@@ -202,6 +238,10 @@ async def run_async(settings, root):
                 except ConnectError as error:
                     failure = error
                 check(response, failure, expected, root, 'stat', request, settings['username'])
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as transport:
+        for data, expected in gzip_error_cases(root):
+            response = await transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=GZIP_ERROR_HEADERS)
+            gzip_failure(response, expected)
     for target, headers, message in account_cases(settings):
         selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
         try:
@@ -226,3 +266,4 @@ if __name__ == '__main__':
         run_sync(settings, settings['root'] + '/sync')
         asyncio.run(run_async(settings, settings['root'] + '/async'))
     print('guest real unary files: 60 sync/async file scenarios (including 4 gzip negotiation and 4 explicit generated-client gzip request cases) + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')
+    print('guest unary gzip failures: 10 synthetic sync/async HTTP inputs parsed by the original Connect error parser; not original SDK request encoding')

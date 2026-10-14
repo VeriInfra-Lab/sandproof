@@ -11,7 +11,7 @@ use std::{fmt, sync::Arc};
 use tokio::time::Instant;
 
 mod rejection;
-pub use rejection::{Rejection, rejected};
+pub use rejection::{GzipRejection, Rejection, rejected};
 mod io;
 pub use io::io_failure;
 mod compression;
