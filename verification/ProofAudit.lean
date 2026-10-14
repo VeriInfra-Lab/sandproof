@@ -1,28 +1,11 @@
 import SandboxModel
-import Lean.Util.CollectAxioms
+import SandboxModel.ProofAuditCommand
+import SandboxModel.Foundations.Audit
 
 /-! Audit actual theorem dependencies, including imported libraries.  Source
 text scanning alone cannot detect an unproved assumption hidden in an import.
 The standard logical foundations are allowed; every other dependency fails
 this check.  This inventory certifies the listed proofs, not missing inputs. -/
-
-open Lean Elab Command
-
-syntax (name := auditControllerProof) "#audit_controller_proof " ident : command
-
-@[command_elab auditControllerProof]
-def elabAuditControllerProof : CommandElab := fun stx => do
-  let declName := stx[1].getId
-  let info ← getConstInfo declName
-  match info with
-  | .thmInfo _ => pure ()
-  | _ => throwErrorAt stx "Expected a theorem, found {declName}"
-  let allowed : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
-  let dependencies ← collectAxioms declName
-  for dependency in dependencies do
-    unless allowed.contains dependency do
-      throwErrorAt stx "Proof {declName} depends on unapproved assumption {dependency}"
-  logInfo m!"Checked {declName}: {dependencies.size} standard logical dependencies"
 
 #audit_controller_proof SandboxModel.reachable_protocol_secure
 #audit_controller_proof SandboxModel.step_protocol_secure

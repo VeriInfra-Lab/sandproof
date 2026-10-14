@@ -242,6 +242,26 @@ fn apply_slot(world: &World, input: SlotInput) -> Result<World, MaintenanceRejec
     Ok(next)
 }
 
+fn sandbox_frontier(world: &World) -> Option<u64> {
+    let mut frontier = None;
+    for (id, _) in world.sandboxes.entries() {
+        if frontier.is_none_or(|previous| id.0 > previous) {
+            frontier = Some(id.0);
+        }
+    }
+    frontier
+}
+
+fn workspace_frontier(world: &World) -> Option<u64> {
+    let mut frontier = None;
+    for (id, _) in world.filesystems.entries() {
+        if frontier.is_none_or(|previous| id.0 > previous) {
+            frontier = Some(id.0);
+        }
+    }
+    frontier
+}
+
 /// Reduce maintenance through the same pure controller boundary as lifecycle
 /// work. Service/host integration must durably validate external certificates.
 ///
@@ -268,8 +288,8 @@ pub fn handle_maintenance(
             }
             let mut next = world.clone();
             next.maintenance = Some(MaintenanceState {
-                sandbox_frontier: world.sandboxes.entries().iter().map(|(id, _)| id.0).max(),
-                workspace_frontier: world.filesystems.entries().iter().map(|(id, _)| id.0).max(),
+                sandbox_frontier: sandbox_frontier(world),
+                workspace_frontier: workspace_frontier(world),
                 retained: Store::default(),
                 time_floor: now_ms,
                 max_retained_results: limits.max_retained_results,
@@ -425,6 +445,53 @@ mod tests {
             handle_maintenance(&enabled, MaintenanceInput::ExpireResults { now_ms: 0 }),
             Err(MaintenanceReject::TimeRegression)
         );
+    }
+
+    #[test]
+    fn frontier_queries_match_original_max_and_enable_rejection_order() {
+        for identifiers in [
+            vec![],
+            vec![(0, 0)],
+            vec![(10, 30), (0, 2), (20, 0)],
+            vec![(u64::MAX, 2), (2, u64::MAX), (1, 1)],
+        ] {
+            let mut world = initial_world();
+            for (id, workspace) in identifiers {
+                world = create(&world, id, workspace).unwrap();
+            }
+            let before = world.clone();
+            let expected_sandbox = world.sandboxes.entries().iter().map(|(id, _)| id.0).max();
+            let expected_workspace = world.filesystems.entries().iter().map(|(id, _)| id.0).max();
+            let enable = MaintenanceInput::Enable {
+                limits: limits(),
+                now_ms: 1,
+            };
+            let enabled = handle_maintenance(&world, enable.clone()).unwrap().next;
+            let state = enabled.maintenance_state().unwrap();
+            assert_eq!(state.sandbox_frontier, expected_sandbox);
+            assert_eq!(state.workspace_frontier, expected_workspace);
+            assert_eq!(world, before);
+            let mut invalid = limits();
+            invalid.max_host_slots = 0;
+            let invalid = MaintenanceInput::Enable {
+                limits: invalid,
+                now_ms: 1,
+            };
+            assert_eq!(
+                handle_maintenance(&world, invalid.clone()),
+                Err(MaintenanceReject::InvalidLimits)
+            );
+            assert_eq!(
+                handle_maintenance(&enabled, invalid.clone()),
+                Err(MaintenanceReject::AlreadyEnabled)
+            );
+            let mut down = enabled;
+            down.controller_up = false;
+            assert_eq!(
+                handle_maintenance(&down, invalid),
+                Err(MaintenanceReject::ControllerDown)
+            );
+        }
     }
 }
 
