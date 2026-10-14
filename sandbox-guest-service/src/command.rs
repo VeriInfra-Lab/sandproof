@@ -1,6 +1,7 @@
 //! Owned command execution, independent of an HTTP request. Public selectors,
-//! persistent registration, authorization of later requests and retention TTLs
-//! belong to the future registry. None of these APIs resolve a raw public PID.
+//! authorization of later requests and retention TTLs belong to the future
+//! registry. Durable PID claims can be attached to gated preparation; none of
+//! these APIs resolve a raw public PID to an active command.
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,10 +17,12 @@ use crate::AuthPermit;
 
 mod driver;
 mod preparation;
+mod registration;
 mod streams;
 pub use preparation::{
     AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationSpec,
 };
+pub use registration::{PidRegisteredCommand, PidRegistrar, RegistrationError};
 #[cfg(test)]
 mod tests;
 pub use streams::{CommandOutput, CommandSubscription, OutputEvent};
