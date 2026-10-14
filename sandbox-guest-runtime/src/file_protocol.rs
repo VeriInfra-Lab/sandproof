@@ -10,7 +10,7 @@ use crate::protocol::{ProtocolError, encode_json, null_default, parse, uint32};
 mod content_type;
 pub use content_type::{JsonContentType, json_content_type};
 mod fault;
-pub use fault::{FaultStage, FileFault};
+pub use fault::{FaultContext, FaultStage, FileFault};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {

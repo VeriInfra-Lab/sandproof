@@ -337,7 +337,7 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 42);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 46);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);

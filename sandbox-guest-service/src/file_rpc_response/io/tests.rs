@@ -8,7 +8,15 @@ fn fault(stage: FaultStage, errno: Option<i32>) -> FileFault {
     FileFault {
         stage,
         path: b"/from".to_vec(),
-        destination: Some(b"/to".to_vec()),
+        context: match stage {
+            FaultStage::Rename => Some(FaultContext::RenameDestination(b"/to".to_vec())),
+            FaultStage::WalkStat
+            | FaultStage::WalkOpen
+            | FaultStage::WalkRead
+            | FaultStage::WalkType
+            | FaultStage::WalkEntryStat => Some(FaultContext::WalkRoot(b"/root".to_vec())),
+            _ => None,
+        },
         errno: errno.map(LinuxErrno),
     }
 }
@@ -98,6 +106,97 @@ const CASES: &[(FaultStage, Option<i32>, u16, &str, &str)] = &[
         "internal",
         "failed to chown directory: chown /from: operation not permitted",
     ),
+    (
+        FaultStage::ResolveStat,
+        Some(2),
+        404,
+        "not_found",
+        "path not found: lstat /from: no such file or directory",
+    ),
+    (
+        FaultStage::ResolveStat,
+        Some(13),
+        500,
+        "internal",
+        "error resolving symlink: lstat /from: permission denied",
+    ),
+    (
+        FaultStage::ResolveReadlink,
+        Some(22),
+        500,
+        "internal",
+        "error resolving symlink: readlink /from: invalid argument",
+    ),
+    (
+        FaultStage::ResolveNotDirectory,
+        None,
+        500,
+        "internal",
+        "error resolving symlink: not a directory",
+    ),
+    (
+        FaultStage::ResolveCycle,
+        None,
+        400,
+        "failed_precondition",
+        "cyclic symlink or chain >255 links at \"/from\"",
+    ),
+    (
+        FaultStage::DirectoryStat,
+        Some(2),
+        404,
+        "not_found",
+        "directory not found: stat /from: no such file or directory",
+    ),
+    (
+        FaultStage::DirectoryStat,
+        Some(13),
+        500,
+        "internal",
+        "error getting file info: stat /from: permission denied",
+    ),
+    (
+        FaultStage::DirectoryNotDirectory,
+        None,
+        400,
+        "invalid_argument",
+        "path is not a directory: /from",
+    ),
+    (
+        FaultStage::WalkStat,
+        Some(2),
+        500,
+        "internal",
+        "error reading directory /root: lstat /from: no such file or directory",
+    ),
+    (
+        FaultStage::WalkOpen,
+        Some(13),
+        500,
+        "internal",
+        "error reading directory /root: open /from: permission denied",
+    ),
+    (
+        FaultStage::WalkRead,
+        Some(5),
+        500,
+        "internal",
+        "error reading directory /root: readdirent /from: input/output error",
+    ),
+    (
+        FaultStage::WalkType,
+        Some(13),
+        500,
+        "internal",
+        "error reading directory /root: fstatat /from: permission denied",
+    ),
+    (
+        FaultStage::WalkEntryStat,
+        Some(20),
+        500,
+        "internal",
+        "error reading directory /root: internal: error getting file info: lstat /from: not a directory",
+    ),
 ];
 
 #[tokio::test]
@@ -130,7 +229,9 @@ async fn stage_selects_fixed_envd_message_code_and_headers() {
 async fn escaped_error_budget_missing_observation_and_byte_copies_retain_capacity() {
     let mut diagnostic = fault(FaultStage::Rename, Some(2));
     diagnostic.path = b"/secret\xff\"<>&\n".to_vec();
-    diagnostic.destination = Some("/雪\u{2028}".as_bytes().to_vec());
+    diagnostic.context = Some(FaultContext::RenameDestination(
+        "/雪\u{2028}".as_bytes().to_vec(),
+    ));
     assert!(!format!("{diagnostic:?}").contains("secret"));
     let bytes = payload(&diagnostic, 4096).unwrap();
     let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -150,7 +251,7 @@ async fn escaped_error_budget_missing_observation_and_byte_copies_retain_capacit
         ),
         (
             FileFault {
-                destination: None,
+                context: None,
                 ..diagnostic.clone()
             },
             4096,
@@ -212,4 +313,29 @@ async fn escaped_error_budget_missing_observation_and_byte_copies_retain_capacit
             .unwrap()
             .unwrap(),
     );
+}
+
+#[test]
+fn cycle_quoting_and_context_roles_do_not_invent_missing_paths() {
+    let mut cycle = fault(FaultStage::ResolveCycle, None);
+    cycle.path = b"/q\xff\"\n".to_vec();
+    let bytes = payload(&cycle, 4096).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["message"],
+        r#"cyclic symlink or chain >255 links at "/q\xff\"\n""#
+    );
+    assert_eq!(payload(&cycle, bytes.len() - 1), Err(Error::ResponseLimit));
+    for mut observed in [
+        fault(FaultStage::Rename, Some(2)),
+        fault(FaultStage::WalkOpen, Some(13)),
+        cycle,
+    ] {
+        observed.context = match observed.stage {
+            FaultStage::Rename => Some(FaultContext::WalkRoot(b"/wrong".to_vec())),
+            FaultStage::WalkOpen => None,
+            _ => Some(FaultContext::RenameDestination(b"/wrong".to_vec())),
+        };
+        assert_eq!(payload(&observed, 4096), Err(Error::UnclassifiedFault));
+    }
 }

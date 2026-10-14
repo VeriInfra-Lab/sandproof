@@ -12,10 +12,6 @@ pub(super) fn text(value: &OsStr) -> Result<String, FileError> {
     value.to_str().map(str::to_owned).ok_or(FileError::Internal)
 }
 
-pub(super) fn entry(path: &Path, limits: FileLimits) -> Result<Entry, FileError> {
-    entry_detailed(path, limits).map_err(|failure| failure.error)
-}
-
 pub(super) fn entry_detailed(path: &Path, limits: FileLimits) -> Result<Entry, FileFailure> {
     let info = fs::symlink_metadata(path)
         .map_err(|error| FileFailure::io(FaultStage::EntryStat, path, None, &error))?;

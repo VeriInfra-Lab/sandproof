@@ -156,7 +156,7 @@ pub fn execute(
     execute_detailed(request, owner, limits).map_err(|failure| failure.error)
 }
 
-/// Execute once and preserve observed failures from `Stat`, `MakeDir` and `Move`.
+/// Execute once and preserve observed failures from `Stat`, `MakeDir`, `Move` and `ListDir`.
 /// Other failures retain their category without inventing a public message.
 /// # Errors
 /// Same categories as execute, with at most two bounded original paths.
@@ -240,8 +240,7 @@ pub fn execute_detailed(
         }
         Request::ListDir { path, depth } => {
             return directory::list(Path::new(path), (*depth).max(1), &mut budget)
-                .map(FileResponse::Entries)
-                .map_err(FileFailure::from);
+                .map(FileResponse::Entries);
         }
         Request::Remove(p) => {
             remove::remove(Path::new(p), &mut budget)?;
@@ -250,16 +249,4 @@ pub fn execute_detailed(
     };
     budget.retain(&entry)?;
     Ok(FileResponse::Entry(entry))
-}
-
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "map_err consumes the original I/O error"
-)]
-fn io_error(error: std::io::Error) -> FileError {
-    if error.kind() == std::io::ErrorKind::NotFound {
-        FileError::NotFound
-    } else {
-        FileError::Internal
-    }
 }

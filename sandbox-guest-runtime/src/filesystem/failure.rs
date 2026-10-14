@@ -1,5 +1,5 @@
 use super::{FileError, directory::EnsureError, directory::EnsureOperation, transfer::linux_errno};
-use crate::file_protocol::{FaultStage, FileFault};
+use crate::file_protocol::{FaultContext, FaultStage, FileFault};
 use std::{os::unix::ffi::OsStrExt, path::Path};
 
 /// Coarse failures remain available to existing component consumers. Detailed
@@ -27,7 +27,8 @@ impl FileFailure {
             fault: Some(FileFault {
                 stage,
                 path: path.as_os_str().as_bytes().to_vec(),
-                destination: destination.map(|p| p.as_os_str().as_bytes().to_vec()),
+                context: destination
+                    .map(|p| FaultContext::RenameDestination(p.as_os_str().as_bytes().to_vec())),
                 errno,
             }),
         }
@@ -39,14 +40,46 @@ impl FileFailure {
         destination: Option<&Path>,
         error: &std::io::Error,
     ) -> Self {
-        let code = if matches!(stage, FaultStage::EntryStat | FaultStage::Rename)
-            && error.kind() == std::io::ErrorKind::NotFound
+        let code = if matches!(
+            stage,
+            FaultStage::EntryStat
+                | FaultStage::Rename
+                | FaultStage::ResolveStat
+                | FaultStage::ResolveReadlink
+                | FaultStage::DirectoryStat
+        ) && error.kind() == std::io::ErrorKind::NotFound
         {
             FileError::NotFound
         } else {
             FileError::Internal
         };
         Self::observed(code, stage, path, destination, linux_errno(error))
+    }
+
+    pub(super) fn walk(
+        stage: FaultStage,
+        path: &Path,
+        root: &Path,
+        error: &std::io::Error,
+    ) -> Self {
+        Self {
+            error: FileError::Internal,
+            fault: Some(FileFault {
+                stage,
+                path: path.as_os_str().as_bytes().to_vec(),
+                context: Some(FaultContext::WalkRoot(root.as_os_str().as_bytes().to_vec())),
+                errno: linux_errno(error),
+            }),
+        }
+    }
+
+    pub(super) fn in_walk(mut self, root: &Path) -> Self {
+        self.error = FileError::Internal;
+        if let Some(fault) = &mut self.fault {
+            fault.stage = FaultStage::WalkEntryStat;
+            fault.context = Some(FaultContext::WalkRoot(root.as_os_str().as_bytes().to_vec()));
+        }
+        self
     }
 }
 impl From<EnsureError> for FileFailure {
