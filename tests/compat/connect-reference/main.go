@@ -210,8 +210,9 @@ func main() {
 			req.Header.Set("X-Fixture-Username", hex.EncodeToString(data))
 		} else if mode == "H" {
 			var fields struct {
-				Version []string `json:"version"`
-				Timeout []string `json:"timeout"`
+				Version     []string `json:"version"`
+				Timeout     []string `json:"timeout"`
+				Compression []string `json:"compression"`
 			}
 			if err := json.Unmarshal(data, &fields); err != nil {
 				panic(err)
@@ -219,6 +220,7 @@ func main() {
 			for name, values := range map[string][]string{
 				"Connect-Protocol-Version": fields.Version,
 				"Connect-Timeout-Ms":       fields.Timeout,
+				"Content-Encoding":         fields.Compression,
 			} {
 				req.Header.Del(name)
 				for _, value := range values {

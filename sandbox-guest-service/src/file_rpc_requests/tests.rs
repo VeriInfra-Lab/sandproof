@@ -18,6 +18,7 @@ use std::{
 pub(crate) mod gzip;
 mod gzip_errors;
 mod headers;
+mod unsupported_compression;
 
 struct Meta;
 impl MetadataSource for Meta {

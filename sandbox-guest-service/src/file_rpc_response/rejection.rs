@@ -18,6 +18,7 @@ pub enum Rejection {
     Timeout(InvalidTimeout),
     PathExpansion(PathExpansion),
     Gzip(GzipRejection),
+    UnsupportedCompression(crate::file_rpc_requests::UnsupportedCompression),
 }
 
 /// Send an observed account/header/path/gzip failure for a selected unary JSON request
@@ -36,6 +37,7 @@ pub async fn rejected(
 ) -> Result<Response, Failure> {
     let accepts_gzip = !matches!(rejection, Rejection::ExplicitUser(_));
     let status = match &rejection {
+        Rejection::UnsupportedCompression(_) => StatusCode::NOT_IMPLEMENTED,
         Rejection::ExplicitUser(_) | Rejection::DefaultUser(_) => StatusCode::UNAUTHORIZED,
         Rejection::Version(_)
         | Rejection::Timeout(_)
@@ -51,6 +53,7 @@ pub async fn rejected(
 fn payload(rejection: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     go_json::bounded(limit as u64, |put| {
         put(match rejection {
+            Rejection::UnsupportedCompression(_) => br#"{"code":"unimplemented","message":""#,
             Rejection::ExplicitUser(_) | Rejection::DefaultUser(_) => {
                 br#"{"code":"unauthenticated","message":""#
             }
@@ -63,6 +66,11 @@ fn payload(rejection: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
         // never allocate an unbounded intermediate quoted error message.
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match rejection {
+            Rejection::UnsupportedCompression(encoding) => {
+                message(b"unknown compression ")?;
+                go_quote::quoted(encoding.value(), &mut message)?;
+                message(b": supported encodings are gzip")?;
+            }
             Rejection::Gzip(error) => {
                 for part in error.parts() {
                     message(part)?;

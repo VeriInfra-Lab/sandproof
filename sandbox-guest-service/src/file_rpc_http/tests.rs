@@ -19,6 +19,7 @@ use std::{
 };
 
 struct Meta;
+mod unsupported_compression;
 impl MetadataSource for Meta {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {
         Ok(Metadata {
@@ -327,14 +328,14 @@ async fn route_auth_protocol_and_account_rejections_do_not_read_body_or_mutate_f
             .initialize(br#"{"accessToken":"token","defaultUser":"user"}"#)
             .await
             .unwrap();
-        if case >= 6 {
+        if case >= 4 {
             let response = result.unwrap();
             assert_eq!(
                 response.status(),
-                if case == 7 {
-                    StatusCode::UNAUTHORIZED
-                } else {
-                    StatusCode::BAD_REQUEST
+                match case {
+                    4 | 5 => StatusCode::NOT_IMPLEMENTED,
+                    7 => StatusCode::UNAUTHORIZED,
+                    _ => StatusCode::BAD_REQUEST,
                 }
             );
             drain(response.into_body()).await;
@@ -347,7 +348,7 @@ async fn route_auth_protocol_and_account_rejections_do_not_read_body_or_mutate_f
                 )),
                 2 => Error::Selection(SelectionError::Method),
                 3 => Error::Selection(SelectionError::ContentType),
-                _ => Error::Selection(SelectionError::RequestCompression),
+                _ => unreachable!(),
             };
             assert_eq!(failure.error(), &expected);
             assert!(!format!("{failure:?}").contains("private body"));

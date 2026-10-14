@@ -27,9 +27,9 @@ mod selection;
 pub use compression::CompressionStage;
 mod timeout;
 mod version;
-pub use selection::SelectionError;
+pub use selection::{SelectionError, UnsupportedCompression};
 #[cfg(any(target_os = "linux", test))]
-pub(crate) use selection::response_encoding;
+pub(crate) use selection::{response_encoding, select as select_http};
 pub use timeout::{InvalidTimeout, TimeoutReason};
 pub use version::InvalidVersion;
 #[cfg(test)]
@@ -170,14 +170,6 @@ impl Authenticated {
         .flatten()
     }
 
-    #[cfg(any(target_os = "linux", test))]
-    pub(crate) fn select_http(
-        &self,
-        method: &axum::http::Method,
-        codec: Option<file_protocol::JsonContentType>,
-    ) -> Result<file_protocol::JsonContentType, SelectionError> {
-        selection::select(method, &self.headers, codec)
-    }
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.admitted.deadline
@@ -203,25 +195,26 @@ impl Authenticated {
     }
 
     /// Decode a selected POST unary JSON file method after Basic middleware and
-    /// HTTP/codec/compression selection (identity or gzip; response is separate).
+    /// HTTP/codec selection. Compression is checked here before version errors.
     /// The trusted HTTP framing layer supplies the unconsumed Body; an exact
     /// size hint is its length, never a reparse of Content-Length. Applies the
     /// fixed Connect timeout now, capped by the admission's original deadline.
     /// # Errors
-    /// Invalid version/timeout, body length/frame/trailer/transport failures, malformed
-    /// JSON, gzip header/body failures, unknown method, expiry or lost decoder.
+    /// Unsupported compression, invalid version/timeout, body framing/transport,
+    /// malformed JSON, gzip header/body, unknown method, expiry or lost decoder.
     /// No file effects occur here.
     pub async fn decode(self, method: &str, body: Body) -> Result<Decoded, Failure> {
         let mut deadline = self.admitted.deadline;
         let owner: Owner = self.admitted.lease.clone();
         let result = async {
             check_deadline(deadline)?;
-            // Connect sets a valid timeout before NewConn, but reports a bad
-            // version before a timeout parse failure. Neither reads the body.
+            // Connect sets a valid timeout before NewConn, then reports unknown
+            // compression before version and timeout parse failures. No body read.
             let timeout = timeout::deadline(&self.headers, Instant::now(), deadline);
             if let Ok(end) = timeout {
                 deadline = end;
             }
+            selection::check_compression(&self.headers).map_err(Error::UnsupportedCompression)?;
             version::check(&self.headers).map_err(Error::Version)?;
             deadline = timeout.map_err(Error::Timeout)?;
             check_deadline(deadline)?;
@@ -344,6 +337,7 @@ pub enum Error {
     Authorization(ServiceError),
     Version(InvalidVersion),
     Timeout(InvalidTimeout),
+    UnsupportedCompression(UnsupportedCompression),
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
@@ -367,7 +361,7 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
-/// Observed version/timeout and known gzip diagnostics have fixed RPC responses.
+/// Observed compression/version/timeout and known gzip errors have fixed responses.
 /// Other classifications remain unmapped; no automatic replay.
 pub struct Failure {
     error: Error,
@@ -385,8 +379,10 @@ impl Failure {
     }
     #[cfg(any(target_os = "linux", test))]
     pub(crate) fn has_response(&self) -> bool {
-        matches!(self.error, Error::Version(_) | Error::Timeout(_))
-            || self.gzip_rejection().is_some()
+        matches!(
+            self.error,
+            Error::Version(_) | Error::Timeout(_) | Error::UnsupportedCompression(_)
+        ) || self.gzip_rejection().is_some()
     }
     #[must_use]
     pub const fn error(&self) -> &Error {
@@ -398,7 +394,7 @@ impl Failure {
     }
 
     /// Consume a selected POST unary JSON failure and its original capacity.
-    /// Known version/timeout/gzip errors use identity response encoding.
+    /// Known compression/version/timeout/gzip errors use identity response encoding.
     /// # Errors
     /// Unmapped source failure, response budget, original expiry or lost worker.
     /// Every failure retains the original owner; no fresh deadline is granted.
@@ -416,6 +412,7 @@ impl Failure {
         let rejection = match (error, gzip) {
             (Error::Version(error), _) => Rejection::Version(error),
             (Error::Timeout(error), _) => Rejection::Timeout(error),
+            (Error::UnsupportedCompression(error), _) => Rejection::UnsupportedCompression(error),
             (_, Some(error)) => Rejection::Gzip(error),
             (error, None) => {
                 return Err(file_rpc_response::Failure::unclassified(

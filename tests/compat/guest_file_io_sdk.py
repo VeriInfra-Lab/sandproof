@@ -156,18 +156,25 @@ def gzip_error_cases(root):
     ]
 
 
-def gzip_failure(response, expected):
-    assert response.status_code == 400, response.text
+def connect_failure(response, expected, *, status=400, code=Code.INVALID_ARGUMENT):
+    assert response.status_code == status, response.text
     assert response.headers['content-type'] == 'application/json'
     assert 'content-encoding' not in response.headers
     assert int(response.headers['content-length']) == len(response.content)
     error = ConnectWireError.from_dict(response.json(), response.status_code, Code.UNAVAILABLE).to_exception()
-    assert error.code == Code.INVALID_ARGUMENT, error
+    assert error.code == code, error
     assert error.message == expected, (error.message, expected)
 
 
 GZIP_ERROR_HEADERS = {**HEADERS, 'content-encoding': 'gzip', 'accept-encoding': 'gzip,identity',
                       'content-type': 'application/json', 'connect-protocol-version': '1'}
+
+
+def unsupported_encoding_cases():
+    for encoding in ['br', 'GZIP']:
+        headers = {**GZIP_ERROR_HEADERS, 'content-encoding': encoding,
+                   'connect-protocol-version': '2', 'connect-timeout-ms': 'invalid'}
+        yield headers, f'unknown compression "{encoding}": supported encodings are gzip'
 
 
 def run_sync(settings, root):
@@ -196,7 +203,10 @@ def run_sync(settings, root):
     with httpx.Client(trust_env=False, timeout=10) as transport:
         for data, expected in gzip_error_cases(root):
             response = transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=GZIP_ERROR_HEADERS)
-            gzip_failure(response, expected)
+            connect_failure(response, expected)
+        for headers, expected in unsupported_encoding_cases():
+            response = transport.post(url + '/filesystem.Filesystem/MakeDir', json={'path': root + '/encoding-refused'}, headers=headers)
+            connect_failure(response, expected, status=501, code=Code.UNIMPLEMENTED)
     for target, headers, message in account_cases(settings):
         selected = sync_client(clients.FilesystemClientSync, target, ConnectionConfig())
         try:
@@ -241,7 +251,10 @@ async def run_async(settings, root):
     async with httpx.AsyncClient(trust_env=False, timeout=10) as transport:
         for data, expected in gzip_error_cases(root):
             response = await transport.post(url + '/filesystem.Filesystem/MakeDir', content=data, headers=GZIP_ERROR_HEADERS)
-            gzip_failure(response, expected)
+            connect_failure(response, expected)
+        for headers, expected in unsupported_encoding_cases():
+            response = await transport.post(url + '/filesystem.Filesystem/MakeDir', json={'path': root + '/encoding-refused'}, headers=headers)
+            connect_failure(response, expected, status=501, code=Code.UNIMPLEMENTED)
     for target, headers, message in account_cases(settings):
         selected = async_client(clients.FilesystemClient, target, ConnectionConfig())
         try:
@@ -267,3 +280,4 @@ if __name__ == '__main__':
         asyncio.run(run_async(settings, settings['root'] + '/async'))
     print('guest real unary files: 60 sync/async file scenarios (including 4 gzip negotiation and 4 explicit generated-client gzip request cases) + 10 account scenarios + 2 timeout rejections passed; no Go HTTP service or VM')
     print('guest unary gzip failures: 10 synthetic sync/async HTTP inputs parsed by the original Connect error parser; not original SDK request encoding')
+    print('guest unary unsupported encoding: 4 synthetic sync/async HTTP inputs parsed by the original Connect error parser; before invalid version/timeout')

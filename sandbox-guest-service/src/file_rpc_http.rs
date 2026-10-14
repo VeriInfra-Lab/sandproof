@@ -116,7 +116,7 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
         // Determine response format without returning a protocol rejection yet:
         // the original explicit Basic middleware must still run first.
         let codec = authenticated.json_codec();
-        let selection = authenticated.select_http(&parts.method, codec);
+        let selection = file_rpc_requests::select_http(&parts.method, codec);
         let encoding = file_rpc_requests::response_encoding(authenticated.headers());
         let prepared = match inner
             .files

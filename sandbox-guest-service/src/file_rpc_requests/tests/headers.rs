@@ -18,7 +18,7 @@ async fn admitted_selection_uses_first_media_type_without_changing_headers_or_de
     let codec = auth.json_codec();
     assert_eq!(codec, Some(file_protocol::JsonContentType::Utf8));
     assert_eq!(
-        auth.select_http(&axum::http::Method::POST, codec),
+        select_http(&axum::http::Method::POST, codec),
         Ok(file_protocol::JsonContentType::Utf8)
     );
     assert_eq!(auth.headers(), &h);

@@ -55,7 +55,25 @@ struct Fixture {
     gzip_responses: AtomicUsize,
     gzip_requests: AtomicUsize,
     gzip_rejected: AtomicUsize,
+    compression_rejected: AtomicUsize,
     username: String,
+}
+
+fn record_prepared_rejection(fixture: &Fixture, response: &Response, gzip_request: bool) {
+    if response.status() == StatusCode::UNAUTHORIZED {
+        fixture.rejected.fetch_add(1, Ordering::SeqCst);
+    } else if response.status() == StatusCode::NOT_IMPLEMENTED {
+        assert!(!response.headers().contains_key("content-encoding"));
+        fixture.compression_rejected.fetch_add(1, Ordering::SeqCst);
+    } else {
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        if gzip_request {
+            assert!(!response.headers().contains_key("content-encoding"));
+            fixture.gzip_rejected.fetch_add(1, Ordering::SeqCst);
+        } else {
+            fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 }
 
 async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
@@ -76,17 +94,7 @@ async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) ->
     let request = match fixture.http.prepare(request).await.unwrap() {
         Prepared::Ready(ready) => ready,
         Prepared::Response(response) => {
-            if response.status() == StatusCode::UNAUTHORIZED {
-                fixture.rejected.fetch_add(1, Ordering::SeqCst);
-            } else {
-                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-                if gzip_request {
-                    assert!(!response.headers().contains_key("content-encoding"));
-                    fixture.gzip_rejected.fetch_add(1, Ordering::SeqCst);
-                } else {
-                    fixture.header_rejected.fetch_add(1, Ordering::SeqCst);
-                }
-            }
+            record_prepared_rejection(&fixture, &response, gzip_request);
             return response;
         }
     };
@@ -291,6 +299,7 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         gzip_responses: AtomicUsize::new(0),
         gzip_requests: AtomicUsize::new(0),
         gzip_rejected: AtomicUsize::new(0),
+        compression_rejected: AtomicUsize::new(0),
         username,
     })
 }
@@ -376,18 +385,24 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
+    check_results(directory.path(), &fixture, &missing_default);
+}
+
+fn check_results(root: &Path, fixture: &Fixture, missing_default: &Fixture) {
     assert_eq!(fixture.seen.load(Ordering::SeqCst), 62);
     assert_eq!(fixture.gzip_responses.load(Ordering::SeqCst), 4);
     assert_eq!(fixture.gzip_requests.load(Ordering::SeqCst), 14);
     assert_eq!(fixture.gzip_rejected.load(Ordering::SeqCst), 10);
+    assert_eq!(fixture.compression_rejected.load(Ordering::SeqCst), 4);
     assert_eq!(fixture.rejected.load(Ordering::SeqCst), 6);
     assert_eq!(fixture.header_rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.seen.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.rejected.load(Ordering::SeqCst), 2);
     assert_eq!(missing_default.header_rejected.load(Ordering::SeqCst), 0);
     for mode in ["sync", "async"] {
-        let dir = directory.path().join(mode);
+        let dir = root.join(mode);
         assert!(!dir.join("gzip-refused").exists());
+        assert!(!dir.join("encoding-refused").exists());
         assert!(!dir.join("path-refused").exists());
         assert!(!dir.join("auth-refused").exists());
         assert!(!dir.join("timeout-refused").exists());
