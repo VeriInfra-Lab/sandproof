@@ -18,7 +18,7 @@ use axum::{
     Router,
     body::Body,
     extract::{OriginalUri, State},
-    http::HeaderMap,
+    http::{HeaderMap, Method},
     response::{IntoResponse, Response},
     routing::post,
 };
@@ -35,7 +35,7 @@ use sandproof_guest_service::{
         AdmissionLimits, CommandBodyLimits, CommandOwners, ManagedCommand, OwnerLimits,
         PidRegistrar, PidRegistry, RegistryError, RegistryLimits,
     },
-    command_requests::{self, CommandRequests, StartPreparation},
+    command_requests::{self, CommandRequests, StartPreparation, http::Rpc},
     file_upload::HeaderLimits,
     upload_body::HttpBodyLimits,
 };
@@ -216,17 +216,16 @@ async fn dispatch(
     headers: HeaderMap,
     body: Body,
 ) -> Response {
-    let method = match uri.path() {
-        "/process.Process/Start" => "Start",
-        "/process.Process/Connect" => "Connect",
-        "/process.Process/List" => "List",
-        "/process.Process/SendInput" => "SendInput",
-        "/process.Process/CloseStdin" => "CloseStdin",
-        "/process.Process/SendSignal" => "SendSignal",
-        "/process.Process/Update" => "Update",
+    let rpc = match uri.path() {
+        "/process.Process/Start" => Rpc::Start,
+        "/process.Process/Connect" => Rpc::Connect,
+        "/process.Process/List" => Rpc::List,
+        "/process.Process/SendInput" => Rpc::SendInput,
+        "/process.Process/CloseStdin" => Rpc::CloseStdin,
+        "/process.Process/SendSignal" => Rpc::SendSignal,
+        "/process.Process/Update" => Rpc::Update,
         _ => panic!("unexpected fixture method"),
     };
-    let received = Instant::now();
     let prepared = fixture
         .requests
         .admit()
@@ -237,18 +236,17 @@ async fn dispatch(
         .prepare(&fixture.accounts, settings().limits)
         .await
         .unwrap();
-    let stream = matches!(method, "Start" | "Connect");
+    let stream = rpc.is_stream();
     selected_json(prepared.headers(), stream);
-    let ready = prepared
-        .decode(method, body, received + Duration::from_secs(10))
-        .await
-        .unwrap();
+    let selected = prepared.select_json(&Method::POST, rpc).unwrap();
+    let content_type = selected.content_type();
+    let ready = selected.decode_identity(body).await.unwrap();
     fixture.calls.fetch_add(1, Ordering::SeqCst);
     let limits = CommandBodyLimits {
         message_bytes: 4096,
         keepalive: Duration::from_secs(5),
     };
-    let reply = if method == "Start" {
+    let reply = if rpc == Rpc::Start {
         assert_eq!(ready.request(), &fixture.expected);
         assert!(!fixture.started.swap(true, Ordering::SeqCst));
         let gates = fixture.directory.path().join("gates");
@@ -289,18 +287,7 @@ async fn dispatch(
         ready.execute_pid(&fixture.registry, limits).await.unwrap()
     };
     assert_eq!(reply.is_stream(), stream);
-    (
-        [(
-            "content-type",
-            if stream {
-                "application/connect+json"
-            } else {
-                "application/json"
-            },
-        )],
-        reply.into_body(),
-    )
-        .into_response()
+    ([("content-type", content_type)], reply.into_body()).into_response()
 }
 
 fn selected_json(headers: &HeaderMap, stream: bool) {

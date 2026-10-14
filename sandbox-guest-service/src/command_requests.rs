@@ -36,6 +36,8 @@ pub use start::StartPreparation;
 #[cfg(test)]
 mod tests;
 
+pub mod http;
+
 /// Explicit component budgets. Wire bytes include the five-byte Start/Connect
 /// envelope; decoded JSON and input bytes have no larger budget. Socket/header
 /// allocation before admission is bounded separately by the listener.

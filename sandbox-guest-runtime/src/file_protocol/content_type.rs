@@ -27,13 +27,21 @@ pub fn json_content_type(
     value: &str,
     limit: usize,
 ) -> Result<Option<JsonContentType>, ProtocolError> {
+    select(value, limit, "application/json")
+}
+
+pub(crate) fn select(
+    value: &str,
+    limit: usize,
+    expected: &str,
+) -> Result<Option<JsonContentType>, ProtocolError> {
     if limit == 0 || limit > isize::MAX as usize / 16 || value.len() > limit {
         return Err(ProtocolError::ResourceExhausted);
     }
     let Ok((kind, params)) = multipart::media_type(value) else {
         return Ok(None);
     };
-    if kind != "application/json" {
+    if kind != expected {
         return Ok(None);
     }
     Ok(if params.is_empty() {

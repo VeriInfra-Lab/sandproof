@@ -18,7 +18,7 @@ pub enum DecodeFailure {
     Json(JsonError),
 }
 
-mod content_type;
+pub(crate) mod content_type;
 pub use content_type::{JsonContentType, json_content_type};
 mod fault;
 pub use fault::{FaultContext, FaultStage, FileFault};

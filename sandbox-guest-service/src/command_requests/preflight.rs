@@ -5,7 +5,7 @@ use sandproof_guest_runtime::accounts::Account;
 use std::sync::Arc;
 
 pub struct Prepared {
-    authenticated: Authenticated,
+    pub(super) authenticated: Authenticated,
     // Preserve the exact explicit account for Start context composition.
     // PID operations don't switch credentials or refresh this lookup.
     account: Option<Account>,

@@ -177,6 +177,8 @@ func main() {
 			target, body = requestEndpoint(data)
 		case "M":
 			target, body = methodEndpoint(data)
+		case "V":
+			target, body = commandHeaderEndpoint(data)
 		case "P":
 			target, body = propertyEndpoint(data), []byte("{}")
 		case "A":
@@ -216,6 +218,9 @@ func main() {
 		}
 		if mode == "M" {
 			methodHeaders(req, data)
+		}
+		if mode == "V" {
+			commandHeaders(req, data)
 		}
 		if mode == "G" || mode == "Z" {
 			req.Header.Del("Accept-Encoding")
@@ -272,6 +277,13 @@ func main() {
 		}
 		if mode == "O" {
 			fmt.Fprintln(out, commandResponseObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "V" {
+			fmt.Fprintln(out, commandHeaderObservation(res, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}

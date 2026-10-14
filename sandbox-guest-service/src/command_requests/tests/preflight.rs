@@ -12,6 +12,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[path = "start.rs"]
 mod start;
 
+#[path = "http.rs"]
+mod http;
+
 struct Accounts(Arc<AtomicUsize>);
 impl AccountSource for Accounts {
     fn lookup(&self, name: &str) -> Result<Account, AccountError> {

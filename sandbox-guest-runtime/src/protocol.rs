@@ -16,6 +16,29 @@ mod request_json;
 use crate::file_protocol::request_json::{prepare_command, uint32};
 use request_json::{bytes, envs, signal};
 
+pub use crate::file_protocol::JsonContentType;
+
+/// Select only the fixed Connect JSON codecs for a known unary/stream method.
+/// None means unselected, not an HTTP rejection of other original protocols.
+/// Complete request headers must be bounded before this MIME allocation.
+/// # Errors
+/// Invalid or exceeded field budget.
+pub fn json_content_type(
+    value: &str,
+    limit: usize,
+    stream: bool,
+) -> Result<Option<JsonContentType>, ProtocolError> {
+    crate::file_protocol::content_type::select(
+        value,
+        limit,
+        if stream {
+            "application/connect+json"
+        } else {
+            "application/json"
+        },
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProtocolError {
     InvalidArgument,
