@@ -94,6 +94,9 @@ impl fmt::Display for InvalidConfiguration {
 impl std::error::Error for InvalidConfiguration {}
 
 impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
+    pub(crate) fn shares_session(&self, session: &Session<M>) -> bool {
+        self.inner.session.shares_state(session)
+    }
     /// Assemble fixed resources without opening sockets or starting processes.
     /// Worker paths and process/preparation budgets are still checked by the
     /// original preparation component before it spawns a worker.

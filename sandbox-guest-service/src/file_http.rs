@@ -56,6 +56,9 @@ impl<M, S, Z> Clone for FileHttp<M, S, Z> {
 }
 
 impl<M: MetadataSource, S: AccountSource, Z: LocalZone + Send + Sync + 'static> FileHttp<M, S, Z> {
+    pub(crate) fn shares_session(&self, session: &Session<M>) -> bool {
+        self.inner.session.shares_state(session)
+    }
     #[must_use]
     pub fn new(
         session: Session<M>,

@@ -9,6 +9,8 @@ use sandproof_guest_service::command_http::{
 mod end_stream;
 #[path = "framing_http.rs"]
 mod framing;
+#[path = "guest_http.rs"]
+mod guest;
 #[path = "json_http.rs"]
 mod json_errors;
 

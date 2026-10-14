@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
-//! Guest service composition under development. These initialization routes
-//! are not an installed envd replacement. Command/file registration, account
-//! integration and immutable-template integration remain separate obligations.
-//! The bounded listener is explicitly configured by its caller; health does
-//! not certify authorization or readiness.
+//! Guest service composition under development. `GuestHttp` combines existing
+//! initialization, command and file handlers with one shared session and an
+//! explicitly configured bounded listener. It does not provision PID state or
+//! install an envd replacement; trusted configuration and immutable-template
+//! integration remain separate obligations. Health does not certify readiness.
 
 pub mod command_requests;
 mod connect_timeout;
@@ -42,6 +42,8 @@ pub mod file_rpc_http;
 pub mod file_transfer;
 #[cfg(target_os = "linux")]
 pub mod files;
+#[cfg(target_os = "linux")]
+pub mod guest_http;
 mod http;
 #[cfg(target_os = "linux")]
 mod metadata;
