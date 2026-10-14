@@ -14,6 +14,7 @@ use crate::connect_timeout::InvalidTimeout;
 
 #[cfg(any(target_os = "linux", test))]
 pub mod account;
+pub mod authorization;
 pub mod reply;
 #[cfg(test)]
 mod tests;

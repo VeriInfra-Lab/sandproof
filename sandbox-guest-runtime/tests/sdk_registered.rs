@@ -230,7 +230,7 @@ async fn dispatch(
         .requests
         .admit()
         .unwrap()
-        .authenticate(&fixture.session, headers)
+        .authenticate_http(&fixture.session, &Method::POST, headers)
         .await
         .unwrap()
         .prepare_http(&Method::POST, &fixture.accounts, settings().limits)

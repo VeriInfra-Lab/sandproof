@@ -251,6 +251,7 @@ func jsonError(w http.ResponseWriter, code int, err error) {
 func rpcAuthorizationHTTP(data []byte) string {
 	var input struct {
 		Method  string
+		Path    string
 		Headers []string
 	}
 	if err := json.Unmarshal(data, &input); err != nil {
@@ -261,7 +262,10 @@ func rpcAuthorizationHTTP(data []byte) string {
 		panic("reference token rejection reached protected handler")
 	})))
 	defer server.Close()
-	req, err := http.NewRequest(input.Method, server.URL+"/filesystem.Filesystem/MakeDir", strings.NewReader("invalid JSON"))
+	if input.Path == "" {
+		input.Path = "/filesystem.Filesystem/MakeDir"
+	}
+	req, err := http.NewRequest(input.Method, server.URL+input.Path, strings.NewReader("invalid JSON"))
 	if err != nil {
 		panic(err)
 	}

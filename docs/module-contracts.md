@@ -383,6 +383,8 @@ live 只取已启动未终结的原控制句柄，connectable 另允许保留期
 
 [命令请求准入与 PID 分派](../sandbox-guest-service/src/command_requests.rs)增加独立请求池：在 token、Basic 账户等待和正文读取前无队列占额，保存原绝对期限；逐项头部、单帧/总字节、帧数及 trailers 先限额，再收集单个已选定的 identity JSON 请求。Start/Connect 保留原五字节 envelope，不能把压缩帧当 JSON。显式 Basic 账户先于协议解码查询，缺省/畸形 Basic 的默认账户查询留给 Start；账户来源仍由可信装配提供。阻塞查询和 JSON 解码取消后，原授权与请求名额持续到实际闭包退出；账户池自己的期限只能缩短原期限，调用方提供的已评估协议期限也只能缩短原期限。Ready 保留不可替换的原请求、授权和已选账户。
 
+[命令 token 错误响应](../sandbox-guest-service/src/command_requests/http/authorization.rs)由 Admitted::authenticate_http 保留原方法，执行同一头预算及 Session 鉴权；仅真实 Authorization(Unauthenticated) 消费为外层 API 的 401、数字 code/message JSON、UTF-8 类型、nosniff 和末尾换行。它在 Basic、方法/压缩/版本/期限解释和正文读取之前，不沿 Connect 流或 gzip 规则；未初始化及重复 token 的本地拒绝政策不变。HEAD 同样检查完整载荷限额，保留长度头后抑制正文。共享原文件 token 发送器，不复制错误文本；编码/到期失败和最后字节副本保留原请求名额、分类及期限，完成的鉴权不继续占读锁。头预算、原期限等其他错误保持未分类，不伪装为 token 拒绝；没有新增公开路由或初始化入口。
+
 List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用原登记句柄；每个后续请求重新鉴权，缺失 PID 先于输入/信号参数拒绝，未知信号不替换成终止信号。Connect 只取得原订阅，不重新执行或改原执行期限。控制成功只确认该次操作；取消输入可能已交付前缀，不重放。派发后释放授权，响应及其最后 Bytes 引用继续占原请求额度；一元正文首次轮询也检查原期限。tag 查找/重复仲裁、完整 HTTP 路由及解码/操作错误全文、请求 gzip 仍未接通；头部选择和指定头错误响应见下文，组件的 UnsupportedOperation 不定义公开状态码。调用方须把同一受信任 VM/会话的 Session 与 PidRegistry 装配在一起，并独立配置监听器、控制请求容量和输出预算；此组件不是部署入口或整机内存上界。
 
 [无 tag 的 Start 组件](../sandbox-guest-service/src/command_requests/start.rs)消费同一 Ready 请求：复用 Basic 预检的精确账户，默认账户在解码后查询，阻塞查询持续持有原授权/请求至实际退出；账户失败先于命令参数拒绝。原初始化快照与已选账户经共用纯组合生成 cwd、环境和数值身份，环境 USER/HOME 不选择内核身份；账户解析后只捕获一次原执行期限，HTTP/响应期限不刷新。调用方显式提供同一 VM/服务会话、未用命令编号、固定 worker/私有目录、原 PID 集/活跃表及预算，不从客户端读取这些配置。prepare 前检查首个 Start 帧按最大 PID 的编码预算并预留原始配置的 List 元数据；原票据持久 claim、装入原活跃记录后才接受放行。返回同一初始订阅，回复取消不关闭共享 stdin 或重执行；接受后的超时可能已有命令，失败不代表未执行或收尾成功。带 tag（包括空串）仍是本组件的 UnsupportedOperation，未定义公开状态码或选择重复策略；完整 HTTP Start/tag 路由尚未启用。
@@ -395,7 +397,7 @@ Selected::decode_identity 将 identity 请求交给原解码/派发；gzip 选�
 
 [显式账户错误响应](../sandbox-guest-service/src/command_requests/http/account.rs)由 Authenticated::prepare_http 保存同一请求的方法和首个类型/版本字段，再执行原 Basic 账户预检；只有受限的无效用户名或真实 NotFound 结果保存 UnknownUser，其他查询故障不伪装成账号不存在。失败之后才按原 authn ErrorWriter 解释类型与版本，不让坏 Connect 头抢先覆盖账户失败。POST 的 Connect 流类型和空/1 版本使用原规范化类型、200、identity flags=2；其余已分类请求为 401 application/json，HEAD 抑制正文但保留实际错误长度。外层不协商 gzip、不广告编码，短流错误也沿原缓冲写入保留长度头；不会套用命令 handler 的 flush/压缩规则。
 
-该入口复用有界 MIME 解析和格式化，保留额外参数与无效 MIME 的原字符串，不把规范化等同于选定 codec；gRPC 和不能无损表示的 MIME 文本仍未分类。错误正文、规范化响应头、阻塞编码和失败各有显式界；动态类型头与正文的最后副本都持有原请求名额。源故障、容量/期限失败不发明用户名错误、不重查账号或重置期限，完成的账户查询不为错误回复继续持有鉴权锁。它未接入 token 拒绝、默认账户 Start 错误或正式监听。
+该入口复用有界 MIME 解析和格式化，保留额外参数与无效 MIME 的原字符串，不把规范化等同于选定 codec；gRPC 和不能无损表示的 MIME 文本仍未分类。错误正文、规范化响应头、阻塞编码和失败各有显式界；动态类型头与正文的最后副本都持有原请求名额。源故障、容量/期限失败不发明用户名错误、不重查账号或重置期限，完成的账户查询不为错误回复继续持有鉴权锁。token 拒绝沿前述独立外层入口；默认账户 Start 错误或正式监听仍未接通。
 
 [异步命令响应体](../sandbox-guest-service/src/command/body.rs)将已观察启动的原订阅编码为 Start、后续 Data、实际 End 及独立 Connect 终结帧。调用方提供原请求守卫、单消息预算、正 keepalive 间隔和绝对响应期限；本组件不选择生产默认值或解析 wire keepalive 头。静默等待不占阻塞线程，不另建生产任务；只在上一帧的最后一个 Bytes 引用释放后读取下一项。编码帧保留原请求/订阅/命令记录，Data 同时保留原输出字节额度；丢弃 body 不提前归还仍由传输持有的容量。该约束要求逐帧消费，不能将整条 body 收集后才释放块；单帧 JSON、base64 临时分配及订阅队列另计，不是整机 RAM 上界。响应到期/断开只结束本订阅，不 kill、关闭共享 stdin 或重设原执行期限；滞后/未知/编码失败中断 body，不发送成功 End 或终结帧，公开 Connect 错误映射仍待路由接通。keepalive 从下游释放前帧后的空闲等待计时。Linux 真实 wait 结果另保留 core_dumped；[结束编码](../sandbox-guest-service/src/command/end.rs)按固定 Go 1.26.8 Linux amd64/arm64 的状态文本编码，保留信号、非零退出及 core-dump 后缀；内核标志不证明 core 文件已保存。
 

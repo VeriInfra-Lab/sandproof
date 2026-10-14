@@ -76,6 +76,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #439 的八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38564633601) 通过：源 a0329fa9a899059f4a2ef56ced87d66f8f389e40，checkout 06fb36868fb3a37f39c3296cce50d56793241e0b；四项 CI、原命令/文件与封存 Redis 均通过。首轮测试错误要求 identity 头缺失而失败，修正为原客户端显式 identity 后实跑通过，生产代码未为测试改变语义。后续迁移到共用 HTTP 选择的候选须独立重跑。
 
+[命令 token 回复检查](../sandbox-guest-service/src/command_requests/tests/token.rs)覆盖原 Session 到回复的拒绝顺序、未初始化/重复 token 的既有规则、HEAD 完整预算与长度、最后 Bytes 副本、原期限和未分类失败。原 WithAuthorization 的 R 入口扩展可选路径，命令测试在七个 process 路径间轮换，以四种 HTTP 方法及 134 种 token 输入比较 536 组真实 HTTP 状态、头和 JSON 原字节；受控初始化 token store 不等于真实 MMDS/命令执行。SANDPROOF_GUEST_AUTH_REFERENCE 须按固定 Go 重建并显式 --include-ignored，原文件路径缺省和测试保留；SDK/PID 路由改用 authenticate_http 后的八轮 Linux 成功回归仍待候选 CI，不计完整 E03。
+
 [命令头错误响应检查](../sandbox-guest-service/src/command_requests/http/reply/tests.rs)覆盖最后字节副本/取消/原期限、逐块背压、原始及压缩帧上限、未分类拒绝和 Debug 脱敏。显式固定 Go W 入口对七种命令、两种 JSON 类型、两种协商和七种拒绝组合比较 196 组真实 HTTP 状态/编码广告/长度、唯一终结帧 flags 和解压后的 JSON 原字节，包含超过 Go 自动长度阈值及非 ASCII/HTML 转义；不要求 gzip 压缩流逐字节相同。共用 SANDPROOF_GUEST_CONNECT_REFERENCE，必须重建并显式 --include-ignored；不计作普通 CI 已执行。[原准入连接检查](../sandbox-guest-service/src/command_requests/tests/http.rs)另覆盖选择失败到实际响应/失败的名额与鉴权释放，新增 Linux 场景待候选 CI。尚无正式监听、完整错误覆盖或 Go/Rust 同 SDK E03。
 
 同一 W 入口另有 126 组非 POST 对照：七种命令、六种 HTTP 方法与三种媒体类型，同时叠加坏压缩/版本/期限，核对最先返回的 405、Allow: POST、空正文及 HEAD 的长度头差异。可移植检查覆盖空 body 在 EOF、丢弃或原期限到期后的名额释放；Linux 原 Basic 预检到 HEAD/GET 回复的连接用例待候选 CI，不能从父分支通过推算。
