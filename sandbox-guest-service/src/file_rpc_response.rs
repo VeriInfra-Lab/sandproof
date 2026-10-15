@@ -36,6 +36,18 @@ pub struct Limits {
     pub wire_bytes: usize,
     pub chunk_bytes: usize,
 }
+impl Limits {
+    pub(crate) fn validate(self) -> Result<(), Error> {
+        if self.wire_bytes == 0
+            || self.chunk_bytes == 0
+            || self.wire_bytes > isize::MAX as usize / 16
+            || self.chunk_bytes > isize::MAX as usize / 16
+        {
+            return Err(Error::InvalidConfiguration);
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -172,13 +184,7 @@ async fn send_encoded_with_encoding(
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Failure> {
     let result = async {
-        if limits.wire_bytes == 0
-            || limits.chunk_bytes == 0
-            || limits.wire_bytes > isize::MAX as usize / 16
-            || limits.chunk_bytes > isize::MAX as usize / 16
-        {
-            return Err(Error::InvalidConfiguration);
-        }
+        limits.validate()?;
         let payload = finite_body::prepare(deadline, Arc::clone(&owner), move |cancelled| {
             let bytes = encode()?;
             let bytes = match encoding {

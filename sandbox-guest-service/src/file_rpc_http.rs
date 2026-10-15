@@ -50,11 +50,23 @@ impl<M, S> Clone for FileRpcHttp<M, S> {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidConfiguration;
+impl fmt::Display for InvalidConfiguration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid file RPC HTTP configuration")
+    }
+}
+impl std::error::Error for InvalidConfiguration {}
+
 impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
     pub(crate) fn shares_session(&self, session: &Session<M>) -> bool {
         self.inner.session.shares_state(session)
     }
-    #[must_use]
+    /// Assemble validated context/response settings before any request or I/O.
+    /// # Errors
+    /// Invalid daemon context or response budgets, using the same validators
+    /// as request execution. No resource defaults are selected.
     pub fn new(
         session: Session<M>,
         requests: FileRpcRequests,
@@ -62,8 +74,10 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
         accounts: AccountPool<S>,
         settings: FileSettings,
         response: file_rpc_response::Limits,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, InvalidConfiguration> {
+        settings.validate().map_err(|_| InvalidConfiguration)?;
+        response.validate().map_err(|_| InvalidConfiguration)?;
+        Ok(Self {
             inner: Arc::new(Inner {
                 session,
                 requests,
@@ -72,7 +86,7 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
                 settings,
                 response,
             }),
-        }
+        })
     }
 
     /// Admit an unconsumed HTTP request before token/account work, select the

@@ -9,6 +9,18 @@ pub struct HeaderLimits {
     pub bytes: usize,
     pub fields: usize,
 }
+impl HeaderLimits {
+    pub(crate) fn validate(self) -> Result<(), Error> {
+        if self.bytes == 0
+            || self.fields == 0
+            || self.bytes > isize::MAX as usize / 16
+            || self.fields > isize::MAX as usize / 16
+        {
+            return Err(Error::InvalidConfiguration);
+        }
+        Ok(())
+    }
+}
 
 /// Observed duplicate after sequential file completions. The batch moves its
 /// already bounded paths here; no file is reopened or replayed for diagnostics.
@@ -34,13 +46,7 @@ impl DuplicatePath {
 /// # Errors
 /// Invalid configuration or exceeded accepted-header budget.
 pub fn check_headers(headers: &HeaderMap, limits: HeaderLimits) -> Result<(), Error> {
-    if limits.bytes == 0
-        || limits.fields == 0
-        || limits.bytes > isize::MAX as usize / 16
-        || limits.fields > isize::MAX as usize / 16
-    {
-        return Err(Error::InvalidConfiguration);
-    }
+    limits.validate()?;
     if headers.len() > limits.fields {
         return Err(Error::HeaderLimit);
     }

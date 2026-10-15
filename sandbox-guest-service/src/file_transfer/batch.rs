@@ -23,7 +23,7 @@ pub struct BatchLimits {
 }
 
 impl BatchLimits {
-    pub(super) fn validate(self) -> Result<Self, FileStreamError> {
+    pub(crate) fn validate(self) -> Result<Self, FileStreamError> {
         if self.files == 0
             || self.files > isize::MAX as usize / 256
             || self.retained_bytes == 0

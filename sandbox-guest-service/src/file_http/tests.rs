@@ -1,4 +1,5 @@
 use super::*;
+mod configuration;
 use crate::file_requests::tests::{full, limits as request_limits, released};
 use crate::{
     InitLimits, Metadata, ServiceError,
@@ -115,7 +116,7 @@ async fn fixture(root: &Path) -> Fixture {
     )
     .unwrap();
     Fixture {
-        http: FileHttp::new(session, requests.clone(), streams, accounts, settings(root)),
+        http: FileHttp::new(session, requests.clone(), streams, accounts, settings(root)).unwrap(),
         requests,
         calls,
     }

@@ -26,6 +26,16 @@ pub struct Limits {
     /// Includes MIME framing, separately from the file/raw-content budget.
     pub wire_bytes: u64,
 }
+impl Limits {
+    pub(crate) fn validate(self) -> Result<(), Error> {
+        if self.response_header_bytes == 0 || self.response_header_bytes > isize::MAX as usize / 16
+        {
+            return Err(Error::InvalidConfiguration);
+        }
+        self.request.validate()?;
+        Ok(())
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Decision(wire::Error),
@@ -105,10 +115,7 @@ pub fn prepare(
     limits: Limits,
     local: &impl LocalZone,
 ) -> Result<Preparation, Error> {
-    if limits.response_header_bytes == 0 || limits.response_header_bytes > isize::MAX as usize / 16
-    {
-        return Err(Error::InvalidConfiguration);
-    }
+    limits.validate()?;
     header_budget(&response, limits.response_header_bytes)?;
     if let Some(value) = modified.last_modified() {
         response.insert(

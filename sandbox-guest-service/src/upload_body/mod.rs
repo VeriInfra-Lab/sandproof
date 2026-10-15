@@ -25,6 +25,19 @@ pub struct GzipLimits {
     pub http: HttpBodyLimits,
     pub decode: DecodeLimits,
 }
+impl GzipLimits {
+    pub(crate) fn validate(self) -> Result<(), GzipError> {
+        if self.decode.chunk_bytes == 0
+            || self.decode.chunk_bytes > isize::MAX as usize / 16
+            || self.decode.header_bytes < 10
+            || self.decode.members == 0
+        {
+            return Err(GzipError::InvalidConfiguration);
+        }
+        self.http.validate()?;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GzipError {
@@ -104,13 +117,7 @@ impl GzipBody {
         deadline: Instant,
         owner: Owner,
     ) -> Result<Self, GzipError> {
-        if limits.decode.chunk_bytes == 0
-            || limits.decode.chunk_bytes > isize::MAX as usize / 16
-            || limits.decode.header_bytes < 10
-            || limits.decode.members == 0
-        {
-            return Err(GzipError::InvalidConfiguration);
-        }
+        limits.validate()?;
         limits.http.total_bytes = limits.http.total_bytes.min(limits.decode.encoded_bytes);
         let input = Input::new(body, expected, limits.http, deadline)?;
         Self::start(deadline, owner, move |runtime, cancelled| {

@@ -50,6 +50,19 @@ pub struct Limits {
     pub total_bytes: u64,
 }
 impl Limits {
+    /// Validate the read-buffered decoder configuration without allocating its
+    /// parsing buffer or accepting any request boundary.
+    /// # Errors
+    /// Invalid budgets or an unrepresentable buffer including Go's lookahead.
+    pub fn validate_read_buffered(self) -> Result<(), Error> {
+        self.capacity_for(true).map(|_| ())
+    }
+    fn capacity_for(self, read_buffered: bool) -> Result<usize, Error> {
+        self.capacity()?
+            .checked_add(if read_buffered { 4096 } else { 0 })
+            .filter(|n| *n <= isize::MAX as usize / 8)
+            .ok_or(Error::InvalidConfiguration)
+    }
     fn capacity(self) -> Result<usize, Error> {
         if [
             self.chunk_bytes,
@@ -136,11 +149,7 @@ impl Decoder {
         Self::create(boundary, limits, true)
     }
     fn create(boundary: &str, limits: Limits, read_buffered: bool) -> Result<Self, Error> {
-        let capacity = limits
-            .capacity()?
-            .checked_add(if read_buffered { 4096 } else { 0 })
-            .filter(|n| *n <= isize::MAX as usize / 8)
-            .ok_or(Error::InvalidConfiguration)?;
+        let capacity = limits.capacity_for(read_buffered)?;
         if boundary.is_empty() {
             return Err(Error::Malformed);
         }

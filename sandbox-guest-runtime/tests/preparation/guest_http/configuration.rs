@@ -100,14 +100,16 @@ pub(super) fn parts<M: MetadataSource>(
             wire_bytes: 8192,
             chunk_bytes: 8192,
         },
-    );
+    )
+    .unwrap();
     let file_http = FileHttp::new(
         session.clone(),
         files.clone(),
         streams.clone(),
         accounts(fixture),
         file_settings,
-    );
+    )
+    .unwrap();
     Parts {
         components: Components {
             commands,

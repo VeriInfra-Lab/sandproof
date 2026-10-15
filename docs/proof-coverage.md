@@ -512,6 +512,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [共用文件 HTTP 编排](../sandbox-guest-service/src/file_http.rs)新增准入到固定方法派发、可信未消费 Body 的 framing 长度、授权查询到 MIME/路径和上传/下载参数、未映射失败持续占额的组合义务。多范围响应在原 worker 按需生成 boundary，须区分自有 30 字节编码/生成阶段/错误处理与 getrandom/OS 熵的外部前提；取消/超时不能提前释放仍未返回的熵调用。组件及可移植检查不证明完整监听器、最终失败策略或端到端文件行为；Linux 新组合待实跑，无新增抽取/Lean 证明，纯核心和历史已证明 Rust 未改。
 
+[文件 HTTP 构造校验](../sandbox-guest-service/src/file_http.rs)及[一元文件构造校验](../sandbox-guest-service/src/file_rpc_http.rs)新增可信配置到可服务对象的对应义务。原头/编码/响应/gzip/MIME 校验抽为共用函数，须证明无请求/账户/文件效果、无请求相关分配、与原有效配置集合及 read-buffered 容量计算一致；早期配置拒绝不能背书真实资源峰值或系统可用性。这些来宾适配尚未抽取或证明；纯核心、历史已证明 Rust 和 Lean 未改，旧定理不覆盖新增装配连接。
+
 [未知文件账号响应](../sandbox-guest-service/src/upload_response/account.rs)新增缺失账户分类与预算先于诊断分配、拒绝阶段、Go JSON/小响应头/HEAD 以及原容量/期限交付的自有义务。可移植有限 Go 对照不证明完整账户源或 POSIX 语义，Linux 请求/SDK 组合待实跑；这些适配未抽取或证明，历史已证明 Rust、纯核心及 LLBC/Lean 未改。
 
 [路径展开错误](../sandbox-guest-service/src/upload_response/path.rs)新增真实词法失败到原 HTTP 包装、原查询与默认路径区分、诊断分配预算、批次中先前副作用保留与更晚 part 不执行的自有连接义务。共享下载上下文错误发送器的重构有可移植回归；固定 Go 原函数有限对照不证明文件系统解析/竞态或全输入等价，Linux 请求/SDK 组合待实跑。未抽取或证明，历史已证明 Rust、纯核心及 LLBC/Lean 未改。
