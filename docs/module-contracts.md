@@ -483,6 +483,8 @@ HTTP 只从原握手及同一次准备失败提取目录缺失事实，保留原
 
 已观察的原生失败按固定 Go 格式返回 Start EOS：管道带原 cmd/argv 的空格连接文本，PTY 另带原解析 cwd 和未经 u16 窄化的 cols/rows；后缀为 fork/exec /bin/sh 和固定 Linux errno 文本。EAGAIN、ENOMEM、ENFILE、EMFILE、ENOSPC 使用 resource_exhausted，其余正 errno 使用 invalid_argument。已登记 PID 保持烧号，原进程/登记 owner 仍等待实际失败收尾；错误回复不等于容量或清理证明。路径、命令及 errno 必须来自同次 Start，互斥事实、预算、期限和最后字节责任继续沿用原 sender。此分类不覆盖 worker 本身的 spawn、PTY 打开或其他准备阶段失败，也不把内部超时/取消改写成确定的用户启动错误。
 
+Start 的工作目录展开失败由同一授权快照、已选账户和原请求的纯组合阶段记录，先于任何 worker 准备或 PID 登记。请求 cwd 非空时覆盖默认目录，缺失/空串仍采用默认目录；不支持的 ~other 展开按固定 Go 以 invalid_argument EOS 返回 failed to expand path '' for user '原账户': cannot expand user-specific home dir。路径空串来自原展开函数的失败返回值，用户名不取环境 USER，也不重新查询账户。缺省账户错误仍优先；NUL、参数/环境校验和预算故障不借此事实改变分类。三种已观察 Start 失败以互斥变体保留，并核对同次组件错误后才渲染；公共旧 ContextError 接口保持不变，回复期限、容量和最后字节责任沿用原发送器。
+
 [文件账户/路径上下文](../sandbox-guest-service/src/files.rs)从同一 `AuthPermit` 快照解析：RPC 沿用 Basic 用户规则，HTTP 文件操作仅从解码后的 `username` 查询选择账号，缺省才使用初始化用户；不把 `user` 别名或 Basic 头当作 HTTP 选择器。显式空/未知账号失败，环境 HOME/USER 不参与账号或 home 选择。Move 的两个路径共用一次账户查询，完整解析后才能交给后续派发；本组件不创建目录、重命名或打开文件。返回的 UID/GID 是创建对象的目标归属，不是文件 worker 的降权凭据，保持既有 daemon/root 文件 I/O 边界。
 
 文件空路径先取初始化工作目录，再按账号 home 展开；已有绝对路径保留原拼写，相对路径只做原词法整理，不提前解析链接或断言权限。NUL 在路径解析阶段保留，由后续实际 I/O 产生该操作的错误，不能冒充已通过路径检查。用户名、Authorization 和输入/展开后每条路径有显式组件预算，Move 至多两条路径；不把这些参数当成正式用户上限或全内存预算。原账户池继续约束取消/超时后仍在运行的查询；正式 HTTP `/files` 路由尚未接通，流式端口的当前边界见下文。

@@ -8,6 +8,7 @@ use sandproof_guest_runtime::{
 };
 use std::time::Duration;
 use tokio::sync::Semaphore;
+mod expansion;
 mod native;
 
 #[tokio::test]
@@ -73,8 +74,7 @@ fn source(path: &str, gzip: bool) -> (Source, Arc<Semaphore>) {
     let slots = Arc::new(Semaphore::new(1));
     (
         Source {
-            missing_cwd: Some(path.into()),
-            native_start: None,
+            rejection: Some(Rejection::MissingCwd(path.into())),
             format: Some(ResponseFormat::new(
                 Rpc::Start,
                 JsonContentType::Json,
@@ -208,7 +208,7 @@ async fn cwd_reply_exact_budget_and_unclassified_or_expired_failures_keep_origin
     for case in 0..4 {
         let (mut source, slots) = source("/private-secret", false);
         match case {
-            0 => source.missing_cwd = None,
+            0 => source.rejection = None,
             1 => source.format = None,
             2 => {
                 source.format = Some(ResponseFormat::new(

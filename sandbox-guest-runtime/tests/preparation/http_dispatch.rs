@@ -13,6 +13,8 @@ mod closed_stdin;
 mod cwd;
 #[path = "end_stream_http.rs"]
 mod end_stream;
+#[path = "expansion_http.rs"]
+mod expansion;
 #[path = "framing_http.rs"]
 mod framing;
 #[path = "guest_http.rs"]

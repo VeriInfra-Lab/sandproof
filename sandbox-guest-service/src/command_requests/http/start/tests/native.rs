@@ -17,8 +17,7 @@ fn request(program: &str, args: &[String], pty: bool, cols: u32, rows: u32) -> S
 }
 fn native_source(pty: bool, errno: i32, gzip: bool) -> (Source, Arc<Semaphore>) {
     let (mut source, slots) = source("/private-secret", gzip);
-    source.missing_cwd = None;
-    source.native_start = Some(NativeFailure::new(
+    source.rejection = Some(Rejection::Native(NativeFailure::new(
         request(
             "/bin/sh",
             &["a b".into(), String::new(), "'\"\\\n<>&中".into()],
@@ -28,7 +27,7 @@ fn native_source(pty: bool, errno: i32, gzip: bool) -> (Source, Arc<Semaphore>) 
         ),
         "/private-secret".into(),
         errno,
-    ));
+    )));
     (source, slots)
 }
 
@@ -59,7 +58,7 @@ async fn native_replies_keep_original_argv_raw_pty_size_and_last_byte_owner() {
 }
 
 #[tokio::test]
-async fn native_reply_exact_budget_expiry_and_conflicting_facts_never_drop_request_credit() {
+async fn native_reply_exact_budget_expiry_and_missing_observation_never_drop_request_credit() {
     for gzip in [false, true] {
         let (initial, _) = native_source(true, 24, gzip);
         let bytes = drain(send(initial, limits()).await.unwrap().into_body()).await;
@@ -94,7 +93,7 @@ async fn native_reply_exact_budget_expiry_and_conflicting_facts_never_drop_reque
         if expired {
             source.deadline = Instant::now();
         } else {
-            source.missing_cwd = Some("/contradiction".into());
+            source.rejection = None;
         }
         let failure = send(source, limits()).await.unwrap_err();
         assert_eq!(
@@ -151,13 +150,15 @@ async fn fixed_go_native_start_errors_match_symbolic_errno_and_full_replies() {
                 for codec in [JsonContentType::Json, JsonContentType::Utf8] {
                     for gzip in [false, true] {
                         let (mut source, slots) = source("/path'\"\\\n<>&中", gzip);
-                        let cwd = source.missing_cwd.take().unwrap();
+                        let Some(Rejection::MissingCwd(cwd)) = source.rejection.take() else {
+                            panic!("cwd fixture");
+                        };
                         let input = serde_json::json!({"Method":"Start","Kind":"native","Cmd":program,"Args":args,"Cwd":cwd,"Native":name,"Pty":pty,"Cols":cols,"Rows":rows,"Gzip":gzip,"UTF8":codec==JsonContentType::Utf8});
-                        source.native_start = Some(NativeFailure::new(
+                        source.rejection = Some(Rejection::Native(NativeFailure::new(
                             request(program, &args, pty, cols, rows),
                             cwd,
                             number,
-                        ));
+                        )));
                         source.format = Some(ResponseFormat::new(
                             Rpc::Start,
                             codec,
