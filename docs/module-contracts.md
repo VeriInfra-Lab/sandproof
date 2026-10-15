@@ -403,6 +403,8 @@ Rust 模式下全部准备上传由[有界上传适配器](../tools/template_bui
 
 上述正式入口已有实现，但尚未安装或替换现役模板。tag、keepalive 异常头、剩余错误映射及完整 SDK 双端、真实 MMDS/daemon 故障、资源峰值和 KVM 验收仍按原待办执行；配置预算和静态 check 不批准这些未决行为，也不使全部 E01–E10 自动成立。
 
+[命令准备所有者](../sandbox-guest-service/src/command/preparation/owner.rs)将原目录/socket/管道/PTY/worker spawn 放入一次阻塞任务，避免这些同步操作占用异步执行线程。进入队列前已持有原命令记录，排队和运行期间继续持有同一授权、请求及准备参数；不新增重试队列或刷新期限。阻塞任务实际开始时重新核对原绝对期限、请求/等待者是否仍在和是否已有撤回决定，已撤回或到期不调用 spawn。开始后取消不能中断 syscall 或提前归还额度；正常错误确认未创建 child 后才归还，成功则连同原 child 移交至既有异步握手/登记/清理。若等待者已丢失而返回可能已有 child，析构仅请求停止并隔离原记录，不能伪造实际 wait；panic 同样保留未知责任。队列项数由原命令记录额度约束，线程数由原 daemon 阻塞线程配置约束，不等于内核 I/O 可中断、系统调度实时性或整机内存峰值已验收。
+
 [准备到 PID 登记连接](../sandbox-guest-service/src/command/registration.rs)通过 PendingCommand::register_pid 等待原 gated worker，将同一票据移入阻塞持久化任务。PidRegistrar 克隆共享独立的单写入名额，进入等待/阻塞队列前预留，原进程即使已到期并收尾，存储名额仍保留到实际文件任务退出；繁忙直接拒绝，不用进程名额代替磁盘任务预算。排队取消在写入前检查，执行中取消可保守烧掉 PID，但不会自动放行代码。返回的 PidRegisteredCommand 固定原票据和实际持久回执，仍须由调用方先安装同一身份的活跃选择器预留，再消费 commit；原执行/准入期限不刷新。失败/丢弃沿原准备所有者停止和 wait，容量只在实际收尾后释放。持久位图本身不是活跃登记表；下述组件连接内存 PID 记录与终局保留，PID 查询已接入共用命令 HTTP 装配。tag 查询、正式 daemon/config 与跨服务活跃进程恢复仍未实现。
 
 [有界 PID 登记](../sandbox-guest-service/src/command/registry.rs)已连接持久回执和原命令 owner，并供共用命令 HTTP 装配使用；该 Linux 组件尚未安装到正式 daemon/模板。调用方显式配置 VM 绑定、服务会话、登记条数、逐记录编码字节与终局保留时长；固定 Go 为 30 秒，正式装配须采用复核后的值。prepare 前预留登记名额并按最大 PID 检查整条 List 元数据编码，保存调用方原配置的副本；编码字节不冒充容器/分配器或整个进程 RAM 上界。publish 拒绝错 VM/会话和已有 PID，先装入精确记录再派发原票据。独立登记任务在 HTTP 等待者之外保留 commit、控制句柄和原始订阅：受理前取消停止原 gated worker，受理后丢失 Start 回复只丢失该回复/订阅，不丢失登记、不重执行。准备清理未知或 owner 丢失保持 unavailable 并继续占额。

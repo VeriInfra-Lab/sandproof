@@ -50,6 +50,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [准备与登记交接检查](../sandbox-guest-runtime/tests/preparation.rs)同样纳入上述两条入口：真实 worker 验证登记确认前无用户副作用、同一额度移交、授权轮换等待至派发、确认接受前后取消的不同语义及丢失回复不重执行。受控握手 socket 与可推进时钟覆盖握手取消、坏协议、绝对登记期限；实际 pidfd/wait 核对中止后退出、私有 gate 回收及容量恢复。测试主动提前 wait 自己的原 child，验证管理者缺失回执时保持 `CleanupUnknown` 和占额；关闭管理 runtime 区分确定未 spawn 与可能已有 child 的责任。没有模拟强制 PID 复用、Linux D 状态、故障文件系统、完整服务重启、Go envd 双端对照或 KVM；这些不由组件绿灯核销。
 
+[阻塞准备回归](../sandbox-guest-service/src/command/preparation/owner/tests.rs)使用原 owner 流程、单阻塞线程、明确屏障及可推进时钟，核对排队时请求取消、等待者丢失、显式撤回和到期均保持原请求/记录额度直到队列项退出，并且不调用 spawn；已进入阻塞工作后丢失异步等待者，线程实际结束前不得归还容量。原同步错误确认无 child 后归还，受控 panic 则保持 OwnerLost 和隔离记录；线程身份另确认工作不在异步调用线程上。此处以故障点替代内核 spawn，真实管道/PTY/worker 仍由原 preparation/process/SDK 组合重跑。原 PID 排队测试改为先准备两台独立 worker 再占用共享阻塞池，使其继续专门验证单写入名额；第二台保留在原观察点的同等剩余期限。新版 Linux 回归尚待 CI 实跑，不能用交叉 Clippy 或旧回执记为执行成功。
+
 [gate 路径退休检查](../sandbox-guest-runtime/tests/process/gate.rs)在真实 READY 后使用原已连接句柄，核对首次 release 删除 launch 路径与空目录、命令只执行一次及实际输出/退出。成功删除后重建同名目录/文件，检查重复退休和原 owner Drop 均不删除该新路径。另在本次私有 gate 中放置夹具文件制造真实 rmdir ENOTEMPTY，检查 release 仍使用同一连接，额外文件保留至原进程 owner Drop 后才由 TempDir 回收。[取消放行回归](../sandbox-guest-runtime/tests/process.rs)以 SIGSTOP/waitid 保持 worker，轮询一次 release 再取消，要求 gate 已退休但 launch 仍为 Unknown，后续禁止再次放行，SIGCONT 后仅出现一次效果。准备登记测试保留放行前 gate/容量，Start 后核对路径已退休而进程额度仍占用。下述真实所有者强杀场景改为要求进入放行后的旧 gate 为零；这些 Linux 断言已在下述 #475 候选 CI 通过，不覆盖握手前崩溃或全部文件系统清理。
 
 [持久 PID 检查](../sandbox-guest-runtime/src/pid_claims/tests.rs)以真实私有临时文件覆盖回执丢弃/启动失败后的永久占用、重开及新会话不复用、有限范围/全满、VM/范围错配、缺失/截断/坏校验/非规范位、权限/链接/多写者和原名称替换。写前、位写后、摘要后和同步后故障点以及 panic 验证未知结果不返回回执，旧位保持，损坏文件不自动修复；六项可移植测试已在 macOS 运行，不冒充断电/故障磁盘实测。入口为 `cargo test -p sandproof-guest-runtime --locked --lib pid_claims::`。Linux [真实准备连接](../sandbox-guest-runtime/tests/preparation/pid_registration.rs)新增三项测试：保存后才实际 exec、结束/重开仍拒绝 PID，重复/错 VM/繁忙/丢弃不执行，单阻塞线程排队取消不写记录，并在原 worker 超时且进程额度已归还后继续保留独立存储名额、拒绝并发登记；使用原 pidfd、明确屏障及实际 wait/私有 gate 清理。Linux 交叉 Clippy 已通过；尚无公开命令注册表、PID 复用内核交错、服务强杀/重启仍存活的完整 E04 或 KVM 证据。
@@ -570,6 +572,8 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 [PTY 候选入口](../tests/system/sdk_pty.py)通过原固定 SDK 的公开 `pty.create/connect/send_stdin/resize/kill` 和同步/异步句柄，对 root、ubuntu 各执行直接退出、断线重连后 code 17、等待输入时 SIGKILL 三种案例。使用 SDK 原 `/bin/bash -i -l`，在私有目录写入有限 Python 程序，通过 FIFO 就绪屏障核对原 PID、UID、cwd、环境及三个终端描述符；之后发送空输入及分块的全部 256 种字节，验证 2304 字节原样合并输出、初始/调整窗口、超出 uint16 的尺寸收窄、准确终局、立即晚连只返回 End、单次启动标记及存活时 List 包含原 PID。结束后的 List 状态只记录观察值：固定 Go 先广播 End 再调用终局保存/删除钩子，不能额外承诺 End 后立即查不到 PID。交互启动命令小于 512 字节，输出上限 128 KiB、元数据上限 4 KiB；登录 shell 的前缀单独记录长度/摘要，不当作固定二进制帧，也不擅自归一化为 Go/Rust 完整对照。原 shell profile 须保留请求的 cwd/自定义环境；模板还须具备 `/usr/bin/python3`。每个 PTY 60 秒、晚连 20 秒，VM 300 秒，不延长寿命以掩盖超时。
 
 该入口采用同一候选参数和前后运行身份观察，Start 结果未知不重试；错误 PID 的连接只关闭该订阅，失败收尾只尝试原已知 PID 的信号，信号结果未知不重放，随后关闭全部已知句柄并销毁原 VM，保留全部收尾错误和原异常。它已实现但尚未在产品 VM 执行。[本地回归](../tests/compat/test_pty_probe.py)分别运行真实私有 PTY 上的原上传程序/短命令，以及受控 RPC 事件下的原固定 SDK Pty/CommandHandle，核对二进制损坏、截断/多余字节、历史重放、错误重连 PID、未知 Start/信号和部分收尾失败。私有 PTY 不读取宿主 shell profile、不切换身份、不操作宿主终端；受控 RPC 不执行 envd。它们不能代替真实登录配置、Linux 身份切换、网关/来宾服务、进程树收尾、完整 PTY 故障/期限矩阵、双端 E03 或 KVM 验收，也未加入 C02 固定监督调用集。
+
+#500 的 PTY 探针回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38800712959) 通过：源 359ced1c8edfa474057f518eb8aaf07654edf76d、checkout d5f12c63110c46fca05ee094bd6f500b28d0d2d7。新增九项回归包含真实私有 PTY 程序和原 SDK 的受控 RPC 调用，固定 SDK 共 109 项、封存 Redis和四项 CI 成功；不包含产品 VM 上的 PTY 探针或此后的阻塞准备改动。
 
 | 实机入口 | 必查内容 |
 |---|---|
