@@ -97,6 +97,33 @@ impl From<CommandError> for SignalFailure {
     }
 }
 
+pub(crate) enum ResizeFailure {
+    Command(CommandError),
+    Native { error: CommandError, errno: i32 },
+}
+impl ResizeFailure {
+    pub(crate) const fn error(self) -> CommandError {
+        match self {
+            Self::Command(error) | Self::Native { error, .. } => error,
+        }
+    }
+    fn observed(error: &std::io::Error) -> Self {
+        let coarse = input_error(error);
+        error
+            .raw_os_error()
+            .filter(|errno| *errno > 0)
+            .map_or(Self::Command(coarse), |errno| Self::Native {
+                error: coarse,
+                errno,
+            })
+    }
+}
+impl From<CommandError> for ResizeFailure {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CommandExit {
     pub code: i32,
@@ -448,12 +475,21 @@ impl ManagedCommand {
     /// # Errors
     /// Stale/not-started/completed command, wrong channel or actual ioctl error.
     pub fn resize_pty(&self, identity: CommandIdentity, size: PtySize) -> Result<(), CommandError> {
+        self.resize_pty_observed(identity, size)
+            .map_err(ResizeFailure::error)
+    }
+
+    pub(crate) fn resize_pty_observed(
+        &self,
+        identity: CommandIdentity,
+        size: PtySize,
+    ) -> Result<(), ResizeFailure> {
         self.check(identity)?;
         self.require_started()?;
         self.shared
             .control
             .resize_pty(identity, size)
-            .map_err(|error| input_error(&error))
+            .map_err(|error| ResizeFailure::observed(&error))
     }
 
     async fn write_channel(

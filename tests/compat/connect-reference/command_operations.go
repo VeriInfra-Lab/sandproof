@@ -45,6 +45,8 @@ func operationError(headers http.Header) error {
 	}
 	input := operationRecord(data)
 	switch input.Kind {
+	case "native-resize":
+		return nativeResizeError(input)
 	case "native-signal":
 		return nativeSignalError(input)
 	case "native-input":

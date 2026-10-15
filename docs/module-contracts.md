@@ -425,6 +425,8 @@ List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用�
 
 SendSignal 的原 pidfd 调用返回正 errno 时，另保留同次原生失败；HTTP 只在原粗结果仍为 Unavailable 时渲染 500 / internal。固定 Go os.Process.Signal 在格式化前将 ESRCH 转为 os: process already finished，其余正 errno 使用固定 Linux 描述，外层均为 error sending signal:。这不是后续 PID/状态查询或重新发送信号；数值身份错误、缺失登记、取消和其他无 errno 的内部故障不能借此推断进程已结束。旧 signal 接口及原输出/终局策略保持，错误回复不证明后代停止、输出已排空或整条 Go 信号调度完全一致。
 
+Update 的 PTY resize 只把原终端句柄上实际 ioctl 返回的正 errno 作为独立失败事实；HTTP 仍核对同次粗错误，再返回固定 Go 的 500 / internal 与 error resizing tty: 加 Linux errno 文本。锁定 PTY 包直接返回 syscall errno，不添加文件路径或 process PID。旧 resize 接口及参数 uint16 转换保持；无 PTY、未启动、终局、身份错误或本地挂断观察不冒充原生 ioctl 失败。终端写入挂断不代表 resize 失败，原 ioctl 成功仍返回成功；不再次调整窗口、查询 PID 或据此推断进程退出。
+
 同一次控制操作实际返回 InvalidArgument 且原句柄不可变 PTY 能力证明通道不匹配时，另保留四项固定事实：PTY 写 stdin、管道写 PTY、PTY CloseStdin、管道 resize。前两项及 resize 返回 internal，CloseStdin 返回 unknown，均为一元 identity 500；文本沿固定 handleInput/CloseStdin/Update 与 handler 错误，仍由原有限发送器承担期限、预算和最后副本所有权。能力查询不证明命令存活，不重新取得 PID 或执行操作；输入关闭、并发写入、完成竞争、真实 I/O/PTY ioctl 失败不能仅凭 InvalidArgument 套用该分类。流式误用保持未分类，不改变旧组件 CommandError 或选择 tag 政策。
 
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)消费同一 Basic 预检结果，先选择已知命令的 POST 与两个 Connect JSON 类型，复用有界 MIME 参数解析。其他原协议为未选定分类，不据此公开返回 415。一元与 Start/Connect 分别选择原 Content-Encoding/Accept-Encoding 和 Connect-Content-Encoding/Connect-Accept-Encoding 的第一值；空值/identity/gzip、逗号或 ASCII 空格分割及不解释 q 权重遵循固定协商。方法/媒体类型先于压缩，压缩错误先于版本，版本先于期限语法错误；有效期限先收紧原准入上限，失败保留已选回复格式/编码及原期限，不刷新容量或时钟。诊断只复制完整头预算后的对应首值，Debug 不暴露原值。

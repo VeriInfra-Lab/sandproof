@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn resize_observation_keeps_native_invalid_argument_distinct_from_mode_rejection() {
+    for errno in [1, 4, 5, 9, 22, 25] {
+        let error = std::io::Error::from_raw_os_error(errno);
+        let observed = ResizeFailure::observed(&error);
+        assert!(matches!(observed, ResizeFailure::Native { errno: n, .. } if n == errno));
+        assert_eq!(observed.error(), input_error(&error));
+    }
+    for error in [
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a PTY"),
+        std::io::Error::new(std::io::ErrorKind::BrokenPipe, "terminal hung up"),
+        std::io::Error::from_raw_os_error(0),
+    ] {
+        assert!(matches!(
+            ResizeFailure::observed(&error),
+            ResizeFailure::Command(_)
+        ));
+        assert_eq!(ResizeFailure::observed(&error).error(), input_error(&error));
+    }
+    for error in [
+        CommandError::StaleIdentity,
+        CommandError::NotStarted,
+        CommandError::ClosedInput,
+    ] {
+        assert_eq!(ResizeFailure::from(error).error(), error);
+    }
+}
+
+#[test]
 fn signal_errno_requires_original_native_observation_and_keeps_legacy_error() {
     for errno in [1, 3, 9, 22, 38] {
         let observed = SignalFailure::observed(&std::io::Error::from_raw_os_error(errno));

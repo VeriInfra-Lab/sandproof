@@ -242,8 +242,16 @@ async fn control(
                 let size = pty.size.as_ref().map_or_else(PtySize::default, |size| {
                     PtySize::from_wire(size.cols, size.rows)
                 });
+                let result = command
+                    .resize_pty_observed(command.identity(), size)
+                    .map_err(|error| {
+                        if let crate::command::ResizeFailure::Native { errno, .. } = &error {
+                            *observed = Some(Rejection::NativeResize(*errno));
+                        }
+                        error.error()
+                    });
                 channel_result(
-                    command.resize_pty(command.identity(), size),
+                    result,
                     !command.has_pty(),
                     ChannelRejection::ResizePipe,
                     observed,
@@ -349,6 +357,19 @@ mod tests {
 
     #[test]
     fn channel_observation_requires_original_mode_and_actual_rejection() {
+        // EINVAL from the original ioctl is already explained, even though
+        // the legacy coarse error is identical to a pipe-mode rejection.
+        let mut observed = Some(Rejection::NativeResize(22));
+        assert_eq!(
+            channel_result(
+                Err(CommandError::InvalidArgument),
+                true,
+                ChannelRejection::ResizePipe,
+                &mut observed,
+            ),
+            Err(CommandError::InvalidArgument)
+        );
+        assert!(matches!(observed, Some(Rejection::NativeResize(22))));
         let outcomes = [
             Ok(()),
             Err(CommandError::InvalidArgument),

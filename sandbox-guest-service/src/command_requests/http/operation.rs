@@ -1,4 +1,4 @@
-//! Fixed PID/parameter rejections and native input/signal errno from dispatch.
+//! Fixed PID/parameter rejections and original native control/input errno.
 //! Unobserved worker/I/O failure and tag policy remain unclassified.
 use super::{ResponseFormat, reply};
 use crate::{command_requests::Error as RequestError, owned_body::Owner};
@@ -19,6 +19,7 @@ pub(crate) enum Rejection {
     StdinClosed,
     StdinDisabled,
     NativeSignal(i32),
+    NativeResize(i32),
     NativeInput { pid: u32, pty: bool, errno: i32 },
 }
 #[derive(Clone, Copy)]
@@ -53,7 +54,7 @@ impl Rejection {
                 errno > 0
                     && error == &RequestError::Command(crate::command::CommandError::Unavailable)
             }
-            Self::NativeInput { errno, .. } => {
+            Self::NativeInput { errno, .. } | Self::NativeResize(errno) => {
                 errno > 0
                     && error
                         == &RequestError::Command(crate::command::input_error(
@@ -143,6 +144,7 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
                 | Rejection::StdinDisabled
                 | Rejection::NativeInput { .. }
                 | Rejection::NativeSignal(_)
+                | Rejection::NativeResize(_)
         ) && format.content_type().starts_with("application/connect+")
         {
             return Err(reply::Error::UnclassifiedFault);
@@ -153,6 +155,7 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
             | Rejection::StdinClosed
             | Rejection::StdinDisabled
             | Rejection::NativeInput { .. }
+            | Rejection::NativeResize(_)
             | Rejection::NativeSignal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::NOT_IMPLEMENTED,
         };
@@ -181,12 +184,21 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
             Rejection::StdinClosed
             | Rejection::StdinDisabled
             | Rejection::NativeInput { .. }
-            | Rejection::NativeSignal(_) => b"internal",
+            | Rejection::NativeSignal(_)
+            | Rejection::NativeResize(_) => b"internal",
             _ => b"unimplemented",
         })?;
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| crate::go_json::string_content(bytes, put);
         match rejection {
+            Rejection::NativeResize(errno) => {
+                message(b"error resizing tty: ")?;
+                message(
+                    sandproof_guest_runtime::file_download::LinuxErrno(errno)
+                        .message()
+                        .as_bytes(),
+                )?;
+            }
             Rejection::NativeSignal(errno) => {
                 message(b"error sending signal: ")?;
                 // Fixed Go os.Process.Signal converts ESRCH before its caller

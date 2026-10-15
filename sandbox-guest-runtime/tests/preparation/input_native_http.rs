@@ -37,6 +37,33 @@ async fn hung_up_pty_readiness_never_fabricates_a_native_syscall_failure() {
     // The original shell opens this FIFO only after all slave FDs close. Keep
     // it waiting on this same reader while testing the retained master writer.
     let mut finish = hold_fifo(&fixture).await;
+    // The retained master can still resize after every slave closes. A write
+    // readiness rejection does not establish an ioctl failure or command exit.
+    for pty in [json!({}), json!({"size":{"cols":65537,"rows":u32::MAX}})] {
+        let response = http
+            .handle(request("Update", &json!({"process":{"pid":pid},"pty":pty})))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let first = bytes(response).await;
+        assert_eq!(first, "{}");
+        let last = first.clone();
+        drop(first);
+        full(&control);
+        rotates(&fixture).await;
+        assert!(command.0.status().completion.is_none());
+        drop(last);
+        timeout(Duration::from_secs(5), async {
+            loop {
+                if control.admit().is_ok() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
     assert_eq!(
         bytes(
             http.handle(request(
