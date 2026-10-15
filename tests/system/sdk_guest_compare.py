@@ -13,11 +13,6 @@ _require_assertions()
 
 import argparse
 import asyncio
-import base64
-from dataclasses import asdict, is_dataclass
-from datetime import datetime
-from enum import Enum
-from io import BytesIO
 import importlib.metadata
 import json
 import os
@@ -33,102 +28,10 @@ from sdk_data_samples import (COMMAND, ENV, FILES, NONZERO_COMMAND, file_entries
                               validate_command, validate_content, validate_entries,
                               validate_file_info, validate_nonzero)
 from sdk_server_smoke import options
+from sdk_observations import CONTENT_LIMIT, Calls, Capture, value
+from sdk_background_compare import background_case, comparable_background
 
-CONTENT_LIMIT = 128 * 1024
 FIXED_MTIME = 1_700_000_000
-
-
-def value(item):
-    """Lossless JSON representation for the fixed SDK's selected result types."""
-    if isinstance(item, BytesIO):
-        assert item.tell() == 0, 'each upload needs a fresh stream'
-        return value(item.getvalue())
-    if isinstance(item, (bytes, bytearray)):
-        assert len(item) <= CONTENT_LIMIT
-        return {'base64': base64.b64encode(item).decode()}
-    if isinstance(item, datetime):
-        return {'datetime': item.isoformat()}
-    if isinstance(item, Enum):
-        return item.value
-    if is_dataclass(item):
-        return value(asdict(item))
-    if isinstance(item, dict):
-        return {key: value(part) for key, part in item.items()}
-    if isinstance(item, (list, tuple)):
-        return [value(part) for part in item]
-    assert item is None or type(item) in (bool, int, float, str), type(item)
-    if isinstance(item, str):
-        assert len(item.encode()) <= CONTENT_LIMIT
-    return item
-
-
-class Capture:
-    def __init__(self):
-        self.parts, self.size = [], 0
-
-    def __call__(self, part):
-        assert type(part) is str
-        self.size += len(part.encode())
-        assert self.size <= CONTENT_LIMIT, 'command callback budget'
-        self.parts.append(part)
-
-
-class Calls:
-    def __init__(self, sandbox, asynchronous):
-        self.sandbox, self.asynchronous = sandbox, asynchronous
-        self.rows = []
-
-    async def invoke(self, method, *args, expected=None, **kwargs):
-        target = self.sandbox
-        for segment in method.split('.'):
-            target = getattr(target, segment)
-        row = {'method': method, 'args': value(args), 'kwargs': value(kwargs), 'status': 'incomplete'}
-        self.rows.append(row)
-        callbacks = None
-        if method == 'commands.run':
-            callbacks = {'stdout': Capture(), 'stderr': Capture()}
-            kwargs = dict(kwargs, on_stdout=callbacks['stdout'], on_stderr=callbacks['stderr'])
-        try:
-            result = await call(target, *args, **kwargs)
-        except Exception as error:
-            assert expected is not None and type(error) is expected, (method, type(error).__name__)
-            result = error
-            row['error'] = {'class': type(error).__module__ + '.' + type(error).__qualname__,
-                            'message': value(str(error))}
-            if is_dataclass(error):
-                row['error']['fields'] = value(error)
-        else:
-            assert expected is None, (method, 'expected failure returned success')
-            row['result'] = value(result)
-        if callbacks is not None:
-            row['callbacks'] = {channel: capture.parts for channel, capture in callbacks.items()}
-            for channel, capture in callbacks.items():
-                assert ''.join(capture.parts) == getattr(result, channel, ''), channel
-        row['status'] = 'complete'
-        return result
-
-    async def stream(self, path, user):
-        kwargs = dict(format='stream', user=user, gzip=True, request_timeout=15,
-                      stream_idle_timeout=15)
-        row = {'method': 'files.read', 'args': [path], 'kwargs': value(kwargs), 'status': 'incomplete'}
-        self.rows.append(row)
-        data, chunks = bytearray(), []
-        def append(chunk):
-            assert len(data) + len(chunk) <= CONTENT_LIMIT, 'file stream budget'
-            data.extend(chunk)
-            chunks.append(len(chunk))
-        if self.asynchronous:
-            async with await self.sandbox.files.read(path, **kwargs) as reader:
-                async for chunk in reader:
-                    append(chunk)
-        else:
-            def drain():
-                with self.sandbox.files.read(path, **kwargs) as reader:
-                    for chunk in reader:
-                        append(chunk)
-            await asyncio.to_thread(drain)
-        row.update(result=value(data), transport_chunk_bytes=chunks, status='complete')
-        return data
 
 
 def plan():
@@ -191,17 +94,22 @@ async def cases(sandbox, inputs, asynchronous, rows=None):
                               user=user, timeout=15, expected=InvalidArgumentException)
     await observed.invoke('commands.run', 'printf forbidden', user=inputs['unknown_user'],
                           timeout=15, expected=AuthenticationException)
+    for user in inputs['users']:
+        for mode in ('direct', 'reconnect-exit', 'kill'):
+            await background_case(observed, user, root + '/' + user, mode)
     healthy = await observed.invoke('commands.run', 'printf paired-healthy', user='ubuntu', timeout=15)
     assert (healthy.stdout, healthy.stderr, healthy.exit_code) == ('paired-healthy', '', 0)
     return observed.rows
 
 
 def comparable(rows):
-    """Only stream segmentation may differ; directory order remains exact."""
+    """Stream segmentation and validated background PID references may differ."""
     result = []
     for original in rows:
         assert original.get('status', 'complete') == 'complete', 'incomplete call is not comparable'
         row = {key: part for key, part in original.items() if key != 'transport_chunk_bytes'}
+        if row['method'] == 'background.case':
+            row = comparable_background(row)
         if 'callbacks' in row:
             row['callbacks'] = {key: ''.join(parts) for key, parts in row['callbacks'].items()}
         if row['method'] == 'files.list' and 'result' in row:
@@ -270,8 +178,9 @@ async def exercise(args):
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     results = []
     report = {'schema_version': 1, 'sdk_version': '2.51.0', 'inputs': inputs, 'results': results,
-        'scope': 'paired foreground commands, cwd/account errors, callbacks and unary/batch/gzip/stream files; '
-                 'not full Start/Connect/PTY, fault/resource matrices or E03/E06 acceptance'}
+        'scope': 'paired foreground/background commands, stdin, same-PID reconnect, exit/kill and retained End; '
+                 'cwd/account errors, callbacks and unary/batch/gzip/stream files; '
+                 'not List/PTY, full fault/resource matrices or E03/E06 acceptance'}
     try:
         for cls in (Sandbox, AsyncSandbox):
             item = {'sdk': cls.__name__, 'pair': [], 'create_attempts': []}

@@ -22,6 +22,7 @@ from tools import guest_probe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'system'))
 import sdk_guest_compare as probe
+import sdk_observations as observations
 
 
 def rows():
@@ -82,7 +83,7 @@ class ComparisonTests(unittest.TestCase):
     def test_capture_and_input_serialization_are_bounded_and_keep_fresh_streams(self):
         capture = probe.Capture()
         capture('中')
-        with patch.object(probe, 'CONTENT_LIMIT', 3), self.assertRaises(AssertionError):
+        with patch.object(observations, 'CONTENT_LIMIT', 3), self.assertRaises(AssertionError):
             capture('!')
         stream = io.BytesIO(bytes(range(256)))
         self.assertEqual(probe.value(stream), probe.value(bytes(range(256))))
