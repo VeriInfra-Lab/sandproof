@@ -576,10 +576,10 @@ def build(work, source, request, profile, *, guest_boot_id, rust_guest_profile=N
     rust_guest = None
     if rust_guest_profile is not None:
         if __package__:
-            from .template_guest import load_profile
+            from .template_guest import load_runtime_profile
         else:
-            from template_guest import load_profile
-        rust_guest = load_profile(rust_guest_profile)
+            from template_guest import load_runtime_profile
+        rust_guest = load_runtime_profile(rust_guest_profile)
     tools = check_tools(profile, registry=request["kind"] == "oci-reference", rust_guest=rust_guest is not None)
     if not stat.S_ISREG(source.lstat().st_mode) or source.stat().st_size > request["max_input_bytes"]:
         raise InvalidTemplate("input archive limit or type")

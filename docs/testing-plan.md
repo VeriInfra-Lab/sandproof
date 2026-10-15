@@ -107,7 +107,11 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #490 的模板身份源提交 12070f83bd1996163d12c4c375f6950062575694（checkout 87698b989accca687c3450a71fabea654a41d388）已在四项普通 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38773547217) 通过，包含实际固定 Redis 的 18 项中心权威块回归。该入口不执行 Linux 专属宿主元数据预算测试，不背书下述安装连接。
 
-[模板安装回归](../tools/tests/test_template_guest.py)在真实私有候选目录核对复制后的 service/worker/config/manifest 指纹、权限、保留路径及静态 check 失败/原期限耗尽。实际 `/bin/sh` 执行生成的 boot/agent，挂载/网络/BusyBox 操作及 daemon 是受控程序：覆盖一次初始化、respawn/重启、PID 状态缺失、initialize 前后失败、重命名/sync 失败、符号链接/重复制备标记。原 opaque 暂存验证独立 pin 必需、身份持久化和重复恢复拒绝变更，并实跑源文件名已消失的精确交接；这些用例不检查 ext4 稀疏程度或假装 Linux 挂载。Go 原安装回归保持，平铺模块导入和额外 applet 拒绝另测试；不把 stub 的 check、sync 或 PID 文件当作真实 daemon、持久磁盘或 KVM 验收。真实 release、镜像 ABI、自动监督上传与完整 E06/E09 仍待补证。
+[模板安装回归](../tools/tests/test_template_guest.py)在真实私有候选目录核对复制后的 service/worker/config/manifest 指纹、权限、保留路径及静态 check 失败/原期限耗尽。实际 `/bin/sh` 执行生成的 boot/agent，挂载/网络/BusyBox 操作及 daemon 是受控程序：覆盖一次初始化、respawn/重启、PID 状态缺失、initialize 前后失败、重命名/sync 失败、符号链接/重复制备标记。原 opaque 暂存验证独立 pin 必需、身份持久化和重复恢复拒绝变更，并实跑源文件名已消失的精确交接；这些用例不检查 ext4 稀疏程度或假装 Linux 挂载。Go 原安装回归保持，平铺模块导入和额外 applet 拒绝另测试；不把 stub 的 check、sync 或 PID 文件当作真实 daemon、持久磁盘或 KVM 验收。真实 release、镜像 ABI、实际 builder 上传与完整 E06/E09 仍待补证。
+
+#491 安装源提交 a3301f449382ab91175d00079f71f05ea39c2466（checkout 5916ce0d714849bdb8995e9482cdc68cfc7dd5e7）的四项普通 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38777145956) 已通过，包含实际固定 Redis 的 18 项中心权威块回归；不表示实际模板安装/启动通过。
+
+[监督器材料回归](../tools/tests/test_template_build_guest.py)使用私有文件和原 SQLite 配置守卫核对同路径换 pin 拒绝旧库重开、源码归档只在宿主必需、运行材料独立校验、必要容量边界、实际流字节/EOF/文件替换与期限；原 opaque 暂存检查候选身份、下载名已消失后的恢复、发布未知结果保留和已知原回执观察。[固定 SDK 监督器检查](../tests/compat/test_template_build_backend.py)覆盖 OCI/Dockerfile 两条上传调用、原 VM 会话与身份头、固定目标路径、worker 参数、候选身份错配时不下载磁盘，以及配置变化/上传超期时不开始后续阶段；该组使用真实 SDK 构造器与受控文件/命令端口。[实际 SDK 回环上传](../tests/compat/test_template_upload.py)通过原异步文件客户端发送普通文件，核对实际字节/保护头，服务器等待回复时原期限取消、连接释放且不重发，以及迟到成功拒绝。回环测试未启动 VM、执行产物或调用 E2B 云；线程/内核文件 I/O 的依赖仍按模块合同区分，不把它当作 E06/E09。
 
 [持久服务会话检查](../sandbox-guest-runtime/src/pid_claims/tests/sessions.rs)补五项真实私有文件回归：多次重开/丢弃结果后编号递增且原 PID 拒绝保留；最大 u64 只发出一次，耗尽不写、不回绕；计数写前/写后/摘要后/同步后故障共同毒化会话与 PID 写者，只有完整图像能重开；篡改与 panic 保持拒绝；校验正确的原 v1 及伪装长度的 v1 均原样拒绝。该组连同既有位图场景共 11 项，在 macOS 实跑通过，并已包含在上述 #486 Linux 回执；入口仍为 `cargo test -p sandproof-guest-runtime --locked --lib pid_claims::`，不把软件故障点等同断电或真实故障磁盘。
 

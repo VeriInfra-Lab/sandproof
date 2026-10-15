@@ -41,12 +41,21 @@ fi
 
 def load_profile(path):
     """No execution, unpacking or image reads on the supervisor/staging host."""
+    return _load_profile(path, artifacts.template_identity)
+
+
+def load_runtime_profile(path):
+    """The disposable worker receives runtime bytes, not the source archive."""
+    return _load_profile(path, artifacts.runtime_template_identity)
+
+
+def _load_profile(path, identify):
     path = private_path(path)
     _, raw = artifacts.fingerprint(path, artifacts.MANIFEST_LIMIT, content=True)
     value = json.loads(raw, object_pairs_hook=unique_keys)
     require_keys(value, PROFILE_KEYS, 'protected Rust guest profile')
-    identity = artifacts.template_identity(value['release'], value['manifest_sha256'],
-                                           value['configuration'], value['configuration_sha256'])
+    identity = identify(value['release'], value['manifest_sha256'],
+                        value['configuration'], value['configuration_sha256'])
     # Read through the same bounded primitive, not an unbounded JSON reopen.
     observed, raw = artifacts.fingerprint(Path(value['configuration']), artifacts.CONFIGURATION_LIMIT, content=True)
     if observed != identity['configuration']:

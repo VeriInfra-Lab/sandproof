@@ -378,16 +378,22 @@ VmIdentity 的稳定绑定为 SHA-256：域字节 `sandproof/guest/pid-binding/v
 
 准备实际执行两份新产物的 --version，经原有界 JSON 命令读取器与同一输入锁逐项核对，读取前后核对二进制/编译器指纹，再复制并同步固定文件名的产物。最终[清单](../tools/guest_artifacts.py)记录 Git commit/tree、源码归档、Cargo/输入锁/配方摘要、工具链报告与入口文件摘要、服务/worker 精确字节和 SHA-256，沿原一次性持久写入发布；失败保留本次目录，不自动重建、重放或替换旧材料，发布后失败可能已留下清单。清单不含模板已验收或运行成功判据。消费方必须先从独立受保护输入取得 manifest_sha256；load 再核对原清单、source.tar 和双二进制，不能用清单自己的内容批准自己。worker_configuration 只返回原配置 v2 的 worker 片段，不生成生产预算或代替静态 check；本次私有 source/target/log 等诊断材料不属于安装载荷。
 
-同一消费者的 template_identity 另接受独立批准的私有配置路径及其 SHA-256，在同一有限 FD 读取中核对配置实际摘要、版本和完整 worker 片段与原清单一致，再产生上述 guest 描述。配置的其他预算/路径仍由原 daemon check 校验；该读取器不执行产物，不声称配置已可启动或文件已经进入 rootfs。下述显式安装/暂存入口消费该描述；自助构建监督的配置/传输尚未接入，现役 Go envd 路径和 SDK 协商字段不变。实际 release、链接库/镜像兼容、安装字节与描述一致性及 KVM 验收分别补证。
+同一消费者的 template_identity 另接受独立批准的私有配置路径及其 SHA-256，在同一有限 FD 读取中核对配置实际摘要、版本和完整 worker 片段与原清单一致，再产生上述 guest 描述。配置的其他预算/路径仍由原 daemon check 校验；该读取器不执行产物，不声称配置已可启动或文件已经进入 rootfs。下述显式安装/暂存入口消费该描述；下述自助监督通过显式受保护配置接入，省略配置时现役 Go envd 路径和 SDK 协商字段不变。实际 release、链接库/镜像兼容、安装字节与描述一致性及 KVM 验收分别补证。
 
 
-[原模板 worker](../tools/template_worker.py)在原 assigned disposable Linux VM 守卫内接受显式 `--rust-guest-profile /absolute/private.json`；省略参数仍使用固定 Go。受保护 profile 至多 16 KiB，精确包含 release（原私有双产物目录）、manifest_sha256、configuration（原私有完整配置文件）和 configuration_sha256，不来自租户构建请求。读取沿原清单/配置校验；配置必须监听 `0.0.0.0:49983`、owner_uid 为 0，worker 为 `/opt/sandproof/sandproof-guest-worker`、PID 目录为 `/opt/sandproof/state`、gate 为 `/run/sandproof-guest/gates`。Rust 模式的原工具 profile 不再包含 envd，BusyBox 另须具备 mv/sync；Go profile 不变。
+[原模板 worker](../tools/template_worker.py)在原 assigned disposable Linux VM 守卫内接受显式 `--rust-guest-profile /absolute/private.json`；省略参数仍使用固定 Go。受保护 profile 至多 16 KiB，精确包含 release（原私有双产物目录）、manifest_sha256、configuration（原私有完整配置文件）和 configuration_sha256，不来自租户构建请求。宿主完整审计源码归档，worker 使用独立的 runtime profile 读取入口，只复核已上传的清单、双二进制和配置；配置必须监听 `0.0.0.0:49983`、owner_uid 为 0，worker 为 `/opt/sandproof/sandproof-guest-worker`、PID 目录为 `/opt/sandproof/state`、gate 为 `/run/sandproof-guest/gates`。Rust 模式的原工具 profile 不再包含 envd，BusyBox 另须具备 mv/sync；Go profile 不变。
 
 [安装器](../tools/template_guest.py)复用原 `/opt/sandproof` 保留路径和镜像内路径解析，只在新候选目录复制固定 service/worker、guest-config.json 和 guest-manifest.json，复用原有限长度/摘要复制并复查副本。根、opt、平台目录须为调用者所有且无组/其他写权限，不通过修改无关镜像目录绕过 daemon 的祖先检查。二进制为 0500，配置/清单为 0400，state 目录为 0700；源码归档/target/日志不安装进 rootfs。复制后的实际 service 在原 Commands 绝对期限和日志预算内执行 `check --config`，成功后重新核对已安装载荷；失败不产生新 VM 制备标记或成功候选。该检查在 builder 环境执行，不能替代新镜像内的动态库兼容和实际启动检查。
 
 安装器写入私有 new-vm 标记；原 BusyBox boot 在网络与新 `/run` tmpfs 建立后，创建私有 gate 目录，先把 new-vm 重命名为 initialization-attempted 并调用 sync，再执行一次 `initialize`。无新标记时绝不执行 initialize，重复/符号链接标记拒绝；首次初始化即使在创建 PID 文件前失败，也已消耗自动制备资格。成功后才写原 boot-ready 标记，原 agent gate 保持并改为只执行 `serve --config`；respawn 不跑 initialize。整 VM 再启动也只打开原 PID 状态，缺失/损坏不补表，仍由原宿主责任路径处理失败和销毁。这是已确认 PID 政策的安装连接，不抵抗来宾 root、有效旧盘回滚或虚假持久化；尚无真实断电/文件系统故障证据。
 
-候选状态包含安装时的 guest 身份。原[暂存入口](../tools/template_stage.py)同样接受独立的 `--rust-guest-profile`，只读取受保护材料，不在宿主执行二进制、解包或挂载镜像；状态中的 guest 必须与独立 profile 相同，不能自行选择信任 pin。新建与原编号恢复均将完整身份绑定到原 manifest，下载文件名消失后的交接恢复也不得丢失或更换它；没有受保护 profile 时拒绝带 Rust 身份的状态。暂存仍不是 Ready，后续登记/真实启动/精确收尾门保持。当前自助监督仍只发送 Go profile，Rust 选项仅供受控制备者显式接入原 worker/暂存链；实际传输、自动监督及 E06/E09 仍待接通和实测。
+候选状态包含安装时的 guest 身份。原[暂存入口](../tools/template_stage.py)同样接受独立的 `--rust-guest-profile`，只读取受保护材料，不在宿主执行二进制、解包或挂载镜像；状态中的 guest 必须与独立 profile 相同，不能自行选择信任 pin。新建与原编号恢复均将完整身份绑定到原 manifest，下载文件名消失后的交接恢复也不得丢失或更换它；没有受保护 profile 时拒绝带 Rust 身份的状态。暂存仍不是 Ready，后续登记/真实启动/精确收尾门保持。自助监督的显式接线见下文，真实 builder/运行 VM 的 E06/E09 仍待实测。
+
+[自助监督器](../tools/template_build_service.py)接受可选受保护配置 `rust_guest_profile`，值为上述私有 profile 的绝对路径；租户请求不能选择或替换它。完整 profile 与派生 guest 身份共同进入原 BuildStore 不可变配置摘要，同一路径换 pin 也不能重开旧库。创建私有窗口/VM 前重新审计并与原配置比对；构建 VM 仅收到 `/input/rust-guest/release` 下的清单/双产物，以及固定 config.json/profile.json，原源码归档留在宿主。额外 helper、配置和产物纳入上传大小与构建盘必要空间检查；worker 在上传后仍检查实际可用空间，不把必要条件视为可构建保证。
+
+Rust 模式下全部准备上传由[有界上传适配器](../tools/template_build_upload.py)使用固定 SDK 2.51.0 的异步文件接口执行，复用原保护中心地址、helper/租户头和原 VM 访问令牌，不调用 SDK create/connect 或新增持久身份。每次只等待一个上传，文件读取 executor 固定为一个线程；文件以同一普通 inode、至多 64 KiB 块和一字节超额探测计数/散列，实际 EOF、路径/FD 身份及回执均检查原作业期限。SDK 对流式正文禁用自身总超时，因此外层 asyncio 期限覆盖等待响应并取消请求；迟到成功、未读到完整 EOF、替换/增长/截断或摘要变化均不能运行下一阶段。外层 owner 在 Python runner 的有限 executor 等待窗口结束后仍继续等待实际读取线程退出，随后才关闭文件；不可中断的宿主文件 I/O、固定 SDK/传输库及原中心网关仍是依赖，不宣称硬实时或内核 I/O 强制中止。取消不代表 VM 已清理，仍走原 Cleaning/精确结算；Go 上传路径保持原行为。
+
+监督器在候选磁盘下载前严格比较 worker 报告与独立 guest 身份，发布前再次复核，并把原 profile 交给原暂存入口；重启及源文件名已消失的交接继续使用同一身份。已尝试发布但结果未知时保持原观察流程，不因材料变化重建或重发；原确定发布回执仍可观察。身份字段按 JSON 类型比较，不能以布尔代替整数。此接线已通过本地组件/回环检查，未默认启用生产 Rust 来宾，真实 Linux release、完整服务与 KVM 验收仍待补证。
 
 `check` 读取原私有配置并构造原有界池，验证预算、路径语法、工作目录一致性和配置 owner 与内核有效 UID 一致；不访问 MMDS、安装路径、PID 文件或 MIME/时区来源，不绑定端口、不执行命令。线程数、阻塞线程数、线程栈及退出等待上限也显式配置，检查表示范围和基础约束，不承诺机器有足够内存。`initialize` 只供可信的新 VM 制备：可信安装者须先创建私有状态/gate 目录并安装 worker；读取实际快照和固定 Firecracker MMDS 身份后排他 create 原 PID 文件。它不由 serve 隐式调用，不覆盖已有或中断文件；取消前尚未开始的制备任务跳过写入，已进入的调用可能留下完整或不完整文件，失败不表示没有副作用。
 

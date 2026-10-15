@@ -459,7 +459,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 [来宾产物准备](../tools/prepare_guest.py)及[清单消费](../tools/guest_artifacts.py)增加精确 Git 归档/工具配方到实际构建、原输入锁到双二进制版本、同一文件观察/复制/同步到摘要、外部受保护 manifest pin 到后续消费，以及失败/超期/发布不确定的连接义务。实现和有限工具测试不构成源码到机器码对应证明，也不验证编译器、链接器、构建镜像、Python/Git、文件系统、原生库或完整内存/磁盘峰值。新工具尚未在真实 Linux 运行原 release 配方或连接受保护模板安装；构建替身不背书这些未执行项。未修改已证明 Rust、LLBC/Lean，旧定理不覆盖新 Python 适配或其模板组合。
 
 
-[模板 Rust 安装连接](../tools/template_guest.py)新增独立 profile pin 到安装副本、实际 daemon check 到再次指纹校验、已消费的新 VM 标记到只执行一次 initialize，以及候选状态/原暂存恢复到同一 TemplateBinding.guest 的连接义务。普通文件副本、实际 shell 控制流与故障替身测试不构成真实 daemon/BusyBox/文件系统持久化、镜像 ABI 或 KVM 证明。重命名及 sync 后不得因缺失 PID 文件重新制备是自有控制要求；内核/文件系统、可信新镜像、私有运行盘、MMDS 身份不变及来宾 root/旧盘回滚排除仍为外部前提。未修改已证明 Rust、抽取或 LLBC/Lean；这些 Python/boot 连接尚未证明。
+[模板 Rust 安装连接](../tools/template_guest.py)新增独立 profile pin 到安装副本、实际 daemon check 到再次指纹校验、已消费的新 VM 标记到只执行一次 initialize，以及候选状态/原暂存恢复到同一 TemplateBinding.guest 的连接义务。普通文件副本、实际 shell 控制流与故障替身测试不构成真实 daemon/BusyBox/文件系统持久化、镜像 ABI 或 KVM 证明。重命名及 sync 后不得因缺失 PID 文件重新制备是自有控制要求；内核/文件系统、可信新镜像、私有运行盘、MMDS 身份不变及来宾 root/旧盘回滚排除仍为外部前提。未修改已证明 Rust、抽取或 LLBC/Lean；这些 Python/boot 连接尚未证明。 [自助监督接线](../tools/template_build_guest.py)另增加受保护 profile 到原 SQLite 配置摘要、完整源码审计到运行材料子集、同一上传 inode/期限到候选拒绝、原候选恢复到相同 guest 身份的连接义务。SDK 异步取消/连接释放、普通文件读取线程及实际挂载/来宾启动仍属外部实现依赖；本地组件和回环实测不构成证明，也未修改已证明 Rust 或继承其结论。
 
 [正常启动状态装配](../sandbox-guest-service/src/startup.rs)新增可信 VM/模板 ID 的有界校验、域分离与长度分帧摘要、同绑定正常 open、未初始化 Session 与元数据身份钉住、令牌轮换不更换 PID 绑定，以及启动绝对期限/单名额/阻塞结果析构顺序义务；均尚未抽取或证明。元数据来源真实性和 VM ID 不复用、SHA-256、目录来源、原 PID 文件与 fsync、Tokio 排队/取消为显式外部连接前提。有限临时文件/故障点回归不证明服务已部署、有效旧盘回滚防护、启动可中断或整机内存上界。未修改已证明 Rust、LLBC/Lean，也不扩大原定理覆盖。
 

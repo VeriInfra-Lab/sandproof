@@ -141,14 +141,20 @@ def load(directory, expected_sha256):
     Never execute bundle contents, create state, repair or accept missing files.
     The source archive is retained with the binaries for independent auditing.
     """
+    manifest = load_runtime(directory, expected_sha256)
+    if fingerprint(Path(directory) / 'source.tar', SOURCE_LIMIT) != manifest['source']['archive']:
+        raise ValueError('guest source archive changed')
+    return manifest
+
+
+def load_runtime(directory, expected_sha256):
+    """Verify the pinned runtime payload; source audit remains on the host."""
     directory = private_path(directory, directory=True)
     hex_digest(expected_sha256)
     observed, raw = fingerprint(directory / 'manifest.json', MANIFEST_LIMIT, content=True)
     if observed['sha256'] != expected_sha256:
         raise ValueError('guest manifest differs from trusted input lock')
     manifest = validate(json.loads(raw, object_pairs_hook=unique_keys))
-    if fingerprint(directory / 'source.tar', SOURCE_LIMIT) != manifest['source']['archive']:
-        raise ValueError('guest source archive changed')
     for role, name in BINARIES.items():
         if fingerprint(directory / name, BINARY_LIMIT, executable=True) != manifest['artifacts'][role]:
             raise ValueError('guest binary fingerprint changed')
@@ -171,6 +177,16 @@ def template_identity(directory, expected_sha256, configuration, configuration_s
     this function neither runs a binary nor claims the rootfs contains it.
     """
     manifest = load(directory, expected_sha256)
+    return _configuration_identity(manifest, expected_sha256, configuration, configuration_sha256)
+
+
+def runtime_template_identity(directory, expected_sha256, configuration, configuration_sha256):
+    """Builder-side payload check, without transferring the audited archive."""
+    manifest = load_runtime(directory, expected_sha256)
+    return _configuration_identity(manifest, expected_sha256, configuration, configuration_sha256)
+
+
+def _configuration_identity(manifest, expected_sha256, configuration, configuration_sha256):
     configuration = private_path(configuration)
     hex_digest(configuration_sha256)
     observed, raw = fingerprint(configuration, CONFIGURATION_LIMIT, content=True)
