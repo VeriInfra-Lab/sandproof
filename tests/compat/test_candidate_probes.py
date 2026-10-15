@@ -19,8 +19,12 @@ import sdk_command_arguments as arguments
 import sdk_command_input as inputs
 import sdk_data_contract as data
 import sdk_file_permissions as files
+import sdk_command_timeouts as command_timeouts
+import sdk_file_timeouts as file_timeouts
+import sdk_rpc_timeouts as rpc_timeouts
 
-PROBES = (inputs, arguments, files)
+TIMEOUT_PROBES = (command_timeouts, file_timeouts, rpc_timeouts)
+PROBES = (inputs, arguments, files, *TIMEOUT_PROBES)
 
 
 class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
@@ -45,6 +49,11 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
                                     (files, 'batch_cases', 'batch'),
                                     (files, 'isolation_cases', 'isolation')]:
             self.stack.enter_context(patch.object(module, name, new=AsyncMock(side_effect=self.case(label))))
+        for module, names in [(command_timeouts, ('run_case', 'connect_case', 'wait_deadline_case')),
+                              (file_timeouts, ('read_case', 'write_case')),
+                              (rpc_timeouts, ('file_case', 'command_case'))]:
+            for name in names:
+                self.stack.enter_context(patch.object(module, name, new=AsyncMock(side_effect=self.timeout_case(name))))
         self.reset()
 
     def reset(self):
@@ -84,7 +93,10 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
                     report['daemon']['start_ticks'] += 1
                 return SimpleNamespace(exit_code=0, stdout=json.dumps(report), stderr='')
             self.trace.append(('command', ident, command))
-            return SimpleNamespace(exit_code=0, stdout='stdin-healthy' if 'stdin-healthy' in command else '', stderr='')
+            return SimpleNamespace(exit_code=0, stdout={'printf stdin-healthy': 'stdin-healthy',
+                'printf healthy': 'healthy'}.get(command, ''), stderr='')
+        def write(path, content):
+            self.trace.append(('setup_file', ident, path, content))
         def kill():
             self.trace.append(('kill', ident))
             failure = self.kill_failures.get(ident)
@@ -93,6 +105,7 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
             return failure if failure is not None else True
         handle = SimpleNamespace(sandbox_id=ident,
             commands=SimpleNamespace(run=AsyncMock(side_effect=run) if mode == 'async' else Mock(side_effect=run)),
+            files=SimpleNamespace(write=AsyncMock(side_effect=write) if mode == 'async' else Mock(side_effect=write)),
             kill=AsyncMock(side_effect=kill) if mode == 'async' else Mock(side_effect=kill))
         self.created.append(handle)
         return handle
@@ -103,6 +116,14 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
             if self.fail_case == (sandbox.sandbox_id, label):
                 raise ValueError('controlled case failure')
             return [dict(case=label, user=args[0] if label == 'stdin' else 'root')]
+        return run
+
+    def timeout_case(self, label):
+        async def run(sandbox, *args):
+            self.trace.append(('case', sandbox.sandbox_id, label, args))
+            if self.fail_case == (sandbox.sandbox_id, label):
+                raise ValueError('controlled case failure')
+            return dict(case=label)
         return run
 
     async def execute(self, module):
@@ -136,7 +157,7 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual([event[0] for event in events][-2:], ['observe', 'kill'])
                 if module is inputs:
                     receipts = report['guests']
-                elif module is arguments:
+                elif module is not files:
                     receipts = report['results']
                 else:
                     receipts = [guest for item in report['results'] for guest in item['rust_guests']]
@@ -162,7 +183,7 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
                 self.bad_observation = ('sync', 1)
                 with self.assertRaises(ValueError):
                     await self.execute(module)
-                self.assertFalse(any(event[0] in ('case', 'command') for event in self.trace))
+                self.assertFalse(any(event[0] in ('case', 'command', 'setup_file') for event in self.trace))
                 self.assertEqual(self.count['async'], 0)
                 self.assert_cleaned_once()
 
@@ -211,7 +232,12 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(probe=module.__name__):
                 self.reset()
                 report = await self.execute(module)
-                self.assertEqual(set(report), {'sdk_version', 'scope', 'cases' if module is inputs else 'results'})
+                expected = {'sdk_version', 'scope', 'cases' if module is inputs else 'results'}
+                if module is file_timeouts:
+                    expected.update(('payload_bytes', 'sha256'))
+                    self.assertEqual(report['payload_bytes'], len(file_timeouts.PAYLOAD))
+                    self.assertEqual(report['sha256'], file_timeouts.DIGEST)
+                self.assertEqual(set(report), expected)
                 self.assertFalse(any(event[0] in ('material', 'observe') for event in self.trace))
                 for event in self.trace:
                     if event[0] == 'create':
@@ -227,6 +253,52 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(caught.exception.exceptions), 1)
         self.assertIsInstance(caught.exception.exceptions[0], asyncio.CancelledError)
         self.assert_cleaned_once()
+
+    async def test_timeout_matrix_keeps_its_arguments_and_separate_observation_budget(self):
+        for module, per_mode in [(command_timeouts, 26), (file_timeouts, 80), (rpc_timeouts, 48)]:
+            with self.subTest(probe=module.__name__):
+                self.reset()
+                report = await self.execute(module)
+                self.assertEqual([len(row['cases']) for row in report['results']], [per_mode, per_mode])
+                for event in self.trace:
+                    if event[0] == 'create':
+                        self.assertEqual(event[3]['timeout'], 300)
+                    if event[0] == 'observe':
+                        self.assertEqual(event[3], dict(user='root', timeout=20))
+                for sandbox in self.created:
+                    cases = [event for event in self.trace if event[0] == 'case' and event[1] == sandbox.sandbox_id]
+                    self.assertEqual(len(cases), per_mode)
+                    observed = set()
+                    for _, _, label, args in cases:
+                        if label == 'run_case':
+                            observed.add(args[-3:-1])
+                        elif label == 'wait_deadline_case':
+                            self.assertIn(args, [(True,), (False,)])
+                            continue
+                        else:
+                            observed.add(args[-2:])
+                    self.assertEqual(observed, {('omitted', None), ('zero', 0), ('negative', -1),
+                        ('large' if module is file_timeouts else 'above_rpc_limit', 10_000_000)})
+
+    async def test_timeout_case_failure_stops_matrix_and_retains_cleanup_and_primary_errors(self):
+        for module, case in [(command_timeouts, 'run_case'), (file_timeouts, 'read_case'),
+                             (rpc_timeouts, 'command_case')]:
+            for mode in ('sync', 'async'):
+                with self.subTest(probe=module.__name__, mode=mode):
+                    self.reset()
+                    ident = mode + '-1'
+                    self.fail_case = (ident, case)
+                    self.kill_failures[ident] = False
+                    with self.assertRaises(BaseExceptionGroup) as caught:
+                        await self.execute(module)
+                    self.assertIsInstance(caught.exception.__context__, ValueError)
+                    self.assertEqual(str(caught.exception.__context__), 'controlled case failure')
+                    self.assertEqual([type(error) for error in caught.exception.exceptions], [RuntimeError])
+                    self.assertEqual(len([event for event in self.trace
+                        if event[:3] == ('case', ident, case)]), 1)
+                    self.assertEqual([event[2] for event in self.trace
+                        if event[:2] == ('observe', ident)], [1])
+                    self.assert_cleaned_once()
 
     def test_shared_candidate_options_keep_all_five_fields(self):
         parser = argparse.ArgumentParser()

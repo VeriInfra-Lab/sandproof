@@ -26,7 +26,8 @@ from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import InvalidArgumentException, TimeoutException
 from e2b.sandbox.commands.command_handle import CommandExitException
 
-from sdk_command_input import call
+from sdk_command_input import call, destroy_probes
+from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
 
 
@@ -165,12 +166,14 @@ async def command_case(sandbox, operation, case, value):
 
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
+    template, candidate = guest_candidate(args)
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     results = []
     for cls in (Sandbox, AsyncSandbox):
-        sandbox = await call(cls.create, template='base', timeout=300,
+        sandbox = await call(cls.create, template=template, timeout=300,
                              allow_internet_access=False, **owner)
         try:
+            before = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
             rows = []
             for operation in ('get_info', 'exists', 'list', 'make_dir', 'remove', 'rename'):
                 for case, value in VALUES:
@@ -179,17 +182,25 @@ async def exercise(args):
                               'handle.send_stdin', 'handle.close_stdin'):
                 for case, value in VALUES:
                     rows.append(await command_case(sandbox, operation, case, value))
-            results.append(dict(sdk=cls.__name__, cases=rows))
+            after = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+            assert before == after, 'Rust guest identity changed during unary timeout cases'
+            item = dict(sdk=cls.__name__, cases=rows)
+            if candidate is not None:
+                item.update(sandbox_id=sandbox.sandbox_id, rust_guest=before)
+            results.append(item)
         finally:
-            _kill_confirmed = (await call(sandbox.kill))
-            assert _kill_confirmed
-    print(json.dumps(dict(sdk_version='2.51.0', results=results,
-                          scope='selected unary filesystem and command request timeout values; '
-                                'negative 1 ms may race success; not lifecycle or watcher API'), indent=2))
+            await destroy_probes([sandbox])
+    report = dict(sdk_version='2.51.0', results=results,
+                  scope='selected unary filesystem and command request timeout values; '
+                        'negative 1 ms may race success; not lifecycle or watcher API')
+    if getattr(args, 'template', None) is not None:
+        report['template'] = template
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
+    guest_arguments(parser)
     asyncio.run(exercise(parser.parse_args()))
