@@ -372,7 +372,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [启动包装](../sandbox-guest-runtime/src/launch_wrapper.rs)、原 worker 及[命令上下文](../sandbox-guest-service/src/execution.rs)新增可信 PATH 与请求环境分离、有效身份查找/相对命中规则、继承 nice 转换、有界脚本/argv 构造和缺失 process 原元数据保留的自有连接义务。READY 前准备、持久 claim 后唯一放行、同一 PID 贯穿 exec、取消查找后的真实 wait 及两次编码预算到实际驻留尚未抽取或证明。288 组 Go 构造对照不执行原 handler；Linux 真实 shell/工具、HTTP 与固定 SDK 证据分别记录，不证明完整 E03、系统调用竞态或整机资源上界。纯核心、历史已证明 Rust、LLBC/Lean 未改，旧结论不覆盖该候选。
 
-[工作目录检查](../sandbox-guest-runtime/src/worker.rs)与[Start 拒绝发送](../sandbox-guest-service/src/command_requests/http/start.rs)新增原 gated worker 的 ENOENT 到私有握手、准备所有者到不可替换失败事实、原路径与原错误/期限到协商 EOS 的自有义务。专属标记只在真实观察后发布，取消/未知收尾不得复用旧事实；成功 Stat 与后续 chdir 的竞态仍属明确边界。该检查、跨任务事实和响应所有权未抽取/证明，有限 Go 错误渲染不执行原 Stat/handler。纯核心和已证明 Rust/Lean 未改。
+[工作目录检查](../sandbox-guest-runtime/src/process/preparation.rs)与[Start 拒绝发送](../sandbox-guest-service/src/command_requests/http/start.rs)的当前义务为父侧原阻塞准备的 ENOENT 到互斥观察、准备所有者到不可替换失败事实、原路径与原错误/期限到协商 EOS 的连接。此观察只在真实 Stat 失败后发布，取消/未知收尾不得复用旧事实；旧 worker 私有握手已不承担当前预检，成功 Stat 与后续 chdir 的竞态仍属明确边界。该检查、跨任务事实和响应所有权未抽取/证明，有限 Go 错误渲染不执行原 Stat/handler。纯核心和已证明 Rust/Lean 未改。
 
 [原生启动分类](../sandbox-guest-runtime/src/worker.rs)和[回复连接](../sandbox-guest-service/src/command_requests/http/start/native.rs)新增完整原放行到原生阶段、正 errno 与内部协议故障区分、新握手拒绝旧 worker、原请求字段与失败事实不可替换及固定错误映射的自有义务。阶段标记、参数移动、已烧号后的真实收尾与 HTTP 最后字节责任均未抽取或证明。固定 Go 符号 errno 渲染及真实 Linux 有限故障分别报告，不证明所有 syscall 失败、完整启动序列或资源耗尽。新增显式管道分配还需证明：stdout→stderr→可选 stdin 的原失败阶段、父/子端及异步注册的所有权转移、未 spawn 分支的部分材料释放、准备观察与同次粗错误一致、原字段到 internal EOS 的连接及最后副本计费。实际 pipe2 失败与受控 Go 渲染分别验证，未证明完整启动故障优先级、Tokio/内核或整机预算。纯核心、历史已证明 Rust/Lean 未改，旧结论不覆盖新版准备与回复适配。
 
@@ -394,7 +394,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [命令准备请求所有权](../sandbox-guest-service/src/command/preparation.rs)新增原请求期限到准备/登记接受的最早时刻、守卫到独立准备任务和持久登记票据、取消后真实收尾/阻塞任务退出、接受后移交至实际放行观察的连接义务。原授权/执行期限与后续进程记录责任保持，但准备 owner 和执行 driver 的本候选均未抽取或证明；真实进程有限检查不能证明服务重启、未知系统调用或完整 HTTP Start。已证明纯核心未改。
 
-准备 owner 在 359ced1c8edfa474057f518eb8aaf07654edf76d 之后进一步将同步 spawn 材料制备移入阻塞任务。新增待证义务包括：原记录预留对排队/运行任务数量的约束、原请求/授权在等待者丢失时仍随闭包保留、出队后原期限及撤回检查先于副作用、返回的原 child 到异步握手的唯一移交、返回值未被消费或 panic 时的停止请求与未知责任隔离。屏障及假时钟回归不证明 Tokio/内核取消或实际 RAM 上界；该新版编排未抽取或证明，旧工程回执和历史定理不能背书它。纯核心、既有 LLBC/Lean 及已证明 Rust 均未改变。
+准备 owner 在 359ced1c8edfa474057f518eb8aaf07654edf76d 之后进一步将同步 spawn 材料制备移入阻塞任务。新增待证义务包括：原记录预留对排队/运行任务数量的约束、原请求/授权在等待者丢失时仍随闭包保留、出队后原期限及撤回检查先于副作用、返回的原 child 到异步握手的唯一移交、返回值未被消费或 panic 时的停止请求与未知责任隔离。屏障及假时钟回归不证明 Tokio/内核取消或实际 RAM 上界；该新版编排未抽取或证明，旧工程回执和历史定理不能背书它。纯核心、既有 LLBC/Lean 及已证明 Rust 均未改变。在 59b13e9fbce0078a9231ab84a472ec80c1193154 之后，cwd Stat 又从 worker 移到原阻塞准备任务、先于 gate/管道/PTY 分配。此顺序、同次 ENOENT 观察到公开错误的连接、阻塞期间责任保持及预检后路径变化到实际 chdir 错误的对应均属未证明适配；不把成功 Stat 当作访问授权或无竞态保证。
 
 [共用 Connect 期限解析](../sandbox-guest-service/src/connect_timeout.rs)从文件请求组件提取，命令执行期限改为首值、空值及有符号整数的固定语义；同一非正 wire 值到 HTTP 立即到期和无执行期限的不同映射、原起点及派发前过期拒绝仍须连接证明。既有有限解析对照和新边界测试不证明完整命令 HTTP 生命周期；已证明纯核心未变。
 

@@ -103,8 +103,8 @@ async fn wrapped_launch_budget_refuses_before_ready_and_reaps_original_worker() 
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
 }
 
-#[tokio::test]
-async fn wrapped_missing_cwd_is_observed_before_ready_and_original_worker_is_reaped() {
+#[test]
+fn wrapped_missing_cwd_precedes_private_directory_and_worker_preparation() {
     for dangling in [false, true] {
         let directory = tempfile::tempdir().unwrap();
         let mut spec = shell(directory.path(), "printf forbidden > effect", false);
@@ -113,6 +113,40 @@ async fn wrapped_missing_cwd_is_observed_before_ready_and_original_worker_is_rea
         if dangling {
             std::os::unix::fs::symlink("absent-target", &spec.cwd).unwrap();
         }
+        let mut rejection = None;
+        let error = sandproof_guest_runtime::CommandPreparation::spawn_observed(
+            &directory.path().join("missing-worker"),
+            &directory.path().join("missing-gates"),
+            1,
+            1,
+            &spec,
+            limits(),
+            &mut rejection,
+        )
+        .err()
+        .expect("missing cwd must reject without a worker");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(
+            rejection,
+            Some(sandproof_guest_runtime::PreparationRejection::MissingCwd)
+        );
+        assert!(!directory.path().join("effect").exists());
+        assert_eq!(
+            std::fs::read_dir(directory.path()).unwrap().count(),
+            usize::from(dangling)
+        );
+    }
+}
+
+#[tokio::test]
+async fn cwd_removed_after_parent_preflight_reaches_native_exec_without_a_second_stat() {
+    for pty in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let cwd = directory.path().join("cwd");
+        std::fs::create_dir(&cwd).unwrap();
+        let mut spec = shell(&cwd, "printf forbidden > effect", false);
+        spec.envd_wrapper_path = Some(String::new());
+        spec.pty = pty.then_some(sandproof_guest_runtime::PtySize { rows: 24, cols: 80 });
         let mut preparation = sandproof_guest_runtime::CommandPreparation::spawn(
             Path::new(WORKER),
             directory.path(),
@@ -122,16 +156,19 @@ async fn wrapped_missing_cwd_is_observed_before_ready_and_original_worker_is_rea
             limits(),
         )
         .unwrap();
-        assert!(!preparation.missing_working_directory());
-        assert!(preparation.finish().await.is_err());
-        assert!(preparation.missing_working_directory());
-        assert!(!preparation.abort().await.unwrap().success());
+        // The worker cannot receive its launch payload until finish is polled.
+        // Remove cwd at this boundary, without racing a sleep or READY.
+        std::fs::remove_dir(&cwd).unwrap();
+        let mut process = Owned(preparation.finish().await.unwrap());
+        assert_eq!(preparation.rejection(), None);
         drop(preparation);
-        assert!(!directory.path().join("effect").exists());
         assert_eq!(
-            std::fs::read_dir(directory.path()).unwrap().count(),
-            usize::from(dangling)
+            process.release().await.unwrap(),
+            LaunchObservation::ExecFailed(2)
         );
+        assert!(!process.wait_main().await.unwrap().success());
+        drop(process);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     }
 }
 

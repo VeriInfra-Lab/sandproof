@@ -15,6 +15,8 @@ pub(crate) const HELLO: &[u8; 4] = b"SG11";
 pub(crate) const READY: &[u8; 4] = b"SG12";
 pub(crate) const ERROR: &[u8; 4] = b"SGE1";
 const FAULT: &[u8; 4] = b"SGF1";
+// Retained for decoding the existing v2 handshake; current workers do not
+// repeat the parent's cwd preflight after pipe/PTY allocation.
 pub(crate) const CWD_MISSING: &[u8; 4] = b"SGC1";
 pub(crate) const ENVIRONMENT_NUL: &[u8; 4] = b"SGN1";
 pub(crate) const ARGUMENT_NUL: &[u8; 4] = b"SGN2";
@@ -61,19 +63,8 @@ fn execute(gate: &mut UnixStream, maximum: usize, native_phase: &mut bool) -> io
     // original durable PID claim and release. Parent cancellation can kill
     // this exact unreleased worker even if filesystem lookup blocks.
     crate::launch_wrapper::prepare(&mut spec, maximum)?;
-    // Fixed handler.New checks Stat under the daemon identity. Only ENOENT
-    // gets this diagnostic: ENOTDIR, permission and other failures continue
-    // to the actual chdir/exec after release. No user code has run here.
-    if wrapped
-        && std::fs::metadata(&spec.cwd).is_err_and(|error| {
-            error.raw_os_error() == Some(rustix::io::Errno::NOENT.raw_os_error())
-        })
-    {
-        gate.write_all(CWD_MISSING)?;
-        return Err(io::Error::from_raw_os_error(
-            rustix::io::Errno::NOENT.raw_os_error(),
-        ));
-    }
+    // The parent already performed the one cwd Stat before preparing I/O.
+    // A later filesystem change must reach actual chdir after release.
     if wrapped && reject_nul(gate, &spec)? {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

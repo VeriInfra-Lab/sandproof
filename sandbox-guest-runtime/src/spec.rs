@@ -81,8 +81,9 @@ impl LaunchSpec {
             credentials.validate()?;
         }
         let wrapped = self.envd_wrapper_path.is_some();
-        // Wrapped requests preserve NUL until the original worker has checked
-        // cwd existence and the fixed Go validation order. Raw exec stays strict.
+        // Wrapped requests preserve NUL through the parent's cwd preflight;
+        // the original worker checks Go's environment/argv order before READY.
+        // Raw exec stays strict.
         let nul = self.cwd.as_os_str().as_bytes().contains(&0)
             || self.program.contains('\0')
             || self.args.iter().any(|arg| arg.contains('\0'))

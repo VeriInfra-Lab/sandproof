@@ -87,9 +87,10 @@ impl CommandPreparation {
         )
     }
 
-    /// Original pre-spawn pipe and selected PTY failures are retained apart
-    /// from local setup, async registration and worker-spawn errors. Clears the supplied
-    /// observation before work; no failure here owns a live child.
+    /// Original pre-spawn cwd, pipe and selected PTY failures are retained apart
+    /// from local setup, async registration and worker-spawn errors. Clears the
+    /// observation before work; no failure here owns a live child. Filesystem
+    /// operations may block; the service runs this under its blocking owner.
     /// # Errors
     /// Same errors as spawn; a recorded native errno is not a cleanup receipt.
     pub fn spawn_observed(
@@ -108,6 +109,18 @@ impl CommandPreparation {
             return Err(invalid("missing command or worker identity"));
         }
         let payload = encode(spec, limits.launch_bytes)?;
+        // Fixed handler.New checks Stat under the daemon identity before any
+        // pipe or PTY allocation. Only ENOENT is a missing-cwd observation;
+        // other errors continue to actual chdir/exec after the original gate.
+        // This is one preflight, not a path lock or an access authorization.
+        if spec.envd_wrapper_path.is_some()
+            && std::fs::metadata(&spec.cwd).is_err_and(|error| {
+                error.raw_os_error() == Some(rustix::io::Errno::NOENT.raw_os_error())
+            })
+        {
+            *rejection = Some(PreparationRejection::MissingCwd);
+            return Err(invalid("working directory does not exist"));
+        }
         let directory = tempfile::Builder::new()
             .prefix("guest-gate-")
             .tempdir_in(private_directory)?;
@@ -159,8 +172,8 @@ impl CommandPreparation {
         })
     }
 
-    /// Whether this exact worker reported the fixed pre-launch ENOENT check.
-    /// This is neither an actual-wait receipt nor evidence for another path.
+    /// Legacy private-handshake observation, not a wait receipt. Current cwd
+    /// preflight failures return through `spawn_observed` before owning a worker.
     #[must_use]
     pub const fn missing_working_directory(&self) -> bool {
         matches!(self.rejection, Some(PreparationRejection::MissingCwd))
