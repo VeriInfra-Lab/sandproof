@@ -155,6 +155,7 @@ fn assert_original_alive(original: &KernelGuard) {
 #[test]
 fn process_death_keeps_command_alive_and_restart_refuses_old_public_pid() {
     let directory = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let result = helper("supervisor_process", directory.path())
         .output()
         .unwrap();
