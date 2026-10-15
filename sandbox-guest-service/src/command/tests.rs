@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn signal_errno_requires_original_native_observation_and_keeps_legacy_error() {
+    for errno in [1, 3, 9, 22, 38] {
+        let observed = SignalFailure::observed(&std::io::Error::from_raw_os_error(errno));
+        assert!(matches!(observed, SignalFailure::Native(number) if number == errno));
+        assert_eq!(observed.error(), CommandError::Unavailable);
+    }
+    for error in [
+        std::io::Error::new(std::io::ErrorKind::NotFound, "no syscall"),
+        std::io::Error::from_raw_os_error(0),
+    ] {
+        assert!(matches!(
+            SignalFailure::observed(&error),
+            SignalFailure::Command(CommandError::Unavailable)
+        ));
+    }
+    assert_eq!(
+        SignalFailure::from(CommandError::StaleIdentity).error(),
+        CommandError::StaleIdentity
+    );
+}
+
+#[test]
 fn input_native_observation_requires_real_errno_and_preserves_legacy_error() {
     for errno in [5, 9, 11, 22, 28, 32] {
         let original = std::io::Error::from_raw_os_error(errno);

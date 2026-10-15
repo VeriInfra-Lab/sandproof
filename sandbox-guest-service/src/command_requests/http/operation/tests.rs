@@ -7,6 +7,7 @@ use sandproof_guest_runtime::protocol::{JsonContentType, ProtocolError};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 mod native_input;
+mod native_signal;
 
 fn source(rejection: Option<Rejection>, format: Option<ResponseFormat>, owner: Owner) -> Source {
     Source {
@@ -283,6 +284,7 @@ async fn channel_rejections_keep_owning_the_request_and_refuse_stream_misclassif
     .map(Rejection::Channel)
     .into_iter()
     .chain([Rejection::StdinClosed, Rejection::StdinDisabled])
+    .chain([Rejection::NativeSignal(3), Rejection::NativeSignal(1)])
     .chain([false, true].map(|pty| Rejection::NativeInput {
         pid: u32::MAX,
         pty,

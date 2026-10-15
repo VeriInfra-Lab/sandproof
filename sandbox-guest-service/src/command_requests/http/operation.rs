@@ -1,4 +1,4 @@
-//! Fixed PID/parameter rejections and native input errno from original dispatch.
+//! Fixed PID/parameter rejections and native input/signal errno from dispatch.
 //! Unobserved worker/I/O failure and tag policy remain unclassified.
 use super::{ResponseFormat, reply};
 use crate::{command_requests::Error as RequestError, owned_body::Owner};
@@ -18,6 +18,7 @@ pub(crate) enum Rejection {
     Channel(ChannelRejection),
     StdinClosed,
     StdinDisabled,
+    NativeSignal(i32),
     NativeInput { pid: u32, pty: bool, errno: i32 },
 }
 #[derive(Clone, Copy)]
@@ -48,6 +49,10 @@ impl Rejection {
     #[cfg(target_os = "linux")]
     pub(crate) fn matches(self, error: &RequestError) -> bool {
         match self {
+            Self::NativeSignal(errno) => {
+                errno > 0
+                    && error == &RequestError::Command(crate::command::CommandError::Unavailable)
+            }
             Self::NativeInput { errno, .. } => {
                 errno > 0
                     && error
@@ -137,6 +142,7 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
                 | Rejection::StdinClosed
                 | Rejection::StdinDisabled
                 | Rejection::NativeInput { .. }
+                | Rejection::NativeSignal(_)
         ) && format.content_type().starts_with("application/connect+")
         {
             return Err(reply::Error::UnclassifiedFault);
@@ -146,7 +152,8 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
             Rejection::Channel(_)
             | Rejection::StdinClosed
             | Rejection::StdinDisabled
-            | Rejection::NativeInput { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | Rejection::NativeInput { .. }
+            | Rejection::NativeSignal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::NOT_IMPLEMENTED,
         };
         reply::send_error(
@@ -171,14 +178,29 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
         put(match rejection {
             Rejection::PidNotFound(_) => b"not_found",
             Rejection::Channel(channel) => channel.code(),
-            Rejection::StdinClosed | Rejection::StdinDisabled | Rejection::NativeInput { .. } => {
-                b"internal"
-            }
+            Rejection::StdinClosed
+            | Rejection::StdinDisabled
+            | Rejection::NativeInput { .. }
+            | Rejection::NativeSignal(_) => b"internal",
             _ => b"unimplemented",
         })?;
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| crate::go_json::string_content(bytes, put);
         match rejection {
+            Rejection::NativeSignal(errno) => {
+                message(b"error sending signal: ")?;
+                // Fixed Go os.Process.Signal converts ESRCH before its caller
+                // formats the error; no later status/PID lookup is involved.
+                if errno == 3 {
+                    message(b"os: process already finished")?;
+                } else {
+                    message(
+                        sandproof_guest_runtime::file_download::LinuxErrno(errno)
+                            .message()
+                            .as_bytes(),
+                    )?;
+                }
+            }
             Rejection::NativeInput {
                 pid, pty, errno, ..
             } => {

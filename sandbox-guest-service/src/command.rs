@@ -73,6 +73,30 @@ impl From<CommandError> for InputFailure {
     }
 }
 
+pub(crate) enum SignalFailure {
+    Command(CommandError),
+    Native(i32),
+}
+impl SignalFailure {
+    pub(crate) const fn error(self) -> CommandError {
+        match self {
+            Self::Command(error) => error,
+            Self::Native(_) => CommandError::Unavailable,
+        }
+    }
+    fn observed(error: &std::io::Error) -> Self {
+        error
+            .raw_os_error()
+            .filter(|errno| *errno > 0)
+            .map_or(Self::Command(CommandError::Unavailable), Self::Native)
+    }
+}
+impl From<CommandError> for SignalFailure {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CommandExit {
     pub code: i32,
@@ -362,11 +386,20 @@ impl ManagedCommand {
         identity: CommandIdentity,
         signal: ProcessSignal,
     ) -> Result<(), CommandError> {
+        self.signal_observed(identity, signal)
+            .map_err(SignalFailure::error)
+    }
+
+    pub(crate) fn signal_observed(
+        &self,
+        identity: CommandIdentity,
+        signal: ProcessSignal,
+    ) -> Result<(), SignalFailure> {
         self.check(identity)?;
         self.shared
             .control
             .signal(identity, signal)
-            .map_err(|_| CommandError::Unavailable)
+            .map_err(|error| SignalFailure::observed(&error))
     }
 
     /// # Errors

@@ -39,6 +39,7 @@ func nativeErrno(name string) syscall.Errno {
 		"EMFILE": syscall.EMFILE, "ENOSPC": syscall.ENOSPC, "ENAMETOOLONG": syscall.ENAMETOOLONG,
 		"ELOOP": syscall.ELOOP, "UNKNOWN": syscall.Errno(2147483647),
 		"EPIPE": syscall.EPIPE, "EINTR": syscall.EINTR,
+		"ESRCH": syscall.ESRCH, "ENOSYS": syscall.ENOSYS,
 	}
 	number, ok := numbers[name]
 	if !ok {

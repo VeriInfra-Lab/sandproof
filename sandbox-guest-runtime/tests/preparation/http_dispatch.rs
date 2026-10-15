@@ -27,6 +27,8 @@ mod json_errors;
 mod launch;
 #[path = "native_http.rs"]
 mod native;
+#[path = "signal_native_http.rs"]
+mod signal_native;
 
 type Http = CommandHttp<MetadataFixture, CurrentAccount>;
 fn processes(fixture: &Fixture, registry: &PidRegistry, registrar: &PidRegistrar) -> Processes {

@@ -227,7 +227,14 @@ async fn control(
                     return Err(Error::Protocol(protocol::ProtocolError::Unimplemented));
                 }
             };
-            command.signal(command.identity(), signal)
+            command
+                .signal_observed(command.identity(), signal)
+                .map_err(|error| {
+                    if let crate::command::SignalFailure::Native(errno) = &error {
+                        *observed = Some(Rejection::NativeSignal(*errno));
+                    }
+                    error.error()
+                })
         }
         Request::Update { process, pty } => {
             let command = live(registry, process.as_ref(), observed)?;
