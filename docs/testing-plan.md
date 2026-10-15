@@ -565,6 +565,12 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 [命令流期限](../tests/system/sdk_command_timeouts.py)、[文件请求/空闲期限](../tests/system/sdk_file_timeouts.py)与[一元 RPC 期限](../tests/system/sdk_rpc_timeouts.py)同样接受上述候选参数，覆盖原 run/connect/wait、文件传输和已选命令/文件一元操作矩阵。身份观察在整组案例前后执行，使用自己的 20 秒命令期限；原案例参数、未知结果观察、无重放及 300 秒 VM 寿命保持。可选报告绑定原 sandbox_id 和前后相同的运行身份，默认报告保持原字段。[同一编排回归](../tests/compat/test_candidate_probes.py)还核对期限参数不被观察预算替换、文件初始写入晚于身份核对，以及案例失败与销毁失败同时保留；这些受控操作不构成真实超时/终止或传输验收。
 
+#499 的期限探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38797587711) 通过：源 7795e782440e731aea50276aa82292ef240d82aa、checkout 7b937bfb8017a92dc84693e0464994dd620647a5；固定 SDK 100 项、封存 Redis 与四项 CI 成功。该结果仍不包含真实候选 VM 的期限矩阵。
+
+[PTY 候选入口](../tests/system/sdk_pty.py)通过原固定 SDK 的公开 `pty.create/connect/send_stdin/resize/kill` 和同步/异步句柄，对 root、ubuntu 各执行直接退出、断线重连后 code 17、等待输入时 SIGKILL 三种案例。使用 SDK 原 `/bin/bash -i -l`，在私有目录写入有限 Python 程序，通过 FIFO 就绪屏障核对原 PID、UID、cwd、环境及三个终端描述符；之后发送空输入及分块的全部 256 种字节，验证 2304 字节原样合并输出、初始/调整窗口、超出 uint16 的尺寸收窄、准确终局、立即晚连只返回 End、单次启动标记及存活时 List 包含原 PID。结束后的 List 状态只记录观察值：固定 Go 先广播 End 再调用终局保存/删除钩子，不能额外承诺 End 后立即查不到 PID。交互启动命令小于 512 字节，输出上限 128 KiB、元数据上限 4 KiB；登录 shell 的前缀单独记录长度/摘要，不当作固定二进制帧，也不擅自归一化为 Go/Rust 完整对照。原 shell profile 须保留请求的 cwd/自定义环境；模板还须具备 `/usr/bin/python3`。每个 PTY 60 秒、晚连 20 秒，VM 300 秒，不延长寿命以掩盖超时。
+
+该入口采用同一候选参数和前后运行身份观察，Start 结果未知不重试；错误 PID 的连接只关闭该订阅，失败收尾只尝试原已知 PID 的信号，信号结果未知不重放，随后关闭全部已知句柄并销毁原 VM，保留全部收尾错误和原异常。它已实现但尚未在产品 VM 执行。[本地回归](../tests/compat/test_pty_probe.py)分别运行真实私有 PTY 上的原上传程序/短命令，以及受控 RPC 事件下的原固定 SDK Pty/CommandHandle，核对二进制损坏、截断/多余字节、历史重放、错误重连 PID、未知 Start/信号和部分收尾失败。私有 PTY 不读取宿主 shell profile、不切换身份、不操作宿主终端；受控 RPC 不执行 envd。它们不能代替真实登录配置、Linux 身份切换、网关/来宾服务、进程树收尾、完整 PTY 故障/期限矩阵、双端 E03 或 KVM 验收，也未加入 C02 固定监督调用集。
+
 | 实机入口 | 必查内容 |
 |---|---|
 | [C02 固定监督](../tests/system/sdk_c02_acceptance.py) | 批准的精确提交、中心/宿主双产物与固定 Redis/TLS 清单、宿主/探针配置；单轮私有身份、实际角色进程回执、失败收尾和原资源审计 |

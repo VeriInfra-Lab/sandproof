@@ -22,9 +22,10 @@ import sdk_file_permissions as files
 import sdk_command_timeouts as command_timeouts
 import sdk_file_timeouts as file_timeouts
 import sdk_rpc_timeouts as rpc_timeouts
+import sdk_pty as pty_probe
 
 TIMEOUT_PROBES = (command_timeouts, file_timeouts, rpc_timeouts)
-PROBES = (inputs, arguments, files, *TIMEOUT_PROBES)
+PROBES = (inputs, arguments, files, pty_probe, *TIMEOUT_PROBES)
 
 
 class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
@@ -43,6 +44,7 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
         self.stack.enter_context(patch.object(inputs.Sandbox, 'create', side_effect=self.create_sync))
         self.stack.enter_context(patch.object(inputs.AsyncSandbox, 'create', new=AsyncMock(side_effect=self.create_async)))
         for module, name, label in [(inputs, 'user_cases', 'stdin'),
+                                    (pty_probe, 'user_cases', 'pty'),
                                     (arguments, 'argument_cases', 'arguments'),
                                     (files, 'user_cases', 'users'),
                                     (files, 'path_cases', 'paths'),
