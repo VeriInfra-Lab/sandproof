@@ -91,8 +91,15 @@ fn failed_method_response_retains_original_two_slots_and_shorter_deadline() {
         *req.method_mut() = axum::http::Method::GET;
         let mut response = Box::pin(f.http.handle(req));
         assert!(poll_fn(|cx| Poll::Ready(response.as_mut().poll(cx).is_pending())).await);
-        tokio::time::advance(Duration::from_secs(5)).await;
-        let failure = response.await.unwrap_err();
+        // Advance past the deadline: Tokio timers round to millisecond ticks.
+        // Awaiting exactly at the boundary can leave the timer pending while
+        // the occupied blocking pool prevents automatic clock advancement.
+        tokio::time::advance(Duration::from_secs(6)).await;
+        let Poll::Ready(result) = poll_fn(|cx| Poll::Ready(response.as_mut().poll(cx))).await
+        else {
+            panic!("method response did not expire while its encoder was queued");
+        };
+        let failure = result.unwrap_err();
         assert_eq!(
             failure.error(),
             &Error::Response(file_rpc_response::Error::DeadlineExceeded)
