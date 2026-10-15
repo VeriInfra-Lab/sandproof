@@ -61,15 +61,17 @@ fn canceled_or_expired_queued_open_retains_startup_slot_until_its_worker_exits()
                 .open(open_dir(&root), owner, 127, init_limits())
                 .await
                 .unwrap();
+            // Canceled/expired work was queued before storage and must not
+            // burn a number. Only this successful retry allocates one.
+            assert_eq!(opened.service_session(), 1);
             let (_, mut claims) = opened.into_parts();
             assert!(matches!(
                 claims.claim(command()),
                 Err(pid_claims::Error::Reused)
             ));
-            assert_eq!(
-                std::fs::read(root.path().join("pid-claims.bin")).unwrap(),
-                before
-            );
+            let allocated = std::fs::read(root.path().join("pid-claims.bin")).unwrap();
+            assert_eq!(allocated.len(), before.len());
+            assert_ne!(allocated, before);
         });
     }
 }

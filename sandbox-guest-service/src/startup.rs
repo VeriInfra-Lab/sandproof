@@ -5,7 +5,7 @@ use sandproof_guest_runtime::pid_claims::{self, Binding, PidClaims};
 use sha2::{Digest, Sha256};
 use std::{fs::File, sync::Arc, time::Duration};
 use tokio::{
-    sync::Semaphore,
+    sync::{Semaphore, oneshot},
     time::{Instant, timeout_at},
 };
 
@@ -27,6 +27,7 @@ pub enum Error {
     InvalidMetadata,
     Busy,
     DeadlineExceeded,
+    Cancelled,
     Metadata(ServiceError),
     Storage(pid_claims::Error),
     WorkerUnavailable,
@@ -108,11 +109,20 @@ impl<M: MetadataSource> MetadataSource for PinnedMetadata<M> {
 pub struct Opened<M> {
     session: Session<PinnedMetadata<M>>,
     claims: PidClaims,
+    service_session: u64,
 }
 impl<M> Opened<M> {
     #[must_use]
     pub fn binding(&self) -> Binding {
         self.claims.binding()
+    }
+
+    /// The durably burned internal identity for this service lifetime. Use it
+    /// in both the active PID registry and command dispatcher for this startup.
+    /// It is not an access token or an authorization for an old process.
+    #[must_use]
+    pub const fn service_session(&self) -> u64 {
+        self.service_session
     }
 
     /// The daemon uses this Session for all handlers and moves the original
@@ -157,14 +167,16 @@ impl<M: MetadataSource> Startup<M> {
         })
     }
 
-    /// Open this VM's EXISTING state under the original trusted directory FD.
+    /// Open this VM's EXISTING state under the original trusted directory FD
+    /// and durably allocate a new service session before returning any state.
     /// The caller establishes directory ancestry and expected owner and bounds
     /// the runtime's blocking pool; this method does not create/open a pathname.
     /// Missing/corrupt/mismatched data is not repaired, migrated or reset.
     /// # Errors
     /// Invalid config, busy startup, metadata failure, original deadline or
     /// existing storage refusal. Timeout cannot interrupt fsync/open/read; the
-    /// slot and FD remain held until queued/running work actually exits.
+    /// slot and FD remain held until queued/running work actually exits. A
+    /// canceled/timed-out allocation may burn a number; it is never recycled.
     pub async fn open(
         &self,
         directory: File,
@@ -199,18 +211,29 @@ impl<M: MetadataSource> Startup<M> {
             return Err(Error::DeadlineExceeded);
         }
         let binding = identity.binding();
+        let (cancelled, _alive) = oneshot::channel::<()>();
         let task = tokio::task::spawn_blocking(move || {
             if Instant::now() >= deadline {
                 return Err(Error::DeadlineExceeded);
             }
-            let claims =
+            if cancelled.is_closed() {
+                return Err(Error::Cancelled);
+            }
+            let mut claims =
                 PidClaims::open(directory, owner, binding, max_pid).map_err(Error::Storage)?;
+            if Instant::now() >= deadline {
+                return Err(Error::DeadlineExceeded);
+            }
+            if cancelled.is_closed() {
+                return Err(Error::Cancelled);
+            }
+            let service_session = claims.allocate_session().map_err(Error::Storage)?;
             if Instant::now() >= deadline {
                 return Err(Error::DeadlineExceeded);
             }
             // Keep the permit with the result too: if the waiter disappeared,
             // drop the locked claims before returning startup capacity.
-            Ok((claims, slot))
+            Ok((claims, slot, service_session))
         });
         // Keep the tuple intact through every remaining failure path so its
         // locked claims are destroyed before its permit, in field order.
@@ -232,6 +255,7 @@ impl<M: MetadataSource> Startup<M> {
         Ok(Opened {
             session,
             claims: opened.0,
+            service_session: opened.2,
         })
     }
 }

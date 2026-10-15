@@ -127,15 +127,19 @@ fn vm_binding_has_unambiguous_fields_and_bounded_valid_identity() {
 async fn normal_startup_reopens_original_pid_state_without_authentication_or_adoption() {
     let (root, owner) = root();
     provision(&root, owner);
-    let before = std::fs::read(root.path().join("pid-claims.bin")).unwrap();
+    let mut before = std::fs::read(root.path().join("pid-claims.bin")).unwrap();
     let source = Source::new();
     let startup = Startup::new(source.clone(), limits()).unwrap();
-    for _ in 0..2 {
+    for expected in 1..=2 {
         let opened = startup
             .open(open_dir(&root), owner, 127, init_limits())
             .await
             .unwrap();
         assert!(opened.binding() == identity().binding());
+        assert_eq!(opened.service_session(), expected);
+        let allocated = std::fs::read(root.path().join("pid-claims.bin")).unwrap();
+        assert_eq!(allocated.len(), before.len());
+        assert_ne!(allocated, before);
         let (session, mut claims) = opened.into_parts();
         assert!(matches!(
             session.authorize(Some("token")).await,
@@ -160,8 +164,9 @@ async fn normal_startup_reopens_original_pid_state_without_authentication_or_ado
         drop(session);
         assert_eq!(
             std::fs::read(root.path().join("pid-claims.bin")).unwrap(),
-            before
+            allocated
         );
+        before = allocated;
     }
     assert_eq!(source.calls.load(Ordering::SeqCst), 6);
 }

@@ -1,4 +1,5 @@
 use super::*;
+mod sessions;
 use std::{
     fs,
     os::unix::fs::{PermissionsExt, symlink},
@@ -234,6 +235,7 @@ fn changed_record_or_name_poison_original_writer_before_any_new_receipt() {
             }
         );
         assert_eq!(error(claims.claim(identity(3))), Error::Poisoned);
+        assert_eq!(error(claims.allocate_session()), Error::Poisoned);
         assert_eq!(
             claims.image, old,
             "failed validation must precede bitmap mutation"
