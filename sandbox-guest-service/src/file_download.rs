@@ -19,7 +19,8 @@ pub use stream::{
 #[cfg(test)]
 pub(crate) mod tests;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub request: wire::Limits,
     pub response_header_bytes: usize,

@@ -23,6 +23,8 @@ pub mod gzip;
 pub mod multipart;
 #[cfg(unix)]
 pub mod pid_claims;
+#[cfg(unix)]
+pub mod startup_files;
 
 #[cfg(any(target_os = "linux", test))]
 mod launch_wrapper;

@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
-//! Guest service composition under development. `GuestHttp` combines existing
+//! Guest service implementation under development. `GuestHttp` combines existing
 //! initialization, command and file handlers with one shared session and an
-//! explicitly configured bounded listener. It does not provision PID state or
-//! install an envd replacement; trusted configuration and immutable-template
-//! integration remain separate obligations. Health does not certify readiness.
+//! explicitly configured bounded listener. The Linux daemon entry consumes one
+//! explicit configuration and separates known-new VM initialization from normal
+//! startup. Immutable-template integration remains an independent obligation;
+//! this crate does not install a replacement. Health does not certify readiness.
 
 #[cfg(any(target_os = "linux", test))]
 mod command_clock;
@@ -34,6 +35,8 @@ mod basic_auth;
 pub mod command;
 #[cfg(target_os = "linux")]
 pub mod command_http;
+#[cfg(target_os = "linux")]
+pub mod daemon;
 #[cfg(target_os = "linux")]
 mod execution;
 #[cfg(target_os = "linux")]

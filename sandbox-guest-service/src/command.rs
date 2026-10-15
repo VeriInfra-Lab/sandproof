@@ -196,7 +196,8 @@ impl ExecutionDeadline {
 
 /// Explicit component limits, not production defaults or total RAM bounds.
 /// A record slot covers its owner and every retained handle/subscription.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OwnerLimits {
     pub records: usize,
     pub subscribers: usize,

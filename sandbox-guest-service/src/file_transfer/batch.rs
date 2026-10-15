@@ -15,7 +15,8 @@ pub use multipart::{MultipartError, MultipartLimits, UploadBodyError};
 /// Explicit per-request limits, in addition to the pool's per-file limits.
 /// `total_bytes` counts file payloads; framing/ignored fields need their own
 /// transport budget. Retained bytes count path and metadata string payloads.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BatchLimits {
     pub files: usize,
     pub total_bytes: u64,

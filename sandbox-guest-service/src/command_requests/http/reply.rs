@@ -23,7 +23,8 @@ pub(super) mod wire;
 
 /// One original admitted request covers the bounded source diagnostic, raw
 /// payload, optional compressed frame, codec workspace and transmission chunk.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     /// Maximum complete wire payload, including the stream's five-byte header.
     /// The uncompressed payload must independently fit this same bound.

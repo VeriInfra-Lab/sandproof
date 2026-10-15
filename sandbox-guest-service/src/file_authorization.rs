@@ -19,7 +19,8 @@ impl Operation {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub headers: crate::file_upload::HeaderLimits,
     /// Total retained decoded path/username/signature bytes. Raw query bytes

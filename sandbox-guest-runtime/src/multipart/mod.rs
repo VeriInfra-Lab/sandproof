@@ -39,7 +39,8 @@ pub enum Error {
 /// Component budgets with no production defaults. Headers include all raw
 /// bytes/fields, even those ignored by file upload. Total includes MIME framing,
 /// ignored parts and any epilogue the caller feeds after End.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub chunk_bytes: usize,
     pub boundary_bytes: usize,

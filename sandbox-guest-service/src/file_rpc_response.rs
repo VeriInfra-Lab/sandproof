@@ -31,7 +31,8 @@ mod tests;
 /// The record budget is separate. Identity retains this JSON payload plus one
 /// transmission chunk. Gzip preparation additionally retains at most `wire_bytes`
 /// compressed bytes and its fixed codec workspace, under original capacity.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub wire_bytes: usize,
     pub chunk_bytes: usize,

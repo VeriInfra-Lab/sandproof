@@ -44,7 +44,8 @@ struct Context {
     request: Arc<dyn Send + Sync>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdmissionLimits {
     /// One absolute deadline covering preparation AND registration decision.
     pub ready_timeout: Duration,

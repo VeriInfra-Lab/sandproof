@@ -1,7 +1,8 @@
 //! Fixed envd GET/POST query binding: Go URL.Query and oapi runtime v1.6.0.
 //! Parsing grants no authorization and performs no path/account/file operation.
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub raw_bytes: usize,
     /// All nonempty fields, including unknown, malformed and repeated fields.

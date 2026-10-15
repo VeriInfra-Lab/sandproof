@@ -38,20 +38,33 @@ pub struct Settings<Z> {
 }
 impl<Z> Settings<Z> {
     fn validate(&self) -> Result<(), InvalidConfiguration> {
-        if self.files.validate().is_err()
-            || self.upload.headers.validate().is_err()
-            || self.upload.encoding.validate().is_err()
-            || self.upload.gzip.validate().is_err()
-            || self.upload.multipart.validate().is_err()
-            || self.upload.batch.validate().is_err()
-            || self.upload_response.validate().is_err()
-            || self.download.response.validate().is_err()
-            || self.download.encoding.validate().is_err()
-        {
-            return Err(InvalidConfiguration);
-        }
-        Ok(())
+        check_settings(
+            &self.files,
+            self.upload,
+            self.download,
+            self.upload_response,
+        )
     }
+}
+pub(crate) fn check_settings(
+    files: &FileSettings,
+    upload: UploadLimits,
+    download: DownloadLimits,
+    response: upload_response::Limits,
+) -> Result<(), InvalidConfiguration> {
+    if files.validate().is_err()
+        || upload.headers.validate().is_err()
+        || upload.encoding.validate().is_err()
+        || upload.gzip.validate().is_err()
+        || upload.multipart.validate().is_err()
+        || upload.batch.validate().is_err()
+        || response.validate().is_err()
+        || download.response.validate().is_err()
+        || download.encoding.validate().is_err()
+    {
+        return Err(InvalidConfiguration);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

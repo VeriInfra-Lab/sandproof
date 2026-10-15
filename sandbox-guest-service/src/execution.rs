@@ -164,7 +164,8 @@ fn account_error(error: AccountError) -> ContextError {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContextLimits {
     pub bytes: usize,
     pub env_entries: usize,
@@ -175,6 +176,8 @@ pub struct ContextLimits {
 
 /// Captured by the future daemon from its trusted launch configuration. Only
 /// PATH is inherited; HOME/USER/LOGNAME originate from the selected account.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionSettings {
     pub daemon_path: String,
     pub daemon_workdir: String,

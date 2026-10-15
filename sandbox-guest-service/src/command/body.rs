@@ -12,7 +12,8 @@ use super::{CommandError, CommandOutput, CommandSubscription, LaunchStatus, Outp
 use crate::{command_clock::Clock, owned_body::Owner};
 
 /// Explicit component budgets, not wire-header parsing or production defaults.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CommandBodyLimits {
     /// JSON payload bytes per frame, excluding its five-byte Connect header.
     pub message_bytes: usize,

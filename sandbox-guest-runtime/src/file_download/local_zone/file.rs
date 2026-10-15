@@ -11,7 +11,8 @@ use std::{
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoadLimits {
     pub path_bytes: usize,
     pub snapshot: Limits,

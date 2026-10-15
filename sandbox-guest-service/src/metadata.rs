@@ -14,7 +14,8 @@ use crate::{Metadata, MetadataSource, ServiceError};
 mod tests;
 
 /// Explicit per-exchange budgets. The two MMDS requests share one deadline.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetadataLimits {
     pub body_bytes: usize,
     /// Hyper's receive buffer has a minimum of 8192 bytes. Kernel/socket and

@@ -13,14 +13,16 @@ mod tests;
 
 /// Per-path bounds include the resolved path. A Move retains at most two.
 /// These are explicit component budgets, not a frozen production policy.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileContextLimits {
     pub path_bytes: usize,
     pub username_bytes: usize,
     pub authorization_bytes: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileSettings {
     pub daemon_workdir: String,
     pub limits: FileContextLimits,

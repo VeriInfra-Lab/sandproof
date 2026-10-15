@@ -24,7 +24,8 @@ pub enum Error {
     ArithmeticOverflow,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub header_bytes: usize,
     pub items: usize,

@@ -448,6 +448,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [一元令牌拒绝回执](../sandbox-guest-service/src/file_rpc_response/token.rs)新增实际 Session 拒绝到外层数字 401 JSON、HEAD 完整预算/正文抑制、原请求槽位/期限与最后字节副本及失败对象的连接义务。令牌接受谓词、受保护初始化及纯核心不变；重复头/初始化前严格拒绝不能用原 Go 已初始化首字段对照背书。回执和 Linux/SDK 组合尚未抽取或证明，不把固定消息或协议测试当作全鉴权证明。
 
+[正式来宾入口](../sandbox-guest-service/src/daemon.rs)新增配置字节上限到原组件预算、必需/未知/重复字段拒绝、当前有效 UID 与私有输入、独立普通/控制池、同一 VM/服务编号与 Session 到全部路由、一次启动期限、先装配后监听和传输停机边界的自有义务；[启动文件端口](../sandbox-guest-runtime/src/startup_files.rs)另新增原目录 FD 遍历、祖先/最终对象权限与身份、NOFOLLOW/NONBLOCK 和类型拒绝义务。入口及新增 Serde 解码尚未抽取或证明，构造/静态检查不证明机器资源足够、实际模板安装或全部后台工作已停止。Rustix/Linux、文件锁/持久存储、serde_json、MMDS 来源、MIME/TZif 材料、Tokio/Hyper 与可信 root/owner 仍须分别建立最小外部合同。线程栈乘法界不等同总 RSS 上界，worker 路径检查不等同二进制摘要见证。原已证明 Rust、LLBC/Lean 未改，旧定理不覆盖本次配置、文件和异步装配。
+
 [持久服务会话](../sandbox-guest-runtime/src/pid_claims/session.rs)将原 PID 图像升级为 v2，并复用原写入/校验/同步/毒化路径。新增有界非零编号、跨重开单调性、未知或丢失结果不回收、耗尽不回绕、会话与 PID 共享毒化，以及旧格式拒绝而不重建的自有义务；上述新版 runtime 和启动分配连接尚未抽取或证明，旧位图测试或模型不背书新增计数字段。fsync、文件锁、存储不回滚和等待者取消仍为对应外部前提；软件故障点只提供测试证据。未修改原已证明 Rust 或 LLBC/Lean。
 
 [正常启动状态装配](../sandbox-guest-service/src/startup.rs)新增可信 VM/模板 ID 的有界校验、域分离与长度分帧摘要、同绑定正常 open、未初始化 Session 与元数据身份钉住、令牌轮换不更换 PID 绑定，以及启动绝对期限/单名额/阻塞结果析构顺序义务；均尚未抽取或证明。元数据来源真实性和 VM ID 不复用、SHA-256、目录来源、原 PID 文件与 fsync、Tokio 排队/取消为显式外部连接前提。有限临时文件/故障点回归不证明服务已部署、有效旧盘回滚防护、启动可中断或整机内存上界。未修改已证明 Rust、LLBC/Lean，也不扩大原定理覆盖。

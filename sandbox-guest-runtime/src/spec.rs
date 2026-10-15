@@ -113,7 +113,8 @@ impl LaunchSpec {
 
 /// Explicit component budgets, not production defaults. The owning service
 /// must separately bound processes, requests, subscribers and retained ends.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessLimits {
     pub chunk_bytes: usize,
     pub launch_bytes: usize,

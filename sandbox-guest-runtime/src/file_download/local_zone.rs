@@ -15,14 +15,18 @@ pub use file::{LoadError, LoadLimits};
 
 /// Trusted startup budgets, separate from each request's date/header limits.
 /// Input bytes also bound abbreviation/footer/leap data and parser scratch.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub input_bytes: usize,
     pub transitions: usize,
     pub zones: usize,
 }
 impl Limits {
-    fn validate(self) -> Result<Self, Error> {
+    /// Validate the explicit representation budgets without reading source data.
+    /// # Errors
+    /// Zero or unrepresentable input, transition or zone budgets.
+    pub fn validate(self) -> Result<Self, Error> {
         if [self.input_bytes, self.transitions, self.zones]
             .into_iter()
             .any(|n| n == 0 || n > isize::MAX as usize / 16)

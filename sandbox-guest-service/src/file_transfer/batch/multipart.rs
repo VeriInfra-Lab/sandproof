@@ -11,7 +11,8 @@ use tokio::time::Instant;
 /// Limits for owned HTTP frames, in addition to MIME/file/result budgets.
 /// These bound accepted frame payloads; the HTTP implementation must separately
 /// bound allocations made before handing a frame to this component.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MultipartLimits {
     pub wire: multipart::Limits,
     pub frame_bytes: usize,

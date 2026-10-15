@@ -44,7 +44,8 @@ pub use crate::request_gzip::CompressionStage;
 /// Explicit component budgets. Wire bytes include the five-byte Start/Connect
 /// envelope; decoded JSON and input bytes have no larger budget. Socket/header
 /// allocation before admission is bounded separately by the listener.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub in_flight: usize,
     pub timeout: Duration,

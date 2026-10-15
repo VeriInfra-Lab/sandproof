@@ -16,7 +16,8 @@ pub enum AccountError {
     Unavailable,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AccountLimits {
     /// Per source file; not a bound on filesystem/kernel allocations or latency.
     pub file_bytes: usize,

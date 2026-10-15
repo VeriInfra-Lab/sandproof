@@ -20,7 +20,8 @@ use std::{
 };
 use tokio::{runtime::Handle, sync::watch, time::Instant};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GzipLimits {
     pub http: HttpBodyLimits,
     pub decode: DecodeLimits,
