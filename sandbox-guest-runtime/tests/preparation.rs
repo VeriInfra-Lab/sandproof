@@ -44,7 +44,9 @@ struct Fixture {
 
 impl Fixture {
     async fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        Self::in_directory(tempfile::tempdir().unwrap()).await
+    }
+    async fn in_directory(directory: tempfile::TempDir) -> Self {
         std::fs::create_dir(directory.path().join("gates")).unwrap();
         let owners = CommandOwners::new(OwnerLimits {
             records: 1,
