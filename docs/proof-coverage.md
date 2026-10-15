@@ -420,7 +420,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [原生输入失败连接](../sandbox-guest-service/src/command.rs)新增同一实际写入的正 errno、原错误/身份/通道到 [HTTP 回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的自有对应义务。旧粗错误保持、模式事实不覆盖原生事实、部分效果不重试，以及合成挂断/取消/完成不伪造 syscall 失败均未抽取或证明。固定 Go 错误格式、真实 os.Pipe 和 Linux 有限 stdin/PTY 组件分别报告，不证明所有输入故障、调度竞态或完整 E03。历史已证明 Rust、纯核心与 Lean 未改。
 
-[原生信号失败连接](../sandbox-guest-service/src/command.rs)新增原 pidfd syscall 的正 errno 到 [固定错误回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的对应义务，包含 ESRCH 到 Go 进程已结束错误、原粗结果/期限核对及无再次查找或发送。主进程已回收、后代仍持管道、登记终局与最后字节容量之间的顺序仍未抽取或证明；有限真实 pidfd 场景与受控 Go 格式对照不代替 PID 复用、完整 Go 信号/输出调度或系统收尾证明。纯核心、历史已证明 Rust 和 Lean 未改。
+[原生信号失败连接](../sandbox-guest-service/src/command.rs)新增原 pidfd syscall 的正 errno 到 [固定错误回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的对应义务，包含 ESRCH 到 Go 进程已结束错误、原粗结果/期限核对及无再次查找或发送。新增 TERM/KILL 及执行期限先解除输出等待、真实主进程 wait 后关闭剩余输出的适配路径；它绕过普通 EOF 收尾而不伪造纯核心 EOF，旧 CommandStream 定理不覆盖此路径。信号失败仍触发取消、既有错误不被成功覆盖、已排队字节先于 End、登记终局/容量与真实收尾的对应均待证。[PTY 共享描述符](../sandbox-guest-runtime/src/pty.rs)的撤销、等待者唤醒、在途 FD 最后引用及 close/ioctl 竞争同样未抽取或证明。固定 Go 源码顺序核对及有限 pidfd/PTY 回归不代替 PID 复用、完整 Go 信号/输出调度或系统收尾证明。纯核心、历史已证明 Rust 和 Lean 未改，旧证明不能背书新版运行适配。
 
 [原生窗口调整失败连接](../sandbox-guest-service/src/command.rs)新增同一终端 ioctl 正 errno、原粗错误和 [HTTP 回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的对应义务。实际 EINVAL 不被无 PTY 分类覆盖、挂断写入不推断 resize 失败、uint16 转换及无重试/新查询均未抽取或证明；有限真实挂断场景和受控 Go 格式对照不证明全部 ioctl 故障、调度或系统收尾。纯核心、历史已证明 Rust 与 Lean 未改。
 

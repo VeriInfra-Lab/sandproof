@@ -92,8 +92,9 @@ pub enum CommandEvent {
         channel: Channel,
         bytes: Vec<u8>,
     },
-    /// Actual main-child wait plus pipe/terminal EOF and consumed output. This
-    /// does not claim descendants stopped, or that a VM has been destroyed.
+    /// Actual main-child wait plus consumed output. The normal path also
+    /// requires EOF; explicit signal settlement may close remaining output.
+    /// This does not claim descendants stopped or that a VM was destroyed.
     End {
         code: i32,
         signal: Option<i32>,
@@ -437,6 +438,22 @@ impl CommandProcess {
     /// Refuses unattempted/failed/unknown launch, unconsumed output, and actual
     /// pipe/wait errors. A read error never becomes an ordinary End.
     pub async fn next_event(&mut self) -> io::Result<Option<CommandEvent>> {
+        self.next_event_with_output_wait(true).await
+    }
+
+    /// Fixed envd signal/timeout semantics: continue reading until main wait,
+    /// then close remaining output even when a descendant holds its write end.
+    /// Already-returned output must still be consumed. This is not EOF evidence.
+    /// # Errors
+    /// Preserves launch, read and wait errors; never invents successful exit.
+    pub async fn next_event_until_main_exit(&mut self) -> io::Result<Option<CommandEvent>> {
+        self.next_event_with_output_wait(false).await
+    }
+
+    async fn next_event_with_output_wait(
+        &mut self,
+        drain: bool,
+    ) -> io::Result<Option<CommandEvent>> {
         match self.launch {
             LaunchState::Released(LaunchObservation::NoExecErrorObserved) => {}
             LaunchState::Released(LaunchObservation::ExecFailed(code)) => {
@@ -456,6 +473,7 @@ impl CommandProcess {
         loop {
             match self.stream.outcome() {
                 CommandOutcome::Exited(code) => {
+                    self.close_waited_output();
                     self.end_delivered = true;
                     return Ok(Some(CommandEvent::End {
                         code,
@@ -465,6 +483,15 @@ impl CommandProcess {
                 }
                 CommandOutcome::Failed(_) => return Err(io::Error::other("output stream failed")),
                 CommandOutcome::Pending => {}
+            }
+            if !drain && let Some(status) = self.waited {
+                self.close_waited_output();
+                self.end_delivered = true;
+                return Ok(Some(CommandEvent::End {
+                    code: status.code().unwrap_or(-1),
+                    signal: status.signal(),
+                    core_dumped: status.core_dumped(),
+                }));
             }
             let mut stdout = vec![0; self.limits.chunk_bytes];
             let mut stderr = vec![0; self.limits.chunk_bytes];
@@ -488,12 +515,31 @@ impl CommandProcess {
     /// Actual read/wait errors remain errors. A failed pipe is closed; another
     /// call can drain the other pipe and retry wait, without rerunning user code.
     pub async fn discard_and_wait(&mut self) -> io::Result<ExitStatus> {
+        self.discard_with_output_wait(true).await
+    }
+
+    /// Settle a previously failed stream after explicit output-wait cancellation.
+    /// The caller must retain the original failure rather than publish this wait
+    /// as a successful stream. No descendant liveness claim is made.
+    /// # Errors
+    /// Preserves actual wait/read failures and rejects unreleased processes.
+    pub async fn discard_until_main_exit(&mut self) -> io::Result<ExitStatus> {
+        self.discard_with_output_wait(false).await
+    }
+
+    async fn discard_with_output_wait(&mut self, drain: bool) -> io::Result<ExitStatus> {
         if !matches!(self.launch, LaunchState::Released(_)) {
             return Err(invalid("unreleased process"));
         }
         loop {
+            if !drain && let Some(status) = self.waited {
+                self.close_waited_output();
+                return Ok(status);
+            }
             if self.stdout_eof && self.stderr_eof {
-                return self.wait_main().await;
+                let status = self.wait_main().await?;
+                self.close_waited_output();
+                return Ok(status);
             }
             let mut stdout = vec![0; self.limits.chunk_bytes];
             let mut stderr = vec![0; self.limits.chunk_bytes];
@@ -512,6 +558,17 @@ impl CommandProcess {
         }
     }
 
+    fn close_waited_output(&mut self) {
+        // No fabricated observe_eof transition in the pure stream core. This
+        // distinct adapter path is authorized by signal/timeout and real wait.
+        debug_assert!(self.waited.is_some());
+        if let Some(pty) = self.pty.take() {
+            pty.close();
+        }
+        self.close_output(self.primary_channel());
+        self.close_output(Channel::Stderr);
+    }
+
     fn close_output(&mut self, channel: Channel) {
         match channel {
             Channel::Stdout => {
@@ -523,7 +580,8 @@ impl CommandProcess {
                 self.stderr_eof = true;
             }
             Channel::Pty => {
-                self.pty.take();
+                // Retain the shared master until actual main wait, so every
+                // input/control clone can be revoked at that same boundary.
                 self.stdout_eof = true;
             }
         }

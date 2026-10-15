@@ -407,7 +407,7 @@ Rust 模式下全部准备上传由[有界上传适配器](../tools/template_bui
 
 [有界 PID 登记](../sandbox-guest-service/src/command/registry.rs)已连接持久回执和原命令 owner，并供共用命令 HTTP 装配使用；该 Linux 组件尚未安装到正式 daemon/模板。调用方显式配置 VM 绑定、服务会话、登记条数、逐记录编码字节与终局保留时长；固定 Go 为 30 秒，正式装配须采用复核后的值。prepare 前预留登记名额并按最大 PID 检查整条 List 元数据编码，保存调用方原配置的副本；编码字节不冒充容器/分配器或整个进程 RAM 上界。publish 拒绝错 VM/会话和已有 PID，先装入精确记录再派发原票据。独立登记任务在 HTTP 等待者之外保留 commit、控制句柄和原始订阅：受理前取消停止原 gated worker，受理后丢失 Start 回复只丢失该回复/订阅，不丢失登记、不重执行。准备清理未知或 owner 丢失保持 unavailable 并继续占额。
 
-live 只取已启动未终结的原控制句柄，connectable 另允许保留期内的原终局订阅；都不凭数值 PID 接管进程，正式分派仍须每请求重新鉴权。List 只编码当前已观察活跃项，完整回复有独立预算。真实 wait/输出排空时由命令 owner 保存 completed_at；终局到期从此时计算，重连、延迟唤醒或 Start 回复丢失均不刷新。读取路径即使早于定时器清理也拒绝到期项；删除只匹配原记录，未知责任不按 TTL 释放，失败不能缓存成成功 End。登记元数据到期后可归还自身名额；仍持有命令/订阅/输出的外部使用者继续占原 CommandOwners 记录名额。tag 当前只作为 List 元数据保存，重复仲裁与 tag 查询尚未实现；该组件不自行批准公开 tag 差异，不恢复跨服务活跃进程。
+live 只取已启动未终结的原控制句柄，connectable 另允许保留期内的原终局订阅；都不凭数值 PID 接管进程，正式分派仍须每请求重新鉴权。List 只编码当前已观察活跃项，完整回复有独立预算。真实 wait 与对应输出收尾完成时由命令 owner 保存 completed_at；终局到期从此时计算，重连、延迟唤醒或 Start 回复丢失均不刷新。读取路径即使早于定时器清理也拒绝到期项；删除只匹配原记录，未知责任不按 TTL 释放，失败不能缓存成成功 End。登记元数据到期后可归还自身名额；仍持有命令/订阅/输出的外部使用者继续占原 CommandOwners 记录名额。tag 当前只作为 List 元数据保存，重复仲裁与 tag 查询尚未实现；该组件不自行批准公开 tag 差异，不恢复跨服务活跃进程。
 
 已加入的 [sandproof-guest-core](../sandbox-guest-core/src/lib.rs) 只承担两个有限局部决定，不依赖 HTTP、Tokio、文件系统或宿主控制器：
 
@@ -426,7 +426,7 @@ live 只取已启动未终结的原控制句柄，connectable 另允许保留期
 
 原连接已认证且 READY 后，执行 owner 在最后检查原执行期限前，同步尝试 unlink 本次 gate 的 launch socket，再 rmdir 本次私有目录；低层直接 release 调用在发送放行字节前补做同一次尝试，不重复删除。已连接句柄继续传递原放行/诊断，不重新解析路径。路径删除不释放进程、请求或登记名额，不证明子进程结束，也不把 Unknown 改为成功。删除成功后解除原 TempDir 的自动删除责任，后续同名路径不再属于原对象；任一步文件系统删除失败仍保留原 TempDir guard 供最终析构继续清理，不启动脱离所有者的后台删除。该有限退休只减少进入放行后的普通路径残留，不保证握手前强杀、故障文件系统或阻塞调用的清理/响应时限。
 
-该端口执行管道及 PTY 命令，显式 cwd/完整环境替换父进程环境；可信解析器可提供数值身份，在私有单线程 worker 内、用户 exec 前设置附加组及真实/有效/保存的 GID、UID。任何一步失败只返回私有诊断并退出，不回退服务账号。未给数值身份的模式仍仅供原当前账号组件使用，鉴权上下文解析总是给出完整身份。stdin 独立于 wait 保存，`take_input` 可移交唯一的 `CommandInput`，使大块写入与输出读取/等待/信号并行推进；移交后由该句柄检查原身份及关闭输入，原进程端口拒绝输入/关闭调用，不伪报管道已关闭。服务登记持有句柄，请求只借用，避免断线销毁句柄而隐式关闭 stdin。空输入、关闭输入和取消写入分别处理；失败/取消的写入可能已送入前缀。信号只作用于保留的 pidfd，先核对完整内部身份。输出适配调用原 `CommandStream`，一个未确认消费的块会阻止继续读取；每次读取使用两个有界 scratch 块，已交给消费方的块及其传输分配另归消费方预算，不设累计输出限额。只有真实 wait、双管道或终端 EOF 和消费确认齐备才产生 End；主进程退出不等于后代退出。
+该端口执行管道及 PTY 命令，显式 cwd/完整环境替换父进程环境；可信解析器可提供数值身份，在私有单线程 worker 内、用户 exec 前设置附加组及真实/有效/保存的 GID、UID。任何一步失败只返回私有诊断并退出，不回退服务账号。未给数值身份的模式仍仅供原当前账号组件使用，鉴权上下文解析总是给出完整身份。stdin 独立于 wait 保存，`take_input` 可移交唯一的 `CommandInput`，使大块写入与输出读取/等待/信号并行推进；移交后由该句柄检查原身份及关闭输入，原进程端口拒绝输入/关闭调用，不伪报管道已关闭。服务登记持有句柄，请求只借用，避免断线销毁句柄而隐式关闭 stdin。空输入、关闭输入和取消写入分别处理；失败/取消的写入可能已送入前缀。信号只作用于保留的 pidfd，先核对完整内部身份。输出适配调用原 `CommandStream`，一个未确认消费的块会阻止继续读取；每次读取使用两个有界 scratch 块，已交给消费方的块及其传输分配另归消费方预算，不设累计输出限额。普通路径只有真实 wait、双管道或终端 EOF 和消费确认齐备才产生 End；显式信号/执行期限取消输出等待的适配路径见下文，不伪造纯核心 EOF。主进程退出不等于后代退出。
 
 独立的[命令协议编解码](../sandbox-guest-runtime/src/protocol.rs)已覆盖固定 SDK 的 Start/Connect、List、SendInput、CloseStdin、SendSignal、Update 请求、List/空操作的一元回复，以及 Start/Data/End/keepalive 和 Connect 流终结帧。保留 stdin 缺省为 true、显式 false、空输入、PTY 通道、PID/tag 及未选择的区别；解码不授予 PID 控制资格。Start/Connect 请求须有一个完整数据帧，identity/gzip 与可选 EOS 规则见下文；拒绝不符长度、额外数据消息、非法 flags、重复 protobuf 消息字段和数组式消息，未知方法不伪报成功。编码按固定 Connect 默认 protobuf JSON 省略零 PID/exitCode、false exited、空 status/cmd/args/envs/processes；固定 SDK 解码恢复零值及 false，不能据字段省略推断退出类型。可选 config/cwd/tag/error 的存在性保留，包括空对象/空字符串；非空 args/envs 内的空元素/键/值和 data oneof 的空 bytes 仍输出。List 编码借用调用方已选定的元数据，不复制整张表，不从 PID 推断存活或重建执行默认值，也不新增列表排序保证。输出 bytes 按原字节使用 base64，非零退出码及错误文本保留。进程 End 与 Connect 传输终结不同，EOF 不能替代它们。消息字节预算在 JSON 解码前和编码写入中检查；HTTP 层仍须在收集正文前限额，输出传输及实际分配另有预算，不设置流累计上限。
 
@@ -474,7 +474,9 @@ List、PID Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调用�
 
 同一次 SendInput 在原独占写句柄下返回正 Linux errno 时，保留原 PID、实际通道和原粗错误；HTTP 核对该事实后以 500 / internal 返回固定 Go 的两层 error writing to stdin/tty 文本，包含 of process 'PID': write |1（管道）或 /dev/ptmx（PTY）及固定 errno 描述。这两个文件名来自固定 Go os.Pipe 与锁定 PTY 包，不取来宾路径或后续查找。旧组件接口保持原错误；关闭/禁用、通道不符、取消、超时、忙写、完成竞争与没有 raw errno 的 PTY 挂断就绪错误均不冒充原生写入失败。失败可能已经写入前缀，不重放操作、不把回复当作输入回滚或进程结束证明；原期限、预算、最后字节副本及后续合法控制继续有效。
 
-SendSignal 的原 pidfd 调用返回正 errno 时，另保留同次原生失败；HTTP 只在原粗结果仍为 Unavailable 时渲染 500 / internal。固定 Go os.Process.Signal 在格式化前将 ESRCH 转为 os: process already finished，其余正 errno 使用固定 Linux 描述，外层均为 error sending signal:。这不是后续 PID/状态查询或重新发送信号；数值身份错误、缺失登记、取消和其他无 errno 的内部故障不能借此推断进程已结束。旧 signal 接口及原输出/终局策略保持，错误回复不证明后代停止、输出已排空或整条 Go 信号调度完全一致。
+SendSignal 的原 pidfd 调用返回正 errno 时，另保留同次原生失败；HTTP 只在原粗结果仍为 Unavailable 时渲染 500 / internal。固定 Go os.Process.Signal 在格式化前将 ESRCH 转为 os: process already finished，其余正 errno 使用固定 Linux 描述，外层均为 error sending signal:。这不是后续 PID/状态查询或重新发送信号；数值身份错误、缺失登记、取消和其他无 errno 的内部故障不能借此推断进程已结束。旧 signal 接口保留粗错误分类，错误回复不证明后代停止或输出已排空。
+
+同一原命令接受 TERM/KILL 后，在实际 pidfd 发送之前解除输出等待；执行期限到期同样解除。因此原发送失败（包括已回收主进程的 ESRCH）不撤销这项效果，未知信号、错身份、缺失登记及派发前到期则不触发。此顺序依据[固定 Go Handler](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/internal/services/process/handler/handler.go)的 outCancel → signal 与 outCtx → cmd.Wait → tty.Close。解除等待不立即停止读取：主进程忽略 TERM 时仍继续输出，只有真实 wait 后才关闭剩余管道/终端并产生原退出状态；后代仍可存活并持有写端。此前发布的 Data 先于 End，已有读取/放行错误或订阅 Lagged 不改成成功。该路径不宣称剩余输出达到 EOF，不修改纯 CommandStream 的正常排空判据，也不保证并发竞争时与 Go 交付完全相同的字节前缀。
 
 Update 的 PTY resize 只把原终端句柄上实际 ioctl 返回的正 errno 作为独立失败事实；HTTP 仍核对同次粗错误，再返回固定 Go 的 500 / internal 与 error resizing tty: 加 Linux errno 文本。锁定 PTY 包直接返回 syscall errno，不添加文件路径或 process PID。旧 resize 接口及参数 uint16 转换保持；无 PTY、未启动、终局、身份错误或本地挂断观察不冒充原生 ioctl 失败。终端写入挂断不代表 resize 失败，原 ioctl 成功仍返回成功；不再次调整窗口、查询 PID 或据此推断进程退出。
 
@@ -510,7 +512,7 @@ Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不�
 
 [PTY 端口](../sandbox-guest-runtime/src/pty.rs)通过原 master FD 打开对应 slave，不按可替换的 `/dev/pts` 路径重新查找。worker 的三个标准描述符均接到同一 slave，PTY 模式不使用管道的 stdin 开关；只有放行后，原单线程 worker 才建立独立 session/controlling terminal，再设置数值身份并 exec，同一主 PID 不变。stdout/stderr 合并为 `Pty` 通道，终端 line discipline 可能转换字节；需要原字节模式的用户程序自行配置 raw，服务不擅自改变默认终端模式。
 
-初始及 resize 的行列按固定 Go 端点将 wire uint32 取低 16 位，零与缺省尺寸保留为零；这只用于终端尺寸，不适用于身份或资源预算。`write_pty` 与管道 `write_input` 互斥，错误通道明确拒绝；PTY 拒绝 CloseStdin，Ctrl+D 是普通终端输入，实际 EOF 仍由终端模式决定。独立控制句柄执行 resize，检查原完整身份和实际 ioctl 结果，不等待正在写入的输入锁；内核可向前台进程组发送 SIGWINCH，显式 kill/term 仍只使用原主进程 pidfd。Linux PTY read 的 EIO 按该端口的 EOF 处理，其他错误仍为失败；EOF 不能替代实际 wait/消费确认。写就绪若已挂断/出错立即失败，不在满缓冲的 EAGAIN 上忙转阻塞收尾。终端 FD 随原管理记录/输入/控制引用保留，结束记录及 TTL 仍按下述待接入规则处理。
+初始及 resize 的行列按固定 Go 端点将 wire uint32 取低 16 位，零与缺省尺寸保留为零；这只用于终端尺寸，不适用于身份或资源预算。`write_pty` 与管道 `write_input` 互斥，错误通道明确拒绝；PTY 拒绝 CloseStdin，Ctrl+D 是普通终端输入，实际 EOF 仍由终端模式决定。独立控制句柄执行 resize，检查原完整身份和实际 ioctl 结果，不等待正在写入的输入锁；内核可向前台进程组发送 SIGWINCH，显式 kill/term 仍只使用原主进程 pidfd。Linux PTY read 的 EIO 按该端口的 EOF 处理，其他错误仍为失败；EOF 不能替代实际 wait/消费确认。写就绪若已挂断/出错立即失败，不在满缓冲的 EAGAIN 上忙转阻塞收尾。正常 EOF 加实际 wait，或上述取消输出等待加实际 wait 后，原 owner 撤销所有输入/控制副本对同一 master 的后续访问，并唤醒已等待的读写。正在执行的操作保留精确 FD 到返回，避免关闭可复用的裸 FD 数字；保留记录不继续持有可用终端。关闭与实际 ioctl/写入的竞态、内核挂断及后代状态不构成进程树停止承诺。结束记录及 TTL 沿用原登记规则。
 
 `ProcessLimits` 的块大小、上下文字节和闸门握手期限是显式组件参数，没有生产默认值；握手期限不是命令执行期限。账户/默认上下文与真实 worker 已有组合入口；正式命令路由及鉴权接入、公开终局保留配置、跨重启活跃登记和完整资源收尾仍待接入；命令管理组件见下文。编解码和测试路由不能当作可安装的 Rust envd 或模板切换证据；一元操作执行/回复及正式协议对照仍未完成。
 
@@ -781,7 +783,7 @@ Linux 文件端口只携带已知操作的结构化 errno；文本来自固定 G
 
 `prepare_command_admitted` 另外接收可信准入方的原请求守卫与绝对期限，在新任务/worker 前拒绝已到期请求；准备和登记接受期限取原请求、准备上限与执行期限的最早值。守卫分别随准备管理任务和原票据持有：取消/失败后一直到真实准备收尾，排队/执行中的持久 PID 任务一直到闭包实际退出，不能因原 child 已退出而提前归还该请求额度。接受后守卫随原 worker 移交执行任务，实际放行观察或未放行中止结束后才释放；后台执行、wait、输出及未知进程责任仍归原独立命令记录，响应传输须由调用方另留同一守卫副本。原请求到期不替换已接受命令的执行期限；该接口不授予授权、不选择 tag 规则，也尚未装配成公开 Start。
 
-执行期限按原起点保存为绝对时刻，准备耗时和重连不重置。[共用 Connect 期限解析](../sandbox-guest-service/src/connect_timeout.rs)选择首个 connect-timeout-ms 字段，后续重复值不参与；空值视为未设置，正负号计入十字节界，畸形十进制或超界拒绝。固定 Start 的执行上下文仅对正数设置期限，未设置/空值/零/负数均不设置执行期限。它与外层 HTTP 上下文不同：wire 零/负数使请求立即到期，HTTP 准入仍须在命令效果前拒绝；SDK API 的零通常省略该头，不能把这三层语义混用。到期前未放行则中止原 worker；放行中/后到期只通过保留的 pidfd 尝试 KILL，记录信号成功/失败，真实 wait 和管道排空另行观察。信号与输入/输出压力独立；断线、等待者取消和丢弃全部客户端句柄不取消命令任务，也不隐式关闭 stdin。执行期限不代替 HTTP 流期限，主进程终止不证明后代或 VM 停止。明确 exec 失败和放行诊断未知保持原错误；未知情况下可丢弃排空原管道并等待原进程，不能重执行或生成完整成功。真实 wait 持续失败时保留责任并有界频率重试，不凭错误释放容量。
+执行期限按原起点保存为绝对时刻，准备耗时和重连不重置。[共用 Connect 期限解析](../sandbox-guest-service/src/connect_timeout.rs)选择首个 connect-timeout-ms 字段，后续重复值不参与；空值视为未设置，正负号计入十字节界，畸形十进制或超界拒绝。固定 Start 的执行上下文仅对正数设置期限，未设置/空值/零/负数均不设置执行期限。它与外层 HTTP 上下文不同：wire 零/负数使请求立即到期，HTTP 准入仍须在命令效果前拒绝；SDK API 的零通常省略该头，不能把这三层语义混用。到期前未放行则中止原 worker；放行中/后到期解除输出等待，并只通过保留的 pidfd 尝试 KILL，记录信号成功/失败；真实 wait 后按上述规则关闭剩余输出，不能把信号回执代作退出。信号与输入/输出压力独立；断线、等待者取消和丢弃全部客户端句柄不取消命令任务，也不隐式关闭 stdin。执行期限不代替 HTTP 流期限，主进程终止不证明后代或 VM 停止。明确 exec 失败和放行诊断未知保持原错误；未知情况下可丢弃排空原管道并等待原进程，不能重执行或生成完整成功。真实 wait 持续失败时保留责任并有界频率重试，不凭错误释放容量。
 
 订阅仅接收登记后的输出和结束结果，无完整历史重放。每订阅有独立条数/字节预算，慢订阅在已排队前缀后得到明确 `Lagged`，不会阻塞其他订阅、管道排空或期限；后续协议映射仍须 E01/E03 复核。输出块被消费方取走后，字节、订阅和记录额度仍保留到块实际释放，不能通过反复重连积累游离缓冲。Data 排在终局之前；已截断的订阅不能因后来 wait 成功而改成正常 End。记录额度覆盖管理任务、保留句柄/订阅/在途块，只有任务完成且这些引用全部释放才归还；终局登记的 TTL 及公开请求/编码/传输额度仍待接入，不把该计数当整机 RAM 上界，也不新增累计输出上限。
 

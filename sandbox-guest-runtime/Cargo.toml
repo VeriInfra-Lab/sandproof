@@ -27,7 +27,7 @@ tempfile = "=3.23.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tempfile = "=3.23.0"
-tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time"] }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time", "sync"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 tokio = { version = "=1.49.0", features = ["test-util"] }
