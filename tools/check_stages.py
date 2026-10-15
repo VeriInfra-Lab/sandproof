@@ -152,15 +152,23 @@ SIGNALS = {
     'dependency_or_material': r'failed to download|failed to get .+ as a dependency|no matching package named|No solution found when resolving dependencies|Redis material directory is missing',
     'test_timeout': r'subprocess\.TimeoutExpired|subprocess timeout|TimeoutError:',
     'assertion': r'AssertionError|assertion .+ failed|assertion failed:',
-    'cleanup': r'CLEANUP_(?:FAILED|UNKNOWN)\b|ERROR: tearDown(?:Class|Module)?\b|cleanup_(?:state|status)["\x27]?\s*[:=]\s*["\x27]?(?:failed|unknown)',
+    'cleanup': r'(?<![A-Z0-9_])CLEANUP_(?:FAILED|UNKNOWN)\b|ERROR: tearDown(?:Class|Module)?\b|cleanup_(?:state|status)["\x27]?\s*[:=]\s*["\x27]?(?:failed|unknown)',
 }
+PASSED_TEST = re.compile(r'\b(?:test_[A-Za-z0-9_]+\s+\([A-Za-z0-9_.]+\)|test [A-Za-z0-9_:]+)\s+\.\.\. (?:ok|skipped .+|ignored(?:, .+)?)\s*$')
+JOB_DEADLINE = re.compile(r'The job has exceeded the maximum execution time of (?:[0-9]+[hms])+\.?\Z')
 
 
-def analyze(text, conclusion):
+def analyze(text, conclusion, annotations=()):
+    if not isinstance(annotations, (list, tuple)) or not all(
+            isinstance(item, dict) and isinstance(item.get('message'), str) for item in annotations):
+        raise ValueError('invalid Actions annotations')
+    deadline = any(JOB_DEADLINE.fullmatch(item['message']) for item in annotations)
     hints = []
     if conclusion != 'success':
-        hints = [name for name, pattern in SIGNALS.items() if re.search(pattern, text, re.IGNORECASE)]
-        if conclusion == 'timed_out':
+        # Successful negative-fixture names are not observed cleanup failures.
+        diagnostic_text = '\n'.join(line for line in text.splitlines() if not PASSED_TEST.search(line))
+        hints = [name for name, pattern in SIGNALS.items() if re.search(pattern, diagnostic_text, re.IGNORECASE)]
+        if conclusion == 'timed_out' or deadline:
             hints.insert(0, 'job_timeout')
         elif conclusion == 'cancelled':
             hints.insert(0, 'interrupted')
@@ -200,6 +208,7 @@ def analyze(text, conclusion):
                 groups = sorted(groups, key=lambda item: item['seconds'], reverse=True)[:10]
             current = None
     return {'schema': 1, 'acceptance': 'not_evaluated', 'job_conclusion': conclusion,
+            'deadline_evidence': 'actions_annotation' if deadline else None,
             'possible_causes': hints, 'slow_cargo_build_reports': builds, 'slow_rust_targets': groups,
             'note': 'Text signals can overlap; confirm against the original error and cleanup evidence. No automatic retry.'}
 
@@ -223,6 +232,7 @@ def main(argv=None):
     sub = commands.add_parser('analyze-log')
     sub.add_argument('--log', type=Path, required=True)
     sub.add_argument('--conclusion', choices=('success', 'failure', 'cancelled', 'timed_out'), required=True)
+    sub.add_argument('--annotations', type=Path, help='private JSON from the original Actions check annotations')
     args = parser.parse_args(argv)
     try:
         if args.command == 'init':
@@ -240,7 +250,8 @@ def main(argv=None):
                 with args.github_summary.open('a', encoding='utf-8') as output:
                     output.write(markdown(result))
         else:
-            result = analyze(read_bounded(args.log, LOG_LIMIT).decode('utf-8', errors='replace'), args.conclusion)
+            annotations = json.loads(read_bounded(args.annotations, EVENT_LIMIT)) if args.annotations else ()
+            result = analyze(read_bounded(args.log, LOG_LIMIT).decode('utf-8', errors='replace'), args.conclusion, annotations)
             print(json.dumps(result, indent=2, ensure_ascii=False))
     except (OSError, ValueError, KeyError, TypeError) as error:
         # No arbitrary paths, raw commands, tokens or child output are echoed.

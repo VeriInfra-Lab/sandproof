@@ -30,6 +30,8 @@ SDK 与 Harbor 的原锁定检查使用 `UV_OFFLINE=1`、`CARGO_NET_OFFLINE=true
 
 需要定位失败或比较热点时，把 `gh run view <运行编号> --log` 的输出保存在本地忽略的 `artifacts/`，再运行 `bash scripts/python-entry.sh tools/check_stages.py analyze-log --log artifacts/ci.log --conclusion failure`；`--conclusion` 必须取实际 Actions 结果（`success|failure|cancelled|timed_out`）。工具列出原 Rust harness 的慢测试目标与网络、依赖/材料、超时、断言、清理等**候选信号**；混合原因并列，无法识别保留未分类，不把关键字猜测作为确定归因或自动重跑依据。输出不附带原日志/命令参数，完整日志仍按私有证据保存。未增加 Go 对照、Rust PR 自动触发、KVM 或证明检查。
 
+Actions 的任务期限可能以 `cancelled` 结算，不能擅自把原结论改成 `timed_out`。可另将原检查的 annotations JSON 私下保存，以 `--annotations artifacts/annotations.json` 提供原平台明确的最大执行时间注释；分析器分别保留原结论和期限证据。已通过的负向测试名称不作为故障信号，清理候选仍需原清理回执确认。
+
 SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tools/ci_redis.py check` 校验黄金盘中受保护的固定 Redis 源/二进制摘要及可执行权限，再以离线 Cargo 运行选定协议、中心、HTTPS 和原 SQLite 收件组件。只在本轮隔离来宾启动私有回环 Redis；没有宿主凭据或产品 KVM。缺引擎、材料损坏或 Rust 依赖缺失立即失败，不下载 Redis、跳过或回退旧组件。该步骤启用前必须实测候选黄金盘的两次全新离线来宾及故意缺料失败，然后受控切换；源码有此步骤不等于宿主已完成安装，实际切换证据归关联 PR/issue。
 
 中心/宿主的[双产物清单](../tools/ci_e2e_artifacts.py)复用唯一[离线准备入口](../tools/ci_e2e_prepare.py)：同一干净候选离线构建 `sandproof-center`、`sandproof-host`、原窗口工具及原迟到动作检查助手，实际执行两个服务的 `contract-versions` 并核对一致。准备不带 App 凭据，不运行 VM，缺固定材料立即失败。固定验收构建使用 `--release` 并明确开启 `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`，让原受控故障点可实际触发；DK 和两题使用同一对真实产物，不另编译一套宿主。这是测试构建，不是普通部署 release 或证明证据。助手必须来自该候选构建目录，其摘要在准备完成后固化，DK 启动前和实际使用前再次核对。监督器源码已拒绝旧 `server` 配置、单服务报告和旧运行状态；工具自测不是已安装或已执行双服务的证据。真实运行、DK 故障组和两题报告仍须同候选组合验收，成功/故意失败/取消收尾完成后才可受控切换原 App 必需检查。不得用现役单服务成功满足新架构验收。

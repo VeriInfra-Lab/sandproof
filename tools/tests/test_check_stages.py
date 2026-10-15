@@ -115,6 +115,8 @@ class StageReceiptTests(unittest.TestCase):
             ('CLEANUP_UNKNOWN', ['cleanup']),
             ('cleanup_status="unknown"', ['cleanup']),
             ('process exited with 124', ['unclassified_failure']),
+            ('test_partial_identity_is_kept_cleanup_unknown (tests.Example) ... ok', ['unclassified_failure']),
+            ('test case::CLEANUP_UNKNOWN ... ok', ['unclassified_failure']),
         ]
         for text, expected in cases:
             with self.subTest(text=text):
@@ -124,6 +126,23 @@ class StageReceiptTests(unittest.TestCase):
                 self.assertEqual(stages.analyze(text, 'success')['possible_causes'], [])
         self.assertEqual(stages.analyze('', 'timed_out')['possible_causes'], ['job_timeout'])
         self.assertEqual(stages.analyze('', 'cancelled')['possible_causes'], ['interrupted'])
+        annotations = [{'message': 'The job has exceeded the maximum execution time of 20m0s'}]
+        result = stages.analyze('test_cleanup_unknown (tests.Example) ... ok', 'cancelled', annotations)
+        self.assertEqual(result['job_conclusion'], 'cancelled')
+        self.assertEqual(result['possible_causes'], ['job_timeout'])
+        self.assertEqual(result['deadline_evidence'], 'actions_annotation')
+        with self.assertRaises(ValueError):
+            stages.analyze('', 'cancelled', [{'message': 20}])
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / 'ci.log'
+            annotations_path = Path(temporary) / 'annotations.json'
+            log.write_text('test_cleanup_unknown (tests.Example) ... ok\n')
+            annotations_path.write_text(json.dumps(annotations))
+            result = subprocess.run([sys.executable, str(ROOT / 'tools/check_stages.py'),
+                'analyze-log', '--log', str(log), '--conclusion', 'cancelled',
+                '--annotations', str(annotations_path)], capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['possible_causes'], ['job_timeout'])
 
     def test_slow_target_summary_uses_original_harness_duration_not_absolute_paths(self):
         text = '''[check-stage] {"event":"stage-start","stage":"workspace-tests"}
