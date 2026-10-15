@@ -154,10 +154,30 @@ fn leaf_conversion_keeps_primitive_errors_and_all_identifier_bytes() {
         r#""1""#,
         "true",
         "[]",
+        "0 x",
         "1 false",
     ] {
         check::<PositiveCounter, DerivedCounter>(input.as_bytes());
     }
+}
+
+#[test]
+fn counter_validation_precedes_the_original_trailing_input_check() {
+    // Parsing a whole u64 first and checking nonzero afterwards is NOT an
+    // equivalent adapter: it would report trailing input before our zero error.
+    let zero = serde_json::from_slice::<PositiveCounter>(b"0 x").unwrap_err();
+    assert_eq!(zero.to_string(), "invalid or exhausted internal counter");
+    assert_eq!(zero.classify(), serde_json::error::Category::Data);
+    assert_eq!((zero.line(), zero.column()), (0, 0));
+    let nonzero = serde_json::from_slice::<PositiveCounter>(b"1 x").unwrap_err();
+    assert_eq!(
+        nonzero.to_string(),
+        "trailing characters at line 1 column 3"
+    );
+    assert_eq!(nonzero.classify(), serde_json::error::Category::Syntax);
+    assert_eq!((nonzero.line(), nonzero.column()), (1, 3));
+    check::<PositiveCounter, DerivedCounter>(b"0 x");
+    check::<PositiveCounter, DerivedCounter>(b"1 x");
 }
 
 #[test]
