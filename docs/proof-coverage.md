@@ -201,6 +201,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 但核心**使用**模板绑定、资源形状记账、恢复匹配与实例精确清理仍在后续验证范围，不能借模板排除条款一起排除。部署前提是产物校验后不可变、交接前关闭写者、路径可信且无不合作写者；ctime 与摘要缓存本身不是这一前提的证明。不宣传用户镜像、供应链或整个沙箱平台都已形式化验证。
 
+#311 在 [TemplateBinding](../controller-service/src/templates.rs)增加可选 [guest 身份](../controller-service/src/templates/guest.rs)，扩展原 canonical digest、不可变登记和恢复比较的数据域。既有缺省描述保留原字节；新字段与原路径/owner 投影、SQLite 提交及中心 Redis 权威块的精确对应通过工程回归核对，尚未抽取或证明。后续连接义务包括独立 manifest/config pin、配置与 worker 版本/摘要一致性，以及被声明的产物确已安装在对应 rootfs 中；摘要相同不自行证明安装或源码到机器码对应。未改变纯核心、抽取规则、LLBC/Lean 或已有定理适用提交；历史结论不覆盖扩展后的模板输入及其服务连接。
+
 ## 历史纯核心覆盖
 
 | 输入或能力 | Rust 与模型的对应证明 | 统一入口 |

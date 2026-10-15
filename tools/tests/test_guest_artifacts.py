@@ -12,6 +12,7 @@ from tools.system_acceptance import write_once
 
 VERSIONS = dict(service_package_version='0.1.0', worker_package_version='0.1.0',
                 config_version=2, worker_protocol_version=2, pid_format_version=2)
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def manifest(directory):
@@ -123,3 +124,54 @@ class GuestArtifactTests(unittest.TestCase):
                 report[key] = original
         with self.assertRaises(ValueError): artifacts.check_reports(VERSIONS, dict(service, extra=1), worker)
         with self.assertRaises(ValueError): artifacts.check_reports(dict(VERSIONS, config_version=3), service, worker)
+
+    def configuration(self):
+        config = json.loads((ROOT / 'sandbox-guest-service/src/daemon/tests/configuration.json').read_bytes())
+        config['worker'] = artifacts.worker_configuration(self.manifest)
+        path = self.root / 'configuration.json'
+        write_once(path, config)
+        return path, config
+
+    def test_shared_template_identity_binds_actual_config_release_and_binary_bytes(self):
+        pin = self.publish()
+        config, _ = self.configuration()
+        config_pin = hashlib.sha256(config.read_bytes()).hexdigest()
+        identity = artifacts.template_identity(self.root, pin, config, config_pin)
+        fixture = json.loads((ROOT / 'tests/compat/guest-template-identity.json').read_bytes())
+        self.assertEqual(identity, fixture)
+        # No mutable configuration values or operator-local paths enter the
+        # descriptor. Exact configuration bytes are still pinned separately.
+        self.assertEqual(identity['configuration'], artifacts.fingerprint(config, artifacts.CONFIGURATION_LIMIT))
+        with self.assertRaisesRegex(ValueError, 'configuration differs'):
+            artifacts.template_identity(self.root, pin, config, '0'*64)
+        config.write_bytes(config.read_bytes() + b' ')
+        with self.assertRaisesRegex(ValueError, 'configuration differs'):
+            artifacts.template_identity(self.root, pin, config, config_pin)
+        config.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'owner-only'):
+            artifacts.template_identity(self.root, pin, config, hashlib.sha256(config.read_bytes()).hexdigest())
+
+    def test_template_identity_refuses_configuration_version_and_worker_mixing(self):
+        pin = self.publish()
+        path, config = self.configuration()
+        for key, value in [
+            (('version',), 1), (('version',), True),
+            (('worker',), None), (('worker', 'protocol_version'), True),
+            (('worker', 'protocol_version'), 1), (('worker', 'package_version'), '0.2.0'),
+            (('worker', 'artifact', 'sha256'), 'e'*64), (('worker', 'artifact', 'bytes'), True),
+            (('worker', 'extra'), 1),
+        ]:
+            bad = copy.deepcopy(config)
+            current = bad
+            for part in key[:-1]: current = current[part]
+            current[key[-1]] = value
+            path.write_text(json.dumps(bad))
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                artifacts.template_identity(self.root, pin, path, hashlib.sha256(path.read_bytes()).hexdigest())
+        raw = json.dumps(config).replace('"version": 2', '"version": 2,"version": 2').encode()
+        path.write_bytes(raw)
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            artifacts.template_identity(self.root, pin, path, hashlib.sha256(raw).hexdigest())
+        path.write_bytes(b' ' * (artifacts.CONFIGURATION_LIMIT + 1))
+        with self.assertRaisesRegex(ValueError, 'size'):
+            artifacts.template_identity(self.root, pin, path, hashlib.sha256(path.read_bytes()).hexdigest())

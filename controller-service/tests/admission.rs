@@ -52,6 +52,7 @@ fn template_options() -> CreateOptions {
     };
     CreateOptions {
         template: Some(TemplateBinding {
+            guest: None,
             startup: None,
             template_id: "ubuntu-r1".into(),
             revision: "r1".into(),
@@ -231,6 +232,81 @@ fn startup_binding_is_frozen_and_schema_guard_never_downgrades() {
             .unwrap(),
         9
     );
+}
+
+#[test]
+fn guest_identity_survives_unknown_commit_and_reopen_without_same_id_replacement() {
+    let (directory, mut journal) = setup();
+    let mut options = template_options();
+    options.template.as_mut().unwrap().guest = Some(
+        serde_json::from_str(include_str!(
+            "../../tests/compat/guest-template-identity.json"
+        ))
+        .unwrap(),
+    );
+    assert!(
+        journal
+            .admit_template_create(
+                request(10, 1),
+                template_admission(options.clone()),
+                compute_limits(),
+                &mut BeforeCommit,
+            )
+            .is_err()
+    );
+    assert!(journal.world().unwrap().sandbox_records().is_empty());
+    assert!(matches!(
+        journal.admit_template_create(
+            request(10, 1),
+            template_admission(options.clone()),
+            compute_limits(),
+            &mut AfterCommit,
+        ),
+        Err(AdmissionError::Journal(JournalError::InjectedCrash(
+            CrashPoint::AfterCommit
+        )))
+    ));
+    drop(journal);
+    let mut journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(
+        journal.create_options(core::SandboxId(10)).unwrap(),
+        options
+    );
+    for case in 0..4 {
+        let mut changed = options.clone();
+        let template = changed.template.as_mut().unwrap();
+        let guest = template.guest.as_mut().unwrap();
+        match case {
+            0 => guest.configuration.sha256 = "a".repeat(64),
+            1 => guest.artifacts.service.sha256 = "b".repeat(64),
+            2 => guest.manifest_sha256 = "c".repeat(64),
+            _ => template.guest = None,
+        }
+        assert!(
+            matches!(
+                journal.admit_template_create(
+                    request(11, 1),
+                    template_admission(changed),
+                    compute_limits(),
+                    &mut NeverCrash,
+                ),
+                Err(AdmissionError::InvalidCreateOptions)
+            ),
+            "mutation {case}"
+        );
+    }
+    assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
+    let mut replacement = options;
+    replacement.template.as_mut().unwrap().template_id = "different-runtime-template".into();
+    replacement.template.as_mut().unwrap().guest = None;
+    journal
+        .admit_template_create(
+            request(11, 1),
+            template_admission(replacement),
+            compute_limits(),
+            &mut NeverCrash,
+        )
+        .unwrap();
 }
 
 #[test]

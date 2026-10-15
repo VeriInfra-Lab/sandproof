@@ -1,0 +1,26 @@
+{
+  "kind": "rust-guest-v1",
+  "manifest_sha256": "8a5bd3c2c467383aff4eb16c8688b6df23dbc6fffb5ffb59fe98b9f39f28e760",
+  "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "versions": {
+    "config_version": 2,
+    "pid_format_version": 2,
+    "service_package_version": "0.1.0",
+    "worker_package_version": "0.1.0",
+    "worker_protocol_version": 2
+  },
+  "artifacts": {
+    "service": {
+      "bytes": 38,
+      "sha256": "12e29864c575deb6f88fa64bc5ea4388f8ad50cf73f4347e436dbfe7ddb57e7c"
+    },
+    "worker": {
+      "bytes": 37,
+      "sha256": "b68e2f8bb41709e50e8a885429cfb755f8b0f71a6f38ffbd5a3815513ec14ea8"
+    }
+  },
+  "configuration": {
+    "bytes": 7070,
+    "sha256": "c2d491edd9985c98f8ec53976567090dbf08691c2bee9640d1f57e6eb32ed0dd"
+  }
+}

@@ -17,6 +17,7 @@ BINARIES = {'service': 'sandproof-guest-service', 'worker': 'sandproof-guest-wor
 SOURCE_LIMIT = 128 * 1024**2
 BINARY_LIMIT = 256 * 1024**2
 MANIFEST_LIMIT = 16 * 1024
+CONFIGURATION_LIMIT = 1024 * 1024
 VERSION_KEYS = {'service_package_version', 'worker_package_version', 'config_version',
                 'worker_protocol_version', 'pid_format_version'}
 TARGET = 'x86_64-unknown-linux-gnu'
@@ -156,3 +157,33 @@ def worker_configuration(manifest):
     return {'package_version': manifest['versions']['worker_package_version'],
             'protocol_version': manifest['versions']['worker_protocol_version'],
             'artifact': dict(manifest['artifacts']['worker'])}
+
+
+def template_identity(directory, expected_sha256, configuration, configuration_sha256):
+    """Bind separately pinned release/config bytes to the protected template.
+
+    Only the version and worker relation are checked here. The original daemon
+    check still validates the complete configuration and budgets before use;
+    this function neither runs a binary nor claims the rootfs contains it.
+    """
+    manifest = load(directory, expected_sha256)
+    configuration = private_path(configuration)
+    hex_digest(configuration_sha256)
+    observed, raw = fingerprint(configuration, CONFIGURATION_LIMIT, content=True)
+    if observed['sha256'] != configuration_sha256:
+        raise ValueError('guest configuration differs from trusted input lock')
+    config = json.loads(raw, object_pairs_hook=unique_keys)
+    if (type(config) is not dict or type(config.get('version')) is not int
+            or config['version'] != manifest['versions']['config_version']):
+        raise ValueError('guest configuration version differs from release')
+    worker = config.get('worker')
+    require_keys(worker, {'package_version', 'protocol_version', 'artifact'}, 'configured worker')
+    descriptor(worker['artifact'], BINARY_LIMIT)
+    if (type(worker['protocol_version']) is not int
+            or worker != worker_configuration(manifest)):
+        raise ValueError('configured worker differs from release')
+    return {'kind': manifest['kind'], 'manifest_sha256': expected_sha256,
+            'source_commit': manifest['source']['commit'],
+            'versions': dict(manifest['versions']),
+            'artifacts': {role: dict(value) for role, value in manifest['artifacts'].items()},
+            'configuration': observed}

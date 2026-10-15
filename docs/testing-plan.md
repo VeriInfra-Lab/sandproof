@@ -100,6 +100,10 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [来宾清单检查](../tools/tests/test_guest_artifacts.py)以真实私有文件核对独立 manifest pin、双二进制/归档变更、缺失/额外/旧字段、布尔冒充数字、错架构/版本、文件类型/权限/链接/字节预算与重复 JSON 字段。[准备检查](../tools/tests/test_prepare_guest.py)使用真实临时 Git 仓库及归档、实际有界版本查询子进程，覆盖脏/未跟踪源码排除、运行配方错配、锁/工具链错配、混合版本、离线构建失败、原期限、编译器变化、原目录不复用和环境白名单；编译阶段是受控替身，版本程序是夹具，不把这些用例算作 Rust release 已构建。原命令回归另实际验证 cwd 仅作用于子进程，保留 EOF 后期限检查。可移植定向组通过；正式准备须在隔离 Linux 环境对精确提交运行原命令，独立核对输出清单及再读拒绝，并继续真实模板/SDK/KVM 验收。普通 PR CI 未增加构建权限或新的安装步骤。
 
+#489 源提交 966ca455ec8043dc2066d90c9b71619952c0ffe4（checkout 7e1361f7fede1767992d21b5253cc913393e44c0）的四项普通 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38769618672) 已通过；这不是该工具的真实 Linux release 构建或模板安装回执。
+
+[共享来宾身份样例](../tests/compat/guest-template-identity.json)由工具端真实私有夹具字节、独立清单/config pin 产生，并由 [Rust 模板检查](../controller-service/tests/templates.rs)读取：核对旧描述字节不变、每个新字段参与摘要、错类型/范围/未知字段拒绝，以及只改路径/owner 的合法投影和混合身份拒绝。[原 SQLite 准入](../controller-service/tests/admission.rs)覆盖提交前失败、提交回执丢失后重开、同编号改配置/二进制/清单或删除 guest 均拒绝；[中心权威块](../sandbox-center-service/tests/business_authority.rs)沿原真实固定 Redis 回归携带新身份，检查恢复和本地证据错配；宿主原元数据预算用例纳入新描述字节，该 Linux 专属用例尚未在本轮 macOS 执行。工具端另覆盖配置独立 pin 失配、版本/worker 混配、布尔、重复字段与有限字节。样例是测试产物，未执行安装或正式服务；配置完整有效性仍归原 daemon 检查，真实构建/安装/SDK 双端/KVM 验收仍待完成。
+
 [持久服务会话检查](../sandbox-guest-runtime/src/pid_claims/tests/sessions.rs)补五项真实私有文件回归：多次重开/丢弃结果后编号递增且原 PID 拒绝保留；最大 u64 只发出一次，耗尽不写、不回绕；计数写前/写后/摘要后/同步后故障共同毒化会话与 PID 写者，只有完整图像能重开；篡改与 panic 保持拒绝；校验正确的原 v1 及伪装长度的 v1 均原样拒绝。该组连同既有位图场景共 11 项，在 macOS 实跑通过，并已包含在上述 #486 Linux 回执；入口仍为 `cargo test -p sandproof-guest-runtime --locked --lib pid_claims::`，不把软件故障点等同断电或真实故障磁盘。
 
 [正常启动状态检查](../sandbox-guest-service/src/startup/tests.rs)使用真实私有目录及原 PidClaims，覆盖固定身份摘要样例/字段无歧义、预算与配置先行、初始未授权、两次重开服务编号递增且已烧 PID 仍拒绝、独占写者、缺失/损坏/错 VM/错范围不新建或重置、令牌轮换保持绑定及外来元数据拒绝。八项回归的定向入口为 `cargo test -p sandproof-guest-service --locked --lib startup::`；该组在 Unix 运行，macOS 可执行真实文件部分。控制元数据源不代替实际 MMDS，原 PID 没有启动用户进程，也不声称服务重启后的活跃进程已收尾。
