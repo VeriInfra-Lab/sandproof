@@ -683,6 +683,10 @@ Accept-Encoding 默认 q=1，重复 q 参数取最后一个可解析值，非法
 
 HTTP 日期接受固定 Go 的三种布局、小数秒、大小写和旧两位年份规则。Last-Modified 使用 UTC，精确 year-1 零值和 Unix epoch 零纳秒不设置该头；带纳秒的 epoch 仍设置。旧格式的命名时区依赖显式可信 `LocalZone` 快照，未知名字沿 Go 保留 nominal UTC 秒值，不能直接当作固定数字偏移；正式 daemon 本地时区解析尚待连接，不得默认以 UTC 冒充部署环境。日期转换限现有 `time` 库的 -9999..9999 年，超出范围明确组件错误；该限制须列入 E01 差异。
 
+[本地时区快照](../sandbox-guest-runtime/src/file_download/local_zone.rs)接受调用方提供的可信 TZif v1/v2/v3 字节，固定 `tz-rs 0.7.3`（仅 alloc 功能）解析后实现原 `LocalZone`。配置显式限制输入字节、选中块的 transition 数与时区类型数；先核对块长度和计数再调用解析器，字符串、footer 与闰秒记录同时受原输入字节上限约束。快照保留解析结果，查询不读文件/环境、不刷新数据，不允许请求选择时区来源。历史首时区、同名缩写的候选顺序/回退、最后 transition 与 POSIX 延伸规则按固定 Go 查询语义连接；Go 忽略闰秒记录的行为保留，不采用库的闰秒修正查询。未知缩写仍沿原日期解析保留 nominal UTC 秒值。
+
+该入口仅支持固定解析器接受的 TZif 数据；非法/超额材料拒绝装配，不悄悄切为 UTC。解析器对缩写、transition 顺序、闰秒记录和 footer 一致性的检查比 Go 严格，v4、任意 POSIX TZ 字符串、系统 TZ/ZONEINFO 搜索与 `/etc/localtime` 加载未实现；这些属于正式 daemon 接通前的来源/兼容复核项，不宣称接受任意 Go 可加载材料。数据读取本身必须由后续可信加载器限额，当前字节入口不限制调用方之前的分配，也不证明总进程 RSS。
+
 Range 保留区间顺序、重叠、重复、后缀零长度、空列表、空文件的无交集例外和超过文件大小的区间总量回退。If-Range 只在 GET/HEAD 的非空 Range 下检查，失败忽略 Range；单段 206 在发送任何头之前仍要求成功 seek（HEAD 也一样）。多段使用调用者提供的 Go 形状、60 字节小写十六进制随机边界，逐段计划 MIME 头/文件区间及结尾，线长包含全部 MIME 字节；边界必须由可信熵产生，不接收用户字段。正文执行者必须在 seek/read 失败或短读时立即结束错误，不能继续生成后续段或成功结尾；该执行连接见下项，Linux 组合尚待实跑。
 
 响应计划保留 200/206/304/412/416 头的差异，以及 416 对 Cache-Control、Content-Encoding、ETag、Last-Modified 的默认清除，保留 Vary/Disposition。这里只实现 `httpservecontentkeepheaders=0` 的固定默认行为；不声称支持 Go 环境开关。错误正文计划仍包含 HEAD 时原 writer 尝试写入的字节，传输层的 HEAD 正文抑制尚由 HTTP 连接承担。显式预算覆盖选中请求字段总字节、扫描项数、响应头及含 MIME 的线长（HEAD 也检查所声明长度）；超额或 int64 长度溢出明确拒绝，不复现 Go 整数回绕。全头解析分配、响应库自动头、原授权/期限/容量、MIME 查表/嗅探、Content-Disposition 及 seek 错误映射仍需正式连接；这些局部预算拒绝尚未冻结为端点状态码。

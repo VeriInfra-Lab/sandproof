@@ -6,6 +6,7 @@
 mod conditions;
 pub mod date;
 mod errno;
+pub mod local_zone;
 pub use errno::LinuxErrno;
 mod ranges;
 pub use conditions::{Conditions, Precondition, precondition};

@@ -81,6 +81,26 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "Z", "L":
+			if len(f) != 3 {
+				panic("TZif fields")
+			}
+			location, err := time.LoadLocationFromTZData("fixture", decode(f[1]))
+			if err != nil {
+				panic(err)
+			}
+			if f[0] == "L" {
+				name, offset := time.Unix(integer(f[2]), 0).In(location).Zone()
+				fmt.Printf("%x\t%d\n", name, offset)
+			} else {
+				time.Local = location
+				t, err := http.ParseTime(string(decode(f[2])))
+				if err != nil {
+					fmt.Println("ERR")
+				} else {
+					fmt.Printf("%d\t%d\n", t.Unix(), t.Nanosecond())
+				}
+			}
 		case "T":
 			if len(f) != 4 {
 				panic("date fields")
