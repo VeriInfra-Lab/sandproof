@@ -5,7 +5,6 @@ use super::*;
 use sandproof_guest_runtime::protocol::ProcessConfig;
 use sandproof_guest_service::command::{PidRegistry, RegistryError, RegistryLimits};
 use std::io::Write;
-use std::os::unix::fs::FileTypeExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -187,25 +186,18 @@ fn process_death_keeps_command_alive_and_restart_refuses_old_public_pid() {
         std::fs::read(directory.path().join("effect-new")).unwrap(),
         b"new"
     );
-    // Abrupt owner death skips TempDir Drop: its one private gate pathname
-    // survives even after the process is reaped. Record that residue explicitly;
-    // only this outer fixture removes its own tree, not the restarted service.
+    // Owner death skips TempDir Drop. The old gate must already have been
+    // retired before release; the outer fixture only removes its own tree.
     let mut leftover_gates = 0;
     for entry in std::fs::read_dir(directory.path()).unwrap() {
         let entry = entry.unwrap();
         if entry.file_type().unwrap().is_dir() {
-            for gate in std::fs::read_dir(entry.path().join("gates")).unwrap() {
-                assert!(
-                    std::fs::symlink_metadata(gate.unwrap().path().join("launch"))
-                        .unwrap()
-                        .file_type()
-                        .is_socket()
-                );
-                leftover_gates += 1;
-            }
+            leftover_gates += std::fs::read_dir(entry.path().join("gates"))
+                .unwrap()
+                .count();
         }
     }
-    assert_eq!(leftover_gates, 1);
+    assert_eq!(leftover_gates, 0);
 }
 
 #[test]

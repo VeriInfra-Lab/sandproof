@@ -15,6 +15,8 @@ use sandproof_guest_runtime::{
 
 const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
 
+#[path = "process/gate.rs"]
+mod gate;
 #[path = "process/worker_protocol.rs"]
 mod worker_protocol;
 #[path = "process/wrapper.rs"]
@@ -418,6 +420,12 @@ async fn cancellation_after_release_can_execute_once_but_never_reopens_the_gate(
         limits(),
     )
     .await;
+    let gate = std::fs::read_dir(directory.path())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
     let pidfd = stop_owned(&process);
     let mut release = Box::pin(process.release());
     assert!(
@@ -426,6 +434,7 @@ async fn cancellation_after_release_can_execute_once_but_never_reopens_the_gate(
             .is_pending()
     );
     drop(release);
+    assert!(!gate.exists());
     assert_eq!(
         process.launch_observation(),
         Some(LaunchObservation::Unknown)

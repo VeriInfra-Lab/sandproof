@@ -208,10 +208,11 @@ impl CommandPreparation {
             pty: self.pty.take(),
             stdin,
             gate: Some(gate),
-            _gate_directory: self
+            gate_directory: self
                 .directory
                 .take()
                 .ok_or_else(|| invalid("transferred gate"))?,
+            gate_path_retirement: super::GatePathRetirement::Pending,
             identity,
             limits: self.limits,
             stream,

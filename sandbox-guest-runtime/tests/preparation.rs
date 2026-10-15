@@ -293,6 +293,7 @@ async fn exact_registration_precedes_release_and_the_same_slot_moves_to_executio
     let (command, mut stream) = pending.commit(identity).await.unwrap();
     let command = Stop(command);
     command.0.started().await.unwrap();
+    assert_eq!(fixture.gate_count(), 0);
     timeout(Duration::from_secs(5), rotate)
         .await
         .unwrap()
