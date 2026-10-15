@@ -255,8 +255,12 @@ impl CommandProcess {
             return;
         }
         self.gate_path_retirement = GatePathRetirement::Attempted;
-        if std::fs::remove_file(self.gate_directory.path().join("launch")).is_ok() {
-            let _ = std::fs::remove_dir(self.gate_directory.path());
+        if std::fs::remove_file(self.gate_directory.path().join("launch")).is_ok()
+            && std::fs::remove_dir(self.gate_directory.path()).is_ok()
+        {
+            // The old directory is gone. Drop must not later remove a new
+            // directory created at the same pathname by another owner.
+            self.gate_directory.disable_cleanup(true);
         }
     }
 

@@ -28,6 +28,14 @@ async fn connected_gate_survives_path_retirement_and_failed_directory_removal_ke
         );
         assert!(!gate.join("launch").exists());
         assert_eq!(gate.exists(), obstruct);
+        if !obstruct {
+            // A different directory may later occupy the retired pathname.
+            // Neither another retirement attempt nor old-owner Drop owns it.
+            std::fs::create_dir(&gate).unwrap();
+            std::fs::write(gate.join("launch"), b"replacement").unwrap();
+            process.retire_gate_path();
+            assert_eq!(std::fs::read(gate.join("launch")).unwrap(), b"replacement");
+        }
         assert!(process.release().await.is_err());
         assert_eq!(collect(&mut process).await, (vec![], vec![], 0));
         assert_eq!(
@@ -38,6 +46,10 @@ async fn connected_gate_survives_path_retirement_and_failed_directory_removal_ke
             assert_eq!(std::fs::read(gate.join("held")).unwrap(), b"fixture");
         }
         drop(process);
-        assert!(!gate.exists());
+        if obstruct {
+            assert!(!gate.exists());
+        } else {
+            assert_eq!(std::fs::read(gate.join("launch")).unwrap(), b"replacement");
+        }
     }
 }

@@ -360,7 +360,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 新 [Linux 进程适配](../sandbox-guest-runtime/src/process.rs)已把原 `CommandStream` 接到真实 wait、管道与消费确认，并实现单次私有 worker 放行及 pidfd 控制。该适配及 [worker](../sandbox-guest-runtime/src/worker.rs)只有组件测试，未抽取或证明；纯核心源码未变，原抽取试验不能背书异步与系统调用。待证连接包括：容量/公开身份先于放行、取消后的原进程责任、私有协议未知结果、真实 PID/创建证据与稳定句柄、stdin 部分效果、管道消费与实际分配/释放。内核、Tokio 与 exec 外部前提须逐项登记；自有状态和协议逻辑不能整体列为可信假设。
 
-[gate 路径退休](../sandbox-guest-runtime/src/process.rs)新增已认证 READY 连接与 Unix socket 路径分离、首次放行前唯一删除尝试、执行 owner 在同步删除后重查原执行期限、原句柄在 unlink 后继续使用、删除失败仍由原 TempDir 承担最终清理的对应义务。同步文件系统调用的完成性、并发路径变更、崩溃时刻与清理回执尚未抽取或证明；删除不产生进程/请求容量 credit，Unknown 不变。有限 SIGSTOP/取消、真实 ENOTEMPTY 与进程强杀测试不代表故障文件系统、全部启动恢复或 E07。历史已证明纯核心与 Lean 未改。
+[gate 路径退休](../sandbox-guest-runtime/src/process.rs)新增已认证 READY 连接与 Unix socket 路径分离、首次放行前唯一删除尝试、执行 owner 在同步删除后重查原执行期限、原句柄在 unlink 后继续使用、成功删除后解除旧目录清理责任、删除失败仍由原 TempDir 承担最终清理的对应义务。同步文件系统调用的完成性、并发路径变更、崩溃时刻与清理回执尚未抽取或证明；删除不产生进程/请求容量 credit，Unknown 不变。有限 SIGSTOP/取消、真实 ENOTEMPTY 与进程强杀测试不代表故障文件系统、全部启动恢复或 E07。历史已证明纯核心与 Lean 未改。
 
 新增的[命令 JSON/Connect 编解码](../sandbox-guest-runtime/src/protocol.rs)已有固定 SDK 样例、畸形输入、有限的原 Go 响应编解码对照及真实进程组合测试，未抽取或证明。请求存在性/选择器、帧边界、字节保真、预算到实际分配、End 到真实观察及传输完成的连接均为 #101 后续义务；新增 List 借用元数据到有界 JSON、默认标量省略和 optional/oneof 存在性保持也未证明；Serde/base64/HTTP 库的使用不使自有适配逻辑自动成为可信前提。原纯核心和已证明控制器源码未变，旧证明不覆盖该新增模块。
 
