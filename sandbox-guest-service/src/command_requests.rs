@@ -339,6 +339,8 @@ pub struct Failure {
     #[cfg(target_os = "linux")]
     missing_cwd: Option<String>,
     #[cfg(target_os = "linux")]
+    native_start: Option<http::start::NativeFailure>,
+    #[cfg(target_os = "linux")]
     operation: Option<http::operation::Rejection>,
     #[cfg(target_os = "linux")]
     response: Option<http::ResponseFormat>,
@@ -355,6 +357,8 @@ impl Failure {
             default_account: None,
             #[cfg(target_os = "linux")]
             missing_cwd: None,
+            #[cfg(target_os = "linux")]
+            native_start: None,
             #[cfg(target_os = "linux")]
             operation: None,
             #[cfg(target_os = "linux")]

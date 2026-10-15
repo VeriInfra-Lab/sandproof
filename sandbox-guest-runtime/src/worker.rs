@@ -8,9 +8,12 @@ use std::process::Command;
 
 use crate::LaunchSpec;
 
-pub(crate) const HELLO: &[u8; 4] = b"SG01";
-pub(crate) const READY: &[u8; 4] = b"SG02";
+// v2 separates native errors from protocol faults. Refuse an older worker
+// before launch bytes: its generic error marker cannot prove this distinction.
+pub(crate) const HELLO: &[u8; 4] = b"SG11";
+pub(crate) const READY: &[u8; 4] = b"SG12";
 pub(crate) const ERROR: &[u8; 4] = b"SGE1";
+const FAULT: &[u8; 4] = b"SGF1";
 pub(crate) const CWD_MISSING: &[u8; 4] = b"SGC1";
 
 /// Run the private worker protocol, then replace this exact process by exec.
@@ -20,18 +23,25 @@ pub(crate) const CWD_MISSING: &[u8; 4] = b"SGC1";
 pub fn run(path: &Path, maximum: usize) -> io::Result<()> {
     let mut gate = UnixStream::connect(path)?;
     gate.write_all(HELLO)?;
-    let result = execute(&mut gate, maximum);
+    let mut native_phase = false;
+    let result = execute(&mut gate, maximum, &mut native_phase);
     if let Err(error) = &result {
         // A diagnostic code on the PRIVATE gate, never mixed into user stderr.
         // A missing/truncated diagnostic is unknown, not a replay instruction.
-        let code = error.raw_os_error().unwrap_or(22);
-        let _ = gate.write_all(ERROR);
+        let native = error.raw_os_error();
+        let code = native.unwrap_or(22);
+        let marker = if native_phase && native.is_some_and(|code| code > 0) {
+            ERROR
+        } else {
+            FAULT
+        };
+        let _ = gate.write_all(marker);
         let _ = gate.write_all(&code.to_be_bytes());
     }
     result
 }
 
-fn execute(gate: &mut UnixStream, maximum: usize) -> io::Result<()> {
+fn execute(gate: &mut UnixStream, maximum: usize, native_phase: &mut bool) -> io::Result<()> {
     let mut header = [0; 4];
     gate.read_exact(&mut header)?;
     let length = u32::from_be_bytes(header) as usize;
@@ -77,6 +87,10 @@ fn execute(gate: &mut UnixStream, maximum: usize) -> io::Result<()> {
             "extra launch bytes",
         ));
     }
+    // Only a native OS error after the complete original release may be
+    // reported as ExecFailed. Gate, decode and internal preparation faults
+    // remain Unknown to the release observer, never a user spawn diagnostic.
+    *native_phase = true;
     if spec.pty.is_some() {
         // Only this single-thread worker changes session/controlling terminal,
         // after its gate is released. The daemon never becomes a tty session.

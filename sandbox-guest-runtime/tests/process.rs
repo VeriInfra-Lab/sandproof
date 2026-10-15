@@ -15,6 +15,8 @@ use sandproof_guest_runtime::{
 
 const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
 
+#[path = "process/worker_protocol.rs"]
+mod worker_protocol;
 #[path = "process/wrapper.rs"]
 mod wrapper;
 

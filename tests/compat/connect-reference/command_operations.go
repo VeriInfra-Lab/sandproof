@@ -20,6 +20,10 @@ import (
 type commandOperationInput struct {
 	Method, Kind string
 	Cwd          string
+	Cmd, Native  string
+	Args         []string
+	Pty          bool
+	Cols, Rows   uint32
 	Number       int64
 	Gzip, UTF8   bool
 }
@@ -38,6 +42,8 @@ func operationError(headers http.Header) error {
 	}
 	input := operationRecord(data)
 	switch input.Kind {
+	case "native":
+		return nativeStartError(input)
 	case "cwd":
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cwd '%s' does not exist", input.Cwd))
 	case "selector":

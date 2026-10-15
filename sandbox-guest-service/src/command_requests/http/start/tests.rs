@@ -8,6 +8,7 @@ use sandproof_guest_runtime::{
 };
 use std::time::Duration;
 use tokio::sync::Semaphore;
+mod native;
 
 #[tokio::test]
 #[ignore = "explicit fixed Go missing-cwd error rendering; set SANDPROOF_GUEST_CONNECT_REFERENCE"]
@@ -73,6 +74,7 @@ fn source(path: &str, gzip: bool) -> (Source, Arc<Semaphore>) {
     (
         Source {
             missing_cwd: Some(path.into()),
+            native_start: None,
             format: Some(ResponseFormat::new(
                 Rpc::Start,
                 JsonContentType::Json,

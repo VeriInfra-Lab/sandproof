@@ -479,6 +479,10 @@ Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不�
 
 HTTP 只从原握手及同一次准备失败提取目录缺失事实，保留原解析路径；组件层保留握手拒绝的 InvalidArgument，不能只凭该粗错误推断公开文本。失去 owner、未知收尾、超时或其他粗粒度错误不能凭 errno、字符串或后续路径查询推断此事实。已观察拒绝以协商的 Start EOS 返回 invalid_argument、cwd '原路径' does not exist；错误路径按原 JSON 转义，原预算/期限及最后字节副本责任保持。默认账户错误继续原 sender，其他启动失败不借本分类变成确定错误。
 
+[原生启动错误](../sandbox-guest-service/src/command_requests/http/start/native.rs)只使用同一 worker 完整接收原放行之后，在终端/身份切换、chdir/exec 阶段观察到的正 Linux errno。私有握手升级为 HELLO=SG11、READY=SG12，旧 worker 在发送启动上下文前被拒绝；内部闸门/解码故障使用单独 SGF1，释放结果保持 Unknown，不能伪装为原生 ExecFailed 或自动重执行。该版本变化不改变公开 SDK 协议，正式制备仍需绑定服务与 worker 的相同版本/摘要。
+
+已观察的原生失败按固定 Go 格式返回 Start EOS：管道带原 cmd/argv 的空格连接文本，PTY 另带原解析 cwd 和未经 u16 窄化的 cols/rows；后缀为 fork/exec /bin/sh 和固定 Linux errno 文本。EAGAIN、ENOMEM、ENFILE、EMFILE、ENOSPC 使用 resource_exhausted，其余正 errno 使用 invalid_argument。已登记 PID 保持烧号，原进程/登记 owner 仍等待实际失败收尾；错误回复不等于容量或清理证明。路径、命令及 errno 必须来自同次 Start，互斥事实、预算、期限和最后字节责任继续沿用原 sender。此分类不覆盖 worker 本身的 spawn、PTY 打开或其他准备阶段失败，也不把内部超时/取消改写成确定的用户启动错误。
+
 [文件账户/路径上下文](../sandbox-guest-service/src/files.rs)从同一 `AuthPermit` 快照解析：RPC 沿用 Basic 用户规则，HTTP 文件操作仅从解码后的 `username` 查询选择账号，缺省才使用初始化用户；不把 `user` 别名或 Basic 头当作 HTTP 选择器。显式空/未知账号失败，环境 HOME/USER 不参与账号或 home 选择。Move 的两个路径共用一次账户查询，完整解析后才能交给后续派发；本组件不创建目录、重命名或打开文件。返回的 UID/GID 是创建对象的目标归属，不是文件 worker 的降权凭据，保持既有 daemon/root 文件 I/O 边界。
 
 文件空路径先取初始化工作目录，再按账号 home 展开；已有绝对路径保留原拼写，相对路径只做原词法整理，不提前解析链接或断言权限。NUL 在路径解析阶段保留，由后续实际 I/O 产生该操作的错误，不能冒充已通过路径检查。用户名、Authorization 和输入/展开后每条路径有显式组件预算，Move 至多两条路径；不把这些参数当成正式用户上限或全内存预算。原账户池继续约束取消/超时后仍在运行的查询；正式 HTTP `/files` 路由尚未接通，流式端口的当前边界见下文。

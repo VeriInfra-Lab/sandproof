@@ -70,6 +70,7 @@ impl Ready {
         let format = self.response;
         let mut default_account = None;
         let mut missing_cwd = None;
+        let mut native_start = None;
         let owner = self.decoded.authenticated.admitted.owner.clone();
         let result = async {
             let resolved = self
@@ -90,6 +91,7 @@ impl Ready {
                 .to_str()
                 .ok_or(Error::Unavailable)?
                 .to_owned();
+            let mut cwd = Some(cwd);
             let pending = preparation
                 .owners
                 .prepare_command_admitted(
@@ -121,13 +123,25 @@ impl Ready {
                         )
                         && observer.missing_working_directory()
                     {
-                        missing_cwd = Some(cwd);
+                        missing_cwd = cwd.take();
                     }
                     Error::Registration(error)
                 })?;
             check_deadline(deadline)?;
             let start = reservation.publish(ticket).map_err(Error::Registry)?;
-            let (_command, subscription) = start.started().await.map_err(Error::Command)?;
+            let (_command, subscription) = start.started().await.map_err(|error| {
+                if let crate::command::CommandError::ExecFailed(errno) = error
+                    && errno > 0
+                    && let Some(cwd) = cwd.take()
+                {
+                    native_start = Some(super::http::start::NativeFailure::new(
+                        resolved.request,
+                        cwd,
+                        errno,
+                    ));
+                }
+                Error::Command(error)
+            })?;
             check_deadline(deadline)?;
             let body = subscription
                 .into_body(owner.clone(), response, deadline)
@@ -141,6 +155,7 @@ impl Ready {
                 let mut failure = Failure::new(error, deadline, owner);
                 failure.default_account = default_account;
                 failure.missing_cwd = missing_cwd;
+                failure.native_start = native_start;
                 failure.response = format;
                 failure
             })
