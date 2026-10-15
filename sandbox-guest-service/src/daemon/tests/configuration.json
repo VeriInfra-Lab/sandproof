@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "listen": "127.0.0.1:49983",
   "runtime": {
     "worker_threads": 2,
@@ -16,6 +16,14 @@
     "worker": "/usr/libexec/sandproof-guest-worker",
     "gate_directory": "/run/sandproof-guest/gates",
     "max_pid": 4194304
+  },
+  "worker": {
+    "package_version": "0.1.0",
+    "protocol_version": 2,
+    "artifact": {
+      "bytes": 3,
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    }
   },
   "startup": {
     "identity_bytes": 4096,

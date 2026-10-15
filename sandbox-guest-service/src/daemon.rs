@@ -18,5 +18,6 @@ pub enum Error {
     DeadlineExceeded,
     Cancelled,
     WorkerUnavailable,
+    WorkerArtifact,
     Listener,
 }

@@ -36,6 +36,7 @@ impl Prepared {
         let directory = self.config.paths.pid_directory.clone();
         let gate = self.config.paths.gate_directory.clone();
         let worker = self.config.paths.worker.clone();
+        let expected = self.worker;
         let owner = self.config.paths.owner_uid;
         let timezone = self.config.snapshots.timezone.clone();
         let zone_limits = self.config.snapshots.timezone_limits;
@@ -48,7 +49,17 @@ impl Prepared {
                 startup_files::state_directory(&gate, owner, CONFIG_BYTES)
                     .map_err(|_| Error::Files)?,
             );
-            drop(startup_files::worker(&worker, owner, CONFIG_BYTES).map_err(|_| Error::Files)?);
+            let executable =
+                startup_files::worker(&worker, owner, CONFIG_BYTES).map_err(|_| Error::Files)?;
+            expected
+                .verify(executable, || Instant::now() < deadline)
+                .map_err(|error| {
+                    if error == sandproof_guest_runtime::artifact::Error::Cancelled {
+                        Error::DeadlineExceeded
+                    } else {
+                        Error::WorkerArtifact
+                    }
+                })?;
             timely(deadline)?;
             let mime = Catalog::load_system(mime_limits).map_err(|_| Error::Snapshots)?;
             timely(deadline)?;

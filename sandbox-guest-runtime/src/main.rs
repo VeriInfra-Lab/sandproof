@@ -3,6 +3,10 @@
 #[cfg(target_os = "linux")]
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
+    if args.len() == 2 && args[1] == "--version" {
+        println!("{}", sandproof_guest_runtime::build_info::worker());
+        return;
+    }
     let valid = args.len() == 5 && args[1] == "--gate" && args[3] == "--limit";
     let maximum = valid
         .then(|| args[4].to_str().and_then(|s| s.parse::<u32>().ok()))

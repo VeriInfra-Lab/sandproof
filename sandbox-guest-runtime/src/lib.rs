@@ -10,6 +10,8 @@
 
 #[cfg(target_os = "linux")]
 pub mod accounts;
+pub mod artifact;
+pub mod build_info;
 pub mod file_protocol;
 #[cfg(target_os = "linux")]
 pub mod filesystem;

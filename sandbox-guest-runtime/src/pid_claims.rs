@@ -23,7 +23,16 @@ mod session;
 mod tests;
 
 const NAME: &str = "pid-claims.bin";
-const MAGIC: &[u8; 8] = b"SPPID\0\x02\0";
+const MAGIC: &[u8; 8] = &[
+    b'S',
+    b'P',
+    b'P',
+    b'I',
+    b'D',
+    0,
+    crate::build_info::PID_FORMAT_VERSION,
+    0,
+];
 const SESSION: std::ops::Range<usize> = 44..52;
 const HEADER: usize = 52;
 const DIGEST: usize = 32;

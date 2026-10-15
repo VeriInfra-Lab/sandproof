@@ -90,6 +90,13 @@ fn read(mut file: File) -> Result<Vec<u8>, Error> {
 }
 
 fn run() -> Result<(), Error> {
+    if std::env::args_os()
+        .skip(1)
+        .eq([OsString::from("--version")])
+    {
+        println!("{}", crate::build_info::service());
+        return Ok(());
+    }
     let (action, path) = arguments(std::env::args_os().skip(1))?;
     let file = startup_files::configuration(&path, startup_files::current_owner(), CONFIG_BYTES)
         .map_err(|_| Error::Input)?;

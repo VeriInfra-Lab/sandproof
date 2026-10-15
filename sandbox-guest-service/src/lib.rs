@@ -6,6 +6,7 @@
 //! startup. Immutable-template integration remains an independent obligation;
 //! this crate does not install a replacement. Health does not certify readiness.
 
+pub mod build_info;
 #[cfg(any(target_os = "linux", test))]
 mod command_clock;
 pub mod command_requests;

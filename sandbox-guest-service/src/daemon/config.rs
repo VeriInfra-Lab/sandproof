@@ -25,6 +25,7 @@ pub struct Configuration {
     pub listen: SocketAddr,
     pub runtime: Runtime,
     pub paths: Paths,
+    pub worker: Worker,
     pub startup: startup::Limits,
     pub metadata: MetadataLimits,
     pub initialization: InitLimits,
@@ -52,6 +53,29 @@ pub struct Paths {
     pub worker: PathBuf,
     pub gate_directory: PathBuf,
     pub max_pid: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Worker {
+    pub package_version: String,
+    pub protocol_version: u32,
+    pub artifact: sandproof_guest_runtime::artifact::Fingerprint,
+}
+
+impl Worker {
+    pub(crate) fn validate(
+        &self,
+    ) -> Result<sandproof_guest_runtime::artifact::Expected, sandproof_guest_runtime::artifact::Error>
+    {
+        use sandproof_guest_runtime::{artifact::Error, build_info};
+        if self.package_version != build_info::PACKAGE_VERSION
+            || self.protocol_version != build_info::WORKER_PROTOCOL_VERSION
+        {
+            return Err(Error::Configuration);
+        }
+        self.artifact.validate()
+    }
 }
 
 #[derive(Deserialize)]
@@ -132,7 +156,7 @@ impl Configuration {
             return Err(DecodeError::Size);
         }
         let value: Self = serde_json::from_slice(bytes).map_err(|_| DecodeError::Json)?;
-        if value.version != 1 {
+        if value.version != crate::build_info::CONFIG_VERSION {
             return Err(DecodeError::Version);
         }
         Ok(value)

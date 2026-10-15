@@ -362,13 +362,17 @@ VmIdentity 的稳定绑定为 SHA-256：域字节 `sandproof/guest/pid-binding/v
 
 返回 Session 的 PinnedMetadata 保留同一元数据源和不可变 ID，每次原 Session 需要新的元数据交换时，先拒绝 ID 改变，再允许原令牌验证/轮换；原同 token 重复初始化行为保持。启动读取的令牌 hash 不预先授权客户端，不保存在身份对象里。目录祖先/预期 UID、元数据响应与先行分配、阻塞线程数仍由可信装配约束。排队/运行中的文件打开不能被超时中断，原名额保留到任务和遗留结果实际退出；取消后结果持有的锁定 FD 先释放，再归还启动名额。排队任务在开始及 open 返回后检查等待者是否已取消；已进入的计数写入不能中断，取消/超时仍可能烧掉编号，绝不自动回收。启动取消或故障不会重放用户命令。下述正式入口消费该组件；不可变模板安装和 E04/E06/E09 整体验收仍待完成。
 
-[来宾正式入口](../sandbox-guest-service/src/daemon/entry.rs)实现 Linux 二进制 `sandproof-guest-service check|initialize|serve --config /absolute/config.json`。只接受一个显式配置路径，不读取生产预算、PATH、账户或 MMDS 地址的环境变量替代值。配置文件最多 1 MiB，在同一 FD 上以固定缓冲读取并检查实际字节，再按[唯一结构](../sandbox-guest-service/src/daemon/config.rs)解码；版本为 1，全部字段必需，未知/重复/错类型字段拒绝，时长采用 Serde 的 secs/nanos 表示。字段直接复用原组件预算类型；进程配置、响应、登记、文件和时区校验也复用原规则，不把 JSON 解码成功当成可启动许可。[测试配置](../sandbox-guest-service/src/daemon/tests/configuration.json)只为可执行回归材料，不是生产默认或已复核的部署预算。
+[来宾正式入口](../sandbox-guest-service/src/daemon/entry.rs)实现 Linux 二进制 `sandproof-guest-service check|initialize|serve --config /absolute/config.json`。只接受一个显式配置路径，不读取生产预算、PATH、账户或 MMDS 地址的环境变量替代值。配置文件最多 1 MiB，在同一 FD 上以固定缓冲读取并检查实际字节，再按[唯一结构](../sandbox-guest-service/src/daemon/config.rs)解码；版本为 2，全部字段必需，未知/重复/错类型字段拒绝，时长采用 Serde 的 secs/nanos 表示。字段直接复用原组件预算类型；进程配置、响应、登记、文件和时区校验也复用原规则，不把 JSON 解码成功当成可启动许可。[测试配置](../sandbox-guest-service/src/daemon/tests/configuration.json)只为可执行回归材料，worker 指纹是三个字节 abc 的测试摘要，不是可执行文件、生产默认或已复核的部署预算。
+
+两个 Linux 二进制另接受唯一参数 `--version`，输出[服务](../sandbox-guest-service/src/build_info.rs)/[worker](../sandbox-guest-runtime/src/build_info.rs) 的紧凑 JSON，不读取配置、打开 gate、连接 MMDS 或创建运行时。字段区分自身包版本、配置版本、私有 worker 协议与 PID 存储格式，并报告编译目标 OS/架构；与[输入锁](../references/v1-baseline.json)逐项回归核对，不冒用 Go envd 0.9.0，也不改变 SDK 协商字段或健康响应。包版本不是精确源码或二进制身份；这些输出不宣称已安装、就绪、协议完全兼容或已证明。
+
+配置 v2 必须显式给出 worker 的 package_version、protocol_version 和 artifact.bytes/sha256；静态阶段拒绝与本服务所链接 runtime 的包/协议版本不一致，以及零/不可表示长度、非 64 位小写十六进制摘要。旧 v1 配置原样拒绝，没有缺省指纹或自动迁移；未部署的安装材料应按精确构建产物重制 v2，不能只更改版本号。initialize/serve 在原受信任 worker FD 上[核对指纹](../sandbox-guest-runtime/src/artifact.rs)，从偏移零用固定 8 KiB 缓冲及一字节超长探针读取，前后核对普通文件类型/长度，比较实际完整内容的 SHA-256；每段及完成前检查原启动期限。错长度/摘要或 I/O 失败在 MMDS、PID 文件访问与监听之前拒绝，不执行候选文件来相信它的自报版本。配置中的版本与摘要由可信制备者共同登记；校验不是签名、ELF 适配或源码出处证明。二进制来源、服务自身摘要、配置与不可变模板的完整描述仍须接通 E09。
 
 `check` 读取原私有配置并构造原有界池，验证预算、路径语法、工作目录一致性和配置 owner 与内核有效 UID 一致；不访问 MMDS、安装路径、PID 文件或 MIME/时区来源，不绑定端口、不执行命令。线程数、阻塞线程数、线程栈及退出等待上限也显式配置，检查表示范围和基础约束，不承诺机器有足够内存。`initialize` 只供可信的新 VM 制备：可信安装者须先创建私有状态/gate 目录并安装 worker；读取实际快照和固定 Firecracker MMDS 身份后排他 create 原 PID 文件。它不由 serve 隐式调用，不覆盖已有或中断文件；取消前尚未开始的制备任务跳过写入，已进入的调用可能留下完整或不完整文件，失败不表示没有副作用。
 
 `serve` 在同一启动绝对期限内观察输入、读取 MMDS、open 原状态、烧掉新服务编号并[装配原组件](../sandbox-guest-service/src/daemon/assembly.rs)，之后才绑定显式地址。命令注册表与登记器使用同一 VM/服务编号，初始化、命令、文件传输和文件 RPC 共享同一 Session 与有界账户池；普通与控制命令各有独立请求池。加载实际固定 Linux MIME 来源和配置选定的时区文件，不使用测试路由或内建 UTC 替身。配置读取在运行时建立之前完成；期限不能中断文件系统调用，已排队/运行的工作继续拥有原路径/FD 至实际退出。入口只启动一次，不自动重试或重建状态。SIGTERM/SIGINT 停止接受连接并沿原连接期限排空，之后按配置等待运行时；输出的 transport stopped 只表示传输停止，不能作为用户进程、后代、文件操作或 VM 已收尾的回执。
 
-[受信任启动路径](../sandbox-guest-runtime/src/startup_files.rs)从 `/` 的原目录 FD 逐层 openat，不跟随任何配置/状态/gate/worker 路径中的符号链接；祖先须为 root 或当前 daemon owner 且不可被组/其他用户写入。最终目录为原 owner 的私有目录，配置为私有普通单链接文件，worker 为不可被组/其他用户写入的可执行普通单链接文件；非阻塞打开后先检查类型，FIFO 不进入读取。时区仍按原专用 loader 允许受信任的 `/etc/localtime` 链接。路径检查不抵抗 root/同 owner 篡改、挂载替换或旧有效盘回滚；worker 的路径观察不等同后续 exec 的二进制摘要见证，来源与版本仍须绑定不可变模板。
+[受信任启动路径](../sandbox-guest-runtime/src/startup_files.rs)从 `/` 的原目录 FD 逐层 openat，不跟随任何配置/状态/gate/worker 路径中的符号链接；祖先须为 root 或当前 daemon owner 且不可被组/其他用户写入。最终目录为原 owner 的私有目录，配置为私有普通单链接文件，worker 为不可被组/其他用户写入的可执行普通单链接文件；非阻塞打开后先检查类型，FIFO 不进入读取。时区仍按原专用 loader 允许受信任的 `/etc/localtime` 链接。路径及启动摘要观察不抵抗 root/同 owner 篡改、挂载替换或旧有效盘回滚，也不把随后按路径 exec 绑定到已关闭的原 FD；可信安装必须在服务生命周期内保持 worker 及祖先不变，来源与版本仍须绑定不可变模板。
 
 上述正式入口已有实现，但尚未安装或替换现役模板。tag、keepalive 异常头、剩余错误映射及完整 SDK 双端、真实 MMDS/daemon 故障、资源峰值和 KVM 验收仍按原待办执行；配置预算和静态 check 不批准这些未决行为，也不使全部 E01–E10 自动成立。
 

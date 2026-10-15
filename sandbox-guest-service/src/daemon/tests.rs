@@ -31,7 +31,7 @@ fn complete_strict_schema_rejects_missing_unknown_duplicate_and_malformed_fields
     let text = serde_json::to_string(&original).unwrap();
     assert!(matches!(
         Configuration::decode(
-            text.replace("\"version\":1", "\"version\":1,\"version\":1")
+            text.replace("\"version\":2", "\"version\":2,\"version\":2")
                 .as_bytes()
         ),
         Err(DecodeError::Json)
@@ -41,7 +41,7 @@ fn complete_strict_schema_rejects_missing_unknown_duplicate_and_malformed_fields
         Err(DecodeError::Json)
     ));
     let mut unsupported = original.clone();
-    unsupported["version"] = json!(2);
+    unsupported["version"] = json!(1);
     assert!(matches!(
         Configuration::decode(&serde_json::to_vec(&unsupported).unwrap()),
         Err(DecodeError::Version)
@@ -68,6 +68,7 @@ fn invalid_budgets_and_cross_component_context_fail_before_external_work() {
         "/runtime/blocking_threads",
         "/runtime/thread_stack_bytes",
         "/paths/max_pid",
+        "/worker/artifact/bytes",
         "/startup/identity_bytes",
         "/metadata/body_bytes",
         "/initialization/body_bytes",
@@ -107,6 +108,9 @@ fn invalid_budgets_and_cross_component_context_fail_before_external_work() {
     }
     for (pointer, replacement) in [
         ("/listen", json!("127.0.0.1:0")),
+        ("/worker/package_version", json!("0.9.0")),
+        ("/worker/protocol_version", json!(1)),
+        ("/worker/artifact/sha256", json!("bad")),
         ("/paths/worker", json!("relative")),
         ("/paths/gate_directory", json!("/root/../gate")),
         ("/paths/pid_directory", json!("/nul\0state")),

@@ -29,6 +29,7 @@ pub struct Prepared {
     pub(super) config: Configuration,
     pub(super) startup: Startup<MmdsClient>,
     pub(super) listener: Listener,
+    pub(super) worker: sandproof_guest_runtime::artifact::Expected,
     accounts: AccountPool<SystemAccounts>,
     owners: CommandOwners,
     commands: RequestPools,
@@ -51,7 +52,7 @@ impl Prepared {
     pub fn new(config: Configuration) -> Result<Self, Error> {
         let now = Instant::now();
         let runtime = &config.runtime;
-        if config.version != 1
+        if config.version != crate::build_info::CONFIG_VERSION
             || config.listen.port() == 0
             || runtime.worker_threads == 0
             || runtime.blocking_threads == 0
@@ -70,6 +71,7 @@ impl Prepared {
         {
             return Err(Error::Configuration);
         }
+        let worker = checked(config.worker.validate())?;
         for path in [
             &config.paths.pid_directory,
             &config.paths.worker,
@@ -139,6 +141,7 @@ impl Prepared {
             config,
             startup,
             listener,
+            worker,
             accounts,
             owners,
             commands,

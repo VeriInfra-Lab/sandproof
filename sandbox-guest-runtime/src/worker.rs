@@ -10,6 +10,7 @@ use crate::LaunchSpec;
 
 // v2 separates native errors from protocol faults. Refuse an older worker
 // before launch bytes: its generic error marker cannot prove this distinction.
+const _: () = assert!(crate::build_info::WORKER_PROTOCOL_VERSION == 2);
 pub(crate) const HELLO: &[u8; 4] = b"SG11";
 pub(crate) const READY: &[u8; 4] = b"SG12";
 pub(crate) const ERROR: &[u8; 4] = b"SGE1";
