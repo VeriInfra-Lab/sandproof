@@ -1,4 +1,5 @@
 use super::*;
+pub(crate) mod timezone;
 use std::{
     io::{BufRead, BufReader, Write},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -188,6 +189,14 @@ impl Case {
         }
     }
     fn check(&self, oracle: &mut Reference) {
+        self.check_local(oracle, &Utc, None);
+    }
+    fn check_local(
+        &self,
+        oracle: &mut Reference,
+        local: &impl wire::date::LocalZone,
+        tzif: Option<&[u8]>,
+    ) -> StatusCode {
         let names = [
             "if-match",
             "if-unmodified-since",
@@ -210,7 +219,7 @@ impl Case {
             response,
             self.modified,
             limits(),
-            &Utc,
+            local,
         )
         .unwrap()
         {
@@ -245,7 +254,7 @@ impl Case {
         }
         observed.push(hex(&body));
         let mut input = vec![
-            "P".into(),
+            if tzif.is_some() { "C" } else { "P" }.into(),
             self.size.to_string(),
             self.modified.seconds().to_string(),
             self.modified.nanos().to_string(),
@@ -253,8 +262,12 @@ impl Case {
             hex(&self.etag),
         ];
         input.extend(self.headers.iter().map(|value| hex(value)));
-        input.extend([String::new(), "0".into()]);
+        input.extend(tzif.map_or_else(
+            || [String::new(), "0".into()],
+            |bytes| [hex(bytes), "TZif".into()],
+        ));
         oracle.check(&input.join("\t"), &observed.join("\t"));
+        result.status
     }
 }
 fn range_cases() -> Vec<Case> {

@@ -194,11 +194,19 @@ func main() {
 				result.Body.Reset()
 			}
 			dump(result)
-		case "P":
+		case "P", "C":
 			if len(f) != 14 {
 				panic("response fields")
 			}
-			local(f[12], f[13])
+			if f[0] == "C" {
+				location, err := time.LoadLocationFromTZData("fixture", decode(f[12]))
+				if err != nil || f[13] != "TZif" {
+					panic("response TZif material")
+				}
+				time.Local = location
+			} else {
+				local(f[12], f[13])
+			}
 			size := integer(f[1])
 			if size < 0 || size > 8192 {
 				panic("fixture size")
