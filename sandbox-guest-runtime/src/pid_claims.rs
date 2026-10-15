@@ -96,6 +96,13 @@ pub struct PidClaims {
 }
 
 impl PidClaims {
+    /// Immutable binding checked when this original store was created/opened.
+    /// This snapshot does not observe file integrity or prove a future claim.
+    #[must_use]
+    pub const fn binding(&self) -> Binding {
+        self.binding
+    }
+
     #[must_use]
     pub fn belongs_to(&self, binding: Binding) -> bool {
         self.binding == binding

@@ -345,18 +345,53 @@ async fn shared_http_preflight_order_and_owned_failures_never_dispatch_or_refres
 }
 
 #[tokio::test]
-async fn shared_http_rejects_aliased_pools_and_wrong_registry_session_before_any_work() {
+async fn shared_http_rejects_invalid_process_settings_and_mismatched_resources_before_work() {
     let fixture = fixture().await;
     let registry = registry();
     let registrar = PidRegistrar::new(store(&fixture));
+    let foreign = Fixture::new().await;
+    std::fs::set_permissions(
+        foreign.directory.path(),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    let foreign_registrar = PidRegistrar::new(
+        PidClaims::create(
+            File::open(foreign.directory.path()).unwrap(),
+            uid(&foreign),
+            Binding::new([0x42; 32]).unwrap(),
+            MAX_PID,
+        )
+        .unwrap(),
+    );
+    let claims = fixture.directory.path().join("pid-claims.bin");
+    let foreign_claims = foreign.directory.path().join("pid-claims.bin");
+    let before = std::fs::read(&claims).unwrap();
+    let foreign_before = std::fs::read(&foreign_claims).unwrap();
     let pool = requests(1);
-    for case in 0..4 {
+    for case in 0..20 {
         let mut processes = processes(&fixture, &registry, &registrar);
         let mut response = responses();
         match case {
             1 => processes.session = 2,
             2 => processes.binding = Binding::new([0x42; 32]).unwrap(),
             3 => response.message.keepalive = Duration::ZERO,
+            4 => processes.process_limits.chunk_bytes = 0,
+            5 => processes.process_limits.chunk_bytes = usize::MAX,
+            6 => processes.process_limits.launch_bytes = 0,
+            7 => processes.process_limits.launch_bytes = u32::MAX as usize + 1,
+            8 => processes.process_limits.handshake_timeout = Duration::ZERO,
+            9 => processes.process_limits.handshake_timeout = Duration::MAX,
+            10 => processes.admission_limits.ready_timeout = Duration::ZERO,
+            11 => processes.admission_limits.cleanup_timeout = Duration::ZERO,
+            12 => processes.admission_limits.retry_delay = Duration::ZERO,
+            13 => processes.admission_limits.ready_timeout = Duration::MAX,
+            14 => processes.admission_limits.cleanup_timeout = Duration::MAX,
+            15 => processes.admission_limits.retry_delay = Duration::MAX,
+            16 => processes.worker = "relative-worker".into(),
+            17 => processes.worker = "/bad\0worker".into(),
+            18 => processes.private_directory = "/bad\0gate-root".into(),
+            19 => processes.registrar = foreign_registrar.clone(),
             _ => (),
         }
         let result = CommandHttp::new(
@@ -378,6 +413,13 @@ async fn shared_http_rejects_aliased_pools_and_wrong_registry_session_before_any
         assert!(fixture.owners.reserve().is_ok());
         fixture.assert_no_effect();
         assert_eq!(fixture.gate_count(), 0);
+        assert_eq!(foreign.gate_count(), 0);
+        assert_eq!(std::fs::read(&claims).unwrap(), before, "case={case}");
+        assert_eq!(
+            std::fs::read(&foreign_claims).unwrap(),
+            foreign_before,
+            "case={case}"
+        );
     }
 }
 

@@ -55,7 +55,7 @@ pub struct AdmissionLimits {
 }
 
 impl AdmissionLimits {
-    fn validate(self, start: Instant) -> Result<Self, CommandError> {
+    pub(crate) fn validate(self, start: Instant) -> Result<Self, CommandError> {
         if [self.ready_timeout, self.cleanup_timeout, self.retry_delay]
             .into_iter()
             .any(|duration| duration.is_zero() || start.checked_add(duration).is_none())

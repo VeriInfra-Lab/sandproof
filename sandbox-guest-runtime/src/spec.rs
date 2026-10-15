@@ -121,7 +121,10 @@ pub struct ProcessLimits {
 }
 
 impl ProcessLimits {
-    pub(crate) fn validate(self) -> io::Result<Self> {
+    /// Check budgets without allocating buffers, opening a gate or spawning.
+    /// # Errors
+    /// Zero/overflowing byte budgets or an unrepresentable handshake deadline.
+    pub fn validate(self) -> io::Result<Self> {
         if self.chunk_bytes == 0
             || self.chunk_bytes.checked_mul(2).is_none()
             || self.launch_bytes == 0

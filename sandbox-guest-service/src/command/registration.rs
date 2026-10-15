@@ -13,6 +13,7 @@ use tokio::sync::Semaphore;
 /// if the original preparation deadline has already stopped/reaped the child.
 #[derive(Clone)]
 pub struct PidRegistrar {
+    binding: Binding,
     claims: Arc<Mutex<PidClaims>>,
     slot: Arc<Semaphore>,
 }
@@ -20,9 +21,16 @@ impl PidRegistrar {
     #[must_use]
     pub fn new(claims: PidClaims) -> Self {
         Self {
+            binding: claims.binding(),
             claims: Arc::new(Mutex::new(claims)),
             slot: Arc::new(Semaphore::new(1)),
         }
+    }
+
+    // Immutable original-store identity; do not lock or wait on ongoing I/O
+    // merely to assemble a dispatcher. register_pid still checks the claim.
+    pub(crate) fn belongs_to(&self, binding: Binding) -> bool {
+        self.binding == binding
     }
 }
 
