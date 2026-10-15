@@ -15,7 +15,7 @@ use crate::pty::PtyMaster;
 use crate::{LaunchSpec, ProcessLimits, PtySize};
 
 mod preparation;
-pub use preparation::{CommandPreparation, PreparationPipe, PreparationRejection};
+pub use preparation::{CommandPreparation, PreparationPipe, PreparationPty, PreparationRejection};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProcessSignal {

@@ -8,7 +8,7 @@ use tokio::time::Instant;
 mod native;
 #[cfg(test)]
 mod tests;
-pub(crate) use native::{LaunchFailure, LaunchFailureKind, PipeStream};
+pub(crate) use native::{LaunchFailure, LaunchFailureKind, PipeStream, PtyStage};
 
 // Exactly one observation from this Start, never reconstructed from its coarse
 // error or from a later path/account lookup.
@@ -35,6 +35,16 @@ impl Rejection {
                 LaunchFailureKind::Pipe { errno, .. } => {
                     errno > 0
                         && launch.is_pipe()
+                        && *error
+                            == RequestError::Registration(RegistrationError::Preparation(
+                                crate::command::prepare_error(&std::io::Error::from_raw_os_error(
+                                    errno,
+                                )),
+                            ))
+                }
+                LaunchFailureKind::Pty { errno, .. } => {
+                    errno > 0
+                        && !launch.is_pipe()
                         && *error
                             == RequestError::Registration(RegistrationError::Preparation(
                                 crate::command::prepare_error(&std::io::Error::from_raw_os_error(

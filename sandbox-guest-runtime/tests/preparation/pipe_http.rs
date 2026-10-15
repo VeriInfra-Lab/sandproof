@@ -5,9 +5,18 @@ const MARKER: &str = "SANDPROOF_PIPE_HTTP_CHILD";
 
 #[tokio::test]
 async fn real_pipe_failure_reaches_start_eos_without_publishing_pid_or_losing_capacity() {
+    isolated(false).await;
+}
+
+#[tokio::test]
+async fn real_pty_master_failure_reaches_start_eos_without_pid_effect_or_lost_capacity() {
+    isolated(true).await;
+}
+
+async fn isolated(pty: bool) {
     let mut child = tokio::process::Command::new(std::env::current_exe().unwrap());
     child.args(["--exact", "pid_registration::registry::requests::start::http_dispatch::pipes::isolated_http_pipe_failure", "--ignored", "--nocapture"])
-        .env(MARKER, "1").kill_on_drop(true);
+        .env(MARKER, if pty { "pty" } else { "pipe" }).kill_on_drop(true);
     let result = timeout(Duration::from_secs(20), child.output())
         .await
         .unwrap()
@@ -23,7 +32,11 @@ async fn real_pipe_failure_reaches_start_eos_without_publishing_pid_or_losing_ca
 #[tokio::test]
 #[ignore = "isolated HTTP subprocess; lowers only its own descriptor limit"]
 async fn isolated_http_pipe_failure() {
-    assert_eq!(std::env::var(MARKER).unwrap(), "1");
+    let pty = match std::env::var(MARKER).unwrap().as_str() {
+        "pty" => true,
+        "pipe" => false,
+        _ => panic!("private child mode required"),
+    };
     let fixture = fixture().await;
     let registry = registry();
     let ordinary = requests(1);
@@ -34,11 +47,19 @@ async fn isolated_http_pipe_failure() {
     assert!(original.current.is_none_or(|n| n >= 64));
     // Warm the original account/encoding worker before limiting this child.
     drop(bytes(http.handle(request("List", &json!({}))).await.unwrap()).await);
-    for (stream, available) in [("stdout", 1), ("stderr", 3), ("stdin", 5)] {
-        let request = request(
-            "Start",
-            &json!({"process":{"cmd":"/bin/sh","args":["-c", "printf forbidden > effect"]}}),
-        );
+    let cases = if pty {
+        &[("pty", 1)][..]
+    } else {
+        &[("stdout", 1), ("stderr", 3), ("stdin", 5)][..]
+    };
+    for &(stream, available) in cases {
+        let mut input =
+            json!({"process":{"cmd":"/bin/sh","args":["-c", "printf forbidden > effect"]}});
+        if pty {
+            input["pty"] = json!({"size":{"cols":65537,"rows":u32::MAX}});
+            input["process"]["cwd"] = json!(fixture.directory.path());
+        }
+        let request = request("Start", &input);
         setrlimit(
             Resource::Nofile,
             Rlimit {
@@ -69,10 +90,12 @@ async fn isolated_http_pipe_failure() {
         assert_eq!(response.status(), StatusCode::OK);
         let mut body = response.into_body().into_data_stream();
         let first = frame(&mut body).await;
-        assert_eq!(
-            json_frame(&first, 2),
+        let expected = if pty {
+            json!({"error":{"code":"resource_exhausted", "message":format!("error starting pty with command '/bin/sh -c printf forbidden > effect' in dir '{}' with '65537' cols and '4294967295' rows: open /dev/ptmx: too many open files", fixture.directory.path().display())}})
+        } else {
             json!({"error":{"code":"internal", "message":format!("error creating {stream} pipe for command '/bin/sh -c printf forbidden > effect': pipe2: too many open files")}})
-        );
+        };
+        assert_eq!(json_frame(&first, 2), expected);
         let last = first.clone();
         drop(first);
         drop(body);

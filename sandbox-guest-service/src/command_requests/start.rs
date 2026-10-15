@@ -261,6 +261,20 @@ fn preparation_rejection(
         PreparationRejection::MissingCwd => return Some(Rejection::MissingCwd(cwd)),
         PreparationRejection::EnvironmentNul => LaunchFailureKind::EnvironmentNul,
         PreparationRejection::ArgumentNul => LaunchFailureKind::ArgumentNul,
+        PreparationRejection::Pty { stage, errno } => LaunchFailureKind::Pty {
+            stage: match stage {
+                sandproof_guest_runtime::PreparationPty::OpenMaster => {
+                    super::http::start::PtyStage::OpenMaster
+                }
+                sandproof_guest_runtime::PreparationPty::Unlock => {
+                    super::http::start::PtyStage::Unlock
+                }
+                sandproof_guest_runtime::PreparationPty::Resize => {
+                    super::http::start::PtyStage::Resize
+                }
+            },
+            errno,
+        },
         PreparationRejection::Pipe { stream, errno } => LaunchFailureKind::Pipe {
             stream: match stream {
                 sandproof_guest_runtime::PreparationPipe::Stdout => {

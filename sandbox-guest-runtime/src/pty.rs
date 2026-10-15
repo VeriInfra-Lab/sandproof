@@ -4,14 +4,14 @@ use std::io;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use rustix::fs::{OFlags, fcntl_getfl, fcntl_setfl};
-use rustix::pty::{OpenptFlags, grantpt, ioctl_tiocgptpeer, openpt, unlockpt};
+use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl, open};
+use rustix::pty::{OpenptFlags, ioctl_tiocgptpeer, unlockpt};
 use rustix::termios::{Winsize, tcsetwinsize};
 use tokio::io::Interest;
 use tokio::io::unix::AsyncFd;
 use tokio::sync::Notify;
 
-use crate::PtySize;
+use crate::{PreparationPty, PreparationRejection, PtySize};
 
 pub(crate) struct PtyMaster {
     descriptor: Mutex<Option<Arc<AsyncFd<OwnedFd>>>>,
@@ -23,33 +23,48 @@ fn closed() -> io::Error {
 }
 
 impl PtyMaster {
+    #[cfg(test)]
     pub(crate) fn open(size: PtySize) -> io::Result<(Arc<Self>, OwnedFd)> {
+        Self::open_observed(size, &mut None)
+    }
+
+    pub(crate) fn open_observed(
+        size: PtySize,
+        rejection: &mut Option<PreparationRejection>,
+    ) -> io::Result<(Arc<Self>, OwnedFd)> {
+        *rejection = None;
         let flags = OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC;
-        let master = openpt(flags)?;
-        grantpt(&master)?;
-        unlockpt(&master)?;
+        // Linux grants the slave permissions at allocation. Use the original
+        // open errno: rustix::openpt normalizes ENOSPC to EAGAIN, unlike Go's
+        // os.OpenFile("/dev/ptmx"). No alternate path or retry is introduced.
+        let master = observed(
+            open(
+                "/dev/ptmx",
+                OFlags::RDWR | OFlags::NOCTTY | OFlags::CLOEXEC,
+                Mode::empty(),
+            ),
+            PreparationPty::OpenMaster,
+            rejection,
+        )?;
+        observed(unlockpt(&master), PreparationPty::Unlock, rejection)?;
         // Open the exact peer from the master, not a replaceable /dev/pts path.
         let slave = ioctl_tiocgptpeer(&master, flags)?;
         fcntl_setfl(&master, fcntl_getfl(&master)? | OFlags::NONBLOCK)?;
+        observed(
+            tcsetwinsize(&master, window(size)),
+            PreparationPty::Resize,
+            rejection,
+        )?;
         let master = Arc::new(Self {
             descriptor: Mutex::new(Some(Arc::new(AsyncFd::new(master)?))),
             closed: Notify::new(),
         });
-        master.resize(size)?;
         Ok((master, slave))
     }
 
     pub(crate) fn resize(&self, size: PtySize) -> io::Result<()> {
         let descriptor = self.descriptor()?;
-        tcsetwinsize(
-            descriptor.get_ref(),
-            Winsize {
-                ws_col: size.cols,
-                ws_row: size.rows,
-                ws_xpixel: 0,
-                ws_ypixel: 0,
-            },
-        )?;
+        tcsetwinsize(descriptor.get_ref(), window(size))?;
         Ok(())
     }
 
@@ -141,12 +156,56 @@ impl PtyMaster {
     }
 }
 
+fn window(size: PtySize) -> Winsize {
+    Winsize {
+        ws_col: size.cols,
+        ws_row: size.rows,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    }
+}
+
+fn observed<T>(
+    result: rustix::io::Result<T>,
+    stage: PreparationPty,
+    rejection: &mut Option<PreparationRejection>,
+) -> io::Result<T> {
+    result.map_err(|error| {
+        *rejection = Some(PreparationRejection::Pty {
+            stage,
+            errno: error.raw_os_error(),
+        });
+        error.into()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::future::{Future, poll_fn};
     use std::task::Poll;
     use std::time::Duration;
+
+    #[test]
+    fn observed_ioctl_errors_keep_original_errno_and_stage_without_opening_a_terminal() {
+        let file = std::fs::File::open("/dev/null").unwrap();
+        for (stage, result) in [
+            (PreparationPty::Unlock, unlockpt(&file)),
+            (
+                PreparationPty::Resize,
+                tcsetwinsize(&file, window(PtySize::default())),
+            ),
+        ] {
+            let mut fact = None;
+            assert_eq!(
+                observed(result, stage, &mut fact)
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(25)
+            );
+            assert_eq!(fact, Some(PreparationRejection::Pty { stage, errno: 25 }));
+        }
+    }
 
     #[tokio::test]
     async fn close_wakes_pending_io_and_revokes_all_clones_without_reusing_fd() {

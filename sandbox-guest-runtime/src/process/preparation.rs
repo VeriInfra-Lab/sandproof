@@ -19,14 +19,23 @@ use crate::{LaunchSpec, ProcessLimits};
 mod pipes;
 pub use pipes::PreparationPipe;
 
-/// An original preparation rejection before READY. Only Pipe carries a native
-/// syscall observation. None of these facts proves cleanup or user execution.
+/// PTY syscalls whose original Linux errors have a fixed Go counterpart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreparationPty {
+    OpenMaster,
+    Unlock,
+    Resize,
+}
+
+/// An original preparation rejection before READY. Pipe and Pty carry native
+/// syscall observations. None of these facts proves cleanup or user execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreparationRejection {
     MissingCwd,
     EnvironmentNul,
     ArgumentNul,
     Pipe { stream: PreparationPipe, errno: i32 },
+    Pty { stage: PreparationPty, errno: i32 },
 }
 
 /// Owns a worker before its identity/gate handshake completes. Cancelling a
@@ -78,11 +87,11 @@ impl CommandPreparation {
         )
     }
 
-    /// Original pre-spawn pipe failures are retained separately from local
-    /// setup, async registration and worker-spawn errors. Clears the supplied
+    /// Original pre-spawn pipe and selected PTY failures are retained apart
+    /// from local setup, async registration and worker-spawn errors. Clears the supplied
     /// observation before work; no failure here owns a live child.
     /// # Errors
-    /// Same errors as spawn; a recorded pipe errno is not a cleanup receipt.
+    /// Same errors as spawn; a recorded native errno is not a cleanup receipt.
     pub fn spawn_observed(
         worker: &Path,
         private_directory: &Path,
@@ -104,7 +113,10 @@ impl CommandPreparation {
             .tempdir_in(private_directory)?;
         let socket = directory.path().join("launch");
         let listener = UnixListener::bind(&socket)?;
-        let terminal = spec.pty.map(PtyMaster::open).transpose()?;
+        let terminal = spec
+            .pty
+            .map(|size| PtyMaster::open_observed(size, rejection))
+            .transpose()?;
         let mut builder = Command::new(worker);
         builder
             .arg("--gate")

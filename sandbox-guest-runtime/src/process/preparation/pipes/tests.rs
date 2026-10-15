@@ -5,7 +5,7 @@ use std::time::Duration;
 const MARKER: &str = "SANDPROOF_PIPE_FAILURE_CHILD";
 
 #[tokio::test]
-async fn actual_pipe_failures_preserve_stage_and_release_every_preparation_descriptor() {
+async fn actual_pipe_and_pty_failures_preserve_stage_and_release_preparation_descriptors() {
     let mut child = Command::new(std::env::current_exe().unwrap());
     child
         .args([
@@ -111,6 +111,7 @@ fn isolated_pipe_failures() {
         assert_eq!(descriptors(), baseline);
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
+    check_pty_failures(&root, &source, &spec, limits);
     rustix::process::setrlimit(rustix::process::Resource::Nofile, original).unwrap();
     let mut fact = Some(PreparationRejection::Pipe {
         stream: PreparationPipe::Stdout,
@@ -131,4 +132,50 @@ fn isolated_pipe_failures() {
     assert_eq!(fact, None);
     assert_eq!(descriptors(), baseline);
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+fn check_pty_failures(
+    root: &tempfile::TempDir,
+    source: &std::fs::File,
+    spec: &LaunchSpec,
+    limits: ProcessLimits,
+) {
+    let baseline = descriptors();
+    let missing_worker = root.path().join("missing-worker");
+    let mut held = Vec::with_capacity(64);
+    let pty_spec = LaunchSpec {
+        pty: Some(crate::PtySize::default()),
+        ..spec.clone()
+    };
+    for available in [1, 2, 3] {
+        fill(&mut held, source);
+        for _ in 0..available {
+            drop(held.pop().unwrap());
+        }
+        let mut fact = Some(PreparationRejection::EnvironmentNul);
+        let error = CommandPreparation::spawn_observed(
+            &missing_worker,
+            root.path(),
+            1,
+            1,
+            &pty_spec,
+            limits,
+            &mut fact,
+        )
+        .err()
+        .expect("PTY setup must fail before worker spawn");
+        assert_eq!(error.raw_os_error(), Some(24));
+        // The listener consumes one FD. Subsequent failures opening the peer
+        // or cloning the slave are private setup, not open /dev/ptmx failures.
+        assert_eq!(
+            fact,
+            (available == 1).then_some(PreparationRejection::Pty {
+                stage: crate::PreparationPty::OpenMaster,
+                errno: 24,
+            })
+        );
+        held.clear();
+        assert_eq!(descriptors(), baseline);
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
 }

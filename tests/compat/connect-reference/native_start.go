@@ -66,6 +66,24 @@ func pipeStartError(input commandOperationInput) error {
 	return connect.NewError(connect.CodeInternal, failure)
 }
 
+// The pinned envd uses creack/pty v1.1.24: Linux open() returns the
+// os.OpenFile /dev/ptmx error, while unlockpt and Setsize return bare ioctl
+// errno. Controlled facts here do not execute those terminal operations.
+func ptyPrepareError(input commandOperationInput) error {
+	if !input.Pty {
+		panic("invalid PTY fixture")
+	}
+	var native error = nativeErrno(input.Native)
+	switch input.Stage {
+	case "open-master":
+		native = &os.PathError{Op: "open", Path: "/dev/ptmx", Err: native}
+	case "unlock", "resize":
+	default:
+		panic("invalid PTY preparation stage")
+	}
+	return formatStartError(input, native)
+}
+
 func formatStartError(input commandOperationInput, native error) error {
 	command := strings.Join(append([]string{input.Cmd}, input.Args...), " ")
 	var failure error

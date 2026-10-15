@@ -94,10 +94,12 @@ impl AdmissionObserver {
     pub(crate) fn rejection(&self) -> Option<PreparationRejection> {
         let fact = self.1.lock().ok().and_then(|fact| *fact)?;
         let expected = match fact {
-            PreparationRejection::Pipe { errno, .. } if errno > 0 => {
+            PreparationRejection::Pipe { errno, .. } | PreparationRejection::Pty { errno, .. }
+                if errno > 0 =>
+            {
                 prepare_error(&std::io::Error::from_raw_os_error(errno))
             }
-            PreparationRejection::Pipe { .. } => return None,
+            PreparationRejection::Pipe { .. } | PreparationRejection::Pty { .. } => return None,
             _ => CommandError::InvalidArgument,
         };
         if !matches!(
@@ -328,31 +330,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pipe_fact_requires_the_original_native_error_and_settled_admission_state() {
+    fn native_preparation_fact_requires_original_error_and_settled_admission_state() {
         let (status, receiver) = watch::channel(AdmissionStatus::Preparing);
         let fact = Arc::new(Mutex::new(None));
         let observer = AdmissionObserver(receiver, fact.clone());
         for errno in [0, -1, 24] {
-            let rejection = PreparationRejection::Pipe {
-                stream: sandproof_guest_runtime::PreparationPipe::Stderr,
-                errno,
-            };
-            *fact.lock().unwrap() = Some(rejection);
-            for state in [
-                AdmissionStatus::Preparing,
-                AdmissionStatus::CleanupUnknown,
-                AdmissionStatus::OwnerLost,
-                AdmissionStatus::Stopped(CommandError::DeadlineExceeded),
-                AdmissionStatus::Stopped(CommandError::Cancelled),
-                AdmissionStatus::Stopped(CommandError::InvalidArgument),
-                AdmissionStatus::Stopped(CommandError::Unavailable),
+            for rejection in [
+                PreparationRejection::Pipe {
+                    stream: sandproof_guest_runtime::PreparationPipe::Stderr,
+                    errno,
+                },
+                PreparationRejection::Pty {
+                    stage: sandproof_guest_runtime::PreparationPty::OpenMaster,
+                    errno,
+                },
+                PreparationRejection::Pty {
+                    stage: sandproof_guest_runtime::PreparationPty::Unlock,
+                    errno,
+                },
+                PreparationRejection::Pty {
+                    stage: sandproof_guest_runtime::PreparationPty::Resize,
+                    errno,
+                },
             ] {
-                status.send_replace(state);
-                assert_eq!(
-                    observer.rejection(),
-                    (errno == 24 && state == AdmissionStatus::Stopped(CommandError::Unavailable))
+                *fact.lock().unwrap() = Some(rejection);
+                for state in [
+                    AdmissionStatus::Preparing,
+                    AdmissionStatus::CleanupUnknown,
+                    AdmissionStatus::OwnerLost,
+                    AdmissionStatus::Stopped(CommandError::DeadlineExceeded),
+                    AdmissionStatus::Stopped(CommandError::Cancelled),
+                    AdmissionStatus::Stopped(CommandError::InvalidArgument),
+                    AdmissionStatus::Stopped(CommandError::Unavailable),
+                ] {
+                    status.send_replace(state);
+                    assert_eq!(
+                        observer.rejection(),
+                        (errno == 24
+                            && state == AdmissionStatus::Stopped(CommandError::Unavailable))
                         .then_some(rejection)
-                );
+                    );
+                }
             }
         }
     }

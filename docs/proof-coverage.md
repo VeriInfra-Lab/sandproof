@@ -376,6 +376,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [原生启动分类](../sandbox-guest-runtime/src/worker.rs)和[回复连接](../sandbox-guest-service/src/command_requests/http/start/native.rs)新增完整原放行到原生阶段、正 errno 与内部协议故障区分、新握手拒绝旧 worker、原请求字段与失败事实不可替换及固定错误映射的自有义务。阶段标记、参数移动、已烧号后的真实收尾与 HTTP 最后字节责任均未抽取或证明。固定 Go 符号 errno 渲染及真实 Linux 有限故障分别报告，不证明所有 syscall 失败、完整启动序列或资源耗尽。新增显式管道分配还需证明：stdout→stderr→可选 stdin 的原失败阶段、父/子端及异步注册的所有权转移、未 spawn 分支的部分材料释放、准备观察与同次粗错误一致、原字段到 internal EOS 的连接及最后副本计费。实际 pipe2 失败与受控 Go 渲染分别验证，未证明完整启动故障优先级、Tokio/内核或整机预算。纯核心、历史已证明 Rust/Lean 未改，旧结论不覆盖新版准备与回复适配。
 
+[PTY 准备错误](../sandbox-guest-runtime/src/pty.rs)新增原固定路径 open/解锁/窗口 ioctl 到互斥阶段和正 errno 的对应义务，包括避免 openpt 的 ENOSPC 归一化、失败时 master/slave 精确回收、原 owner 状态/粗错误核对，以及原 PTY 请求字段到有界 EOS 的连接。peer ioctl、复制/异步注册和 worker spawn 不借该事实分类；这些适配改动尚未抽取或证明，工程故障点与 Go 受控格式对照不能背书完整启动优先级或内核终端语义。纯核心、历史已证明 Rust/Lean 未改，旧结论不覆盖该新版运行适配。
+
 [Start NUL 校验连接](../sandbox-guest-runtime/src/worker.rs)新增原请求 NUL 保留到可信 worker、工作目录检查先于 NUL、环境校验先于 argv/cwd 转换、READY 前互斥拒绝事实及原准备所有者实际收尾的对应义务。准备观察经共享锁和状态检查进入有界错误发送器，不从粗 InvalidArgument 推导事实；锁失败/未知清理不生成诊断。原生 errno 和校验失败保持分离，raw 入口的早期拒绝仍在。固定 Go Cmd.Start 的实际校验与有限 HTTP 渲染对照、Linux 候选回归均属工程证据；这些改动尚未抽取或证明，历史纯核心和 Lean 未改。
 
 [Start 路径展开连接](../sandbox-guest-service/src/execution.rs)新增同一账户/初始化快照的原失败事实到 [Start 回复](../sandbox-guest-service/src/command_requests/http/start.rs) 的传递义务，以及三种观察互斥、与原组件错误匹配和旧粗错误接口保持的义务。纯组合、真实账户预检/拒绝顺序、未创建 worker/PID 及最后字节责任尚未抽取或证明；Go 原路径函数对照和 Linux 有限组件回归分别报告，不能代替完整 E03 或系统资源证明。纯核心、历史已证明 Rust/Lean 未改，旧结论不覆盖新增连接。

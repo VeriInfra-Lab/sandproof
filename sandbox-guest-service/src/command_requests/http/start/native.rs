@@ -19,11 +19,19 @@ impl PipeStream {
 }
 
 #[derive(Clone, Copy)]
+pub(crate) enum PtyStage {
+    OpenMaster,
+    Unlock,
+    Resize,
+}
+
+#[derive(Clone, Copy)]
 pub(crate) enum LaunchFailureKind {
     Native(i32),
     EnvironmentNul,
     ArgumentNul,
     Pipe { stream: PipeStream, errno: i32 },
+    Pty { stage: PtyStage, errno: i32 },
 }
 
 pub(crate) struct LaunchFailure {
@@ -59,10 +67,22 @@ impl LaunchFailure {
             }
             return self.pipe_payload(stream, errno, limit);
         }
+        if let LaunchFailureKind::Pty { errno, .. } = self.kind
+            && (errno <= 0 || self.is_pipe())
+        {
+            return Err(reply::Error::UnclassifiedFault);
+        }
         crate::go_json::bounded(limit as u64, |put| {
             put(br#"{"error":{"code":""#)?;
             put(
-                if matches!(self.kind, LaunchFailureKind::Native(11 | 12 | 23 | 24 | 28)) {
+                if matches!(
+                    self.kind,
+                    LaunchFailureKind::Native(11 | 12 | 23 | 24 | 28)
+                        | LaunchFailureKind::Pty {
+                            errno: 11 | 12 | 23 | 24 | 28,
+                            ..
+                        }
+                ) {
                     b"resource_exhausted"
                 } else {
                     b"invalid_argument"
@@ -100,6 +120,13 @@ impl LaunchFailure {
                 }
                 LaunchFailureKind::ArgumentNul => {
                     message(b": fork/exec /bin/sh: invalid argument")?;
+                }
+                LaunchFailureKind::Pty { stage, errno } => {
+                    message(b": ")?;
+                    if matches!(stage, PtyStage::OpenMaster) {
+                        message(b"open /dev/ptmx: ")?;
+                    }
+                    message(LinuxErrno(errno).message().as_bytes())?;
                 }
                 LaunchFailureKind::Pipe { .. } => {
                     return Err(crate::file_download::Error::InvalidConfiguration);
