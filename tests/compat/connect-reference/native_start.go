@@ -30,7 +30,7 @@ func startErrorCode(err error) connect.Code {
 	}
 }
 
-func nativeStartError(input commandOperationInput) error {
+func nativeErrno(name string) syscall.Errno {
 	numbers := map[string]syscall.Errno{
 		"EPERM": syscall.EPERM, "ENOENT": syscall.ENOENT, "EIO": syscall.EIO,
 		"E2BIG": syscall.E2BIG, "ENOEXEC": syscall.ENOEXEC, "EBADF": syscall.EBADF,
@@ -38,11 +38,17 @@ func nativeStartError(input commandOperationInput) error {
 		"ENOTDIR": syscall.ENOTDIR, "EINVAL": syscall.EINVAL, "ENFILE": syscall.ENFILE,
 		"EMFILE": syscall.EMFILE, "ENOSPC": syscall.ENOSPC, "ENAMETOOLONG": syscall.ENAMETOOLONG,
 		"ELOOP": syscall.ELOOP, "UNKNOWN": syscall.Errno(2147483647),
+		"EPIPE": syscall.EPIPE, "EINTR": syscall.EINTR,
 	}
-	number, ok := numbers[input.Native]
+	number, ok := numbers[name]
 	if !ok {
 		panic("unknown fixture native errno")
 	}
+	return number
+}
+
+func nativeStartError(input commandOperationInput) error {
+	number := nativeErrno(input.Native)
 	native := &os.PathError{Op: "fork/exec", Path: "/bin/sh", Err: number}
 	command := strings.Join(append([]string{input.Cmd}, input.Args...), " ")
 	var failure error

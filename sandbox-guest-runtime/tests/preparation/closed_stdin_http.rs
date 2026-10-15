@@ -75,42 +75,34 @@ async fn disabled_and_closed_stdin_are_observed_without_misclassifying_live_brok
                     }),
                 ))
                 .await;
-            if mode == "broken" && !input.is_empty() {
-                let failure = result.unwrap_err();
-                assert!(matches!(&failure, Failure::Operation(f) if
-                    f.request_error() == Error::Command(CommandError::Unavailable)
-                    && f.error() == command_requests::http::reply::Error::UnclassifiedFault));
-                full(&ordinary);
-                rotates(&fixture).await;
-                drop(failure);
-            } else {
-                let reply = result.unwrap();
-                assert_eq!(
-                    reply.status(),
-                    if mode == "broken" {
-                        StatusCode::OK
-                    } else {
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    }
-                );
-                let bytes = bytes(reply).await;
-                assert_eq!(
-                    serde_json::from_slice::<Value>(&bytes).unwrap(),
-                    if mode == "broken" {
-                        json!({})
-                    } else {
-                        json!({
-                            "code":"internal",
-                            "message":"error writing to stdin: stdin not enabled or closed"
-                        })
-                    }
-                );
-                let last = bytes.clone();
-                drop(bytes);
-                full(&ordinary);
-                rotates(&fixture).await;
-                drop(last);
-            }
+            let reply = result.unwrap();
+            assert_eq!(
+                reply.status(),
+                if mode == "broken" && input.is_empty() {
+                    StatusCode::OK
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            );
+            let bytes = bytes(reply).await;
+            assert_eq!(
+                serde_json::from_slice::<Value>(&bytes).unwrap(),
+                if mode == "broken" && input.is_empty() {
+                    json!({})
+                } else if mode == "broken" {
+                    json!({"code":"internal", "message":format!("error writing to stdin: error writing to stdin of process '{pid}': write |1: broken pipe")})
+                } else {
+                    json!({
+                        "code":"internal",
+                        "message":"error writing to stdin: stdin not enabled or closed"
+                    })
+                }
+            );
+            let last = bytes.clone();
+            drop(bytes);
+            full(&ordinary);
+            rotates(&fixture).await;
+            drop(last);
             assert!(registry.live(pid).is_ok());
         }
         // Legacy callers retain their coarse error, independently of HTTP.

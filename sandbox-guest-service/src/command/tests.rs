@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn input_native_observation_requires_real_errno_and_preserves_legacy_error() {
+    for errno in [5, 9, 11, 22, 28, 32] {
+        let original = std::io::Error::from_raw_os_error(errno);
+        let observed = input_failure(&original, false);
+        assert!(
+            matches!(observed, InputFailure::Native { errno: number, error } if number == errno && error == input_error(&original))
+        );
+        assert_eq!(observed.error(), input_error(&original));
+    }
+    for kind in [
+        std::io::ErrorKind::BrokenPipe,
+        std::io::ErrorKind::InvalidInput,
+        std::io::ErrorKind::Other,
+    ] {
+        let error = std::io::Error::new(kind, "synthetic error with no syscall observation");
+        assert!(matches!(
+            input_failure(&error, false),
+            InputFailure::Command(_)
+        ));
+    }
+    assert!(matches!(
+        input_failure(
+            &std::io::Error::new(std::io::ErrorKind::BrokenPipe, "closed stdin"),
+            true
+        ),
+        InputFailure::StdinClosed
+    ));
+}
+
+#[test]
 fn timeout_headers_use_the_fixed_first_value_and_one_absolute_execution_origin() {
     let start = Instant::now();
     let mut headers = HeaderMap::new();

@@ -45,6 +45,8 @@ func operationError(headers http.Header) error {
 	}
 	input := operationRecord(data)
 	switch input.Kind {
+	case "native-input":
+		return nativeInputError(input)
 	case "expansion":
 		_, err := originalExpandAndResolve(input.Cwd, &user.User{Username: input.User, HomeDir: "/home/fixture"}, input.DefaultCwd)
 		if err == nil {

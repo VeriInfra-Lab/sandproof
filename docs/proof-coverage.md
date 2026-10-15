@@ -412,6 +412,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 原独占输入锁下的[stdin 关闭观察](../sandbox-guest-service/src/command.rs)另增加启动时禁用标记到实际无句柄拒绝、缺失端口与同次失败的对应、关闭端口和真实 EPIPE 区分、完成竞争不误归因、旧粗粒度错误保持，以及有限事实跨 HTTP 发送的所有权义务。空写入、重复关闭、取消和资源失败须分别处理；这些新连接尚未抽取或证明，组件/SDK/受控 Go 格式对照不替代完整原服务对照。
 
+[原生输入失败连接](../sandbox-guest-service/src/command.rs)新增同一实际写入的正 errno、原错误/身份/通道到 [HTTP 回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的自有对应义务。旧粗错误保持、模式事实不覆盖原生事实、部分效果不重试，以及合成挂断/取消/完成不伪造 syscall 失败均未抽取或证明。固定 Go 错误格式、真实 os.Pipe 和 Linux 有限 stdin/PTY 组件分别报告，不证明所有输入故障、调度竞态或完整 E03。历史已证明 Rust、纯核心与 Lean 未改。
+
 [来宾 HTTP 装配](../sandbox-guest-service/src/guest_http.rs)新增三个处理器共享同一认证状态的对象身份检查、路径到原处理器的唯一分派、原请求/控制池与回复所有权跨装配保持、初始化和轮换共同作用于各接口的对应义务。既有有界监听器到实际命令/文件处理器的连接、错误责任至连接结束、运输取消不推断进程停止也尚未抽取或证明；构造检查不证明调用方账户/VM/PID 配置可信。组件回环与静态检查不证明正式 daemon、任意并发、实时性或整机内存，纯核心与已证明 Rust/Lean 未改。
 
 [命令空消息语义](../sandbox-guest-runtime/src/protocol.rs)修正完整零长度标准流帧到默认 protobuf 请求的连接，不放宽一元空 JSON、原输入预算或截断拒绝。[可选 EOS 校验](../sandbox-guest-runtime/src/protocol/end_stream.rs)另增加首消息优先、完整终结帧/EOF、独立载荷预算、encoding/json 字段/null/重复/折叠语义、Unicode 替换及有界副本、已知形状与 base64 校验而不应用客户端错误的对应义务；不保留任意元数据树的空间界和未知深度遍历也尚未证明。有限原 Go server-stream 对照不覆盖压缩、公开错误全文或完整协议证明；纯核心和已证明 Rust/Lean 未改。

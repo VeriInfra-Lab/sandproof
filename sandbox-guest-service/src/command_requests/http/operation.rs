@@ -1,5 +1,5 @@
-//! Fixed PID lookup and parameter rejections observed during original dispatch.
-//! No tag policy or arbitrary worker/I/O failure is converted into public text.
+//! Fixed PID/parameter rejections and native input errno from original dispatch.
+//! Unobserved worker/I/O failure and tag policy remain unclassified.
 use super::{ResponseFormat, reply};
 use crate::{command_requests::Error as RequestError, owned_body::Owner};
 use axum::{http::StatusCode, response::Response};
@@ -18,6 +18,7 @@ pub(crate) enum Rejection {
     Channel(ChannelRejection),
     StdinClosed,
     StdinDisabled,
+    NativeInput { pid: u32, pty: bool, errno: i32 },
 }
 #[derive(Clone, Copy)]
 pub(crate) enum ChannelRejection {
@@ -47,6 +48,13 @@ impl Rejection {
     #[cfg(target_os = "linux")]
     pub(crate) fn matches(self, error: &RequestError) -> bool {
         match self {
+            Self::NativeInput { errno, .. } => {
+                errno > 0
+                    && error
+                        == &RequestError::Command(crate::command::input_error(
+                            &std::io::Error::from_raw_os_error(errno),
+                        ))
+            }
             Self::StdinDisabled => {
                 error == &RequestError::Command(crate::command::CommandError::ClosedInput)
             }
@@ -102,7 +110,7 @@ impl fmt::Debug for Failure {
 }
 #[cfg(target_os = "linux")]
 impl crate::command_requests::Failure {
-    /// Emit only a lookup/parameter failure observed by the original PID dispatch.
+    /// Emit only a failure fact observed by the original PID dispatch/operation.
     /// No new lookup, operation, token check or deadline is created here.
     /// # Errors
     /// Missing observation/format, invalid limits, expiry or encoding failure.
@@ -125,16 +133,20 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
         let rejection = source.rejection.ok_or(reply::Error::UnclassifiedFault)?;
         if matches!(
             rejection,
-            Rejection::Channel(_) | Rejection::StdinClosed | Rejection::StdinDisabled
+            Rejection::Channel(_)
+                | Rejection::StdinClosed
+                | Rejection::StdinDisabled
+                | Rejection::NativeInput { .. }
         ) && format.content_type().starts_with("application/connect+")
         {
             return Err(reply::Error::UnclassifiedFault);
         }
         let status = match rejection {
             Rejection::PidNotFound(_) => StatusCode::NOT_FOUND,
-            Rejection::Channel(_) | Rejection::StdinClosed | Rejection::StdinDisabled => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            Rejection::Channel(_)
+            | Rejection::StdinClosed
+            | Rejection::StdinDisabled
+            | Rejection::NativeInput { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::NOT_IMPLEMENTED,
         };
         reply::send_error(
@@ -159,12 +171,33 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
         put(match rejection {
             Rejection::PidNotFound(_) => b"not_found",
             Rejection::Channel(channel) => channel.code(),
-            Rejection::StdinClosed | Rejection::StdinDisabled => b"internal",
+            Rejection::StdinClosed | Rejection::StdinDisabled | Rejection::NativeInput { .. } => {
+                b"internal"
+            }
             _ => b"unimplemented",
         })?;
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| crate::go_json::string_content(bytes, put);
         match rejection {
+            Rejection::NativeInput {
+                pid, pty, errno, ..
+            } => {
+                let channel: &[u8] = if pty { b"tty" } else { b"stdin" };
+                message(b"error writing to ")?;
+                message(channel)?;
+                message(b": error writing to ")?;
+                message(channel)?;
+                message(b" of process '")?;
+                message(pid.to_string().as_bytes())?;
+                message(b"': write ")?;
+                message(if pty { b"/dev/ptmx" } else { b"|1" })?;
+                message(b": ")?;
+                message(
+                    sandproof_guest_runtime::file_download::LinuxErrno(errno)
+                        .message()
+                        .as_bytes(),
+                )?;
+            }
             Rejection::Channel(channel) => message(channel.message())?,
             Rejection::StdinClosed | Rejection::StdinDisabled => {
                 message(b"error writing to stdin: stdin not enabled or closed")?;

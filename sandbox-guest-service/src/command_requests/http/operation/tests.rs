@@ -6,6 +6,7 @@ use sandproof_guest_runtime::gzip::{DecodeLimits, Decoder};
 use sandproof_guest_runtime::protocol::{JsonContentType, ProtocolError};
 use std::time::Duration;
 use tokio::sync::Semaphore;
+mod native_input;
 
 fn source(rejection: Option<Rejection>, format: Option<ResponseFormat>, owner: Owner) -> Source {
     Source {
@@ -282,7 +283,11 @@ async fn channel_rejections_keep_owning_the_request_and_refuse_stream_misclassif
     .map(Rejection::Channel)
     .into_iter()
     .chain([Rejection::StdinClosed, Rejection::StdinDisabled])
-    {
+    .chain([false, true].map(|pty| Rejection::NativeInput {
+        pid: u32::MAX,
+        pty,
+        errno: 5,
+    })) {
         let raw = payload(rejection, false, 4096).unwrap();
         for (stream, budget, expired) in [
             (false, raw.len(), false),

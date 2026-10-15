@@ -181,15 +181,7 @@ async fn control(
                     let result = command
                         .write_input_observed(command.identity(), bytes)
                         .await;
-                    match &result {
-                        Err(InputFailure::StdinClosed) => {
-                            *observed = Some(Rejection::StdinClosed);
-                        }
-                        Err(InputFailure::StdinDisabled) => {
-                            *observed = Some(Rejection::StdinDisabled);
-                        }
-                        _ => (),
-                    }
+                    observe_input(&result, command.identity().pid, false, observed);
                     channel_result(
                         result.map_err(InputFailure::error),
                         command.has_pty(),
@@ -197,12 +189,16 @@ async fn control(
                         observed,
                     )
                 }
-                Some(Input::Pty(bytes)) => channel_result(
-                    command.write_pty(command.identity(), bytes).await,
-                    !command.has_pty(),
-                    ChannelRejection::PtyOnPipe,
-                    observed,
-                ),
+                Some(Input::Pty(bytes)) => {
+                    let result = command.write_pty_observed(command.identity(), bytes).await;
+                    observe_input(&result, command.identity().pid, true, observed);
+                    channel_result(
+                        result.map_err(InputFailure::error),
+                        !command.has_pty(),
+                        ChannelRejection::PtyOnPipe,
+                        observed,
+                    )
+                }
                 _ => {
                     *observed = Some(Rejection::MissingInput);
                     return Err(Error::Protocol(protocol::ProtocolError::Unimplemented));
@@ -253,6 +249,24 @@ async fn control(
     };
     result.map_err(Error::Command)
 }
+
+fn observe_input(
+    result: &Result<(), InputFailure>,
+    pid: u32,
+    pty: bool,
+    observed: &mut Option<Rejection>,
+) {
+    *observed = match result {
+        Err(InputFailure::StdinClosed) => Some(Rejection::StdinClosed),
+        Err(InputFailure::StdinDisabled) => Some(Rejection::StdinDisabled),
+        Err(InputFailure::Native { errno, .. }) => Some(Rejection::NativeInput {
+            pid,
+            pty,
+            errno: *errno,
+        }),
+        _ => None,
+    };
+}
 // The original operation must actually reject, and its immutable terminal
 // capability must establish the precise reason. A live PTY ioctl EINVAL,
 // completion race, busy writer, closed input or I/O failure is not this fact.
@@ -262,7 +276,7 @@ fn channel_result(
     rejection: ChannelRejection,
     observed: &mut Option<Rejection>,
 ) -> Result<(), CommandError> {
-    if wrong_mode && result == Err(CommandError::InvalidArgument) {
+    if observed.is_none() && wrong_mode && result == Err(CommandError::InvalidArgument) {
         *observed = Some(Rejection::Channel(rejection));
     }
     result
@@ -281,6 +295,50 @@ impl AsRef<[u8]> for Unary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn input_observation_keeps_original_pid_errno_and_never_relabels_other_failures() {
+        for (errno, error) in [
+            (32, CommandError::Unavailable),
+            (22, CommandError::InvalidArgument),
+        ] {
+            let mut observed = None;
+            observe_input(
+                &Err(InputFailure::Native { error, errno }),
+                123,
+                true,
+                &mut observed,
+            );
+            assert_eq!(
+                channel_result(Err(error), true, ChannelRejection::PtyOnPipe, &mut observed),
+                Err(error)
+            );
+            assert!(
+                matches!(observed, Some(Rejection::NativeInput { pid:123, pty:true, errno: number }) if number == errno)
+            );
+            let fact = observed.unwrap();
+            assert!(fact.matches(&Error::Command(error)));
+            assert!(!fact.matches(&Error::DeadlineExceeded));
+            assert!(!fact.matches(&Error::Command(CommandError::ClosedInput)));
+        }
+        for result in [
+            Ok(()),
+            Err(InputFailure::Command(CommandError::Unavailable)),
+            Err(InputFailure::Command(CommandError::Cancelled)),
+        ] {
+            let mut observed = None;
+            observe_input(&result, 123, false, &mut observed);
+            assert!(observed.is_none());
+        }
+        assert!(
+            !Rejection::NativeInput {
+                pid: 123,
+                pty: false,
+                errno: 0
+            }
+            .matches(&Error::Command(CommandError::Unavailable))
+        );
+    }
 
     #[test]
     fn channel_observation_requires_original_mode_and_actual_rejection() {

@@ -54,13 +54,14 @@ pub enum CommandError {
 /// callers retain their original coarse error; HTTP may consume the fact.
 pub(crate) enum InputFailure {
     Command(CommandError),
+    Native { error: CommandError, errno: i32 },
     StdinClosed,
     StdinDisabled,
 }
 impl InputFailure {
     pub(crate) const fn error(self) -> CommandError {
         match self {
-            Self::Command(error) => error,
+            Self::Command(error) | Self::Native { error, .. } => error,
             Self::StdinClosed => CommandError::Unavailable,
             Self::StdinDisabled => CommandError::ClosedInput,
         }
@@ -397,9 +398,17 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
     ) -> Result<(), CommandError> {
-        self.write_channel(identity, bytes, true)
+        self.write_pty_observed(identity, bytes)
             .await
             .map_err(InputFailure::error)
+    }
+
+    pub(crate) async fn write_pty_observed(
+        &self,
+        identity: CommandIdentity,
+        bytes: &[u8],
+    ) -> Result<(), InputFailure> {
+        self.write_channel(identity, bytes, true).await
     }
 
     /// Resize the original terminal independently of a blocked input writer.
@@ -450,13 +459,7 @@ impl ManagedCommand {
                 let closed_stdin = !pty && !self.has_pty() && writer.is_closed();
                 let result = if pty { writer.write_pty(identity, bytes).await }
                     else { writer.write_input(identity, bytes).await };
-                result.map_err(|error| {
-                    if closed_stdin && error.kind() == std::io::ErrorKind::BrokenPipe {
-                        InputFailure::StdinClosed
-                    } else {
-                        InputFailure::Command(input_error(&error))
-                    }
-                })
+                result.map_err(|error| input_failure(&error, closed_stdin))
             } => result,
         }
     }
@@ -504,10 +507,25 @@ impl ManagedCommand {
     }
 }
 
-fn input_error(error: &std::io::Error) -> CommandError {
+pub(crate) fn input_error(error: &std::io::Error) -> CommandError {
     match error.kind() {
         std::io::ErrorKind::InvalidInput => CommandError::InvalidArgument,
         _ => CommandError::Unavailable,
+    }
+}
+
+// Called only for the completed original write, while holding its writer lock.
+// Synthetic mode/identity errors and cancellation never become native facts.
+fn input_failure(error: &std::io::Error, closed_stdin: bool) -> InputFailure {
+    if closed_stdin && error.kind() == std::io::ErrorKind::BrokenPipe {
+        InputFailure::StdinClosed
+    } else if let Some(errno) = error.raw_os_error().filter(|errno| *errno > 0) {
+        InputFailure::Native {
+            error: input_error(error),
+            errno,
+        }
+    } else {
+        InputFailure::Command(input_error(error))
     }
 }
 
