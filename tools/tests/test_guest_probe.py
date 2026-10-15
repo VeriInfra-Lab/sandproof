@@ -1,0 +1,249 @@
+"""Private installed/proc fixtures and exact SDK orchestration; no VM/network."""
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+from tools import guest_probe as probe, guest_artifacts as artifacts
+from tools.system_acceptance import write_once
+from tools.tests.test_guest_artifacts import manifest
+
+
+class GuestObservationTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.platform = self.root / 'platform'
+        self.platform.mkdir()
+        self.proc = self.root / 'proc'
+        (self.proc / 'net').mkdir(parents=True)
+        self.expected = {}
+        for role, name in probe.NAMES.items():
+            path = self.platform / name
+            path.write_bytes(('private fixture ' + role).encode())
+            path.chmod(0o500 if role in ('service', 'worker') else 0o400)
+            self.expected[role] = artifacts.fingerprint(path, probe.LIMITS[role])
+        self.owner = os.geteuid()
+        self.listener()
+        self.process(42)
+
+    def listener(self, *, inode=77, address='00000000', state='0A'):
+        (self.proc / 'net/tcp').write_text(
+            'sl local_address rem_address st tx_queue rx tr retr uid timeout inode\n'
+            f'0: {address}:{49983:04X} 00000000:0000 {state} 0:0 0:0 0 0 0 {inode}\n')
+
+    def process(self, pid):
+        directory = self.proc / str(pid)
+        (directory / 'fd').mkdir(parents=True)
+        (directory / 'exe').symlink_to(self.platform / probe.NAMES['service'])
+        argv = (str(self.platform / probe.NAMES['service']) + '\0serve\0--config\0'
+                + str(self.platform / probe.NAMES['configuration']) + '\0')
+        (directory / 'cmdline').write_bytes(argv.encode())
+        self.ticks(pid, 123)
+        (directory / 'fd/6').symlink_to('socket:[77]')
+        return directory
+
+    def ticks(self, pid, value):
+        (self.proc / str(pid) / 'stat').write_text(
+            f'{pid} (name with ) spaces) S ' + '0 ' * 18 + str(value) + ' 0\n')
+
+    def observe(self):
+        observed = probe.installed(self.platform, self.expected, self.owner)
+        return probe.observe_daemon(self.proc, self.platform, self.expected,
+                                    observed['service'], self.owner)
+
+    def test_actual_files_match_original_descriptors_and_one_listening_executable(self):
+        self.assertEqual(self.observe(), dict(pid=42, start_ticks=123, socket_inode=77))
+        # Unrelated process arguments may be huge/private. They are not read.
+        unrelated = self.process(43)
+        (unrelated / 'exe').unlink()
+        (unrelated / 'exe').symlink_to(self.platform / probe.NAMES['worker'])
+        (unrelated / 'cmdline').write_bytes(b'private' * 10000)
+        self.assertEqual(self.observe()['pid'], 42)
+        for role in probe.NAMES:
+            path = self.platform / probe.NAMES[role]
+            original = path.read_bytes()
+            path.chmod(0o700)
+            path.write_bytes(b'!' + original[1:])
+            with self.subTest(role=role), self.assertRaises(ValueError):
+                self.observe()
+            path.write_bytes(original)
+            path.chmod(0o500 if role in ('service', 'worker') else 0o400)
+
+    def test_installed_bytes_alone_cannot_identify_another_process_or_socket(self):
+        executable = self.proc / '42/exe'
+        executable.unlink()
+        executable.symlink_to(self.platform / probe.NAMES['worker'])
+        with self.assertRaises(ValueError):
+            self.observe()
+        executable.unlink()
+        # Even a byte-identical different inode is not the installed daemon.
+        other = self.root / 'other-service'
+        other.write_bytes((self.platform / probe.NAMES['service']).read_bytes())
+        other.chmod(0o500)
+        executable.symlink_to(other)
+        with self.assertRaises(ValueError):
+            self.observe()
+        executable.unlink()
+        executable.symlink_to(self.platform / probe.NAMES['service'])
+        for address, state, inode in [('0100007F', '0A', 77), ('00000000', '01', 77),
+                                      ('00000000', '0A', 88)]:
+            self.listener(address=address, state=state, inode=inode)
+            with self.subTest(address=address, state=state, inode=inode), self.assertRaises(ValueError):
+                self.observe()
+        self.listener()
+        self.process(43)
+        with self.assertRaises(ValueError):
+            self.observe()
+
+    def test_process_exec_identity_arguments_and_start_ticks_are_rechecked(self):
+        original = probe.owns_socket
+        for change in ('ticks', 'arguments', 'executable', 'listener'):
+            with self.subTest(change=change):
+                calls = 0
+                def change_after_first_observation(directory, inode):
+                    nonlocal calls
+                    result = original(directory, inode)
+                    calls += 1
+                    if calls == 1:
+                        if change == 'ticks':
+                            self.ticks(42, 124)
+                        elif change == 'arguments':
+                            (self.proc / '42/cmdline').write_bytes(b'wrong\0')
+                        elif change == 'executable':
+                            (self.proc / '42/exe').unlink()
+                            (self.proc / '42/exe').symlink_to(self.platform / probe.NAMES['worker'])
+                        else:
+                            self.listener(inode=88)
+                    return result
+                with patch.object(probe, 'owns_socket', side_effect=change_after_first_observation):
+                    with self.assertRaises(ValueError):
+                        self.observe()
+                shutil.rmtree(self.proc / '42')
+                self.process(42)
+                self.listener()
+
+    def test_link_permission_size_and_scanning_bounds_fail_closed(self):
+        service = self.platform / probe.NAMES['service']
+        for mode in (0o600, 0o777):
+            service.chmod(mode)
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                self.observe()
+        service.chmod(0o500)
+        configuration = self.platform / probe.NAMES['configuration']
+        configuration.chmod(0o640)
+        with self.assertRaises(ValueError):
+            self.observe()
+        configuration.chmod(0o400)
+        os.link(service, self.root / 'hardlink')
+        with self.assertRaises(ValueError):
+            self.observe()
+        (self.root / 'hardlink').unlink()
+        with patch.object(probe, 'PROCESS_LIMIT', 0), self.assertRaises(ValueError):
+            self.observe()
+        with patch.object(probe, 'FD_LIMIT', 0), self.assertRaises(ValueError):
+            self.observe()
+        with patch.object(probe, 'PROGRAM_LIMIT', 8), self.assertRaises(ValueError):
+            probe.command(self.expected)
+        with self.assertRaises(ValueError):
+            probe.small_file(self.proc / '42/cmdline', 2)
+        (self.proc / '42/stat').write_text('42 (missing closing parenthesis ' + '1 ' * 25)
+        with self.assertRaises(ValueError):
+            self.observe()
+        self.ticks(42, 123)
+        service.rename(self.root / 'moved')
+        service.symlink_to(self.root / 'moved')
+        with self.assertRaises(OSError):
+            self.observe()
+
+    def test_exact_report_shape_and_program_do_not_accept_boolean_or_extra_evidence(self):
+        good = dict(schema_version=1, files=self.expected,
+                    daemon=dict(pid=42, start_ticks=123, socket_inode=77))
+        result = lambda report: SimpleNamespace(exit_code=0, stdout=json.dumps(report), stderr='')
+        self.assertEqual(probe.receipt(result(good), self.expected), good)
+        for field in ('pid', 'start_ticks', 'socket_inode'):
+            bad = copy.deepcopy(good)
+            bad['daemon'][field] = True
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                probe.receipt(result(bad), self.expected)
+        bad = copy.deepcopy(good)
+        bad['files']['worker']['sha256'] = '0' * 64
+        with self.assertRaises(ValueError):
+            probe.receipt(result(bad), self.expected)
+        for bad in (dict(good, extra='payload'), dict(good, schema_version=True)):
+            with self.assertRaises(ValueError):
+                probe.receipt(result(bad), self.expected)
+        for bad in (SimpleNamespace(exit_code=1, stdout='', stderr=''),
+                    SimpleNamespace(exit_code=0, stdout='{}' * 4096, stderr=''),
+                    SimpleNamespace(exit_code=0, stdout=json.dumps(good), stderr='warning')):
+            with self.assertRaises(ValueError):
+                probe.receipt(bad, self.expected)
+        args = shlex.split(probe.command(self.expected))
+        self.assertEqual(args[:3], ['/usr/bin/python3', '-I', '-c'])
+        self.assertEqual(json.loads(args[4]), self.expected)
+        self.assertLess(len(probe.command(self.expected).encode()), 16384)
+        # Execute only the invalid-argument path of the actual sent program.
+        # This fails before reading /proc, installed paths or invoking an SDK.
+        for flags in ([], ['-O']):
+            checked = subprocess.run([sys.executable, '-I', *flags, '-c', args[3], '{}'],
+                capture_output=True, text=True, timeout=5)
+            self.assertEqual(checked.returncode, 1)
+            self.assertEqual(checked.stdout, '')
+            self.assertEqual(checked.stderr, 'guest_identity_failed\n')
+
+    def test_descriptor_observation_rejects_replacement_and_changes_during_hash(self):
+        service = self.platform / probe.NAMES['service']
+        original = service.read_bytes()
+        read = os.read
+        for change in ('growth', 'same-size', 'replacement'):
+            service.chmod(0o700)
+            service.write_bytes(original)
+            service.chmod(0o500)
+            changed = False
+            def mutate(fd, size):
+                nonlocal changed
+                block = read(fd, size)
+                if block and not changed:
+                    changed = True
+                    if change == 'replacement':
+                        service.rename(self.root / 'old-service')
+                        service.write_bytes(original)
+                        service.chmod(0o500)
+                    else:
+                        service.chmod(0o700)
+                        service.write_bytes(original + b'!' if change == 'growth' else b'!' + original[1:])
+                        service.chmod(0o500)
+                return block
+            with self.subTest(change=change), patch.object(probe.os, 'read', side_effect=mutate):
+                with self.assertRaises(ValueError):
+                    probe.installed(self.platform, self.expected, self.owner)
+
+    def test_local_release_and_config_pins_are_checked_before_building_a_guest_command(self):
+        release = self.root / 'release'
+        release.mkdir(mode=0o700)
+        value = manifest(release)
+        write_once(release / 'manifest.json', value)
+        config = self.root / 'configuration.json'
+        write_once(config, dict(version=2, worker=artifacts.worker_configuration(value)))
+        manifest_hash = hashlib.sha256((release / 'manifest.json').read_bytes()).hexdigest()
+        config_hash = hashlib.sha256(config.read_bytes()).hexdigest()
+        identity, expected = probe.load_expected(release, manifest_hash, config, config_hash)
+        self.assertEqual(identity['source_commit'], value['source']['commit'])
+        self.assertEqual(expected['manifest']['sha256'], manifest_hash)
+        for pins in (('0'*64, config_hash), (manifest_hash, '0'*64)):
+            with self.subTest(pins=pins), self.assertRaises(ValueError):
+                probe.load_expected(release, pins[0], config, pins[1])
+
+
+if __name__ == '__main__':
+    unittest.main()

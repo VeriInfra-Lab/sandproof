@@ -88,7 +88,9 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [正式入口配置检查](../sandbox-guest-service/src/daemon/tests.rs)增加完整显式配置、每层未知/缺字段、重复字段、错版本/类型、超限文档、各原组件预算拒绝及跨接口工作目录一致性；Prepared 构造使用不存在安装路径仍能完成，证明静态阶段未以路径存在或 MMDS 可用作为隐含前提。[CLI 检查](../sandbox-guest-service/src/daemon/entry/tests.rs)核对唯一动作/绝对配置参数和同一 FD 的有界读取；[装配检查](../sandbox-guest-service/src/daemon/tests/composition.rs)以受控元数据及原真实 PID 状态连接同一 Prepared::assemble，验证健康独立、三类接口初始化前拒绝、初始化后空 List 和错误令牌拒绝、关闭后编号递增及旧 PID 不复用。六项在下述 #487 Linux CI 实跑通过，执行入口为 `cargo test -p sandproof-guest-service --locked --lib daemon::`；不冒充实际 Firecracker MMDS、正式子进程启动/重启或 KVM。
 
-[正式二进制启动拒绝检查](../sandbox-guest-service/tests/daemon.rs)直接启动 Cargo 构建的服务二进制，覆盖 `check` 在安装路径不存在、监听地址已占用时仍只做静态验证，三个动作对错版本/预算/owner/worker 协议的先行拒绝，以及配置缺失、链接、权限、超限、无写者 FIFO 的明确失败。`initialize`/`serve` 的缺状态/gate 目录、缺 worker、worker 权限/长度/摘要及快照失败均须在元数据阶段之前退出；已有真实 PID 文件的字节与 inode 不变，重开后旧 PID 仍为 Reused、服务编号只按原持久值递增，worker 效果与 gate 为零。每个子进程有独立期限，完整 stdout/stderr 核对只允许无载荷阶段诊断。夹具在检出目录内创建自己的 0700 临时树，并使用原启动文件检查核对整条祖先；检出路径不满足可信权限即失败，不修改祖先、不放宽生产路径、不以跳过计通过。入口为 Linux `cargo test -p sandproof-guest-service --locked --test daemon`，已纳入原 `--all-targets` 检查；当前本地只有 Linux 交叉 Clippy 结果，实际执行待 CI。这是正式 CLI 的拒绝路径验证，不包含成功 MMDS 交换、已启动服务的重启、真实模板安装或 KVM。
+[正式二进制启动拒绝检查](../sandbox-guest-service/tests/daemon.rs)直接启动 Cargo 构建的服务二进制，覆盖 `check` 在安装路径不存在、监听地址已占用时仍只做静态验证，三个动作对错版本/预算/owner/worker 协议的先行拒绝，以及配置缺失、链接、权限、超限、无写者 FIFO 的明确失败。`initialize`/`serve` 的缺状态/gate 目录、缺 worker、worker 权限/长度/摘要及快照失败均须在元数据阶段之前退出；已有真实 PID 文件的字节与 inode 不变，重开后旧 PID 仍为 Reused、服务编号只按原持久值递增，worker 效果与 gate 为零。每个子进程有独立期限，完整 stdout/stderr 核对只允许无载荷阶段诊断。夹具在检出目录内创建自己的 0700 临时树，并使用原启动文件检查核对整条祖先；检出路径不满足可信权限即失败，不修改祖先、不放宽生产路径、不以跳过计通过。入口为 Linux `cargo test -p sandproof-guest-service --locked --test daemon`，已纳入原 `--all-targets` 检查；三项已在下述 #495 Linux CI 实跑通过。这是正式 CLI 的拒绝路径验证，不包含成功 MMDS 交换、已启动服务的重启、真实模板安装或 KVM。
+
+#495 的三项正式 CLI 拒绝测试已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38788690795) 执行成功：源 9f71ef6ecd68ef3ae829ae75dd81aec42453355e、checkout e334e7904a132e0eca37ffea87c4813c0240ea6b；固定 SDK 84 项、封存 Redis 与四项 CI 全部成功。该回执只推进上述启动拒绝覆盖，不包含成功启动或下述运行身份观察工具。
 
 [受信任启动文件检查](../sandbox-guest-runtime/src/startup_files/tests.rs)四项在 macOS 使用真实私有目录/文件通过：原 FD 在路径替换后仍读取原内容，组/其他可写祖先、非私有状态/配置、不可执行或可写 worker、硬链接/软链接/错类型/错 UID 拒绝，FIFO 无写者时非阻塞打开后拒绝，以及路径/预算先行。目录遍历主体使用私有锚点，避免把公共临时目录祖先当成可信安装路径；另只读打开实际 `/usr/bin/false` 检查从 OS 根开始的入口，不执行它。定向入口为 `cargo test -p sandproof-guest-runtime --locked --lib startup_files::`。不覆盖并发挂载替换、root/同 owner 对抗、worker 摘要或整套安装验收。
 
@@ -544,6 +546,12 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 先运行[宿主预检](../tools/check_kvm_host.py)，它只验证环境，不能代替产品测试。系统脚本参数以各自 `--help` 为准，不复制某台机器的绝对路径。新建私有 Git 检出与构建使用 `umask 077`；受保护可执行文件及祖先不能被组或其他用户写入。环境拒绝须修正执行环境，不能降低身份检查。
 
 所有带断言的执行入口必须在 `-O`、`-OO` 或 `PYTHONOPTIMIZE` 下于资源创建前拒绝；[统一守卫](../tests/system/_assertions_required.py)也要绑定源码摘要。C02 的只读安全导出可例外，但不得借导出模式恢复或清理资源。
+
+#311 的候选来宾可沿[原同步/异步 SDK 数据入口](../tests/system/sdk_data_contract.py)显式传入 `--template`；Rust 身份核对还须同时提供 `--guest-release`、`--guest-manifest-sha256`、`--guest-configuration`、`--guest-configuration-sha256`，对应已审核的原 release 目录、独立 manifest pin、实际安装配置及其独立 pin。缺项或材料失配在创建 VM 前拒绝；选定模板须已由原受保护流程发布，脚本不创建模板或改别名。两个 SDK 模式仍经原中心/宿主网关创建、连接与销毁自己的实例，原 root/非 root 调用集和撤销后令牌检查不变。该选项用于获准的隔离实机验收，不纳入普通 CI 的 VM 执行。
+
+[运行身份观察](../tools/guest_probe.py)在调用集前后通过原已鉴权命令执行只读 Python 观察：核对 `/opt/sandproof` 中服务、worker、配置、manifest 的有限长度/摘要及同一 inode，持有 `/proc/PID` 目录 FD 核对实际 `exe`、原 `serve --config` argv、start_ticks，以及该进程持有的 `0.0.0.0:49983` 监听 socket。文件正确但实际运行 Go/其他程序、监听者缺失/不唯一、参数/可执行 inode/进程或 socket 变化均不能通过；不靠服务自报版本或安装文件存在推断正在运行。观察程序不创建服务/PID 状态、不安装或发送信号，使用固定 `/usr/bin/python3 -I`，要求候选测试模板在该路径具备 Python 3、root 观察 `/proc` 的能力及原命令预算；每次 20 秒，程序材料最多 24 KiB、回复最多 4 KiB、进程及候选 FD 扫描分别最多 4096，文件按原产物上限以 64 KiB 块读取。这些是验收观察边界，不是生产资源默认值或任意调度保证。
+
+新入口已实现，尚未在真实 VM 执行。[私有文件/proc 夹具](../tools/tests/test_guest_probe.py)核对摘要/权限/链接、路径替换/读取中变更、错可执行文件、同字节不同 inode、错监听与重复进程、观察中身份变化及有限解析；[固定 SDK 编排检查](../tests/compat/test_guest_observation.py)使用受控 SDK 操作验证双模式候选选择、调用前后观察、无重放、拒绝后的原实例销毁及旧默认报告不变，不执行真实 create 或 KVM。原 C02 不传这些新选项，也不会导入或执行该可选观察程序；默认 base 调用及严格报告接受范围保持不变，可选 Rust 报告不能代替其精确资源审计或发布回执。来宾 root、内核和可信安装仍是工程观察前提；同字节回滚、恶意来宾伪造回复、完整 SDK 双端对照、真实 MMDS/服务重启及 E06/E07/E09 仍须分别验收。
 
 | 实机入口 | 必查内容 |
 |---|---|
