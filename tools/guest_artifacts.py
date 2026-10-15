@@ -10,8 +10,12 @@ from pathlib import Path
 import re
 import stat
 
-from tools.check_kvm_host import require_keys, unique_keys
-from tools.system_acceptance import private_path
+if __package__:
+    from .check_kvm_host import require_keys, unique_keys
+    from .system_acceptance import private_path
+else:
+    from check_kvm_host import require_keys, unique_keys
+    from system_acceptance import private_path
 
 BINARIES = {'service': 'sandproof-guest-service', 'worker': 'sandproof-guest-worker'}
 SOURCE_LIMIT = 128 * 1024**2

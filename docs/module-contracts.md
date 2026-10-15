@@ -164,7 +164,7 @@ Start/Connect 不设累计输出上限，顺序、单消息/在途边界保持�
 
 #311 的可选 [guest 描述](../controller-service/src/templates/guest.rs)将 Rust 来宾身份纳入同一 TemplateBinding：kind 固定 rust-guest-v1、独立批准的 manifest SHA-256、40 位源码提交、服务/worker 包版本、配置/worker 协议/PID 格式版本、双二进制及完整配置的字节数/SHA-256。双二进制各至多 256 MiB，配置至多 1 MiB；摘要为小写十六进制，版本和长度必须为有界正值，未知/缺失字段拒绝。此处只验证描述形状，允许保留不同版本模板，不替代相配 daemon 的配置检查、已安装字节核对或模板验证。完整描述参与原 canonical digest、不可变编号登记、恢复及 GLOBAL→LOCAL 比较；只有受保护路径和原映射 owner 可变。配置预算或任一产物变更也须新模板编号，不能借不变的 rootfs 路径替换描述。
 
-guest 缺省为 None 并省略序列化，既有固定 Go 描述字节和摘要不变，不隐式迁移为 Rust；不认识 guest 的旧二进制按原 deny_unknown_fields 拒绝新描述，回退必须使用相配旧模板/部署材料，不能删除字段伪装旧版本。该字段独立于原 SDK envd_version 协商值，也不增加公开响应字段、宿主路径或新的下载 part；实际文件仍由完整 rootfs 的原摘要绑定。当前只交付描述与持久链路，Rust 安装/构建切换及新模板启用仍须完成本页 #311 合同与对应实机验收。
+guest 缺省为 None 并省略序列化，既有固定 Go 描述字节和摘要不变，不隐式迁移为 Rust；不认识 guest 的旧二进制按原 deny_unknown_fields 拒绝新描述，回退必须使用相配旧模板/部署材料，不能删除字段伪装旧版本。该字段独立于原 SDK envd_version 协商值，也不增加公开响应字段、宿主路径或新的下载 part；实际文件仍由完整 rootfs 的原摘要绑定。原候选 worker 与暂存入口已接入下述显式 Rust 安装配置；自助构建监督的自动传递及新模板启用仍须完成本页 #311 合同与对应实机验收。
 
 中心先在同一 Redis 权威块持久绑定 GLOBAL 模板、原创建选项、寿命、资源及固定宿主；宿主在原 SQLite 准入事务保存 LOCAL 产物、租户映射、资源计划和 outbox。二者没有跨库原子事务；任一提交未知都不重新分配替代 VM。未知与他人模板统一返回 404，避免枚举；已授权模板暂无校验可用节点返回暂不可用，不换 base。尚未确认精确回收的实例继续占额，逻辑宿主内存额度不是 Linux 物理预留。启动前核对本机受保护产物的类型、长度和摘要，重启核对原绑定；观察、停止和精确清理不依赖源镜像存在。cgroup 父目录/UID 范围仍是稳定部署前提。
 
@@ -378,7 +378,16 @@ VmIdentity 的稳定绑定为 SHA-256：域字节 `sandproof/guest/pid-binding/v
 
 准备实际执行两份新产物的 --version，经原有界 JSON 命令读取器与同一输入锁逐项核对，读取前后核对二进制/编译器指纹，再复制并同步固定文件名的产物。最终[清单](../tools/guest_artifacts.py)记录 Git commit/tree、源码归档、Cargo/输入锁/配方摘要、工具链报告与入口文件摘要、服务/worker 精确字节和 SHA-256，沿原一次性持久写入发布；失败保留本次目录，不自动重建、重放或替换旧材料，发布后失败可能已留下清单。清单不含模板已验收或运行成功判据。消费方必须先从独立受保护输入取得 manifest_sha256；load 再核对原清单、source.tar 和双二进制，不能用清单自己的内容批准自己。worker_configuration 只返回原配置 v2 的 worker 片段，不生成生产预算或代替静态 check；本次私有 source/target/log 等诊断材料不属于安装载荷。
 
-同一消费者的 template_identity 另接受独立批准的私有配置路径及其 SHA-256，在同一有限 FD 读取中核对配置实际摘要、版本和完整 worker 片段与原清单一致，再产生上述 guest 描述。配置的其他预算/路径仍由原 daemon check 校验；该读取器不执行产物，不声称配置已可启动或文件已经进入 rootfs。构建监督/安装尚未调用它，现役 Go envd 路径和 SDK 协商字段不变；实际 release、链接库/镜像兼容、安装字节与描述一致性及 KVM 验收分别补证。
+同一消费者的 template_identity 另接受独立批准的私有配置路径及其 SHA-256，在同一有限 FD 读取中核对配置实际摘要、版本和完整 worker 片段与原清单一致，再产生上述 guest 描述。配置的其他预算/路径仍由原 daemon check 校验；该读取器不执行产物，不声称配置已可启动或文件已经进入 rootfs。下述显式安装/暂存入口消费该描述；自助构建监督的配置/传输尚未接入，现役 Go envd 路径和 SDK 协商字段不变。实际 release、链接库/镜像兼容、安装字节与描述一致性及 KVM 验收分别补证。
+
+
+[原模板 worker](../tools/template_worker.py)在原 assigned disposable Linux VM 守卫内接受显式 `--rust-guest-profile /absolute/private.json`；省略参数仍使用固定 Go。受保护 profile 至多 16 KiB，精确包含 release（原私有双产物目录）、manifest_sha256、configuration（原私有完整配置文件）和 configuration_sha256，不来自租户构建请求。读取沿原清单/配置校验；配置必须监听 `0.0.0.0:49983`、owner_uid 为 0，worker 为 `/opt/sandproof/sandproof-guest-worker`、PID 目录为 `/opt/sandproof/state`、gate 为 `/run/sandproof-guest/gates`。Rust 模式的原工具 profile 不再包含 envd，BusyBox 另须具备 mv/sync；Go profile 不变。
+
+[安装器](../tools/template_guest.py)复用原 `/opt/sandproof` 保留路径和镜像内路径解析，只在新候选目录复制固定 service/worker、guest-config.json 和 guest-manifest.json，复用原有限长度/摘要复制并复查副本。根、opt、平台目录须为调用者所有且无组/其他写权限，不通过修改无关镜像目录绕过 daemon 的祖先检查。二进制为 0500，配置/清单为 0400，state 目录为 0700；源码归档/target/日志不安装进 rootfs。复制后的实际 service 在原 Commands 绝对期限和日志预算内执行 `check --config`，成功后重新核对已安装载荷；失败不产生新 VM 制备标记或成功候选。该检查在 builder 环境执行，不能替代新镜像内的动态库兼容和实际启动检查。
+
+安装器写入私有 new-vm 标记；原 BusyBox boot 在网络与新 `/run` tmpfs 建立后，创建私有 gate 目录，先把 new-vm 重命名为 initialization-attempted 并调用 sync，再执行一次 `initialize`。无新标记时绝不执行 initialize，重复/符号链接标记拒绝；首次初始化即使在创建 PID 文件前失败，也已消耗自动制备资格。成功后才写原 boot-ready 标记，原 agent gate 保持并改为只执行 `serve --config`；respawn 不跑 initialize。整 VM 再启动也只打开原 PID 状态，缺失/损坏不补表，仍由原宿主责任路径处理失败和销毁。这是已确认 PID 政策的安装连接，不抵抗来宾 root、有效旧盘回滚或虚假持久化；尚无真实断电/文件系统故障证据。
+
+候选状态包含安装时的 guest 身份。原[暂存入口](../tools/template_stage.py)同样接受独立的 `--rust-guest-profile`，只读取受保护材料，不在宿主执行二进制、解包或挂载镜像；状态中的 guest 必须与独立 profile 相同，不能自行选择信任 pin。新建与原编号恢复均将完整身份绑定到原 manifest，下载文件名消失后的交接恢复也不得丢失或更换它；没有受保护 profile 时拒绝带 Rust 身份的状态。暂存仍不是 Ready，后续登记/真实启动/精确收尾门保持。当前自助监督仍只发送 Go profile，Rust 选项仅供受控制备者显式接入原 worker/暂存链；实际传输、自动监督及 E06/E09 仍待接通和实测。
 
 `check` 读取原私有配置并构造原有界池，验证预算、路径语法、工作目录一致性和配置 owner 与内核有效 UID 一致；不访问 MMDS、安装路径、PID 文件或 MIME/时区来源，不绑定端口、不执行命令。线程数、阻塞线程数、线程栈及退出等待上限也显式配置，检查表示范围和基础约束，不承诺机器有足够内存。`initialize` 只供可信的新 VM 制备：可信安装者须先创建私有状态/gate 目录并安装 worker；读取实际快照和固定 Firecracker MMDS 身份后排他 create 原 PID 文件。它不由 serve 隐式调用，不覆盖已有或中断文件；取消前尚未开始的制备任务跳过写入，已进入的调用可能留下完整或不完整文件，失败不表示没有副作用。
 

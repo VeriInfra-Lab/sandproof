@@ -13,7 +13,10 @@ import re
 import stat
 import tempfile
 
-from tools.check_kvm_host import unique_keys
+if __package__:
+    from .check_kvm_host import unique_keys
+else:
+    from check_kvm_host import unique_keys
 
 STAGED_FILES = ("center", "host", "kernel", "rootfs")
 PROBES = ("sdk_server_smoke.py", "sdk_data_contract.py")
