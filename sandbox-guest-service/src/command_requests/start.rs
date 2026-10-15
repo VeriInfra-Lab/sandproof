@@ -9,7 +9,7 @@ use sandproof_guest_runtime::{
 };
 use tokio::time::timeout_at;
 
-use super::http::start::Rejection;
+use super::http::start::{LaunchFailure, LaunchFailureKind, Rejection};
 use super::{
     Authenticated, Decoded, Error, Failure, Instant, Ready, Reply, Request, check_deadline,
 };
@@ -97,6 +97,7 @@ impl Ready {
                 .ok_or(Error::Unavailable)?
                 .to_owned();
             let mut cwd = Some(cwd);
+            let mut request = Some(resolved.request);
             let pending = preparation
                 .owners
                 .prepare_command_admitted(
@@ -126,9 +127,9 @@ impl Ready {
                         == crate::command::RegistrationError::Preparation(
                             crate::command::CommandError::InvalidArgument,
                         )
-                        && observer.missing_working_directory()
                     {
-                        start_rejection = cwd.take().map(Rejection::MissingCwd);
+                        start_rejection =
+                            preparation_rejection(observer.rejection(), &mut request, &mut cwd);
                     }
                     Error::Registration(error)
                 })?;
@@ -138,10 +139,11 @@ impl Ready {
                 if let crate::command::CommandError::ExecFailed(errno) = error
                     && errno > 0
                     && let Some(cwd) = cwd.take()
+                    && let Some(request) = request.take()
                 {
-                    start_rejection = Some(Rejection::Native(
-                        super::http::start::NativeFailure::new(resolved.request, cwd, errno),
-                    ));
+                    start_rejection = Some(Rejection::Launch(LaunchFailure::native(
+                        request, cwd, errno,
+                    )));
                 }
                 Error::Command(error)
             })?;
@@ -249,4 +251,24 @@ impl Ready {
             execution,
         })
     }
+}
+
+fn preparation_rejection(
+    observation: Option<sandproof_guest_runtime::PreparationRejection>,
+    request: &mut Option<StartRequest>,
+    cwd: &mut Option<String>,
+) -> Option<Rejection> {
+    use sandproof_guest_runtime::PreparationRejection;
+    let observation = observation?;
+    let cwd = cwd.take()?;
+    let kind = match observation {
+        PreparationRejection::MissingCwd => return Some(Rejection::MissingCwd(cwd)),
+        PreparationRejection::EnvironmentNul => LaunchFailureKind::EnvironmentNul,
+        PreparationRejection::ArgumentNul => LaunchFailureKind::ArgumentNul,
+    };
+    Some(Rejection::Launch(LaunchFailure::new(
+        request.take()?,
+        cwd,
+        kind,
+    )))
 }

@@ -80,18 +80,27 @@ impl LaunchSpec {
         if let Some(credentials) = &self.credentials {
             credentials.validate()?;
         }
-        if (self.program.is_empty() && self.envd_wrapper_path.is_none())
-            || !self.cwd.is_absolute()
-            || self.cwd.as_os_str().as_bytes().contains(&0)
+        let wrapped = self.envd_wrapper_path.is_some();
+        // Wrapped requests preserve NUL until the original worker has checked
+        // cwd existence and the fixed Go validation order. Raw exec stays strict.
+        let nul = self.cwd.as_os_str().as_bytes().contains(&0)
             || self.program.contains('\0')
+            || self.args.iter().any(|arg| arg.contains('\0'))
+            || self
+                .env
+                .iter()
+                .any(|(key, value)| key.contains('\0') || value.contains('\0'));
+        if (self.program.is_empty() && !wrapped)
+            || !self.cwd.is_absolute()
+            || (!wrapped && nul)
             || self
                 .envd_wrapper_path
                 .as_ref()
                 .is_some_and(|path| path.contains('\0'))
-            || self.args.iter().any(|arg| arg.contains('\0'))
-            || self.env.iter().any(|(key, value)| {
-                key.is_empty() || key.contains(['=', '\0']) || value.contains('\0')
-            })
+            || self
+                .env
+                .keys()
+                .any(|key| key.is_empty() || key.contains('='))
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,

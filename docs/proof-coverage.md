@@ -374,6 +374,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [原生启动分类](../sandbox-guest-runtime/src/worker.rs)和[回复连接](../sandbox-guest-service/src/command_requests/http/start/native.rs)新增完整原放行到原生阶段、正 errno 与内部协议故障区分、新握手拒绝旧 worker、原请求字段与失败事实不可替换及固定错误映射的自有义务。阶段标记、参数移动、已烧号后的真实收尾与 HTTP 最后字节责任均未抽取或证明。固定 Go 符号 errno 渲染及真实 Linux 有限故障分别报告，不证明所有 syscall 失败、完整启动序列或资源耗尽。共享 errno 表只有用途注释调整，纯核心、历史已证明 Rust/Lean 未改。
 
+[Start NUL 校验连接](../sandbox-guest-runtime/src/worker.rs)新增原请求 NUL 保留到可信 worker、工作目录检查先于 NUL、环境校验先于 argv/cwd 转换、READY 前互斥拒绝事实及原准备所有者实际收尾的对应义务。准备观察经共享锁和状态检查进入有界错误发送器，不从粗 InvalidArgument 推导事实；锁失败/未知清理不生成诊断。原生 errno 和校验失败保持分离，raw 入口的早期拒绝仍在。固定 Go Cmd.Start 的实际校验与有限 HTTP 渲染对照、Linux 候选回归均属工程证据；这些改动尚未抽取或证明，历史纯核心和 Lean 未改。
+
 [Start 路径展开连接](../sandbox-guest-service/src/execution.rs)新增同一账户/初始化快照的原失败事实到 [Start 回复](../sandbox-guest-service/src/command_requests/http/start.rs) 的传递义务，以及三种观察互斥、与原组件错误匹配和旧粗错误接口保持的义务。纯组合、真实账户预检/拒绝顺序、未创建 worker/PID 及最后字节责任尚未抽取或证明；Go 原路径函数对照和 Linux 有限组件回归分别报告，不能代替完整 E03 或系统资源证明。纯核心、历史已证明 Rust/Lean 未改，旧结论不覆盖新增连接。
 
 新增[命令所有权、执行期限与订阅](../sandbox-guest-service/src/command.rs)及 Linux 端口的独立控制句柄/失败排空路径尚未抽取或证明。#101 待证连接包括：初始订阅先于放行、授权到派发、原绝对期限与 pidfd、任务/请求取消的区分、未知结果不重执行、输出与终局顺序、慢订阅拒绝、实际持有块与字节/订阅/记录额度的共同释放、任务丢失后的未决责任和容量保留。只增加真实进程组件证据，未改变已证明控制器 Rust 或纯来宾核心，原抽取和定理不覆盖新异步编排；公开 PID/tag 和持久终局保留仍是待接入义务。

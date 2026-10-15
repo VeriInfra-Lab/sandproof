@@ -71,7 +71,7 @@ fn observed_facts_require_the_original_matching_failure() {
             )),
         ),
         (
-            Rejection::Native(NativeFailure::new(
+            Rejection::Launch(LaunchFailure::native(
                 sandproof_guest_runtime::protocol::StartRequest {
                     process: None,
                     pty: None,

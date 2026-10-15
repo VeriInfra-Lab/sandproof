@@ -25,6 +25,7 @@ type commandOperationInput struct {
 	DefaultCwd   *string
 	Cmd, Native  string
 	Args         []string
+	Env          map[string]string
 	Pty          bool
 	Cols, Rows   uint32
 	Number       int64
@@ -45,6 +46,8 @@ func operationError(headers http.Header) error {
 	}
 	input := operationRecord(data)
 	switch input.Kind {
+	case "nul":
+		return nulStartError(input)
 	case "native-resize":
 		return nativeResizeError(input)
 	case "native-signal":

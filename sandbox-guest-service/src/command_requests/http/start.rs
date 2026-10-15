@@ -8,13 +8,13 @@ use tokio::time::Instant;
 mod native;
 #[cfg(test)]
 mod tests;
-pub(crate) use native::NativeFailure;
+pub(crate) use native::{LaunchFailure, LaunchFailureKind};
 
 // Exactly one observation from this Start, never reconstructed from its coarse
 // error or from a later path/account lookup.
 pub(crate) enum Rejection {
     MissingCwd(String),
-    Native(NativeFailure),
+    Launch(LaunchFailure),
     Expansion(crate::upload_response::PathExpansion),
 }
 impl Rejection {
@@ -28,10 +28,17 @@ impl Rejection {
                         CommandError::InvalidArgument,
                     ))
             }
-            Self::Native(native) => {
-                native.errno > 0
-                    && *error == RequestError::Command(CommandError::ExecFailed(native.errno))
-            }
+            Self::Launch(launch) => match launch.kind {
+                LaunchFailureKind::Native(errno) => {
+                    errno > 0 && *error == RequestError::Command(CommandError::ExecFailed(errno))
+                }
+                LaunchFailureKind::EnvironmentNul | LaunchFailureKind::ArgumentNul => {
+                    *error
+                        == RequestError::Registration(RegistrationError::Preparation(
+                            CommandError::InvalidArgument,
+                        ))
+                }
+            },
             Self::Expansion(_) => {
                 *error == RequestError::Context(crate::ContextError::InvalidArgument)
             }
@@ -43,7 +50,7 @@ impl Rejection {
             Self::MissingCwd(path) => {
                 message(&[b"cwd '", path.as_bytes(), b"' does not exist"], limit)
             }
-            Self::Native(native) => native.payload(limit),
+            Self::Launch(native) => native.payload(limit),
             Self::Expansion(expansion) => message(&expansion.rpc_parts(), limit),
         }
     }

@@ -17,7 +17,7 @@ fn request(program: &str, args: &[String], pty: bool, cols: u32, rows: u32) -> S
 }
 fn native_source(pty: bool, errno: i32, gzip: bool) -> (Source, Arc<Semaphore>) {
     let (mut source, slots) = source("/private-secret", gzip);
-    source.rejection = Some(Rejection::Native(NativeFailure::new(
+    source.rejection = Some(Rejection::Launch(LaunchFailure::native(
         request(
             "/bin/sh",
             &["a b".into(), String::new(), "'\"\\\n<>&中".into()],
@@ -154,7 +154,7 @@ async fn fixed_go_native_start_errors_match_symbolic_errno_and_full_replies() {
                             panic!("cwd fixture");
                         };
                         let input = serde_json::json!({"Method":"Start","Kind":"native","Cmd":program,"Args":args,"Cwd":cwd,"Native":name,"Pty":pty,"Cols":cols,"Rows":rows,"Gzip":gzip,"UTF8":codec==JsonContentType::Utf8});
-                        source.rejection = Some(Rejection::Native(NativeFailure::new(
+                        source.rejection = Some(Rejection::Launch(LaunchFailure::native(
                             request(program, &args, pty, cols, rows),
                             cwd,
                             number,

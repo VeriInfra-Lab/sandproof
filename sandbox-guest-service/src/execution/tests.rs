@@ -198,13 +198,14 @@ fn directory_expansion_matches_home_default_and_lexical_join_rules() {
         ("/a/link/../b", "/home/u", "/a/link/../b"),
         ("../../x", "/home/u", "/x"),
         ("x", "relative", "/daemon/relative/x"),
+        ("x\0y", "/home/u", "/home/u/x\0y"),
         ("", "", "/daemon"),
     ] {
         let mut selected = account("u");
         selected.home = home.into();
         assert_eq!(resolve_path(path, &selected, "/daemon").unwrap(), expected);
     }
-    for path in ["~other/x", "x\0y"] {
+    for path in ["~other/x", "~other\0"] {
         assert_eq!(
             resolve_path(path, &account("u"), "/daemon").map_err(|error| error.context()),
             Err(ContextError::InvalidArgument)
@@ -254,7 +255,7 @@ async fn command_path_observation_uses_selected_account_and_keeps_context_errors
             Some(expected)
         );
     }
-    for (cwd, home) in [("~other\0", "/home/bob"), ("~other", "/home/\0bob")] {
+    for (cwd, home) in [("~other", "/home/\0bob"), ("/explicit", "/home/\0bob")] {
         let mut selected = account("bob");
         selected.home = home.into();
         assert!(matches!(
@@ -266,8 +267,15 @@ async fn command_path_observation_uses_selected_account_and_keeps_context_errors
     req.process.as_mut().unwrap().cmd = "bad\0cmd".into();
     assert!(matches!(
         auth.compose_command_observed(&req, account("bob"), &settings()),
-        Err(CommandContextError::Context(ContextError::InvalidArgument))
+        Err(CommandContextError::Expansion(_))
     ));
+    req.process.as_mut().unwrap().cwd = Some("/explicit".into());
+    assert_eq!(
+        auth.compose_command_observed(&req, account("bob"), &settings())
+            .unwrap()
+            .program,
+        "bad\0cmd"
+    );
 }
 
 #[tokio::test]

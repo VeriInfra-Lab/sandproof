@@ -52,6 +52,10 @@ func nativeErrno(name string) syscall.Errno {
 func nativeStartError(input commandOperationInput) error {
 	number := nativeErrno(input.Native)
 	native := &os.PathError{Op: "fork/exec", Path: "/bin/sh", Err: number}
+	return formatStartError(input, native)
+}
+
+func formatStartError(input commandOperationInput, native error) error {
 	command := strings.Join(append([]string{input.Cmd}, input.Args...), " ")
 	var failure error
 	if input.Pty {

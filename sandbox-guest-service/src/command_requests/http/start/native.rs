@@ -1,16 +1,27 @@
-//! Original request fields plus the original worker's native launch errno.
+//! Original request fields and the original worker's selected launch rejection.
 use super::reply;
 use sandproof_guest_runtime::{file_download::LinuxErrno, protocol::StartRequest};
 
-pub(crate) struct NativeFailure {
+#[derive(Clone, Copy)]
+pub(crate) enum LaunchFailureKind {
+    Native(i32),
+    EnvironmentNul,
+    ArgumentNul,
+}
+
+pub(crate) struct LaunchFailure {
     program: String,
     args: Vec<String>,
     cwd: String,
     pty: Option<(u32, u32)>,
-    pub(super) errno: i32,
+    pub(super) kind: LaunchFailureKind,
 }
-impl NativeFailure {
-    pub(crate) fn new(request: StartRequest, cwd: String, errno: i32) -> Self {
+impl LaunchFailure {
+    pub(crate) fn native(request: StartRequest, cwd: String, errno: i32) -> Self {
+        Self::new(request, cwd, LaunchFailureKind::Native(errno))
+    }
+
+    pub(crate) fn new(request: StartRequest, cwd: String, kind: LaunchFailureKind) -> Self {
         let (program, args) = request.process.map(|p| (p.cmd, p.args)).unwrap_or_default();
         let pty = request
             .pty
@@ -20,18 +31,20 @@ impl NativeFailure {
             args,
             cwd,
             pty,
-            errno,
+            kind,
         }
     }
 
     pub(super) fn payload(&self, limit: usize) -> Result<Vec<u8>, reply::Error> {
         crate::go_json::bounded(limit as u64, |put| {
             put(br#"{"error":{"code":""#)?;
-            put(if matches!(self.errno, 11 | 12 | 23 | 24 | 28) {
-                b"resource_exhausted"
-            } else {
-                b"invalid_argument"
-            })?;
+            put(
+                if matches!(self.kind, LaunchFailureKind::Native(11 | 12 | 23 | 24 | 28)) {
+                    b"resource_exhausted"
+                } else {
+                    b"invalid_argument"
+                },
+            )?;
             put(br#"","message":""#)?;
             let mut message = |bytes: &[u8]| crate::go_json::string_content(bytes, put);
             message(if self.pty.is_some() {
@@ -54,8 +67,18 @@ impl NativeFailure {
                 message(rows.to_string().as_bytes())?;
                 message(b"' rows")?;
             }
-            message(b": fork/exec /bin/sh: ")?;
-            message(LinuxErrno(self.errno).message().as_bytes())?;
+            match self.kind {
+                LaunchFailureKind::Native(errno) => {
+                    message(b": fork/exec /bin/sh: ")?;
+                    message(LinuxErrno(errno).message().as_bytes())?;
+                }
+                LaunchFailureKind::EnvironmentNul => {
+                    message(b": exec: environment variable contains NUL")?;
+                }
+                LaunchFailureKind::ArgumentNul => {
+                    message(b": fork/exec /bin/sh: invalid argument")?;
+                }
+            }
             put(br#""}}"#)
         })
         .map_err(|_| reply::Error::ResponseLimit)

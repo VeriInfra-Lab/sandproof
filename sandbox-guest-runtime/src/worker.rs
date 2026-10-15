@@ -15,6 +15,8 @@ pub(crate) const READY: &[u8; 4] = b"SG12";
 pub(crate) const ERROR: &[u8; 4] = b"SGE1";
 const FAULT: &[u8; 4] = b"SGF1";
 pub(crate) const CWD_MISSING: &[u8; 4] = b"SGC1";
+pub(crate) const ENVIRONMENT_NUL: &[u8; 4] = b"SGN1";
+pub(crate) const ARGUMENT_NUL: &[u8; 4] = b"SGN2";
 
 /// Run the private worker protocol, then replace this exact process by exec.
 /// The worker binary is single-threaded; success does not return.
@@ -71,6 +73,12 @@ fn execute(gate: &mut UnixStream, maximum: usize, native_phase: &mut bool) -> io
             rustix::io::Errno::NOENT.raw_os_error(),
         ));
     }
+    if wrapped && reject_nul(gate, &spec)? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "launch contains NUL",
+        ));
+    }
     gate.write_all(READY)?;
     let mut release = [0];
     gate.read_exact(&mut release)?;
@@ -107,6 +115,28 @@ fn execute(gate: &mut UnixStream, maximum: usize, native_phase: &mut bool) -> io
         .envs(spec.env)
         .exec();
     Err(error)
+}
+
+// Go Cmd.environ runs before StartProcess's argv/cwd string conversion. These
+// are validation observations, not actual syscall errno or exec receipts.
+fn reject_nul(gate: &mut UnixStream, spec: &LaunchSpec) -> io::Result<bool> {
+    use std::os::unix::ffi::OsStrExt;
+    let marker = if spec
+        .env
+        .iter()
+        .any(|(key, value)| key.contains('\0') || value.contains('\0'))
+    {
+        ENVIRONMENT_NUL
+    } else if spec.program.contains('\0')
+        || spec.args.iter().any(|arg| arg.contains('\0'))
+        || spec.cwd.as_os_str().as_bytes().contains(&0)
+    {
+        ARGUMENT_NUL
+    } else {
+        return Ok(false);
+    };
+    gate.write_all(marker)?;
+    Ok(true)
 }
 
 // Only called inside this private, single-threaded worker, after release and

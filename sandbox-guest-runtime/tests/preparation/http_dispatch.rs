@@ -27,6 +27,8 @@ mod json_errors;
 mod launch;
 #[path = "native_http.rs"]
 mod native;
+#[path = "nul_http.rs"]
+mod nul;
 #[path = "signal_native_http.rs"]
 mod signal_native;
 

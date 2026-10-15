@@ -17,6 +17,8 @@ const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
 
 #[path = "process/gate.rs"]
 mod gate;
+#[path = "process/nul.rs"]
+mod nul;
 #[path = "process/worker_protocol.rs"]
 mod worker_protocol;
 #[path = "process/wrapper.rs"]

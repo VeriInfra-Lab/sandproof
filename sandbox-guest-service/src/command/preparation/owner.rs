@@ -2,10 +2,8 @@ use super::{
     AdmissionLimits, AdmissionStatus, CommandError, CommandPreparation, CommandReservation,
     Context, Decision, Instant, PreparationSpec, Reply, Worker, oneshot, watch,
 };
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use sandproof_guest_runtime::PreparationRejection;
+use std::sync::{Arc, Mutex};
 
 /// Constructed before spawn, so even an unpolled task resolves its observers.
 pub(super) struct AdmissionOwner {
@@ -14,7 +12,7 @@ pub(super) struct AdmissionOwner {
     reply: Option<oneshot::Sender<Reply>>,
     unsettled: bool,
     finished: bool,
-    missing_cwd: Arc<AtomicBool>,
+    rejection: Arc<Mutex<Option<PreparationRejection>>>,
 }
 
 impl AdmissionOwner {
@@ -22,7 +20,7 @@ impl AdmissionOwner {
         reservation: CommandReservation,
         status: watch::Sender<AdmissionStatus>,
         reply: oneshot::Sender<Reply>,
-        missing_cwd: Arc<AtomicBool>,
+        rejection: Arc<Mutex<Option<PreparationRejection>>>,
     ) -> Self {
         Self {
             reservation: Some(reservation),
@@ -30,7 +28,7 @@ impl AdmissionOwner {
             reply: Some(reply),
             unsettled: false,
             finished: false,
-            missing_cwd,
+            rejection,
         }
     }
 
@@ -118,8 +116,8 @@ async fn run(
         () = tokio::time::sleep_until(until) => Err(CommandError::DeadlineExceeded),
         _ = &mut decision => Err(CommandError::Cancelled),
         result = preparation.finish() => {
-            if result.is_err() && preparation.missing_working_directory() {
-                owner.missing_cwd.store(true, Ordering::Release);
+            if result.is_err() && let Ok(mut fact) = owner.rejection.lock() {
+                *fact = preparation.rejection();
             }
             result.map_err(|error| prepare_error(&error))
         },

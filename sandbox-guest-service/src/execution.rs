@@ -244,7 +244,7 @@ impl AuthPermit {
         env.extend(process.envs.clone());
         if env
             .iter()
-            .any(|(key, value)| key.is_empty() || key.contains(['=', '\0']) || value.contains('\0'))
+            .any(|(key, _)| key.is_empty() || key.contains('='))
         {
             return Err(ContextError::InvalidArgument.into());
         }
@@ -302,9 +302,6 @@ fn command_process<'a>(
         .process
         .as_ref()
         .map_or_else(|| Cow::Owned(ProcessConfig::default()), Cow::Borrowed);
-    if process.cmd.contains('\0') || process.args.iter().any(|arg| arg.contains('\0')) {
-        return Err(ContextError::InvalidArgument);
-    }
     if process.args.len() > limit.arguments {
         return Err(ContextError::ResourceExhausted);
     }
@@ -350,7 +347,7 @@ fn resolve_path(
     account: &Account,
     daemon_cwd: &str,
 ) -> Result<String, CommandContextError> {
-    if path.contains('\0') || account.home.contains('\0') {
+    if account.home.contains('\0') {
         return Err(ContextError::InvalidArgument.into());
     }
     expand_path(path, &account.home, daemon_cwd).map_err(|error| match error {

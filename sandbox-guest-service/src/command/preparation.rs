@@ -2,12 +2,13 @@
 //! grants no public PID policy: only its caller can confirm the required
 //! registration, and only then may the original worker be dispatched.
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use sandproof_guest_core::CommandIdentity;
-use sandproof_guest_runtime::{CommandPreparation, CommandProcess, LaunchSpec, ProcessLimits};
+use sandproof_guest_runtime::{
+    CommandPreparation, CommandProcess, LaunchSpec, PreparationRejection, ProcessLimits,
+};
 use tokio::sync::{oneshot, watch};
 use tokio::time::Instant;
 
@@ -81,17 +82,23 @@ pub enum AdmissionStatus {
 }
 
 #[derive(Clone)]
-pub struct AdmissionObserver(watch::Receiver<AdmissionStatus>, Arc<AtomicBool>);
+pub struct AdmissionObserver(
+    watch::Receiver<AdmissionStatus>,
+    Arc<Mutex<Option<PreparationRejection>>>,
+);
 
 impl AdmissionObserver {
     // The immutable fact is published before Stopping. Unknown cleanup or
     // owner loss cannot be relabelled as this original preparation failure.
-    pub(crate) fn missing_working_directory(&self) -> bool {
-        matches!(
+    pub(crate) fn rejection(&self) -> Option<PreparationRejection> {
+        if !matches!(
             self.status(),
             AdmissionStatus::Stopping(CommandError::InvalidArgument)
                 | AdmissionStatus::Stopped(CommandError::InvalidArgument)
-        ) && self.1.load(Ordering::Acquire)
+        ) {
+            return None;
+        }
+        self.1.lock().ok().and_then(|fact| *fact)
     }
 
     #[must_use]
@@ -257,7 +264,7 @@ impl CommandOwners {
         let until = execution.0.map_or(until, |at| at.min(until));
         let reservation = self.reserve()?;
         let (status, observer) = watch::channel(AdmissionStatus::Preparing);
-        let missing_cwd = Arc::new(AtomicBool::new(false));
+        let rejection = Arc::new(Mutex::new(None));
         let (decision, receive_decision) = oneshot::channel();
         let (reply, receive_reply) = oneshot::channel();
         owner::spawn(
@@ -270,10 +277,10 @@ impl CommandOwners {
                 request: request.owner.clone(),
             },
             receive_decision,
-            owner::AdmissionOwner::new(reservation, status, reply, missing_cwd.clone()),
+            owner::AdmissionOwner::new(reservation, status, reply, rejection.clone()),
         );
         Ok(PendingCommand {
-            observer: AdmissionObserver(observer, missing_cwd),
+            observer: AdmissionObserver(observer, rejection),
             decision: Some(decision),
             reply: receive_reply,
             _request: request.owner,
@@ -305,36 +312,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cwd_fact_does_not_relabel_expiry_owner_loss_or_unknown_cleanup() {
+    fn rejection_fact_does_not_relabel_expiry_owner_loss_or_unknown_cleanup() {
         let (status, receiver) = watch::channel(AdmissionStatus::Preparing);
-        let fact = Arc::new(AtomicBool::new(false));
+        let fact = Arc::new(Mutex::new(None));
         let observer = AdmissionObserver(receiver, fact.clone());
         status.send_replace(AdmissionStatus::Stopped(CommandError::InvalidArgument));
-        assert!(!observer.missing_working_directory());
-        fact.store(true, Ordering::Release);
-        for state in [
-            AdmissionStatus::Preparing,
-            AdmissionStatus::Ready(CommandIdentity {
-                session: 1,
-                command: 1,
-                pid: 1,
-                start_ticks: 1,
-            }),
-            AdmissionStatus::Stopping(CommandError::DeadlineExceeded),
-            AdmissionStatus::Stopped(CommandError::Cancelled),
-            AdmissionStatus::Stopped(CommandError::Unavailable),
-            AdmissionStatus::CleanupUnknown,
-            AdmissionStatus::OwnerLost,
+        assert_eq!(observer.rejection(), None);
+        for rejection in [
+            PreparationRejection::MissingCwd,
+            PreparationRejection::EnvironmentNul,
+            PreparationRejection::ArgumentNul,
         ] {
-            status.send_replace(state);
-            assert!(!observer.missing_working_directory(), "{state:?}");
-        }
-        for state in [
-            AdmissionStatus::Stopping(CommandError::InvalidArgument),
-            AdmissionStatus::Stopped(CommandError::InvalidArgument),
-        ] {
-            status.send_replace(state);
-            assert!(observer.missing_working_directory());
+            *fact.lock().unwrap() = Some(rejection);
+            for state in [
+                AdmissionStatus::Preparing,
+                AdmissionStatus::Ready(CommandIdentity {
+                    session: 1,
+                    command: 1,
+                    pid: 1,
+                    start_ticks: 1,
+                }),
+                AdmissionStatus::Stopping(CommandError::DeadlineExceeded),
+                AdmissionStatus::Stopped(CommandError::Cancelled),
+                AdmissionStatus::Stopped(CommandError::Unavailable),
+                AdmissionStatus::CleanupUnknown,
+                AdmissionStatus::OwnerLost,
+            ] {
+                status.send_replace(state);
+                assert_eq!(observer.rejection(), None, "{state:?}");
+            }
+            for state in [
+                AdmissionStatus::Stopping(CommandError::InvalidArgument),
+                AdmissionStatus::Stopped(CommandError::InvalidArgument),
+            ] {
+                status.send_replace(state);
+                assert_eq!(observer.rejection(), Some(rejection));
+            }
         }
     }
 }
