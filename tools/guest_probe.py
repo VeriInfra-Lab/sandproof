@@ -1,4 +1,4 @@
-"""Read-only Rust guest observation through the existing authenticated SDK.
+"""Read-only pinned guest observation through the existing authenticated SDK.
 
 The program sent to the guest uses only Python's standard library. It observes
 installed bytes and the process holding the configured listening socket; it
@@ -23,6 +23,7 @@ PROGRAM_LIMIT = 24 * 1024
 REPORT_LIMIT = 4096
 PROCESS_LIMIT = 4096
 FD_LIMIT = 4096
+GO_PATH = '/usr/local/bin/envd'
 
 
 def require(condition):
@@ -41,9 +42,13 @@ def unique(pairs):
 def validate_expected(expected):
     require(type(expected) is dict and expected.keys() == NAMES.keys())
     for role, value in expected.items():
-        require(type(value) is dict and value.keys() == {'bytes', 'sha256'})
-        require(type(value['bytes']) is int and 0 < value['bytes'] <= LIMITS[role])
-        require(type(value['sha256']) is str and re.fullmatch('[0-9a-f]{64}', value['sha256']))
+        validate_file(value, LIMITS[role])
+
+
+def validate_file(value, maximum):
+    require(type(value) is dict and value.keys() == {'bytes', 'sha256'})
+    require(type(value['bytes']) is int and 0 < value['bytes'] <= maximum)
+    require(type(value['sha256']) is str and re.fullmatch('[0-9a-f]{64}', value['sha256']))
 
 
 def identity(info):
@@ -69,19 +74,20 @@ def hashed(fd, expected, owner):
     return before
 
 
+def installed_file(path, expected, owner, mode):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = hashed(fd, expected, owner)
+        require(identity(path.lstat()) == identity(info) and stat.S_IMODE(info.st_mode) == mode)
+        return info
+    finally:
+        os.close(fd)
+
+
 def installed(platform, expected, owner):
-    observed = {}
-    for role, name in NAMES.items():
-        path = platform / name
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        try:
-            info = hashed(fd, expected[role], owner)
-            require(identity(path.lstat()) == identity(info))
-            require(stat.S_IMODE(info.st_mode) == (0o500 if role in ('service', 'worker') else 0o400))
-            observed[role] = info
-        finally:
-            os.close(fd)
-    return observed
+    return {role: installed_file(platform / name, expected[role], owner,
+                0o500 if role in ('service', 'worker') else 0o400)
+            for role, name in NAMES.items()}
 
 
 def small_file(name, limit, *, directory=None):
@@ -142,9 +148,13 @@ def owns_socket(directory, inode):
 
 
 def observe_daemon(proc, platform, expected, installed_service, owner):
-    inode = listener_inode(proc, 49983)
     argv = (str(platform / NAMES['service']) + '\0serve\0--config\0'
             + str(platform / NAMES['configuration']) + '\0').encode()
+    return observe_process(proc, expected['service'], installed_service, owner, argv)
+
+
+def observe_process(proc, expected, installed_service, owner, argv):
+    inode = listener_inode(proc, 49983)
     matches = []
     with os.scandir(proc) as entries:
         count = 0
@@ -177,7 +187,7 @@ def observe_daemon(proc, platform, expected, installed_service, owner):
                 # the held proc directory, never an operator-supplied symlink.
                 executable = os.open('exe', os.O_RDONLY | os.O_NONBLOCK, dir_fd=directory)
                 try:
-                    actual = hashed(executable, expected['service'], owner)
+                    actual = hashed(executable, expected, owner)
                     require(identity(actual) == identity(installed_service))
                     require(identity(os.stat('exe', dir_fd=directory)) == identity(actual))
                 finally:
@@ -219,6 +229,10 @@ def load_expected(release, manifest_sha256, configuration, configuration_sha256)
 
 def command(expected):
     validate_expected(expected)
+    return program_command(expected)
+
+
+def program_command(expected):
     with Path(__file__).open('rb') as source_file:
         source = source_file.read(PROGRAM_LIMIT + 1)
     require(len(source) <= PROGRAM_LIMIT)
@@ -236,17 +250,70 @@ def receipt(result, expected):
             and type(report['schema_version']) is int and report['schema_version'] == 1)
     validate_expected(report['files'])
     require(report['files'] == expected)
-    daemon = report['daemon']
+    validate_daemon(report['daemon'])
+    return report
+
+
+def validate_daemon(daemon):
     require(type(daemon) is dict and daemon.keys() == {'pid', 'start_ticks', 'socket_inode'})
     require(all(type(value) is int and 0 < value < 2**64 for value in daemon.values())
             and daemon['pid'] <= 4_194_304)
+
+
+def validate_go(expected):
+    # Reuse the same strict scalar bounds without allowing arbitrary guest
+    # paths, command lines or ports in the observer's input.
+    validate_file(expected, LIMITS['service'])
+
+
+def load_go_expected():
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / 'tests/system/base-inputs.json').read_text(), object_pairs_hook=unique)
+    baseline = json.loads((root / 'references/v1-baseline.json').read_text(), object_pairs_hook=unique)
+    envd = profile['envd']
+    require(envd['source_commit'] == baseline['source_revisions']['e2b_runtime_behavior_reference'])
+    expected = {key: envd[key] for key in ('bytes', 'sha256')}
+    validate_go(expected)
+    return {'source_commit': envd['source_commit'], 'version': envd['version'],
+            'go_version': envd['go_version'], 'file': expected}
+
+
+def go_command(expected):
+    validate_go(expected)
+    return program_command({'fixed_go': expected})
+
+
+def observe_go(expected):
+    validate_go(expected)
+    require(sys.platform == 'linux' and os.geteuid() == 0)
+    path = Path(GO_PATH)
+    before = installed_file(path, expected, 0, 0o755)
+    daemon = observe_process(Path('/proc'), expected, before, 0,
+                             (GO_PATH + '\0-verbose\0').encode())
+    require(identity(installed_file(path, expected, 0, 0o755)) == identity(before))
+    return {'schema_version': 1, 'fixed_go': expected, 'daemon': daemon}
+
+
+def go_receipt(result, expected):
+    validate_go(expected)
+    require(result.exit_code == 0 and not result.stderr
+            and len(result.stdout.encode()) <= REPORT_LIMIT)
+    report = json.loads(result.stdout, object_pairs_hook=unique)
+    require(type(report) is dict and report.keys() == {'schema_version', 'fixed_go', 'daemon'}
+            and type(report['schema_version']) is int and report['schema_version'] == 1
+            and report['fixed_go'] == expected)
+    validate_go(report['fixed_go'])
+    validate_daemon(report['daemon'])
     return report
 
 
 if __name__ == '__main__':
     try:
         require(len(sys.argv) == 2 and len(sys.argv[1].encode()) <= REPORT_LIMIT)
-        print(json.dumps(observe(json.loads(sys.argv[1], object_pairs_hook=unique)), sort_keys=True))
+        expected = json.loads(sys.argv[1], object_pairs_hook=unique)
+        report = (observe_go(expected['fixed_go']) if type(expected) is dict
+                  and expected.keys() == {'fixed_go'} else observe(expected))
+        print(json.dumps(report, sort_keys=True))
     except Exception:
         print('guest_identity_failed', file=sys.stderr)
         sys.exit(1)

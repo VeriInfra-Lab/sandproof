@@ -244,6 +244,52 @@ class GuestObservationTests(unittest.TestCase):
             with self.subTest(pins=pins), self.assertRaises(ValueError):
                 probe.load_expected(release, pins[0], config, pins[1])
 
+    def test_fixed_go_observation_uses_same_real_executable_and_socket_checks(self):
+        path = self.platform / 'envd'
+        path.write_bytes(b'private Go fixture')
+        path.chmod(0o755)
+        expected = artifacts.fingerprint(path, probe.LIMITS['service'])
+        executable = self.proc / '42/exe'
+        executable.unlink()
+        executable.symlink_to(path)
+        argv = (probe.GO_PATH + '\0-verbose\0').encode()
+        (self.proc / '42/cmdline').write_bytes(argv)
+        installed = probe.installed_file(path, expected, self.owner, 0o755)
+        def observe():
+            return probe.observe_process(self.proc, expected, installed, self.owner, argv)
+        self.assertEqual(observe(), dict(pid=42, start_ticks=123, socket_inode=77))
+        for changed in (argv[:-1], argv + b'-no-cgroups\0', b'other\0-verbose\0'):
+            (self.proc / '42/cmdline').write_bytes(changed)
+            with self.subTest(argv=changed), self.assertRaises(ValueError):
+                observe()
+        (self.proc / '42/cmdline').write_bytes(argv)
+        path.chmod(0o777)
+        with self.assertRaises(ValueError):
+            probe.installed_file(path, expected, self.owner, 0o755)
+
+    def test_go_pin_and_receipt_cannot_accept_rust_shape_wrong_bytes_or_boolean_identity(self):
+        pinned = probe.load_go_expected()
+        self.assertEqual(pinned['source_commit'], 'f455fd58fa3f289e78ce1de690c35968d8d29322')
+        expected = pinned['file']
+        report = dict(schema_version=1, fixed_go=expected,
+                      daemon=dict(pid=42, start_ticks=123, socket_inode=77))
+        result = lambda item: SimpleNamespace(exit_code=0, stdout=json.dumps(item), stderr='')
+        self.assertEqual(probe.go_receipt(result(report), expected), report)
+        for bad in (dict(report, files=self.expected), dict(report, schema_version=True),
+                    dict(report, fixed_go=dict(expected, bytes=1)),
+                    dict(report, daemon=dict(pid=True, start_ticks=123, socket_inode=77))):
+            with self.subTest(report=bad), self.assertRaises(ValueError):
+                probe.go_receipt(result(bad), expected)
+        args = shlex.split(probe.go_command(expected))
+        self.assertEqual(json.loads(args[4]), {'fixed_go': expected})
+        self.assertEqual(args[:3], ['/usr/bin/python3', '-I', '-c'])
+        for flags in ([], ['-O']):
+            checked = subprocess.run([sys.executable, '-I', *flags, '-c', args[3],
+                                      '{"fixed_go":{"bytes":true,"sha256":"wrong"}}'],
+                capture_output=True, text=True, timeout=5)
+            self.assertEqual((checked.returncode, checked.stdout, checked.stderr),
+                             (1, '', 'guest_identity_failed\n'))
+
 
 if __name__ == '__main__':
     unittest.main()

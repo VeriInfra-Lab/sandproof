@@ -83,13 +83,14 @@ async def observe_candidate(sandbox, candidate, *, asynchronous):
     return await asyncio.to_thread(observe_guest, sandbox, candidate)
 
 
-def guest_arguments(parser):
+def guest_arguments(parser, *, required=False):
     """One opt-in candidate/pin CLI shared by the original SDK probes."""
-    parser.add_argument("--template", help="explicit candidate template; defaults to base without Rust observation")
-    parser.add_argument("--guest-release", help="protected release directory with audited source and binaries")
-    parser.add_argument("--guest-manifest-sha256", help="independently pinned release manifest hash")
-    parser.add_argument("--guest-configuration", help="protected exact installed daemon configuration")
-    parser.add_argument("--guest-configuration-sha256", help="independently pinned configuration hash")
+    parser.add_argument("--template", required=required, help=("explicit Rust candidate template" if required
+                        else "explicit candidate template; defaults to base without Rust observation"))
+    parser.add_argument("--guest-release", required=required, help="protected release directory with audited source and binaries")
+    parser.add_argument("--guest-manifest-sha256", required=required, help="independently pinned release manifest hash")
+    parser.add_argument("--guest-configuration", required=required, help="protected exact installed daemon configuration")
+    parser.add_argument("--guest-configuration-sha256", required=required, help="independently pinned configuration hash")
 
 
 def barrier_command(directory):
