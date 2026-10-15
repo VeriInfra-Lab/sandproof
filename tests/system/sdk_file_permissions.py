@@ -29,7 +29,8 @@ from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import AuthenticationException, FileNotFoundException, InvalidArgumentException
 from e2b.sandbox.filesystem.filesystem import FileType
 
-from sdk_command_input import call
+from sdk_command_input import call, destroy_probes
+from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
 
 
@@ -204,14 +205,17 @@ async def isolation_cases(victim, control, directory, host_canary):
 
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
+    template, candidate = guest_candidate(args)
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     results = []
     for cls in (Sandbox, AsyncSandbox):
         live = []
         try:
             for _ in range(2):
-                live.append(await call(cls.create, template='base', timeout=300,
+                live.append(await call(cls.create, template=template, timeout=300,
                                        allow_internet_access=False, **owner))
+            before = [await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+                      for sandbox in live]
             victim, control = live
             directory = '/tmp/file-permissions-' + uuid.uuid4().hex
             await call(victim.commands.run, 'mkdir -m 0777 ' + shlex.quote(directory))
@@ -219,16 +223,24 @@ async def exercise(args):
             cases += await path_cases(victim, directory)
             cases += await batch_cases(victim, directory)
             cases += await isolation_cases(victim, control, directory, args.host_canary)
-            results.append(dict(sdk=cls.__name__, victim=victim.sandbox_id,
-                                control=control.sandbox_id, cases=cases))
+            after = [await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+                     for sandbox in live]
+            assert before == after, 'Rust guest identity changed during file cases'
+            item = dict(sdk=cls.__name__, victim=victim.sandbox_id,
+                        control=control.sandbox_id, cases=cases)
+            if candidate is not None:
+                item['rust_guests'] = [dict(sandbox_id=sandbox.sandbox_id, rust_guest=observation)
+                                       for sandbox, observation in zip(live, before)]
+            results.append(item)
         finally:
-            for sandbox in reversed(live):
-                _kill_confirmed = (await call(sandbox.kill))
-                assert _kill_confirmed, 'destruction not confirmed'
-    print(json.dumps(dict(sdk_version='2.51.0', results=results,
-                          scope='file user/home/ownership, selected path errors, partial batches, '
-                                'private VM path controls; invoking harness must audit host canary '
-                                'and exact resources; not guest DAC or exhaustive path coverage'), indent=2))
+            await destroy_probes(live)
+    report = dict(sdk_version='2.51.0', results=results,
+                  scope='file user/home/ownership, selected path errors, partial batches, '
+                        'private VM path controls; invoking harness must audit host canary '
+                        'and exact resources; not guest DAC or exhaustive path coverage')
+    if getattr(args, 'template', None) is not None:
+        report['template'] = template
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':
@@ -236,4 +248,5 @@ if __name__ == '__main__':
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
     parser.add_argument('--host-canary', required=True)
+    guest_arguments(parser)
     asyncio.run(exercise(parser.parse_args()))

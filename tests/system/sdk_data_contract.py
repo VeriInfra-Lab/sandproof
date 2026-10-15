@@ -74,6 +74,24 @@ async def observe_guest_async(sandbox, candidate):
     return {'identity': identity, 'observation': guest_probe.receipt(result, expected)}
 
 
+async def observe_candidate(sandbox, candidate, *, asynchronous):
+    """The same observation for the existing coroutine-based system probes."""
+    if candidate is None:
+        return None
+    if asynchronous:
+        return await observe_guest_async(sandbox, candidate)
+    return await asyncio.to_thread(observe_guest, sandbox, candidate)
+
+
+def guest_arguments(parser):
+    """One opt-in candidate/pin CLI shared by the original SDK probes."""
+    parser.add_argument("--template", help="explicit candidate template; defaults to base without Rust observation")
+    parser.add_argument("--guest-release", help="protected release directory with audited source and binaries")
+    parser.add_argument("--guest-manifest-sha256", help="independently pinned release manifest hash")
+    parser.add_argument("--guest-configuration", help="protected exact installed daemon configuration")
+    parser.add_argument("--guest-configuration-sha256", help="independently pinned configuration hash")
+
+
 def barrier_command(directory):
     gate = shlex.quote(f"{directory}/release.fifo")
     marker = shlex.quote(f"{directory}/starts")
@@ -263,9 +281,5 @@ if __name__ == "__main__":
     parser.add_argument("--api-url", required=True)
     parser.add_argument("--sandbox-url", required=True)
     parser.add_argument("--unprivileged-user", default="ubuntu")
-    parser.add_argument("--template", help="explicit candidate template; defaults to base without Rust observation")
-    parser.add_argument("--guest-release", help="protected release directory with audited source and binaries")
-    parser.add_argument("--guest-manifest-sha256", help="independently pinned release manifest hash")
-    parser.add_argument("--guest-configuration", help="protected exact installed daemon configuration")
-    parser.add_argument("--guest-configuration-sha256", help="independently pinned configuration hash")
+    guest_arguments(parser)
     exercise(parser.parse_args())

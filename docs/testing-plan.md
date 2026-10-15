@@ -553,6 +553,10 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 新入口已实现，尚未在真实 VM 执行。[私有文件/proc 夹具](../tools/tests/test_guest_probe.py)核对摘要/权限/链接、路径替换/读取中变更、错可执行文件、同字节不同 inode、错监听与重复进程、观察中身份变化及有限解析；[固定 SDK 编排检查](../tests/compat/test_guest_observation.py)使用受控 SDK 操作验证双模式候选选择、调用前后观察、无重放、拒绝后的原实例销毁及旧默认报告不变，不执行真实 create 或 KVM。原 C02 不传这些新选项，也不会导入或执行该可选观察程序；默认 base 调用及严格报告接受范围保持不变，可选 Rust 报告不能代替其精确资源审计或发布回执。来宾 root、内核和可信安装仍是工程观察前提；同字节回滚、恶意来宾伪造回复、完整 SDK 双端对照、真实 MMDS/服务重启及 E06/E07/E09 仍须分别验收。
 
+#496 的身份观察编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38791264714) 通过：源 386e3ebb6584f941f19d747937474e071b67e0d7、checkout 5f864540c204b03ac8ea3cf379267f336b3c68e4；固定 SDK 89 项、封存 Redis 与四项 CI 全部成功。该回执不表示真实 VM 中的身份观察已经执行。
+
+[stdin](../tests/system/sdk_command_input.py)、[命令参数](../tests/system/sdk_command_arguments.py)和[文件权限/部分批次](../tests/system/sdk_file_permissions.py)探针也接受上述同一组候选参数：同步/异步模式均在原调用集前后核对身份，文件探针分别核对两台实例，报告将每份观察绑定到原 sandbox_id；原调用输入、VM 寿命和未指定参数时的报告保持不变。已知实例按逆序各尝试一次销毁，某台拒绝、报错或取消不能跳过另一台；全部收尾异常连同原调用异常保留，创建结果未知不重试。[受控编排回归](../tests/compat/test_candidate_probes.py)覆盖这些顺序、身份变化拒绝和部分失败；它替换 SDK 操作及案例函数，不执行真实案例、主机 canary 或产品 VM。SDK 销毁确认仍须由获准的实机监督器补充精确资源审计。
+
 | 实机入口 | 必查内容 |
 |---|---|
 | [C02 固定监督](../tests/system/sdk_c02_acceptance.py) | 批准的精确提交、中心/宿主双产物与固定 Redis/TLS 清单、宿主/探针配置；单轮私有身份、实际角色进程回执、失败收尾和原资源审计 |
