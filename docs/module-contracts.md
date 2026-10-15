@@ -545,6 +545,10 @@ HTTP 只从原握手及同一次准备失败提取目录缺失事实，保留原
 
 已观察的原生失败按固定 Go 格式返回 Start EOS：管道带原 cmd/argv 的空格连接文本，PTY 另带原解析 cwd 和未经 u16 窄化的 cols/rows；后缀为 fork/exec /bin/sh 和固定 Linux errno 文本。EAGAIN、ENOMEM、ENFILE、EMFILE、ENOSPC 使用 resource_exhausted，其余正 errno 使用 invalid_argument。已登记 PID 保持烧号，原进程/登记 owner 仍等待实际失败收尾；错误回复不等于容量或清理证明。路径、命令及 errno 必须来自同次 Start，互斥事实、预算、期限和最后字节责任继续沿用原 sender。此分类不覆盖 worker 本身的 spawn、PTY 打开或其他准备阶段失败，也不把内部超时/取消改写成确定的用户启动错误。
 
+[管道准备](../sandbox-guest-runtime/src/process/preparation/pipes.rs)在 worker spawn 前依次分配 stdout、stderr 和启用时的 stdin，持有明确的父端/子端，全部异步注册成功后才移交原 worker。每条 pipe2 失败携带原通道与正 errno；异步注册、闸门目录/socket、PTY 或 worker spawn 的错误不能冒充管道失败。父端与配置中的子端均由原准备作用域持有，任一失败销毁本次部分材料；没有启动用户命令或发布 PID。准备观察只在原 Stopping/Stopped 与同一粗错误相符时可取，未知收尾、owner 丢失和外层期限不能借旧事实产生公开错误。
+
+同次管道失败经原 Start EOS 返回 internal，文本为 error creating <stdout|stderr|stdin> pipe for command '<原 cmd/argv>': pipe2: <固定 Linux errno>。固定 Go Handler.New 对管道错误使用 CodeInternal，即使 errno 表示资源耗尽也不套用后续 StartErrorCode；不反射私有 worker/socket 路径。回复和最后字节副本仍沿原预算/期限占额，未 spawn 的记录名额可归还，原请求名额继续由回复持有。管道创建仍早于 worker 内的 cwd/NUL 检查，多处同时故障时的完整 Go 拒绝顺序尚未对照；不能把本阶段映射称为整个 Start 等价。
+
 Start 中的 cmd/argv、请求 cwd 和环境键/值的 NUL 由原包装 worker 在工作目录 Stat 之后、READY 之前检查；词法展开或真实目录缺失仍优先。环境 NUL 优先于参数/cwd NUL，分别用 SGN1/SGN2 返回校验观察，不伪造正 errno 或已执行事实。握手保存互斥 PreparationRejection，原 owner 在停止/已停止且粗错误为 InvalidArgument 时才提供该观察；未知收尾、失去 owner、取消或期限不借旧事实改写。对应 Start EOS 使用原管道/PTY 前缀，后缀分别为 exec: environment variable contains NUL 与 fork/exec /bin/sh: invalid argument；不反射环境值。尚未 READY，因此不 claim/发布 PID，不执行用户代码，实际 wait/目录回收和最后响应字节继续保持原容量责任。raw LaunchSpec 仍在 spawn 前拒绝 NUL；初始化默认环境及空键/含等号键的既有拒绝不变，这些边界不因本观察获得完整 Go 兼容声明。
 
 Start 的工作目录展开失败由同一授权快照、已选账户和原请求的纯组合阶段记录，先于任何 worker 准备或 PID 登记。请求 cwd 非空时覆盖默认目录，缺失/空串仍采用默认目录；不支持的 ~other 展开按固定 Go 以 invalid_argument EOS 返回 failed to expand path '' for user '原账户': cannot expand user-specific home dir。路径空串来自原展开函数的失败返回值，用户名不取环境 USER，也不重新查询账户。缺省账户错误仍优先；NUL、参数/环境校验和预算故障不借此事实改变分类。已观察 Start 失败以互斥变体保留，并核对同次组件错误后才渲染；公共旧 ContextError 接口保持不变，回复期限、容量和最后字节责任沿用原发送器。

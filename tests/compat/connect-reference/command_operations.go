@@ -24,6 +24,7 @@ type commandOperationInput struct {
 	User         string
 	DefaultCwd   *string
 	Cmd, Native  string
+	Pipe         string
 	Args         []string
 	Env          map[string]string
 	Pty          bool
@@ -46,6 +47,8 @@ func operationError(headers http.Header) error {
 	}
 	input := operationRecord(data)
 	switch input.Kind {
+	case "pipe":
+		return pipeStartError(input)
 	case "nul":
 		return nulStartError(input)
 	case "native-resize":

@@ -43,7 +43,7 @@ pub mod worker;
 #[cfg(target_os = "linux")]
 pub use process::{
     CommandControl, CommandEvent, CommandInput, CommandPreparation, CommandProcess,
-    LaunchObservation, PreparationRejection, ProcessSignal,
+    LaunchObservation, PreparationPipe, PreparationRejection, ProcessSignal,
 };
 #[cfg(target_os = "linux")]
 pub use spec::{Credentials, LaunchSpec, ProcessLimits, PtySize};

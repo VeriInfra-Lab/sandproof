@@ -3,10 +3,27 @@ use super::reply;
 use sandproof_guest_runtime::{file_download::LinuxErrno, protocol::StartRequest};
 
 #[derive(Clone, Copy)]
+pub(crate) enum PipeStream {
+    Stdout,
+    Stderr,
+    Stdin,
+}
+impl PipeStream {
+    const fn name(self) -> &'static [u8] {
+        match self {
+            Self::Stdout => b"stdout",
+            Self::Stderr => b"stderr",
+            Self::Stdin => b"stdin",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(crate) enum LaunchFailureKind {
     Native(i32),
     EnvironmentNul,
     ArgumentNul,
+    Pipe { stream: PipeStream, errno: i32 },
 }
 
 pub(crate) struct LaunchFailure {
@@ -36,6 +53,12 @@ impl LaunchFailure {
     }
 
     pub(super) fn payload(&self, limit: usize) -> Result<Vec<u8>, reply::Error> {
+        if let LaunchFailureKind::Pipe { stream, errno } = self.kind {
+            if errno <= 0 || !self.is_pipe() {
+                return Err(reply::Error::UnclassifiedFault);
+            }
+            return self.pipe_payload(stream, errno, limit);
+        }
         crate::go_json::bounded(limit as u64, |put| {
             put(br#"{"error":{"code":""#)?;
             put(
@@ -78,7 +101,40 @@ impl LaunchFailure {
                 LaunchFailureKind::ArgumentNul => {
                     message(b": fork/exec /bin/sh: invalid argument")?;
                 }
+                LaunchFailureKind::Pipe { .. } => {
+                    return Err(crate::file_download::Error::InvalidConfiguration);
+                }
             }
+            put(br#""}}"#)
+        })
+        .map_err(|_| reply::Error::ResponseLimit)
+    }
+
+    pub(super) const fn is_pipe(&self) -> bool {
+        self.pty.is_none()
+    }
+
+    fn pipe_payload(
+        &self,
+        stream: PipeStream,
+        errno: i32,
+        limit: usize,
+    ) -> Result<Vec<u8>, reply::Error> {
+        crate::go_json::bounded(limit as u64, |put| {
+            // Fixed Handler.New wraps os.Pipe with CodeInternal, even for
+            // resource errno. StartErrorCode applies to later spawn failures.
+            put(br#"{"error":{"code":"internal","message":""#)?;
+            let mut message = |bytes: &[u8]| crate::go_json::string_content(bytes, put);
+            message(b"error creating ")?;
+            message(stream.name())?;
+            message(b" pipe for command '")?;
+            message(self.program.as_bytes())?;
+            for arg in &self.args {
+                message(b" ")?;
+                message(arg.as_bytes())?;
+            }
+            message(b"': pipe2: ")?;
+            message(LinuxErrno(errno).message().as_bytes())?;
             put(br#""}}"#)
         })
         .map_err(|_| reply::Error::ResponseLimit)

@@ -1,6 +1,6 @@
 use super::{
     AdmissionLimits, AdmissionStatus, CommandError, CommandPreparation, CommandReservation,
-    Context, Decision, Instant, PreparationSpec, Reply, Worker, oneshot, watch,
+    Context, Decision, Instant, PreparationSpec, Reply, Worker, oneshot, prepare_error, watch,
 };
 use sandproof_guest_runtime::PreparationRejection;
 use std::sync::{Arc, Mutex};
@@ -95,18 +95,23 @@ async fn run(
     // Mark before entering spawn: panic between a successful kernel spawn and
     // normal return may have created a child. Error return itself owns none.
     owner.unsettled = true;
-    let preparation = CommandPreparation::spawn(
+    let mut rejection = None;
+    let preparation = CommandPreparation::spawn_observed(
         &spec.worker,
         &spec.private_directory,
         spec.session,
         spec.command,
         &spec.launch,
         spec.process_limits,
+        &mut rejection,
     );
     drop(spec);
     let mut preparation = match preparation {
         Ok(preparation) => preparation,
         Err(error) => {
+            if let Ok(mut fact) = owner.rejection.lock() {
+                *fact = rejection;
+            }
             owner.stopped(prepare_error(&error));
             return;
         }
@@ -172,14 +177,6 @@ async fn run(
             .send_replace(AdmissionStatus::Dispatched(identity));
         owner.finished = true;
         owner.send(Reply::Dispatched(launch)); // dropped reply cannot cancel the new owner
-    }
-}
-
-fn prepare_error(error: &std::io::Error) -> CommandError {
-    match error.kind() {
-        std::io::ErrorKind::InvalidInput => CommandError::InvalidArgument,
-        std::io::ErrorKind::TimedOut => CommandError::DeadlineExceeded,
-        _ => CommandError::Unavailable,
     }
 }
 

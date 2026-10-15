@@ -11,6 +11,7 @@ use tokio::sync::Semaphore;
 mod expansion;
 mod native;
 mod nul;
+mod pipes;
 
 #[tokio::test]
 #[ignore = "explicit fixed Go missing-cwd error rendering; set SANDPROOF_GUEST_CONNECT_REFERENCE"]

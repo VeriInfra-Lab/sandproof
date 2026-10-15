@@ -22,6 +22,7 @@ mod preparation;
 mod registration;
 mod registry;
 mod streams;
+pub(crate) use preparation::prepare_error;
 pub use preparation::{
     AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationRequest,
     PreparationSpec,

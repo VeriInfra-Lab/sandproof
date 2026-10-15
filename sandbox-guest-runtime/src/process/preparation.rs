@@ -16,13 +16,17 @@ use super::{
 use crate::pty::PtyMaster;
 use crate::{LaunchSpec, ProcessLimits};
 
-/// A rejection reported by the original authenticated worker before READY.
-/// It proves neither cleanup nor a native syscall error or user execution.
+mod pipes;
+pub use pipes::PreparationPipe;
+
+/// An original preparation rejection before READY. Only Pipe carries a native
+/// syscall observation. None of these facts proves cleanup or user execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreparationRejection {
     MissingCwd,
     EnvironmentNul,
     ArgumentNul,
+    Pipe { stream: PreparationPipe, errno: i32 },
 }
 
 /// Owns a worker before its identity/gate handshake completes. Cancelling a
@@ -63,6 +67,32 @@ impl CommandPreparation {
         spec: &LaunchSpec,
         limits: ProcessLimits,
     ) -> io::Result<Self> {
+        Self::spawn_observed(
+            worker,
+            private_directory,
+            session,
+            command,
+            spec,
+            limits,
+            &mut None,
+        )
+    }
+
+    /// Original pre-spawn pipe failures are retained separately from local
+    /// setup, async registration and worker-spawn errors. Clears the supplied
+    /// observation before work; no failure here owns a live child.
+    /// # Errors
+    /// Same errors as spawn; a recorded pipe errno is not a cleanup receipt.
+    pub fn spawn_observed(
+        worker: &Path,
+        private_directory: &Path,
+        session: u64,
+        command: u64,
+        spec: &LaunchSpec,
+        limits: ProcessLimits,
+        rejection: &mut Option<PreparationRejection>,
+    ) -> io::Result<Self> {
+        *rejection = None;
         let limits = limits.validate()?;
         spec.validate()?;
         if session == 0 || command == 0 || !worker.is_absolute() {
@@ -82,6 +112,7 @@ impl CommandPreparation {
             .arg("--limit")
             .arg(limits.launch_bytes.to_string())
             .env_clear();
+        let mut pipes = None;
         let pty = if let Some((master, slave)) = terminal {
             builder
                 .stdin(Stdio::from(slave.try_clone()?))
@@ -89,17 +120,13 @@ impl CommandPreparation {
                 .stderr(Stdio::from(slave));
             Some(master)
         } else {
-            builder
-                .stdin(if spec.stdin {
-                    Stdio::piped()
-                } else {
-                    Stdio::null()
-                })
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+            pipes = Some(pipes::prepare(&mut builder, spec.stdin, rejection)?);
             None
         };
-        let child = builder.spawn()?;
+        let mut child = builder.spawn()?;
+        if let Some(pipes) = pipes {
+            pipes.attach(&mut child);
+        }
         // Command retains configured Stdio descriptors for possible reuse;
         // this one-shot builder must not keep the slave open across an await.
         drop(builder);

@@ -29,6 +29,8 @@ mod launch;
 mod native;
 #[path = "nul_http.rs"]
 mod nul;
+#[path = "pipe_http.rs"]
+mod pipes;
 #[path = "signal_native_http.rs"]
 mod signal_native;
 
