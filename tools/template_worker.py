@@ -128,12 +128,12 @@ class Commands:
         else:
             event("completed")
 
-    def run(self, args, *, daemon=False, env=None):
+    def run(self, args, *, daemon=False, env=None, cwd=None):
         if time.monotonic() >= self.deadline:
             raise TimeoutError("build deadline")
         child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, start_new_session=True,
-                                 env=COMMAND_ENV if env is None else env)
+                                 env=COMMAND_ENV if env is None else env, cwd=cwd)
         if daemon:
             return child
         try:
