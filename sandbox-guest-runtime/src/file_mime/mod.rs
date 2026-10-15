@@ -9,6 +9,7 @@ mod sniff;
 mod system;
 pub(crate) use catalog::lower;
 pub use catalog::{Catalog, CatalogLimits};
+pub(crate) use format::media_type;
 pub use format::{basename, disposition, extension};
 pub use sniff::{SNIFF_BYTES, detect};
 #[cfg(test)]

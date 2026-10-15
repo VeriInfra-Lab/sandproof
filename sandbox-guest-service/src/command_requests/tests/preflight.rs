@@ -9,6 +9,14 @@ use sandproof_guest_runtime::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "start.rs"]
+mod start;
+
+#[path = "account.rs"]
+mod account;
+#[path = "http.rs"]
+mod http;
+
 struct Accounts(Arc<AtomicUsize>);
 impl AccountSource for Accounts {
     fn lookup(&self, name: &str) -> Result<Account, AccountError> {
@@ -161,7 +169,10 @@ async fn timed_out_account_lookup_holds_request_and_auth_until_actual_exit() {
         .await
         .unwrap();
     let deadline = auth.deadline();
-    let task = tokio::spawn(async move { auth.prepare(&accounts, context_limits()).await });
+    let task = tokio::spawn(async move {
+        auth.prepare_http(&axum::http::Method::POST, &accounts, context_limits())
+            .await
+    });
     started.await.unwrap();
     tokio::time::pause();
     // Tokio rounds timer deadlines up to milliseconds. This deliberately

@@ -7,6 +7,9 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+#[path = "body_clock.rs"]
+mod clock;
+
 fn limits() -> CommandBodyLimits {
     CommandBodyLimits {
         message_bytes: 2048,

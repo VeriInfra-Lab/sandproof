@@ -33,6 +33,13 @@ pub struct CommandControl {
 }
 
 impl CommandControl {
+    /// Whether this original capability owns a terminal. This immutable fact
+    /// does not establish launch, liveness or success of an operation.
+    #[must_use]
+    pub fn has_pty(&self) -> bool {
+        self.pty.is_some()
+    }
+
     /// Resize this original terminal without waiting for input/output locks.
     /// # Errors
     /// Stale identity, a pipe command or actual terminal ioctl failure.
@@ -103,6 +110,13 @@ enum InputPort {
 }
 
 impl CommandInput {
+    /// Whether this exclusively borrowed input no longer owns a port. This is
+    /// not a process-liveness observation or evidence about a previous write.
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        self.port.is_none()
+    }
+
     /// # Errors
     /// Rejects stale identity, closed stdin and actual write errors. A failed
     /// or cancelled write may already have delivered a prefix; never replay it.
@@ -174,6 +188,14 @@ impl Drop for CommandProcess {
 }
 
 impl CommandProcess {
+    /// Observe a closed input marker still owned by this process. Before the
+    /// owner takes input after launch, a pipe marker without a port means stdin
+    /// was disabled. A missing/taken marker is not such an observation.
+    #[must_use]
+    pub fn has_closed_input(&self) -> bool {
+        self.stdin.as_ref().is_some_and(CommandInput::is_closed)
+    }
+
     /// Start only the trusted worker and bind its pidfd/creation evidence. User
     /// code remains behind a private gate until `release` is called. The owner
     /// must reserve capacity before prepare and public selector identity before
@@ -587,7 +609,7 @@ fn accounting(error: sandproof_guest_core::CommandError) -> io::Error {
     io::Error::other(format!("guest stream accounting: {error:?}"))
 }
 
-fn encode(spec: &LaunchSpec, maximum: usize) -> io::Result<Vec<u8>> {
+pub(crate) fn encode(spec: &LaunchSpec, maximum: usize) -> io::Result<Vec<u8>> {
     struct Bounded {
         bytes: Vec<u8>,
         maximum: usize,

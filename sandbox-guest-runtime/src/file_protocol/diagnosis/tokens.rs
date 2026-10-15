@@ -20,6 +20,7 @@ pub(super) enum Kind {
     ArrayClose,
     Comma,
 }
+#[derive(Clone)]
 pub(super) struct Token {
     pub(super) kind: Kind,
     pub(super) range: Range<usize>,
@@ -29,6 +30,7 @@ pub(super) struct Decoder<'a> {
     offset: usize,
     last: Kind,
     stack: Vec<Kind>,
+    peeked: Option<Result<Token, Failure>>,
 }
 impl<'a> Decoder<'a> {
     pub(super) fn new(body: &'a [u8]) -> Self {
@@ -37,9 +39,25 @@ impl<'a> Decoder<'a> {
             offset: 0,
             last: Kind::Start,
             stack: Vec::new(),
+            peeked: None,
         }
     }
     pub(super) fn read(&mut self) -> Result<Token, Failure> {
+        if let Some(result) = self.peeked.take() {
+            return result;
+        }
+        self.read_next()
+    }
+    pub(super) fn peek(&mut self) -> Result<Token, Failure> {
+        if self.peeked.is_none() {
+            self.peeked = Some(self.read_next());
+        }
+        self.peeked
+            .as_ref()
+            .expect("cached token or lexical failure")
+            .clone()
+    }
+    fn read_next(&mut self) -> Result<Token, Failure> {
         loop {
             let mut token = self.next()?;
             let invalid = || Failure::token(JsonReason::UnexpectedToken, &token);

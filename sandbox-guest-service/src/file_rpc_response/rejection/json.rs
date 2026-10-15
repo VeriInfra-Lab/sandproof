@@ -1,12 +1,29 @@
 use crate::{file_download::Error, go_json::Sink, go_quote};
-use sandproof_guest_runtime::file_protocol::{JsonError, JsonField, JsonReason};
+use sandproof_guest_runtime::file_protocol::{JsonError, JsonReason};
 
 pub(super) fn message(error: &JsonError, put: &mut Sink<'_>) -> Result<(), Error> {
+    if !matches!(
+        error.method(),
+        "Stat" | "MakeDir" | "ListDir" | "Move" | "Remove"
+    ) {
+        return Err(Error::InvalidConfiguration);
+    }
+    message_in(error, "filesystem", put)
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn command_message(error: &JsonError, put: &mut Sink<'_>) -> Result<(), Error> {
+    message_in(error, "process", put)
+}
+
+fn message_in(error: &JsonError, namespace: &str, put: &mut Sink<'_>) -> Result<(), Error> {
     put(b"unmarshal message: ")?;
     if error.reason() == JsonReason::Empty {
         return put(b"zero-length payload is not a valid JSON object");
     }
-    put(b"unmarshal into *filesystem.")?;
+    put(b"unmarshal into *")?;
+    put(namespace.as_bytes())?;
+    put(b".")?;
     put(error.method().as_bytes())?;
     // The original protobuf library chooses ASCII space or NBSP from its Go
     // binary hash. Emit its ASCII spelling; oracle comparison normalizes only
@@ -15,7 +32,10 @@ pub(super) fn message(error: &JsonError, put: &mut Sink<'_>) -> Result<(), Error
     match error.reason() {
         JsonReason::UnexpectedEof => return put(b"unexpected EOF"),
         JsonReason::Depth => return put(b"exceeded max recursion depth"),
-        JsonReason::Duplicate | JsonReason::InvalidField(_) => {}
+        JsonReason::Duplicate
+        | JsonReason::DuplicateMap
+        | JsonReason::Oneof(_)
+        | JsonReason::InvalidField(_) => {}
         _ => put(b"syntax error ")?,
     }
     let (line, column) = error.position();
@@ -53,13 +73,20 @@ pub(super) fn message(error: &JsonError, put: &mut Sink<'_>) -> Result<(), Error
             put(b"duplicate field ")?;
             put(error.raw())
         }
+        JsonReason::DuplicateMap => {
+            put(b"duplicate map key ")?;
+            put(error.raw())
+        }
+        JsonReason::Oneof(oneof) => {
+            put(b"error parsing ")?;
+            put(error.raw())?;
+            put(b", oneof ")?;
+            put(oneof.name().as_bytes())?;
+            put(b" is already set")
+        }
         JsonReason::InvalidField(field) => {
             put(b"invalid value for ")?;
-            put(if field == JsonField::Depth {
-                b"uint32"
-            } else {
-                b"string"
-            })?;
+            put(field.kind().as_bytes())?;
             put(b" field ")?;
             put(field.name().as_bytes())?;
             put(b": ")?;
@@ -69,6 +96,22 @@ pub(super) fn message(error: &JsonError, put: &mut Sink<'_>) -> Result<(), Error
             unreachable!("unpositioned reason returned above")
         }
     }
+}
+
+#[test]
+fn command_diagnostic_cannot_be_relabelled_as_a_file_error() {
+    use crate::command_requests::Error as RequestError;
+    let result = sandproof_guest_runtime::protocol::decode_request_observed::<RequestError>(
+        "List",
+        b"bad",
+        64,
+        false,
+        |_| unreachable!(),
+    );
+    let Err(RequestError::Json(error)) = result else {
+        panic!("command diagnostic required");
+    };
+    assert!(message(&error, &mut |_| Ok(())).is_err());
 }
 
 fn control(byte: u8, put: &mut Sink<'_>) -> Result<(), Error> {

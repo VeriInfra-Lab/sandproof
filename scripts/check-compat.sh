@@ -16,14 +16,14 @@ if [[ "$(uname -s)" == Linux ]]; then
     data_gateway::sdk_tests:: -- --test-threads=1 --nocapture
   echo "SDK/gateway composition checks passed; authorization, host relay and VM are not tested."
   cargo clippy -p sandproof-guest-runtime --all-targets --features sdk-contract-tests --locked -- -D warnings
-  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_protocol --test protocol --test command_responses --test command_requests -- --nocapture
+  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_protocol --test sdk_registered --test protocol --test command_responses --test command_requests -- --nocapture
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_files -- --nocapture
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_io -- --nocapture
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_transfer -- --nocapture
   cargo test -p sandproof-guest-runtime --locked --test file_protocol
   cargo test -p sandproof-guest-runtime --locked --test filesystem
   cargo test -p sandproof-guest-runtime --locked --test file_transfer
-  cargo test -p sandproof-guest-runtime --locked --lib --test context --test owner --test preparation --test pty
+  cargo test -p sandproof-guest-runtime --locked --lib --test context --test owner --test preparation --test process --test pty
   echo "SDK/guest commands and real unary/raw/multipart files passed through test routers; this is not a complete guest service or Go envd/KVM comparison."
   cargo clippy -p sandproof-guest-service --all-targets --locked -- -D warnings
   cargo test -p sandproof-guest-service --all-targets --locked

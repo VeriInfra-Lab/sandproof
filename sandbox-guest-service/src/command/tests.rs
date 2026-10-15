@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn timeout_headers_use_one_absolute_origin_and_reject_ambiguous_wire_values() {
+fn timeout_headers_use_the_fixed_first_value_and_one_absolute_execution_origin() {
     let start = Instant::now();
     let mut headers = HeaderMap::new();
     assert!(
@@ -11,9 +11,14 @@ fn timeout_headers_use_one_absolute_origin_and_reject_ambiguous_wire_values() {
             .is_none()
     );
     for (wire, ms) in [
+        ("", 0),
         ("0", 0),
+        ("-1", 0),
+        ("+0", 0),
+        ("-000000001", 0),
         ("0000000000", 0),
         ("1", 1),
+        ("+1", 1),
         ("9999999999", 9_999_999_999),
     ] {
         headers.insert("connect-timeout-ms", wire.parse().unwrap());
@@ -23,7 +28,16 @@ fn timeout_headers_use_one_absolute_origin_and_reject_ambiguous_wire_values() {
             (ms != 0).then(|| start + Duration::from_millis(ms))
         );
     }
-    for wire in ["", "-1", "+1", " 1", "1 ", "1.0", "10000000000", "forever"] {
+    for wire in [
+        "+",
+        "-",
+        " 1",
+        "1 ",
+        "1.0",
+        "10000000000",
+        "forever",
+        "+9999999999",
+    ] {
         headers.insert("connect-timeout-ms", wire.parse().unwrap());
         assert!(matches!(
             ExecutionDeadline::from_headers(&headers, start),
@@ -31,8 +45,11 @@ fn timeout_headers_use_one_absolute_origin_and_reject_ambiguous_wire_values() {
         ));
     }
     headers.insert("connect-timeout-ms", "1".parse().unwrap());
-    headers.append("connect-timeout-ms", "1".parse().unwrap());
-    assert!(ExecutionDeadline::from_headers(&headers, start).is_err());
+    headers.append("connect-timeout-ms", "invalid".parse().unwrap());
+    assert_eq!(
+        ExecutionDeadline::from_headers(&headers, start).unwrap().0,
+        Some(start + Duration::from_millis(1))
+    );
     assert!(ExecutionDeadline::from_duration(start, Duration::MAX).is_err());
 }
 

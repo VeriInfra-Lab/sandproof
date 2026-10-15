@@ -14,6 +14,7 @@ use std::{
 
 #[cfg(target_os = "linux")]
 mod preflight;
+mod token;
 
 struct Meta;
 impl MetadataSource for Meta {
@@ -114,6 +115,56 @@ fn invalid_budgets_reject_before_admission() {
             Err(AdmissionError::InvalidConfiguration)
         ));
     }
+}
+
+#[test]
+fn cancelled_or_expired_command_gzip_keeps_auth_until_queued_worker_exits() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for expire in [false, true] {
+            let session = session().await;
+            let pool = CommandRequests::new(limits()).unwrap();
+            let (entered, started) = tokio::sync::oneshot::channel();
+            let (resume, resumed) = std::sync::mpsc::channel();
+            let occupied = tokio::task::spawn_blocking(move || {
+                entered.send(()).unwrap();
+                resumed.recv_timeout(Duration::from_secs(5)).unwrap();
+            });
+            started.await.unwrap();
+            let auth = authenticate(&pool, &session).await;
+            let deadline = auth.deadline();
+            let wire = crate::file_rpc_requests::tests::gzip::compressed(b"{}");
+            let mut decoding = Box::pin(auth.decode_with(
+                Body::from(wire),
+                deadline,
+                |bytes, limit, deadline, cancelled| {
+                    compression::decode("List", bytes, limit, 7, deadline, cancelled)
+                },
+            ));
+            pending(decoding.as_mut()).await;
+            if expire {
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_secs(31)).await;
+                let failure = decoding.await.err().unwrap();
+                assert_eq!(failure.error(), Error::DeadlineExceeded);
+                drop(failure);
+                tokio::time::resume();
+            } else {
+                drop(decoding);
+            }
+            full(&pool);
+            let mut init = Box::pin(session.initialize(br#"{"accessToken":"token"}"#));
+            pending(init.as_mut()).await;
+            resume.send(()).unwrap();
+            occupied.await.unwrap();
+            init.await.unwrap();
+            released(&pool).await;
+        }
+    });
 }
 
 #[tokio::test]
@@ -296,7 +347,7 @@ async fn cancelled_decoder_keeps_auth_and_capacity_until_its_actual_exit() {
     let task = tokio::spawn(auth.decode_with(
         Body::from("{}"),
         Instant::now() + Duration::from_secs(30),
-        move |_, _| {
+        move |_, _, _, _| {
             entered.send(()).unwrap();
             let _guard = worker_gate
                 .1

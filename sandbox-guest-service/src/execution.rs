@@ -1,13 +1,14 @@
 //! Authenticated default/context composition. This does not register a public
 //! command or release a process. The caller retains `AuthPermit` through actual
 //! admission/dispatch and separately owns process/public-selector capacity.
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::HeaderMap;
 use sandproof_guest_runtime::accounts::{Account, AccountError, AccountLimits, lookup_local_user};
-use sandproof_guest_runtime::protocol::StartRequest;
+use sandproof_guest_runtime::protocol::{ProcessConfig, StartRequest};
 use sandproof_guest_runtime::{LaunchSpec, PtySize};
 use tokio::sync::Semaphore;
 
@@ -174,36 +175,26 @@ impl AuthPermit {
         accounts: &AccountPool<S>,
         settings: &ExecutionSettings,
     ) -> Result<LaunchSpec, ContextError> {
+        command_process(request, settings)?;
         let limit = settings.limits;
-        if limit.bytes == 0
-            || limit.env_entries == 0
-            || limit.arguments == 0
-            || limit.username_bytes == 0
-            || limit.authorization_bytes == 0
-            || !settings.daemon_workdir.starts_with('/')
-            || settings.daemon_workdir.contains('\0')
-            || settings.daemon_path.contains('\0')
-        {
-            return Err(ContextError::InvalidArgument);
-        }
-        let process = request
-            .process
-            .as_ref()
-            .ok_or(ContextError::InvalidArgument)?;
-        if process.cmd.is_empty()
-            || process.cmd.contains('\0')
-            || process.args.iter().any(|arg| arg.contains('\0'))
-        {
-            return Err(ContextError::InvalidArgument);
-        }
-        if process.args.len() > limit.arguments {
-            return Err(ContextError::ResourceExhausted);
-        }
         let name = selected_user(headers, &self.defaults().user, limit)?;
         let account = accounts.lookup(name.clone()).await?;
         if account.name != name {
             return Err(ContextError::Unavailable);
         }
+        self.compose_command(request, account, settings)
+    }
+
+    // The account has already been selected under this exact authorization.
+    // This pure phase cannot refresh account lookup or execute a command.
+    pub(crate) fn compose_command(
+        &self,
+        request: &StartRequest,
+        account: Account,
+        settings: &ExecutionSettings,
+    ) -> Result<LaunchSpec, ContextError> {
+        let limit = settings.limits;
+        let process = command_process(request, settings)?;
         let cwd = resolve_path(
             process
                 .cwd
@@ -240,6 +231,7 @@ impl AuthPermit {
             return Err(ContextError::ResourceExhausted);
         }
         Ok(LaunchSpec {
+            envd_wrapper_path: Some(settings.daemon_path.clone()),
             program: process.cmd.clone(),
             args: process.args.clone(),
             cwd: cwd.into(),
@@ -253,6 +245,41 @@ impl AuthPermit {
             credentials: Some(account.credentials),
         })
     }
+}
+
+pub(crate) fn validate_command_settings(settings: &ExecutionSettings) -> Result<(), ContextError> {
+    let limit = settings.limits;
+    if limit.bytes == 0
+        || limit.env_entries == 0
+        || limit.arguments == 0
+        || limit.username_bytes == 0
+        || limit.authorization_bytes == 0
+        || !settings.daemon_workdir.starts_with('/')
+        || settings.daemon_workdir.contains('\0')
+        || settings.daemon_path.contains('\0')
+    {
+        return Err(ContextError::InvalidArgument);
+    }
+    Ok(())
+}
+
+fn command_process<'a>(
+    request: &'a StartRequest,
+    settings: &ExecutionSettings,
+) -> Result<Cow<'a, ProcessConfig>, ContextError> {
+    validate_command_settings(settings)?;
+    let limit = settings.limits;
+    let process = request
+        .process
+        .as_ref()
+        .map_or_else(|| Cow::Owned(ProcessConfig::default()), Cow::Borrowed);
+    if process.cmd.contains('\0') || process.args.iter().any(|arg| arg.contains('\0')) {
+        return Err(ContextError::InvalidArgument);
+    }
+    if process.args.len() > limit.arguments {
+        return Err(ContextError::ResourceExhausted);
+    }
+    Ok(process)
 }
 
 fn selected_user(

@@ -83,6 +83,7 @@ impl Fixture {
             session: 1,
             command: 1,
             launch: LaunchSpec {
+                envd_wrapper_path: None,
                 program: "/bin/sh".into(),
                 args: vec![
                     "-c".into(),

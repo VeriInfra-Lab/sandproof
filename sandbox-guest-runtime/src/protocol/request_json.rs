@@ -11,6 +11,10 @@ use std::collections::{BTreeMap, btree_map::Entry};
 
 pub(super) fn bytes<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
     let encoded = String::deserialize(deserializer)?;
+    decode_bytes(&encoded).map_err(|_| de::Error::custom("invalid bytes"))
+}
+
+pub(crate) fn decode_bytes(encoded: &str) -> Result<Vec<u8>, base64::DecodeError> {
     // The original chooses padding using the parsed string's byte length BEFORE
     // DecodeString ignores CR/LF. Trying four decoders would accept other input.
     let padding = if encoded.len().is_multiple_of(4) {
@@ -39,9 +43,7 @@ pub(super) fn bytes<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8
     } else {
         encoded.as_bytes()
     };
-    engine
-        .decode(input)
-        .map_err(|_| de::Error::custom("invalid bytes"))
+    engine.decode(input)
 }
 
 pub(super) fn signal<'de, D: Deserializer<'de>>(

@@ -12,9 +12,39 @@ use base64::engine::general_purpose::STANDARD;
 use sandproof_guest_core::Channel;
 use serde::{Deserialize, Serialize};
 
-mod request_json;
+mod content_type;
+mod end_stream;
+mod request_body;
+pub(crate) mod request_json;
 use crate::file_protocol::request_json::{prepare_command, uint32};
+pub use content_type::canonical_content_type;
+pub use end_stream::{EndStreamError, EndStreamReason};
+pub use request_body::FramingError;
 use request_json::{bytes, envs, signal};
+
+pub use crate::file_protocol::JsonContentType;
+pub use crate::file_protocol::{JsonError, JsonField, JsonOneof, JsonReason};
+
+/// Select only the fixed Connect JSON codecs for a known unary/stream method.
+/// None means unselected, not an HTTP rejection of other original protocols.
+/// Complete request headers must be bounded before this MIME allocation.
+/// # Errors
+/// Invalid or exceeded field budget.
+pub fn json_content_type(
+    value: &str,
+    limit: usize,
+    stream: bool,
+) -> Result<Option<JsonContentType>, ProtocolError> {
+    crate::file_protocol::content_type::select(
+        value,
+        limit,
+        if stream {
+            "application/connect+json"
+        } else {
+            "application/json"
+        },
+    )
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProtocolError {
@@ -246,9 +276,12 @@ struct UpdateRequest {
 struct Empty {}
 
 /// Decode one complete HTTP body after bounded HTTP collection. Start/Connect
-/// require exactly one uncompressed Connect envelope, including its full
-/// declared length; unary methods use unframed JSON. Extra envelopes, flags,
-/// compression and trailing bytes are never silently discarded.
+/// require one uncompressed data envelope with its full declared length and
+/// optionally one final, validated Connect EOS metadata envelope. Unary methods
+/// use unframed JSON. More data messages, compression, malformed metadata and
+/// trailing bytes are never silently discarded.
+/// A complete zero-length standard envelope is the protobuf default message,
+/// as in Connect's stream decoder; an absent envelope is still malformed.
 ///
 /// # Errors
 /// Returns a payload-free protocol error on invalid framing/JSON, unknown
@@ -258,34 +291,85 @@ pub fn decode_request(
     body: &[u8],
     max_message_bytes: usize,
 ) -> Result<Request, ProtocolError> {
-    if max_message_bytes == 0 {
-        return Err(ProtocolError::ResourceExhausted);
-    }
-    let payload = if matches!(method, "Start" | "Connect") {
-        let header: &[u8; 5] = body
-            .get(..5)
-            .and_then(|slice| slice.try_into().ok())
-            .ok_or(ProtocolError::InvalidArgument)?;
-        let size = u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
-        if size > max_message_bytes {
-            return Err(ProtocolError::ResourceExhausted);
-        }
-        if header[0] != 0 || body.len().checked_sub(5) != Some(size) {
-            return Err(ProtocolError::InvalidArgument);
-        }
-        &body[5..]
-    } else {
-        if body.len() > max_message_bytes {
-            return Err(ProtocolError::ResourceExhausted);
-        }
-        body
-    };
-    if !matches!(
+    request_body::decode(
         method,
-        "Start" | "Connect" | "List" | "SendInput" | "CloseStdin" | "SendSignal" | "Update"
-    ) {
-        return Err(ProtocolError::Unimplemented);
-    }
+        body,
+        max_message_bytes,
+        false,
+        |_| Err(ProtocolError::InvalidArgument),
+        |_| ProtocolError::InvalidArgument,
+        &(decode_message, end_stream::validate),
+    )
+}
+
+/// Decode a request whose HTTP layer selected gzip. Streaming envelopes may
+/// still carry identity messages; only compressed nonempty payloads invoke
+/// `expand`. Unary nonempty payloads always invoke it. The trusted expander must
+/// bound allocations and enforce original cancellation/deadline while working.
+/// Raw and expanded messages are independently checked against the same limit.
+/// # Errors
+/// Original framing/JSON/budget rejection or the expander's unchanged error.
+pub fn decode_request_with_gzip<E: From<ProtocolError>>(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
+) -> Result<Request, E> {
+    request_body::decode(
+        method,
+        body,
+        max_message_bytes,
+        true,
+        expand,
+        |_| ProtocolError::InvalidArgument.into(),
+        &(
+            |method: &str, payload: &[u8]| decode_message(method, payload).map_err(Into::into),
+            |payload: &[u8]| end_stream::validate(payload).map_err(Into::into),
+        ),
+    )
+}
+
+/// Decode the selected command encoding and retain bounded framing, protobuf
+/// JSON and EOS JSON observations at their actual receive stage. Diagnostics are observed
+/// only after actual decode failure; diagnostic disagreement stays unclassified.
+/// The expander has the same trusted allocation/cancellation obligations as
+/// `decode_request_with_gzip`; gzip is the already selected HTTP request encoding.
+/// # Errors
+/// Original protocol/budget, framing/JSON/EOS observation or unchanged gzip error.
+pub fn decode_request_observed<
+    E: From<ProtocolError> + From<FramingError> + From<JsonError> + From<EndStreamError>,
+>(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    gzip: bool,
+    expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
+) -> Result<Request, E> {
+    request_body::decode(
+        method,
+        body,
+        max_message_bytes,
+        gzip,
+        expand,
+        E::from,
+        &(
+            |method: &str, payload: &[u8]| {
+                decode_message(method, payload).map_err(|error| {
+                    if error == ProtocolError::InvalidArgument
+                        && let Some(observed) =
+                            crate::file_protocol::diagnosis::observe_command(method, payload)
+                    {
+                        return E::from(observed);
+                    }
+                    E::from(error)
+                })
+            },
+            end_stream::validate_observed,
+        ),
+    )
+}
+
+fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError> {
     let prepared = prepare_command(payload)?;
     let payload = prepared.as_ref();
     match method {

@@ -8,7 +8,7 @@ use crate::{
 };
 use tokio::time::Instant;
 mod compression;
-mod json;
+pub(super) mod json;
 pub use compression::GzipRejection;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

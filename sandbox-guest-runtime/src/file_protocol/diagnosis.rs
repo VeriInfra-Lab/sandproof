@@ -6,7 +6,9 @@
 // BSD license: diagnosis/PROTOBUF-LICENSE.
 use std::{fmt, ops::Range};
 
+mod command;
 mod tokens;
+pub(crate) use command::observe as observe_command;
 use tokens::{Decoder, Kind, Token};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +17,18 @@ pub enum JsonField {
     Source,
     Destination,
     Depth,
+    Cmd,
+    Args,
+    Cwd,
+    Tag,
+    Stdin,
+    StdinBytes,
+    PtyBytes,
+    Signal,
+    Pid,
+    Cols,
+    Rows,
+    MapValue,
 }
 impl JsonField {
     #[must_use]
@@ -24,6 +38,42 @@ impl JsonField {
             Self::Source => "source",
             Self::Destination => "destination",
             Self::Depth => "depth",
+            Self::Cmd => "cmd",
+            Self::Args => "args",
+            Self::Cwd => "cwd",
+            Self::Tag => "tag",
+            Self::Stdin | Self::StdinBytes => "stdin",
+            Self::PtyBytes => "pty",
+            Self::Signal => "signal",
+            Self::Pid => "pid",
+            Self::Cols => "cols",
+            Self::Rows => "rows",
+            Self::MapValue => "value",
+        }
+    }
+    #[must_use]
+    pub const fn kind(self) -> &'static str {
+        match self {
+            Self::Depth | Self::Pid | Self::Cols | Self::Rows => "uint32",
+            Self::Stdin => "bool",
+            Self::StdinBytes | Self::PtyBytes => "bytes",
+            Self::Signal => "enum",
+            _ => "string",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JsonOneof {
+    Selector,
+    Input,
+}
+impl JsonOneof {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Selector => "process.ProcessSelector.selector",
+            Self::Input => "process.ProcessInput.input",
         }
     }
 }
@@ -40,6 +90,8 @@ pub enum JsonReason {
     InvalidCharacter(u8),
     InvalidEscape,
     Duplicate,
+    DuplicateMap,
+    Oneof(JsonOneof),
     InvalidField(JsonField),
 }
 
@@ -76,6 +128,7 @@ impl JsonError {
     }
 }
 
+#[derive(Clone)]
 struct Failure {
     reason: JsonReason,
     position: usize,
@@ -112,6 +165,10 @@ pub(super) fn observe(method: &str, body: &[u8]) -> Option<JsonError> {
     } else {
         message(method, body).err()?
     };
+    Some(finish(method, body, error))
+}
+
+fn finish(method: &'static str, body: &[u8], error: Failure) -> JsonError {
     let prefix = &body[..error.position];
     let line = prefix.split(|b| *b == b'\n').count();
     let column_bytes = prefix.rsplit(|b| *b == b'\n').next().unwrap_or_default();
@@ -121,12 +178,12 @@ pub(super) fn observe(method: &str, body: &[u8]) -> Option<JsonError> {
         at += tokens::rune_length(&column_bytes[at..]).unwrap_or(1);
         column += 1;
     }
-    Some(JsonError {
+    JsonError {
         method,
         reason: error.reason,
         position: (line, column),
         raw: body[error.raw].to_vec(),
-    })
+    }
 }
 
 fn message(method: &str, body: &[u8]) -> Result<(), Failure> {

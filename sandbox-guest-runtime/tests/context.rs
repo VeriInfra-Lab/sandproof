@@ -180,7 +180,11 @@ async fn authenticated_defaults_reach_real_worker_without_inheriting_daemon_envi
             (key.to_owned(), value.to_owned())
         })
         .collect();
-    assert_eq!(actual, spec.env);
+    // The fixed /bin/sh wrapper supplies its actual working directory. Keep
+    // exact equality for all variables, including no other daemon inheritance.
+    let mut expected = spec.env.clone();
+    expected.insert("PWD".into(), spec.cwd.to_str().unwrap().into());
+    assert_eq!(actual, expected);
     assert_eq!(actual["VALUE"], "request");
     assert_eq!(actual["USER"], "root");
     assert_eq!(
@@ -206,6 +210,7 @@ async fn numeric_identity_is_applied_even_when_environment_claims_root() {
     .unwrap()
     .credentials;
     let spec = sandproof_guest_runtime::LaunchSpec {
+        envd_wrapper_path: None,
         program: "/bin/sh".into(),
         args: vec![
             "-c".into(),
@@ -261,6 +266,7 @@ async fn numeric_identity_is_applied_even_when_environment_claims_root() {
 async fn sentinel_uid_cannot_mean_keep_daemon_identity() {
     let directory = tempfile::tempdir().unwrap();
     let spec = sandproof_guest_runtime::LaunchSpec {
+        envd_wrapper_path: None,
         program: "/bin/sh".into(),
         args: vec!["-c".into(), "printf ran > effect".into()],
         cwd: directory.path().into(),

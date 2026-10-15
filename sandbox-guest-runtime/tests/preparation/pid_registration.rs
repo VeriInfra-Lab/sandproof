@@ -6,6 +6,9 @@ use std::{fs::File, os::unix::fs::MetadataExt};
 #[path = "pid_registry.rs"]
 mod registry;
 
+#[path = "request_ownership.rs"]
+mod request_ownership;
+
 fn binding() -> Binding {
     Binding::new([0x31; 32]).unwrap()
 }

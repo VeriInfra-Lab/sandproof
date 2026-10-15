@@ -9,8 +9,8 @@ use crate::protocol::{ProtocolError, encode_json, null_default, parse};
 
 pub(crate) mod request_json;
 use request_json::uint32;
-mod diagnosis;
-pub use diagnosis::{JsonError, JsonField, JsonReason};
+pub(crate) mod diagnosis;
+pub use diagnosis::{JsonError, JsonField, JsonOneof, JsonReason};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodeFailure {
@@ -18,7 +18,7 @@ pub enum DecodeFailure {
     Json(JsonError),
 }
 
-mod content_type;
+pub(crate) mod content_type;
 pub use content_type::{JsonContentType, json_content_type};
 mod fault;
 pub use fault::{FaultContext, FaultStage, FileFault};

@@ -23,7 +23,8 @@ mod registration;
 mod registry;
 mod streams;
 pub use preparation::{
-    AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationSpec,
+    AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationRequest,
+    PreparationSpec,
 };
 pub use registration::{PidRegisteredCommand, PidRegistrar, RegistrationError};
 pub use registry::{
@@ -47,6 +48,28 @@ pub enum CommandError {
     ExecFailed(i32),
     Lagged,
     Unavailable,
+}
+
+/// A precise observation from the original input attempt. Existing component
+/// callers retain their original coarse error; HTTP may consume the fact.
+pub(crate) enum InputFailure {
+    Command(CommandError),
+    StdinClosed,
+    StdinDisabled,
+}
+impl InputFailure {
+    pub(crate) const fn error(self) -> CommandError {
+        match self {
+            Self::Command(error) => error,
+            Self::StdinClosed => CommandError::Unavailable,
+            Self::StdinDisabled => CommandError::ClosedInput,
+        }
+    }
+}
+impl From<CommandError> for InputFailure {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,25 +126,19 @@ impl ExecutionDeadline {
             .ok_or(CommandError::InvalidArgument)
     }
 
-    /// Parse the fixed Connect wire range, not a new SDK field. HTTP admission
-    /// must call this once; parsing again on Connect must only bound that stream.
+    /// Parse the fixed Start execution timeout within the Connect wire range.
+    /// Selects the first field; empty/zero/negative means no execution deadline.
+    /// HTTP admission must separately reject an expired request before effects:
+    /// wire zero/negative already expires that context. Capture this once at
+    /// Start's original execution origin, never again on a later Connect.
     /// # Errors
-    /// Duplicate, empty, signed, nondecimal and >10-digit values are rejected.
+    /// Malformed signed decimal, >10-byte value or unrepresentable deadline.
     pub fn from_headers(headers: &HeaderMap, start: Instant) -> Result<Self, CommandError> {
-        let mut values = headers.get_all("connect-timeout-ms").iter();
-        let first = values.next();
-        if values.next().is_some() {
-            return Err(CommandError::InvalidArgument);
-        }
-        let Some(value) = first else {
-            return Ok(Self(None));
-        };
-        let value = value.to_str().map_err(|_| CommandError::InvalidArgument)?;
-        if value.is_empty() || value.len() > 10 || !value.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(CommandError::InvalidArgument);
-        }
-        let ms = value.parse().map_err(|_| CommandError::InvalidArgument)?;
-        Self::from_duration(start, Duration::from_millis(ms))
+        let duration = crate::connect_timeout::execution_duration(headers)
+            .map_err(|_| CommandError::InvalidArgument)?;
+        duration.map_or(Ok(Self(None)), |duration| {
+            Self::from_duration(start, duration)
+        })
     }
 }
 
@@ -217,8 +234,19 @@ impl CommandReservation {
         authorization: AuthPermit,
         deadline: ExecutionDeadline,
     ) -> (ManagedCommand, CommandSubscription) {
+        self.start_registered_admitted(process, authorization, deadline, Arc::new(()))
+    }
+
+    fn start_registered_admitted(
+        self,
+        process: CommandProcess,
+        authorization: AuthPermit,
+        deadline: ExecutionDeadline,
+        request: Arc<dyn Send + Sync>,
+    ) -> (ManagedCommand, CommandSubscription) {
         let identity = process.identity();
         let control = process.control();
+        let stdin_disabled = !control.has_pty() && process.has_closed_input();
         let (status, _) = watch::channel(CommandStatus {
             launch: LaunchStatus::Pending,
             completion: None,
@@ -229,6 +257,7 @@ impl CommandReservation {
         let shared = Arc::new(Shared {
             identity,
             control,
+            stdin_disabled,
             status,
             streams: Mutex::new(streams::Subscribers::default()),
             subscriber_slots: Arc::new(Semaphore::new(self.limits.subscribers)),
@@ -244,6 +273,7 @@ impl CommandReservation {
             process,
             authorization,
             deadline,
+            request,
             Arc::clone(&command.shared),
         );
         (command, output)
@@ -253,6 +283,7 @@ impl CommandReservation {
 struct Shared {
     identity: CommandIdentity,
     control: CommandControl,
+    stdin_disabled: bool,
     status: watch::Sender<CommandStatus>,
     streams: Mutex<streams::Subscribers>,
     subscriber_slots: Arc<Semaphore>,
@@ -269,6 +300,10 @@ pub struct ManagedCommand {
 }
 
 impl ManagedCommand {
+    pub(crate) fn has_pty(&self) -> bool {
+        self.shared.control.has_pty()
+    }
+
     #[must_use]
     pub fn identity(&self) -> CommandIdentity {
         self.shared.identity
@@ -341,6 +376,16 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
     ) -> Result<(), CommandError> {
+        self.write_input_observed(identity, bytes)
+            .await
+            .map_err(InputFailure::error)
+    }
+
+    pub(crate) async fn write_input_observed(
+        &self,
+        identity: CommandIdentity,
+        bytes: &[u8],
+    ) -> Result<(), InputFailure> {
         self.write_channel(identity, bytes, false).await
     }
 
@@ -352,7 +397,9 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
     ) -> Result<(), CommandError> {
-        self.write_channel(identity, bytes, true).await
+        self.write_channel(identity, bytes, true)
+            .await
+            .map_err(InputFailure::error)
     }
 
     /// Resize the original terminal independently of a blocked input writer.
@@ -372,10 +419,10 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
         pty: bool,
-    ) -> Result<(), CommandError> {
+    ) -> Result<(), InputFailure> {
         self.check(identity)?;
         if bytes.len() > self.shared.limits.stdin_bytes {
-            return Err(CommandError::ResourceExhausted);
+            return Err(CommandError::ResourceExhausted.into());
         }
         let mut input = self
             .shared
@@ -383,17 +430,34 @@ impl ManagedCommand {
             .try_lock()
             .map_err(|_| CommandError::ResourceExhausted)?;
         self.require_started()?;
-        let writer = input.as_mut().ok_or(CommandError::ClosedInput)?;
+        let writer = input.as_mut().ok_or_else(|| {
+            if !pty && self.shared.stdin_disabled {
+                InputFailure::StdinDisabled
+            } else {
+                InputFailure::Command(CommandError::ClosedInput)
+            }
+        })?;
         tokio::select! {
             biased;
             () = input_finished(&self.shared) => {
                 input.take();
-                Err(CommandError::ClosedInput)
+                Err(CommandError::ClosedInput.into())
             }
             result = async {
-                if pty { writer.write_pty(identity, bytes).await }
-                else { writer.write_input(identity, bytes).await }
-            } => result.map_err(|error| input_error(&error)),
+                // Borrowed under the original exclusive writer lock; the
+                // actual attempt still runs once. No later PID/state lookup
+                // may infer this reason from a generic BrokenPipe/Unavailable.
+                let closed_stdin = !pty && !self.has_pty() && writer.is_closed();
+                let result = if pty { writer.write_pty(identity, bytes).await }
+                    else { writer.write_input(identity, bytes).await };
+                result.map_err(|error| {
+                    if closed_stdin && error.kind() == std::io::ErrorKind::BrokenPipe {
+                        InputFailure::StdinClosed
+                    } else {
+                        InputFailure::Command(input_error(&error))
+                    }
+                })
+            } => result,
         }
     }
 

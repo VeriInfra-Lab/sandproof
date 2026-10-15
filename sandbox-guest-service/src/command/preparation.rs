@@ -2,6 +2,8 @@
 //! grants no public PID policy: only its caller can confirm the required
 //! registration, and only then may the original worker be dispatched.
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use sandproof_guest_core::CommandIdentity;
@@ -24,6 +26,21 @@ pub struct PreparationSpec {
     pub command: u64,
     pub launch: LaunchSpec,
     pub process_limits: ProcessLimits,
+}
+
+/// Original request capacity and absolute deadline from the trusted admission
+/// boundary. This does not authenticate or reset command execution time.
+pub struct PreparationRequest {
+    pub deadline: Instant,
+    pub owner: Arc<dyn Send + Sync>,
+}
+
+struct Context {
+    authorization: AuthPermit,
+    execution: ExecutionDeadline,
+    limits: AdmissionLimits,
+    until: Instant,
+    request: Arc<dyn Send + Sync>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -64,9 +81,19 @@ pub enum AdmissionStatus {
 }
 
 #[derive(Clone)]
-pub struct AdmissionObserver(watch::Receiver<AdmissionStatus>);
+pub struct AdmissionObserver(watch::Receiver<AdmissionStatus>, Arc<AtomicBool>);
 
 impl AdmissionObserver {
+    // The immutable fact is published before Stopping. Unknown cleanup or
+    // owner loss cannot be relabelled as this original preparation failure.
+    pub(crate) fn missing_working_directory(&self) -> bool {
+        matches!(
+            self.status(),
+            AdmissionStatus::Stopping(CommandError::InvalidArgument)
+                | AdmissionStatus::Stopped(CommandError::InvalidArgument)
+        ) && self.1.load(Ordering::Acquire)
+    }
+
     #[must_use]
     pub fn status(&self) -> AdmissionStatus {
         *self.0.borrow()
@@ -100,6 +127,9 @@ pub struct PendingCommand {
     observer: AdmissionObserver,
     decision: Option<oneshot::Sender<Decision>>,
     reply: oneshot::Receiver<Reply>,
+    // The storage task owns this ticket. Even if preparation has already
+    // stopped, queued/running durable PID work retains original request credit.
+    _request: Arc<dyn Send + Sync>,
 }
 
 impl PendingCommand {
@@ -186,28 +216,67 @@ impl CommandOwners {
         execution: ExecutionDeadline,
         limits: AdmissionLimits,
     ) -> Result<PendingCommand, CommandError> {
-        let start = Instant::now();
-        let limits = limits.validate(start)?;
-        let until = execution.0.map_or(start + limits.ready_timeout, |at| {
-            at.min(start + limits.ready_timeout)
-        });
-        let reservation = self.reserve()?;
-        let (status, observer) = watch::channel(AdmissionStatus::Preparing);
-        let (decision, receive_decision) = oneshot::channel();
-        let (reply, receive_reply) = oneshot::channel();
-        owner::spawn(
+        let deadline = Instant::now()
+            .checked_add(limits.ready_timeout)
+            .ok_or(CommandError::InvalidArgument)?;
+        self.prepare_command_admitted(
             spec,
             authorization,
             execution,
             limits,
-            until,
+            PreparationRequest {
+                deadline,
+                owner: Arc::new(()),
+            },
+        )
+    }
+
+    /// Same original preparation/registration owner, retaining caller admission
+    /// through actual preparation cleanup, persistent PID work and gate release.
+    /// The request deadline can only shorten the preparation/decision deadline;
+    /// after dispatch acceptance it does not replace the execution deadline.
+    /// The caller separately retains a clone through response transport.
+    /// # Errors
+    /// Invalid limits, expired admission or full process record capacity.
+    /// # Panics
+    /// Requires a running Tokio runtime.
+    pub fn prepare_command_admitted(
+        &self,
+        spec: PreparationSpec,
+        authorization: AuthPermit,
+        execution: ExecutionDeadline,
+        limits: AdmissionLimits,
+        request: PreparationRequest,
+    ) -> Result<PendingCommand, CommandError> {
+        let start = Instant::now();
+        let limits = limits.validate(start)?;
+        if start >= request.deadline {
+            return Err(CommandError::DeadlineExceeded);
+        }
+        let until = request.deadline.min(start + limits.ready_timeout);
+        let until = execution.0.map_or(until, |at| at.min(until));
+        let reservation = self.reserve()?;
+        let (status, observer) = watch::channel(AdmissionStatus::Preparing);
+        let missing_cwd = Arc::new(AtomicBool::new(false));
+        let (decision, receive_decision) = oneshot::channel();
+        let (reply, receive_reply) = oneshot::channel();
+        owner::spawn(
+            spec,
+            Context {
+                authorization,
+                execution,
+                limits,
+                until,
+                request: request.owner.clone(),
+            },
             receive_decision,
-            owner::AdmissionOwner::new(reservation, status, reply),
+            owner::AdmissionOwner::new(reservation, status, reply, missing_cwd.clone()),
         );
         Ok(PendingCommand {
-            observer: AdmissionObserver(observer),
+            observer: AdmissionObserver(observer, missing_cwd),
             decision: Some(decision),
             reply: receive_reply,
+            _request: request.owner,
         })
     }
 }
@@ -228,5 +297,44 @@ impl Worker {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cwd_fact_does_not_relabel_expiry_owner_loss_or_unknown_cleanup() {
+        let (status, receiver) = watch::channel(AdmissionStatus::Preparing);
+        let fact = Arc::new(AtomicBool::new(false));
+        let observer = AdmissionObserver(receiver, fact.clone());
+        status.send_replace(AdmissionStatus::Stopped(CommandError::InvalidArgument));
+        assert!(!observer.missing_working_directory());
+        fact.store(true, Ordering::Release);
+        for state in [
+            AdmissionStatus::Preparing,
+            AdmissionStatus::Ready(CommandIdentity {
+                session: 1,
+                command: 1,
+                pid: 1,
+                start_ticks: 1,
+            }),
+            AdmissionStatus::Stopping(CommandError::DeadlineExceeded),
+            AdmissionStatus::Stopped(CommandError::Cancelled),
+            AdmissionStatus::Stopped(CommandError::Unavailable),
+            AdmissionStatus::CleanupUnknown,
+            AdmissionStatus::OwnerLost,
+        ] {
+            status.send_replace(state);
+            assert!(!observer.missing_working_directory(), "{state:?}");
+        }
+        for state in [
+            AdmissionStatus::Stopping(CommandError::InvalidArgument),
+            AdmissionStatus::Stopped(CommandError::InvalidArgument),
+        ] {
+            status.send_replace(state);
+            assert!(observer.missing_working_directory());
+        }
     }
 }

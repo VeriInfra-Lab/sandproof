@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchSpec {
+    /// Trusted daemon PATH for the pinned envd shell/priority wrapper. This
+    /// selects the wrapper; it is never taken from the user command's PATH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envd_wrapper_path: Option<String>,
     pub program: String,
     pub args: Vec<String>,
     pub cwd: PathBuf,
@@ -76,10 +80,14 @@ impl LaunchSpec {
         if let Some(credentials) = &self.credentials {
             credentials.validate()?;
         }
-        if self.program.is_empty()
+        if (self.program.is_empty() && self.envd_wrapper_path.is_none())
             || !self.cwd.is_absolute()
             || self.cwd.as_os_str().as_bytes().contains(&0)
             || self.program.contains('\0')
+            || self
+                .envd_wrapper_path
+                .as_ref()
+                .is_some_and(|path| path.contains('\0'))
             || self.args.iter().any(|arg| arg.contains('\0'))
             || self.env.iter().any(|(key, value)| {
                 key.is_empty() || key.contains(['=', '\0']) || value.contains('\0')

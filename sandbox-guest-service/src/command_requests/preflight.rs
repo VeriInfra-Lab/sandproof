@@ -5,14 +5,15 @@ use sandproof_guest_runtime::accounts::Account;
 use std::sync::Arc;
 
 pub struct Prepared {
-    authenticated: Authenticated,
-    // Preserve the exact explicit account for future Start context composition.
+    pub(super) authenticated: Authenticated,
+    // Preserve the exact explicit account for Start context composition.
     // PID operations don't switch credentials or refresh this lookup.
     account: Option<Account>,
 }
 pub struct Ready {
     pub(super) decoded: Decoded,
-    pub(super) _account: Option<Account>,
+    pub(super) account: Option<Account>,
+    pub(super) response: Option<super::http::ResponseFormat>,
 }
 impl Authenticated {
     /// Resolve only an explicit Basic username before decoding. Absent or
@@ -29,6 +30,7 @@ impl Authenticated {
     ) -> Result<Prepared, Failure> {
         let deadline = self.deadline();
         let owner = self.admitted.owner.clone();
+        let mut unknown_user = None;
         let result = async {
             check_deadline(deadline)?;
             if limits.username_bytes == 0 || limits.authorization_bytes == 0 {
@@ -48,12 +50,18 @@ impl Authenticated {
             let authenticated = Arc::new(self);
             let account = if let Some(name) = name {
                 if name.is_empty() || name.contains(['\0', '\r', '\n', ':']) {
+                    unknown_user = Some(crate::upload_response::UnknownUser::new(&name));
                     return Err(Error::Context(ContextError::Unauthenticated));
                 }
                 let account = accounts
                     .lookup_admitted(name.clone(), deadline, authenticated.clone())
                     .await
-                    .map_err(Error::Context)?;
+                    .map_err(|error| {
+                        if error == ContextError::Unauthenticated {
+                            unknown_user = Some(crate::upload_response::UnknownUser::new(&name));
+                        }
+                        Error::Context(error)
+                    })?;
                 if account.name != name {
                     return Err(Error::Context(ContextError::Unavailable));
                 }
@@ -69,7 +77,11 @@ impl Authenticated {
             })
         }
         .await;
-        result.map_err(|error| Failure::new(error, deadline, owner))
+        result.map_err(|error| {
+            let mut failure = Failure::new(error, deadline, owner);
+            failure.unknown_user = unknown_user;
+            failure
+        })
     }
 }
 impl Prepared {
@@ -99,11 +111,42 @@ impl Prepared {
                 .authenticated
                 .decode(method, body, protocol_deadline)
                 .await?,
-            _account: self.account,
+            account: self.account,
+            response: None,
+        })
+    }
+
+    pub(super) async fn decode_selected(
+        self,
+        method: &'static str,
+        body: Body,
+        protocol_deadline: Instant,
+        gzip: bool,
+    ) -> Result<Ready, Failure> {
+        let chunk = self.authenticated.admitted.limits.body.frame_bytes;
+        Ok(Ready {
+            decoded: self
+                .authenticated
+                .decode_with(
+                    body,
+                    protocol_deadline,
+                    move |bytes, limit, deadline, cancelled| {
+                        super::compression::decode_selected(
+                            method, bytes, limit, chunk, deadline, cancelled, gzip,
+                        )
+                    },
+                )
+                .await?,
+            account: self.account,
+            response: None,
         })
     }
 }
 impl Ready {
+    pub(crate) fn owner(&self) -> crate::owned_body::Owner {
+        self.decoded.authenticated.admitted.owner.clone()
+    }
+
     #[must_use]
     pub const fn request(&self) -> &Request {
         &self.decoded.request

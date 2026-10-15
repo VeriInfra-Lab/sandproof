@@ -12,6 +12,36 @@ fn binding() -> Binding {
 }
 
 #[test]
+fn absent_process_metadata_stays_absent_and_uses_its_own_wire_budget() {
+    let entries = [ProcessInfo {
+        config: None,
+        pid: u32::MAX,
+        tag: None,
+    }];
+    let budget = encode_response(Response::List(&entries), 1024)
+        .unwrap()
+        .len();
+    let registry = PidRegistry::new(
+        binding(),
+        1,
+        RegistryLimits {
+            metadata_bytes: budget,
+            ..limits()
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        registry.reserve(&ProcessConfig::default(), None),
+        Err(RegistryError::ResourceExhausted)
+    ));
+    let reservation = registry.reserve_optional(None, None).unwrap();
+    assert!(reservation.metadata.config.is_none());
+    assert_eq!(registry.available_slots(), 0);
+    drop(reservation);
+    assert_eq!(registry.available_slots(), 1);
+}
+
+#[test]
 fn invalid_configuration_and_oversized_metadata_never_consume_capacity() {
     assert!(matches!(
         PidRegistry::new(binding(), 0, limits()),

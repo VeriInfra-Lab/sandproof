@@ -15,6 +15,9 @@ use sandproof_guest_runtime::{
 
 const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
 
+#[path = "process/wrapper.rs"]
+mod wrapper;
+
 fn stop_owned(process: &CommandProcess) -> std::os::fd::OwnedFd {
     use rustix::process::{
         Pid, PidfdFlags, Signal, WaitId, WaitIdOptions, pidfd_open, pidfd_send_signal, waitid,
@@ -63,6 +66,7 @@ fn limits() -> ProcessLimits {
 
 fn shell(directory: &Path, script: &str, stdin: bool) -> LaunchSpec {
     LaunchSpec {
+        envd_wrapper_path: None,
         program: "/bin/sh".into(),
         args: vec!["-c".into(), script.into()],
         cwd: directory.into(),

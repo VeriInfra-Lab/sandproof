@@ -135,6 +135,10 @@ impl AuthPermit {
 }
 
 impl<M: MetadataSource> Session<M> {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn shares_state(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
     /// # Errors
     /// Refuses zero, inconsistent or unrepresentable initialization limits.
     pub fn new(metadata: M, limits: InitLimits) -> Result<Self, ServiceError> {

@@ -72,6 +72,10 @@ func main() {
 	registerRequests(mux)
 	registerCommandResponses(mux)
 	registerCommandRequests(mux)
+	registerCommandAccounts(mux)
+	registerDefaultAccounts(mux)
+	registerFramedCommandRequests(mux)
+	registerCommandOperations(mux)
 	// The envd account failure observation is controlled here. Both wrappers
 	// below are the original authn/Connect implementation, not a replacement.
 	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
@@ -160,6 +164,13 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		if mode == "L" {
+			fmt.Fprintln(out, string(launchWrapper(data)))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
 		target, body := path, data
 		commandStream := false
 		var compression struct {
@@ -169,14 +180,26 @@ func main() {
 			Error  bool
 		}
 		switch mode {
+		case "R":
+			target, body = operationEndpoint(data)
+		case "E":
+			target, body = encodedCommandEndpoint(data)
+		case "F":
+			target, body = framedCommandRequestEndpoint(data)
+		case "D":
+			target, body = commandDefaultAccountPath, []byte{0, 0, 0, 0, 2, '{', '}'}
+		case "Y":
+			target, body = commandAccountPath, []byte("invalid unread request")
 		case "Q":
 			target, body = commandRequestEndpoint(data)
-		case "O":
+		case "O", "N":
 			target, body, commandStream = commandResponseEndpoint(data)
 		case "J", "K":
 			target, body = requestEndpoint(data)
 		case "M":
 			target, body = methodEndpoint(data)
+		case "V", "W":
+			target, body = commandHeaderEndpoint(data)
 		case "P":
 			target, body = propertyEndpoint(data), []byte("{}")
 		case "A":
@@ -208,14 +231,35 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
-		if mode == "O" {
+		if mode == "O" || mode == "N" {
 			req.Header.Set("X-Fixture-Command", hex.EncodeToString(data))
 			if commandStream {
 				req.Header.Set("Content-Type", "application/connect+json")
 			}
+			if mode == "N" {
+				commandSuccessHeaders(req, data, commandStream)
+			}
 		}
 		if mode == "M" {
 			methodHeaders(req, data)
+		}
+		if mode == "V" || mode == "W" {
+			commandHeaders(req, data)
+		}
+		if mode == "Y" {
+			commandAccountHeaders(req, data)
+		}
+		if mode == "D" {
+			commandDefaultAccountHeaders(req, data)
+		}
+		if mode == "F" {
+			req.Header.Set("Content-Type", "application/connect+json")
+		}
+		if mode == "E" {
+			encodedCommandHeaders(req, data)
+		}
+		if mode == "R" {
+			operationHeaders(req, data)
 		}
 		if mode == "G" || mode == "Z" {
 			req.Header.Del("Accept-Encoding")
@@ -272,6 +316,45 @@ func main() {
 		}
 		if mode == "O" {
 			fmt.Fprintln(out, commandResponseObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "N" {
+			fmt.Fprintln(out, commandSuccessObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "V" {
+			fmt.Fprintln(out, commandHeaderObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "F" {
+			fmt.Fprintln(out, framedCommandRequestObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "E" {
+			if encodedCommandRecord(data).Reply {
+				fmt.Fprintln(out, commandHeaderReply(res, responseBody))
+			} else {
+				fmt.Fprintln(out, encodedCommandObservation(res, responseBody))
+			}
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "W" || mode == "Y" || mode == "D" || mode == "R" {
+			fmt.Fprintln(out, commandHeaderReply(res, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}

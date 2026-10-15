@@ -81,6 +81,7 @@ pub(super) fn spawn(
     process: CommandProcess,
     authorization: AuthPermit,
     deadline: ExecutionDeadline,
+    request: Arc<dyn Send + Sync>,
     shared: Arc<Shared>,
 ) {
     // Construct before spawn: dropping an unpolled task must also quarantine
@@ -89,13 +90,21 @@ pub(super) fn spawn(
         shared: Arc::clone(&shared),
         settled: false,
     };
-    tokio::spawn(run(process, authorization, deadline, shared, guard));
+    tokio::spawn(run(
+        process,
+        authorization,
+        deadline,
+        request,
+        shared,
+        guard,
+    ));
 }
 
 async fn run(
     mut process: CommandProcess,
     authorization: AuthPermit,
     mut deadline: ExecutionDeadline,
+    request: Arc<dyn Send + Sync>,
     shared: Arc<Shared>,
     mut guard: OwnerGuard,
 ) {
@@ -153,6 +162,9 @@ async fn run(
         }
         return;
     }
+    // Preparation and actual release have settled. Later execution, wait and
+    // output remain charged to the independent command record/subscriptions.
+    drop(request);
     let mut retry = None;
     loop {
         let observation = tokio::select! {

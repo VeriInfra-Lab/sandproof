@@ -1,7 +1,10 @@
 use super::{
-    AdmissionLimits, AdmissionStatus, AuthPermit, CommandError, CommandPreparation,
-    CommandReservation, Decision, ExecutionDeadline, Instant, PreparationSpec, Reply, Worker,
-    oneshot, watch,
+    AdmissionLimits, AdmissionStatus, CommandError, CommandPreparation, CommandReservation,
+    Context, Decision, Instant, PreparationSpec, Reply, Worker, oneshot, watch,
+};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 /// Constructed before spawn, so even an unpolled task resolves its observers.
@@ -11,6 +14,7 @@ pub(super) struct AdmissionOwner {
     reply: Option<oneshot::Sender<Reply>>,
     unsettled: bool,
     finished: bool,
+    missing_cwd: Arc<AtomicBool>,
 }
 
 impl AdmissionOwner {
@@ -18,6 +22,7 @@ impl AdmissionOwner {
         reservation: CommandReservation,
         status: watch::Sender<AdmissionStatus>,
         reply: oneshot::Sender<Reply>,
+        missing_cwd: Arc<AtomicBool>,
     ) -> Self {
         Self {
             reservation: Some(reservation),
@@ -25,6 +30,7 @@ impl AdmissionOwner {
             reply: Some(reply),
             unsettled: false,
             finished: false,
+            missing_cwd,
         }
     }
 
@@ -60,33 +66,26 @@ impl Drop for AdmissionOwner {
 
 pub(super) fn spawn(
     spec: PreparationSpec,
-    authorization: AuthPermit,
-    execution: ExecutionDeadline,
-    limits: AdmissionLimits,
-    until: Instant,
+    context: Context,
     decision: oneshot::Receiver<Decision>,
     owner: AdmissionOwner,
 ) {
-    tokio::spawn(run(
-        spec,
-        authorization,
-        execution,
-        limits,
-        until,
-        decision,
-        owner,
-    ));
+    tokio::spawn(run(spec, context, decision, owner));
 }
 
 async fn run(
     spec: PreparationSpec,
-    authorization: AuthPermit,
-    execution: ExecutionDeadline,
-    limits: AdmissionLimits,
-    until: Instant,
+    context: Context,
     mut decision: oneshot::Receiver<Decision>,
     mut owner: AdmissionOwner,
 ) {
+    let Context {
+        authorization,
+        execution,
+        limits,
+        until,
+        request,
+    } = context;
     if owner.reply.as_ref().is_none_or(oneshot::Sender::is_closed) {
         owner.stopped(CommandError::Cancelled);
         return;
@@ -118,7 +117,12 @@ async fn run(
         biased;
         () = tokio::time::sleep_until(until) => Err(CommandError::DeadlineExceeded),
         _ = &mut decision => Err(CommandError::Cancelled),
-        result = preparation.finish() => result.map_err(|error| prepare_error(&error)),
+        result = preparation.finish() => {
+            if result.is_err() && preparation.missing_working_directory() {
+                owner.missing_cwd.store(true, Ordering::Release);
+            }
+            result.map_err(|error| prepare_error(&error))
+        },
     };
     let process = match prepared {
         Ok(process) => process,
@@ -163,7 +167,8 @@ async fn run(
         return;
     }
     if let Some(reservation) = owner.reservation.take() {
-        let launch = reservation.start_registered(process, authorization, execution);
+        let launch =
+            reservation.start_registered_admitted(process, authorization, execution, request);
         owner
             .status
             .send_replace(AdmissionStatus::Dispatched(identity));

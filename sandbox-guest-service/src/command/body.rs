@@ -9,15 +9,29 @@ use sandproof_guest_runtime::protocol::{Event, encode_event, encode_stream_end};
 use tokio::{sync::oneshot, time::Instant};
 
 use super::{CommandError, CommandOutput, CommandSubscription, LaunchStatus, OutputEvent};
-use crate::owned_body::Owner;
+use crate::{command_clock::Clock, owned_body::Owner};
 
 /// Explicit component budgets, not wire-header parsing or production defaults.
 #[derive(Clone, Copy, Debug)]
 pub struct CommandBodyLimits {
     /// JSON payload bytes per frame, excluding its five-byte Connect header.
     pub message_bytes: usize,
-    /// Idle time after downstream releases a frame. Must be positive.
+    /// Period after the last Start/data frame owner releases it. Keepalive
+    /// frames do not reset the schedule. Must be positive.
     pub keepalive: Duration,
+}
+impl CommandBodyLimits {
+    pub(crate) fn validate(self, now: Instant) -> Result<(), CommandBodyError> {
+        if self.message_bytes == 0
+            || self.message_bytes > u32::MAX as usize
+            || self.message_bytes > isize::MAX as usize - 5
+            || self.keepalive.is_zero()
+            || now.checked_add(self.keepalive).is_none()
+        {
+            return Err(CommandBodyError::InvalidArgument);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,7 +57,7 @@ struct Frame {
     bytes: Vec<u8>,
     _lease: Arc<Lease>,
     output: Option<CommandOutput>,
-    released: Option<oneshot::Sender<()>>,
+    released: Option<oneshot::Sender<Instant>>,
 }
 impl AsRef<[u8]> for Frame {
     fn as_ref(&self) -> &[u8] {
@@ -55,7 +69,7 @@ impl Drop for Frame {
         drop(std::mem::take(&mut self.bytes));
         drop(self.output.take());
         if let Some(released) = self.released.take() {
-            let _ = released.send(());
+            let _ = released.send(Instant::now());
         }
     }
 }
@@ -71,8 +85,13 @@ struct Producer {
     lease: Arc<Lease>,
     limits: CommandBodyLimits,
     deadline: Instant,
-    released: Option<oneshot::Receiver<()>>,
+    released: Option<Acknowledgement>,
+    clock: Option<Clock>,
     stage: Stage,
+}
+struct Acknowledgement {
+    received: oneshot::Receiver<Instant>,
+    resets_clock: bool,
 }
 
 impl CommandSubscription {
@@ -94,14 +113,7 @@ impl CommandSubscription {
         deadline: Instant,
     ) -> Result<Body, CommandBodyError> {
         let now = Instant::now();
-        if limits.message_bytes == 0
-            || limits.message_bytes > u32::MAX as usize
-            || limits.message_bytes > isize::MAX as usize - 5
-            || limits.keepalive.is_zero()
-            || now.checked_add(limits.keepalive).is_none()
-        {
-            return Err(CommandBodyError::InvalidArgument);
-        }
+        limits.validate(now)?;
         if deadline <= now {
             return Err(CommandBodyError::DeadlineExceeded);
         }
@@ -128,6 +140,7 @@ impl CommandSubscription {
             limits,
             deadline,
             released: None,
+            clock: None,
             stage: Stage::Start(first),
         };
         Ok(Body::from_stream(stream::unfold(
@@ -159,11 +172,18 @@ impl Producer {
     }
     async fn next_inner(&mut self) -> Result<Option<Frame>, CommandBodyError> {
         if let Some(released) = self.released.as_mut() {
-            released
+            let sent = (&mut released.received)
                 .await
                 .map_err(|_| CommandBodyError::Command(CommandError::Unavailable))?;
+            if released.resets_clock {
+                self.clock = Some(
+                    Clock::after(sent, self.limits.keepalive)
+                        .ok_or(CommandBodyError::InvalidArgument)?,
+                );
+            }
             self.released.take();
         }
+        let resets_clock = matches!(self.stage, Stage::Start(_));
         let (bytes, output) = match &mut self.stage {
             Stage::Start(first) => (std::mem::take(first), None),
             Stage::Output => return self.output().await.map(Some),
@@ -178,13 +198,20 @@ impl Producer {
             Stage::Start(_) => Stage::Output,
             _ => Stage::Done,
         };
-        Ok(Some(self.frame(bytes, output)))
+        Ok(Some(self.frame(bytes, output, resets_clock)))
     }
     async fn output(&mut self) -> Result<Frame, CommandBodyError> {
+        let clock = self
+            .clock
+            .as_mut()
+            .ok_or(CommandBodyError::Command(CommandError::Unavailable))?;
         let event = tokio::select! {
             biased;
             event = self.subscription.next() => Some(event),
-            () = tokio::time::sleep(self.limits.keepalive) => None,
+            () = tokio::time::sleep_until(clock.deadline()) => {
+                clock.consume(Instant::now()).ok_or(CommandBodyError::InvalidArgument)?;
+                None
+            },
         };
         let (encoded, output) = match event {
             None => (
@@ -206,11 +233,20 @@ impl Producer {
             Some(None) => return Err(CommandBodyError::Command(CommandError::Unavailable)),
         };
         let bytes = encoded.map_err(|_| CommandBodyError::ResourceExhausted)?;
-        Ok(self.frame(bytes, output))
+        let resets_clock = output.is_some();
+        Ok(self.frame(bytes, output, resets_clock))
     }
-    fn frame(&mut self, bytes: Vec<u8>, output: Option<CommandOutput>) -> Frame {
+    fn frame(
+        &mut self,
+        bytes: Vec<u8>,
+        output: Option<CommandOutput>,
+        resets_clock: bool,
+    ) -> Frame {
         let (released, receiver) = oneshot::channel();
-        self.released = Some(receiver);
+        self.released = Some(Acknowledgement {
+            received: receiver,
+            resets_clock,
+        });
         Frame {
             bytes,
             _lease: Arc::clone(&self.lease),

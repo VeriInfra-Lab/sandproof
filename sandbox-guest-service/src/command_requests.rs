@@ -26,11 +26,20 @@ mod dispatch;
 #[cfg(target_os = "linux")]
 mod preflight;
 #[cfg(target_os = "linux")]
+mod start;
+#[cfg(target_os = "linux")]
 pub use dispatch::Reply;
 #[cfg(target_os = "linux")]
 pub use preflight::{Prepared, Ready};
+#[cfg(target_os = "linux")]
+pub use start::StartPreparation;
 #[cfg(test)]
 mod tests;
+
+#[cfg(any(target_os = "linux", test))]
+mod compression;
+pub mod http;
+pub use crate::request_gzip::CompressionStage;
 
 /// Explicit component budgets. Wire bytes include the five-byte Start/Connect
 /// envelope; decoded JSON and input bytes have no larger budget. Socket/header
@@ -53,6 +62,11 @@ pub struct CommandRequests {
     limits: Limits,
 }
 impl CommandRequests {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn shares_capacity(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.slots, &other.slots)
+    }
+
     /// # Errors
     /// Invalid or unrepresentable budgets; no tasks or commands are created.
     pub fn new(limits: Limits) -> Result<Self, AdmissionError> {
@@ -101,6 +115,11 @@ pub struct Admitted {
     owner: Owner,
 }
 impl Admitted {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn owner(&self) -> Owner {
+        self.owner.clone()
+    }
+
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.deadline
@@ -166,7 +185,7 @@ impl Authenticated {
         body: Body,
         deadline: Instant,
     ) -> Result<Decoded, Failure> {
-        self.decode_with(body, deadline, move |bytes, limit| {
+        self.decode_with(body, deadline, move |bytes, limit, _, _| {
             protocol::decode_request(method, bytes, limit).map_err(Error::Protocol)
         })
         .await
@@ -180,7 +199,14 @@ impl Authenticated {
         decode: F,
     ) -> Result<Decoded, Failure>
     where
-        F: FnOnce(&[u8], usize) -> Result<Request, Error> + Send + 'static,
+        F: FnOnce(
+                &[u8],
+                usize,
+                Instant,
+                &tokio::sync::watch::Receiver<bool>,
+            ) -> Result<Request, Error>
+            + Send
+            + 'static,
     {
         use axum::body::HttpBody;
         let deadline = deadline.min(self.deadline());
@@ -212,10 +238,10 @@ impl Authenticated {
             let (cancel, cancelled) = tokio::sync::watch::channel(false);
             let task = tokio::task::spawn_blocking(move || {
                 crate::owned_body::check_active::<Error>(deadline, &cancelled)?;
-                let request = decode(&payload, limit)?;
+                let request = decode(&payload, limit, deadline, &cancelled)?;
                 drop(payload);
                 crate::owned_body::check_active::<Error>(deadline, &cancelled)?;
-                Ok(Decoded {
+                Ok::<_, Error>(Decoded {
                     request,
                     authenticated: self,
                     deadline,
@@ -240,7 +266,7 @@ struct Decoded {
     deadline: Instant,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     DeadlineExceeded,
     HeaderLimit,
@@ -248,17 +274,46 @@ pub enum Error {
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
+    Framing(sandproof_guest_runtime::protocol::FramingError),
+    Json(sandproof_guest_runtime::protocol::JsonError),
+    EndStream(sandproof_guest_runtime::protocol::EndStreamError),
+    Compression {
+        stage: CompressionStage,
+        error: crate::upload_body::GzipError,
+    },
     Unavailable,
     #[cfg(target_os = "linux")]
     Context(crate::ContextError),
     #[cfg(target_os = "linux")]
     Registry(crate::command::RegistryError),
     #[cfg(target_os = "linux")]
+    Registration(crate::command::RegistrationError),
+    #[cfg(target_os = "linux")]
     Command(crate::command::CommandError),
     #[cfg(target_os = "linux")]
     Response(crate::command::CommandBodyError),
-    /// Start/tag selection are not wired by this PID-only component.
+    /// Wrong dispatch entry or a tag requiring the unselected tag policy.
     UnsupportedOperation,
+}
+impl From<ProtocolError> for Error {
+    fn from(error: ProtocolError) -> Self {
+        Self::Protocol(error)
+    }
+}
+impl From<sandproof_guest_runtime::protocol::FramingError> for Error {
+    fn from(error: sandproof_guest_runtime::protocol::FramingError) -> Self {
+        Self::Framing(error)
+    }
+}
+impl From<sandproof_guest_runtime::protocol::JsonError> for Error {
+    fn from(error: sandproof_guest_runtime::protocol::JsonError) -> Self {
+        Self::Json(error)
+    }
+}
+impl From<sandproof_guest_runtime::protocol::EndStreamError> for Error {
+    fn from(error: sandproof_guest_runtime::protocol::EndStreamError) -> Self {
+        Self::EndStream(error)
+    }
 }
 impl crate::owned_body::Failure for Error {
     fn deadline() -> Self {
@@ -277,6 +332,16 @@ impl std::error::Error for Error {}
 pub struct Failure {
     error: Error,
     deadline: Instant,
+    #[cfg(target_os = "linux")]
+    unknown_user: Option<crate::upload_response::UnknownUser>,
+    #[cfg(target_os = "linux")]
+    default_account: Option<http::default_account::Rejection>,
+    #[cfg(target_os = "linux")]
+    missing_cwd: Option<String>,
+    #[cfg(target_os = "linux")]
+    operation: Option<http::operation::Rejection>,
+    #[cfg(target_os = "linux")]
+    response: Option<http::ResponseFormat>,
     _owner: Owner,
 }
 impl Failure {
@@ -284,12 +349,22 @@ impl Failure {
         Self {
             error,
             deadline,
+            #[cfg(target_os = "linux")]
+            unknown_user: None,
+            #[cfg(target_os = "linux")]
+            default_account: None,
+            #[cfg(target_os = "linux")]
+            missing_cwd: None,
+            #[cfg(target_os = "linux")]
+            operation: None,
+            #[cfg(target_os = "linux")]
+            response: None,
             _owner: owner,
         }
     }
     #[must_use]
-    pub const fn error(&self) -> Error {
-        self.error
+    pub fn error(&self) -> Error {
+        self.error.clone()
     }
     #[must_use]
     pub const fn deadline(&self) -> Instant {

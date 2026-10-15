@@ -51,6 +51,9 @@ impl<M, S> Clone for FileRpcHttp<M, S> {
     }
 }
 impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
+    pub(crate) fn shares_session(&self, session: &Session<M>) -> bool {
+        self.inner.session.shares_state(session)
+    }
     #[must_use]
     pub fn new(
         session: Session<M>,
