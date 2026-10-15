@@ -6,8 +6,12 @@
 use super::date::LocalZone;
 use tz::{TimeZone, TimeZoneRef, timezone::LocalTimeType};
 
+#[cfg(unix)]
+mod file;
 #[cfg(test)]
 mod tests;
+#[cfg(unix)]
+pub use file::{LoadError, LoadLimits};
 
 /// Trusted startup budgets, separate from each request's date/header limits.
 /// Input bytes also bound abbreviation/footer/leap data and parser scratch.
@@ -16,6 +20,18 @@ pub struct Limits {
     pub input_bytes: usize,
     pub transitions: usize,
     pub zones: usize,
+}
+impl Limits {
+    fn validate(self) -> Result<Self, Error> {
+        if [self.input_bytes, self.transitions, self.zones]
+            .into_iter()
+            .any(|n| n == 0 || n > isize::MAX as usize / 16)
+        {
+            Err(Error::InvalidConfiguration)
+        } else {
+            Ok(self)
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,12 +55,7 @@ impl Snapshot {
     /// Invalid budgets, oversized data/counts or `TZif` rejected by the pinned
     /// parser. Supports its `TZif` v1/v2/v3 formats and valid extension rules.
     pub fn from_tzif(bytes: &[u8], limits: Limits) -> Result<Self, Error> {
-        if [limits.input_bytes, limits.transitions, limits.zones]
-            .into_iter()
-            .any(|n| n == 0 || n > isize::MAX as usize / 16)
-        {
-            return Err(Error::InvalidConfiguration);
-        }
+        let limits = limits.validate()?;
         if bytes.len() > limits.input_bytes {
             return Err(Error::InputLimit);
         }

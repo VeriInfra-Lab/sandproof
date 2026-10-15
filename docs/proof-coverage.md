@@ -468,6 +468,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [本地时区快照](../sandbox-guest-runtime/src/file_download/local_zone.rs)新增输入/块计数预检、不可变解析结果、历史首类型/同名缩写选择、忽略闰秒修正及 POSIX 延伸查询义务。第三方 `tz-rs 0.7.3` 的 TZif/规则解析与内存分配是新增外部实现边界，未抽取或证明；其更严格材料接受范围、真实时区来源和读取预算须在 daemon 装配时继续复核。固定 Go 原加载/查询/HTTP 日期的有限对照属于测试证据，不是任意时区文件等价或形式化证明。纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不背书该快照或新依赖。
 
+[时区文件读取](../sandbox-guest-runtime/src/file_download/local_zone/file.rs)新增打开前配置/路径预算、普通 FD 来源、有限读取/EOF 探测、部分失败不发布与快照独立性义务；Unix open/fstat/read、内存分配、可信路径和模板来源为外部边界。原 `Limits` 校验提取为共享方法，原字节入口拒绝条件保持；适配器与该提取均未抽取/证明。有限文件和故障点测试不能证明并发改写一致性、系统调用可中断、来源真实性或总 RSS；旧定理不背书本实现。
+
 [范围正文执行器](../sandbox-guest-service/src/file_download/stream.rs)、[Linux FD 连接](../sandbox-guest-service/src/file_transfer/identity_download.rs)及[共用阻塞正文任务](../sandbox-guest-service/src/owned_body.rs)新增条件提前结束、准备期/正文期 seek、按计划读取与短读错误、MIME 分段、HEAD 抑制、原期限及最后字节副本到容量释放的义务。共用任务从 gzip 所有权代码抽出，旧路径回归通过仅属工程证据；Linux mtime/同一 FD/原 AuthPermit 组合尚待实跑。这些模块未抽取或证明，不能用纯 `Transfer` 或原历史版本定理覆盖新增执行连接；纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改。
 
 [下载 MIME](../sandbox-guest-runtime/src/file_mime/mod.rs)新增不可变数据库来源/优先级、Unicode 查表、原始 filename 编码、512 字节签名顺序及配置计费义务；[identity 执行](../sandbox-guest-service/src/file_download/stream.rs)新增条件先于嗅探、忽略读取错误但保留前缀、回绕失败与阻塞取消期间原守卫保留的组合义务。有限固定 Go 对照及本地组件通过只属工程证据，Linux 固定路径/原 FD 和模板来源验证尚待实跑。这些模块未抽取或证明；现有 multipart 参数解析仅开放 crate 内复用，算法未改，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 均未改，旧定理不覆盖新增路径。
