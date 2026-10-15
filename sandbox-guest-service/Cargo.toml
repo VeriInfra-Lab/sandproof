@@ -30,8 +30,9 @@ sandproof-guest-core = { path = "../sandbox-guest-core" }
 hyper = { version = "=1.11.1", features = ["client", "http1"] }
 tower = { version = "=0.5.2", features = ["util"] }
 
-[target.'cfg(target_os = "linux")'.dev-dependencies]
+[target.'cfg(unix)'.dev-dependencies]
 tempfile = "=3.23.0"
+sandproof-guest-core = { path = "../sandbox-guest-core" }
 
 [lints]
 workspace = true

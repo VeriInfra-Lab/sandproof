@@ -23,6 +23,8 @@ mod go_quote;
 pub mod listener;
 mod owned_body;
 mod request_gzip;
+#[cfg(unix)]
+pub mod startup;
 pub mod upload_body;
 pub mod upload_response;
 
