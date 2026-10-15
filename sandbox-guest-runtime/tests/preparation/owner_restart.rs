@@ -152,6 +152,20 @@ fn assert_original_alive(original: &KernelGuard) {
     );
 }
 
+async fn expire_new_command(fixture: &Fixture, registry: &PidRegistry, command: &ManagedCommand) {
+    assert_eq!(registry.available_slots(), 0);
+    assert!(matches!(
+        fixture.owners.reserve(),
+        Err(CommandError::ResourceExhausted)
+    ));
+    super::registry::expire_retention(
+        registry,
+        command.identity(),
+        command.status().completed_at.unwrap(),
+    )
+    .await;
+}
+
 #[test]
 fn process_death_keeps_command_alive_and_restart_refuses_old_public_pid() {
     let directory = tempfile::tempdir().unwrap();
@@ -201,7 +215,8 @@ fn supervisor_process() {
     // nonzero argument as Pid. This isolated process owns no unrelated child.
     rustix::process::set_child_subreaper(Some(Pid::INIT)).unwrap();
     runtime().block_on(async {
-        timeout(Duration::from_secs(30), async {
+        // Includes the explicit 30-second virtual retention advance below.
+        timeout(Duration::from_mins(1), async {
             let root = root();
             drop(claims(&root, true));
             let listener = UnixListener::bind(root.join("owner.sock")).unwrap();
@@ -267,8 +282,10 @@ fn supervisor_process() {
             assert_eq!(new.0.wait().await.unwrap().code, 0);
             assert!(matches!(output.next().await, Some(Ok(OutputEvent::End(_)))));
             drop(output);
+            expire_new_command(&fixture, &current, &new.0).await;
             drop(new);
             capacity_restored(&fixture.owners).await;
+            assert_eq!(current.available_slots(), 1);
             assert_eq!(fixture.gate_count(), 0);
             assert_eq!(std::fs::read(root.join("effect")).unwrap(), b"once");
             drop(release);
