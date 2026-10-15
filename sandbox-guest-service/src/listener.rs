@@ -39,6 +39,13 @@ pub struct Listener {
     limits: Limits,
 }
 
+// Pinned Hyper 1.11.1 h1::role::Server::parse retains HeaderIndices (two
+// usize pairs) and httparse::Header (str/byte slices), four words each. Check
+// their combined scratch arithmetic before any connection can request these
+// allocations. This is not a process memory bound or an allocation guarantee;
+// dependency upgrades must recheck the parser's storage representation.
+const HEADER_SCRATCH_BYTES: usize = 8 * std::mem::size_of::<usize>();
+
 /// Transport observations only, not successful operation receipts. Counters
 /// saturate rather than wrap. No request headers, paths or errors are retained.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -54,13 +61,19 @@ pub struct Report {
 impl Listener {
     /// # Errors
     /// Rejects empty budgets, Hyper buffers below its 8192-byte minimum and
-    /// deadlines that cannot be represented. Header time may not exceed the
-    /// connection lifetime. Configuration is checked before accepting sockets.
+    /// deadlines or parser scratch/buffer sizes that cannot be represented.
+    /// Header time may not exceed the connection lifetime. Configuration is
+    /// checked before accepting sockets, without allocating parser storage.
     pub fn new(limits: Limits) -> Result<Self, InvalidLimits> {
         let now = Instant::now();
         if limits.connections == 0
             || limits.header_count == 0
+            || limits
+                .header_count
+                .checked_mul(HEADER_SCRATCH_BYTES)
+                .is_none_or(|bytes| bytes > isize::MAX as usize)
             || limits.buffer_bytes < 8192
+            || limits.buffer_bytes > isize::MAX as usize
             || limits.header_timeout.is_zero()
             || limits.connection_timeout.is_zero()
             || limits.header_timeout > limits.connection_timeout

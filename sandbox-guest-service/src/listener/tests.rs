@@ -63,6 +63,48 @@ fn invalid_transport_limits_are_rejected_before_accept() {
     assert!(Listener::new(limits()).is_ok());
 }
 
+#[test]
+fn unrepresentable_parser_storage_is_rejected_without_constructing_a_connection() {
+    // Constructor checks only: never pass these giant limits to Hyper, create
+    // a socket or attempt the allocations. The pinned parser retains two
+    // arrays, each containing four machine words per configured header.
+    let maximum_headers = isize::MAX as usize / (8 * std::mem::size_of::<usize>());
+    for header_count in [maximum_headers + 1, isize::MAX as usize, usize::MAX] {
+        assert!(matches!(
+            Listener::new(Limits {
+                header_count,
+                ..limits()
+            }),
+            Err(InvalidLimits)
+        ));
+    }
+    for buffer_bytes in [isize::MAX as usize + 1, usize::MAX] {
+        assert!(matches!(
+            Listener::new(Limits {
+                buffer_bytes,
+                ..limits()
+            }),
+            Err(InvalidLimits)
+        ));
+    }
+    // Arithmetic boundaries do not certify that this much memory is
+    // available. No transport or parser is created at the accepted boundary.
+    assert!(
+        Listener::new(Limits {
+            header_count: maximum_headers,
+            ..limits()
+        })
+        .is_ok()
+    );
+    assert!(
+        Listener::new(Limits {
+            buffer_bytes: isize::MAX as usize,
+            ..limits()
+        })
+        .is_ok()
+    );
+}
+
 async fn read_all(socket: &mut TcpStream) -> Vec<u8> {
     let mut bytes = Vec::new();
     let result = tokio::time::timeout(Duration::from_secs(3), socket.read_to_end(&mut bytes))
