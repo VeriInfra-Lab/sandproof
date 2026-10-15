@@ -325,6 +325,11 @@ if sys.argv[1] == 'tree':
         self.assertIn('if: ${{ always() && steps.workspace.outcome', workflow)
         self.assertIn('bash scripts/check-function.sh', workflow)
         self.assertIn('tools/ci_redis.py check', workflow)
+        # runner is available in step env, not job env. A syntactically valid
+        # YAML file can otherwise be rejected before a single check starts.
+        job_prefix = workflow.split('    steps:', 1)[0]
+        self.assertNotIn('${{ runner.', job_prefix)
+        self.assertEqual(workflow.count('          SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl'), 2)
 
 
 if __name__ == '__main__':

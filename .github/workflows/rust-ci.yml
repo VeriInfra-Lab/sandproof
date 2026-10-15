@@ -17,14 +17,14 @@ jobs:
   rust:
     runs-on: [self-hosted, Linux, X64, sandproof-ci-rust]
     timeout-minutes: 20
-    env:
-      SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Check pinned Rust workspace
         id: workspace
+        env:
+          SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
         # The full workspace includes real Redis-backed component contracts.
         # Missing sealed material must fail before the original check entry.
         run: |
@@ -34,6 +34,8 @@ jobs:
           bash scripts/check-function.sh
       - name: Summarize check stages
         if: ${{ always() && steps.workspace.outcome != 'skipped' }}
+        env:
+          SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
         run: |
           if [[ -f "$SANDPROOF_CHECK_EVENTS" ]]; then
             bash scripts/python-entry.sh tools/check_stages.py summary \
