@@ -84,11 +84,11 @@ class KnownCommand:
         assert public_pid(handle.pid) == self.pid, 'reconnect changed original PID'
         return handle
 
-    async def wait(self, handle):
+    async def wait(self, handle, **kwargs):
         assert any(handle is known for known in self.handles)
         assert public_pid(handle.pid) == self.pid
         try:
-            result = await call(handle.wait)
+            result = await call(handle.wait, **kwargs)
         except CommandExitException:
             self.finished = True
             raise
