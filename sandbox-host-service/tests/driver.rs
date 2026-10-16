@@ -36,6 +36,58 @@ impl TemplateSource for Missing {
     }
 }
 
+#[tokio::test]
+async fn health_waits_once_behind_original_work_then_observes_the_current_resources() {
+    use std::{future::Future, sync::mpsc, task::Poll};
+    let dir = tempfile::tempdir().unwrap();
+    let (entered, observed) = mpsc::channel();
+    let (release, blocked) = mpsc::channel();
+    let state = Arc::new(Mutex::new(local::State {
+        block_prepare: Some((entered, blocked)),
+        ..local::State::default()
+    }));
+    let host = HostLifecycle::new(local::application(
+        &dir.path().join("db"),
+        state,
+        Arc::new(local::TestClock(AtomicI64::new(10))),
+        true,
+    ));
+    let create = local::request();
+    host.receive(create.clone()).await.unwrap();
+    let original = host.clone();
+    let work = tokio::spawn(async move {
+        original
+            .advance(create, Some(local::template()), local::compute())
+            .await
+    });
+    tokio::task::spawn_blocking(move || observed.recv_timeout(Duration::from_secs(5)).unwrap())
+        .await
+        .unwrap();
+    let mut health = Box::pin(host.free_resources(config().node.clone(), config().compute));
+    let pending =
+        std::future::poll_fn(|cx| Poll::Ready(health.as_mut().poll(cx).is_pending())).await;
+    // Release the actual worker even when the regression fails on old code.
+    release.send(()).unwrap();
+    assert!(
+        pending,
+        "health was dropped as Busy instead of reserving the next work slot"
+    );
+    assert!(
+        matches!(
+            host.free_resources(config().node.clone(), config().compute)
+                .await,
+            Err(ApplicationError::Busy)
+        ),
+        "a second observation formed another waiter"
+    );
+    let ready = work.await.unwrap().unwrap();
+    assert!(matches!(ready.fact, LifecycleFact::Ready { .. }));
+    let (observed_at, free) = health.await.unwrap();
+    assert_eq!(observed_at, 10);
+    assert_eq!(free.instances, 1); // Real committed post-create usage, not cached health.
+    assert_eq!(host.active_work(), 0);
+}
+
 struct CorruptAuthority(std::path::PathBuf);
 impl TemplateSource for CorruptAuthority {
     fn bound(&self, _: &CreateBinding) -> Result<InternalTemplate, ApplicationError> {

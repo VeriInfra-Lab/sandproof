@@ -108,6 +108,7 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
             | SelectionError::Request(
                 crate::command_requests::Error::Json(_)
                     | crate::command_requests::Error::EndStream(_)
+                    | crate::command_requests::Error::BodyLimit
             )
     ) && super::observed_compression(error).is_none()
         && super::observed_framing(error).is_none()
@@ -120,6 +121,9 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         }
         put(br#"{"code":""#)?;
         put(match error {
+            SelectionError::Request(crate::command_requests::Error::BodyLimit) => {
+                b"resource_exhausted"
+            }
             SelectionError::Compression(_) => b"unimplemented",
             SelectionError::Request(crate::command_requests::Error::EndStream(_)) => b"internal",
             error if super::observed_framing(error).is_some() => {
@@ -130,6 +134,9 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match error {
+            SelectionError::Request(crate::command_requests::Error::BodyLimit) => {
+                message(b"command request exceeds configured body limits")?;
+            }
             SelectionError::Request(crate::command_requests::Error::EndStream(error)) => {
                 super::end_stream::message(*error, &mut message)?;
             }

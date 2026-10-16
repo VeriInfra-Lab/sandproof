@@ -5,6 +5,81 @@ use axum::http::Method;
 #[path = "http/gzip.rs"]
 mod gzip;
 
+#[tokio::test]
+async fn oversized_body_replies_without_dispatch_and_keeps_the_original_request_slot() {
+    let session = session().await;
+    let pool = CommandRequests::new(limits()).unwrap();
+    for rpc in [Rpc::SendInput, Rpc::Start] {
+        let mut h = headers();
+        h.insert(
+            "content-type",
+            if rpc.is_stream() {
+                "application/connect+json"
+            } else {
+                "application/json"
+            }
+            .parse()
+            .unwrap(),
+        );
+        let selected = prepare_headers(&pool, &session, h)
+            .await
+            .select_json(&Method::POST, rpc)
+            .unwrap();
+        let original = selected.deadline();
+        let failure = selected
+            .decode(Body::from(vec![b' '; 65537]))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(failure.error(), &SelectionError::Request(Error::BodyLimit));
+        assert_eq!(failure.deadline(), original);
+        full(&pool);
+        let response = failure
+            .into_response(crate::command_requests::http::reply::Limits {
+                wire_bytes: 4096,
+                chunk_bytes: 4096,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            if rpc.is_stream() {
+                axum::http::StatusCode::OK
+            } else {
+                axum::http::StatusCode::TOO_MANY_REQUESTS
+            }
+        );
+        let mut body = response.into_body();
+        let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        let expected = br#"{"code":"resource_exhausted","message":"command request exceeds configured body limits"}"#;
+        if rpc.is_stream() {
+            assert_eq!(bytes[0], 2);
+            assert_eq!(
+                &bytes[5..],
+                [b"{\"error\":".as_slice(), expected, b"}"].concat()
+            );
+        } else {
+            assert_eq!(bytes.as_ref(), expected);
+        }
+        drop(body);
+        full(&pool);
+        drop(bytes);
+        released(&pool).await;
+        // A later independently admitted request still decodes normally.
+        let mut h = headers();
+        h.insert("content-type", "application/json".parse().unwrap());
+        let ready = prepare_headers(&pool, &session, h)
+            .await
+            .select_json(&Method::POST, Rpc::List)
+            .unwrap()
+            .decode(Body::from("{}"))
+            .await
+            .unwrap();
+        assert_eq!(ready.request(), &Request::List);
+        drop(ready);
+    }
+}
+
 fn unread() -> Body {
     Body::from_stream(stream::poll_fn(
         |_| -> Poll<Option<Result<Bytes, std::io::Error>>> {

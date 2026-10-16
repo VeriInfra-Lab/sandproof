@@ -55,6 +55,7 @@ pub enum CommandError {
 /// callers retain their original coarse error; HTTP may consume the fact.
 pub(crate) enum InputFailure {
     Command(CommandError),
+    TooLarge,
     Native { error: CommandError, errno: i32 },
     StdinClosed,
     StdinDisabled,
@@ -63,6 +64,7 @@ impl InputFailure {
     pub(crate) const fn error(self) -> CommandError {
         match self {
             Self::Command(error) | Self::Native { error, .. } => error,
+            Self::TooLarge => CommandError::ResourceExhausted,
             Self::StdinClosed => CommandError::Unavailable,
             Self::StdinDisabled => CommandError::ClosedInput,
         }
@@ -508,7 +510,7 @@ impl ManagedCommand {
     ) -> Result<(), InputFailure> {
         self.check(identity)?;
         if bytes.len() > self.shared.limits.stdin_bytes {
-            return Err(CommandError::ResourceExhausted.into());
+            return Err(InputFailure::TooLarge);
         }
         let mut input = self
             .shared

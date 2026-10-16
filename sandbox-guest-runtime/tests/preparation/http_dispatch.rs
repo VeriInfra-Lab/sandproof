@@ -21,6 +21,8 @@ mod framing;
 mod guest;
 #[path = "input_native_http.rs"]
 mod input_native;
+#[path = "input_limit_http.rs"]
+mod input_limits;
 #[path = "json_http.rs"]
 mod json_errors;
 #[path = "launch_http.rs"]

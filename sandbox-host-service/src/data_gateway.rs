@@ -17,6 +17,7 @@ use axum::{
 use hyper::client::conn::http1;
 use hyper_util::rt::TokioIo;
 use sandproof_api::admission::{RequestAdmission, RequestClass, RequestLease};
+use sandproof_controller_service::application::fault::{FaultContext, FaultRecord, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError as PortError, ControllerApplication, ControllerHost, DataAccessPort,
     DataAuthorization, DataKind, DataPermit,
@@ -269,7 +270,20 @@ async fn authorize_data<P: DataAuthorization>(
     {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(PortError::NotFound | PortError::Invalid)) => Err(StatusCode::UNAUTHORIZED),
-        Ok(Err(_)) | Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE),
+        Ok(Err(error)) => {
+            FaultRecord::application(
+                FaultStage::HostDataAuthorization,
+                &error,
+                FaultContext::default(),
+            )
+            .emit();
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+        Err(_) => {
+            FaultRecord::application(FaultStage::Join, &PortError::Busy, FaultContext::default())
+                .emit();
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
     }
 }
 
@@ -290,7 +304,10 @@ async fn launch_data_route<P: DataAccessPort>(
         Ok(child) => drain::RelayProcess::new(child),
         Err(PortError::NotFound | PortError::Invalid) => return Err(StatusCode::UNAUTHORIZED),
         Err(PortError::QuotaExceeded) => return Err(StatusCode::TOO_MANY_REQUESTS),
-        Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE),
+        Err(error) => {
+            FaultRecord::application(FaultStage::Relay, &error, FaultContext::default()).emit();
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
     };
     Ok((permit, child))
 }
