@@ -1,5 +1,5 @@
-//! Shared command HTTP dispatch with reserved control admission. No listener,
-//! tag policy or catch-all public error mapping.
+//! Shared PID/tag command HTTP dispatch with reserved control admission.
+//! No listener or catch-all public error mapping.
 use crate::{
     AccountPool, AccountSource, ExecutionSettings, MetadataSource, Session,
     command::{AdmissionLimits, CommandBodyLimits, CommandOwners, PidRegistrar, PidRegistry},
@@ -133,6 +133,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
                 .registry
                 .matches_session(processes.binding, processes.session)
             || !processes.registrar.belongs_to(processes.binding)
+            || !processes.registry.has_public_retention()
             || processes.process_limits.validate().is_err()
             || processes.admission_limits.validate(Instant::now()).is_err()
             || !processes.worker.is_absolute()

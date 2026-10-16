@@ -86,7 +86,7 @@ impl Prepared {
         ))?;
         checked(config.commands.process.validate())?;
         checked(config.commands.admission.validate(now))?;
-        checked(config.commands.registry.validate())?;
+        checked(config.commands.registry.validate_public())?;
         checked(config.commands.response.validate())?;
         checked(crate::file_http::check_settings(
             &config.files.context,

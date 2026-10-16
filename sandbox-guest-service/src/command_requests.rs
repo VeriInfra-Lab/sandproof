@@ -293,7 +293,7 @@ pub enum Error {
     Command(crate::command::CommandError),
     #[cfg(target_os = "linux")]
     Response(crate::command::CommandBodyError),
-    /// Wrong dispatch entry or a tag requiring the unselected tag policy.
+    /// Wrong dispatch entry for the decoded request.
     UnsupportedOperation,
 }
 impl From<ProtocolError> for Error {

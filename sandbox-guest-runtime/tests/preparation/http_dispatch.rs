@@ -37,6 +37,8 @@ mod nul;
 mod pipes;
 #[path = "signal_native_http.rs"]
 mod signal_native;
+#[path = "tag_http.rs"]
+mod tags;
 
 type Http = CommandHttp<MetadataFixture, CurrentAccount>;
 fn processes(fixture: &Fixture, registry: &PidRegistry, registrar: &PidRegistrar) -> Processes {
@@ -375,7 +377,7 @@ async fn shared_http_rejects_invalid_process_settings_and_mismatched_resources_b
     let before = std::fs::read(&claims).unwrap();
     let foreign_before = std::fs::read(&foreign_claims).unwrap();
     let pool = requests(1);
-    for case in 0..20 {
+    for case in 0..23 {
         let mut processes = processes(&fixture, &registry, &registrar);
         let mut response = responses();
         match case {
@@ -398,6 +400,22 @@ async fn shared_http_rejects_invalid_process_settings_and_mismatched_resources_b
             17 => processes.worker = "/bad\0worker".into(),
             18 => processes.private_directory = "/bad\0gate-root".into(),
             19 => processes.registrar = foreign_registrar.clone(),
+            20..=22 => {
+                processes.registry = PidRegistry::new(
+                    binding(),
+                    1,
+                    sandproof_guest_service::command::RegistryLimits {
+                        records: 1,
+                        metadata_bytes: 4096,
+                        retention: match case {
+                            20 => Duration::from_secs(29),
+                            21 => Duration::from_secs(30) + Duration::from_nanos(1),
+                            _ => Duration::from_secs(31),
+                        },
+                    },
+                )
+                .unwrap();
+            }
             _ => (),
         }
         let result = CommandHttp::new(
@@ -430,7 +448,7 @@ async fn shared_http_rejects_invalid_process_settings_and_mismatched_resources_b
 }
 
 #[tokio::test]
-async fn shared_http_preserves_default_account_and_gzip_replies_without_inventing_tag_or_route_policy()
+async fn shared_http_preserves_default_account_gzip_and_missing_tag_replies_without_unknown_route_policy()
  {
     let fixture = fixture().await;
     let registry = registry();
@@ -475,20 +493,20 @@ async fn shared_http_preserves_default_account_and_gzip_replies_without_inventin
     full(&ordinary);
     drop(payload);
 
-    let failure = http
-        .handle(request(
-            "Start",
-            &json!({"tag":"","process":{"cmd":"/bin/true"}}),
-        ))
+    let reply = http
+        .handle(request("Connect", &json!({"process":{"tag":""}})))
         .await
-        .unwrap_err();
-    assert!(
-        matches!(&failure, Failure::Start(f) if f.request_error() == Error::UnsupportedOperation
-        && f.error() == command_requests::http::reply::Error::UnclassifiedFault)
+        .unwrap();
+    let payload = bytes(reply).await;
+    assert_eq!(
+        json_frame(&payload, 2),
+        json!({"error":{
+            "code":"not_found", "message":"process with tag  not found"
+        }})
     );
     full(&ordinary);
     rotates(&fixture).await;
-    drop(failure);
+    drop(payload);
 
     let mut unknown = request("List/", &json!({}));
     unread(&mut unknown);

@@ -400,7 +400,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [共用 Connect 期限解析](../sandbox-guest-service/src/connect_timeout.rs)从文件请求组件提取，命令执行期限改为首值、空值及有符号整数的固定语义；同一非正 wire 值到 HTTP 立即到期和无执行期限的不同映射、原起点及派发前过期拒绝仍须连接证明。既有有限解析对照和新边界测试不证明完整命令 HTTP 生命周期；已证明纯核心未变。
 
-[无 tag 的 Start 连接](../sandbox-guest-service/src/command_requests/start.rs)新增已解码请求/原授权/已选账户不可替换、默认账户阻塞工作到原期限和容量、纯上下文组合到原 worker、首帧/元数据准入先于子进程、持久 claim 与活跃记录先于接受、回复丢失后只管理原进程的自有义务。账户/环境组合和响应预算校验共享重构没有新增证明；有限组件回归不覆盖完整 HTTP 选择/错误、tag、重启及整机压力。准备、登记和执行端口仍属未证明适配，纯核心及已证明 Rust 未改。
+[Start 连接](../sandbox-guest-service/src/command_requests/start.rs)新增已解码请求/原授权/已选账户不可替换、默认账户阻塞工作到原期限和容量、纯上下文组合到原 worker、首帧/元数据准入先于子进程、持久 claim 与活跃记录先于接受、回复丢失后只管理原进程的自有义务。账户/环境组合和响应预算校验共享重构没有新增证明；有限组件回归不覆盖完整 HTTP 选择/错误、重启及整机压力。在 85d487ec34fcf144999b1064140350a1f8f9d48d 之后，原 tag 到准备前原子预约、本次 AlreadyExists 到有界公开回复、字面选择器到唯一原记录、终局 Connect 与存活控制的区分、每请求鉴权/期限及最后副本所有权均新增未证明连接义务；数字字符串不得转换成 PID。准备、登记和执行端口仍属未证明适配，纯核心及已证明 Rust 未改。
 
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)新增 Basic 预检到方法/媒体类型/压缩/版本/期限的顺序、第一字段与有界诊断、较早期限和协商格式保留、identity 解码前拒绝以及失败/Ready 到原容量的连接义务。命令和文件共用 MIME 选择主体，保留原文件 API；有限 Go 对照不证明完整协议、到期效果边界或公开错误映射。新增选择、共享解析重构及 SDK 路由迁移尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
 
@@ -414,11 +414,11 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [命令 token 回复](../sandbox-guest-service/src/command_requests/http/authorization.rs)新增原鉴权分类/方法不可替换、外层 API 拒绝先于协议解释、HEAD 预算、响应失败及字节副本到原名额/期限的连接义务。复用原 token 有界发送器，未改变 Session 政策；固定 Go 有限 HTTP 对照不证明初始化、完整路由或任意故障。这部分连接和 SDK 测试入口迁移尚未抽取或证明，纯核心和已证明 Rust/Lean 未改。
 
-[命令请求准入/PID 分派](../sandbox-guest-service/src/command_requests.rs)增加原请求额度到 token/Basic/JSON 阻塞工作的所有权连接、取消/超时后实际闭包退出、单次解码和不可替换请求到原注册句柄、部分输入不重放、原响应期限与最后 Bytes 引用释放的自有义务，尚未抽取或证明。真实账户/进程适配沿用现有端口，不把其有限测试提升为 HTTP 路由、跨服务恢复、整机容量或 Go 双端证据；纯核心及已证明 Rust 未改，旧定理不覆盖新编排。
+[命令请求准入/PID/tag 分派](../sandbox-guest-service/src/command_requests.rs)增加原请求额度到 token/Basic/JSON 阻塞工作的所有权连接、取消/超时后实际闭包退出、单次解码和不可替换请求到原注册句柄、部分输入不重放、原响应期限与最后 Bytes 引用释放的自有义务，尚未抽取或证明。真实账户/进程适配沿用现有端口，不把其有限测试提升为 HTTP 路由、跨服务恢复、整机容量或 Go 双端证据；纯核心及已证明 Rust 未改，旧定理不覆盖新编排。
 
-[共用命令 HTTP 派发](../sandbox-guest-service/src/command_http.rs)新增精确路径到普通/保留控制池的连接、拒绝池别名、原鉴权/预检/选择顺序、不可替换 Ready 到同一执行资源、克隆共用内部编号及耗尽不回绕的自有义务。构造增加原持久存储不可变绑定与注册表/VM 的一致性、进程/准备预算及 worker 路径语法校验义务；配置快照不能代替当前文件完整性或实际 claim，原 claim 校验仍保留。唯一 Start 装配、可信 VM/会话及存储来源仍是调用前提，内部编号不代替永久 PID 集；共享账户/运行时也不能由控制请求名额独立推出控制延迟保证。原错误/期限/容量经各发送器保持、取消和回复失败不重放，以及 SDK 夹具迁移均尚未抽取或证明。纯核心和已证明 Rust/Lean 未改，有限 Linux/SDK 检查不证明完整服务或整机压力上界。
+[共用命令 HTTP 派发](../sandbox-guest-service/src/command_http.rs)新增精确路径到普通/保留控制池的连接、拒绝池别名、原鉴权/预检/选择顺序、不可替换 Ready 到同一执行资源、克隆共用内部编号及耗尽不回绕的自有义务。构造增加原持久存储不可变绑定与注册表/VM 的一致性、进程/准备预算及 worker 路径语法校验义务；配置快照不能代替当前文件完整性或实际 claim，原 claim 校验仍保留。唯一 Start 装配、可信 VM/会话及存储来源仍是调用前提，内部编号不代替永久 PID 集；共享账户/运行时也不能由控制请求名额独立推出控制延迟保证。原错误/期限/容量经各发送器保持、取消和回复失败不重放，以及 SDK 夹具迁移均尚未抽取或证明。在 85d487ec34fcf144999b1064140350a1f8f9d48d 之后，公开 HTTP 构造及 daemon 静态准备精确约束 30 秒保留、拒绝发生在 MMDS/PID 工作前的对应亦未证明。纯核心和已证明 Rust/Lean 未改，有限 Linux/SDK 检查不证明完整服务或整机压力上界。
 
-[PID 操作拒绝](../sandbox-guest-service/src/command_requests/http/operation.rs)新增原选择器、实际表查询结果及参数检查顺序到有限错误观察的对应；原终局保留与存活控制的区别、未知不伪装 NotFound、超时不重用旧观察和派发失败不重放也须证明。已观察事实到固定类型/数值/枚举文本、Go JSON 转义、一元/流式错误格式、共用有限发送器和原错误/期限/容量到最后副本均尚未抽取或证明。受控原 Go 格式对照不执行原 getProcess/handleInput/SendSignal，真实 Linux 与 SDK 回归也不能代替完整 E03、任意并发或整机内存证明；纯核心和已证明 Rust/Lean 未改。
+[PID/tag 操作拒绝](../sandbox-guest-service/src/command_requests/http/operation.rs)新增原选择器、实际表查询结果及参数检查顺序到有限错误观察的对应；原终局保留与存活控制的区别、未知不伪装 NotFound、超时不重用旧观察和派发失败不重放也须证明。已观察事实到固定类型/数值/枚举文本、Go JSON 转义、一元/流式错误格式、共用有限发送器和原错误/期限/容量到最后副本均尚未抽取或证明。受控原 Go 格式对照不执行原 getProcess/handleInput/SendSignal，真实 Linux 与 SDK 回归也不能代替完整 E03、任意并发或整机内存证明；纯核心和已证明 Rust/Lean 未改。
 
 新增[通道失败观察](../sandbox-guest-service/src/command_requests/dispatch.rs)连接原句柄不可变 PTY 能力、同次实际拒绝与四种固定公开错误。能力不等于存活、模式正确的 ioctl/输入失败不误分类、原操作只执行一次、旧组件错误保持不变，以及一元格式/期限/预算/最后副本容量的对应尚未抽取或证明。有限 Go 受控格式、真实 Linux 命令和固定 SDK 用例不证明完整原 handler、并发、终端行为或 E03；纯核心和已证明 Rust/Lean 未改。
 

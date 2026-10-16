@@ -1,4 +1,4 @@
-//! PID-only dispatch under the original request. Known selector/parameter
+//! PID/tag dispatch under the original request. Known selector/parameter
 //! failures preserve their actual observation for the separate HTTP sender.
 use super::http::operation::{ChannelRejection, Rejection};
 use super::{Body, Error, Failure, Instant, Owner, Ready, Request, check_deadline};
@@ -67,9 +67,8 @@ impl Reply {
 }
 impl Ready {
     /// Consume one authenticated, decoded request and dispatch to the original
-    /// PID capability only. Each later request must repeat token/Basic preflight.
-    /// Start uses the separate `start_pid` entry; tag selectors remain unsupported
-    /// pending their policy/assembly. A successful control reply is not an exit
+    /// PID or exact tag capability. Each request repeats token/Basic preflight.
+    /// Start uses the separate `start_pid` entry. A successful control reply is not an exit
     /// receipt. Cancellation of a write may follow a delivered prefix.
     /// # Errors
     /// Expiry, unsupported operation, missing/unknown PID, I/O or response budget.
@@ -88,8 +87,7 @@ impl Ready {
             check_deadline(deadline)?;
             let request = &self.decoded.request;
             if let Request::Connect(selector) = request {
-                let number = pid(selector.as_ref(), &mut observed)?;
-                let command = lookup(registry.connectable(number), number, &mut observed)?;
+                let command = select(registry, selector.as_ref(), true, &mut observed)?;
                 let stream = command
                     .subscribe(command.identity())
                     .map_err(Error::Command)?;
@@ -139,24 +137,39 @@ impl Ready {
             })
     }
 }
-fn pid(selector: Option<&Selector>, observed: &mut Option<Rejection>) -> Result<u32, Error> {
-    match selector {
-        Some(Selector::Pid(pid)) => Ok(*pid),
-        Some(Selector::Tag(_)) => Err(Error::UnsupportedOperation),
-        _ => {
-            *observed = Some(Rejection::MissingSelector);
-            Err(Error::Protocol(protocol::ProtocolError::Unimplemented))
-        }
-    }
-}
-fn lookup(
-    result: Result<ManagedCommand, crate::command::RegistryError>,
-    number: u32,
+fn select(
+    registry: &PidRegistry,
+    selector: Option<&Selector>,
+    retained: bool,
     observed: &mut Option<Rejection>,
 ) -> Result<ManagedCommand, Error> {
+    let result = match selector {
+        Some(Selector::Pid(pid)) => {
+            if retained {
+                registry.connectable(*pid)
+            } else {
+                registry.live(*pid)
+            }
+        }
+        Some(Selector::Tag(tag)) => {
+            if retained {
+                registry.connectable_tag(tag)
+            } else {
+                registry.live_tag(tag)
+            }
+        }
+        _ => {
+            *observed = Some(Rejection::MissingSelector);
+            return Err(Error::Protocol(protocol::ProtocolError::Unimplemented));
+        }
+    };
     result.map_err(|error| {
         if error == crate::command::RegistryError::NotFound {
-            *observed = Some(Rejection::PidNotFound(number));
+            *observed = match selector {
+                Some(Selector::Pid(pid)) => Some(Rejection::PidNotFound(*pid)),
+                Some(Selector::Tag(tag)) => Some(Rejection::TagNotFound(tag.clone())),
+                _ => None,
+            };
         }
         Error::Registry(error)
     })
@@ -166,8 +179,7 @@ fn live(
     selector: Option<&Selector>,
     observed: &mut Option<Rejection>,
 ) -> Result<ManagedCommand, Error> {
-    let number = pid(selector, observed)?;
-    lookup(registry.live(number), number, observed)
+    select(registry, selector, false, observed)
 }
 async fn control(
     request: &Request,

@@ -1,5 +1,5 @@
-//! Authenticated, untagged Start -> original gated worker -> durable PID record.
-//! HTTP negotiation, public failures and tag policy remain outside this component.
+//! Authenticated Start -> reserved PID/tag record -> original gated worker.
+//! Public duplicate-tag failures retain the original reservation observation.
 use std::{path::Path, sync::Arc};
 
 use sandproof_guest_runtime::{
@@ -17,7 +17,7 @@ use crate::{
     AccountPool, AccountSource, ContextError, ExecutionSettings,
     command::{
         AdmissionLimits, CommandBodyError, CommandBodyLimits, CommandOwners, ExecutionDeadline,
-        PidRegistrar, PidRegistry, PreparationRequest, PreparationSpec,
+        PidRegistrar, PidRegistry, PreparationRequest, PreparationSpec, RegistryReservation,
     },
     execution::{CommandContextError, selected_user_with_limits, validate_command_settings},
 };
@@ -45,19 +45,37 @@ struct Resolved {
     execution: ExecutionDeadline,
 }
 
+fn reserve_start(
+    registry: &PidRegistry,
+    request: &StartRequest,
+    observed: &mut Option<Rejection>,
+) -> Result<RegistryReservation, Error> {
+    registry
+        .reserve_optional(request.process.as_ref(), request.tag.as_deref())
+        .map_err(|error| {
+            if error == crate::command::RegistryError::AlreadyExists {
+                *observed = request
+                    .tag
+                    .as_ref()
+                    .map(|tag| Rejection::TagAlreadyExists(tag.clone()));
+            }
+            Error::Registry(error)
+        })
+}
+
 impl Ready {
-    /// Start only the original decoded, untagged request. Explicit Basic reuses
+    /// Start only the original decoded request. Explicit Basic reuses
     /// the preflight account; default lookup retains the same auth/request until
     /// its actual blocking worker exits. Registry capacity and the first response
     /// frame budget are checked before preparing any child. The original child
     /// stays gated until its durable PID claim and active record are installed.
     ///
-    /// This is an uninstalled PID-only component, not a public tag policy. A tag
-    /// (including an empty one) is unsupported pending that separate assembly.
+    /// A present tag, including the empty string, is exclusively reserved before
+    /// preparing a child. Duplicate live/pending tags never reach the worker.
     /// Cancellation before acceptance stops preparation; afterwards the original
     /// registry owns execution and losing this reply never starts another child.
     /// # Errors
-    /// Original expiry, context/worker/storage/registry failure, unsupported tag
+    /// Original expiry, context/worker/storage/registry failure, duplicate tag
     /// or response limits. Failed requests may have burned a PID or, after
     /// acceptance, started a command. Errors are not cleanup receipts.
     pub async fn start_pid<S: AccountSource>(
@@ -86,10 +104,11 @@ impl Ready {
             // Later actual PID width cannot invalidate the initial frame budget.
             encode_event(Event::Start(u32::MAX), response.message_bytes)
                 .map_err(|_| Error::Response(CommandBodyError::ResourceExhausted))?;
-            let reservation = preparation
-                .registry
-                .reserve_optional(resolved.request.process.as_ref(), None)
-                .map_err(Error::Registry)?;
+            let reservation = reserve_start(
+                preparation.registry,
+                &resolved.request,
+                &mut start_rejection,
+            )?;
             check_deadline(deadline)?;
             let cwd = resolved
                 .launch
@@ -179,9 +198,6 @@ impl Ready {
         let Request::Start(request) = request else {
             return Err(Error::UnsupportedOperation);
         };
-        if request.tag.is_some() {
-            return Err(Error::UnsupportedOperation);
-        }
         validate_command_settings(settings).map_err(Error::Context)?;
         let authenticated = Arc::new(authenticated);
         let fallback = &authenticated.authorization().defaults().user;

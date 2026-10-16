@@ -245,7 +245,7 @@ async fn unary_response_clones_keep_capacity_but_release_authorization() {
 }
 
 #[tokio::test]
-async fn missing_pid_precedes_control_arguments_and_tags_have_no_dispatch_policy() {
+async fn missing_pid_or_tag_precedes_control_arguments_and_start_uses_its_own_dispatch() {
     let session = session().await;
     let pool = CommandRequests::new(limits()).unwrap();
     let accounts = AccountPool::new(
@@ -298,7 +298,11 @@ async fn missing_pid_precedes_control_arguments_and_tags_have_no_dispatch_policy
                 .err()
                 .unwrap()
                 .error(),
-            Error::UnsupportedOperation
+            if method == "Start" {
+                Error::UnsupportedOperation
+            } else {
+                Error::Registry(RegistryError::NotFound)
+            }
         );
     }
 }

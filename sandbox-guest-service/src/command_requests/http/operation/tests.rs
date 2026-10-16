@@ -9,6 +9,7 @@ use tokio::sync::Semaphore;
 mod native_input;
 mod native_resize;
 mod native_signal;
+mod tag;
 
 fn source(rejection: Option<Rejection>, format: Option<ResponseFormat>, owner: Owner) -> Source {
     Source {
@@ -71,21 +72,25 @@ async fn operation_replies_retain_exact_budget_original_error_and_last_byte_refe
             Rejection::MissingSelector,
             Rejection::MissingInput,
             Rejection::PidNotFound(u32::MAX),
+            Rejection::TagNotFound("tag\"\\\n<>&中".into()),
             Rejection::Signal(i32::MIN),
         ] {
             let format = Some(format(rpc, true, true));
-            let response = send(source(Some(rejection), format, Arc::new(())), limits())
-                .await
-                .unwrap();
+            let response = send(
+                source(Some(rejection.clone()), format, Arc::new(())),
+                limits(),
+            )
+            .await
+            .unwrap();
             let bytes = drain(response.into_body()).await;
-            let raw = payload(rejection, rpc.is_stream(), 4096).unwrap();
+            let raw = payload(&rejection, rpc.is_stream(), 4096).unwrap();
             let required = bytes
                 .len()
                 .max(raw.len() + if rpc.is_stream() { 5 } else { 0 });
             for budget in [required, required - 1] {
                 let slots = Arc::new(Semaphore::new(1));
                 let owner: Owner = Arc::new(slots.clone().try_acquire_owned().unwrap());
-                let source = source(Some(rejection), format, owner);
+                let source = source(Some(rejection.clone()), format, owner);
                 let deadline = source.deadline;
                 let result = send(
                     source,
@@ -219,7 +224,7 @@ async fn fixed_go_pid_parameter_failure_status_headers_and_payloads_match() {
                 for (rejection, kind, number) in &failures {
                     let response = send(
                         source(
-                            Some(*rejection),
+                            Some(rejection.clone()),
                             Some(format(rpc, gzip, utf8)),
                             Arc::new(()),
                         ),
@@ -292,7 +297,7 @@ async fn channel_rejections_keep_owning_the_request_and_refuse_stream_misclassif
         pty,
         errno: 5,
     })) {
-        let raw = payload(rejection, false, 4096).unwrap();
+        let raw = payload(&rejection, false, 4096).unwrap();
         for (stream, budget, expired) in [
             (false, raw.len(), false),
             (false, raw.len() - 1, false),
@@ -302,7 +307,7 @@ async fn channel_rejections_keep_owning_the_request_and_refuse_stream_misclassif
             let slots = Arc::new(Semaphore::new(1));
             let owner: Owner = Arc::new(slots.clone().try_acquire_owned().unwrap());
             let mut source = source(
-                Some(rejection),
+                Some(rejection.clone()),
                 Some(format(
                     if stream { Rpc::Connect } else { Rpc::SendInput },
                     true,

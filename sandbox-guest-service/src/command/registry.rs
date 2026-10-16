@@ -34,6 +34,13 @@ pub struct RegistryLimits {
     pub retention: Duration,
 }
 impl RegistryLimits {
+    pub(crate) fn validate_public(self) -> Result<Self, RegistryError> {
+        if self.retention != Duration::from_secs(30) {
+            return Err(RegistryError::InvalidArgument);
+        }
+        self.validate()
+    }
+
     pub(crate) fn validate(self) -> Result<Self, RegistryError> {
         if self.records == 0
             || self.records > Semaphore::MAX_PERMITS
@@ -96,6 +103,10 @@ struct State {
 }
 
 impl PidRegistry {
+    pub(crate) fn has_public_retention(&self) -> bool {
+        self.inner.limits.validate_public().is_ok()
+    }
+
     pub(crate) fn matches_session(&self, binding: Binding, session: u64) -> bool {
         self.inner.binding == binding && self.inner.session == session
     }

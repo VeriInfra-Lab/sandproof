@@ -1,5 +1,5 @@
 //! Selected Connect JSON headers after the original token/Basic preflight.
-//! No listener or tag policy is installed.
+//! Listener assembly and tag selection belong to the command dispatcher.
 #[cfg(any(target_os = "linux", test))]
 use axum::http::{HeaderMap, Method};
 #[cfg(any(target_os = "linux", test))]
