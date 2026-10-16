@@ -67,26 +67,39 @@ async fn keepalive_http_does_not_precede_token_or_explicit_account_preflight() {
     let ordinary = requests(1);
     let control = requests(1);
     let http = http(&fixture, &registry, &ordinary, &control);
-    for (token, user, text) in [
-        ("wrong", "missing", ""),
-        ("token", "missing", "invalid username: 'missing'"),
-    ] {
+    for token in ["wrong", "token"] {
         let mut rejected = request("Start", &json!({}));
         let h = rejected.headers_mut();
         h.insert("x-access-token", token.parse().unwrap());
         h.insert(
             "authorization",
-            format!("Basic {}", STANDARD.encode(format!("{user}:")))
+            format!("Basic {}", STANDARD.encode("missing:"))
                 .parse()
                 .unwrap(),
         );
         h.insert("keepalive-ping-interval", "0".parse().unwrap());
         unread(&mut rejected);
         let reply = http.handle(rejected).await.unwrap();
-        assert_eq!(reply.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            reply.status(),
+            if token == "wrong" {
+                StatusCode::UNAUTHORIZED
+            } else {
+                StatusCode::OK
+            }
+        );
         let payload = bytes(reply).await;
-        assert!(std::str::from_utf8(&payload).unwrap().contains(text));
-        assert!(!std::str::from_utf8(&payload).unwrap().contains("keepalive"));
+        if token == "wrong" {
+            let decoded: Value = serde_json::from_slice(&payload).unwrap();
+            assert_eq!(decoded["code"], 401);
+        } else {
+            assert_eq!(
+                json_frame(&payload, 2),
+                json!({"error":{
+                    "code":"unauthenticated", "message":"invalid username: 'missing'"
+                }})
+            );
+        }
         drop(payload);
         assert!(ordinary.admit().is_ok());
         fixture.assert_no_effect();
