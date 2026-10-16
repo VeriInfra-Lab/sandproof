@@ -36,6 +36,7 @@ from sdk_list_compare import list_case, comparable_list
 from sdk_argument_compare import argument_cases, comparable_argument
 from sdk_subscriber_compare import MODES as SUBSCRIBER_MODES, subscriber_case, comparable_subscribers
 from sdk_resource_observations import ResourceSamples
+from sdk_tag_compare import tag_case, comparable_tag
 
 FIXED_MTIME = 1_700_000_000
 
@@ -113,6 +114,8 @@ async def cases(sandbox, inputs, asynchronous, rows=None, *, resource_sample=Non
         for mode in ('direct', 'reconnect-exit', 'kill'):
             await pty_case(observed, user, int(identity.stdout.strip()), root + '/' + user, mode)
     await list_case(observed, inputs)
+    for user in inputs['users']:
+        await tag_case(observed, user, root + '/' + user)
     healthy = await observed.invoke('commands.run', 'printf paired-healthy', user='ubuntu', timeout=15)
     assert (healthy.stdout, healthy.stderr, healthy.exit_code) == ('paired-healthy', '', 0)
     return observed.rows
@@ -136,6 +139,8 @@ def comparable(rows):
             row = comparable_argument(row)
         if row['method'] == 'commands.subscriber_case':
             row = comparable_subscribers(row)
+        if row['method'] == 'commands.tag_case':
+            row = comparable_tag(row)
         if 'callbacks' in row:
             row['callbacks'] = {key: ''.join(parts) for key, parts in row['callbacks'].items()}
         if row['method'] == 'files.list' and 'result' in row:
@@ -227,6 +232,7 @@ async def exercise(args):
                  'complete controlled command/PTY List snapshots and known-entry retirement; '
                  'foreground/background cwd and user rejections with absent side effects and healthy follow-ups; '
                  'three simultaneous command subscriptions with independent detach and shared terminal output; '
+                 'one-live-tag reconnect, binary input and successful terminal reuse through original generated RPCs; '
                  'not full fault/resource matrices or E03/E06 acceptance'}
     if observe_resources:
         report['resource_sampling'] = '14 identity-bound phase samples per VM; no resource budget verdict'

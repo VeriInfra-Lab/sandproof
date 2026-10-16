@@ -647,6 +647,14 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 
 #507 的 List 回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38833503900) 通过：源 117e7e9e7a767b1f18fc7e99a412806b3004f346、checkout 9d133d3ed35412bf30db67fbd38adc0a2233afe2，9 项 List 回归包含在固定 SDK 162 项中。#508 的后台/PTY 终局后不补发 kill 回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38834237283) 通过：源 db570135ee33a391394c17a37aa84c66726e9e58、checkout 59088f9d58a716778ba7bd2606c0df090b717936，固定 SDK 165 项通过。两次封存 Redis 及四项 CI 均成功；均不包含真实产品 VM 或之后的 stdin/期限收尾改动。
 
+[单存活 tag 双端片段](../tests/system/sdk_tag_compare.py)在原四 VM 调用计划中，为 root 的空 tag 和 ubuntu 的特殊字符 tag 各执行两个顺序命令。每个命令先独占写入 once 标记并发出原就绪字节，消费就绪后关闭初始订阅，按 tag 重连、写入空输入和全部 256 个 byte、关闭 stdin，核对 hash/stdout/stderr 与实际 End。随后按 tag 控制须返回原 not_found，保留 Connect 只返回原终局；第二次 Start 复用同一 tag 后，旧 PID Connect 必须返回原 not_found，原标记不能被重放。活跃 List 的全部字段与 tag 存在性仍严格核对，终局移除共用上述有界观察检查；保留 Connect 后再次要求完整空表。固定 Go [Start](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/internal/services/process/start.go) 在新进程启动成功后、登记前清除非 nil tag 的旧终局，空字符串也进入该分支；本片段据此核对成功复用，不推断失败 Start 的清除时序相同。
+
+固定 Commands.run 不暴露 tag，因此该片段通过同一 sandbox 已配置的[原生成 ProcessClient](../tests/system/sdk_tag_rpc.py)发送 tag 字段，仍使用原同步/异步 CommandHandle、原鉴权和传输；不修改 SDK、不重新配置路由或泄露连接头。Start/活跃 Connect 为 60 秒，保留/旧 PID Connect 为 20 秒，一元及初始就绪等待为 15 秒；外层原 VM 寿命不刷新。仅同一时刻一个存活 tag 的成功/保留/复用行为进入 Go/Rust 相等比较，不把已批准的重复存活 tag 拒绝和多个不同 tag 的 Go 遍历差异混为相等。
+
+比较只改写已核实的两次 Start PID、对应句柄/列表引用，以及精确核实的旧 PID not_found 文本；原错误类别、tag、配置、输入、输出及原证据均保留。原 List 前置/移除观察的采样差异按同一检查排除，实际固定快照仍比较；不搜索替换任意数字。未知 Start 不重试；失败收尾只作用于尚未取得真实 End 的已知 PID，收到终局后不补发 kill。预期旧 PID 拒绝却返回句柄时只关闭该订阅，不按其 PID 发信号；原错误和关闭错误共同保留。
+
+[tag 对照回归](../tests/compat/test_tag_compare.py)以原 SDK 句柄和预定事件检查重连、旧 PID/字段错误、未知启动/输入、缺 End、错误退出类别及精确收尾；实际生成客户端经回环 HTTP 核对空/特殊 tag、原 Basic/token、期限和流式/一元错误解析。相同私有程序另在真实 pipe 子进程检查 ready、输入摘要、stderr 与 once。当前为本地回归，尚未执行真实 Go/Rust VM，不表示正式服务重启、重复 tag 差异矩阵、完整 E03/E04/E05 或 KVM 已通过；首次获准实跑前仍须技术复核。
+
 [命令参数双端片段](../tests/system/sdk_argument_compare.py)在同一输入计划上执行前台/后台两组案例。每组分别检查 root/ubuntu 的公开目录、root 私有目录以及指向它们的符号链接；Python 程序核对实际物理 cwd、有效用户、空字符串/引号/中文参数和含空值/换行的环境变量，stdout/stderr 与完整终局逐字段比较。两组各有 13 类拒绝：未知账户及未知账户伴随缺失 cwd、root/ubuntu 的缺失路径/悬空链接/普通文件/非目录父路径，以及 ubuntu 无权进入的目录/链接/私有目录下的缺失子项。每次拒绝必须是指定 SDK 异常类型，保留并比较原错误全文；随后检查该次唯一标记不存在，再执行合法 ubuntu 命令。准备时确认账户不存在，读取目录/文件归属、权限和固定实际 mtime，最后核对普通文件内容未变。
 
 每台 VM 的该片段包含 66 次原 Start：两次准备、12 次合法上下文、26 次拒绝及 26 次拒绝后的健康调用；正常路径得到六个后台句柄。命令及其请求期限显式为 15 秒，准备沿用原命令默认请求期限，VM 寿命仍由外层限定。后台比较仅将已验证的原 Start PID、result.pid 及 wait/disconnect 的 handle_pid 转成同一逻辑引用；只合并同通道回调分块，原数字和分块仍保存。命令、参数、环境、输出及错误中类似 PID 的文本均不得替换。预期拒绝却成功返回的后台句柄先纳入所有权，再按原 PID 尝试一次失败收尾；未知 Start 不补造 PID、不重发，已经取得公开终局不追加 kill。原失败和全部收尾失败共同保留。
