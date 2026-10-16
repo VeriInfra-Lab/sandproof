@@ -9,6 +9,7 @@
 pub mod build_info;
 #[cfg(any(target_os = "linux", test))]
 mod command_clock;
+pub mod command_keepalive;
 pub mod command_requests;
 mod connect_timeout;
 pub mod file_authorization;
