@@ -1,5 +1,5 @@
 //! Selected Connect JSON headers after the original token/Basic preflight.
-//! No listener or tag policy is installed.
+//! Listener assembly and tag selection belong to the command dispatcher.
 #[cfg(any(target_os = "linux", test))]
 use axum::http::{HeaderMap, Method};
 #[cfg(any(target_os = "linux", test))]
@@ -118,6 +118,8 @@ pub enum Error {
     Compression(RejectedValue),
     Version(RejectedValue),
     Timeout(InvalidTimeout),
+    /// Approved Start/Connect policy, separate from the fixed Go observations.
+    Keepalive(crate::command_keepalive::InvalidInterval),
     /// Selection understands gzip; this decoder cannot expand a gzip request.
     EncodingNotImplemented,
 }
@@ -130,6 +132,7 @@ struct Plan {
     request_encoding: Encoding,
     response_encoding: Encoding,
     deadline: Instant,
+    keepalive: Option<std::time::Duration>,
 }
 #[cfg(any(target_os = "linux", test))]
 impl Plan {
@@ -217,12 +220,21 @@ fn select(
         ));
     }
     let deadline = parsed.map_err(|error| (Error::Timeout(error), deadline, Some(response)))?;
+    let keepalive = if rpc.is_stream() {
+        Some(
+            crate::command_keepalive::bounded_period(headers)
+                .map_err(|error| (Error::Keepalive(error), deadline, Some(response)))?,
+        )
+    } else {
+        None
+    };
     Ok(Plan {
         rpc,
         codec,
         request_encoding,
         response_encoding,
         deadline,
+        keepalive,
     })
 }
 
@@ -304,8 +316,8 @@ mod owned {
         /// preflight, without polling its body. Retain its original request slot
         /// on every failure; never refresh the admission deadline.
         /// # Errors
-        /// Original expiry, method/codec, compression, version or timeout. These
-        /// are component observations, not a public HTTP status/error policy.
+        /// Original expiry, method/codec, compression, version or timeout, then
+        /// the approved bounded-positive keepalive policy for Start/Connect.
         pub fn select_json(self, method: &Method, rpc: Rpc) -> Result<Selected, Failure> {
             match select(
                 self.headers(),
@@ -402,6 +414,7 @@ mod owned {
             decoded
                 .map(|mut ready| {
                     ready.response = Some(response);
+                    ready.keepalive = self.plan.keepalive;
                     ready
                 })
                 .map_err(|failure| Failure::request(failure, response))

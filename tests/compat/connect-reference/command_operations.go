@@ -22,6 +22,7 @@ type commandOperationInput struct {
 	Method, Kind string
 	Cwd          string
 	User         string
+	Tag          string
 	DefaultCwd   *string
 	Cmd, Native  string
 	Pipe         string
@@ -76,6 +77,8 @@ func operationError(headers http.Header) error {
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("invalid input type %T", selector))
 	case "pid":
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("process with pid %d not found", uint32(input.Number)))
+	case "tag":
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("process with tag %s not found", input.Tag))
 	case "input":
 		var input *rpc.ProcessInput
 		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("invalid input type %T", input.GetInput()))

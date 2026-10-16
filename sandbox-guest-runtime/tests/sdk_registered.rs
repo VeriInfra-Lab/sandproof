@@ -35,7 +35,9 @@ use sandproof_guest_service::{
         AdmissionLimits, CommandBodyLimits, CommandOwners, ManagedCommand, OwnerLimits,
         PidRegistrar, PidRegistry, RegistryError, RegistryLimits,
     },
-    command_http::{CommandHttp, Prepared, Processes, RequestPools, ResponseLimits},
+    command_http::{
+        CommandHttp, Prepared, Processes, Ready as CommandReady, RequestPools, ResponseLimits,
+    },
     command_requests::{self, CommandRequests},
     file_upload::HeaderLimits,
     upload_body::HttpBodyLimits,
@@ -53,6 +55,14 @@ use tokio::{
 const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
 const LIMIT: usize = 16384;
 const REQUESTS: usize = 4;
+const INVALID_KEEPALIVE: [&str; 6] = [
+    "0",
+    "-1",
+    "9223372037",
+    "-9223372037",
+    "20211507185753197",
+    "9223372036854775807",
+];
 
 struct MetadataFixture;
 impl MetadataSource for MetadataFixture {
@@ -99,12 +109,14 @@ struct Fixture {
     http: CommandHttp<MetadataFixture, CurrentAccount>,
     lookups: Arc<AtomicUsize>,
     calls: AtomicUsize,
+    keepalive_rejections: AtomicUsize,
     requests: CommandRequests,
     controls: CommandRequests,
     owners: CommandOwners,
     registry: PidRegistry,
     expected: Request,
     started: AtomicBool,
+    duplicate_starts: AtomicUsize,
     command: Mutex<Option<Stop>>,
 }
 fn binding() -> Binding {
@@ -251,12 +263,14 @@ impl Fixture {
             http,
             lookups,
             calls: AtomicUsize::new(0),
+            keepalive_rejections: AtomicUsize::new(0),
             requests,
             controls,
             owners,
             registry,
             expected: expected(request),
             started: AtomicBool::new(false),
+            duplicate_starts: AtomicUsize::new(0),
             command: Mutex::new(None),
         }
     }
@@ -271,18 +285,55 @@ async fn dispatch(
     let start = uri.path() == "/process.Process/Start";
     let stream = start || uri.path() == "/process.Process/Connect";
     selected_json(&headers, stream);
+    let invalid_keepalive = headers.get("keepalive-ping-interval").map(|value| {
+        assert!(stream);
+        assert!(
+            INVALID_KEEPALIVE
+                .iter()
+                .any(|expected| value.as_bytes() == expected.as_bytes())
+        );
+        std::fs::read(fixture.directory.path().join("pid-claims.bin")).unwrap()
+    });
     let mut request = HttpRequest::new(body);
     *request.method_mut() = Method::POST;
     *request.uri_mut() = uri;
     *request.headers_mut() = headers;
     let prepared = fixture.http.prepare(request).await.unwrap();
     fixture.calls.fetch_add(1, Ordering::SeqCst);
+    if let Some(before) = invalid_keepalive {
+        let Prepared::Response(response) = prepared else {
+            panic!("invalid keepalive was not rejected before decoding");
+        };
+        assert!(!fixture.started.load(Ordering::SeqCst));
+        assert!(!fixture.directory.path().join("effect").exists());
+        assert_eq!(fixture.registry.available_slots(), 1);
+        assert!(fixture.owners.reserve().is_ok());
+        assert_eq!(
+            std::fs::read_dir(fixture.directory.path().join("gates"))
+                .unwrap()
+                .count(),
+            0
+        );
+        assert_eq!(
+            std::fs::read(fixture.directory.path().join("pid-claims.bin")).unwrap(),
+            before
+        );
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/connect+json"
+        );
+        fixture.keepalive_rejections.fetch_add(1, Ordering::SeqCst);
+        return response;
+    }
     let Prepared::Ready(ready) = prepared else {
         panic!("unexpected fixture preflight rejection");
     };
     if start {
         assert_eq!(ready.request(), &fixture.expected);
-        assert!(!fixture.started.swap(true, Ordering::SeqCst));
+        if fixture.started.swap(true, Ordering::SeqCst) {
+            return duplicate_start(&fixture, *ready).await;
+        }
     }
     let response = ready.execute().await.unwrap();
     if start {
@@ -291,6 +342,40 @@ async fn dispatch(
         let pid = u32::try_from(listed["processes"][0]["pid"].as_u64().unwrap()).unwrap();
         *fixture.command.lock().unwrap() = Some(Stop(fixture.registry.connectable(pid).unwrap()));
     }
+    response
+}
+
+async fn duplicate_start(
+    fixture: &Fixture,
+    ready: CommandReady<MetadataFixture, CurrentAccount>,
+) -> Response {
+    let Request::Start(expected) = &fixture.expected else {
+        panic!("fixture must hold a Start request");
+    };
+    let tag = expected
+        .tag
+        .as_deref()
+        .expect("only tagged fixtures may repeat Start");
+    assert_eq!(fixture.duplicate_starts.fetch_add(1, Ordering::SeqCst), 0);
+    let command = fixture.registry.live_tag(tag).unwrap().identity();
+    let claims = fixture.directory.path().join("pid-claims.bin");
+    let before = std::fs::read(&claims).unwrap();
+    let gates = || {
+        std::fs::read_dir(fixture.directory.path().join("gates"))
+            .unwrap()
+            .count()
+    };
+    let gate_count = gates();
+    let response = ready.execute().await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(std::fs::read(claims).unwrap(), before);
+    assert_eq!(gates(), gate_count);
+    assert_eq!(fixture.registry.live_tag(tag).unwrap().identity(), command);
+    assert!(fixture.owners.reserve().is_err());
+    assert_eq!(
+        std::fs::read(fixture.directory.path().join("effect")).unwrap(),
+        b"once"
+    );
     response
 }
 
@@ -318,6 +403,15 @@ fn selected_json(headers: &HeaderMap, stream: bool) {
 }
 
 async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
+    let tagged = matches!(&fixture.expected, Request::Start(request) if request.tag.is_some());
+    assert_eq!(
+        fixture.duplicate_starts.load(Ordering::SeqCst),
+        usize::from(tagged)
+    );
+    assert_eq!(
+        fixture.keepalive_rejections.load(Ordering::SeqCst),
+        2 * INVALID_KEEPALIVE.len()
+    );
     let command = fixture.command.lock().unwrap().take().unwrap();
     let exit = timeout(Duration::from_secs(5), command.0.wait())
         .await
@@ -352,6 +446,14 @@ async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
         fixture.registry.connectable(identity.pid),
         Err(RegistryError::NotFound)
     ));
+    if let Request::Start(request) = &fixture.expected
+        && let Some(tag) = &request.tag
+    {
+        assert!(matches!(
+            fixture.registry.connectable_tag(tag),
+            Err(RegistryError::NotFound)
+        ));
+    }
     tokio::time::resume();
     drop(command);
     timeout(Duration::from_secs(5), async {
@@ -382,12 +484,12 @@ async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
         if basic {
             fixture.calls.load(Ordering::SeqCst)
         } else {
-            1
+            1 + usize::from(tagged)
         }
     );
 }
 
-async fn probe(asynchronous: bool, mode: &str) {
+async fn probe(asynchronous: bool, mode: &str, tag: Option<&str>) {
     let script = match mode {
         "pipe" => "printf once >> effect; printf '%s|ready' \"$VALUE\"; exec /bin/cat",
         "term" | "kill" => {
@@ -401,6 +503,9 @@ async fn probe(asynchronous: bool, mode: &str) {
     let mut request = json!({"process":{"cmd":"/bin/sh", "args":["-c",script], "envs":{"VALUE":"request"}},"stdin":true});
     if mode == "pty" {
         request["pty"] = json!({"size":{"cols":80,"rows":24}});
+    }
+    if let Some(tag) = tag {
+        request["tag"] = json!(tag);
     }
     let fixture = Arc::new(Fixture::new(&request).await);
     let mut app = Router::new();
@@ -444,7 +549,7 @@ async fn probe(asynchronous: bool, mode: &str) {
         .spawn()
         .unwrap();
     let settings = json!({"url":format!("http://{address}"),"asynchronous":asynchronous,
-        "basic":asynchronous,"mode":mode,"request":request});
+        "basic":asynchronous,"mode":mode,"request":request,"keepalive_values":INVALID_KEEPALIVE});
     sdk.stdin
         .take()
         .unwrap()
@@ -470,7 +575,21 @@ async fn probe(asynchronous: bool, mode: &str) {
 async fn pinned_sdk_uses_authenticated_original_pid_for_every_command_operation() {
     for asynchronous in [false, true] {
         for mode in ["pipe", "pty", "term", "kill"] {
-            probe(asynchronous, mode).await;
+            probe(asynchronous, mode, None).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn pinned_sdk_uses_exact_tags_and_decodes_duplicate_and_missing_tag_failures() {
+    for asynchronous in [false, true] {
+        for (mode, tag) in [
+            ("pipe", ""),
+            ("pty", "123"),
+            ("term", "a\"\\<>&中\n"),
+            ("kill", "名\u{2028}"),
+        ] {
+            probe(asynchronous, mode, Some(tag)).await;
         }
     }
 }

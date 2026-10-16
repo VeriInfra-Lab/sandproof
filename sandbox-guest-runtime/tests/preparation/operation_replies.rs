@@ -165,6 +165,14 @@ async fn check_missing(pool: &CommandRequests, fixture: &Fixture, registry: &Pid
             error,
             json!({"code":"not_found","message":format!("process with pid {} not found",u32::MAX)})
         );
+        for tag in ["", "tag\"\\<>&中\n"] {
+            let error =
+                rejected(pool, fixture, registry, rpc, json!({"process":{"tag":tag}})).await;
+            assert_eq!(
+                error,
+                json!({"code":"not_found", "message":format!("process with tag {tag} not found")})
+            );
+        }
     }
 }
 
@@ -262,29 +270,19 @@ async fn original_pid_lookup_precedes_parameter_rejections_and_valid_control_sti
 }
 
 #[tokio::test]
-async fn operation_sender_does_not_classify_tag_or_unselected_component_failure() {
+async fn operation_sender_requires_http_selection_for_pid_and_tag_failures() {
     let fixture = Fixture::new().await;
     let registry = registry();
     let pool = requests(1);
-    for tagged in [false, true] {
-        let ready = if tagged {
-            selected(
-                &pool,
-                &fixture,
-                Rpc::Connect,
-                json!({"process":{"tag":"pending"}}),
-            )
-            .await
-        } else {
-            ready(
-                &pool,
-                &fixture,
-                "Connect",
-                json!({"process":{"pid":123}}),
-                Instant::now() + Duration::from_secs(30),
-            )
-            .await
-        };
+    for selector in [json!({"pid":123}), json!({"tag":"pending"})] {
+        let ready = ready(
+            &pool,
+            &fixture,
+            "Connect",
+            json!({"process":selector}),
+            Instant::now() + Duration::from_secs(30),
+        )
+        .await;
         let failure = ready
             .execute_pid(&registry, response())
             .await

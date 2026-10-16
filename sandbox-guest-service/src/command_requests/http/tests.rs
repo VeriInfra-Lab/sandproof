@@ -1,6 +1,7 @@
 use super::*;
 use std::time::Duration;
 
+mod keepalive;
 mod reference;
 
 fn headers(stream: bool) -> HeaderMap {

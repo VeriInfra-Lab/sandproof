@@ -13,6 +13,7 @@ pub(crate) use native::{LaunchFailure, LaunchFailureKind, PipeStream, PtyStage};
 // Exactly one observation from this Start, never reconstructed from its coarse
 // error or from a later path/account lookup.
 pub(crate) enum Rejection {
+    TagAlreadyExists(String),
     MissingCwd(String),
     Launch(LaunchFailure),
     Expansion(crate::upload_response::PathExpansion),
@@ -22,6 +23,9 @@ impl Rejection {
     fn matches(&self, error: &RequestError) -> bool {
         use crate::command::{CommandError, RegistrationError};
         match self {
+            Self::TagAlreadyExists(_) => {
+                *error == RequestError::Registry(crate::command::RegistryError::AlreadyExists)
+            }
             Self::MissingCwd(_) => {
                 *error
                     == RequestError::Registration(RegistrationError::Preparation(
@@ -67,6 +71,11 @@ impl Rejection {
 
     fn payload(&self, limit: usize) -> Result<Vec<u8>, reply::Error> {
         match self {
+            Self::TagAlreadyExists(tag) => message_with_code(
+                b"already_exists",
+                &[b"process with tag ", tag.as_bytes(), b" already exists"],
+                limit,
+            ),
             Self::MissingCwd(path) => {
                 message(&[b"cwd '", path.as_bytes(), b"' does not exist"], limit)
             }
@@ -181,8 +190,14 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Observe
 }
 
 fn message(parts: &[&[u8]], limit: usize) -> Result<Vec<u8>, reply::Error> {
+    message_with_code(b"invalid_argument", parts, limit)
+}
+
+fn message_with_code(code: &[u8], parts: &[&[u8]], limit: usize) -> Result<Vec<u8>, reply::Error> {
     crate::go_json::bounded(limit as u64, |put| {
-        put(br#"{"error":{"code":"invalid_argument","message":""#)?;
+        put(br#"{"error":{"code":""#)?;
+        put(code)?;
+        put(br#"","message":""#)?;
         for part in parts {
             crate::go_json::string_content(part, put)?;
         }

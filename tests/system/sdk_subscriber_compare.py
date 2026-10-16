@@ -18,6 +18,7 @@ from sdk_command_input import KnownCommand, call
 from sdk_observations import Calls, Capture
 
 MODES = ('detach-start', 'detach-peer')
+RESOURCE_PHASES = ('subscribed', 'detached', 'terminal')
 
 
 class RecordedHandle:
@@ -36,7 +37,7 @@ class RecordedHandle:
             evidence=dict(subscription=self.name, handle_pid=self.pid))
 
 
-async def subscriber_case(observed, user, parent, mode):
+async def subscriber_case(observed, user, parent, mode, *, resource_sample=None):
     assert mode in MODES
     directory = parent + '/subscribers-' + mode
     row = dict(method='commands.subscriber_case', args=[user, directory, mode],
@@ -47,6 +48,10 @@ async def subscriber_case(observed, user, parent, mode):
     commands = observed.sandbox.commands
     code = 0 if mode == 'detach-start' else 17
     expected = (code, 'exit status 17' if code else None)
+
+    async def sample(phase):
+        if resource_sample is not None:
+            await resource_sample(f'subscribers/{user}/{mode}/{phase}')
 
     async def subscribe(name, *args, **kwargs):
         capture = {channel: Capture() for channel in ('stdout', 'stderr')}
@@ -83,10 +88,12 @@ async def subscriber_case(observed, user, parent, mode):
         ready = await calls.invoke('commands.run', 'cat ' + shlex.quote(directory + '/ready'),
                                    user=user, timeout=15)
         assert (ready.exit_code, ready.error, ready.stdout, ready.stderr) == (0, None, 'ready\n', '')
+        await sample('subscribed')
         detached = row['detached'] = 'start' if mode == 'detach-start' else 'peer-a'
         for name, handle, _ in subscriptions:
             if name == detached:
                 await owned.disconnect(handle)
+        await sample('detached')
         await calls.operation('commands.send_stdin', commands.send_stdin, owned.pid, TEXT, request_timeout=15)
         await calls.operation('commands.send_stdin', commands.send_stdin, owned.pid, BINARY, request_timeout=15)
         await calls.operation('commands.close_stdin', commands.close_stdin, owned.pid, request_timeout=15)
@@ -112,6 +119,7 @@ async def subscriber_case(observed, user, parent, mode):
         await wait('late', late, capture, '', '')
         marker = await calls.invoke('files.read', directory + '/started', user=user, request_timeout=15)
         assert marker == 'once\n', 'subscribing executed the command again'
+        await sample('terminal')
     row['status'] = 'complete'
     return row
 

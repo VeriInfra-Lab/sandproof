@@ -1,6 +1,6 @@
-"""Pinned sync/async SDK -> authenticated PID components in a restricted fixture.
+"""Pinned sync/async SDK -> authenticated PID/tag components in a restricted fixture.
 
-No cloud, VM, production router, tag policy or fixed-Go differential result.
+No cloud, VM, installed daemon or fixed-Go differential result.
 """
 
 import asyncio
@@ -31,11 +31,12 @@ class Peer:
                          else (sync_client, process_connect.ProcessClientSync))
         self.client = factory(kind, settings['url'], ConnectionConfig())
 
-    def call(self, method, request):
-        return getattr(self.client, method)(request, headers=self.headers, timeout_ms=10000)
+    def call(self, method, request, headers=None):
+        return getattr(self.client, method)(request, headers=self.headers | (headers or {}),
+                                            timeout_ms=10000)
 
-    async def unary(self, method, kind, payload):
-        result = self.call(method, kind.from_json(json.dumps(payload)))
+    async def unary(self, method, kind, payload, headers=None):
+        result = self.call(method, kind.from_json(json.dumps(payload)), headers)
         return await result if self.asynchronous else result
 
     async def next(self, stream):
@@ -47,16 +48,16 @@ class Peer:
         else:
             stream.close()
 
-    async def rejected(self, method, kind, payload, code, message):
+    async def rejected(self, method, kind, payload, code, message, headers=None):
         try:
-            if method == 'connect':
-                stream = self.call(method, kind.from_json(json.dumps(payload)))
+            if method in ('start', 'connect'):
+                stream = self.call(method, kind.from_json(json.dumps(payload)), headers)
                 try:
                     await self.next(stream)
                 finally:
                     await self.close(stream)
             else:
-                await self.unary(method, kind, payload)
+                await self.unary(method, kind, payload, headers)
         except ConnectError as error:
             assert (error.code, error.message) == (code, message), repr(error)
         else:
@@ -128,6 +129,19 @@ class Peer:
 
 async def run(settings):
     peer, mode = Peer(settings), settings['mode']
+    tagged = 'tag' in settings['request']
+    tag = settings['request'].get('tag')
+    # The original generated RPC client may supply this explicit header. The
+    # higher-level commands/PTY APIs normally send their fixed 50-second value.
+    # Each rejected Start must finish before the one permitted real Start.
+    for value in settings['keepalive_values']:
+        for method, kind, payload in [
+            ('start', process_pb.StartRequest, settings['request']),
+            ('connect', process_pb.ConnectRequest, {'process': {'pid': 4294967295}}),
+        ]:
+            await peer.rejected(method, kind, payload, Code.INVALID_ARGUMENT,
+                                'keepalive interval must be between 1 and 9223372036 seconds',
+                                {'keepalive-ping-interval': value})
     request = process_pb.StartRequest.from_json(json.dumps(settings['request']))
     stream = peer.call('start', request)
     try:
@@ -137,15 +151,31 @@ async def run(settings):
         listed = await peer.unary('list', process_pb.ListRequest, {})
         assert len(listed.processes) == 1
         item = listed.processes[0]
-        assert item.pid == pid and not item.has_field('tag')
+        assert item.pid == pid and item.has_field('tag') == tagged
+        if tagged:
+            assert item.tag == tag
         assert item.config == request.process
         assert not item.config.has_field('cwd')  # Raw request, not resolved home.
         await peer.output(stream, 'pty' if mode == 'pty' else 'stdout',
                           b'24 80\r\n' if mode == 'pty' else b'request|ready')
+        if tagged:
+            await peer.rejected('start', process_pb.StartRequest, settings['request'],
+                                Code.ALREADY_EXISTS, f'process with tag {tag} already exists')
     finally:
         await peer.close(stream)
 
-    selector = {'process': {'pid': pid}}
+    selector = {'process': {'tag': tag} if tagged else {'pid': pid}}
+    if tagged:
+        for absent in (f'missing-{tag}', str(pid)):
+            if absent == tag:
+                continue
+            for method, kind in [('connect', process_pb.ConnectRequest),
+                                 ('send_input', process_pb.SendInputRequest),
+                                 ('close_stdin', process_pb.CloseStdinRequest),
+                                 ('send_signal', process_pb.SendSignalRequest),
+                                 ('update', process_pb.UpdateRequest)]:
+                await peer.rejected(method, kind, {'process': {'tag': absent}},
+                                    Code.NOT_FOUND, f'process with tag {absent} not found')
     # Native SDK calls decode real Rust failure responses before a later valid
     # reconnect/control. They neither close stdin nor substitute a signal.
     missing = {'process': {'pid': 4294967295}}
@@ -216,6 +246,9 @@ async def run(settings):
 
     listed = await peer.unary('list', process_pb.ListRequest, {})
     assert listed.processes == []
+    if tagged:
+        await peer.rejected('send_signal', process_pb.SendSignalRequest, selector,
+                            Code.NOT_FOUND, f'process with tag {tag} not found')
     # A late connection receives the same terminal result, without replay/exec.
     stream = peer.call('connect', process_pb.ConnectRequest.from_json(json.dumps(selector)))
     try:
@@ -230,5 +263,9 @@ if __name__ == '__main__':
     settings = json.load(sys.stdin)
     with isolated_sdk_environment():
         asyncio.run(run(settings))
-    print(f"authenticated PID SDK: {settings['mode']}, async={settings['asynchronous']} passed; "
-          f"{11 if settings['mode'] in ('term', 'kill') else 9} operation rejections passed")
+    print(f"authenticated {'tag' if 'tag' in settings['request'] else 'PID'} SDK: "
+          f"{settings['mode']}, async={settings['asynchronous']} passed; "
+          f"{2 * len(settings['keepalive_values'])} keepalive rejections passed; "
+          f"{11 if settings['mode'] in ('term', 'kill') else 9} base operation rejections passed")
+    if 'tag' in settings['request']:
+        print('exact tag selection, duplicate Start and missing/live-only tag rejections passed')

@@ -119,6 +119,12 @@ fn invalid_budgets_and_cross_component_context_fail_before_external_work() {
         ("/runtime/shutdown_timeout", json!({"secs":0,"nanos":0})),
         ("/commands/registry/retention", json!({"secs":0,"nanos":0})),
         (
+            "/commands/registry/retention",
+            json!({"secs":29,"nanos":999_999_999}),
+        ),
+        ("/commands/registry/retention", json!({"secs":30,"nanos":1})),
+        ("/commands/registry/retention", json!({"secs":31,"nanos":0})),
+        (
             "/commands/admission/cleanup_timeout",
             json!({"secs":0,"nanos":0}),
         ),

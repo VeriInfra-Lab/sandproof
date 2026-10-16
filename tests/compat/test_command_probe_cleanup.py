@@ -73,10 +73,12 @@ class Transcript:
             for event in events or []:
                 if isinstance(event, Exception):
                     raise event
-                yield response(event=pb.ProcessEvent(event=Oneof(*event)))
+                yield None if event is None else response(event=pb.ProcessEvent(event=Oneof(*event)))
         async def asynchronous():
             try:
                 for message in messages():
+                    if message is None:
+                        await asyncio.Event().wait()
                     yield message
                 if events is None:
                     # A held subscription ends only when the SDK disconnects.
@@ -85,7 +87,9 @@ class Transcript:
                 self.closed.append(label)
         def synchronous():
             try:
-                yield from messages()
+                for message in messages():
+                    assert message is not None, 'unexpected read beyond held output'
+                    yield message
                 assert events is not None, 'unexpected wait on a held subscription'
             finally:
                 self.closed.append(label)

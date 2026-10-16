@@ -359,8 +359,13 @@ def comparable_list(original):
         parts['pty'] = value(b''.join(base64.b64decode(c['base64'], validate=True) for c in parts['pty']))
     expected_observations = [([], None, True), (['root', 'ubuntu'], 'pty', False),
                              (['ubuntu'], 'root', False), ([], 'ubuntu', False)]
-    assert len(row['observations']) == len(expected_observations)
-    for observation, expected in zip(row['observations'], expected_observations):
+    check_observations(row['observations'], expected_observations, pids, definitions)
+    return row
+
+
+def check_observations(observations, expected_observations, pids, definitions):
+    assert len(observations) == len(expected_observations)
+    for observation, expected in zip(observations, expected_observations):
         assert (observation['names'], observation['retiring'], observation['baseline']) == expected
         assert observation['status'] == 'complete' and 0 < len(observation['calls']) <= ROUNDS
         previous_timeout = SECONDS
@@ -381,4 +386,3 @@ def comparable_list(original):
         # exact known-identity removal progress are excluded from equality;
         # stable complete snapshots and all their fields are compared above.
         del observation['calls']
-    return row

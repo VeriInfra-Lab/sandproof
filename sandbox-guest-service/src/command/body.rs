@@ -19,6 +19,8 @@ pub struct CommandBodyLimits {
     pub message_bytes: usize,
     /// Period after the last Start/data frame owner releases it. Keepalive
     /// frames do not reset the schedule. Must be positive.
+    /// Direct-component interval. HTTP-selected Start/Connect replace this
+    /// with their validated original header (or the fixed 90-second fallback).
     pub keepalive: Duration,
 }
 impl CommandBodyLimits {

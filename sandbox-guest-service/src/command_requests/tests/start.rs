@@ -161,7 +161,7 @@ async fn start_reuses_explicit_account_and_only_resolves_defaults_once() {
 }
 
 #[tokio::test]
-async fn default_account_precedes_invalid_command_and_tag_policy_is_not_selected() {
+async fn default_account_precedes_invalid_command_and_tag_reservation() {
     let session = session().await;
     session
         .initialize(br#"{"accessToken":"token","defaultUser":"missing"}"#)
@@ -203,11 +203,14 @@ async fn default_account_precedes_invalid_command_and_tag_policy_is_not_selected
             .await
             .err()
             .unwrap();
-        assert_eq!(failure.error(), Error::UnsupportedOperation);
+        assert_eq!(
+            failure.error(),
+            Error::Context(ContextError::Unauthenticated)
+        );
         drop(failure);
         released(&pool).await;
     }
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
     assert_eq!(fixture.registry.available_slots(), 1);
     drop(fixture.owners.reserve().unwrap());
 }

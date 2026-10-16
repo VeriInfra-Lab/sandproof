@@ -13,6 +13,7 @@ import re
 import shlex
 import stat
 import sys
+import time
 
 PLATFORM = '/opt/sandproof'
 NAMES = {'service': 'sandproof-guest-service', 'worker': 'sandproof-guest-worker',
@@ -20,6 +21,7 @@ NAMES = {'service': 'sandproof-guest-service', 'worker': 'sandproof-guest-worker
 LIMITS = {'service': 256 * 1024**2, 'worker': 256 * 1024**2,
           'configuration': 1024**2, 'manifest': 16 * 1024}
 PROGRAM_LIMIT = 24 * 1024
+COMMAND_LIMIT = 32 * 1024
 REPORT_LIMIT = 4096
 PROCESS_LIMIT = 4096
 FD_LIMIT = 4096
@@ -249,8 +251,10 @@ def program_command(expected):
     require(len(source) <= PROGRAM_LIMIT)
     # -I ignores guest PYTHON* overrides and user site modules. Assertions are
     # not used anywhere in this observer; failure checks survive optimization.
-    return ' '.join(shlex.quote(arg) for arg in
-                    ('/usr/bin/python3', '-I', '-c', source.decode(), json.dumps(expected, sort_keys=True)))
+    result = ' '.join(shlex.quote(arg) for arg in
+                     ('/usr/bin/python3', '-I', '-c', source.decode(), json.dumps(expected, sort_keys=True)))
+    require(len(result.encode()) <= COMMAND_LIMIT)
+    return result
 
 
 def receipt(result, expected):
@@ -318,12 +322,129 @@ def go_receipt(result, expected):
     return report
 
 
+def validate_target(expected):
+    if type(expected) is dict and expected.keys() == {'fixed_go'}:
+        validate_go(expected['fixed_go'])
+    else:
+        validate_expected(expected)
+
+
+def observe_target(expected):
+    return (observe_go(expected['fixed_go']) if type(expected) is dict
+            and expected.keys() == {'fixed_go'} else observe(expected))
+
+
+def resource_command(expected, daemon):
+    """Read-only sample of the exact previously observed Rust or Go daemon."""
+    validate_target(expected)
+    validate_daemon(daemon)
+    return program_command({'resources': {'expected': expected, 'daemon': daemon}})
+
+
+def proc_snapshot(name, directory):
+    # A single bounded read avoids assembling smaps_rollup from multiple
+    # changing snapshots. No fallback to inaccurate statm/VmRSS measurements.
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        raw = os.read(fd, 16 * 1024 + 1)
+        require(len(raw) <= 16 * 1024 and not os.read(fd, 1))
+        return raw
+    finally:
+        os.close(fd)
+
+
+def proc_values(raw, fields):
+    values = {}
+    for line in raw.splitlines():
+        key, separator, value = line.partition(b':')
+        if separator and key in fields:
+            require(key not in values)
+            unit = fields[key]
+            match = re.fullmatch(rb'([0-9]+)' + (rb'\s+kB' if unit == 1024 else b''), value.strip())
+            require(match is not None)
+            number = int(match[1]) * unit
+            require(0 <= number < 2**64)
+            values[key] = number
+    require(values.keys() == fields.keys())
+    return values
+
+
+def validate_sample(sample):
+    require(type(sample) is dict and sample.keys() == {
+        'rss_bytes', 'reported_peak_rss_bytes', 'threads', 'open_fds', 'elapsed_ns'})
+    require(all(type(value) is int and 0 <= value < 2**64 for value in sample.values()))
+    require(0 < sample['threads'] <= PROCESS_LIMIT and 0 < sample['open_fds'] <= FD_LIMIT)
+
+
+def read_resources(proc, daemon, *, go_wildcard=False):
+    validate_daemon(daemon)
+    pid, inode = daemon['pid'], daemon['socket_inode']
+    directory = os.open(proc / str(pid), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        require(start_ticks(directory, pid) == daemon['start_ticks'] and owns_socket(directory, inode))
+        executable = identity(os.stat('exe', dir_fd=directory))
+        argv = small_file('cmdline', 4096, directory=directory)
+        started = time.monotonic_ns()
+        status = proc_values(proc_snapshot('status', directory),
+                             {b'Pid': 1, b'Tgid': 1, b'Threads': 1, b'VmHWM': 1024})
+        require(status[b'Pid'] == pid and status[b'Tgid'] == pid)
+        memory = proc_values(proc_snapshot('smaps_rollup', directory), {b'Rss': 1024})
+        fd = os.open('fd', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+        try:
+            count = 0
+            with os.scandir(fd) as entries:
+                for entry in entries:
+                    count += 1
+                    require(count <= FD_LIMIT and entry.name.isascii() and entry.name.isdecimal())
+        finally:
+            os.close(fd)
+        sample = dict(rss_bytes=memory[b'Rss'], reported_peak_rss_bytes=status[b'VmHWM'],
+                      threads=status[b'Threads'], open_fds=count,
+                      elapsed_ns=time.monotonic_ns() - started)
+        validate_sample(sample)
+        require(start_ticks(directory, pid) == daemon['start_ticks']
+                and identity(os.stat('exe', dir_fd=directory)) == executable
+                and small_file('cmdline', 4096, directory=directory) == argv
+                and owns_socket(directory, inode)
+                and listener_inode(proc, 49983, go_wildcard=go_wildcard) == inode)
+        return sample
+    finally:
+        os.close(directory)
+
+
+def observe_resources(request):
+    require(type(request) is dict and request.keys() == {'expected', 'daemon'})
+    expected, daemon = request['expected'], request['daemon']
+    validate_target(expected)
+    validate_daemon(daemon)
+    before = observe_target(expected)
+    require(before['daemon'] == daemon)
+    sample = read_resources(Path('/proc'), daemon, go_wildcard=expected.keys() == {'fixed_go'})
+    require(observe_target(expected) == before)
+    return dict(schema_version=1, expected=expected, daemon=daemon, sample=sample)
+
+
+def resource_receipt(result, expected, daemon):
+    validate_target(expected)
+    validate_daemon(daemon)
+    require(result.exit_code == 0 and not result.stderr
+            and len(result.stdout.encode()) <= REPORT_LIMIT)
+    report = json.loads(result.stdout, object_pairs_hook=unique)
+    require(type(report) is dict and report.keys() == {'schema_version', 'expected', 'daemon', 'sample'}
+            and type(report['schema_version']) is int and report['schema_version'] == 1)
+    validate_target(report['expected'])
+    validate_daemon(report['daemon'])
+    validate_sample(report['sample'])
+    require(report['expected'] == expected and report['daemon'] == daemon)
+    return report
+
+
 if __name__ == '__main__':
     try:
         require(len(sys.argv) == 2 and len(sys.argv[1].encode()) <= REPORT_LIMIT)
         expected = json.loads(sys.argv[1], object_pairs_hook=unique)
-        report = (observe_go(expected['fixed_go']) if type(expected) is dict
-                  and expected.keys() == {'fixed_go'} else observe(expected))
+        report = (observe_resources(expected['resources']) if type(expected) is dict
+                  and expected.keys() == {'resources'} else observe_target(expected))
         print(json.dumps(report, sort_keys=True))
     except Exception:
         print('guest_identity_failed', file=sys.stderr)

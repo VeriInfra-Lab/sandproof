@@ -16,7 +16,6 @@ import argparse
 import asyncio
 import hashlib
 import importlib.metadata
-import inspect
 import json
 import os
 import shlex
@@ -25,14 +24,9 @@ import uuid
 from e2b import AsyncSandbox, Sandbox
 from e2b.sandbox.commands.command_handle import CommandExitException
 from sdk_server_smoke import options
-from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
-
-
-async def call(function, *args, **kwargs):
-    if inspect.iscoroutinefunction(function):
-        return await function(*args, **kwargs)
-    result = await asyncio.to_thread(function, *args, **kwargs)
-    return await result if inspect.isawaitable(result) else result
+from sdk_data_contract import (
+    KnownCommand, call, guest_arguments, guest_candidate, observe_candidate, public_pid,
+)
 
 
 async def destroy_probes(live):
@@ -51,77 +45,6 @@ async def destroy_probes(live):
             errors.append(error)
     if errors:
         raise BaseExceptionGroup('known probe instance cleanup failed', errors)
-
-
-def public_pid(pid):
-    assert type(pid) is int and 0 < pid <= 4194304, 'invalid original command PID'
-    return pid
-
-
-class KnownCommand:
-    """One returned Start identity; subscription close and process End are distinct."""
-    def __init__(self, commands, original):
-        self.commands, self.original = commands, original
-        self.handles, self.closed = [original], set()
-        self.pid, self.finished, self.signal_attempted = None, False, False
-
-    async def __aenter__(self):
-        try:
-            self.pid = public_pid(self.original.pid)
-        except BaseException as error:
-            await self.cleanup(error)
-            raise
-        return self
-
-    async def __aexit__(self, _kind, error, _traceback):
-        await self.cleanup(error)
-        return False
-
-    def add(self, handle):
-        # Retain even a wrong-PID reply so its subscription can be closed.
-        if all(handle is not known for known in self.handles):
-            self.handles.append(handle)
-        assert public_pid(handle.pid) == self.pid, 'reconnect changed original PID'
-        return handle
-
-    async def wait(self, handle, **kwargs):
-        assert any(handle is known for known in self.handles)
-        assert public_pid(handle.pid) == self.pid
-        try:
-            result = await call(handle.wait, **kwargs)
-        except CommandExitException:
-            self.finished = True
-            raise
-        self.finished = True
-        return result
-
-    async def disconnect(self, handle):
-        assert any(handle is known for known in self.handles)
-        if id(handle) not in self.closed:
-            self.closed.add(id(handle))  # Unknown replies never cause a retry.
-            await call(handle.disconnect)
-
-    async def kill(self, **kwargs):
-        assert self.pid is not None and not self.finished, 'no unfinished original command'
-        assert not self.signal_attempted, 'original signal was already attempted'
-        self.signal_attempted = True
-        return await call(self.commands.kill, self.pid, **kwargs)
-
-    async def cleanup(self, primary):
-        errors = []
-        if self.pid is not None and not self.finished and not self.signal_attempted:
-            try:
-                await self.kill(request_timeout=15)
-            except BaseException as error:
-                errors.append(error)
-        for handle in reversed(self.handles):
-            try:
-                await self.disconnect(handle)
-            except BaseException as error:
-                errors.append(error)
-        if errors:
-            raise BaseExceptionGroup('known command and subscription cleanup failed',
-                                     ([primary] if primary is not None else []) + errors)
 
 
 READ_INPUT = (

@@ -1,5 +1,5 @@
-//! Fixed PID/parameter rejections and original native control/input errno.
-//! Unobserved worker/I/O failure and tag policy remain unclassified.
+//! Fixed PID/tag/parameter rejections and original native control/input errno.
+//! Unobserved worker/I/O failures remain unclassified.
 use super::{ResponseFormat, reply};
 use crate::{command_requests::Error as RequestError, owned_body::Owner};
 use axum::{http::StatusCode, response::Response};
@@ -9,10 +9,11 @@ use tokio::time::Instant;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum Rejection {
     MissingSelector,
     PidNotFound(u32),
+    TagNotFound(String),
     MissingInput,
     Signal(i32),
     Channel(ChannelRejection),
@@ -49,20 +50,20 @@ impl ChannelRejection {
 }
 impl Rejection {
     #[cfg(target_os = "linux")]
-    pub(crate) fn matches(self, error: &RequestError) -> bool {
+    pub(crate) fn matches(&self, error: &RequestError) -> bool {
         match self {
             Self::InputTooLarge => {
                 error == &RequestError::Command(crate::command::CommandError::ResourceExhausted)
             }
             Self::NativeSignal(errno) => {
-                errno > 0
+                *errno > 0
                     && error == &RequestError::Command(crate::command::CommandError::Unavailable)
             }
             Self::NativeInput { errno, .. } | Self::NativeResize(errno) => {
-                errno > 0
+                *errno > 0
                     && error
                         == &RequestError::Command(crate::command::input_error(
-                            &std::io::Error::from_raw_os_error(errno),
+                            &std::io::Error::from_raw_os_error(*errno),
                         ))
             }
             Self::StdinDisabled => {
@@ -74,7 +75,7 @@ impl Rejection {
             Self::Channel(_) => {
                 error == &RequestError::Command(crate::command::CommandError::InvalidArgument)
             }
-            Self::PidNotFound(_) => {
+            Self::PidNotFound(_) | Self::TagNotFound(_) => {
                 error == &RequestError::Registry(crate::command::RegistryError::NotFound)
             }
             _ => {
@@ -120,18 +121,23 @@ impl fmt::Debug for Failure {
 }
 #[cfg(target_os = "linux")]
 impl crate::command_requests::Failure {
-    /// Emit only a failure fact observed by the original PID dispatch/operation.
+    /// Emit only a failure fact observed by the original selector/operation.
     /// No new lookup, operation, token check or deadline is created here.
     /// # Errors
     /// Missing observation/format, invalid limits, expiry or encoding failure.
     /// The original error and request responsibility survive every refusal.
     pub async fn into_operation_response(self, limits: reply::Limits) -> Result<Response, Failure> {
+        let mut original = self;
+        let rejection = original
+            .operation
+            .take()
+            .filter(|r| r.matches(&original.error()));
         let source = Source {
-            rejection: self.operation.filter(|r| r.matches(&self.error())),
-            format: self.response,
-            request_error: self.error(),
-            deadline: self.deadline(),
-            _owner: Arc::new(self),
+            rejection,
+            format: original.response,
+            request_error: original.error(),
+            deadline: original.deadline(),
+            _owner: Arc::new(original),
         };
         send(source, limits).await
     }
@@ -140,7 +146,10 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
     let source = Arc::new(source);
     let result = async {
         let format = source.format.ok_or(reply::Error::UnclassifiedFault)?;
-        let rejection = source.rejection.ok_or(reply::Error::UnclassifiedFault)?;
+        let rejection = source
+            .rejection
+            .as_ref()
+            .ok_or(reply::Error::UnclassifiedFault)?;
         if matches!(
             rejection,
             Rejection::Channel(_)
@@ -155,7 +164,7 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
         }
         let status = match rejection {
             Rejection::InputTooLarge => StatusCode::TOO_MANY_REQUESTS,
-            Rejection::PidNotFound(_) => StatusCode::NOT_FOUND,
+            Rejection::PidNotFound(_) | Rejection::TagNotFound(_) => StatusCode::NOT_FOUND,
             Rejection::Channel(_)
             | Rejection::StdinClosed
             | Rejection::StdinDisabled
@@ -164,20 +173,30 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
             | Rejection::NativeSignal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::NOT_IMPLEMENTED,
         };
+        let worker = source.clone();
         reply::send_error(
             format,
             status,
             limits,
             source.deadline,
             source.clone(),
-            move |stream, limit| payload(rejection, stream, limit),
+            move |stream, limit| {
+                payload(
+                    worker
+                        .rejection
+                        .as_ref()
+                        .ok_or(reply::Error::UnclassifiedFault)?,
+                    stream,
+                    limit,
+                )
+            },
         )
         .await
     }
     .await;
     result.map_err(|error| Failure { error, source })
 }
-fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, reply::Error> {
+fn payload(rejection: &Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, reply::Error> {
     crate::go_json::bounded(limit as u64, |put| {
         if stream {
             put(br#"{"error":"#)?;
@@ -185,7 +204,7 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
         put(br#"{"code":""#)?;
         put(match rejection {
             Rejection::InputTooLarge => b"resource_exhausted",
-            Rejection::PidNotFound(_) => b"not_found",
+            Rejection::PidNotFound(_) | Rejection::TagNotFound(_) => b"not_found",
             Rejection::Channel(channel) => channel.code(),
             Rejection::StdinClosed
             | Rejection::StdinDisabled
@@ -201,7 +220,7 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
             Rejection::NativeResize(errno) => {
                 message(b"error resizing tty: ")?;
                 message(
-                    sandproof_guest_runtime::file_download::LinuxErrno(errno)
+                    sandproof_guest_runtime::file_download::LinuxErrno(*errno)
                         .message()
                         .as_bytes(),
                 )?;
@@ -210,11 +229,11 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
                 message(b"error sending signal: ")?;
                 // Fixed Go os.Process.Signal converts ESRCH before its caller
                 // formats the error; no later status/PID lookup is involved.
-                if errno == 3 {
+                if *errno == 3 {
                     message(b"os: process already finished")?;
                 } else {
                     message(
-                        sandproof_guest_runtime::file_download::LinuxErrno(errno)
+                        sandproof_guest_runtime::file_download::LinuxErrno(*errno)
                             .message()
                             .as_bytes(),
                     )?;
@@ -223,7 +242,7 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
             Rejection::NativeInput {
                 pid, pty, errno, ..
             } => {
-                let channel: &[u8] = if pty { b"tty" } else { b"stdin" };
+                let channel: &[u8] = if *pty { b"tty" } else { b"stdin" };
                 message(b"error writing to ")?;
                 message(channel)?;
                 message(b": error writing to ")?;
@@ -231,10 +250,10 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
                 message(b" of process '")?;
                 message(pid.to_string().as_bytes())?;
                 message(b"': write ")?;
-                message(if pty { b"/dev/ptmx" } else { b"|1" })?;
+                message(if *pty { b"/dev/ptmx" } else { b"|1" })?;
                 message(b": ")?;
                 message(
-                    sandproof_guest_runtime::file_download::LinuxErrno(errno)
+                    sandproof_guest_runtime::file_download::LinuxErrno(*errno)
                         .message()
                         .as_bytes(),
                 )?;
@@ -250,9 +269,14 @@ fn payload(rejection: Rejection, stream: bool, limit: usize) -> Result<Vec<u8>, 
                 message(pid.to_string().as_bytes())?;
                 message(b" not found")?;
             }
+            Rejection::TagNotFound(tag) => {
+                message(b"process with tag ")?;
+                message(tag.as_bytes())?;
+                message(b" not found")?;
+            }
             Rejection::Signal(value) => {
                 message(b"invalid signal: ")?;
-                if value == 0 {
+                if *value == 0 {
                     message(b"SIGNAL_UNSPECIFIED")?;
                 } else {
                     message(value.to_string().as_bytes())?;

@@ -155,3 +155,46 @@ class OriginalSdkSubscriberTests(unittest.IsolatedAsyncioTestCase):
                     if item['method'] == 'commands.run' and item['kwargs'].get('background'))))
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 paired.compare([row], [other], mutation)
+
+    async def test_resource_hooks_follow_subscription_barriers_without_changing_compared_calls(self):
+        for asynchronous in (False, True):
+            for mode in subscribers.MODES:
+                original, _ = self.fixture(asynchronous, mode)
+                reference = await self.run_case(original, mode)
+                observed, backend = self.fixture(asynchronous, mode)
+                phases = []
+                async def sample(phase):
+                    phases.append(phase)
+                    if phase.endswith('/subscribed'):
+                        self.assertEqual([name for name, *_ in backend.calls], ['start', 'connect', 'connect'])
+                        self.assertEqual(len(backend.closed), 0)
+                        self.assertFalse(backend.done)
+                    elif phase.endswith('/detached'):
+                        self.assertEqual(len(backend.closed), 1)
+                        self.assertFalse(backend.done)
+                    else:
+                        self.assertTrue(backend.done)
+                        self.assertEqual(len(backend.closed), 4)
+                        self.assertEqual([name for name, *_ in backend.calls][-1], 'connect')
+                row = await subscribers.subscriber_case(observed, 'ubuntu', '/tmp/shared/ubuntu', mode,
+                                                        resource_sample=sample)
+                self.assertEqual(phases, [f'subscribers/ubuntu/{mode}/{phase}'
+                                          for phase in subscribers.RESOURCE_PHASES])
+                paired.compare([reference], [row], 'sampled protocol calls unchanged')
+
+    async def test_resource_hook_failure_cleans_only_unfinished_command_and_retains_all_closes(self):
+        for asynchronous in (False, True):
+            for stage in subscribers.RESOURCE_PHASES:
+                observed, backend = self.fixture(asynchronous)
+                error = RuntimeError('resource observation unknown')
+                async def sample(phase):
+                    if phase.endswith('/' + stage):
+                        raise error
+                with self.assertRaises(RuntimeError) as raised:
+                    await subscribers.subscriber_case(observed, 'ubuntu', '/tmp/shared/ubuntu', 'detach-start',
+                                                      resource_sample=sample)
+                self.assertIs(raised.exception, error)
+                self.assertEqual(sum(name == 'start' for name, *_ in backend.calls), 1)
+                self.assertEqual(sum(name == 'kill' for name, *_ in backend.calls), int(stage != 'terminal'))
+                self.assertEqual(len(backend.closed), 4 if stage == 'terminal' else 3)
+                self.assertEqual(observed.rows[-1]['status'], 'incomplete')

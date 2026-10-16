@@ -34,7 +34,10 @@ from sdk_pty_compare import pty_case, comparable_pty
 from sdk_file_compare import file_cases, sdk_file_cases, comparable_batch
 from sdk_list_compare import list_case, comparable_list
 from sdk_argument_compare import argument_cases, comparable_argument
-from sdk_subscriber_compare import subscriber_case, comparable_subscribers
+from sdk_subscriber_compare import MODES as SUBSCRIBER_MODES, subscriber_case, comparable_subscribers
+from sdk_resource_observations import ResourceSamples
+from sdk_tag_compare import tag_case, comparable_tag
+from sdk_tag_policy import policy_cases
 
 FIXED_MTIME = 1_700_000_000
 
@@ -46,7 +49,7 @@ def plan():
             'mtime': FIXED_MTIME}
 
 
-async def cases(sandbox, inputs, asynchronous, rows=None):
+async def cases(sandbox, inputs, asynchronous, rows=None, *, resource_sample=None):
     observed = Calls(sandbox, asynchronous)
     if rows is not None:
         observed.rows = rows
@@ -104,13 +107,16 @@ async def cases(sandbox, inputs, asynchronous, rows=None):
     for user in inputs['users']:
         for mode in ('direct', 'reconnect-exit', 'kill'):
             await background_case(observed, user, root + '/' + user, mode)
-        for mode in ('detach-start', 'detach-peer'):
-            await subscriber_case(observed, user, root + '/' + user, mode)
+        for mode in SUBSCRIBER_MODES:
+            await subscriber_case(observed, user, root + '/' + user, mode,
+                                  resource_sample=resource_sample)
         identity = await observed.invoke('commands.run', 'id -u ' + shlex.quote(user), user='root', timeout=20)
         assert identity.exit_code == 0 and not identity.stderr and identity.stdout.strip().isdecimal()
         for mode in ('direct', 'reconnect-exit', 'kill'):
             await pty_case(observed, user, int(identity.stdout.strip()), root + '/' + user, mode)
     await list_case(observed, inputs)
+    for user in inputs['users']:
+        await tag_case(observed, user, root + '/' + user)
     healthy = await observed.invoke('commands.run', 'printf paired-healthy', user='ubuntu', timeout=15)
     assert (healthy.stdout, healthy.stderr, healthy.exit_code) == ('paired-healthy', '', 0)
     return observed.rows
@@ -134,6 +140,8 @@ def comparable(rows):
             row = comparable_argument(row)
         if row['method'] == 'commands.subscriber_case':
             row = comparable_subscribers(row)
+        if row['method'] == 'commands.tag_case':
+            row = comparable_tag(row)
         if 'callbacks' in row:
             row['callbacks'] = {key: ''.join(parts) for key, parts in row['callbacks'].items()}
         if row['method'] == 'files.list' and 'result' in row:
@@ -152,7 +160,7 @@ def compare(left, right, label):
             label + ': call ' + str(index) + ' differs (' + a['method'] + ')')
 
 
-async def paired(cls, owner, inputs, go, rust, templates, item):
+async def paired(cls, owner, inputs, go, rust, templates, item, *, observe_resources=False):
     from tools import guest_probe
     live, failure = [], None
     try:
@@ -173,10 +181,22 @@ async def paired(cls, owner, inputs, go, rust, templates, item):
                                     user='root', timeout=20)
                 return {'identity': go, 'observation': guest_probe.go_receipt(result, go['file'])}
             entry['before'] = await observe()
+            samples = None
+            if observe_resources:
+                expected = rust[1] if kind == 'rust' else {'fixed_go': go['file']}
+                samples = ResourceSamples(sandbox, expected, entry['before']['observation']['daemon'], inputs)
+                entry['resources'] = samples.report
+                await samples.take('before-cases')
             entry['calls'] = []
-            entry['calls'] = await cases(sandbox, inputs, cls is AsyncSandbox, entry['calls'])
+            sampling = {'resource_sample': samples.take} if samples is not None else {}
+            entry['calls'] = await cases(sandbox, inputs, cls is AsyncSandbox, entry['calls'], **sampling)
             entry['sdk_files'] = []
             await sdk_file_cases(sandbox, inputs, cls is AsyncSandbox, entry['sdk_files'])
+            entry['tag_policy'] = []
+            await policy_cases(sandbox, inputs, cls is AsyncSandbox, kind, entry['tag_policy'])
+            if samples is not None:
+                await samples.take('after-cases')
+                samples.complete()
             entry['after'] = await observe()
             assert entry['after'] == entry['before'], kind + ' daemon changed during paired cases'
         compare(item['pair'][0]['calls'], item['pair'][1]['calls'], 'Go/Rust')
@@ -197,6 +217,8 @@ async def paired(cls, owner, inputs, go, rust, templates, item):
 
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
+    observe_resources = getattr(args, 'observe_resources', False)
+    assert type(observe_resources) is bool
     template, rust = guest_candidate(args)
     assert rust is not None and args.go_template and template != args.go_template
     from tools import guest_probe
@@ -213,13 +235,18 @@ async def exercise(args):
                  'complete controlled command/PTY List snapshots and known-entry retirement; '
                  'foreground/background cwd and user rejections with absent side effects and healthy follow-ups; '
                  'three simultaneous command subscriptions with independent detach and shared terminal output; '
+                 'one-live-tag reconnect, binary input and successful terminal reuse through original generated RPCs; '
+                 'distinct and duplicate live tag outcomes validated per approved Go/Rust policy, retained separately; '
                  'not full fault/resource matrices or E03/E06 acceptance'}
+    if observe_resources:
+        report['resource_sampling'] = '14 identity-bound phase samples per VM; no resource budget verdict'
     try:
         for cls in (Sandbox, AsyncSandbox):
             item = {'sdk': cls.__name__, 'pair': [], 'create_attempts': []}
             results.append(item)
             await paired(cls, owner, inputs, go, rust,
-                         [('go', args.go_template), ('rust', template)], item)
+                         [('go', args.go_template), ('rust', template)], item,
+                         observe_resources=observe_resources)
         compare(results[0]['pair'][0]['calls'], results[1]['pair'][0]['calls'], 'sync/async')
         report['status'] = 'pass'
     except BaseException as error:
@@ -236,5 +263,7 @@ if __name__ == '__main__':
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
     parser.add_argument('--go-template', required=True, help='immutable template using the pinned base Go envd')
+    parser.add_argument('--observe-resources', action='store_true',
+                        help='sample the pinned daemon at declared phases; no budget verdict or extra VM')
     guest_arguments(parser, required=True)
     asyncio.run(exercise(parser.parse_args()))

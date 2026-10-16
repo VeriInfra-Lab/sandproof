@@ -14,6 +14,9 @@ pub struct Ready {
     pub(super) decoded: Decoded,
     pub(super) account: Option<Account>,
     pub(super) response: Option<super::http::ResponseFormat>,
+    // Only HTTP selection supplies this. Direct decoded components keep their
+    // explicit caller period; selected Start/Connect carry their original head.
+    pub(super) keepalive: Option<std::time::Duration>,
 }
 impl Authenticated {
     /// Resolve only an explicit Basic username before decoding. Absent or
@@ -113,6 +116,7 @@ impl Prepared {
                 .await?,
             account: self.account,
             response: None,
+            keepalive: None,
         })
     }
 
@@ -139,10 +143,21 @@ impl Prepared {
                 .await?,
             account: self.account,
             response: None,
+            keepalive: None,
         })
     }
 }
 impl Ready {
+    pub(super) fn response_limits(
+        &self,
+        mut limits: crate::command::CommandBodyLimits,
+    ) -> crate::command::CommandBodyLimits {
+        if let Some(period) = self.keepalive {
+            limits.keepalive = period;
+        }
+        limits
+    }
+
     pub(crate) fn owner(&self) -> crate::owned_body::Owner {
         self.decoded.authenticated.admitted.owner.clone()
     }

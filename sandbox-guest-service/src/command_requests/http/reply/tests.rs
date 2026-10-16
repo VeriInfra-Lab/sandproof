@@ -13,6 +13,7 @@ mod end_stream;
 mod framing;
 mod gzip;
 mod json;
+mod keepalive;
 mod reference;
 
 fn limits() -> Limits {

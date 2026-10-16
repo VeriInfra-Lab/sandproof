@@ -1,7 +1,7 @@
 //! Owned command execution, independent of an HTTP request. Durable PID claims
-//! connect gated preparation to a bounded active/retained PID registry. Tag
-//! arbitration, public HTTP routes and later-request authorization remain
-//! separate; a raw numeric PID is never adopted as a new control capability.
+//! connect gated preparation to a bounded active/retained PID/tag registry.
+//! Public HTTP dispatch and later-request authorization remain separate; a raw
+//! numeric PID is never adopted as a new control capability.
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
