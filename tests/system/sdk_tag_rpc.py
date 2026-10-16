@@ -15,6 +15,7 @@ from e2b.sandbox_sync.commands.command_handle import CommandHandle
 from e2b.sandbox_async.commands.command import first_event
 from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
 from sdk_command_input import call
+from sdk_observations import value
 
 KINDS = {'start': process_pb.StartRequest, 'connect': process_pb.ConnectRequest,
          'send_input': process_pb.SendInputRequest, 'close_stdin': process_pb.CloseStdinRequest,
@@ -26,7 +27,26 @@ class TagRpc:
         self.calls, self.commands = calls, calls.sandbox.commands
         self.headers = authentication_header(self.commands._envd_version, user)
 
-    async def stream(self, method, payload, capture, *, generation, label, seconds=60, expected=None):
+    async def operation(self, *args, **kwargs):
+        index = len(self.calls.rows)
+
+        def record(error):
+            self.calls.rows[index]['error']['rpc_code'] = value(error.code)
+            self.calls.rows[index]['error']['rpc_details'] = [
+                dict(type_name=detail.type_name, bytes=value(detail.message_bytes)) for detail in error.details]
+
+        try:
+            result = await self.calls.operation(*args, **kwargs)
+        except ConnectError as error:
+            record(error)
+            raise
+        if isinstance(result, ConnectError):
+            record(result)
+        return result
+
+    async def stream(self, method, payload, capture, *, generation, label, seconds=60, expected=None,
+                     allow_success=False):
+        """With allow_success, the caller owns every returned original handle."""
         def opening(payload, timeout_ms):
             request = KINDS[method].from_json(json.dumps(payload))
             return getattr(self.commands._rpc, method)(request,
@@ -57,13 +77,13 @@ class TagRpc:
                     raise BaseExceptionGroup('tag stream opening and close failed', [error, cleanup])
                 raise
 
-        result = await self.calls.operation('process.' + method,
+        result = await self.operation('process.' + method,
             asynchronous if self.calls.asynchronous else synchronous,
             payload, timeout_ms=seconds * 1000, expected=expected,
             allow_success=expected is not None,
             serialize=lambda handle: {'pid': handle.pid},
             evidence=dict(generation=generation, subscription=label))
-        if expected is not None and not isinstance(result, ConnectError):
+        if expected is not None and not isinstance(result, ConnectError) and not allow_success:
             # An unexpected successful Connect only owns its subscription. Do
             # not signal the returned PID or lose its stream when validation fails.
             failure = AssertionError('expected tag RPC rejection returned a handle')
@@ -80,7 +100,7 @@ class TagRpc:
             response = await call(getattr(self.commands._rpc, method), request,
                                   headers=self.headers, timeout_ms=timeout_ms)
             return json.loads(response.to_json())
-        return await self.calls.operation('process.' + method, invoke, payload,
+        return await self.operation('process.' + method, invoke, payload,
             timeout_ms=15000, expected=expected, evidence=dict(generation=generation))
 
 

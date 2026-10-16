@@ -48,6 +48,7 @@ def definitions(parent, tag):
 def not_found(error, selector, wanted):
     assert type(error) is ConnectError
     assert (error.code, error.message) == (Code.NOT_FOUND, f'process with {selector} {wanted} not found')
+    assert not error.details
 
 
 async def tag_case(observed, user, parent):

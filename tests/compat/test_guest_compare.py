@@ -294,6 +294,9 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         async def file_cases(_sandbox, _inputs, asynchronous, partial):
             partial.append(dict(method='files.mode', args=[asynchronous], status='complete'))
         self.run_files = self.replace(probe, 'sdk_file_cases', AsyncMock(side_effect=file_cases))
+        async def policy_cases(_sandbox, _inputs, _asynchronous, kind, partial):
+            partial.append(dict(kind=kind, status='complete'))
+        self.run_policy = self.replace(probe, 'policy_cases', AsyncMock(side_effect=policy_cases))
 
     def replace(self, target, name, replacement):
         return self.stack.enter_context(patch.object(target, name, replacement))
@@ -318,6 +321,10 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.run_files.await_count, 4)
         self.assertTrue(all(call.args[1] is plans[0] for call in self.run_files.await_args_list))
         self.assertEqual([call.args[2] for call in self.run_files.await_args_list], [False, False, True, True])
+        self.assertEqual(self.run_policy.await_count, 4)
+        self.assertTrue(all(call.args[1] is plans[0] for call in self.run_policy.await_args_list))
+        self.assertEqual([(call.args[2], call.args[3]) for call in self.run_policy.await_args_list],
+                         [(False, 'go'), (False, 'rust'), (True, 'go'), (True, 'rust')])
         self.assertEqual(plans[0], result['inputs'])
         for create in (self.sync_create, self.async_create):
             self.assertEqual([call.kwargs['template'] for call in create.call_args_list],
@@ -333,6 +340,8 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(item['known_destroy_acknowledged'])
             self.assertEqual(len(item['pair']), 2)
             self.assertTrue(all('resources' not in entry for entry in item['pair']))
+            for entry in item['pair']:
+                self.assertEqual(entry['tag_policy'], [dict(kind=entry['kind'], status='complete')])
         self.assertNotIn('resource_sampling', result)
 
     async def test_optional_resource_plan_samples_each_pinned_vm_and_preserves_protocol_comparison(self):
@@ -418,6 +427,19 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.run_cases.assert_not_called()
         self.assertEqual(self.sync_create.call_count, 1)
         self.guests[0].kill.assert_called_once()
+
+    async def test_policy_failure_retains_partial_outcomes_and_cleans_every_known_vm(self):
+        async def policy(_sandbox, _inputs, _asynchronous, kind, partial):
+            partial.append(dict(kind=kind, status='incomplete'))
+            raise AssertionError('unexpected tag outcome')
+        self.run_policy.side_effect = policy
+        result = await self.run_probe(AssertionError)
+        entry = result['results'][0]['pair'][0]
+        self.assertEqual(entry['tag_policy'], [dict(kind='go', status='incomplete')])
+        self.assertNotIn('after', entry)
+        self.guests[0].kill.assert_called_once()
+        self.sync_create.assert_called_once()
+        self.async_create.assert_not_called()
 
     async def test_unknown_second_create_does_not_retry_or_invent_a_vm_to_destroy(self):
         self.sync_create.side_effect = [self.guests[0], RuntimeError('unknown create')]

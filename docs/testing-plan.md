@@ -655,6 +655,14 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 
 [tag 对照回归](../tests/compat/test_tag_compare.py)以原 SDK 句柄和预定事件检查重连、旧 PID/字段错误、未知启动/输入、缺 End、错误退出类别及精确收尾；实际生成客户端经回环 HTTP 核对空/特殊 tag、原 Basic/token、期限和流式/一元错误解析。相同私有程序另在真实 pipe 子进程检查 ready、输入摘要、stderr 与 once。当前为本地回归，尚未执行真实 Go/Rust VM，不表示正式服务重启、重复 tag 差异矩阵、完整 E03/E04/E05 或 KVM 已通过；首次获准实跑前仍须技术复核。
 
+[已批准 tag 差异片段](../tests/system/sdk_tag_policy.py)接在同一四 VM 计划的命令/文件调用集之后，为 root 和 ubuntu 分别发送相同的三个原生成 Start：两个不同 tag 的命令保持 stdin 打开，再尝试与第一个 tag 重复的第三个命令。每次成功 Start 都先消费实际 ready，完整 List 核对所有存活 PID、配置及 tag 字段。重复 Start 前后分别查询两个 tag：Rust 必须返回对应原 PID，固定 Go 允许精确 not_found 或该 tag 已知的原 PID；有重复项时仅允许该 tag 的两个原 Start 之一，不接受另一 tag 或未知 PID，也不假定各次 sync.Map 遍历次序相同。此片段不通过重试等待某种 Go 次序。
+
+固定 Go 的重复 Start 必须成功并实际执行一次；Rust 必须返回精确 already_exists，之后核对重复程序的独占标记不存在。所有成功启动的命令均通过各自原 PID 关闭 stdin、等待真实 End、核对输出及 once 标记；不按歧义 tag 发送结束/清理操作。终局移除继续使用同一有界完整 List 观察，其他存活项必须保持。未知 Start 不重放；不符预期但成功的 Start 先保留原句柄用于失败收尾，重复返回同一 PID 不产生第二个发信号责任；错误 Connect 回复只保留并关闭订阅。所有公开可观察的关闭/清理错误与原失败共同保留，SDK disconnect 返回不代表服务端订阅或 VM 已物理收尾。
+
+这些已确认差异保存在每台 VM 的独立 `tag_policy` 原始证据中，由各端规则逐步断言，不改写成两端相等。流式和一元原 ConnectError 另保留原 RPC code 与完整 details 字节；预期拒绝同时核对代码、全文和无额外 details。原相等调用集仍逐字段比较。每台 VM 新增两次准备命令、六次带 tag 的 Start 尝试（Go 六次执行，Rust 四次执行及两次拒绝）、八次 tag Connect；不增加 VM、不刷新原 300 秒寿命或改变可选 14 阶段采样计划。Start 原流期限为 60 秒、Connect 为 20 秒，初始 ready 等待及一元请求为 15 秒；同步首帧仍受原 60 秒流期限约束。
+
+[tag 差异回归](../tests/compat/test_tag_policy.py)以预定列表/事件和成功/拒绝回复驱动固定同步/异步 SDK 原句柄，检查两端 Start/Connect 请求逐字相同、Go 漏查/不同重复项选择保留、Rust 错误接受/漏查、未知启动/EOF、错误 PID/元数据、重复副作用、缺 End 及多个清理失败；[双端编排回归](../tests/compat/test_guest_compare.py)核对同一输入和 kind 传递、部分差异证据及已知 VM 收尾。它们不重新实现 Go/Rust 登记算法，也不执行 envd；当前仅为本地回归，真实双端 VM、并发 tag 预约和全部故障差异仍待实测。
+
 [命令参数双端片段](../tests/system/sdk_argument_compare.py)在同一输入计划上执行前台/后台两组案例。每组分别检查 root/ubuntu 的公开目录、root 私有目录以及指向它们的符号链接；Python 程序核对实际物理 cwd、有效用户、空字符串/引号/中文参数和含空值/换行的环境变量，stdout/stderr 与完整终局逐字段比较。两组各有 13 类拒绝：未知账户及未知账户伴随缺失 cwd、root/ubuntu 的缺失路径/悬空链接/普通文件/非目录父路径，以及 ubuntu 无权进入的目录/链接/私有目录下的缺失子项。每次拒绝必须是指定 SDK 异常类型，保留并比较原错误全文；随后检查该次唯一标记不存在，再执行合法 ubuntu 命令。准备时确认账户不存在，读取目录/文件归属、权限和固定实际 mtime，最后核对普通文件内容未变。
 
 每台 VM 的该片段包含 66 次原 Start：两次准备、12 次合法上下文、26 次拒绝及 26 次拒绝后的健康调用；正常路径得到六个后台句柄。命令及其请求期限显式为 15 秒，准备沿用原命令默认请求期限，VM 寿命仍由外层限定。后台比较仅将已验证的原 Start PID、result.pid 及 wait/disconnect 的 handle_pid 转成同一逻辑引用；只合并同通道回调分块，原数字和分块仍保存。命令、参数、环境、输出及错误中类似 PID 的文本均不得替换。预期拒绝却成功返回的后台句柄先纳入所有权，再按原 PID 尝试一次失败收尾；未知 Start 不补造 PID、不重发，已经取得公开终局不追加 kill。原失败和全部收尾失败共同保留。

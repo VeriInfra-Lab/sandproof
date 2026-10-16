@@ -37,6 +37,7 @@ from sdk_argument_compare import argument_cases, comparable_argument
 from sdk_subscriber_compare import MODES as SUBSCRIBER_MODES, subscriber_case, comparable_subscribers
 from sdk_resource_observations import ResourceSamples
 from sdk_tag_compare import tag_case, comparable_tag
+from sdk_tag_policy import policy_cases
 
 FIXED_MTIME = 1_700_000_000
 
@@ -191,6 +192,8 @@ async def paired(cls, owner, inputs, go, rust, templates, item, *, observe_resou
             entry['calls'] = await cases(sandbox, inputs, cls is AsyncSandbox, entry['calls'], **sampling)
             entry['sdk_files'] = []
             await sdk_file_cases(sandbox, inputs, cls is AsyncSandbox, entry['sdk_files'])
+            entry['tag_policy'] = []
+            await policy_cases(sandbox, inputs, cls is AsyncSandbox, kind, entry['tag_policy'])
             if samples is not None:
                 await samples.take('after-cases')
                 samples.complete()
@@ -233,6 +236,7 @@ async def exercise(args):
                  'foreground/background cwd and user rejections with absent side effects and healthy follow-ups; '
                  'three simultaneous command subscriptions with independent detach and shared terminal output; '
                  'one-live-tag reconnect, binary input and successful terminal reuse through original generated RPCs; '
+                 'distinct and duplicate live tag outcomes validated per approved Go/Rust policy, retained separately; '
                  'not full fault/resource matrices or E03/E06 acceptance'}
     if observe_resources:
         report['resource_sampling'] = '14 identity-bound phase samples per VM; no resource budget verdict'
