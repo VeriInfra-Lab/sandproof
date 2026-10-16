@@ -10,6 +10,12 @@ impl AsyncRead for BufferedWire {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        // A real HTTP caller waits for the response, rather than closing its
+        // upload socket as soon as the declared request bytes are delivered.
+        // EOF here would exercise Hyper's default half-close rejection instead.
+        if self.input.position() == self.input.get_ref().len() as u64 {
+            return Poll::Pending;
+        }
         Pin::new(&mut self.input).poll_read(cx, buf)
     }
 }
