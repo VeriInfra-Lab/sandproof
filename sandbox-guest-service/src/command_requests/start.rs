@@ -9,6 +9,7 @@ use sandproof_guest_runtime::{
 };
 use tokio::time::timeout_at;
 
+use super::http::start::{LaunchFailure, LaunchFailureKind, Rejection};
 use super::{
     Authenticated, Decoded, Error, Failure, Instant, Ready, Reply, Request, check_deadline,
 };
@@ -18,7 +19,7 @@ use crate::{
         AdmissionLimits, CommandBodyError, CommandBodyLimits, CommandOwners, ExecutionDeadline,
         PidRegistrar, PidRegistry, PreparationRequest, PreparationSpec,
     },
-    execution::{selected_user_with_limits, validate_command_settings},
+    execution::{CommandContextError, selected_user_with_limits, validate_command_settings},
 };
 
 /// Trusted assembly for one command in one VM/session. These are never decoded
@@ -69,11 +70,16 @@ impl Ready {
         let deadline = self.deadline();
         let format = self.response;
         let mut default_account = None;
-        let mut missing_cwd = None;
+        let mut start_rejection = None;
         let owner = self.decoded.authenticated.admitted.owner.clone();
         let result = async {
             let resolved = self
-                .resolve_start(accounts, settings, &mut default_account)
+                .resolve_start(
+                    accounts,
+                    settings,
+                    &mut default_account,
+                    &mut start_rejection,
+                )
                 .await?;
             response.validate(Instant::now()).map_err(Error::Response)?;
             // Later actual PID width cannot invalidate the initial frame budget.
@@ -90,6 +96,8 @@ impl Ready {
                 .to_str()
                 .ok_or(Error::Unavailable)?
                 .to_owned();
+            let mut cwd = Some(cwd);
+            let mut request = Some(resolved.request);
             let pending = preparation
                 .owners
                 .prepare_command_admitted(
@@ -119,15 +127,26 @@ impl Ready {
                         == crate::command::RegistrationError::Preparation(
                             crate::command::CommandError::InvalidArgument,
                         )
-                        && observer.missing_working_directory()
                     {
-                        missing_cwd = Some(cwd);
+                        start_rejection =
+                            preparation_rejection(observer.rejection(), &mut request, &mut cwd);
                     }
                     Error::Registration(error)
                 })?;
             check_deadline(deadline)?;
             let start = reservation.publish(ticket).map_err(Error::Registry)?;
-            let (_command, subscription) = start.started().await.map_err(Error::Command)?;
+            let (_command, subscription) = start.started().await.map_err(|error| {
+                if let crate::command::CommandError::ExecFailed(errno) = error
+                    && errno > 0
+                    && let Some(cwd) = cwd.take()
+                    && let Some(request) = request.take()
+                {
+                    start_rejection = Some(Rejection::Launch(LaunchFailure::native(
+                        request, cwd, errno,
+                    )));
+                }
+                Error::Command(error)
+            })?;
             check_deadline(deadline)?;
             let body = subscription
                 .into_body(owner.clone(), response, deadline)
@@ -140,7 +159,7 @@ impl Ready {
             .map_err(|error| {
                 let mut failure = Failure::new(error, deadline, owner);
                 failure.default_account = default_account;
-                failure.missing_cwd = missing_cwd;
+                failure.start_rejection = start_rejection;
                 failure.response = format;
                 failure
             })
@@ -151,6 +170,7 @@ impl Ready {
         accounts: &AccountPool<S>,
         settings: &ExecutionSettings,
         observed: &mut Option<super::http::default_account::Rejection>,
+        start_rejection: &mut Option<Rejection>,
     ) -> Result<Resolved, Error> {
         let deadline = self.deadline();
         check_deadline(deadline)?;
@@ -215,8 +235,14 @@ impl Ready {
             .map_err(Error::Command)?;
         let launch = authenticated
             .authorization()
-            .compose_command(&request, account, settings)
-            .map_err(Error::Context)?;
+            .compose_command_observed(&request, account, settings)
+            .map_err(|error| {
+                let context = error.context();
+                if let CommandContextError::Expansion(expansion) = error {
+                    *start_rejection = Some(Rejection::Expansion(expansion));
+                }
+                Error::Context(context)
+            })?;
         check_deadline(deadline)?;
         Ok(Resolved {
             authenticated,
@@ -225,4 +251,24 @@ impl Ready {
             execution,
         })
     }
+}
+
+fn preparation_rejection(
+    observation: Option<sandproof_guest_runtime::PreparationRejection>,
+    request: &mut Option<StartRequest>,
+    cwd: &mut Option<String>,
+) -> Option<Rejection> {
+    use sandproof_guest_runtime::PreparationRejection;
+    let observation = observation?;
+    let cwd = cwd.take()?;
+    let kind = match observation {
+        PreparationRejection::MissingCwd => return Some(Rejection::MissingCwd(cwd)),
+        PreparationRejection::EnvironmentNul => LaunchFailureKind::EnvironmentNul,
+        PreparationRejection::ArgumentNul => LaunchFailureKind::ArgumentNul,
+    };
+    Some(Rejection::Launch(LaunchFailure::new(
+        request.take()?,
+        cwd,
+        kind,
+    )))
 }

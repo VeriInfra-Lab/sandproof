@@ -14,12 +14,20 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/user"
 	rpc "sandproof.local/connect-reference/process"
 )
 
 type commandOperationInput struct {
 	Method, Kind string
 	Cwd          string
+	User         string
+	DefaultCwd   *string
+	Cmd, Native  string
+	Args         []string
+	Env          map[string]string
+	Pty          bool
+	Cols, Rows   uint32
 	Number       int64
 	Gzip, UTF8   bool
 }
@@ -38,6 +46,23 @@ func operationError(headers http.Header) error {
 	}
 	input := operationRecord(data)
 	switch input.Kind {
+	case "nul":
+		return nulStartError(input)
+	case "native-resize":
+		return nativeResizeError(input)
+	case "native-signal":
+		return nativeSignalError(input)
+	case "native-input":
+		return nativeInputError(input)
+	case "expansion":
+		_, err := originalExpandAndResolve(input.Cwd, &user.User{Username: input.User, HomeDir: "/home/fixture"}, input.DefaultCwd)
+		if err == nil {
+			panic("expected path expansion failure")
+		}
+		// handler.New propagates this exact error as CodeInvalidArgument.
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	case "native":
+		return nativeStartError(input)
 	case "cwd":
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cwd '%s' does not exist", input.Cwd))
 	case "selector":

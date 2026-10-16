@@ -18,12 +18,14 @@ use std::{
     os::unix::fs::{FileExt, MetadataExt},
 };
 
+mod session;
 #[cfg(test)]
 mod tests;
 
 const NAME: &str = "pid-claims.bin";
-const MAGIC: &[u8; 8] = b"SPPID\0\x01\0";
-const HEADER: usize = 44;
+const MAGIC: &[u8; 8] = b"SPPID\0\x02\0";
+const SESSION: std::ops::Range<usize> = 44..52;
+const HEADER: usize = 52;
 const DIGEST: usize = 32;
 /// Representation ceiling for the Linux `x86_64` component, not a daemon default.
 /// Configuration selects a nonzero inclusive bound no larger than this value.
@@ -60,6 +62,7 @@ pub enum Error {
     InvalidIdentity,
     OutOfRange,
     Reused,
+    SessionExhausted,
     WriteUnknown,
     Poisoned,
 }
@@ -96,6 +99,13 @@ pub struct PidClaims {
 }
 
 impl PidClaims {
+    /// Immutable binding checked when this original store was created/opened.
+    /// This snapshot does not observe file integrity or prove a future claim.
+    #[must_use]
+    pub const fn binding(&self) -> Binding {
+        self.binding
+    }
+
     #[must_use]
     pub fn belongs_to(&self, binding: Binding) -> bool {
         self.binding == binding
@@ -135,7 +145,9 @@ impl PidClaims {
         let mut image = vec![0; length];
         image[..8].copy_from_slice(MAGIC);
         image[8..40].copy_from_slice(&binding.0);
-        image[40..HEADER].copy_from_slice(&max_pid.to_le_bytes());
+        image[40..44].copy_from_slice(&max_pid.to_le_bytes());
+        // The new VM has issued no service session. Only allocate_session may
+        // advance this counter; normal open never resets it.
         // PID 0 can never be a real SDK process identity.
         image[HEADER] = 1;
         seal(&mut image);
@@ -245,12 +257,28 @@ impl PidClaims {
         self.poisoned = true;
         self.verify()?;
         self.image[offset] |= mask;
+        self.persist_change(offset..offset + 1, Stage::BitWritten, &mut checkpoint)?;
+        Ok(Claim {
+            binding: self.binding,
+            identity,
+        })
+    }
+
+    // Both durable identities use the same poison/verify/write/sync protocol
+    // and the same exclusive original file. The caller poisons and verifies
+    // before changing the in-memory image. A partial write remains uncertain.
+    fn persist_change(
+        &mut self,
+        changed: std::ops::Range<usize>,
+        written: Stage,
+        checkpoint: &mut impl FnMut(Stage) -> Result<(), Error>,
+    ) -> Result<(), Error> {
         seal(&mut self.image);
         checkpoint(Stage::BeforeWrite)?;
         self.file
-            .write_all_at(&self.image[offset..=offset], offset as u64)
+            .write_all_at(&self.image[changed.clone()], changed.start as u64)
             .map_err(|_| Error::WriteUnknown)?;
-        checkpoint(Stage::BitWritten)?;
+        checkpoint(written)?;
         let tail = self.image.len() - DIGEST;
         self.file
             .write_all_at(&self.image[tail..], tail as u64)
@@ -260,10 +288,7 @@ impl PidClaims {
         checkpoint(Stage::Synced)?;
         self.verify()?;
         self.poisoned = false;
-        Ok(Claim {
-            binding: self.binding,
-            identity,
-        })
+        Ok(())
     }
 
     fn verify(&self) -> Result<(), Error> {
@@ -304,6 +329,7 @@ impl Drop for PidClaims {
 enum Stage {
     BeforeWrite,
     BitWritten,
+    SessionWritten,
     DigestWritten,
     Synced,
 }
@@ -345,7 +371,7 @@ fn validate(image: &[u8], binding: Binding, max_pid: u32) -> Result<(), Error> {
     if image[8..40] != binding.0 {
         return Err(Error::BindingMismatch);
     }
-    if image[40..HEADER] != max_pid.to_le_bytes() {
+    if image[40..44] != max_pid.to_le_bytes() {
         return Err(Error::RangeMismatch);
     }
     let allowed = u8::MAX >> (7 - max_pid % 8);

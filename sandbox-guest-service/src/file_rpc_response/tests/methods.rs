@@ -1,4 +1,48 @@
 use super::*;
+use std::{
+    future::{Future, poll_fn},
+    task::Poll,
+};
+
+#[test]
+fn queued_method_encoder_retains_capacity_after_its_waiter_expires() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, resumed) = std::sync::mpsc::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            entered.send(()).unwrap();
+            resumed.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        started.await.unwrap();
+        tokio::time::pause();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let (records, slots) = retain(Records::Empty);
+        let mut response = Box::pin(method_not_allowed(false, limits(), deadline, records));
+        assert!(poll_fn(|cx| Poll::Ready(response.as_mut().poll(cx).is_pending())).await);
+        // Leave timer tick rounding behind; never wait for the real blocker
+        // watchdog to release the encoder and manufacture an expiry result.
+        tokio::time::advance(Duration::from_secs(6)).await;
+        let Poll::Ready(result) = poll_fn(|cx| Poll::Ready(response.as_mut().poll(cx))).await
+        else {
+            panic!("queued method encoder did not expire");
+        };
+        let failure = result.unwrap_err();
+        assert_eq!(failure.error(), Error::DeadlineExceeded);
+        assert_eq!(failure.deadline(), deadline);
+        assert_eq!(slots.available_permits(), 0);
+        drop(failure);
+        assert_eq!(slots.available_permits(), 0);
+        tokio::time::resume();
+        release.send(()).unwrap();
+        blocker.await.unwrap();
+        released(slots).await;
+    });
+}
 
 #[tokio::test]
 async fn empty_method_reply_retains_capacity_until_eof_drop_or_original_expiry() {

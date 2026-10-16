@@ -16,6 +16,15 @@ use super::{
 use crate::pty::PtyMaster;
 use crate::{LaunchSpec, ProcessLimits};
 
+/// A rejection reported by the original authenticated worker before READY.
+/// It proves neither cleanup nor a native syscall error or user execution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreparationRejection {
+    MissingCwd,
+    EnvironmentNul,
+    ArgumentNul,
+}
+
 /// Owns a worker before its identity/gate handshake completes. Cancelling a
 /// borrowed finish future leaves this object available for actual abort/wait.
 /// Drop only requests a kill; it is never a cleanup receipt or capacity credit.
@@ -31,7 +40,7 @@ pub struct CommandPreparation {
     session: u64,
     command: u64,
     attempted: bool,
-    missing_cwd: bool,
+    rejection: Option<PreparationRejection>,
     waited: Option<ExitStatus>,
 }
 
@@ -106,7 +115,7 @@ impl CommandPreparation {
             session,
             command,
             attempted: false,
-            missing_cwd: false,
+            rejection: None,
             waited: None,
         })
     }
@@ -115,7 +124,13 @@ impl CommandPreparation {
     /// This is neither an actual-wait receipt nor evidence for another path.
     #[must_use]
     pub const fn missing_working_directory(&self) -> bool {
-        self.missing_cwd
+        matches!(self.rejection, Some(PreparationRejection::MissingCwd))
+    }
+
+    /// Observation from this worker only; failed cleanup remains independent.
+    #[must_use]
+    pub const fn rejection(&self) -> Option<PreparationRejection> {
+        self.rejection
     }
 
     /// Complete the private handshake at most once; no user code is released.
@@ -161,7 +176,7 @@ impl CommandPreparation {
             stream.write_all(&self.payload).await?;
             let mut ready = [0; 4];
             stream.read_exact(&mut ready).await?;
-            check_ready(ready, &mut self.missing_cwd)?;
+            check_ready(ready, &mut self.rejection)?;
             Ok(stream)
         })
         .await
@@ -208,10 +223,11 @@ impl CommandPreparation {
             pty: self.pty.take(),
             stdin,
             gate: Some(gate),
-            _gate_directory: self
+            gate_directory: self
                 .directory
                 .take()
                 .ok_or_else(|| invalid("transferred gate"))?,
+            gate_path_retirement: super::GatePathRetirement::Pending,
             identity,
             limits: self.limits,
             stream,
@@ -260,10 +276,15 @@ impl CommandPreparation {
     }
 }
 
-fn check_ready(ready: [u8; 4], missing_cwd: &mut bool) -> io::Result<()> {
-    if &ready == crate::worker::CWD_MISSING {
-        *missing_cwd = true;
-        return Err(invalid("worker reported missing cwd"));
+fn check_ready(ready: [u8; 4], rejection: &mut Option<PreparationRejection>) -> io::Result<()> {
+    *rejection = match &ready {
+        crate::worker::CWD_MISSING => Some(PreparationRejection::MissingCwd),
+        crate::worker::ENVIRONMENT_NUL => Some(PreparationRejection::EnvironmentNul),
+        crate::worker::ARGUMENT_NUL => Some(PreparationRejection::ArgumentNul),
+        _ => None,
+    };
+    if rejection.is_some() {
+        return Err(invalid("worker rejected launch context"));
     }
     if &ready != crate::worker::READY {
         return Err(invalid("worker refused context"));

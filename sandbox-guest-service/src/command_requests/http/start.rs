@@ -5,52 +5,100 @@ use axum::response::Response;
 use std::{fmt, sync::Arc};
 use tokio::time::Instant;
 
+mod native;
 #[cfg(test)]
 mod tests;
+pub(crate) use native::{LaunchFailure, LaunchFailureKind};
+
+// Exactly one observation from this Start, never reconstructed from its coarse
+// error or from a later path/account lookup.
+pub(crate) enum Rejection {
+    MissingCwd(String),
+    Launch(LaunchFailure),
+    Expansion(crate::upload_response::PathExpansion),
+}
+impl Rejection {
+    #[cfg(target_os = "linux")]
+    fn matches(&self, error: &RequestError) -> bool {
+        use crate::command::{CommandError, RegistrationError};
+        match self {
+            Self::MissingCwd(_) => {
+                *error
+                    == RequestError::Registration(RegistrationError::Preparation(
+                        CommandError::InvalidArgument,
+                    ))
+            }
+            Self::Launch(launch) => match launch.kind {
+                LaunchFailureKind::Native(errno) => {
+                    errno > 0 && *error == RequestError::Command(CommandError::ExecFailed(errno))
+                }
+                LaunchFailureKind::EnvironmentNul | LaunchFailureKind::ArgumentNul => {
+                    *error
+                        == RequestError::Registration(RegistrationError::Preparation(
+                            CommandError::InvalidArgument,
+                        ))
+                }
+            },
+            Self::Expansion(_) => {
+                *error == RequestError::Context(crate::ContextError::InvalidArgument)
+            }
+        }
+    }
+
+    fn payload(&self, limit: usize) -> Result<Vec<u8>, reply::Error> {
+        match self {
+            Self::MissingCwd(path) => {
+                message(&[b"cwd '", path.as_bytes(), b"' does not exist"], limit)
+            }
+            Self::Launch(native) => native.payload(limit),
+            Self::Expansion(expansion) => message(&expansion.rpc_parts(), limit),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Failure {
     Account(default_account::Failure),
-    Cwd(CwdFailure),
+    Observed(ObservedFailure),
 }
 impl Failure {
     #[must_use]
     pub const fn error(&self) -> reply::Error {
         match self {
             Self::Account(f) => f.error(),
-            Self::Cwd(f) => f.error,
+            Self::Observed(f) => f.error,
         }
     }
     #[must_use]
     pub fn request_error(&self) -> RequestError {
         match self {
             Self::Account(f) => f.request_error(),
-            Self::Cwd(f) => f.source.request_error.clone(),
+            Self::Observed(f) => f.source.request_error.clone(),
         }
     }
     #[must_use]
     pub fn deadline(&self) -> Instant {
         match self {
             Self::Account(f) => f.deadline(),
-            Self::Cwd(f) => f.source.deadline,
+            Self::Observed(f) => f.source.deadline,
         }
     }
 }
 
 struct Source {
-    missing_cwd: Option<String>,
+    rejection: Option<Rejection>,
     format: Option<ResponseFormat>,
     request_error: RequestError,
     deadline: Instant,
     _owner: Owner,
 }
-pub struct CwdFailure {
+pub struct ObservedFailure {
     error: reply::Error,
     source: Arc<Source>,
 }
-impl fmt::Debug for CwdFailure {
+impl fmt::Debug for ObservedFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CommandCwdReplyFailure")
+        f.debug_struct("CommandStartReplyFailure")
             .field("error", &self.error)
             .finish_non_exhaustive()
     }
@@ -64,36 +112,32 @@ impl crate::command_requests::Failure {
     /// Unclassified failure, invalid budgets, expiry or failed encoding. The
     /// original request and actual preparation cleanup keep their owners.
     pub async fn into_start_response(mut self, limits: reply::Limits) -> Result<Response, Failure> {
-        if self.missing_cwd.is_none() {
+        if self.start_rejection.is_none() {
             return self
                 .into_default_account_response(limits)
                 .await
                 .map_err(Failure::Account);
         }
-        let missing_cwd = if self.error()
-            == RequestError::Registration(crate::command::RegistrationError::Preparation(
-                crate::command::CommandError::InvalidArgument,
-            )) {
-            self.missing_cwd.take()
-        } else {
-            None
-        };
+        let rejection = self
+            .start_rejection
+            .take()
+            .filter(|fact| fact.matches(&self.error()));
         let source = Source {
-            missing_cwd,
+            rejection,
             format: self.response,
             request_error: self.error(),
             deadline: self.deadline(),
             _owner: Arc::new(self),
         };
-        send(source, limits).await.map_err(Failure::Cwd)
+        send(source, limits).await.map_err(Failure::Observed)
     }
 }
 
-async fn send(source: Source, limits: reply::Limits) -> Result<Response, CwdFailure> {
+async fn send(source: Source, limits: reply::Limits) -> Result<Response, ObservedFailure> {
     let source = Arc::new(source);
     let result = async {
         let format = source.format.ok_or(reply::Error::UnclassifiedFault)?;
-        if source.missing_cwd.is_none() {
+        if source.rejection.is_none() {
             return Err(reply::Error::UnclassifiedFault);
         }
         let worker = source.clone();
@@ -103,26 +147,26 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, CwdFail
             source.deadline,
             source.clone(),
             move |limit| {
-                payload(
-                    worker
-                        .missing_cwd
-                        .as_deref()
-                        .ok_or(reply::Error::UnclassifiedFault)?,
-                    limit,
-                )
+                worker
+                    .rejection
+                    .as_ref()
+                    .ok_or(reply::Error::UnclassifiedFault)?
+                    .payload(limit)
             },
         )
         .await
     }
     .await;
-    result.map_err(|error| CwdFailure { error, source })
+    result.map_err(|error| ObservedFailure { error, source })
 }
 
-fn payload(path: &str, limit: usize) -> Result<Vec<u8>, reply::Error> {
+fn message(parts: &[&[u8]], limit: usize) -> Result<Vec<u8>, reply::Error> {
     crate::go_json::bounded(limit as u64, |put| {
-        put(br#"{"error":{"code":"invalid_argument","message":"cwd '"#)?;
-        crate::go_json::string_content(path.as_bytes(), put)?;
-        put(br#"' does not exist"}}"#)
+        put(br#"{"error":{"code":"invalid_argument","message":""#)?;
+        for part in parts {
+            crate::go_json::string_content(part, put)?;
+        }
+        put(br#""}}"#)
     })
     .map_err(|_| reply::Error::ResponseLimit)
 }

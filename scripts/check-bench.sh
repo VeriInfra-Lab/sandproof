@@ -7,7 +7,7 @@ cd "$PROJECT_ROOT"
 # Harbor pressure tests use the real Rust reducer through the retention fixture.
 # Fetch/build it before entering that fixture's 180-second component deadline.
 # Preparation still shares the enclosing job deadline and any failure is fatal.
-cargo build --locked -p sandproof-controller-service --bin sandproof-window-reducer
+cargo --config scripts/check-profiles.toml build --locked -p sandproof-controller-service --bin sandproof-window-reducer
 
 uv run --locked --project benchmarks python -m benchmarks.check_harbor
 uv run --locked --project benchmarks python -m unittest discover -s benchmarks/tests -v

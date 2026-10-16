@@ -26,8 +26,8 @@ use tokio::time::Instant;
 mod tests;
 
 /// Trusted daemon configuration/snapshots, not fields from the HTTP request.
-/// Existing account/transfer/response components validate their respective
-/// settings. No daemon environment, MIME files or local zone are guessed here.
+/// Assembly validates these using the original component rules before serving.
+/// No daemon environment, MIME files or local zone are guessed here.
 pub struct Settings<Z> {
     pub files: FileSettings,
     pub upload: UploadLimits,
@@ -36,6 +36,32 @@ pub struct Settings<Z> {
     pub mime: Arc<Catalog>,
     pub local: Arc<Z>,
 }
+impl<Z> Settings<Z> {
+    fn validate(&self) -> Result<(), InvalidConfiguration> {
+        if self.files.validate().is_err()
+            || self.upload.headers.validate().is_err()
+            || self.upload.encoding.validate().is_err()
+            || self.upload.gzip.validate().is_err()
+            || self.upload.multipart.validate().is_err()
+            || self.upload.batch.validate().is_err()
+            || self.upload_response.validate().is_err()
+            || self.download.response.validate().is_err()
+            || self.download.encoding.validate().is_err()
+        {
+            return Err(InvalidConfiguration);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidConfiguration;
+impl fmt::Display for InvalidConfiguration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid file HTTP configuration")
+    }
+}
+impl std::error::Error for InvalidConfiguration {}
 
 pub struct FileHttp<M, S, Z> {
     inner: Arc<Inner<M, S, Z>>,
@@ -59,15 +85,20 @@ impl<M: MetadataSource, S: AccountSource, Z: LocalZone + Send + Sync + 'static> 
     pub(crate) fn shares_session(&self, session: &Session<M>) -> bool {
         self.inner.session.shares_state(session)
     }
-    #[must_use]
+    /// Assemble only validated settings, without account, body or file work.
+    /// Existing pools and MIME snapshots have already validated their budgets.
+    /// # Errors
+    /// Invalid context, upload, download or response configuration. No defaults
+    /// or new client-visible quota policy are selected here.
     pub fn new(
         session: Session<M>,
         requests: FileRequests,
         streams: FileStreams,
         accounts: AccountPool<S>,
         settings: Settings<Z>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, InvalidConfiguration> {
+        settings.validate()?;
+        Ok(Self {
             inner: Arc::new(Inner {
                 session,
                 requests,
@@ -75,7 +106,7 @@ impl<M: MetadataSource, S: AccountSource, Z: LocalZone + Send + Sync + 'static> 
                 accounts,
                 settings,
             }),
-        }
+        })
     }
 
     /// Accept an unconsumed body from a trusted HTTP framing layer. The exact

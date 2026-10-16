@@ -15,7 +15,7 @@ use crate::pty::PtyMaster;
 use crate::{LaunchSpec, ProcessLimits, PtySize};
 
 mod preparation;
-pub use preparation::CommandPreparation;
+pub use preparation::{CommandPreparation, PreparationRejection};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProcessSignal {
@@ -79,6 +79,11 @@ enum LaunchState {
     Prepared,
     AbortRequested,
     Released(LaunchObservation),
+}
+
+enum GatePathRetirement {
+    Pending,
+    Attempted,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -168,7 +173,8 @@ pub struct CommandProcess {
     mode: OutputMode,
     stdin: Option<CommandInput>,
     gate: Option<UnixStream>,
-    _gate_directory: tempfile::TempDir,
+    gate_directory: tempfile::TempDir,
+    gate_path_retirement: GatePathRetirement,
     identity: CommandIdentity,
     limits: ProcessLimits,
     stream: CommandStream,
@@ -239,6 +245,25 @@ impl CommandProcess {
         }
     }
 
+    /// Retire only this prepared worker's already-connected socket pathname.
+    /// This synchronous filesystem work creates no task or capacity credit.
+    /// Owners with execution deadlines must call it BEFORE their final expiry
+    /// check. Failure keeps the original `TempDir` fallback; this is no receipt
+    /// for successful cleanup, process termination or command execution.
+    pub fn retire_gate_path(&mut self) {
+        if matches!(self.gate_path_retirement, GatePathRetirement::Attempted) {
+            return;
+        }
+        self.gate_path_retirement = GatePathRetirement::Attempted;
+        if std::fs::remove_file(self.gate_directory.path().join("launch")).is_ok()
+            && std::fs::remove_dir(self.gate_directory.path()).is_ok()
+        {
+            // The old directory is gone. Drop must not later remove a new
+            // directory created at the same pathname by another owner.
+            self.gate_directory.disable_cleanup(true);
+        }
+    }
+
     /// Release this exact prepared process at most once. The caller must have
     /// recorded public-selector ownership before this call. Cancellation after
     /// its first poll leaves Unknown in this object; it never reopens the gate.
@@ -253,6 +278,9 @@ impl CommandProcess {
             .gate
             .take()
             .ok_or_else(|| invalid("missing launch gate"))?;
+        // READY authenticated this connection. Raw callers get the same path
+        // retirement; deadline-owning service callers already attempted it.
+        self.retire_gate_path();
         let observed = tokio::time::timeout(self.limits.handshake_timeout, async {
             gate.write_all(&[1]).await?;
             gate.shutdown().await?;

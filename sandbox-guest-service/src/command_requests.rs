@@ -337,7 +337,7 @@ pub struct Failure {
     #[cfg(target_os = "linux")]
     default_account: Option<http::default_account::Rejection>,
     #[cfg(target_os = "linux")]
-    missing_cwd: Option<String>,
+    start_rejection: Option<http::start::Rejection>,
     #[cfg(target_os = "linux")]
     operation: Option<http::operation::Rejection>,
     #[cfg(target_os = "linux")]
@@ -354,7 +354,7 @@ impl Failure {
             #[cfg(target_os = "linux")]
             default_account: None,
             #[cfg(target_os = "linux")]
-            missing_cwd: None,
+            start_rejection: None,
             #[cfg(target_os = "linux")]
             operation: None,
             #[cfg(target_os = "linux")]

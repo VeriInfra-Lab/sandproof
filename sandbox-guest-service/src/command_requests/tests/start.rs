@@ -17,6 +17,9 @@ mod default_account;
 #[path = "start/gzip.rs"]
 mod gzip;
 
+#[path = "start/expansion.rs"]
+mod expansion;
+
 struct StartFixture {
     directory: tempfile::TempDir,
     owners: CommandOwners,

@@ -231,7 +231,8 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         streams.clone(),
         accounts,
         http_settings(&root),
-    );
+    )
+    .unwrap();
     Arc::new(Fixture {
         root,
         username,

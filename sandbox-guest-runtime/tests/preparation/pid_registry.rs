@@ -176,7 +176,11 @@ async fn lost_start_reply_keeps_original_control_and_terminal_retention_never_re
     assert_eq!(fixture.gate_count(), 0);
 }
 
-async fn expire_retention(registry: &PidRegistry, identity: CommandIdentity, finished: Instant) {
+pub(super) async fn expire_retention(
+    registry: &PidRegistry,
+    identity: CommandIdentity,
+    finished: Instant,
+) {
     tokio::time::pause();
     tokio::time::advance(
         (finished + Duration::from_secs(29)).saturating_duration_since(Instant::now()),

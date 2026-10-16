@@ -12,6 +12,7 @@ sdk-contract-tests = []
 crc32fast = "=1.5.2"
 flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
 time = "=0.3.44"
+tz = { package = "tz-rs", version = "=0.7.3", default-features = false, features = ["alloc"] }
 base64 = "=0.22.1"
 sandproof-guest-core = { path = "../sandbox-guest-core" }
 serde = { version = "=1.0.228", features = ["derive"] }

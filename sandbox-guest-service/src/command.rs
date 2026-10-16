@@ -54,19 +54,71 @@ pub enum CommandError {
 /// callers retain their original coarse error; HTTP may consume the fact.
 pub(crate) enum InputFailure {
     Command(CommandError),
+    Native { error: CommandError, errno: i32 },
     StdinClosed,
     StdinDisabled,
 }
 impl InputFailure {
     pub(crate) const fn error(self) -> CommandError {
         match self {
-            Self::Command(error) => error,
+            Self::Command(error) | Self::Native { error, .. } => error,
             Self::StdinClosed => CommandError::Unavailable,
             Self::StdinDisabled => CommandError::ClosedInput,
         }
     }
 }
 impl From<CommandError> for InputFailure {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
+}
+
+pub(crate) enum SignalFailure {
+    Command(CommandError),
+    Native(i32),
+}
+impl SignalFailure {
+    pub(crate) const fn error(self) -> CommandError {
+        match self {
+            Self::Command(error) => error,
+            Self::Native(_) => CommandError::Unavailable,
+        }
+    }
+    fn observed(error: &std::io::Error) -> Self {
+        error
+            .raw_os_error()
+            .filter(|errno| *errno > 0)
+            .map_or(Self::Command(CommandError::Unavailable), Self::Native)
+    }
+}
+impl From<CommandError> for SignalFailure {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
+}
+
+pub(crate) enum ResizeFailure {
+    Command(CommandError),
+    Native { error: CommandError, errno: i32 },
+}
+impl ResizeFailure {
+    pub(crate) const fn error(self) -> CommandError {
+        match self {
+            Self::Command(error) | Self::Native { error, .. } => error,
+        }
+    }
+    fn observed(error: &std::io::Error) -> Self {
+        let coarse = input_error(error);
+        error
+            .raw_os_error()
+            .filter(|errno| *errno > 0)
+            .map_or(Self::Command(coarse), |errno| Self::Native {
+                error: coarse,
+                errno,
+            })
+    }
+}
+impl From<CommandError> for ResizeFailure {
     fn from(error: CommandError) -> Self {
         Self::Command(error)
     }
@@ -361,11 +413,20 @@ impl ManagedCommand {
         identity: CommandIdentity,
         signal: ProcessSignal,
     ) -> Result<(), CommandError> {
+        self.signal_observed(identity, signal)
+            .map_err(SignalFailure::error)
+    }
+
+    pub(crate) fn signal_observed(
+        &self,
+        identity: CommandIdentity,
+        signal: ProcessSignal,
+    ) -> Result<(), SignalFailure> {
         self.check(identity)?;
         self.shared
             .control
             .signal(identity, signal)
-            .map_err(|_| CommandError::Unavailable)
+            .map_err(|error| SignalFailure::observed(&error))
     }
 
     /// # Errors
@@ -397,21 +458,38 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
     ) -> Result<(), CommandError> {
-        self.write_channel(identity, bytes, true)
+        self.write_pty_observed(identity, bytes)
             .await
             .map_err(InputFailure::error)
+    }
+
+    pub(crate) async fn write_pty_observed(
+        &self,
+        identity: CommandIdentity,
+        bytes: &[u8],
+    ) -> Result<(), InputFailure> {
+        self.write_channel(identity, bytes, true).await
     }
 
     /// Resize the original terminal independently of a blocked input writer.
     /// # Errors
     /// Stale/not-started/completed command, wrong channel or actual ioctl error.
     pub fn resize_pty(&self, identity: CommandIdentity, size: PtySize) -> Result<(), CommandError> {
+        self.resize_pty_observed(identity, size)
+            .map_err(ResizeFailure::error)
+    }
+
+    pub(crate) fn resize_pty_observed(
+        &self,
+        identity: CommandIdentity,
+        size: PtySize,
+    ) -> Result<(), ResizeFailure> {
         self.check(identity)?;
         self.require_started()?;
         self.shared
             .control
             .resize_pty(identity, size)
-            .map_err(|error| input_error(&error))
+            .map_err(|error| ResizeFailure::observed(&error))
     }
 
     async fn write_channel(
@@ -450,13 +528,7 @@ impl ManagedCommand {
                 let closed_stdin = !pty && !self.has_pty() && writer.is_closed();
                 let result = if pty { writer.write_pty(identity, bytes).await }
                     else { writer.write_input(identity, bytes).await };
-                result.map_err(|error| {
-                    if closed_stdin && error.kind() == std::io::ErrorKind::BrokenPipe {
-                        InputFailure::StdinClosed
-                    } else {
-                        InputFailure::Command(input_error(&error))
-                    }
-                })
+                result.map_err(|error| input_failure(&error, closed_stdin))
             } => result,
         }
     }
@@ -504,10 +576,25 @@ impl ManagedCommand {
     }
 }
 
-fn input_error(error: &std::io::Error) -> CommandError {
+pub(crate) fn input_error(error: &std::io::Error) -> CommandError {
     match error.kind() {
         std::io::ErrorKind::InvalidInput => CommandError::InvalidArgument,
         _ => CommandError::Unavailable,
+    }
+}
+
+// Called only for the completed original write, while holding its writer lock.
+// Synthetic mode/identity errors and cancellation never become native facts.
+fn input_failure(error: &std::io::Error, closed_stdin: bool) -> InputFailure {
+    if closed_stdin && error.kind() == std::io::ErrorKind::BrokenPipe {
+        InputFailure::StdinClosed
+    } else if let Some(errno) = error.raw_os_error().filter(|errno| *errno > 0) {
+        InputFailure::Native {
+            error: input_error(error),
+            errno,
+        }
+    } else {
+        InputFailure::Command(input_error(error))
     }
 }
 

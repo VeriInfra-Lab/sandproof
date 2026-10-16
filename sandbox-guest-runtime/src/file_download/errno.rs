@@ -3,7 +3,7 @@
 // Copyright 2009 The Go Authors. BSD license: ../multipart/GO-LICENSE.
 use std::{borrow::Cow, fmt};
 
-/// Only construct from Linux filesystem errno or explicit controlled fixtures.
+/// Only construct from Linux native errno or explicit controlled fixtures.
 /// The number has Linux amd64 semantics even when a portable test runs elsewhere.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LinuxErrno(pub i32);

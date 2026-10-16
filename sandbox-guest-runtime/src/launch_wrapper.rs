@@ -83,7 +83,7 @@ fn helper(path: &str, name: &str) -> Option<String> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn prepare(spec: &mut crate::LaunchSpec, maximum: usize) -> io::Result<()> {
-    let Some(path) = spec.envd_wrapper_path.take() else {
+    let Some(path) = spec.envd_wrapper_path.as_deref() else {
         return Ok(());
     };
     let nice = rustix::process::getpriority_process(None).unwrap_or(0);
@@ -91,8 +91,8 @@ pub(crate) fn prepare(spec: &mut crate::LaunchSpec, maximum: usize) -> io::Resul
         .checked_neg()
         .ok_or_else(|| io::Error::other("invalid nice value"))?;
     let shell = script(
-        helper(&path, "ionice").as_deref(),
-        helper(&path, "nice").as_deref(),
+        helper(path, "ionice").as_deref(),
+        helper(path, "nice").as_deref(),
         delta,
         maximum,
     )?;
@@ -112,6 +112,7 @@ pub(crate) fn prepare(spec: &mut crate::LaunchSpec, maximum: usize) -> io::Resul
     arguments.append(&mut spec.args);
     spec.args = arguments;
     spec.validate()?;
+    spec.envd_wrapper_path.take();
     // Wrapped context gets the same encoded launch budget, before READY.
     drop(crate::process::encode(spec, maximum)?);
     Ok(())

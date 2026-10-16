@@ -198,16 +198,84 @@ fn directory_expansion_matches_home_default_and_lexical_join_rules() {
         ("/a/link/../b", "/home/u", "/a/link/../b"),
         ("../../x", "/home/u", "/x"),
         ("x", "relative", "/daemon/relative/x"),
+        ("x\0y", "/home/u", "/home/u/x\0y"),
         ("", "", "/daemon"),
     ] {
-        assert_eq!(resolve_path(path, home, "/daemon").unwrap(), expected);
+        let mut selected = account("u");
+        selected.home = home.into();
+        assert_eq!(resolve_path(path, &selected, "/daemon").unwrap(), expected);
     }
-    for path in ["~other/x", "x\0y"] {
+    for path in ["~other/x", "~other\0"] {
         assert_eq!(
-            resolve_path(path, "/home/u", "/daemon"),
+            resolve_path(path, &account("u"), "/daemon").map_err(|error| error.context()),
             Err(ContextError::InvalidArgument)
         );
     }
+}
+
+#[tokio::test]
+async fn command_path_observation_uses_selected_account_and_keeps_context_errors_distinct() {
+    let session = session().await;
+    session
+        .initialize(br#"{"accessToken":"token","defaultUser":"alice","defaultWorkdir":"~default"}"#)
+        .await
+        .unwrap();
+    let auth = session.authorize(Some("token")).await.unwrap();
+    for cwd in [None, Some(""), Some("~other/x"), Some("~人")] {
+        let mut req = request();
+        let process = req.process.as_mut().unwrap();
+        process.cwd = cwd.map(str::to_owned);
+        process
+            .envs
+            .insert("USER".into(), "env-is-not-the-account".into());
+        process
+            .envs
+            .insert("HOME".into(), "/env-is-not-home".into());
+        let error = auth
+            .compose_command_observed(&req, account("bob"), &settings())
+            .unwrap_err();
+        assert_eq!(error.context(), ContextError::InvalidArgument);
+        let CommandContextError::Expansion(observed) = error else {
+            panic!("path observation lost");
+        };
+        assert_eq!(observed, crate::upload_response::PathExpansion::new("bob"));
+        assert!(matches!(
+            auth.compose_command(&req, account("bob"), &settings()),
+            Err(ContextError::InvalidArgument)
+        ));
+    }
+    for (cwd, expected) in [("/explicit", "/explicit"), ("~/x", "/home/bob/x")] {
+        let mut req = request();
+        req.process.as_mut().unwrap().cwd = Some(cwd.into());
+        assert_eq!(
+            auth.compose_command_observed(&req, account("bob"), &settings())
+                .unwrap()
+                .cwd
+                .to_str(),
+            Some(expected)
+        );
+    }
+    for (cwd, home) in [("~other", "/home/\0bob"), ("/explicit", "/home/\0bob")] {
+        let mut selected = account("bob");
+        selected.home = home.into();
+        assert!(matches!(
+            resolve_path(cwd, &selected, "/daemon"),
+            Err(CommandContextError::Context(ContextError::InvalidArgument))
+        ));
+    }
+    let mut req = request();
+    req.process.as_mut().unwrap().cmd = "bad\0cmd".into();
+    assert!(matches!(
+        auth.compose_command_observed(&req, account("bob"), &settings()),
+        Err(CommandContextError::Expansion(_))
+    ));
+    req.process.as_mut().unwrap().cwd = Some("/explicit".into());
+    assert_eq!(
+        auth.compose_command_observed(&req, account("bob"), &settings())
+            .unwrap()
+            .program,
+        "bad\0cmd"
+    );
 }
 
 #[tokio::test]

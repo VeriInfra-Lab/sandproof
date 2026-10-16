@@ -1,4 +1,8 @@
 use super::*;
+use std::{
+    future::{Future, poll_fn},
+    task::Poll,
+};
 
 #[tokio::test]
 async fn non_post_methods_follow_basic_preflight_and_precede_codec_headers_and_body() {
@@ -62,37 +66,70 @@ async fn non_post_methods_follow_basic_preflight_and_precede_codec_headers_and_b
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
 }
 
-#[tokio::test]
-async fn failed_method_response_retains_original_two_slots_and_shorter_deadline() {
-    let root = tempfile::tempdir().unwrap();
-    let f = fixture(root.path(), 0).await;
-    let start = Instant::now();
-    let mut req = request("MakeDir", Body::from(r#"{"path":"refused"}"#));
-    *req.method_mut() = axum::http::Method::GET;
-    let failure = f.http.handle(req).await.unwrap_err();
-    assert_eq!(
-        failure.error(),
-        &Error::Response(file_rpc_response::Error::InvalidConfiguration)
-    );
-    assert!(failure.deadline().unwrap() >= start);
-    assert!(failure.deadline().unwrap() <= Instant::now() + Duration::from_secs(5));
-    full(&f);
-    file_full(&f).await;
-    assert_eq!(f.calls.load(Ordering::SeqCst), 0);
-    f.session
-        .initialize(br#"{"accessToken":"token","defaultUser":"user"}"#)
-        .await
+#[test]
+fn failed_method_response_retains_original_two_slots_and_shorter_deadline() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
         .unwrap();
-    assert!(!root.path().join("refused").exists());
-    drop(failure);
-    released(&f).await;
-    // The file slot recovers as well; the independent request pool reaches I/O.
-    let response = f
-        .file_probe
-        .handle(request("MakeDir", Body::from(r#"{"path":"recovered"}"#)))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 200);
-    drain(response.into_body()).await;
-    assert!(root.path().join("recovered").is_dir());
+    runtime.block_on(async {
+        let root = tempfile::tempdir().unwrap();
+        let f = fixture(root.path(), 65536).await;
+        // Valid construction is mandatory. Hold the sole blocking thread so
+        // the real method-response encoder cannot run before its deadline.
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, resumed) = std::sync::mpsc::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            entered.send(()).unwrap();
+            resumed.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        started.await.unwrap();
+        tokio::time::pause();
+        let start = Instant::now();
+        let mut req = request("MakeDir", Body::from(r#"{"path":"refused"}"#));
+        *req.method_mut() = axum::http::Method::GET;
+        let mut response = Box::pin(f.http.handle(req));
+        assert!(poll_fn(|cx| Poll::Ready(response.as_mut().poll(cx).is_pending())).await);
+        // Advance past the deadline: Tokio timers round to millisecond ticks.
+        // Awaiting exactly at the boundary can leave the timer pending while
+        // the occupied blocking pool prevents automatic clock advancement.
+        tokio::time::advance(Duration::from_secs(6)).await;
+        let Poll::Ready(result) = poll_fn(|cx| Poll::Ready(response.as_mut().poll(cx))).await
+        else {
+            panic!("method response did not expire while its encoder was queued");
+        };
+        let failure = result.unwrap_err();
+        assert_eq!(
+            failure.error(),
+            &Error::Response(file_rpc_response::Error::DeadlineExceeded)
+        );
+        // Original file-pool deadline (5s), not the request pool's 30s.
+        assert_eq!(failure.deadline(), Some(start + Duration::from_secs(5)));
+        tokio::time::resume();
+        full(&f);
+        file_full(&f).await;
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+        f.session
+            .initialize(br#"{"accessToken":"token","defaultUser":"user"}"#)
+            .await
+            .unwrap();
+        assert!(!root.path().join("refused").exists());
+        drop(failure);
+        // Even after the HTTP failure is dropped, queued encoder work owns
+        // both slots until it actually observes cancellation/expiry and ends.
+        full(&f);
+        file_full(&f).await;
+        release.send(()).unwrap();
+        blocker.await.unwrap();
+        released(&f).await;
+        let response = f
+            .file_probe
+            .handle(request("MakeDir", Body::from(r#"{"path":"recovered"}"#)))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        drain(response.into_body()).await;
+        assert!(root.path().join("recovered").is_dir());
+    });
 }

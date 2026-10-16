@@ -13,6 +13,7 @@ use axum::{body::Body, http::Request, response::Response};
 use sandproof_guest_runtime::{ProcessLimits, pid_claims::Binding, protocol};
 use std::{
     fmt,
+    os::unix::ffi::OsStrExt,
     path::PathBuf,
     sync::{
         Arc,
@@ -98,11 +99,12 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
         self.inner.session.shares_state(session)
     }
     /// Assemble fixed resources without opening sockets or starting processes.
-    /// Worker paths and process/preparation budgets are still checked by the
-    /// original preparation component before it spawns a worker.
+    /// Process/preparation budgets and original registry/store identities are
+    /// checked here. The original launch still validates actual paths and I/O;
+    /// construction does not prove worker installation or future PID writes.
     /// # Errors
-    /// Shared admission pools, mismatched registry identity, invalid context or
-    /// response budgets. No production defaults are selected.
+    /// Shared admission pools, mismatched registry/store identity, invalid
+    /// worker path syntax, context or budgets. No defaults are selected.
     pub fn new(
         session: Session<M>,
         requests: RequestPools,
@@ -115,6 +117,16 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
             || !processes
                 .registry
                 .matches_session(processes.binding, processes.session)
+            || !processes.registrar.belongs_to(processes.binding)
+            || processes.process_limits.validate().is_err()
+            || processes.admission_limits.validate(Instant::now()).is_err()
+            || !processes.worker.is_absolute()
+            || processes.worker.as_os_str().as_bytes().contains(&0)
+            || processes
+                .private_directory
+                .as_os_str()
+                .as_bytes()
+                .contains(&0)
             || crate::execution::validate_command_settings(&settings).is_err()
             || response.message.validate(Instant::now()).is_err()
             || http::reply::check_limits(response.http).is_err()

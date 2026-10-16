@@ -1,4 +1,5 @@
 use super::*;
+mod configuration;
 use crate::{
     InitLimits, Metadata, ServiceError, file_upload::HeaderLimits, files::FileContextLimits,
     upload_body::HttpBodyLimits,
@@ -140,7 +141,8 @@ async fn fixture(root: &Path, wire_bytes: usize) -> Fixture {
                 wire_bytes: 65536,
                 chunk_bytes: 17,
             },
-        ),
+        )
+        .unwrap(),
         http: FileRpcHttp::new(
             session.clone(),
             requests.clone(),
@@ -151,7 +153,8 @@ async fn fixture(root: &Path, wire_bytes: usize) -> Fixture {
                 wire_bytes,
                 chunk_bytes: 17,
             },
-        ),
+        )
+        .unwrap(),
         requests,
         calls,
         session,

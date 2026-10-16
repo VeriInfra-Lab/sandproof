@@ -19,6 +19,23 @@ pub struct MultipartLimits {
     pub trailer_bytes: usize,
     pub trailer_fields: usize,
 }
+impl MultipartLimits {
+    fn http(self) -> HttpBodyLimits {
+        HttpBodyLimits {
+            total_bytes: self.wire.total_bytes,
+            frame_bytes: self.frame_bytes,
+            frames: self.frames,
+            trailer_bytes: self.trailer_bytes,
+            trailer_fields: self.trailer_fields,
+        }
+    }
+
+    pub(crate) fn validate(self) -> Result<(), MultipartError> {
+        self.http().validate()?;
+        self.wire.validate_read_buffered()?;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
@@ -270,18 +287,7 @@ impl Input {
         deadline: Instant,
         gzip: bool,
     ) -> Result<Self, MultipartError> {
-        let body = HttpInput::new(
-            body,
-            expected,
-            HttpBodyLimits {
-                total_bytes: limits.wire.total_bytes,
-                frame_bytes: limits.frame_bytes,
-                frames: limits.frames,
-                trailer_bytes: limits.trailer_bytes,
-                trailer_fields: limits.trailer_fields,
-            },
-            deadline,
-        )?;
+        let body = HttpInput::new(body, expected, limits.http(), deadline)?;
         timely(deadline, Ok(()))?;
         let boundary = multipart::boundary_detailed(content_type, limits.wire.header_bytes)?;
         let decoder = Decoder::new_read_buffered(&boundary, limits.wire)?;

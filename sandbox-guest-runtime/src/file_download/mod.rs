@@ -6,6 +6,7 @@
 mod conditions;
 pub mod date;
 mod errno;
+pub mod local_zone;
 pub use errno::LinuxErrno;
 mod ranges;
 pub use conditions::{Conditions, Precondition, precondition};
@@ -29,7 +30,10 @@ pub struct Limits {
     pub items: usize,
 }
 impl Limits {
-    fn validate(self) -> Result<(), Error> {
+    /// Validate configuration without parsing request headers or allocating.
+    /// # Errors
+    /// Zero or unrepresentable header/item budgets.
+    pub fn validate(self) -> Result<(), Error> {
         if self.header_bytes == 0
             || self.header_bytes > isize::MAX as usize / 16
             || self.items == 0

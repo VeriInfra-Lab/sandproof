@@ -1,6 +1,86 @@
 use super::*;
 
 #[test]
+fn resize_observation_keeps_native_invalid_argument_distinct_from_mode_rejection() {
+    for errno in [1, 4, 5, 9, 22, 25] {
+        let error = std::io::Error::from_raw_os_error(errno);
+        let observed = ResizeFailure::observed(&error);
+        assert!(matches!(observed, ResizeFailure::Native { errno: n, .. } if n == errno));
+        assert_eq!(observed.error(), input_error(&error));
+    }
+    for error in [
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a PTY"),
+        std::io::Error::new(std::io::ErrorKind::BrokenPipe, "terminal hung up"),
+        std::io::Error::from_raw_os_error(0),
+    ] {
+        assert!(matches!(
+            ResizeFailure::observed(&error),
+            ResizeFailure::Command(_)
+        ));
+        assert_eq!(ResizeFailure::observed(&error).error(), input_error(&error));
+    }
+    for error in [
+        CommandError::StaleIdentity,
+        CommandError::NotStarted,
+        CommandError::ClosedInput,
+    ] {
+        assert_eq!(ResizeFailure::from(error).error(), error);
+    }
+}
+
+#[test]
+fn signal_errno_requires_original_native_observation_and_keeps_legacy_error() {
+    for errno in [1, 3, 9, 22, 38] {
+        let observed = SignalFailure::observed(&std::io::Error::from_raw_os_error(errno));
+        assert!(matches!(observed, SignalFailure::Native(number) if number == errno));
+        assert_eq!(observed.error(), CommandError::Unavailable);
+    }
+    for error in [
+        std::io::Error::new(std::io::ErrorKind::NotFound, "no syscall"),
+        std::io::Error::from_raw_os_error(0),
+    ] {
+        assert!(matches!(
+            SignalFailure::observed(&error),
+            SignalFailure::Command(CommandError::Unavailable)
+        ));
+    }
+    assert_eq!(
+        SignalFailure::from(CommandError::StaleIdentity).error(),
+        CommandError::StaleIdentity
+    );
+}
+
+#[test]
+fn input_native_observation_requires_real_errno_and_preserves_legacy_error() {
+    for errno in [5, 9, 11, 22, 28, 32] {
+        let original = std::io::Error::from_raw_os_error(errno);
+        let observed = input_failure(&original, false);
+        assert!(
+            matches!(observed, InputFailure::Native { errno: number, error } if number == errno && error == input_error(&original))
+        );
+        assert_eq!(observed.error(), input_error(&original));
+    }
+    for kind in [
+        std::io::ErrorKind::BrokenPipe,
+        std::io::ErrorKind::InvalidInput,
+        std::io::ErrorKind::Other,
+    ] {
+        let error = std::io::Error::new(kind, "synthetic error with no syscall observation");
+        assert!(matches!(
+            input_failure(&error, false),
+            InputFailure::Command(_)
+        ));
+    }
+    assert!(matches!(
+        input_failure(
+            &std::io::Error::new(std::io::ErrorKind::BrokenPipe, "closed stdin"),
+            true
+        ),
+        InputFailure::StdinClosed
+    ));
+}
+
+#[test]
 fn timeout_headers_use_the_fixed_first_value_and_one_absolute_execution_origin() {
     let start = Instant::now();
     let mut headers = HeaderMap::new();

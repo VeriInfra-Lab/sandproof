@@ -108,6 +108,9 @@ async fn run(
     shared: Arc<Shared>,
     mut guard: OwnerGuard,
 ) {
+    // This synchronous filesystem step may take time. Recheck the original
+    // execution deadline below before any release byte can execute user code.
+    process.retire_gate_path();
     // A pre-expired command is aborted before release. No user program ran.
     if process.launch_observation().is_none() && deadline.0.is_some_and(|at| at <= Instant::now()) {
         shared.status.send_modify(|state| {

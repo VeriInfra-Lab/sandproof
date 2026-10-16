@@ -27,6 +27,25 @@ pub enum ContextError {
     Unimplemented,
 }
 
+#[derive(Debug)]
+pub(crate) enum CommandContextError {
+    Context(ContextError),
+    Expansion(crate::upload_response::PathExpansion),
+}
+impl CommandContextError {
+    pub(crate) const fn context(&self) -> ContextError {
+        match self {
+            Self::Context(error) => *error,
+            Self::Expansion(_) => ContextError::InvalidArgument,
+        }
+    }
+}
+impl From<ContextError> for CommandContextError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+
 /// Blocking, read-only account lookup. Implementations never execute commands.
 pub trait AccountSource: Send + Sync + 'static {
     /// # Errors
@@ -193,6 +212,16 @@ impl AuthPermit {
         account: Account,
         settings: &ExecutionSettings,
     ) -> Result<LaunchSpec, ContextError> {
+        self.compose_command_observed(request, account, settings)
+            .map_err(|error| error.context())
+    }
+
+    pub(crate) fn compose_command_observed(
+        &self,
+        request: &StartRequest,
+        account: Account,
+        settings: &ExecutionSettings,
+    ) -> Result<LaunchSpec, CommandContextError> {
         let limit = settings.limits;
         let process = command_process(request, settings)?;
         let cwd = resolve_path(
@@ -202,7 +231,7 @@ impl AuthPermit {
                 .filter(|path| !path.is_empty())
                 .or(self.defaults().workdir.as_deref())
                 .unwrap_or(""),
-            &account.home,
+            &account,
             &settings.daemon_workdir,
         )?;
         let mut env = BTreeMap::from([
@@ -215,9 +244,9 @@ impl AuthPermit {
         env.extend(process.envs.clone());
         if env
             .iter()
-            .any(|(key, value)| key.is_empty() || key.contains(['=', '\0']) || value.contains('\0'))
+            .any(|(key, _)| key.is_empty() || key.contains('='))
         {
-            return Err(ContextError::InvalidArgument);
+            return Err(ContextError::InvalidArgument.into());
         }
         let mut sizes = std::iter::once(process.cmd.len())
             .chain(std::iter::once(cwd.len()))
@@ -228,7 +257,7 @@ impl AuthPermit {
                 .try_fold(0usize, usize::checked_add)
                 .is_none_or(|sum| sum > limit.bytes)
         {
-            return Err(ContextError::ResourceExhausted);
+            return Err(ContextError::ResourceExhausted.into());
         }
         Ok(LaunchSpec {
             envd_wrapper_path: Some(settings.daemon_path.clone()),
@@ -273,9 +302,6 @@ fn command_process<'a>(
         .process
         .as_ref()
         .map_or_else(|| Cow::Owned(ProcessConfig::default()), Cow::Borrowed);
-    if process.cmd.contains('\0') || process.args.iter().any(|arg| arg.contains('\0')) {
-        return Err(ContextError::InvalidArgument);
-    }
     if process.args.len() > limit.arguments {
         return Err(ContextError::ResourceExhausted);
     }
@@ -316,11 +342,20 @@ pub(crate) fn selected_user_with_limits(
     Ok(user)
 }
 
-fn resolve_path(path: &str, home: &str, daemon_cwd: &str) -> Result<String, ContextError> {
-    if path.contains('\0') || home.contains('\0') {
-        return Err(ContextError::InvalidArgument);
+fn resolve_path(
+    path: &str,
+    account: &Account,
+    daemon_cwd: &str,
+) -> Result<String, CommandContextError> {
+    if account.home.contains('\0') {
+        return Err(ContextError::InvalidArgument.into());
     }
-    expand_path(path, home, daemon_cwd)
+    expand_path(path, &account.home, daemon_cwd).map_err(|error| match error {
+        ContextError::InvalidArgument => CommandContextError::Expansion(
+            crate::upload_response::PathExpansion::new(&account.name),
+        ),
+        other => CommandContextError::Context(other),
+    })
 }
 
 pub(crate) fn expand_path(

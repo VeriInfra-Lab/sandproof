@@ -81,6 +81,26 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "Z", "L":
+			if len(f) != 3 {
+				panic("TZif fields")
+			}
+			location, err := time.LoadLocationFromTZData("fixture", decode(f[1]))
+			if err != nil {
+				panic(err)
+			}
+			if f[0] == "L" {
+				name, offset := time.Unix(integer(f[2]), 0).In(location).Zone()
+				fmt.Printf("%x\t%d\n", name, offset)
+			} else {
+				time.Local = location
+				t, err := http.ParseTime(string(decode(f[2])))
+				if err != nil {
+					fmt.Println("ERR")
+				} else {
+					fmt.Printf("%d\t%d\n", t.Unix(), t.Nanosecond())
+				}
+			}
 		case "T":
 			if len(f) != 4 {
 				panic("date fields")
@@ -174,11 +194,19 @@ func main() {
 				result.Body.Reset()
 			}
 			dump(result)
-		case "P":
+		case "P", "C":
 			if len(f) != 14 {
 				panic("response fields")
 			}
-			local(f[12], f[13])
+			if f[0] == "C" {
+				location, err := time.LoadLocationFromTZData("fixture", decode(f[12]))
+				if err != nil || f[13] != "TZif" {
+					panic("response TZif material")
+				}
+				time.Local = location
+			} else {
+				local(f[12], f[13])
+			}
 			size := integer(f[1])
 			if size < 0 || size > 8192 {
 				panic("fixture size")

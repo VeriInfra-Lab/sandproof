@@ -316,7 +316,8 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
             },
         },
         response_limits(),
-    );
+    )
+    .unwrap();
     Arc::new(Fixture {
         session,
         http,

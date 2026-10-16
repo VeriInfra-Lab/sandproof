@@ -32,7 +32,10 @@ pub struct Limits {
     pub items: usize,
 }
 impl Limits {
-    fn check(self, header: &[u8]) -> Result<(), Error> {
+    /// Validate configuration without selecting a request encoding.
+    /// # Errors
+    /// Zero or unrepresentable header/item budgets.
+    pub fn validate(self) -> Result<(), Error> {
         if self.header_bytes == 0
             || self.header_bytes > isize::MAX as usize / 16
             || self.items == 0
@@ -40,6 +43,10 @@ impl Limits {
         {
             return Err(Error::InvalidConfiguration);
         }
+        Ok(())
+    }
+    fn check(self, header: &[u8]) -> Result<(), Error> {
+        self.validate()?;
         if header.len() > self.header_bytes {
             return Err(Error::HeaderLimit);
         }

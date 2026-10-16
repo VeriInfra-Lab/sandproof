@@ -88,6 +88,18 @@ class RunnerDeadlineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci_vm.RunnerDeadline(1800, 'arbitrary-privileged-job')
 
+    def test_rust_retains_full_30_minutes_plus_bounded_reporting_after_late_start(self):
+        budget = ci_vm.RunnerDeadline(ci_vm.RUNNER_JOB_SECONDS['rust'], 'rust', clock=lambda: self.now)
+        self.now = 299
+        budget.feed(self.marker.replace(b'sdk-contract', b'rust'))
+        self.now += 30 * 60
+        self.assertEqual(budget.remaining(), 300)
+        budget.feed(self.marker.replace(b'sdk-contract', b'rust'))
+        self.now += 300
+        with self.assertRaises(subprocess.TimeoutExpired):
+            budget.remaining()
+        self.assertEqual(ci_vm.RUNNER_UNIT_SECONDS['rust'], 2500)
+
     def test_pipe_wait_uses_new_budget_and_never_reads_stderr_as_job_start(self):
         for marker_on_stdout in (True, False):
             self.now = 0

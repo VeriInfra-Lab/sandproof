@@ -44,7 +44,9 @@ struct Fixture {
 
 impl Fixture {
     async fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        Self::in_directory(tempfile::tempdir().unwrap()).await
+    }
+    async fn in_directory(directory: tempfile::TempDir) -> Self {
         std::fs::create_dir(directory.path().join("gates")).unwrap();
         let owners = CommandOwners::new(OwnerLimits {
             records: 1,
@@ -291,6 +293,7 @@ async fn exact_registration_precedes_release_and_the_same_slot_moves_to_executio
     let (command, mut stream) = pending.commit(identity).await.unwrap();
     let command = Stop(command);
     command.0.started().await.unwrap();
+    assert_eq!(fixture.gate_count(), 0);
     timeout(Duration::from_secs(5), rotate)
         .await
         .unwrap()

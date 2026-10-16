@@ -1,4 +1,5 @@
 use super::*;
+use crate::linux::PROCESS_TEST_LOCK;
 use std::process::Stdio;
 
 fn launch(script: &str) -> OwnedChild {
@@ -28,6 +29,7 @@ fn assert_reaped(id: u32) {
 }
 #[test]
 fn explicit_transfer_keeps_child_alive_until_new_owner_finishes() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let mut child = launch("IFS= read -r input; printf '%s' \"$input\"").into_child();
     child
         .stdin
@@ -41,6 +43,7 @@ fn explicit_transfer_keeps_child_alive_until_new_owner_finishes() {
 }
 #[test]
 fn large_dual_pipe_output_does_not_deadlock() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let mut child = launch(
         "i=0; while [ \"$i\" -lt 8192 ]; do printf 0123456789abcdef; printf fedcba9876543210 >&2; i=$((i+1)); done",
     );
@@ -51,6 +54,7 @@ fn large_dual_pipe_output_does_not_deadlock() {
 }
 #[test]
 fn early_return_reaps_the_exact_blocked_child() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let child = launch("IFS= read -r input");
     let id = child.id();
     drop(child);
@@ -58,6 +62,7 @@ fn early_return_reaps_the_exact_blocked_child() {
 }
 #[test]
 fn borrowed_output_wait_drains_both_pipes_and_reaps() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let mut child = launch("printf out; printf err >&2; exit 7");
     let id = child.id();
     let output = child.wait_output().unwrap();
@@ -68,6 +73,7 @@ fn borrowed_output_wait_drains_both_pipes_and_reaps() {
 }
 #[test]
 fn input_and_dual_outputs_progress_together() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     // Each pipe exceeds kernel capacity before the helper reads its input.
     let mut child = launch(
         "i=0; while [ \"$i\" -lt 8192 ]; do printf 0123456789abcdef; printf fedcba9876543210 >&2; i=$((i+1)); done; exec /bin/cat",
@@ -83,6 +89,7 @@ fn input_and_dual_outputs_progress_together() {
 }
 #[test]
 fn stuck_input_and_silent_process_time_out_without_touching_other_child() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     for input in [Vec::new(), vec![b'x'; 128 * 1024]] {
         // A shell builtin loop cannot fork or read stdin; no fixture descendants.
         let mut child = launch("while :; do :; done");
@@ -106,6 +113,7 @@ fn stuck_input_and_silent_process_time_out_without_touching_other_child() {
 }
 #[test]
 fn stdout_and_stderr_overflow_are_errors_not_truncated_success() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     for script in ["printf 12345", "printf 12345 >&2"] {
         let mut child = launch(script);
         let id = child.id();
@@ -136,6 +144,7 @@ fn stdout_and_stderr_overflow_are_errors_not_truncated_success() {
 }
 #[test]
 fn oversized_input_and_early_exit_are_not_success() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let error = launch("exec /bin/cat")
         .exchange(
             b"12345",
@@ -153,6 +162,7 @@ fn oversized_input_and_early_exit_are_not_success() {
 }
 #[test]
 fn bounded_prefix_finishes_without_waiting_for_stream_eof() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let mut child = launch("printf started; while :; do :; done");
     let id = child.id();
     let output = child
@@ -165,6 +175,7 @@ fn bounded_prefix_finishes_without_waiting_for_stream_eof() {
 #[test]
 fn another_known_writer_cannot_keep_the_exchange_waiting_after_helper_exit() {
     use std::os::{fd::OwnedFd, unix::net::UnixStream};
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let (reader, writer) = UnixStream::pair().unwrap();
     let mut holder = Command::new("/bin/sh")
         .args(["-c", "IFS= read -r finish"])
