@@ -475,10 +475,11 @@ class GuestObservationTests(unittest.TestCase):
         read = probe.read_resources
         for expected in (self.expected, {'fixed_go': probe.load_go_expected()['file']}):
             before = dict(schema_version=1, daemon=daemon, files=expected)
-            def sample(proc, original):
+            def sample(proc, original, *, go_wildcard=False):
                 self.assertEqual(proc, Path('/proc'))
                 self.assertEqual(original, daemon)
-                return read(self.proc, original)
+                self.assertEqual(go_wildcard, expected.keys() == {'fixed_go'})
+                return read(self.proc, original, go_wildcard=go_wildcard)
             request = dict(expected=expected, daemon=daemon)
             with patch.object(probe, 'observe_target', side_effect=[before, before]) as observe, \
                     patch.object(probe, 'read_resources', side_effect=sample) as resources:

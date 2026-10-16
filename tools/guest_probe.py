@@ -376,7 +376,7 @@ def validate_sample(sample):
     require(0 < sample['threads'] <= PROCESS_LIMIT and 0 < sample['open_fds'] <= FD_LIMIT)
 
 
-def read_resources(proc, daemon):
+def read_resources(proc, daemon, *, go_wildcard=False):
     validate_daemon(daemon)
     pid, inode = daemon['pid'], daemon['socket_inode']
     directory = os.open(proc / str(pid), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -405,7 +405,8 @@ def read_resources(proc, daemon):
         require(start_ticks(directory, pid) == daemon['start_ticks']
                 and identity(os.stat('exe', dir_fd=directory)) == executable
                 and small_file('cmdline', 4096, directory=directory) == argv
-                and owns_socket(directory, inode) and listener_inode(proc, 49983) == inode)
+                and owns_socket(directory, inode)
+                and listener_inode(proc, 49983, go_wildcard=go_wildcard) == inode)
         return sample
     finally:
         os.close(directory)
@@ -418,7 +419,7 @@ def observe_resources(request):
     validate_daemon(daemon)
     before = observe_target(expected)
     require(before['daemon'] == daemon)
-    sample = read_resources(Path('/proc'), daemon)
+    sample = read_resources(Path('/proc'), daemon, go_wildcard=expected.keys() == {'fixed_go'})
     require(observe_target(expected) == before)
     return dict(schema_version=1, expected=expected, daemon=daemon, sample=sample)
 
