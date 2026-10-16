@@ -460,6 +460,8 @@ CommandHttp 固定同一 Session、账户池、上下文设置、VM/服务会话
 
 [keepalive 头选择组件](../sandbox-guest-service/src/command_keepalive.rs)独立观察固定 64 位 Go 的 `Keepalive-Ping-Interval` 首字段：缺失、空值、非十进制及超出 i64 的解析失败得到 90 秒，后续字段不覆盖首值；可解析的符号/前导零整数按 Go time.Duration 乘法回绕为有符号纳秒。正结果返回 Period，零或负结果返回带实际纳秒值的 UpstreamPanic 分类，不执行 panic，也不悄悄改为默认周期。负整数可能回绕为正数，正整数溢出也可能产生亚秒周期；例如 20211507185753197 得到 512 纳秒。组件只借用已受完整头预算约束的输入，不保存原字段或建立 timer。它尚未接入 CommandHttp，不批准原 panic、回绕周期、公开拒绝映射或生产默认值；零/负/乘法溢出的服务政策仍需 owner 确认和技术复核。构造 ticker 的库观察不说明实际 Start 在这些输入下是否已产生效果。
 
+固定 Python SDK 2.51.0 的同步/异步普通命令和 PTY Start/Connect 均发送 `Keepalive-Ping-Interval: 50`，与各次 Connect timeout 独立；SDK 的保活事件不会进入 stdout/stderr/PTY 回调，不成为 End 或成功回执。夹在 UTF-8 codepoint 两段之间的保活事件也不改变原文本增量解码；PTY 仍按原 byte 交付。[原 SDK 回环检查](../tests/compat/test_sdk_keepalive_wire.py)验证该客户端观察，未连接 Rust 头选择组件或真实服务时钟。
+
 [来宾 HTTP 装配](../sandbox-guest-service/src/guest_http.rs)以同一个 Session 连接原 /health、/init、CommandHttp、FileRpcHttp 与 /files。构造时逐项核对共享认证状态的对象身份，不能用相同 token/元数据的独立 Session 替代；账户、资源池、worker、VM/PID 集、MIME/时区和预算仍由可信调用方提供。只分派原路径，不预读/复制/归一化正文；各命名空间继续执行原路由、准入、鉴权、解析、效果及有限回复。装配克隆共享原命令编号序列和各资源池，原三类请求/控制容量不合并；health/init 不占命令或文件槽位，但仍受连接预算约束。
 
 GuestHttp::serve 消费显式配置的原有界 HTTP/1 监听器和已绑定的私有 socket，不自行选地址或生产默认值。未映射失败保持原类型及其责任直到连接结束，关闭该连接并计入运输报告；Debug 不输出路径或错误内容，不补造公开状态码。退出停止接收，旧连接沿原绝对期限排空；取消运输只丢弃订阅，不证明进程/文件效果已停止，也不重执行。该装配未提供正式 daemon 二进制、配置入口、PID 状态制备、不可变模板安装或版本锁；受控回环测试不等于来宾部署、完整 SDK 双端或 KVM 验收。
