@@ -140,6 +140,7 @@ async def run_case(sandbox, asynchronous, field, case, value, background):
     else:
         command += "printf 'finished\\n'"
     owned, terminal_observed, candidates = None, False, None
+    outcome, terminal = expected, None
     async with AsyncExitStack() as cleanup:
         try:
             result = await call(sandbox.commands.run, command, stdin=True,
@@ -148,10 +149,15 @@ async def run_case(sandbox, asynchronous, field, case, value, background):
                 owned = await cleanup.enter_async_context(KnownCommand(sandbox.commands, result))
                 result = await owned.wait(result)
             terminal_observed = True
+            terminal = terminal_fields(result)
         except Exception as error:
             if isinstance(error, CommandExitException):
                 terminal_observed = True
-            verify_failure(error, expected)
+                terminal = terminal_fields(error)
+            if expected == 'stream_deadline':
+                outcome = deadline_outcome(error, execution_deadline=True)
+            else:
+                verify_failure(error, expected)
         else:
             assert expected == 'completed', 'deadline or malformed header was ignored'
             assert (result.stdout, result.stderr, result.exit_code, result.error) == ('finished\n', '', 0, None)
@@ -163,7 +169,9 @@ async def run_case(sandbox, asynchronous, field, case, value, background):
         if owned is None and not terminal_observed and expected in ('stream_deadline', 'opening_deadline'):
             candidates = await unacknowledged_candidates(sandbox, command)
     return dict(operation='run', parameter=field, case=case, background=background,
-                outcome=expected, observed_start_markers=count, terminal_observed=terminal_observed,
+                expected_outcomes=([expected, 'command_terminated'] if expected == 'stream_deadline' else [expected]),
+                outcome=outcome, terminal_result=terminal,
+                observed_start_markers=count, terminal_observed=terminal_observed,
                 original_pid=owned.pid if owned is not None else None,
                 unacknowledged_candidates=candidates)
 
@@ -204,10 +212,25 @@ async def connect_case(sandbox, asynchronous, field, case, value):
                 outcome=expected, same_pid_recovered=True, start_markers=1)
 
 
+def terminal_fields(result):
+    return dict(exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr, error=result.error)
+
+
 def verify_deadline_exit(error):
     assert type(error) is CommandExitException
-    assert (error.exit_code, error.stdout, error.stderr, error.error) == (
-        -1, '', '', 'signal: killed')
+    actual = terminal_fields(error)
+    assert actual == dict(exit_code=-1, stdout='', stderr='', error='signal: killed'), (
+        'unexpected deadline terminal', actual)
+
+
+def deadline_outcome(error, *, execution_deadline):
+    # Start creates a process deadline separately from the RPC stream's.
+    # Connect only bounds the new subscription, never the original process.
+    if execution_deadline and type(error) is CommandExitException:
+        verify_deadline_exit(error)
+        return 'command_terminated'
+    verify_failure(error, 'stream_deadline')
+    return 'stream_deadline'
 
 
 async def wait_deadline_case(sandbox, started_with_deadline):
@@ -228,11 +251,7 @@ async def wait_deadline_case(sandbox, started_with_deadline):
         try:
             await owned.wait(waiting)
         except Exception as error:
-            if started_with_deadline and type(error) is CommandExitException:
-                # envd's process deadline and the RPC deadline can race.
-                verify_deadline_exit(error)
-            else:
-                verify_failure(error, 'stream_deadline')
+            initial_outcome = deadline_outcome(error, execution_deadline=started_with_deadline)
         else:
             raise AssertionError('wait ignored the command stream deadline')
         await owned.disconnect(waiting)
@@ -244,6 +263,7 @@ async def wait_deadline_case(sandbox, started_with_deadline):
                 await owned.wait(recovery)
             except Exception as error:
                 verify_deadline_exit(error)
+                terminal = terminal_fields(error)
             else:
                 raise AssertionError('command deadline did not terminate the process')
             removal = await observe_absent(sandbox, owned.pid, command)
@@ -253,14 +273,17 @@ async def wait_deadline_case(sandbox, started_with_deadline):
             await call(recovery.close_stdin, request_timeout=15)
             result = await owned.wait(recovery)
             assert (result.stdout, result.stderr, result.exit_code, result.error) == ('finished\n', '', 0, None)
+            terminal = terminal_fields(result)
         count = await marker_count(sandbox, marker)
-        assert count == 1
+        if not started_with_deadline:
+            assert count == 1
         healthy = await call(sandbox.commands.run, 'printf healthy', timeout=15)
         assert healthy.stdout == 'healthy'
     return dict(operation='wait', parameter='inherited_stream_deadline',
                 case='start' if started_with_deadline else 'connect',
                 outcome='command_terminated' if started_with_deadline else 'stream_deadline',
-                same_pid_observed=True, start_markers=1, post_end_list_observations=removal)
+                initial_wait_outcome=initial_outcome, terminal_result=terminal,
+                same_pid_observed=True, start_markers=count, post_end_list_observations=removal)
 
 
 async def exercise(args):

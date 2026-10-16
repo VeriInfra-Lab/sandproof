@@ -621,11 +621,17 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 
 #499 的期限探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38797587711) 通过：源 7795e782440e731aea50276aa82292ef240d82aa、checkout 7b937bfb8017a92dc84693e0464994dd620647a5；固定 SDK 100 项、封存 Redis 与四项 CI 成功。该结果仍不包含真实候选 VM 的期限矩阵。
 
-stdin 和命令期限探针共用原 Start 身份的收尾记录：只有已返回并通过正整数范围检查的原 PID 可以收到单次失败收尾信号；每个返回的订阅各尝试一次 disconnect，未知关闭回执不重试。错误 Connect 的订阅仍关闭，但其 PID 不用于控制；原异常、信号异常和全部关闭异常共同保留。原 wait 返回 CommandResult 或抛出 CommandExitException 即记录已收到终局，后续错误类别、完整字段或标记读取失败仍判失败，但不再补发 kill。缺 End 或流期限失败不伪造进程已结束。默认成功结果也要求 error 为 None；原 timeout/request_timeout 输入与错误映射矩阵保持。
+stdin 和命令期限探针共用原 Start 身份的收尾记录：只有已返回并通过正整数范围检查的原 PID 可以收到单次失败收尾信号；每个返回的订阅各尝试一次 disconnect，未知关闭回执不重试。错误 Connect 的订阅仍关闭，但其 PID 不用于控制；原异常、信号异常和全部关闭异常共同保留。原 wait 返回 CommandResult 或抛出 CommandExitException 即记录已收到终局，后续错误类别、完整字段或标记读取失败仍判失败，但不再补发 kill。缺 End 或流期限失败不伪造进程已结束。默认成功结果也要求 error 为 None；原 timeout/request_timeout 输入和 SDK 错误映射保持，进程期限与流期限的竞态按下述分别记录。
 
 命令期限 Start 未返回 PID 时，只读取一次 List，记录 cmd/args/envs/cwd/tag 全部精确匹配原提交的候选条目；多个匹配也不代表取得 Start 身份，不根据标记子串或匹配结果连接、发送信号或重试 Start。报告新增 terminal_observed、original_pid、unacknowledged_candidates；原实例仍由外层销毁并等待实机资源审计。已收到命令期限终局后，最多 15 秒/128 轮观察原 PID 从 List 移除，每次查询使用剩余期限，尚未移除时必须保留原元数据；不要求 End 后瞬时消失。单份列表最多 128 项/128 KiB，拒绝重复或非法 PID；这些是探针观察边界，不是产品容量保证。post_end_list_observations 保留原 PID 的各次观察，不据它证明整张表或进程树已空。
 
 [收尾回归](../tests/compat/test_command_probe_cleanup.py)通过固定同步/异步 SDK 的原 Commands 和句柄消费预定 RPC 事件，覆盖 stdin 默认/二进制/重连、成功及错误终局、缺 End、标记失败、期限恢复、延迟移除、未知 Start 候选与错误 Connect；受控句柄故障补充重复引用、无效 PID、取消及所有收尾错误保留，可推进时钟核对截止时点和次数上限。不实现另一套来宾注册表，不运行产品 VM，也不把本地通过计为真实期限或销毁验收。此改动不涉及 C02 原固定 sdk_data_contract 调用集。
+
+#509 的收尾回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38835915317) 通过：源 dfe563a64202aad0ece5a41832c14ced87f760cc、checkout 6b1c74e81ed789b5fd331812342fe1fcd7e9a42b，新增 14 项回归包含在固定 SDK 179 项中，封存 Redis 及四项 CI 成功。该证据不包含下面新增的期限结果修正或真实 VM。
+
+固定 Go 的 [Start](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/internal/services/process/start.go)从同一 Connect 头另建进程上下文，其期限与 RPC 流上下文分别管理；[Handler](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/internal/services/process/handler/handler.go)通过真实 exec.CommandContext/wait 产生终局。固定 SDK 把负 timeout 量化为 1 ms。run 的该案例保持 stdin 开启且程序等待输入，只接受原 DEADLINE_EXCEEDED 映射，或 CommandExitException 的准确四字段 `exit_code=-1, stdout='', stderr='', error='signal: killed'`；意外成功、其他退出码/信号/输出仍失败。expected_outcomes 记录两种预期，outcome 记录本次公开调用实际返回的类别，terminal_result 保留原 SDK 公开终局字段；不把两种结果归一化为同一观察。Connect 的新流期限不会改变原执行期限，其案例仍不能把进程死亡作为预期超时。
+
+wait 记录 initial_wait_outcome，再通过同一原 PID 的恢复订阅验证后续终局。执行期限可能在用户程序写入一次性标记之前到期，所以 Start 期限案例允许观察到 0 或 1 次标记，报告实际计数；已有标记仍必须完整且恰好一次。Connect 期限后主动关闭 stdin 并成功完成的案例仍要求标记为 1。若 SDK 在消费 End 后又收到 RPC 流错误，两个固定客户端均优先抛出流错误；探针按这个公开失败记录，不读取 SDK 私有缓存来改判成功。[期限结果回归](../tests/compat/test_command_deadline_outcomes.py)用预定 RPC 事件控制两种结果、尾随错误和标记时点，核对原同步/异步 SDK、原 1 ms/1 s/60 s 参数、同 PID 恢复、全部终局字段和单次收尾。受控事件不证明真实 Go/Rust 的竞态频率或执行期限精度；真实 VM 矩阵仍待运行。
 
 [PTY 候选入口](../tests/system/sdk_pty.py)通过原固定 SDK 的公开 `pty.create/connect/send_stdin/resize/kill` 和同步/异步句柄，对 root、ubuntu 各执行直接退出、断线重连后 code 17、等待输入时 SIGKILL 三种案例。使用 SDK 原 `/bin/bash -i -l`，在私有目录写入有限 Python 程序，通过 FIFO 就绪屏障核对原 PID、UID、cwd、环境及三个终端描述符；之后发送空输入及分块的全部 256 种字节，验证 2304 字节原样合并输出、初始/调整窗口、超出 uint16 的尺寸收窄、准确终局、立即晚连只返回 End、单次启动标记及存活时 List 包含原 PID。结束后的 List 状态只记录观察值：固定 Go 先广播 End 再调用终局保存/删除钩子，不能额外承诺 End 后立即查不到 PID。交互启动命令小于 512 字节，输出上限 128 KiB、元数据上限 4 KiB；登录 shell 的前缀单独记录长度/摘要，不当作固定二进制帧，也不擅自归一化为 Go/Rust 完整对照。原 shell profile 须保留请求的 cwd/自定义环境；模板还须具备 `/usr/bin/python3`。每个 PTY 60 秒、晚连 20 秒，VM 300 秒，不延长寿命以掩盖超时。
 
