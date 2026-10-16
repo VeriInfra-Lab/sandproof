@@ -75,7 +75,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_larger_caller_buffer_does_not_change_the_original_read_budget() {
-        let input = vec![b'x'; 131072];
+        let input = vec![b'x'; 131_072];
         let mut capped = ReadCap::new(input.as_slice(), 16384);
         let mut target = vec![b'p'; 32768];
         let mut buffer = ReadBuf::new(&mut target);
@@ -113,7 +113,9 @@ mod tests {
         buffer.advance(3);
         assert!(
             std::future::poll_fn(|cx| Poll::Ready(
-                Pin::new(&mut capped).poll_read(cx, &mut buffer).is_pending()
+                Pin::new(&mut capped)
+                    .poll_read(cx, &mut buffer)
+                    .is_pending()
             ))
             .await
         );

@@ -38,7 +38,7 @@ impl AsyncWrite for BufferedWire {
 
 #[tokio::test]
 async fn coalesced_http_body_frames_do_not_exceed_the_original_transport_read_budget() {
-    const PAYLOAD: usize = 131072;
+    const PAYLOAD: usize = 131_072;
     for padding in [0, 31, 511, 4095] {
         let budget = Limits {
             buffer_bytes: 16384,
@@ -90,7 +90,7 @@ async fn coalesced_http_body_frames_do_not_exceed_the_original_transport_read_bu
 
 #[tokio::test]
 async fn original_upload_guard_accepts_a_coalesced_body_without_larger_limits() {
-    const PAYLOAD: usize = 131072;
+    const PAYLOAD: usize = 131_072;
     let budget = Limits {
         buffer_bytes: 16384,
         ..limits()
