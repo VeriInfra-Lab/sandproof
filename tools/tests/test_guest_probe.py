@@ -191,7 +191,7 @@ class GuestObservationTests(unittest.TestCase):
         args = shlex.split(probe.command(self.expected))
         self.assertEqual(args[:3], ['/usr/bin/python3', '-I', '-c'])
         self.assertEqual(json.loads(args[4]), self.expected)
-        self.assertLess(len(probe.command(self.expected).encode()), 16384)
+        self.assertLessEqual(len(probe.command(self.expected).encode()), probe.COMMAND_LIMIT)
         # Execute only the invalid-argument path of the actual sent program.
         # This fails before reading /proc, installed paths or invoking an SDK.
         for flags in ([], ['-O']):
@@ -300,6 +300,176 @@ class GuestObservationTests(unittest.TestCase):
                 capture_output=True, text=True, timeout=5)
             self.assertEqual((checked.returncode, checked.stdout, checked.stderr),
                              (1, '', 'guest_identity_failed\n'))
+
+    def resource_files(self):
+        directory = self.proc / '42'
+        (directory / 'status').write_bytes(
+            b'Name:\tprivate\nPid:\t42\nTgid:\t42\nThreads:\t3\nVmRSS:\t1 kB\nVmHWM:\t512 kB\n')
+        (directory / 'smaps_rollup').write_bytes(
+            b'0000-ffff ---p 00000000 00:00 0 [rollup]\nRss:\t768 kB\nPss:\t123 kB\n')
+        return directory
+
+    def test_resource_sample_uses_rollup_rss_and_separate_kernel_hwm_and_fd_count(self):
+        self.resource_files()
+        daemon = self.observe()
+        with patch.object(probe.time, 'monotonic_ns', side_effect=[100, 150]):
+            sample = probe.read_resources(self.proc, daemon)
+        self.assertEqual(sample, dict(rss_bytes=768*1024, reported_peak_rss_bytes=512*1024,
+                                      threads=3, open_fds=1, elapsed_ns=50))
+        # VmHWM and the later rollup snapshot are neither atomic nor equally
+        # precise. The observer must not silently turn one into the other.
+        (self.proc / '42/fd/7').symlink_to('pipe:[88]')
+        self.assertEqual(probe.read_resources(self.proc, daemon)['open_fds'], 2)
+        with patch.object(probe, 'FD_LIMIT', 1), self.assertRaises(ValueError):
+            probe.read_resources(self.proc, daemon)
+
+    def test_resource_files_refuse_missing_malformed_duplicate_large_or_linked_fields(self):
+        directory = self.resource_files()
+        daemon = self.observe()
+        for name, content in [
+            ('status', b'Pid: 42\nTgid: 43\nThreads: 3\nVmHWM: 512 kB\n'),
+            ('status', b'Pid: 42\nTgid: 42\nThreads: 0\nVmHWM: 512 kB\n'),
+            ('status', b'Pid: 42\nTgid: 42\nThreads: 4097\nVmHWM: 512 kB\n'),
+            ('smaps_rollup', b'Rss: -1 kB\n'),
+            ('smaps_rollup', b'Rss: 1 KB\n'),
+            ('smaps_rollup', b'Rss: 1.0 kB\n'),
+            ('smaps_rollup', b'Rss: true kB\n'),
+            ('smaps_rollup', b'Rss: 1 kB\nRss: 2 kB\n'),
+            ('smaps_rollup', b'Pss: 1 kB\n'),
+            ('smaps_rollup', b'Rss: 18446744073709551616 kB\n'),
+            ('smaps_rollup', b'Rss: 1 kB\n' + b' ' * (16 * 1024)),
+        ]:
+            with self.subTest(name=name, content=content[:60]):
+                self.resource_files()
+                (directory / name).write_bytes(content)
+                with self.assertRaises(ValueError):
+                    probe.read_resources(self.proc, daemon)
+        self.resource_files()
+        (directory / 'smaps_rollup').unlink()
+        with self.assertRaises(OSError):
+            probe.read_resources(self.proc, daemon)
+        (directory / 'smaps_rollup').symlink_to('status')
+        with self.assertRaises(OSError):
+            probe.read_resources(self.proc, daemon)
+
+    def test_resource_read_refuses_process_exec_arguments_or_listener_changes(self):
+        self.resource_files()
+        daemon = self.observe()
+        read = probe.proc_snapshot
+        for change in ('ticks', 'arguments', 'executable', 'listener'):
+            changed = []
+            def mutate(name, directory):
+                raw = read(name, directory)
+                if name == 'smaps_rollup':
+                    changed.append(change)
+                    if change == 'ticks':
+                        self.ticks(42, 124)
+                    elif change == 'arguments':
+                        (self.proc / '42/cmdline').write_bytes(b'other\0')
+                    elif change == 'executable':
+                        (self.proc / '42/exe').unlink()
+                        (self.proc / '42/exe').symlink_to(self.platform / probe.NAMES['worker'])
+                    else:
+                        self.listener(inode=88)
+                return raw
+            with self.subTest(change=change), patch.object(probe, 'proc_snapshot', side_effect=mutate):
+                with self.assertRaises(ValueError):
+                    probe.read_resources(self.proc, daemon)
+            self.assertEqual(changed, [change])
+            shutil.rmtree(self.proc / '42')
+            self.process(42)
+            self.resource_files()
+            self.listener()
+
+    def test_resource_observation_binds_original_target_before_and_after_the_sample(self):
+        self.resource_files()
+        daemon = self.observe()
+        read = probe.read_resources
+        for expected in (self.expected, {'fixed_go': probe.load_go_expected()['file']}):
+            before = dict(schema_version=1, daemon=daemon, files=expected)
+            def sample(proc, original):
+                self.assertEqual(proc, Path('/proc'))
+                self.assertEqual(original, daemon)
+                return read(self.proc, original)
+            request = dict(expected=expected, daemon=daemon)
+            with patch.object(probe, 'observe_target', side_effect=[before, before]) as observe, \
+                    patch.object(probe, 'read_resources', side_effect=sample) as resources:
+                result = probe.observe_resources(request)
+            self.assertEqual([call.args for call in observe.call_args_list], [(expected,), (expected,)])
+            self.assertEqual(resources.call_count, 1)
+            self.assertEqual((result['expected'], result['daemon']), (expected, daemon))
+            after = dict(before, daemon=dict(daemon, start_ticks=124))
+            with patch.object(probe, 'observe_target', side_effect=[before, after]), \
+                    patch.object(probe, 'read_resources', side_effect=sample), self.assertRaises(ValueError):
+                probe.observe_resources(request)
+            with patch.object(probe, 'observe_target', return_value=after), \
+                    patch.object(probe, 'read_resources') as resources, self.assertRaises(ValueError):
+                probe.observe_resources(request)
+            resources.assert_not_called()
+
+    def test_resource_receipts_reject_wrong_target_identity_shape_or_unbounded_metrics(self):
+        self.resource_files()
+        daemon = self.observe()
+        sample = probe.read_resources(self.proc, daemon)
+        result = lambda value: SimpleNamespace(exit_code=0, stdout=json.dumps(value), stderr='')
+        for expected in (self.expected, {'fixed_go': probe.load_go_expected()['file']}):
+            good = dict(schema_version=1, expected=expected, daemon=daemon, sample=sample)
+            self.assertEqual(probe.resource_receipt(result(good), expected, daemon), good)
+            bad_reports = [dict(good, schema_version=True), dict(good, extra=True),
+                           dict(good, daemon=dict(daemon, pid=43)),
+                           dict(good, daemon=dict(daemon, pid=True)),
+                           dict(good, expected={'fixed_go': dict(bytes=1, sha256='0'*64)})]
+            for field in sample:
+                for value in (True, -1, 2**64, '1'):
+                    bad_reports.append(dict(good, sample=dict(sample, **{field: value})))
+            for bad in bad_reports:
+                with self.subTest(report=bad), self.assertRaises(ValueError):
+                    probe.resource_receipt(result(bad), expected, daemon)
+            for bad in (SimpleNamespace(exit_code=1, stdout=json.dumps(good), stderr=''),
+                        SimpleNamespace(exit_code=0, stdout=json.dumps(good), stderr='warning'),
+                        SimpleNamespace(exit_code=0, stdout='{}' * 4096, stderr='')):
+                with self.assertRaises(ValueError):
+                    probe.resource_receipt(bad, expected, daemon)
+
+    def test_resource_program_has_exact_pins_bounded_shell_and_optimized_failure_path(self):
+        daemon = self.observe()
+        for expected in (self.expected, {'fixed_go': probe.load_go_expected()['file']}):
+            command = probe.resource_command(expected, daemon)
+            args = shlex.split(command)
+            self.assertEqual(args[:3], ['/usr/bin/python3', '-I', '-c'])
+            self.assertEqual(json.loads(args[4]), {'resources': dict(expected=expected, daemon=daemon)})
+            self.assertLessEqual(len(command.encode()), probe.COMMAND_LIMIT)
+            for flags in ([], ['-O']):
+                checked = subprocess.run([sys.executable, '-I', *flags, '-c', args[3],
+                    '{"resources":{"expected":{},"daemon":{}}}'],
+                    capture_output=True, text=True, timeout=5)
+                self.assertEqual((checked.returncode, checked.stdout, checked.stderr),
+                                 (1, '', 'guest_identity_failed\n'))
+        with patch.object(probe, 'COMMAND_LIMIT', 8), self.assertRaises(ValueError):
+            probe.resource_command(self.expected, daemon)
+        with self.assertRaises(ValueError):
+            probe.resource_command(self.expected, dict(daemon, pid=True))
+
+
+class LinuxResourceSnapshotTests(unittest.TestCase):
+    """Real procfs parsing, selected only by the required Linux tool suite."""
+
+    def test_actual_proc_rollup_and_status_use_the_observed_current_process(self):
+        self.assertEqual(sys.platform, 'linux')
+        pid = os.getpid()
+        directory = os.open(f'/proc/{pid}', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            ticks = probe.start_ticks(directory, pid)
+            status = probe.proc_values(probe.proc_snapshot('status', directory),
+                                       {b'Pid': 1, b'Tgid': 1, b'Threads': 1, b'VmHWM': 1024})
+            memory = probe.proc_values(probe.proc_snapshot('smaps_rollup', directory), {b'Rss': 1024})
+            self.assertEqual((status[b'Pid'], status[b'Tgid']), (pid, pid))
+            self.assertGreater(status[b'Threads'], 0)
+            self.assertGreater(status[b'VmHWM'], 0)
+            self.assertGreater(memory[b'Rss'], 0)
+            self.assertEqual(probe.start_ticks(directory, pid), ticks)
+        finally:
+            os.close(directory)
 
 
 if __name__ == '__main__':
