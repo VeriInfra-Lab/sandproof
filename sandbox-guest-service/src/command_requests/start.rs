@@ -67,6 +67,7 @@ impl Ready {
         preparation: StartPreparation<'_>,
         response: CommandBodyLimits,
     ) -> Result<Reply, Failure> {
+        let response = self.response_limits(response);
         let deadline = self.deadline();
         let format = self.response;
         let mut default_account = None;

@@ -110,7 +110,9 @@ impl Plan {
         }
         let status = match error {
             SelectionError::Compression(_) => StatusCode::NOT_IMPLEMENTED,
-            SelectionError::Version(_) | SelectionError::Timeout(_) => StatusCode::BAD_REQUEST,
+            SelectionError::Version(_)
+            | SelectionError::Timeout(_)
+            | SelectionError::Keepalive(_) => StatusCode::BAD_REQUEST,
             error if observed_compression(error).is_some() => StatusCode::BAD_REQUEST,
             error if observed_framing(error).is_some() => StatusCode::BAD_REQUEST,
             SelectionError::Request(
@@ -133,6 +135,7 @@ impl Plan {
             || matches!(
                 error,
                 SelectionError::Request(crate::command_requests::Error::EndStream(_))
+                    | SelectionError::Keepalive(_)
             ))
             && !stream
         {

@@ -23,6 +23,8 @@ mod guest;
 mod input_native;
 #[path = "json_http.rs"]
 mod json_errors;
+#[path = "keepalive_http.rs"]
+mod keepalive;
 #[path = "launch_http.rs"]
 mod launch;
 #[path = "native_http.rs"]

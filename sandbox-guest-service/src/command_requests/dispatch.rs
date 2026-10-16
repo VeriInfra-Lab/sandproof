@@ -79,6 +79,7 @@ impl Ready {
         registry: &PidRegistry,
         limits: CommandBodyLimits,
     ) -> Result<Reply, Failure> {
+        let limits = self.response_limits(limits);
         let deadline = self.deadline();
         let format = self.response;
         let owner = self.decoded.authenticated.admitted.owner.clone();

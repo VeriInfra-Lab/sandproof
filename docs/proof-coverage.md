@@ -392,7 +392,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [异步命令响应体](../sandbox-guest-service/src/command/body.rs)增加原订阅到 Connect 事件/终结顺序、Bytes 最后引用到请求/订阅/输出/记录额度释放、原响应期限与执行期限分离、取消后原进程责任、编码/滞后失败不补成功终局的自有义务，尚未抽取或证明。[keepalive 时钟](../sandbox-guest-service/src/command_clock.rs)与原帧释放时间回执进一步改变上述适配：Start/Data 重置、保活不重置、延迟轮询和周期跳过、同一最后所有者释放边界到异步时钟的对应尚未证明；有限原时间库及假时钟回归不证明完整 HTTP 时序或库/调度器实时性。Linux 执行结果新增 core_dumped，结束文本使用固定 Go 信号名；真实 wait 到字段及 wire 编码的对应同样未证明。异步 driver 与运行端口已改，已证明纯核心未变，旧结论不覆盖这些适配与传输所有权。
 
-在 b98a44c51dd1b0935553f92daa6c94f0fabd5756 基线后新增的 [keepalive 头选择](../sandbox-guest-service/src/command_keepalive.rs)尚未抽取或证明。首字段选择、字节/十进制 i64 解析、90 秒回退、显式 wrapping_mul 与 Go 有符号纳秒的对应，以及正周期/原构造器 panic 分类均是自有待证义务；有限 Go 对照不等于全输入等价证明。组件没有接入 HTTP、配置或调度时钟，后续政策、拒绝顺序、瞬时时间可表示性及资源界仍须单独连接和验证。已证明控制器 Rust、纯来宾核心、抽取输入及 Lean 源码未改，原定理不覆盖新增组件。
+在 b98a44c51dd1b0935553f92daa6c94f0fabd5756 基线后新增的 [keepalive 头选择](../sandbox-guest-service/src/command_keepalive.rs)尚未抽取或证明。首字段选择、字节/十进制 i64 解析、90 秒回退、显式 wrapping_mul 与 Go 有符号纳秒的对应，以及正周期/原构造器 panic 分类均是自有待证义务；有限 Go 对照不等于全输入等价证明。cf0e80a12181aac72ea017641e3e8e05bcefdd16 基线后，批准的有界正秒规则经 HTTP 选择、Ready、Start/Connect 分派接到原响应体；新增 parsed-i64 与乘法溢出的区分、效果前拒绝顺序、固定 invalid_argument EOS、原协商格式/期限/请求容量的保持、选定周期不可替换和覆盖组件显式值的自有义务，均未抽取或证明。瞬时时间可表示性、原帧释放到时钟、配置预算及完整运输资源界仍须分别验证。已证明控制器 Rust、纯来宾核心、抽取输入及 Lean 源码未改，原定理不覆盖新增组件。
 
 [命令准备请求所有权](../sandbox-guest-service/src/command/preparation.rs)新增原请求期限到准备/登记接受的最早时刻、守卫到独立准备任务和持久登记票据、取消后真实收尾/阻塞任务退出、接受后移交至实际放行观察的连接义务。原授权/执行期限与后续进程记录责任保持，但准备 owner 和执行 driver 的本候选均未抽取或证明；真实进程有限检查不能证明服务重启、未知系统调用或完整 HTTP Start。已证明纯核心未改。
 

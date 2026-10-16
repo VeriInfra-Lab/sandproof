@@ -5,6 +5,10 @@ use axum::http::HeaderValue;
 fn missing_invalid_and_out_of_range_first_fields_use_the_fixed_default() {
     let default = Selection::Period(Duration::from_secs(90));
     assert_eq!(select(&HeaderMap::new()), default);
+    assert_eq!(
+        bounded_period(&HeaderMap::new()),
+        Ok(Duration::from_secs(90))
+    );
     for value in [
         b"".as_slice(),
         b"+",
@@ -28,7 +32,59 @@ fn missing_invalid_and_out_of_range_first_fields_use_the_fixed_default() {
         );
         headers.append("keepalive-ping-interval", "1".parse().unwrap());
         assert_eq!(select(&headers), default, "{value:?}");
+        assert_eq!(
+            bounded_period(&headers),
+            Ok(Duration::from_secs(90)),
+            "{value:?}"
+        );
     }
+}
+
+#[test]
+fn approved_period_rejects_parsed_nonpositive_or_overflowing_seconds_even_if_go_wraps_positive() {
+    for value in [
+        "0",
+        "+0",
+        "-0",
+        "-1",
+        "-9223372036854775808",
+        "9223372036854775807",
+        "9223372037",
+        "-9223372037",
+        "18446744074",
+        "-18446744073",
+        "20211507185753197",
+        "36028797018963968",
+    ] {
+        let mut headers = HeaderMap::new();
+        headers.append("keepalive-ping-interval", value.parse().unwrap());
+        headers.append("keepalive-ping-interval", "50".parse().unwrap());
+        assert_eq!(bounded_period(&headers), Err(InvalidInterval), "{value}");
+    }
+}
+
+#[test]
+fn approved_period_preserves_positive_whole_seconds_and_ignores_later_fields() {
+    for (value, expected) in [
+        ("1", 1),
+        ("+0001", 1),
+        ("50", 50),
+        ("90", 90),
+        ("9223372036", 9_223_372_036),
+    ] {
+        let mut headers = HeaderMap::new();
+        headers.append("keepalive-ping-interval", value.parse().unwrap());
+        headers.append("keepalive-ping-interval", "0".parse().unwrap());
+        let period = bounded_period(&headers).unwrap();
+        assert_eq!(period, Duration::from_secs(expected));
+        assert!(tokio::time::Instant::now().checked_add(period).is_some());
+    }
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "keepalive-ping-interval",
+        format!("+{}1", "0".repeat(4096)).parse().unwrap(),
+    );
+    assert_eq!(bounded_period(&headers), Ok(Duration::from_secs(1)));
 }
 
 #[test]

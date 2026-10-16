@@ -105,6 +105,7 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         SelectionError::Compression(_)
             | SelectionError::Version(_)
             | SelectionError::Timeout(_)
+            | SelectionError::Keepalive(_)
             | SelectionError::Request(
                 crate::command_requests::Error::Json(_)
                     | crate::command_requests::Error::EndStream(_)
@@ -130,6 +131,9 @@ fn payload(error: &SelectionError, stream: bool, limit: usize) -> Result<Vec<u8>
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| go_json::string_content(bytes, put);
         match error {
+            SelectionError::Keepalive(_) => {
+                message(b"keepalive interval must be between 1 and 9223372036 seconds")?;
+            }
             SelectionError::Request(crate::command_requests::Error::EndStream(error)) => {
                 super::end_stream::message(*error, &mut message)?;
             }

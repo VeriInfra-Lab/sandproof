@@ -1,5 +1,5 @@
 //! Shared command HTTP dispatch with reserved control admission. No listener,
-//! production defaults, tag policy or catch-all public error mapping.
+//! tag policy or catch-all public error mapping.
 use crate::{
     AccountPool, AccountSource, ExecutionSettings, MetadataSource, Session,
     command::{AdmissionLimits, CommandBodyLimits, CommandOwners, PidRegistrar, PidRegistry},
@@ -50,6 +50,8 @@ pub struct Processes {
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResponseLimits {
+    /// Validated component limits. Selected Start/Connect always replace the
+    /// component keepalive with their original wire header or 90-second fallback.
     pub message: CommandBodyLimits,
     pub http: http::reply::Limits,
     pub account_headers: usize,

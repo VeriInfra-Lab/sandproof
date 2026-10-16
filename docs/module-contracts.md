@@ -401,7 +401,7 @@ Rust 模式下全部准备上传由[有界上传适配器](../tools/template_bui
 
 [受信任启动路径](../sandbox-guest-runtime/src/startup_files.rs)从 `/` 的原目录 FD 逐层 openat，不跟随任何配置/状态/gate/worker 路径中的符号链接；祖先须为 root 或当前 daemon owner 且不可被组/其他用户写入。最终目录为原 owner 的私有目录，配置为私有普通单链接文件，worker 为不可被组/其他用户写入的可执行普通单链接文件；非阻塞打开后先检查类型，FIFO 不进入读取。时区仍按原专用 loader 允许受信任的 `/etc/localtime` 链接。路径及启动摘要观察不抵抗 root/同 owner 篡改、挂载替换或旧有效盘回滚，也不把随后按路径 exec 绑定到已关闭的原 FD；可信安装必须在服务生命周期内保持 worker 及祖先不变，来源与版本仍须绑定不可变模板。
 
-上述正式入口已有实现，但尚未安装或替换现役模板。tag、keepalive 异常头、剩余错误映射及完整 SDK 双端、真实 MMDS/daemon 故障、资源峰值和 KVM 验收仍按原待办执行；配置预算和静态 check 不批准这些未决行为，也不使全部 E01–E10 自动成立。
+上述正式入口已有实现，但尚未安装或替换现役模板。tag、剩余错误映射及完整 SDK 双端、真实 MMDS/daemon 故障、资源峰值和 KVM 验收仍按原待办执行；配置预算和静态 check 不批准这些未决行为，也不使全部 E01–E10 自动成立。
 
 [命令准备所有者](../sandbox-guest-service/src/command/preparation/owner.rs)将原目录/socket/管道/PTY/worker spawn 放入一次阻塞任务，避免这些同步操作占用异步执行线程。进入队列前已持有原命令记录，排队和运行期间继续持有同一授权、请求及准备参数；不新增重试队列或刷新期限。阻塞任务实际开始时重新核对原绝对期限、请求/等待者是否仍在和是否已有撤回决定，已撤回或到期不调用 spawn。开始后取消不能中断 syscall 或提前归还额度；正常错误确认未创建 child 后才归还，成功则连同原 child 移交至既有异步握手/登记/清理。若等待者已丢失而返回可能已有 child，析构仅请求停止并隔离原记录，不能伪造实际 wait；panic 同样保留未知责任。队列项数由原命令记录额度约束，线程数由原 daemon 阻塞线程配置约束，不等于内核 I/O 可中断、系统调度实时性或整机内存峰值已验收。
 
@@ -456,9 +456,13 @@ EOS 语法、类型或 base64 拒绝经原选定 Start/Connect 回复为 200 / i
 
 CommandHttp 固定同一 Session、账户池、上下文设置、VM/服务会话、PID 注册表/持久登记器、worker 路径和显式预算；构造核对注册表的 VM/会话和持久登记器原打开对象的不可变 VM 绑定，并调用原进程/准备预算校验器；相对 worker 路径或 worker/gate 路径含 NUL 也在装配时拒绝。绑定快照不获取存储锁、不读文件，不证明当前文件完整性；原 claim 仍核对绑定和持久写入。实际路径、worker 安装及文件系统观察留在原准备/发布前置检查，构造不启动 worker 或消耗 PID。prepare 返回已观察的回复或不可修改的 Ready；外层可检查原请求施加测试限制，不能替换其身份/资源/期限，execute 消费一次原请求。Start 在该装配及全部克隆之间分配递增非零命令编号，失败不回收、耗尽不回绕；同一注册表/会话必须以一个装配作为唯一 Start 入口，不能和底层直接准备的编号混用。原始 PID 永不复用规则仍由持久 PID 集负责，内部编号不替代它。
 
-共用入口发送现有已观察的 token/Basic/头部/gzip/帧/JSON/EOS/默认账户/PID 参数及通道模式拒绝和正常回复；未知路由、tag、未分类操作故障和编码失败保持有类型的原失败、容量与绝对期限，不重新鉴权/查表/执行，不创造公开错误文本。请求取消或回复失败不成为进程退出/副作用未发生的回执。keepalive 暂沿调用方显式组件配置，完整头语义和生产默认值仍待接通；该模块没有安装服务或选择 tag 政策。
+共用入口发送现有已观察的 token/Basic/头部/gzip/帧/JSON/EOS/默认账户/PID 参数及通道模式拒绝和正常回复；未知路由、tag、未分类操作故障和编码失败保持有类型的原失败、容量与绝对期限，不重新鉴权/查表/执行，不创造公开错误文本。请求取消或回复失败不成为进程退出/副作用未发生的回执。Start/Connect 使用下述已批准的 keepalive 头规则；该模块没有安装服务或选择 tag 政策。
 
-[keepalive 头选择组件](../sandbox-guest-service/src/command_keepalive.rs)独立观察固定 64 位 Go 的 `Keepalive-Ping-Interval` 首字段：缺失、空值、非十进制及超出 i64 的解析失败得到 90 秒，后续字段不覆盖首值；可解析的符号/前导零整数按 Go time.Duration 乘法回绕为有符号纳秒。正结果返回 Period，零或负结果返回带实际纳秒值的 UpstreamPanic 分类，不执行 panic，也不悄悄改为默认周期。负整数可能回绕为正数，正整数溢出也可能产生亚秒周期；例如 20211507185753197 得到 512 纳秒。组件只借用已受完整头预算约束的输入，不保存原字段或建立 timer。它尚未接入 CommandHttp，不批准原 panic、回绕周期、公开拒绝映射或生产默认值；零/负/乘法溢出的服务政策仍需 owner 确认和技术复核。构造 ticker 的库观察不说明实际 Start 在这些输入下是否已产生效果。
+[keepalive 头选择组件](../sandbox-guest-service/src/command_keepalive.rs)独立观察固定 64 位 Go 的 `Keepalive-Ping-Interval` 首字段：缺失、空值、非十进制及超出 i64 的解析失败得到 90 秒，后续字段不覆盖首值；可解析的符号/前导零整数按 Go time.Duration 乘法回绕为有符号纳秒。正结果返回 Period，零或负结果返回带实际纳秒值的 UpstreamPanic 分类，不执行 panic，也不悄悄改为默认周期。负整数可能回绕为正数，正整数溢出也可能产生亚秒周期；例如 20211507185753197 得到 512 纳秒。组件只借用已受完整头预算约束的输入，不保存原字段或建立 timer。原行为观察保留为独立 select 入口，不能直接作为服务周期；构造 ticker 的库观察不说明实际 Go Start 在这些输入下是否已产生效果。
+
+owner 已确认采用有界正秒政策：HTTP Start/Connect 的首字段成功解析为 i64 时只接受 1–9,223,372,036 秒；零、负数及有符号纳秒乘法溢出在命令执行前拒绝，缺失或解析失败仍回退到 90 秒。符号、前导零及后续字段规则沿原选择；i64 解析溢出属于解析失败，不能与成功解析后的乘法溢出混淆。这是明确的 Go 兼容差异，不采用 panic 或回绕周期。HTTP 选择在原 token/显式 Basic、方法/类型/压缩/版本/Connect timeout 检查后、正文读取和默认账户查询前执行；一元命令不解释该头。已知拒绝发送 200 / invalid_argument 错误 EOS，消息为 `keepalive interval must be between 1 and 9223372036 seconds`，保留原 charset/identity/gzip、响应容量和绝对期限，不回显输入。
+
+选定周期随不可替换的 Ready 传到 start_pid/execute_pid 的响应体，不重新读取请求头，不改变原执行期限或 Connect timeout。HTTP 选择后的周期覆盖 CommandBodyLimits.keepalive；该配置字段仍按组件规则校验，只有未经 HTTP 选择的直接组件调用沿用其显式值。原响应体仍在使用前检查瞬时时间可表示性；响应期限短于周期时可以从不发送保活。完整网络时序、实际 SDK 双端及部署验收仍待执行。
 
 固定 Python SDK 2.51.0 的同步/异步普通命令和 PTY Start/Connect 均发送 `Keepalive-Ping-Interval: 50`，与各次 Connect timeout 独立；SDK 的保活事件不会进入 stdout/stderr/PTY 回调，不成为 End 或成功回执。夹在 UTF-8 codepoint 两段之间的保活事件也不改变原文本增量解码；PTY 仍按原 byte 交付。[原 SDK 回环检查](../tests/compat/test_sdk_keepalive_wire.py)验证该客户端观察，未连接 Rust 头选择组件或真实服务时钟。
 
@@ -490,7 +494,7 @@ Update 的 PTY resize 只把原终端句柄上实际 ioctl 返回的正 errno �
 
 [命令 HTTP 选择](../sandbox-guest-service/src/command_requests/http.rs)消费同一 Basic 预检结果，先选择已知命令的 POST 与两个 Connect JSON 类型，复用有界 MIME 参数解析。其他原协议为未选定分类，不据此公开返回 415。一元与 Start/Connect 分别选择原 Content-Encoding/Accept-Encoding 和 Connect-Content-Encoding/Connect-Accept-Encoding 的第一值；空值/identity/gzip、逗号或 ASCII 空格分割及不解释 q 权重遵循固定协商。方法/媒体类型先于压缩，压缩错误先于版本，版本先于期限语法错误；有效期限先收紧原准入上限，失败保留已选回复格式/编码及原期限，不刷新容量或时钟。诊断只复制完整头预算后的对应首值，Debug 不暴露原值。
 
-Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不可替换的原回复格式；旧 decode_identity 仍在读正文前拒绝 gzip，不将其 EncodingNotImplemented 定义为公开拒绝政策。零/负 wire 期限保留为到期并在本组件效果前拒绝；原 Go 外层上下文到期本身并不证明每个流 handler 都停止派发，有限头对照不作此承诺。失败保留请求容量，不保留已经完成的鉴权读锁。解码/操作错误全文及未分类账户故障、keepalive 头和正式路由/daemon 仍待连接。
+Selected::decode 按原选择解码 identity/gzip 请求，在 Ready 保存不可替换的原回复格式；旧 decode_identity 仍在读正文前拒绝 gzip，不将其 EncodingNotImplemented 定义为公开拒绝政策。零/负 wire 期限保留为到期并在本组件效果前拒绝；原 Go 外层上下文到期本身并不证明每个流 handler 都停止派发，有限头对照不作此承诺。失败保留请求容量，不保留已经完成的鉴权读锁。解码/操作错误全文及未分类账户故障仍未完整映射；keepalive 选定周期同原回复格式保存在 Ready，正式路由/daemon 的部署验收仍待执行。
 
 [命令请求 gzip](../sandbox-guest-service/src/command_requests/compression.rs)与文件请求复用[有界解压器](../sandbox-guest-service/src/request_gzip.rs)：HTTP framing 完整后，在原阻塞解码责任内依次展开数据和可选 EOS，原授权、取消信号和绝对期限不替换。压缩输入总量及每个展开消息各受原 body.total_bytes 限制，解压输出块受 body.frame_bytes 限制；拼接/空成员仍校验，读压缩源和取输出块前检查取消/期限。原载荷、展开消息、解析字段及 codec 工作区可能同时驻留，不冒充单副本或整机峰值。
 
