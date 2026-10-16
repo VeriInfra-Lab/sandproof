@@ -92,6 +92,7 @@ mod tests {
     use std::process::{Command, Stdio};
     #[test]
     fn unknown_child_retains_capacity_until_exact_exit_is_reaped() {
+        let _serial = crate::linux::PROCESS_TEST_LOCK.lock().unwrap();
         let reaper = Arc::new(Reaper {
             active: AtomicUsize::new(0),
             pending: Mutex::new(Vec::with_capacity(MAX_HELPERS)),

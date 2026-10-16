@@ -1,0 +1,21 @@
+# Only loaded by the explicit --config in check-function.sh. Never changes
+# deployment or proof-extraction builds. Retain all runtime safety checks.
+[profile.dev.package.sandbox-controller-core]
+opt-level = 1
+
+[profile.dev.package.sandproof-controller-service]
+opt-level = 1
+
+# Cargo passes this package's OPT_LEVEL to cc for the bundled engine. No
+# SQLite feature macro or durability setting is changed.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 1
+
+[profile.test.package.sandbox-controller-core]
+opt-level = 1
+
+[profile.test.package.sandproof-controller-service]
+opt-level = 1
+
+[profile.test.package.libsqlite3-sys]
+opt-level = 1
