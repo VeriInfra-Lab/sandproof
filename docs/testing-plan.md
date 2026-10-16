@@ -619,9 +619,13 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 
 [参数对照回归](../tests/compat/test_argument_compare.py)用固定同步/异步 Commands 和真实公开句柄消费预定 RPC 事件，覆盖完整调用矩阵、精确输入与回调、异常全文、严格 PID 引用、非法 PID、缺 End、相反结果及多个收尾失败；文件属性和查询回复由受控操作提供，不实现业务文件系统。另在私有 Python 子进程执行同一上下文程序，检查参数、环境和符号链接物理 cwd，不切换身份或读取宿主 shell profile。当前片段已实现，尚未在真实 Go/Rust VM 执行，不代表 Linux 账户/目录权限、完整畸形参数矩阵、重复 tag 政策或 E03 验收通过；C02 固定调用集保持原样。
 
+#513 的参数双端回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38840358332) 通过：源 59ad1cd9a64592170d4aa44c09c9d1af175da7e5、checkout 81fd6689002e2482c7f421824e6f966201ec387c，新增 9 项包含在固定 SDK 204 项中，原 Linux SDK/Rust 组合、封存 Redis 及四项 CI 成功。它不包含下述独立参数探针的收尾修正，也不代表真实 Go/Rust 产品 VM 对照。
+
 [stdin](../tests/system/sdk_command_input.py)、[命令参数](../tests/system/sdk_command_arguments.py)和[文件权限/部分批次](../tests/system/sdk_file_permissions.py)探针也接受上述同一组候选参数：同步/异步模式均在原调用集前后核对身份，文件探针分别核对两台实例，报告将每份观察绑定到原 sandbox_id；原调用输入、VM 寿命和未指定参数时的报告保持不变。已知实例按逆序各尝试一次销毁，某台拒绝、报错或取消不能跳过另一台；全部收尾异常连同原调用异常保留，创建结果未知不重试。[受控编排回归](../tests/compat/test_candidate_probes.py)覆盖这些顺序、身份变化拒绝和部分失败；它替换 SDK 操作及案例函数，不执行真实案例、主机 canary 或产品 VM。SDK 销毁确认仍须由获准的实机监督器补充精确资源审计。
 
 #497 的候选探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38793635811) 通过：源 586a8e4fb0473c813d8baec9601a548be8e353d6、checkout 4140d26ad2780573401422311406b8177185af93；新增 9 项编排包含在固定 SDK 98 项中，封存 Redis及四项 CI 成功。此处仍为受控 SDK 操作，不是三组案例在真实候选 VM 上的执行回执。
+
+独立[命令参数探针](../tests/system/sdk_command_arguments.py)的合法后台上下文和预期拒绝却成功返回的句柄同样使用 KnownCommand：先验证原 PID，等待缺 End/超时/取消时只向原已知 PID 尝试一次信号，信号失败也继续关闭订阅；非法 PID 仅关闭返回订阅。公开终局已经返回后不补发 kill，并严格核对 stdout/stderr/exit_code/error。结果验证在所有权范围内完成，原失败、信号失败及关闭失败共同保留；Start 结果未知仍不重试。文件存在性和最终内容调用先取得结果再断言，原 Start/文件输入、案例顺序和 12 项报告保持。[原 SDK 收尾回归](../tests/compat/test_argument_probe_cleanup.py)覆盖完整 30 次 Start 编排、原同步/异步句柄、未知 Start、非法 PID、缺 End、期限错误、受控 wait 取消及多个失败；它不执行 envd、真实 Linux 用户权限或产品 VM，不能代替真实资源清理验收。
 
 [命令流期限](../tests/system/sdk_command_timeouts.py)、[文件请求/空闲期限](../tests/system/sdk_file_timeouts.py)与[一元 RPC 期限](../tests/system/sdk_rpc_timeouts.py)同样接受上述候选参数，覆盖原 run/connect/wait、文件传输和已选命令/文件一元操作矩阵。身份观察在整组案例前后执行，使用自己的 20 秒命令期限；原案例参数、未知结果观察、无重放及 300 秒 VM 寿命保持。可选报告绑定原 sandbox_id 和前后相同的运行身份，默认报告保持原字段。[同一编排回归](../tests/compat/test_candidate_probes.py)还核对期限参数不被观察预算替换、文件初始写入晚于身份核对，以及案例失败与销毁失败同时保留；这些受控操作不构成真实超时/终止或传输验收。
 

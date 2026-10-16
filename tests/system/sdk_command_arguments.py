@@ -23,24 +23,26 @@ import uuid
 from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import AuthenticationException, InvalidArgumentException
 
-from sdk_command_input import call, destroy_probes
+from sdk_command_input import KnownCommand, call, destroy_probes
 from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
 
 
 async def healthy_context(sandbox, directory, user, background=False):
     command = "pwd; id -un; printf '%s\\n' \"$SP_ARGUMENT_VALUE\""
+    def validate(result):
+        assert (result.stdout, result.stderr, result.exit_code, result.error) == (
+            f'{directory}\n{user}\nspaces and 中文\n', '', 0, None)
     result = await call(sandbox.commands.run, command, cwd=directory, user=user,
                         envs={'SP_ARGUMENT_VALUE': 'spaces and 中文'},
                         background=background, timeout=15)
     if background:
         handle = result
-        try:
-            result = await call(handle.wait)
-        finally:
-            await call(handle.disconnect)
-    assert (result.stdout, result.stderr, result.exit_code) == (
-        f'{directory}\n{user}\nspaces and 中文\n', '', 0)
+        async with KnownCommand(sandbox.commands, handle) as owned:
+            result = await owned.wait(handle)
+            validate(result)
+    else:
+        validate(result)
 
 
 async def argument_cases(sandbox):
@@ -74,16 +76,19 @@ async def argument_cases(sandbox):
             except Exception as error:
                 assert type(error) is expected, (name, type(error).__name__, repr(error))
             else:
+                error = AssertionError(f'{name} Start unexpectedly succeeded')
                 if background:
-                    await call(result.kill)
-                    await call(result.disconnect)
-                raise AssertionError(f'{name} Start unexpectedly succeeded')
-            assert not await call(sandbox.files.exists, marker), name
+                    async with KnownCommand(sandbox.commands, result):
+                        raise error
+                raise error
+            exists = await call(sandbox.files.exists, marker)
+            assert exists is False, name
             await healthy_context(sandbox, directory, 'ubuntu')
             results.append(dict(case=name, user='unknown' if user == unknown else user,
                                 background=background, exception=expected.__name__,
                                 marker_absent=True, subsequent_command_healthy=True))
-    assert await call(sandbox.files.read, directory + '/file') == 'ordinary file'
+    original = await call(sandbox.files.read, directory + '/file')
+    assert original == 'ordinary file'
     return results
 
 
