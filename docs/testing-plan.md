@@ -627,9 +627,15 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 
 独立[命令参数探针](../tests/system/sdk_command_arguments.py)的合法后台上下文和预期拒绝却成功返回的句柄同样使用 KnownCommand：先验证原 PID，等待缺 End/超时/取消时只向原已知 PID 尝试一次信号，信号失败也继续关闭订阅；非法 PID 仅关闭返回订阅。公开终局已经返回后不补发 kill，并严格核对 stdout/stderr/exit_code/error。结果验证在所有权范围内完成，原失败、信号失败及关闭失败共同保留；Start 结果未知仍不重试。文件存在性和最终内容调用先取得结果再断言，原 Start/文件输入、案例顺序和 12 项报告保持。[原 SDK 收尾回归](../tests/compat/test_argument_probe_cleanup.py)覆盖完整 30 次 Start 编排、原同步/异步句柄、未知 Start、非法 PID、缺 End、期限错误、受控 wait 取消及多个失败；它不执行 envd、真实 Linux 用户权限或产品 VM，不能代替真实资源清理验收。
 
+#514 的独立参数收尾回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38841612428) 通过：源 04a7d70c3528ba9ac36740409dc59ab121a218f4、checkout 50c749c8ebcd2aa6731d9196418fc657aef29102，新增 8 项包含在固定 SDK 212 项中，原 Linux SDK/Rust 组合、封存 Redis 及四项 CI 成功。它不包含下述文件期限证据改动，也不代表真实产品 VM。
+
 [命令流期限](../tests/system/sdk_command_timeouts.py)、[文件请求/空闲期限](../tests/system/sdk_file_timeouts.py)与[一元 RPC 期限](../tests/system/sdk_rpc_timeouts.py)同样接受上述候选参数，覆盖原 run/connect/wait、文件传输和已选命令/文件一元操作矩阵。身份观察在整组案例前后执行，使用自己的 20 秒命令期限；原案例参数、未知结果观察、无重放及 300 秒 VM 寿命保持。可选报告绑定原 sandbox_id 和前后相同的运行身份，默认报告保持原字段。[同一编排回归](../tests/compat/test_candidate_probes.py)还核对期限参数不被观察预算替换、文件初始写入晚于身份核对，以及案例失败与销毁失败同时保留；这些受控操作不构成真实超时/终止或传输验收。
 
 #499 的期限探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38797587711) 通过：源 7795e782440e731aea50276aa82292ef240d82aa、checkout 7b937bfb8017a92dc84693e0464994dd620647a5；固定 SDK 100 项、封存 Redis 与四项 CI 成功。该结果仍不包含真实候选 VM 的期限矩阵。
+
+文件期限探针只读取自己的固定 69,000 字节内容或未知上传后的前缀；其流式收集器逐块检查原字节前缀和长度，超长/损坏立即失败并关闭原读取器，不先累计任意正文到 EOF。文本/bytes 模式仍由原 SDK 缓冲，返回后才检查；这个探针内容边界不是产品文件上限、SDK 内部缓冲或实际 RSS 保证。read_observation 记录公开返回的 public_bytes/public_sha256 和公开完整返回的 public_eof，超时不把前缀提升为完整结果；零公开字节不表示网络未接收数据。未知上传的单次只读观察另保留 observed_sha256，与原 observed_lengths 区分当次不存在、空文件、部分或完整内容；这些不是写入停止、持久化或回滚回执，不重发写入。成功批量回复必须保持原路径顺序，不能只比较集合。
+
+探针自身的完整性失败与读取器关闭失败共同保留；固定 SDK 在处理传输错误/取消时若又被关闭异常覆盖，只有 ReadTimeout、TimeoutError 原因以及没有另一原始失败的异常链才可归为预期期限。其他失败不能借关闭超时通过，失败后不继续健康调用。原请求参数、上传源类型/编码、负值期限分类、VM 寿命和候选身份观察保持。[文件期限回归](../tests/compat/test_file_timeout_evidence.py)让原固定同步/异步 Filesystem、HTTP 序列化和公开流读取器消费预定 HTTP/RPC 回复，覆盖每种客户端 16 组读取和 64 组上传参数、原 timeout 选择、流关闭、前缀/超长/截断、异常链、取消、乱序回复及上传源关闭。HTTP 回复与时限错误由受控传输提供，未验证 pyqwest 的真实计时、服务文件效果或网络；异步负 idle 参数仍由原 SDK 的 wait_for 拒绝。它不执行 envd、不构造业务文件系统，也不代替真实 VM 文件期限、E03/E05 或实际资源峰值验收。
 
 stdin 和命令期限探针共用原 Start 身份的收尾记录：只有已返回并通过正整数范围检查的原 PID 可以收到单次失败收尾信号；每个返回的订阅各尝试一次 disconnect，未知关闭回执不重试。错误 Connect 的订阅仍关闭，但其 PID 不用于控制；原异常、信号异常和全部关闭异常共同保留。原 wait 返回 CommandResult 或抛出 CommandExitException 即记录已收到终局，后续错误类别、完整字段或标记读取失败仍判失败，但不再补发 kill。缺 End 或流期限失败不伪造进程已结束。默认成功结果也要求 error 为 None；原 timeout/request_timeout 输入和 SDK 错误映射保持，进程期限与流期限的竞态按下述分别记录。
 
