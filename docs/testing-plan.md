@@ -577,6 +577,8 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 后台失败保留部分调用与订阅；未知 Start 不补造 PID，不重试 Start。错误 Connect PID 只用于关闭返回的订阅，失败信号只发向原已知 PID；Kill 或 disconnect 的未知回执不重复发送。所有已知句柄逐个收尾，保留原失败及全部收尾错误，外层仍销毁已知 VM。[后台回归](../tests/compat/test_background_compare.py)使用原固定同步/异步 Commands/CommandHandle 和受控 RPC 事件核对上述步骤、输入字节、错误 PID、输出损坏、缺 End、历史重放及未知结果；setup/FIFO 读者在该夹具中受控返回。另在真实私有子进程运行同一完整命令程序，实查 FIFO 屏障、空/二进制 stdin、真实退出和 kill 后 wait；不读取宿主 shell profile、不切换身份、不执行 envd。共享[记录器](../tests/system/sdk_observations.py)继续接受原前台/文件回归。当前扩展尚未在真实 Go/Rust VM 执行，不能代替网关、正式来宾、进程树、完整 E04 或 KVM 验收。
 
+后台双端探针与独立 [PTY 探针](../tests/system/sdk_pty.py)均将“原 SDK 已返回真实终局”与“终局符合案例预期”分开判断：收到 CommandResult 或 CommandExitException 后即记录已结束，再核对成功/非零类别、退出码、error 与输出。实际终局不符合预期仍失败并保留实际结果/诊断，只关闭原订阅，不再补发 kill；缺 End、流截断或等待失败仍属于结果未知，按原已知 PID 进行一次收尾。对应[后台回归](../tests/compat/test_background_compare.py)与[PTY 回归](../tests/compat/test_pty_probe.py)以原固定同步/异步 SDK 注入相反退出类别和错误字段，旧代码分别复现 4/8 个失败分支，修正后全部通过；另检查缺 End 时原收尾仍执行。这是探针失败处理修正，不改变生产进程终止语义、End 所代表的主进程范围或物理资源审计要求。
+
 #504 的后台双端编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38825340099) 通过：源 a216e3b6c8b0f2d214641325151b53a5f6688cf9、checkout 752d92c3057036fa4eb3b9f8ab1a0824e467d0b4；新增 8 项后台回归、固定 SDK 129 项、封存 Redis 与四项 CI 成功。它不包含以下后续 PTY 扩展，也不表示产品 VM 双端验收通过。
 
 [PTY 双端片段](../tests/system/sdk_pty_compare.py)复用同一输入计划和固定 SDK 的原 Pty/CommandHandle，对 root/ubuntu 分别检查直接退出、断线原 PID 重连后退出 17，以及输入等待中的 SIGKILL。通过 root 的原命令查询所选账户 UID；使用同一私有目录、上传程序、短 bootstrap、环境值和全部 byte 载荷，检查实际 PID/UID/cwd/环境/三个 tty 描述符、初始尺寸和 resize；重连案例保留 65536 偏移的 uint16 尺寸窄化检查。结束后原 PID Connect 只返回同一终局，不得重放数据，一次性标记必须仍只有一次执行。每次 SDK 调用、结果/错误与原始 PTY 字节分块均保存，含失败前的部分观察。
@@ -596,6 +598,8 @@ PTY 的预定 PID 规则只处理已严格匹配原 Start 的顶层/句柄/订�
 octet 异常之后不重发整批，只查询原路径。同步确认首项，异步确认首/末两项的完整内容与所选用户归属；最终再读取全部预期文件和错误目录，并核对顺序模式的末项缺失。观察最多 15 秒、128 轮，每次读取使用剩余期限；首次可见后消失、大小回退/超长、非文件、错误字节、超时或观察次数耗尽都不能通过。观察中的调用/结果/错误原样留在 `settlement.calls`，失败保留部分记录。比较前重新验证这份记录的路径、方法、错误类别、单调大小、请求期限、最终归属与完整字节；这些有限只读采样的次数、时点、缺失错误文本和瞬时属性单独留作证据，不作为两台 VM 必须同速完成的相等字段。该排除仅适用于 `settlement.calls`；场景中的错误、输入和最终快照没有此排除。文件状态完整不证明并发 HTTP 请求均已收到回执、请求资源已释放或数据已持久化。
 
 [文件对照回归](../tests/compat/test_file_compare.py)通过固定同步/异步 SDK 的真实回环 HTTP 检查 multipart 原顺序与错误解析、同步 octet 遇错停止，以及屏障控制下异步错误先返回、其他原上传仍待完成。另用受控文件结果和可推进时钟检查消失/回退/错内容/期限、完整证据与比较排除范围；私有目录的错误身份或初始归属必须在覆盖前失败。[入口编排回归](../tests/compat/test_guest_compare.py)检查四台实例复用计划、各模式 Go/Rust 文件结果失配拒绝、未完成文件观察保留及原实例收尾。回环夹具不实现业务文件系统；这些测试不证明来宾权限、真实磁盘行为、生产网关或跨 VM 隔离。该扩展尚未执行真实 Go/Rust VM；完整 List、故障/资源矩阵、服务重启及 E03/E06/E07 仍待补，比较规则仍须首次获准实跑前技术复核。
+
+#506 的文件双端编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38831403800) 通过：源 e07d2c0cedc7a91482249f44e69bd1ae3fbfdf5b、checkout f3ddcced9cedb92ca85fe69db27d2b9a494af51e；新增 12 项文件回归、2 项编排回归、固定 SDK 153 项、原 Linux SDK/Rust 组合、封存 Redis 与四项 CI 成功。它不包含后续 List 或终局收尾修正，也不代表 Go/Rust 产品 VM 对照。
 
 [完整 List 双端片段](../tests/system/sdk_list_compare.py)在原实例中同时保持 root/ubuntu 两个普通命令和一个 ubuntu PTY，读取完整列表，增加同一 ubuntu PID 的订阅后再次检查列表没有增加条目。随后依次检查 PTY SIGKILL、root 正常退出、ubuntu 退出 17；每次移除后及保留终局 Connect 后，仍核对全部存活项和全部字段，最后要求空表。记录每次原 Start/Connect 的 PID、输入与回调分块，保留终局不重放输出；一次性文件检查程序仅执行一次。不使用 tag 启动或仲裁，此处 tag 必须保留原 None，不能用空字符串代替；待定重复 tag 政策不由本片段决定。
 

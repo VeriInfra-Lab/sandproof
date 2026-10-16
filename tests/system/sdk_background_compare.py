@@ -12,7 +12,7 @@ import hashlib
 import shlex
 
 from e2b.sandbox.commands.command_handle import CommandExitException
-from sdk_command_input import READ_INPUT
+from sdk_command_input import READ_INPUT, call
 from sdk_observations import Calls, Capture
 
 TEXT = 'first line and 中文\n'
@@ -74,7 +74,18 @@ async def background_case(observed, user, parent, mode):
     async def wait(name, handle, capture):
         bound = handle.wait if observed.asynchronous else partial(handle.wait,
             on_stdout=capture['stdout'], on_stderr=capture['stderr'])
-        result = await calls.operation('handle.wait', bound,
+        async def observe_terminal():
+            nonlocal finished
+            # Receipt of End is independent of the expected exit category.
+            # A mismatch must fail validation without another process signal.
+            try:
+                result = await call(bound)
+            except CommandExitException:
+                finished = True
+                raise
+            finished = True
+            return result
+        result = await calls.operation('handle.wait', observe_terminal,
             expected=CommandExitException if expected[0] else None,
             evidence=dict(subscription=name, handle_pid=handle.pid))
         return result
@@ -116,7 +127,6 @@ async def background_case(observed, user, parent, mode):
         stdout = '' if mode == 'kill' else str(len(payload)) + ' ' + hashlib.sha256(payload).hexdigest() + '\n'
         stderr = '' if mode == 'kill' else 'paired stderr 中文\n'
         result = await wait(active_name, handle, capture)
-        finished = True
         terminal(result, capture, stdout, stderr)
         late, late_capture = await subscription('late', commands.connect, pid, timeout=20, request_timeout=15)
         assert late.pid == pid, 'retained Connect changed PID'

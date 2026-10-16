@@ -101,12 +101,17 @@ def validate_frame(data, ready, resized):
                 startup_bytes=len(prefix), startup_sha256=hashlib.sha256(prefix).hexdigest())
 
 
-async def wait_result(handle, capture, asynchronous, expected):
+async def wait_result(handle, capture, asynchronous):
     try:
         result = await call(handle.wait, **({} if asynchronous else {'on_pty': capture}))
     except CommandExitException as error:
         result = error
-    assert (result.exit_code, result.error, result.stdout, result.stderr) == (*expected, '', '')
+    return result
+
+
+def terminal_result(result, expected):
+    actual = (result.exit_code, result.error, result.stdout, result.stderr)
+    assert actual == (*expected, '', ''), (actual, (*expected, '', ''))
     return dict(exit_code=result.exit_code, error=result.error)
 
 
@@ -173,8 +178,9 @@ async def pty_case(sandbox, user, uid, mode, asynchronous):
             await call(sandbox.pty.resize, pid, resized, request_timeout=15)
             for chunk in (b'', PAYLOAD[:513], PAYLOAD[513:]):
                 await call(sandbox.pty.send_stdin, pid, chunk, request_timeout=15)
-        terminal = await wait_result(handle, capture, asynchronous, expected)
+        result = await wait_result(handle, capture, asynchronous)
         finished = True
+        terminal = terminal_result(result, expected)
         # Connect immediately while the fixed envd's terminal record is retained.
         # No command is reissued; late Connect must contain End and no history.
         late_capture = Capture()
@@ -182,7 +188,7 @@ async def pty_case(sandbox, user, uid, mode, asynchronous):
                           **({'on_data': late_capture} if asynchronous else {}))
         handles.append(late)
         assert late.pid == pid
-        late_result = await wait_result(late, late_capture, asynchronous, expected)
+        late_result = terminal_result(await wait_result(late, late_capture, asynchronous), expected)
         assert late_result == terminal
         assert not late_capture.data, 'late Connect replayed PTY output'
         # Fixed Go broadcasts End before its OnExit retention/removal hook.

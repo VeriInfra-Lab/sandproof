@@ -258,6 +258,30 @@ class OriginalSdkTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len([r for r in backend.calls if r[0] == 'start']), 1)
                     if corruption != 'missing-end':
                         self.assertFalse(any(r[0] == 'kill' for r in backend.calls))
+                    else:
+                        self.assertEqual([r[1].process.selector for r in backend.calls if r[0] == 'kill'],
+                                         [Oneof('pid', backend.pid)])
+
+    async def test_actual_end_category_and_fields_fail_without_a_signal_after_end(self):
+        for asynchronous in (False, True):
+            for mode, code, error in [('direct', 17, 'exit status 17'),
+                                     ('reconnect-exit', 0, None),
+                                     ('direct', 0, 'unexpected terminal error'),
+                                     ('reconnect-exit', 17, 'unexpected terminal error')]:
+                with self.subTest(asynchronous=asynchronous, mode=mode, code=code, error=error):
+                    calls, backend = self.fixture(asynchronous, mode)
+                    backend.code, backend.error = code, error
+                    with self.assertRaises(Exception):
+                        await background.background_case(calls, 'ubuntu', '/tmp/shared/ubuntu', mode)
+                    self.assertFalse(any(row[0] == 'kill' for row in backend.calls), 'original End already observed')
+                    self.assertEqual(len([row for row in backend.calls if row[0] == 'start']), 1)
+                    self.assertEqual(len(backend.closed), 2 if mode == 'reconnect-exit' else 1)
+                    row = calls.rows[0]
+                    self.assertEqual(row['status'], 'incomplete')
+                    terminal = next(item for item in row['calls'] if item['method'] == 'handle.wait')
+                    actual = terminal['error']['fields'] if 'error' in terminal else terminal['result']
+                    self.assertEqual((actual['exit_code'], actual['error']), (code, error))
+                    self.assertEqual(actual['stderr'], 'paired stderr 中文\n')
 
     async def test_unknown_signal_is_recorded_without_replay(self):
         for asynchronous in (False, True):

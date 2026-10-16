@@ -139,6 +139,8 @@ class ControlledRpc:
         self.config = self.ready = None
         self.code, self.error, self.resized = 0, None, None
         self.list_after_end = False
+        self.end_override = None
+        self.missing_end = False
 
     def start(self, request, **kwargs):
         self.calls.append(('start', request, kwargs))
@@ -170,7 +172,8 @@ class ControlledRpc:
         end = {'exit_code': self.code, 'exited': True}
         if self.error is not None:
             end['error'] = self.error
-        yield self.event(response, 'end', process_pb.ProcessEvent.EndEvent(**end))
+        if not self.missing_end:
+            yield self.event(response, 'end', process_pb.ProcessEvent.EndEvent(**(self.end_override or end)))
 
     def stream(self, response, late, wrong):
         first = self.event(response, 'start', process_pb.ProcessEvent.StartEvent(pid=self.pid + int(wrong)))
@@ -296,6 +299,34 @@ class OriginalPtySdkTests(unittest.IsolatedAsyncioTestCase):
                         await probe.pty_case(sandbox, 'ubuntu', 1000, 'direct', asynchronous)
                     self.assertEqual(len(backend.closed), 2)
                     self.assertFalse(any(row[0] == 'kill' for row in backend.calls))
+
+    async def test_wrong_terminal_fields_fail_without_signalling_an_already_finished_pty(self):
+        for asynchronous in (False, True):
+            for mode, code, error in [('direct', 17, 'exit status 17'),
+                                     ('reconnect-exit', 0, None),
+                                     ('direct', 0, 'unexpected terminal error'),
+                                     ('reconnect-exit', 17, 'unexpected terminal error')]:
+                with self.subTest(asynchronous=asynchronous, mode=mode, code=code, error=error):
+                    sandbox, backend = self.sandbox(asynchronous)
+                    backend.end_override = dict(exit_code=code, exited=True)
+                    if error is not None:
+                        backend.end_override['error'] = error
+                    with self.assertRaises(AssertionError) as raised:
+                        await probe.pty_case(sandbox, 'ubuntu', 1000, mode, asynchronous)
+                    self.assertEqual(raised.exception.args[0][0], (code, error, '', ''))
+                    self.assertFalse(any(row[0] == 'kill' for row in backend.calls), 'actual End already received')
+                    self.assertEqual(len([row for row in backend.calls if row[0] == 'start']), 1)
+                    self.assertEqual(len(backend.closed), 2 if mode == 'reconnect-exit' else 1)
+
+    async def test_missing_end_still_cleans_up_only_the_known_original_pty(self):
+        for asynchronous in (False, True):
+            sandbox, backend = self.sandbox(asynchronous)
+            backend.missing_end = True
+            with self.assertRaises(Exception):
+                await probe.pty_case(sandbox, 'ubuntu', 1000, 'direct', asynchronous)
+            self.assertEqual([row[1].process.selector for row in backend.calls if row[0] == 'kill'],
+                             [Oneof('pid', backend.pid)])
+            self.assertEqual(len(backend.closed), 1)
 
     async def test_wrong_reconnect_pid_closes_both_streams_and_kills_only_original_pid(self):
         for asynchronous in (False, True):
