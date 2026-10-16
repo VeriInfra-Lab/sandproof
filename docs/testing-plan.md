@@ -611,6 +611,8 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 
 [List 回归](../tests/compat/test_list_compare.py)通过原固定同步/异步 Commands、Pty 和 CommandHandle 消费受控事件与预定 List 回复，验证不同列表顺序/不同 PID、全部元数据和条目、活跃多订阅、延迟移除、额外/重复/缺失项、存活项丢失、结束项重新出现、错误重连、坏 ready/缺 End/历史重放、未知输入和部分关闭失败。可推进时钟另核对期限及次数上限；同一程序在真实私有 pipe/PTY 子进程上检查 ready、等待输入、退出和 kill/wait，不读取宿主 profile、不切换身份、不执行 envd。当前片段已实现但尚未执行真实 Go/Rust VM；原固定 SDK 下的全部 List 字段覆盖不等于完整 E03–E07，正式服务重启、tag、故障/资源矩阵及 KVM 仍待补。预定规则须在首次获准实跑前技术复核。
 
+#507 的 List 回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38833503900) 通过：源 117e7e9e7a767b1f18fc7e99a412806b3004f346、checkout 9d133d3ed35412bf30db67fbd38adc0a2233afe2，9 项 List 回归包含在固定 SDK 162 项中。#508 的后台/PTY 终局后不补发 kill 回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38834237283) 通过：源 db570135ee33a391394c17a37aa84c66726e9e58、checkout 59088f9d58a716778ba7bd2606c0df090b717936，固定 SDK 165 项通过。两次封存 Redis 及四项 CI 均成功；均不包含真实产品 VM 或之后的 stdin/期限收尾改动。
+
 [stdin](../tests/system/sdk_command_input.py)、[命令参数](../tests/system/sdk_command_arguments.py)和[文件权限/部分批次](../tests/system/sdk_file_permissions.py)探针也接受上述同一组候选参数：同步/异步模式均在原调用集前后核对身份，文件探针分别核对两台实例，报告将每份观察绑定到原 sandbox_id；原调用输入、VM 寿命和未指定参数时的报告保持不变。已知实例按逆序各尝试一次销毁，某台拒绝、报错或取消不能跳过另一台；全部收尾异常连同原调用异常保留，创建结果未知不重试。[受控编排回归](../tests/compat/test_candidate_probes.py)覆盖这些顺序、身份变化拒绝和部分失败；它替换 SDK 操作及案例函数，不执行真实案例、主机 canary 或产品 VM。SDK 销毁确认仍须由获准的实机监督器补充精确资源审计。
 
 #497 的候选探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38793635811) 通过：源 586a8e4fb0473c813d8baec9601a548be8e353d6、checkout 4140d26ad2780573401422311406b8177185af93；新增 9 项编排包含在固定 SDK 98 项中，封存 Redis及四项 CI 成功。此处仍为受控 SDK 操作，不是三组案例在真实候选 VM 上的执行回执。
@@ -618,6 +620,12 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 [命令流期限](../tests/system/sdk_command_timeouts.py)、[文件请求/空闲期限](../tests/system/sdk_file_timeouts.py)与[一元 RPC 期限](../tests/system/sdk_rpc_timeouts.py)同样接受上述候选参数，覆盖原 run/connect/wait、文件传输和已选命令/文件一元操作矩阵。身份观察在整组案例前后执行，使用自己的 20 秒命令期限；原案例参数、未知结果观察、无重放及 300 秒 VM 寿命保持。可选报告绑定原 sandbox_id 和前后相同的运行身份，默认报告保持原字段。[同一编排回归](../tests/compat/test_candidate_probes.py)还核对期限参数不被观察预算替换、文件初始写入晚于身份核对，以及案例失败与销毁失败同时保留；这些受控操作不构成真实超时/终止或传输验收。
 
 #499 的期限探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38797587711) 通过：源 7795e782440e731aea50276aa82292ef240d82aa、checkout 7b937bfb8017a92dc84693e0464994dd620647a5；固定 SDK 100 项、封存 Redis 与四项 CI 成功。该结果仍不包含真实候选 VM 的期限矩阵。
+
+stdin 和命令期限探针共用原 Start 身份的收尾记录：只有已返回并通过正整数范围检查的原 PID 可以收到单次失败收尾信号；每个返回的订阅各尝试一次 disconnect，未知关闭回执不重试。错误 Connect 的订阅仍关闭，但其 PID 不用于控制；原异常、信号异常和全部关闭异常共同保留。原 wait 返回 CommandResult 或抛出 CommandExitException 即记录已收到终局，后续错误类别、完整字段或标记读取失败仍判失败，但不再补发 kill。缺 End 或流期限失败不伪造进程已结束。默认成功结果也要求 error 为 None；原 timeout/request_timeout 输入与错误映射矩阵保持。
+
+命令期限 Start 未返回 PID 时，只读取一次 List，记录 cmd/args/envs/cwd/tag 全部精确匹配原提交的候选条目；多个匹配也不代表取得 Start 身份，不根据标记子串或匹配结果连接、发送信号或重试 Start。报告新增 terminal_observed、original_pid、unacknowledged_candidates；原实例仍由外层销毁并等待实机资源审计。已收到命令期限终局后，最多 15 秒/128 轮观察原 PID 从 List 移除，每次查询使用剩余期限，尚未移除时必须保留原元数据；不要求 End 后瞬时消失。单份列表最多 128 项/128 KiB，拒绝重复或非法 PID；这些是探针观察边界，不是产品容量保证。post_end_list_observations 保留原 PID 的各次观察，不据它证明整张表或进程树已空。
+
+[收尾回归](../tests/compat/test_command_probe_cleanup.py)通过固定同步/异步 SDK 的原 Commands 和句柄消费预定 RPC 事件，覆盖 stdin 默认/二进制/重连、成功及错误终局、缺 End、标记失败、期限恢复、延迟移除、未知 Start 候选与错误 Connect；受控句柄故障补充重复引用、无效 PID、取消及所有收尾错误保留，可推进时钟核对截止时点和次数上限。不实现另一套来宾注册表，不运行产品 VM，也不把本地通过计为真实期限或销毁验收。此改动不涉及 C02 原固定 sdk_data_contract 调用集。
 
 [PTY 候选入口](../tests/system/sdk_pty.py)通过原固定 SDK 的公开 `pty.create/connect/send_stdin/resize/kill` 和同步/异步句柄，对 root、ubuntu 各执行直接退出、断线重连后 code 17、等待输入时 SIGKILL 三种案例。使用 SDK 原 `/bin/bash -i -l`，在私有目录写入有限 Python 程序，通过 FIFO 就绪屏障核对原 PID、UID、cwd、环境及三个终端描述符；之后发送空输入及分块的全部 256 种字节，验证 2304 字节原样合并输出、初始/调整窗口、超出 uint16 的尺寸收窄、准确终局、立即晚连只返回 End、单次启动标记及存活时 List 包含原 PID。结束后的 List 状态只记录观察值：固定 Go 先广播 End 再调用终局保存/删除钩子，不能额外承诺 End 后立即查不到 PID。交互启动命令小于 512 字节，输出上限 128 KiB、元数据上限 4 KiB；登录 shell 的前缀单独记录长度/摘要，不当作固定二进制帧，也不擅自归一化为 Go/Rust 完整对照。原 shell profile 须保留请求的 cwd/自定义环境；模板还须具备 `/usr/bin/python3`。每个 PTY 60 秒、晚连 20 秒，VM 300 秒，不延长寿命以掩盖超时。
 
