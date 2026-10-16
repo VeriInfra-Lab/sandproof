@@ -1,6 +1,7 @@
 """Paired probe comparison/orchestration and actual fixed SDK loopback calls."""
 import copy
 import argparse
+import asyncio
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import io
 import json
@@ -23,6 +24,12 @@ from tools import guest_probe
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'system'))
 import sdk_guest_compare as probe
 import sdk_observations as observations
+import sdk_resource_observations as resources
+
+
+def resource_report(expected, daemon, rss=8192):
+    return dict(schema_version=1, expected=expected, daemon=daemon,
+        sample=dict(rss_bytes=rss, reported_peak_rss_bytes=16384, threads=3, open_fds=9, elapsed_ns=100))
 
 
 def rows():
@@ -162,6 +169,100 @@ class OriginalSdkRecordingTests(unittest.IsolatedAsyncioTestCase):
             self.app.truncate_file = False
             self.assertEqual(await calls.stream('/tmp/healthy', 'root'), b'synthetic file content\n')
 
+    async def test_resource_samples_use_both_original_sdks_once_per_phase_without_budget_verdict(self):
+        expected = {'fixed_go': guest_probe.load_go_expected()['file']}
+        daemon = dict(pid=42, start_ticks=123, socket_inode=77)
+        for cls in (Sandbox, AsyncSandbox):
+            sandbox = await self.connect(cls)
+            samples = resources.ResourceSamples(sandbox, expected, daemon, probe.plan())
+            before = len(self.app.process.starts)
+            self.app.process.stderr_chunks = []
+            for index, phase in enumerate(samples.phases):
+                # Large valid readings are retained without a made-up pass
+                # threshold; only this collector's representation is bounded.
+                report = resource_report(expected, daemon, rss=2**40 + index)
+                raw = json.dumps(report).encode()
+                self.app.process.stdout_chunks = [raw[:17], raw[17:]]
+                await samples.take(phase)
+                self.assertEqual(samples.report['observations'][-1]['receipt'], report)
+                self.assertGreaterEqual(samples.report['observations'][-1]['request_elapsed_ns'], 0)
+            samples.complete()
+            self.assertEqual(len(samples.phases), 14)
+            self.assertEqual(samples.report['budget_verdict'], 'not_evaluated')
+            self.assertEqual(len(self.app.process.starts) - before, 14)
+            for start in self.app.process.starts[before:]:
+                self.assertEqual((start.process.cmd, list(start.process.args)),
+                                 ('/bin/bash', ['-l', '-c', samples.command]))
+            with self.assertRaises(AssertionError):
+                await samples.take('after-cases')
+            self.assertEqual(len(self.app.process.starts) - before, 14)
+            self.assertEqual(self.app.process.signals, [])
+
+    async def test_resource_reply_overflow_stderr_wrong_identity_or_missing_end_never_retries(self):
+        expected = {'fixed_go': guest_probe.load_go_expected()['file']}
+        daemon = dict(pid=42, start_ticks=123, socket_inode=77)
+        for cls in (Sandbox, AsyncSandbox):
+            sandbox = await self.connect(cls)
+            for fault in ('overflow', 'stderr', 'identity', 'missing-end'):
+                with self.subTest(sdk=cls.__name__, fault=fault):
+                    samples = resources.ResourceSamples(sandbox, expected, daemon, probe.plan())
+                    report = resource_report(expected, dict(daemon, pid=43) if fault == 'identity' else daemon)
+                    self.app.process.stdout_chunks = ([b'x' * 4097] if fault == 'overflow'
+                                                       else [json.dumps(report).encode()])
+                    self.app.process.stderr_chunks = [b'unexpected'] if fault == 'stderr' else []
+                    self.app.process.omit_end = fault == 'missing-end'
+                    before = len(self.app.process.starts)
+                    with self.assertRaises(Exception):
+                        await samples.take('before-cases')
+                    self.assertEqual(samples.report['observations'][0]['status'], 'incomplete')
+                    self.assertNotIn('receipt', samples.report['observations'][0])
+                    for phase in ('before-cases', samples.phases[1]):
+                        with self.assertRaises(AssertionError):
+                            await samples.take(phase)
+                    with self.assertRaises(AssertionError):
+                        samples.complete()
+                    self.assertEqual(len(self.app.process.starts) - before, 1)
+                    self.assertEqual(self.app.process.signals, [])
+                    self.app.process.omit_end = False
+
+
+class ResourceConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pending_sample_rejects_concurrent_work_and_cancellation_retains_one_failed_phase(self):
+        expected = {'fixed_go': guest_probe.load_go_expected()['file']}
+        daemon = dict(pid=42, start_ticks=123, socket_inode=77)
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def run(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            raise AssertionError('cancelled observation must not finish')
+        method = AsyncMock(side_effect=run)
+        samples = resources.ResourceSamples(SimpleNamespace(commands=SimpleNamespace(run=method)),
+                                             expected, daemon, probe.plan())
+        with self.assertRaises(AssertionError):
+            await samples.take('after-cases')
+        method.assert_not_called()
+        with self.assertRaises(AssertionError):
+            samples.complete()
+        task = asyncio.create_task(samples.take('before-cases'))
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+            with self.assertRaises(AssertionError):
+                await samples.take(samples.phases[1])
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self.assertEqual(len(samples.report['observations']), 1)
+        row = samples.report['observations'][0]
+        self.assertGreaterEqual(row['request_elapsed_ns'], 0)
+        self.assertEqual({key: value for key, value in row.items() if key != 'request_elapsed_ns'},
+                         dict(phase='before-cases', status='incomplete', error='CancelledError'))
+        with self.assertRaises(AssertionError):
+            await samples.take('before-cases')
+        method.assert_awaited_once()
+
 
 class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -174,6 +275,7 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             guest_manifest_sha256='a'*64, guest_configuration='/private/config',
             guest_configuration_sha256='b'*64)
         expected = {role: {'bytes': 7, 'sha256': 'c'*64} for role in guest_probe.NAMES}
+        self.expected = expected
         self.replace(guest_probe, 'load_expected', Mock(return_value=({'source_commit': 'd'*40}, expected)))
         self.go = guest_probe.load_go_expected()
         self.go_report = dict(schema_version=1, fixed_go=self.go['file'],
@@ -230,6 +332,68 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         for item in result['results']:
             self.assertTrue(item['known_destroy_acknowledged'])
             self.assertEqual(len(item['pair']), 2)
+            self.assertTrue(all('resources' not in entry for entry in item['pair']))
+        self.assertNotIn('resource_sampling', result)
+
+    async def test_optional_resource_plan_samples_each_pinned_vm_and_preserves_protocol_comparison(self):
+        self.args.observe_resources = True
+        daemon = dict(pid=52, start_ticks=345, socket_inode=88)
+        self.observe.return_value = {'observation': {'daemon': daemon}}
+        for index, guest in enumerate(self.guests):
+            expected = self.expected if index % 2 else {'fixed_go': self.go['file']}
+            original = daemon if index % 2 else self.go_report['daemon']
+            def run(command, *, _expected=expected, _daemon=original, **kwargs):
+                if 'on_stdout' not in kwargs:
+                    return SimpleNamespace(exit_code=0, stdout=json.dumps(self.go_report), stderr='')
+                self.assertEqual(command, guest_probe.resource_command(_expected, _daemon))
+                self.assertEqual((kwargs['user'], kwargs['timeout'], kwargs['request_timeout']), ('root', 20, 20))
+                raw = json.dumps(resource_report(_expected, _daemon))
+                kwargs['on_stdout'](raw[:13])
+                kwargs['on_stdout'](raw[13:])
+                kwargs['on_stderr']('')
+                return SimpleNamespace(exit_code=0, stdout=raw, stderr='')
+            guest.commands.run.side_effect = run
+        async def cases(_sandbox, inputs, _asynchronous, partial, *, resource_sample):
+            for phase in resources.phases(inputs)[1:-1]:
+                await resource_sample(phase)
+            partial.extend(rows())
+            return partial
+        self.run_cases.side_effect = cases
+        result = await self.run_probe()
+        self.assertEqual(result['status'], 'pass')
+        self.assertIn('no resource budget verdict', result['resource_sampling'])
+        for item in result['results']:
+            for entry in item['pair']:
+                samples = entry['resources']
+                self.assertEqual(samples['budget_verdict'], 'not_evaluated')
+                self.assertEqual([row['phase'] for row in samples['observations']], resources.phases(result['inputs']))
+                self.assertEqual(entry['calls'], rows())
+        for index, guest in enumerate(self.guests):
+            guest.kill.assert_called_once()
+            self.assertEqual(guest.commands.run.call_count, 14 + (2 if index % 2 == 0 else 0))
+
+    async def test_failed_resource_receipt_keeps_partial_phase_and_known_vm_cleanup_failure(self):
+        self.args.observe_resources = True
+        def run(command, **kwargs):
+            if 'on_stdout' not in kwargs:
+                return SimpleNamespace(exit_code=0, stdout=json.dumps(self.go_report), stderr='')
+            raw = json.dumps(resource_report({'fixed_go': self.go['file']},
+                                             dict(self.go_report['daemon'], pid=43)))
+            kwargs['on_stdout'](raw)
+            return SimpleNamespace(exit_code=0, stdout=raw, stderr='')
+        self.guests[0].commands.run.side_effect = run
+        self.guests[0].kill.side_effect = RuntimeError('known VM cleanup uncertain')
+        result = await self.run_probe(BaseExceptionGroup)
+        row = result['results'][0]['pair'][0]['resources']['observations'][0]
+        self.assertGreaterEqual(row['request_elapsed_ns'], 0)
+        self.assertEqual({key: value for key, value in row.items() if key != 'request_elapsed_ns'},
+                         dict(phase='before-cases', status='incomplete', error='ValueError'))
+        self.assertIsInstance(self.failure.exceptions[0], ValueError)
+        self.assertFalse(result['results'][0]['known_destroy_acknowledged'])
+        self.run_cases.assert_not_called()
+        self.sync_create.assert_called_once()
+        self.guests[0].kill.assert_called_once()
+        self.assertEqual(self.guests[0].commands.run.call_count, 2)
 
     async def test_comparison_failure_preserves_both_observations_and_all_cleanup_errors(self):
         different = rows()
