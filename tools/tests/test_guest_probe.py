@@ -367,6 +367,50 @@ class GuestObservationTests(unittest.TestCase):
         with patch.object(probe, 'FD_LIMIT', 1), self.assertRaises(ValueError):
             probe.read_resources(self.proc, daemon)
 
+    def test_go_resource_observation_keeps_its_dual_stack_listener_checks(self):
+        self.resource_files()
+        daemon = self.observe()
+        header = (self.proc / 'net/tcp').read_text().splitlines()[0] + '\n'
+        row = f'0: {"0" * 32}:C33F {"0" * 32}:0000 0A 0:0 0:0 0 0 0 77\n'
+        (self.proc / 'net/tcp').write_text(header)
+        tcp6 = self.proc / 'net/tcp6'
+        tcp6.write_text(header + row)
+        expected = {'fixed_go': probe.load_go_expected()['file']}
+        before = dict(schema_version=1, daemon=daemon, fixed_go=expected['fixed_go'])
+        request = dict(expected=expected, daemon=daemon)
+        read = probe.read_resources
+        flags = []
+
+        def sample(proc, original, *, go_wildcard=False):
+            self.assertEqual((proc, original), (Path('/proc'), daemon))
+            flags.append(go_wildcard)
+            if go_wildcard:
+                return read(self.proc, original, go_wildcard=True)
+            return read(self.proc, original)
+
+        with patch.object(probe, 'observe_target', side_effect=[before, before]), \
+                patch.object(probe, 'read_resources', side_effect=sample):
+            report = probe.observe_resources(request)
+        self.assertEqual(flags, [True])
+        self.assertEqual(report['sample']['open_fds'], 1)
+        # The Go observation is not an IPv6 relaxation for Rust callers.
+        with self.assertRaises(ValueError):
+            read(self.proc, daemon)
+
+        snapshot = probe.proc_snapshot
+
+        def replaced_listener(name, directory):
+            raw = snapshot(name, directory)
+            if name == 'smaps_rollup':
+                tcp6.write_text(header + row.replace(' 77\n', ' 88\n'))
+            return raw
+
+        with patch.object(probe, 'observe_target', return_value=before), \
+                patch.object(probe, 'read_resources', side_effect=sample), \
+                patch.object(probe, 'proc_snapshot', side_effect=replaced_listener), \
+                self.assertRaises(ValueError):
+            probe.observe_resources(request)
+
     def test_resource_files_refuse_missing_malformed_duplicate_large_or_linked_fields(self):
         directory = self.resource_files()
         daemon = self.observe()
