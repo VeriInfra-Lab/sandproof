@@ -84,7 +84,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
 
     /// Read-only health sampling uses the SAME work gate, with at most one
     /// waiting/running observation. FIFO reservation prevents periodic driver
-    /// work from repeatedly winning try_acquire and expiring a healthy node.
+    /// work from repeatedly winning `try_acquire` and expiring a healthy node.
     /// No concurrent application work or longer freshness lease is introduced.
     /// # Errors
     /// Unknown observations never refresh a node as healthy.
