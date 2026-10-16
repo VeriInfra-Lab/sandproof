@@ -39,7 +39,8 @@ def synthetic_helper():
 
 @lru_cache(maxsize=1)
 def compiled_helper():
-    subprocess.run(['cargo', 'build', '--locked', '-p', 'sandproof-controller-service',
+    subprocess.run(['cargo', '--config', 'scripts/check-profiles.toml',
+                    'build', '--locked', '-p', 'sandproof-controller-service',
                     '--bin', 'sandproof-window-reducer'], cwd=ROOT, check=True, timeout=180)
     target = Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'target'))
     if not target.is_absolute():

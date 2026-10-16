@@ -7,9 +7,45 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 
 class FunctionEntryTests(unittest.TestCase):
+    def test_reducer_fixture_uses_prebuild_profile_and_bridge_shares_its_result(self):
+        from tools.tests import template_build_fixture as fixture
+        from tools.tests.test_template_build_windows import WindowBridgeTests
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary)
+            (target / 'debug').mkdir()
+            binary = target / 'debug/sandproof-window-reducer'
+            binary.write_bytes(b'synthetic test artifact, not executable')
+            with patch.dict(os.environ, {'CARGO_TARGET_DIR': str(target)}), \
+                    patch.object(fixture.subprocess, 'run') as run:
+                helper = fixture.compiled_helper.__wrapped__()
+            run.assert_called_once_with(
+                ['cargo', '--config', 'scripts/check-profiles.toml', 'build', '--locked',
+                 '-p', 'sandproof-controller-service', '--bin', 'sandproof-window-reducer'],
+                cwd=root, check=True, timeout=180)
+            # Only rustc for deliberately malformed helpers remains in this
+            # suite's setup; the actual reducer is supplied by the shared build.
+            class ProbeBridge(WindowBridgeTests):
+                pass
+            def compile_synthetic_fault(argv, **kwargs):
+                Path(argv[-1]).write_bytes(b'synthetic fault helper')
+            try:
+                with patch('tools.tests.test_template_build_windows.compiled_helper', return_value=helper) as shared, \
+                        patch('tools.tests.test_template_build_windows.subprocess.run',
+                              side_effect=compile_synthetic_fault) as compile_fault:
+                    ProbeBridge.setUpClass()
+                shared.assert_called_once_with()
+                self.assertEqual(compile_fault.call_args.args[0][0], 'rustc')
+                compile_fault.assert_called_once()
+                self.assertEqual(ProbeBridge.binary, binary)
+                self.assertEqual(ProbeBridge.digest, helper['sha256'])
+            finally:
+                ProbeBridge.doClassCleanups()
+
     def test_real_optimized_test_profile_retains_debug_assertions_and_overflow_panics(self):
         root = Path(__file__).resolve().parents[2]
         script = (root / 'scripts/check-function.sh').read_text()
@@ -119,7 +155,7 @@ name = Path(sys.argv[0]).name
 with (stage / 'trace').open('a') as output:
     output.write(name + '\\n')
 if name == 'cargo':
-    if sys.argv[1:] != ['build', '--locked', '-p', 'sandproof-controller-service', '--bin', 'sandproof-window-reducer']:
+    if sys.argv[1:] != ['--config', 'scripts/check-profiles.toml', 'build', '--locked', '-p', 'sandproof-controller-service', '--bin', 'sandproof-window-reducer']:
         raise SystemExit(91)
     if os.environ.get('ENTRY_BUILD_FAILURE'):
         raise SystemExit(17)

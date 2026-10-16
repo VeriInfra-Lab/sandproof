@@ -360,7 +360,7 @@ if sys.argv[1] == 'tree':
 
     def test_workflow_retains_triggers_original_gate_and_reports_without_masking_failures(self):
         workflow = (ROOT / '.github/workflows/rust-ci.yml').read_text()
-        self.assertIn('timeout-minutes: 20', workflow)
+        self.assertIn('timeout-minutes: 30', workflow)
         self.assertIn('branches: [main, test]', workflow)
         self.assertIn('workflow_dispatch:', workflow)
         self.assertNotIn('pull_request:', workflow)
