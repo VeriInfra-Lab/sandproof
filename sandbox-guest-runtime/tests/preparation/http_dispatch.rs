@@ -19,10 +19,10 @@ mod expansion;
 mod framing;
 #[path = "guest_http.rs"]
 mod guest;
-#[path = "input_native_http.rs"]
-mod input_native;
 #[path = "input_limit_http.rs"]
 mod input_limits;
+#[path = "input_native_http.rs"]
+mod input_native;
 #[path = "json_http.rs"]
 mod json_errors;
 #[path = "launch_http.rs"]
