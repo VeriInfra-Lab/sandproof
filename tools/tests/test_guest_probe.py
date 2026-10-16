@@ -266,7 +266,8 @@ class GuestObservationTests(unittest.TestCase):
         (self.proc / '42/cmdline').write_bytes(argv)
         installed = probe.installed_file(path, expected, self.owner, 0o755)
         def observe():
-            return probe.observe_process(self.proc, expected, installed, self.owner, argv)
+            return probe.observe_process(self.proc, expected, installed, self.owner, argv,
+                                         go_wildcard=True)
         self.assertEqual(observe(), dict(pid=42, start_ticks=123, socket_inode=77))
         for changed in (argv[:-1], argv + b'-no-cgroups\0', b'other\0-verbose\0'):
             (self.proc / '42/cmdline').write_bytes(changed)
@@ -276,6 +277,49 @@ class GuestObservationTests(unittest.TestCase):
         path.chmod(0o777)
         with self.assertRaises(ValueError):
             probe.installed_file(path, expected, self.owner, 0o755)
+
+    def test_go_dual_stack_listener_is_unique_bounded_and_rechecked(self):
+        tcp6 = self.proc / 'net/tcp6'
+        header = (self.proc / 'net/tcp').read_text().splitlines()[0] + '\n'
+        row = f'0: {"0" * 32}:C33F {"0" * 32}:0000 0A 0:0 0:0 0 0 0 77\n'
+        (self.proc / 'net/tcp').write_text(header)
+        tcp6.write_text(header + row)
+        self.assertEqual(probe.listener_inode(self.proc, 49983, go_wildcard=True), 77)
+        # A Go observation still requires the original executable, arguments,
+        # process start and held listening socket; accepting tcp6 is not a bypass.
+        installed = probe.installed(self.platform, self.expected, self.owner)['service']
+        argv = (self.proc / '42/cmdline').read_bytes()
+        def observe():
+            return probe.observe_process(self.proc, self.expected['service'], installed,
+                                         self.owner, argv, go_wildcard=True)
+        self.assertEqual(observe()['socket_inode'], 77)
+        with self.assertRaises(ValueError):
+            self.observe()  # Rust must still have its explicit IPv4 socket.
+        for changed in (row + row, row.replace('0A ', '01 '),
+                        row.replace('0' * 32 + ':C33F', '0' * 31 + '1:C33F'),
+                        row.replace(' 77\n', ' 88\n'), 'malformed\n'):
+            tcp6.write_text(header + changed)
+            with self.subTest(row=changed), self.assertRaises(ValueError):
+                observe()
+        tcp6.write_text(header + row)
+        self.listener()  # Two wildcard listeners are ambiguous, even if same inode.
+        with self.assertRaises(ValueError):
+            observe()
+        (self.proc / 'net/tcp').write_text(header)
+        original = probe.owns_socket
+        def replace_listener(directory, inode):
+            result = original(directory, inode)
+            tcp6.write_text(header + row.replace(' 77\n', ' 88\n'))
+            return result
+        with patch.object(probe, 'owns_socket', side_effect=replace_listener):
+            with self.assertRaises(ValueError):
+                observe()
+        with patch.object(probe, 'small_file', side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                probe.listener_inode(self.proc, 49983, go_wildcard=True)
+        tcp6.write_bytes(b'x' * (1024**2 + 1))
+        with self.assertRaises(ValueError):
+            probe.listener_inode(self.proc, 49983, go_wildcard=True)
 
     def test_go_pin_and_receipt_cannot_accept_rust_shape_wrong_bytes_or_boolean_identity(self):
         pinned = probe.load_go_expected()
