@@ -6,7 +6,8 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 const BUFFER_BYTES: usize = 64 * 1024;
 
-/// Forward both directions with bounded buffers and TCP half-close semantics.
+/// Forward one HTTP connection with bounded buffers. Upload EOF half-closes
+/// the guest's write side; guest response EOF ends this one-shot exchange.
 /// # Errors
 /// Returns the original read/write/flush/shutdown failure; an upload failure
 /// still permits the downstream rejection response to drain first.
@@ -32,11 +33,16 @@ where
         output.flush().await?;
         Ok::<(), io::Error>(())
     };
-    // The relay has TCP half-close semantics. Upload EOF only closes
+    // Upload EOF has TCP half-close semantics: it only closes
     // the guest's write half; it is not a revocation or a cleanup certificate.
     // A guest may stop accepting an upload before returning its rejection
     // (for example, HTTP 507). Preserve that response even if the request
     // copy failed. Response errors still cancel the upload immediately.
+    // Conversely, response EOF must finish the relay even if the caller has
+    // not closed its upload: the HTTP client may be waiting for this process's
+    // stdout EOF before closing stdin. Waiting for both creates a cycle when
+    // the guest rejects/closes a request without a response. This connection
+    // serves one request (Connection: close); never replay a partial upload.
     // Revocation/disconnect remains the supervising gateway's responsibility:
     // it terminates/reaps the exact child rather than treating EOF as cleanup.
     tokio::pin!(upstream, downstream);
@@ -46,8 +52,7 @@ where
             result
         }
         result = &mut downstream => {
-            result?;
-            upstream.await
+            result
         }
     }
 }
@@ -179,6 +184,42 @@ mod tests {
     #[tokio::test]
     async fn downstream_error_cancels_an_upload_that_has_no_eof() {
         downstream_error().await;
+    }
+
+    #[tokio::test]
+    async fn guest_eof_does_not_wait_for_client_upload_eof() {
+        for response in [
+            b"".as_slice(),
+            b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n",
+        ] {
+            let (mut client_input, input) = tokio::io::duplex(17);
+            let (output, mut client_output) = tokio::io::duplex(19);
+            let (stream, mut guest) = tokio::io::duplex(23);
+            let (reader, writer) = tokio::io::split(stream);
+            client_input.write_all(b"head").await.unwrap();
+            let task = tokio::spawn(relay(input, output, reader, writer));
+            let mut head = [0; 4];
+            guest.read_exact(&mut head).await.unwrap();
+            assert_eq!(&head, b"head");
+            let server = async {
+                guest.write_all(response).await.unwrap();
+                guest.shutdown().await.unwrap();
+            };
+            let client = async {
+                let mut received = Vec::new();
+                client_output.read_to_end(&mut received).await.unwrap();
+                assert_eq!(received, response);
+            };
+            tokio::time::timeout(Duration::from_secs(5), async {
+                tokio::join!(server, client);
+                task.await.unwrap().unwrap();
+            })
+            .await
+            .expect("guest EOF waited for the still-open client upload");
+            // The client upload remains open throughout; no sleep or forced
+            // timeout supplies EOF and an empty response is not fake success.
+            drop(client_input);
+        }
     }
 
     async fn downstream_error() {

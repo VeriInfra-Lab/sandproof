@@ -123,9 +123,20 @@ async fn unknown_codec_budget_empty_json_and_missing_selection_do_not_fabricate_
     ] {
         let (owner, slots) = retain();
         let error = SelectionError::Request(error);
-        let failure = send(error.clone(), format, limits(), deadline(), owner)
-            .await
-            .unwrap_err();
+        let result = send(error.clone(), format, limits(), deadline(), owner).await;
+        if error == SelectionError::Request(RequestError::BodyLimit) {
+            // Known local quota is now an explicit resource refusal, not an
+            // invented gzip diagnostic. Unknown codec/I/O faults below remain
+            // unclassified and keep the original request responsibility.
+            let response = result.unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::OK);
+            let wire = drain(response.into_body()).await;
+            assert_eq!(wire[0], 3);
+            assert_eq!(decoded(&wire[5..]), br#"{"error":{"code":"resource_exhausted","message":"command request exceeds configured body limits"}}"#);
+            released(slots).await;
+            continue;
+        }
+        let failure = result.unwrap_err();
         assert_eq!(failure.error(), Error::UnclassifiedFault);
         assert_eq!(failure.selection_error(), &error);
         assert_eq!(slots.available_permits(), 0);

@@ -10,6 +10,33 @@ mod native_input;
 mod native_resize;
 mod native_signal;
 
+#[tokio::test]
+async fn observed_input_limit_is_an_explicit_reply_not_a_dropped_connection() {
+    let slots = Arc::new(Semaphore::new(1));
+    let owner: Owner = Arc::new(slots.clone().try_acquire_owned().unwrap());
+    let mut source = source(
+        Some(Rejection::InputTooLarge),
+        Some(format(Rpc::SendInput, false, false)),
+        owner,
+    );
+    source.request_error = RequestError::Command(crate::command::CommandError::ResourceExhausted);
+    let response = send(source, limits()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.headers()["content-type"], "application/json");
+    let mut body = response.into_body();
+    let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    assert_eq!(
+        bytes.as_ref(),
+        br#"{"code":"resource_exhausted","message":"command input exceeds configured byte limit"}"#
+    );
+    let copy = bytes.clone();
+    drop(bytes);
+    drop(body);
+    assert_eq!(slots.available_permits(), 0);
+    drop(copy);
+    assert_eq!(slots.available_permits(), 1);
+}
+
 fn source(rejection: Option<Rejection>, format: Option<ResponseFormat>, owner: Owner) -> Source {
     Source {
         rejection,

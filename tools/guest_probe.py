@@ -105,15 +105,25 @@ def small_file(name, limit, *, directory=None):
         os.close(fd)
 
 
-def listener_inode(proc, port):
-    lines = small_file(proc / 'net/tcp', 1024**2).splitlines()
+def listener_inode(proc, port, *, go_wildcard=False):
     found = []
-    for line in lines[1:]:
-        fields = line.split()
-        require(len(fields) >= 10)
-        if fields[1] == f'00000000:{port:04X}'.encode() and fields[3] == b'0A':
-            require(fields[9].isdigit() and int(fields[9]) > 0)
-            found.append(int(fields[9]))
+    tables = [('tcp', '00000000')]
+    if go_wildcard:
+        # Go's net.Listen("tcp", wildcard) may use a dual-stack socket even
+        # when the configured address is 0.0.0.0. Rust keeps its IPv4 contract.
+        tables.append(('tcp6', '0' * 32))
+    for table, wildcard in tables:
+        try:
+            lines = small_file(proc / 'net' / table, 1024**2).splitlines()
+        except FileNotFoundError:
+            require(table == 'tcp6')  # IPv6 may be disabled in this kernel.
+            continue
+        for line in lines[1:]:
+            fields = line.split()
+            require(len(fields) >= 10)
+            if fields[1] == f'{wildcard}:{port:04X}'.encode() and fields[3] == b'0A':
+                require(fields[9].isdigit() and int(fields[9]) > 0)
+                found.append(int(fields[9]))
     require(len(found) == 1)
     return found[0]
 
@@ -153,8 +163,8 @@ def observe_daemon(proc, platform, expected, installed_service, owner):
     return observe_process(proc, expected['service'], installed_service, owner, argv)
 
 
-def observe_process(proc, expected, installed_service, owner, argv):
-    inode = listener_inode(proc, 49983)
+def observe_process(proc, expected, installed_service, owner, argv, *, go_wildcard=False):
+    inode = listener_inode(proc, 49983, go_wildcard=go_wildcard)
     matches = []
     with os.scandir(proc) as entries:
         count = 0
@@ -198,7 +208,8 @@ def observe_process(proc, expected, installed_service, owner, argv):
                 matches.append({'pid': pid, 'start_ticks': before, 'socket_inode': inode})
             finally:
                 os.close(directory)
-    require(len(matches) == 1 and listener_inode(proc, 49983) == inode)
+    require(len(matches) == 1
+            and listener_inode(proc, 49983, go_wildcard=go_wildcard) == inode)
     return matches[0]
 
 
@@ -289,7 +300,7 @@ def observe_go(expected):
     path = Path(GO_PATH)
     before = installed_file(path, expected, 0, 0o755)
     daemon = observe_process(Path('/proc'), expected, before, 0,
-                             (GO_PATH + '\0-verbose\0').encode())
+                             (GO_PATH + '\0-verbose\0').encode(), go_wildcard=True)
     require(identity(installed_file(path, expected, 0, 0o755)) == identity(before))
     return {'schema_version': 1, 'fixed_go': expected, 'daemon': daemon}
 
