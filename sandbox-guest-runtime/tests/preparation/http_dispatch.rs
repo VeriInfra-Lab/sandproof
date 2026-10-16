@@ -25,6 +25,8 @@ mod input_native;
 mod json_errors;
 #[path = "keepalive_http.rs"]
 mod keepalive;
+#[path = "keepalive_encoded_http.rs"]
+mod keepalive_encoded;
 #[path = "launch_http.rs"]
 mod launch;
 #[path = "native_http.rs"]
