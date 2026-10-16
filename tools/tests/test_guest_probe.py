@@ -209,6 +209,7 @@ class GuestObservationTests(unittest.TestCase):
             service.chmod(0o700)
             service.write_bytes(original)
             service.chmod(0o500)
+            before = service.stat()
             changed = False
             def mutate(fd, size):
                 nonlocal changed
@@ -223,10 +224,20 @@ class GuestObservationTests(unittest.TestCase):
                         service.chmod(0o700)
                         service.write_bytes(original + b'!' if change == 'growth' else b'!' + original[1:])
                         service.chmod(0o500)
+                        if change == 'same-size':
+                            # All original bytes have already been read. This
+                            # case tests a changed metadata snapshot, not an
+                            # atomic read guarantee. Rapid writes may share the
+                            # same Linux timestamp tick; establish the fault
+                            # explicitly instead of sleeping or retrying.
+                            os.utime(service, ns=(before.st_atime_ns,
+                                                 before.st_mtime_ns + 2_000_000_000))
+                            self.assertNotEqual(service.stat().st_mtime_ns, before.st_mtime_ns)
                 return block
             with self.subTest(change=change), patch.object(probe.os, 'read', side_effect=mutate):
                 with self.assertRaises(ValueError):
                     probe.installed(self.platform, self.expected, self.owner)
+            self.assertTrue(changed, 'the intended read-time fault was not reached')
 
     def test_local_release_and_config_pins_are_checked_before_building_a_guest_command(self):
         release = self.root / 'release'
