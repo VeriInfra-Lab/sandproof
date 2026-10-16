@@ -209,6 +209,14 @@ async fn actual_wait_does_not_release_unconsumed_output_or_invent_end() {
         process.next_event().await.unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock
     );
+    assert_eq!(
+        process
+            .next_event_until_main_exit()
+            .await
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::WouldBlock
+    );
     let mut stale = process.identity();
     stale.command += 1;
     assert!(process.consume_output(stale, channel, bytes.len()).is_err());
@@ -320,6 +328,7 @@ async fn actual_exec_failure_is_private_and_never_user_success() {
         ));
         assert!(!process.wait_main().await.unwrap().success());
         assert!(process.next_event().await.is_err());
+        assert!(process.next_event_until_main_exit().await.is_err());
         assert!(process.release().await.is_err());
     }
     let mut process = prepare(
@@ -449,6 +458,7 @@ async fn cancellation_after_release_can_execute_once_but_never_reopens_the_gate(
         b"ran"
     );
     assert!(process.next_event().await.is_err());
+    assert!(process.next_event_until_main_exit().await.is_err());
     assert!(process.release().await.is_err());
 }
 

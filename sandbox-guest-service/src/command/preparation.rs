@@ -44,7 +44,8 @@ struct Context {
     request: Arc<dyn Send + Sync>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdmissionLimits {
     /// One absolute deadline covering preparation AND registration decision.
     pub ready_timeout: Duration,
@@ -91,14 +92,23 @@ impl AdmissionObserver {
     // The immutable fact is published before Stopping. Unknown cleanup or
     // owner loss cannot be relabelled as this original preparation failure.
     pub(crate) fn rejection(&self) -> Option<PreparationRejection> {
+        let fact = self.1.lock().ok().and_then(|fact| *fact)?;
+        let expected = match fact {
+            PreparationRejection::Pipe { errno, .. } | PreparationRejection::Pty { errno, .. }
+                if errno > 0 =>
+            {
+                prepare_error(&std::io::Error::from_raw_os_error(errno))
+            }
+            PreparationRejection::Pipe { .. } | PreparationRejection::Pty { .. } => return None,
+            _ => CommandError::InvalidArgument,
+        };
         if !matches!(
             self.status(),
-            AdmissionStatus::Stopping(CommandError::InvalidArgument)
-                | AdmissionStatus::Stopped(CommandError::InvalidArgument)
+            AdmissionStatus::Stopping(error) | AdmissionStatus::Stopped(error) if error == expected
         ) {
             return None;
         }
-        self.1.lock().ok().and_then(|fact| *fact)
+        Some(fact)
     }
 
     #[must_use]
@@ -114,6 +124,14 @@ impl AdmissionObserver {
             .await
             .map_err(|_| CommandError::Unavailable)?;
         Ok(*self.0.borrow_and_update())
+    }
+}
+
+pub(crate) fn prepare_error(error: &std::io::Error) -> CommandError {
+    match error.kind() {
+        std::io::ErrorKind::InvalidInput => CommandError::InvalidArgument,
+        std::io::ErrorKind::TimedOut => CommandError::DeadlineExceeded,
+        _ => CommandError::Unavailable,
     }
 }
 
@@ -310,6 +328,52 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_preparation_fact_requires_original_error_and_settled_admission_state() {
+        let (status, receiver) = watch::channel(AdmissionStatus::Preparing);
+        let fact = Arc::new(Mutex::new(None));
+        let observer = AdmissionObserver(receiver, fact.clone());
+        for errno in [0, -1, 24] {
+            for rejection in [
+                PreparationRejection::Pipe {
+                    stream: sandproof_guest_runtime::PreparationPipe::Stderr,
+                    errno,
+                },
+                PreparationRejection::Pty {
+                    stage: sandproof_guest_runtime::PreparationPty::OpenMaster,
+                    errno,
+                },
+                PreparationRejection::Pty {
+                    stage: sandproof_guest_runtime::PreparationPty::Unlock,
+                    errno,
+                },
+                PreparationRejection::Pty {
+                    stage: sandproof_guest_runtime::PreparationPty::Resize,
+                    errno,
+                },
+            ] {
+                *fact.lock().unwrap() = Some(rejection);
+                for state in [
+                    AdmissionStatus::Preparing,
+                    AdmissionStatus::CleanupUnknown,
+                    AdmissionStatus::OwnerLost,
+                    AdmissionStatus::Stopped(CommandError::DeadlineExceeded),
+                    AdmissionStatus::Stopped(CommandError::Cancelled),
+                    AdmissionStatus::Stopped(CommandError::InvalidArgument),
+                    AdmissionStatus::Stopped(CommandError::Unavailable),
+                ] {
+                    status.send_replace(state);
+                    assert_eq!(
+                        observer.rejection(),
+                        (errno == 24
+                            && state == AdmissionStatus::Stopped(CommandError::Unavailable))
+                        .then_some(rejection)
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn rejection_fact_does_not_relabel_expiry_owner_loss_or_unknown_cleanup() {

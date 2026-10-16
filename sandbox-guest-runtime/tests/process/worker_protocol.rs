@@ -5,6 +5,32 @@ use tokio::{
 };
 
 #[tokio::test]
+async fn worker_version_needs_no_gate_and_refuses_extra_arguments() {
+    for args in [vec!["--version"], vec!["--version", "extra"]] {
+        let child = tokio::process::Command::new(WORKER)
+            .args(&args)
+            .kill_on_drop(true)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = tokio::time::timeout(Duration::from_secs(5), child.wait_with_output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output.status.success(), args.len() == 1);
+        assert!(output.stderr.is_empty());
+        if args.len() == 1 {
+            let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(info, sandproof_guest_runtime::build_info::worker());
+        } else {
+            assert!(output.stdout.is_empty());
+        }
+    }
+}
+
+#[tokio::test]
 async fn malformed_release_is_private_protocol_fault_never_native_exec_failure() {
     for release in [&[2][..], &[1, 9], &[]] {
         let directory = tempfile::tempdir().unwrap();

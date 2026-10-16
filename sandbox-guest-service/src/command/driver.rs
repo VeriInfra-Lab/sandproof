@@ -48,6 +48,7 @@ async fn expires(deadline: ExecutionDeadline) {
 }
 
 fn kill_at_deadline(shared: &Shared) {
+    shared.output_wait_cancelled.send_replace(true);
     let action = if shared
         .control
         .signal(shared.identity, ProcessSignal::Kill)
@@ -137,7 +138,7 @@ async fn run(
         }
     };
     drop(authorization);
-    let mut failure = match launch {
+    let failure = match launch {
         LaunchObservation::NoExecErrorObserved => None,
         LaunchObservation::ExecFailed(code) => Some(CommandError::ExecFailed(code)),
         LaunchObservation::Unknown => Some(CommandError::LaunchUnknown),
@@ -168,7 +169,19 @@ async fn run(
     // Preparation and actual release have settled. Later execution, wait and
     // output remain charged to the independent command record/subscriptions.
     drop(request);
+    drive(process, deadline, shared, failure).await;
+    guard.settled = true;
+}
+
+async fn drive(
+    mut process: CommandProcess,
+    mut deadline: ExecutionDeadline,
+    shared: Arc<Shared>,
+    mut failure: Option<CommandError>,
+) {
     let mut retry = None;
+    let mut cancelled = shared.output_wait_cancelled.subscribe();
+    let mut drain = !*cancelled.borrow_and_update();
     loop {
         let observation = tokio::select! {
             biased;
@@ -177,7 +190,11 @@ async fn run(
                 deadline = ExecutionDeadline(None);
                 continue;
             }
-            result = observe(&mut process, failure, retry) => result,
+            _ = cancelled.changed(), if drain => {
+                drain = false;
+                continue;
+            }
+            result = observe(&mut process, failure, retry, drain) => result,
         };
         retry = None;
         match observation {
@@ -197,7 +214,6 @@ async fn run(
                     core_dumped,
                 };
                 finish(&shared, failure.map_or(Ok(exit), Err));
-                guard.settled = true;
                 return;
             }
             Ok(None) | Err(_) => {
@@ -238,19 +254,26 @@ async fn observe(
     process: &mut CommandProcess,
     failure: Option<CommandError>,
     retry: Option<Instant>,
+    drain: bool,
 ) -> std::io::Result<Option<CommandEvent>> {
     use std::os::unix::process::ExitStatusExt;
     if let Some(at) = retry {
         tokio::time::sleep_until(at).await;
     }
     if failure.is_some() {
-        let status = process.discard_and_wait().await?;
+        let status = if drain {
+            process.discard_and_wait().await?
+        } else {
+            process.discard_until_main_exit().await?
+        };
         Ok(Some(CommandEvent::End {
             code: status.code().unwrap_or(-1),
             signal: status.signal(),
             core_dumped: status.core_dumped(),
         }))
-    } else {
+    } else if drain {
         process.next_event().await
+    } else {
+        process.next_event_until_main_exit().await
     }
 }

@@ -20,14 +20,14 @@ serde_json = { version = "=1.0.142", features = ["raw_value"] }
 sha2 = "=0.10.9"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "=1.1.5", features = ["process", "net", "thread", "fs", "pty", "termios"] }
+rustix = { version = "=1.1.5", features = ["process", "net", "thread", "fs", "pty", "termios", "pipe"] }
 
 [dev-dependencies]
 tempfile = "=3.23.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tempfile = "=3.23.0"
-tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time"] }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time", "sync"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 tokio = { version = "=1.49.0", features = ["test-util"] }

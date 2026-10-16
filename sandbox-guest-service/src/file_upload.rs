@@ -4,7 +4,8 @@ use axum::http::HeaderMap;
 use sandproof_guest_runtime::file_upload::{self, Error};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HeaderLimits {
     pub bytes: usize,
     pub fields: usize,

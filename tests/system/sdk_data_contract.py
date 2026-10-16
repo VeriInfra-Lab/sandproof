@@ -38,6 +38,61 @@ from sdk_data_samples import (
 )
 
 
+def guest_candidate(args):
+    """Validate all protected Rust material before creating either test VM."""
+    names = ('guest_release', 'guest_manifest_sha256', 'guest_configuration',
+             'guest_configuration_sha256')
+    values = [getattr(args, name, None) for name in names]
+    template = getattr(args, 'template', None)
+    if template is not None and (type(template) is not str or not template):
+        raise ValueError('explicit template must be nonempty')
+    if not any(value is not None for value in values):
+        return template or 'base', None
+    if not template or any(value is None for value in values):
+        raise ValueError('Rust guest observation requires explicit template and all four pinned inputs')
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from tools import guest_probe
+    identity, expected = guest_probe.load_expected(*values)
+    return template, (identity, expected, guest_probe.command(expected))
+
+
+def observe_guest(sandbox, candidate):
+    if candidate is None:
+        return None
+    from tools import guest_probe
+    identity, expected, command = candidate
+    result = sandbox.commands.run(command, user='root', timeout=20)
+    return {'identity': identity, 'observation': guest_probe.receipt(result, expected)}
+
+
+async def observe_guest_async(sandbox, candidate):
+    if candidate is None:
+        return None
+    from tools import guest_probe
+    identity, expected, command = candidate
+    result = await sandbox.commands.run(command, user='root', timeout=20)
+    return {'identity': identity, 'observation': guest_probe.receipt(result, expected)}
+
+
+async def observe_candidate(sandbox, candidate, *, asynchronous):
+    """The same observation for the existing coroutine-based system probes."""
+    if candidate is None:
+        return None
+    if asynchronous:
+        return await observe_guest_async(sandbox, candidate)
+    return await asyncio.to_thread(observe_guest, sandbox, candidate)
+
+
+def guest_arguments(parser, *, required=False):
+    """One opt-in candidate/pin CLI shared by the original SDK probes."""
+    parser.add_argument("--template", required=required, help=("explicit Rust candidate template" if required
+                        else "explicit candidate template; defaults to base without Rust observation"))
+    parser.add_argument("--guest-release", required=required, help="protected release directory with audited source and binaries")
+    parser.add_argument("--guest-manifest-sha256", required=required, help="independently pinned release manifest hash")
+    parser.add_argument("--guest-configuration", required=required, help="protected exact installed daemon configuration")
+    parser.add_argument("--guest-configuration-sha256", required=required, help="independently pinned configuration hash")
+
+
 def barrier_command(directory):
     gate = shlex.quote(f"{directory}/release.fifo")
     marker = shlex.quote(f"{directory}/starts")
@@ -165,17 +220,23 @@ async def async_case(sandbox, directory, user):
     return {"user": user, "sha256": hashes, "reconnected_pid": handle.pid, "killed_pid": killed.pid}
 
 
-async def async_service_cases(args, owner):
-    sandbox = await AsyncSandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
+async def async_service_cases(args, owner, template, candidate):
+    sandbox = await AsyncSandbox.create(template=template, timeout=300, allow_internet_access=False, **owner)
     try:
         _runpy.run_path(str(_GuardPath(__file__).with_name("_resource_evidence.py")))["record_resource_identity"](sandbox.sandbox_id)
         connected = await AsyncSandbox.connect(sandbox.sandbox_id, **owner)
         assert connected.sandbox_id == sandbox.sandbox_id
+        before = await observe_guest_async(connected, candidate)
         cases = []
         for user in ("root", args.unprivileged_user):
             directory = f"/tmp/sandproof-async-data-{uuid.uuid4().hex}"
             cases.append(await async_case(connected, directory, user))
-        return {"sandbox_id": sandbox.sandbox_id, "cases": cases}
+        after = await observe_guest_async(connected, candidate)
+        assert before == after, 'Rust guest identity or listening process changed during SDK cases'
+        result = {"sandbox_id": sandbox.sandbox_id, "cases": cases}
+        if candidate is not None:
+            result['rust_guest'] = before
+        return result
     finally:
         _kill_confirmed = (await AsyncSandbox.kill(sandbox.sandbox_id, **owner))
         assert _kill_confirmed, "async destruction not confirmed"
@@ -186,24 +247,32 @@ async def async_service_cases(args, owner):
 def exercise(args):
     assert importlib.metadata.version("e2b") == "2.51.0"
     assert args.unprivileged_user not in ("root", "0", ""), "select a real non-root base user"
+    template, candidate = guest_candidate(args)
     owner = options(os.environ["SANDPROOF_TEST_API_KEY"], args.api_url, args.sandbox_url)
-    sandbox = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
+    sandbox = Sandbox.create(template=template, timeout=300, allow_internet_access=False, **owner)
     report = {"sdk_version": "2.51.0"}
+    if candidate is not None or getattr(args, 'template', None) is not None:
+        report['template'] = template
     try:
         _runpy.run_path(str(_GuardPath(__file__).with_name("_resource_evidence.py")))["record_resource_identity"](sandbox.sandbox_id)
         connected = Sandbox.connect(sandbox.sandbox_id, **owner)
         assert connected.sandbox_id == sandbox.sandbox_id
+        before = observe_guest(connected, candidate)
         cases = []
         for user in ("root", args.unprivileged_user):
             directory = f"/tmp/sandproof-sync-data-{uuid.uuid4().hex}"
             cases.append(sync_case(connected, directory, user))
+        after = observe_guest(connected, candidate)
+        assert before == after, 'Rust guest identity or listening process changed during SDK cases'
         report["sync"] = {"sandbox_id": sandbox.sandbox_id, "cases": cases}
+        if candidate is not None:
+            report['sync']['rust_guest'] = before
     finally:
         _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **owner))
         assert _kill_confirmed, "sync destruction not confirmed"
         with httpx.Client(base_url=args.sandbox_url, trust_env=False, timeout=10) as client:
             assert client.get("/health", headers={"X-Access-Token": sandbox._envd_access_token}).status_code == 401
-    report["async"] = asyncio.run(async_service_cases(args, owner))
+    report["async"] = asyncio.run(async_service_cases(args, owner, template, candidate))
     report["scope"] = "real controller/gateway/VM data calls; resource residuals and timeout/fault matrices require separate evidence"
     print(json.dumps(report, indent=2))
 
@@ -213,4 +282,5 @@ if __name__ == "__main__":
     parser.add_argument("--api-url", required=True)
     parser.add_argument("--sandbox-url", required=True)
     parser.add_argument("--unprivileged-user", default="ubuntu")
+    guest_arguments(parser)
     exercise(parser.parse_args())

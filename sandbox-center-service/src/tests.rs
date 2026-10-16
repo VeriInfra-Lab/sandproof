@@ -64,6 +64,7 @@ struct Templates {
 fn template() -> PublicTemplate {
     PublicTemplate::from_binding(
         sandproof_controller_service::templates::TemplateBinding {
+            guest: None,
             template_id: "base".into(),
             revision: "r1".into(),
             owner: None,

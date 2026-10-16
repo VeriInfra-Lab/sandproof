@@ -32,7 +32,8 @@ pub trait MetadataSource: Send + Sync + 'static {
     fn fetch(&self) -> impl Future<Output = Result<Metadata, ServiceError>> + Send;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InitLimits {
     pub body_bytes: usize,
     pub token_bytes: usize,

@@ -78,6 +78,7 @@ fn stage(root: &Path) -> CandidateStore {
     disk[1036..1040].copy_from_slice(&4096_u32.to_le_bytes());
     disk[1080..1082].copy_from_slice(&[0x53, 0xef]);
     let binding = TemplateBinding {
+        guest: None,
         template_id: format!("tpl-{ID}"),
         revision: "r1".into(),
         owner: Some(1),

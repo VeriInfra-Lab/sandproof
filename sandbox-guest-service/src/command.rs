@@ -22,6 +22,7 @@ mod preparation;
 mod registration;
 mod registry;
 mod streams;
+pub(crate) use preparation::prepare_error;
 pub use preparation::{
     AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationRequest,
     PreparationSpec,
@@ -196,7 +197,8 @@ impl ExecutionDeadline {
 
 /// Explicit component limits, not production defaults or total RAM bounds.
 /// A record slot covers its owner and every retained handle/subscription.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OwnerLimits {
     pub records: usize,
     pub subscribers: usize,
@@ -311,6 +313,7 @@ impl CommandReservation {
             control,
             stdin_disabled,
             status,
+            output_wait_cancelled: watch::channel(false).0,
             streams: Mutex::new(streams::Subscribers::default()),
             subscriber_slots: Arc::new(Semaphore::new(self.limits.subscribers)),
             input: tokio::sync::Mutex::new(None),
@@ -337,6 +340,7 @@ struct Shared {
     control: CommandControl,
     stdin_disabled: bool,
     status: watch::Sender<CommandStatus>,
+    output_wait_cancelled: watch::Sender<bool>,
     streams: Mutex<streams::Subscribers>,
     subscriber_slots: Arc<Semaphore>,
     input: tokio::sync::Mutex<Option<CommandInput>>,
@@ -423,6 +427,10 @@ impl ManagedCommand {
         signal: ProcessSignal,
     ) -> Result<(), SignalFailure> {
         self.check(identity)?;
+        // Fixed Go cancels output waiting BEFORE attempting TERM/KILL, even
+        // if the original process has already exited and signalling fails.
+        // It keeps reading until actual main-child wait, not merely delivery.
+        self.shared.output_wait_cancelled.send_replace(true);
         self.shared
             .control
             .signal(identity, signal)

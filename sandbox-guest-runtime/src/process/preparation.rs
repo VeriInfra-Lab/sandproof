@@ -16,13 +16,26 @@ use super::{
 use crate::pty::PtyMaster;
 use crate::{LaunchSpec, ProcessLimits};
 
-/// A rejection reported by the original authenticated worker before READY.
-/// It proves neither cleanup nor a native syscall error or user execution.
+mod pipes;
+pub use pipes::PreparationPipe;
+
+/// PTY syscalls whose original Linux errors have a fixed Go counterpart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreparationPty {
+    OpenMaster,
+    Unlock,
+    Resize,
+}
+
+/// An original preparation rejection before READY. Pipe and Pty carry native
+/// syscall observations. None of these facts proves cleanup or user execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreparationRejection {
     MissingCwd,
     EnvironmentNul,
     ArgumentNul,
+    Pipe { stream: PreparationPipe, errno: i32 },
+    Pty { stage: PreparationPty, errno: i32 },
 }
 
 /// Owns a worker before its identity/gate handshake completes. Cancelling a
@@ -63,18 +76,60 @@ impl CommandPreparation {
         spec: &LaunchSpec,
         limits: ProcessLimits,
     ) -> io::Result<Self> {
+        Self::spawn_observed(
+            worker,
+            private_directory,
+            session,
+            command,
+            spec,
+            limits,
+            &mut None,
+        )
+    }
+
+    /// Original pre-spawn cwd, pipe and selected PTY failures are retained apart
+    /// from local setup, async registration and worker-spawn errors. Clears the
+    /// observation before work; no failure here owns a live child. Filesystem
+    /// operations may block; the service runs this under its blocking owner.
+    /// # Errors
+    /// Same errors as spawn; a recorded native errno is not a cleanup receipt.
+    pub fn spawn_observed(
+        worker: &Path,
+        private_directory: &Path,
+        session: u64,
+        command: u64,
+        spec: &LaunchSpec,
+        limits: ProcessLimits,
+        rejection: &mut Option<PreparationRejection>,
+    ) -> io::Result<Self> {
+        *rejection = None;
         let limits = limits.validate()?;
         spec.validate()?;
         if session == 0 || command == 0 || !worker.is_absolute() {
             return Err(invalid("missing command or worker identity"));
         }
         let payload = encode(spec, limits.launch_bytes)?;
+        // Fixed handler.New checks Stat under the daemon identity before any
+        // pipe or PTY allocation. Only ENOENT is a missing-cwd observation;
+        // other errors continue to actual chdir/exec after the original gate.
+        // This is one preflight, not a path lock or an access authorization.
+        if spec.envd_wrapper_path.is_some()
+            && std::fs::metadata(&spec.cwd).is_err_and(|error| {
+                error.raw_os_error() == Some(rustix::io::Errno::NOENT.raw_os_error())
+            })
+        {
+            *rejection = Some(PreparationRejection::MissingCwd);
+            return Err(invalid("working directory does not exist"));
+        }
         let directory = tempfile::Builder::new()
             .prefix("guest-gate-")
             .tempdir_in(private_directory)?;
         let socket = directory.path().join("launch");
         let listener = UnixListener::bind(&socket)?;
-        let terminal = spec.pty.map(PtyMaster::open).transpose()?;
+        let terminal = spec
+            .pty
+            .map(|size| PtyMaster::open_observed(size, rejection))
+            .transpose()?;
         let mut builder = Command::new(worker);
         builder
             .arg("--gate")
@@ -82,6 +137,7 @@ impl CommandPreparation {
             .arg("--limit")
             .arg(limits.launch_bytes.to_string())
             .env_clear();
+        let mut pipes = None;
         let pty = if let Some((master, slave)) = terminal {
             builder
                 .stdin(Stdio::from(slave.try_clone()?))
@@ -89,17 +145,13 @@ impl CommandPreparation {
                 .stderr(Stdio::from(slave));
             Some(master)
         } else {
-            builder
-                .stdin(if spec.stdin {
-                    Stdio::piped()
-                } else {
-                    Stdio::null()
-                })
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+            pipes = Some(pipes::prepare(&mut builder, spec.stdin, rejection)?);
             None
         };
-        let child = builder.spawn()?;
+        let mut child = builder.spawn()?;
+        if let Some(pipes) = pipes {
+            pipes.attach(&mut child);
+        }
         // Command retains configured Stdio descriptors for possible reuse;
         // this one-shot builder must not keep the slave open across an await.
         drop(builder);
@@ -120,8 +172,8 @@ impl CommandPreparation {
         })
     }
 
-    /// Whether this exact worker reported the fixed pre-launch ENOENT check.
-    /// This is neither an actual-wait receipt nor evidence for another path.
+    /// Legacy private-handshake observation, not a wait receipt. Current cwd
+    /// preflight failures return through `spawn_observed` before owning a worker.
     #[must_use]
     pub const fn missing_working_directory(&self) -> bool {
         matches!(self.rejection, Some(PreparationRejection::MissingCwd))

@@ -2,6 +2,8 @@
 
 #[path = "owner/body.rs"]
 mod body;
+#[path = "owner/settlement.rs"]
+mod settlement;
 
 use std::collections::BTreeMap;
 use std::future::Future;

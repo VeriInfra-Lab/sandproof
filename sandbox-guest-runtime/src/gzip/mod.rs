@@ -17,7 +17,8 @@ use input::Input;
 use std::fmt;
 use std::io::{self, BufRead, Read};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecodeLimits {
     pub chunk_bytes: usize,
     pub encoded_bytes: u64,

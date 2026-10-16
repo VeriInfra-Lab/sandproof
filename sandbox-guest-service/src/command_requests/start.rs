@@ -123,11 +123,7 @@ impl Ready {
                 .register_pid(preparation.registrar.clone(), preparation.binding)
                 .await
                 .map_err(|error| {
-                    if error
-                        == crate::command::RegistrationError::Preparation(
-                            crate::command::CommandError::InvalidArgument,
-                        )
-                    {
+                    if matches!(error, crate::command::RegistrationError::Preparation(_)) {
                         start_rejection =
                             preparation_rejection(observer.rejection(), &mut request, &mut cwd);
                     }
@@ -265,6 +261,34 @@ fn preparation_rejection(
         PreparationRejection::MissingCwd => return Some(Rejection::MissingCwd(cwd)),
         PreparationRejection::EnvironmentNul => LaunchFailureKind::EnvironmentNul,
         PreparationRejection::ArgumentNul => LaunchFailureKind::ArgumentNul,
+        PreparationRejection::Pty { stage, errno } => LaunchFailureKind::Pty {
+            stage: match stage {
+                sandproof_guest_runtime::PreparationPty::OpenMaster => {
+                    super::http::start::PtyStage::OpenMaster
+                }
+                sandproof_guest_runtime::PreparationPty::Unlock => {
+                    super::http::start::PtyStage::Unlock
+                }
+                sandproof_guest_runtime::PreparationPty::Resize => {
+                    super::http::start::PtyStage::Resize
+                }
+            },
+            errno,
+        },
+        PreparationRejection::Pipe { stream, errno } => LaunchFailureKind::Pipe {
+            stream: match stream {
+                sandproof_guest_runtime::PreparationPipe::Stdout => {
+                    super::http::start::PipeStream::Stdout
+                }
+                sandproof_guest_runtime::PreparationPipe::Stderr => {
+                    super::http::start::PipeStream::Stderr
+                }
+                sandproof_guest_runtime::PreparationPipe::Stdin => {
+                    super::http::start::PipeStream::Stdin
+                }
+            },
+            errno,
+        },
     };
     Some(Rejection::Launch(LaunchFailure::new(
         request.take()?,

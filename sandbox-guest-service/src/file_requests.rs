@@ -20,7 +20,8 @@ pub(crate) mod tests;
 /// admitted parsing/auth waits, retained capabilities, rejections and actual
 /// transfer work/results. Connections and already parsed HTTP buffers remain
 /// separately bounded by the listener/transport.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub in_flight: usize,
     pub timeout: Duration,

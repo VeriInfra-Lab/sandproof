@@ -44,7 +44,8 @@ impl FileError {
 /// their named limits. A detailed failure retains at most two path payloads,
 /// each at most `path_bytes`, until its response/failure owner is released.
 /// Kernel/stdlib allocations remain external obligations.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileLimits {
     pub path_bytes: usize,
     pub entries: usize,

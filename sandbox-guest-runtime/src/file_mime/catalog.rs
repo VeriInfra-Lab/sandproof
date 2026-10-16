@@ -3,7 +3,8 @@
 use super::{Error, builtins, format};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogLimits {
     pub input_bytes: usize,
     /// Raw line bytes, including newline. At most 65535 (a conservative

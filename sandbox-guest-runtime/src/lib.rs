@@ -10,6 +10,8 @@
 
 #[cfg(target_os = "linux")]
 pub mod accounts;
+pub mod artifact;
+pub mod build_info;
 pub mod file_protocol;
 #[cfg(target_os = "linux")]
 pub mod filesystem;
@@ -23,6 +25,8 @@ pub mod gzip;
 pub mod multipart;
 #[cfg(unix)]
 pub mod pid_claims;
+#[cfg(unix)]
+pub mod startup_files;
 
 #[cfg(any(target_os = "linux", test))]
 mod launch_wrapper;
@@ -39,7 +43,7 @@ pub mod worker;
 #[cfg(target_os = "linux")]
 pub use process::{
     CommandControl, CommandEvent, CommandInput, CommandPreparation, CommandProcess,
-    LaunchObservation, PreparationRejection, ProcessSignal,
+    LaunchObservation, PreparationPipe, PreparationPty, PreparationRejection, ProcessSignal,
 };
 #[cfg(target_os = "linux")]
 pub use spec::{Credentials, LaunchSpec, ProcessLimits, PtySize};

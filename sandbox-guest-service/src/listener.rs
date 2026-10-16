@@ -23,7 +23,8 @@ mod tests;
 /// connection lifetime covers headers, body, handler, response and keep-alive;
 /// it is never restarted by bytes or another request. Closing transport does
 /// not establish that a file effect or command stopped, and never retries it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub connections: usize,
     pub header_count: usize,

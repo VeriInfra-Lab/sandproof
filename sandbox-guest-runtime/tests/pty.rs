@@ -50,6 +50,13 @@ impl Drop for Owned {
         let _ = self.0.signal(self.0.identity(), ProcessSignal::Kill);
     }
 }
+
+struct Descendant(std::os::fd::OwnedFd);
+impl Drop for Descendant {
+    fn drop(&mut self) {
+        let _ = rustix::process::pidfd_send_signal(&self.0, rustix::process::Signal::KILL);
+    }
+}
 async fn prepare(directory: &Path, spec: &LaunchSpec) -> Owned {
     Owned(
         CommandProcess::prepare(Path::new(WORKER), directory, 1, 1, spec, limits())
@@ -122,6 +129,83 @@ async fn collect(process: &mut CommandProcess) -> (Vec<u8>, i32) {
     })
     .await
     .unwrap()
+}
+
+#[tokio::test]
+async fn signal_settlement_closes_shared_terminal_after_main_wait_without_waiting_for_descendant() {
+    use rustix::process::{Pid, PidfdFlags, pidfd_open};
+    use std::io::Write;
+    let directory = tempfile::tempdir().unwrap();
+    let launch = spec(
+        directory.path(),
+        r"
+tty.setraw(0)
+signal.signal(signal.SIGHUP, signal.SIG_IGN)
+os.mkfifo('finish', 0o600)
+fd=os.open('finish', os.O_RDWR)
+child=os.fork()
+if child == 0:
+    os.read(fd, 1)
+    os._exit(0)
+os.write(1, (str(child)+'\n').encode())
+os._exit(0)
+",
+    );
+    let mut process = prepare(directory.path(), &launch).await;
+    release(&mut process.0).await;
+    let identity = process.0.identity();
+    let control = process.0.control();
+    let mut input = process.0.take_input(identity).unwrap();
+    let mut pid = Vec::new();
+    while !pid.ends_with(b"\n") {
+        pid.extend(chunk(&mut process.0).await);
+        assert!(pid.len() <= 32);
+    }
+    let pid: i32 = std::str::from_utf8(&pid).unwrap().trim().parse().unwrap();
+    let descendant =
+        Descendant(pidfd_open(Pid::from_raw(pid).unwrap(), PidfdFlags::empty()).unwrap());
+    let mut finish = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(directory.path().join("finish"))
+        .unwrap();
+    assert!(
+        timeout(Duration::from_secs(5), process.0.wait_main())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
+    let mut waiting = Box::pin(process.0.next_event());
+    assert!(
+        std::future::poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
+    drop(waiting);
+    assert!(matches!(
+        process.0.next_event_until_main_exit().await.unwrap(),
+        Some(CommandEvent::End {
+            code: 0,
+            signal: None,
+            ..
+        })
+    ));
+    assert!(control.resize_pty(identity, PtySize::default()).is_err());
+    assert!(input.write_pty(identity, b"after close").await.is_err());
+    let exit = tokio::io::unix::AsyncFd::new(descendant.0.as_fd()).unwrap();
+    let mut waiting = Box::pin(exit.readable());
+    assert!(
+        std::future::poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
+    drop(waiting);
+    finish.write_all(b"x").unwrap();
+    let _ready = timeout(Duration::from_secs(5), exit.readable())
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]

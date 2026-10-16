@@ -210,6 +210,7 @@ impl TemplateArtifacts for TestHost {
 }
 pub fn template() -> InternalTemplate {
     let local = TemplateBinding {
+        guest: None,
         template_id: "base-fixed".into(),
         revision: "r1".into(),
         owner: None,

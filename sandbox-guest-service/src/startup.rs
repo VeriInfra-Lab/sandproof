@@ -12,7 +12,8 @@ use tokio::{
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     /// Combined retained instance/template UTF-8 bytes. The metadata transport
     /// must separately bound its response and its earlier allocations.

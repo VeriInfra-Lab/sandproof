@@ -128,6 +128,7 @@ mod tests {
         Publication {
             candidate_id: candidate_id.clone(),
             binding: TemplateBinding {
+                guest: None,
                 template_id: format!("tpl-{candidate_id}"),
                 revision: "r1".into(),
                 owner: Some(owner),

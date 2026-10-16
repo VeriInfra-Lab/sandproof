@@ -6,6 +6,13 @@
     "cargo_lock_sha256": "7a0bf24674c0ad322d9ccedbe06bc14730fc3cd334593411af2f2fd87b0baecc",
     "sdk_python": "e2b==2.51.0",
     "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
+    "rust_guest": {
+      "service_package_version": "0.1.0",
+      "worker_package_version": "0.1.0",
+      "config_version": 2,
+      "worker_protocol_version": 2,
+      "pid_format_version": 2
+    },
     "center_storage": {
       "redis_server": "7.2.16",
       "archive_url": "https://download.redis.io/releases/redis-7.2.16.tar.gz",

@@ -39,7 +39,8 @@ pub(crate) mod tests;
 /// collected wire bytes, expanded JSON, decoding work, decoded records and
 /// downstream response work. Wire and expanded payloads have the same separate cap.
 /// Socket/header parsing and allocations before this boundary are separate.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub in_flight: usize,
     pub timeout: Duration,

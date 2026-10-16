@@ -29,7 +29,8 @@ pub use gzip_read::GzipReadError;
 /// Result entries have their existing path/metadata budget. This separately
 /// bounds the escaped JSON payload and each retained transmission chunk.
 /// The worker may retain the full payload plus one chunk, not just one chunk.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub wire_bytes: usize,
     pub chunk_bytes: usize,

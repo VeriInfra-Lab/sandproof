@@ -1,7 +1,13 @@
 use super::*;
 use sandproof_guest_runtime::protocol::{ProcessConfig, Pty, PtySize, StartRequest};
 
-fn request(program: &str, args: &[String], pty: bool, cols: u32, rows: u32) -> StartRequest {
+pub(super) fn request(
+    program: &str,
+    args: &[String],
+    pty: bool,
+    cols: u32,
+    rows: u32,
+) -> StartRequest {
     StartRequest {
         process: Some(ProcessConfig {
             cmd: program.into(),

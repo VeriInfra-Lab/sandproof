@@ -147,6 +147,25 @@ fn queued_claim_keeps_storage_capacity_after_cancellation_and_process_deadline()
             let identity = pending.prepared().await.unwrap();
             let _guard = kernel_guard(identity);
             let mut observer = pending.observer();
+            // Prepare both original workers before occupying their shared
+            // blocking pool. This case tests the PID storage slot, not queued
+            // process preparation (covered independently).
+            // It used to be created after the 61-second clock advance below;
+            // preserve its remaining 60 seconds at that observation point.
+            let mut other_pending = other
+                .owners
+                .prepare_command(
+                    other.spec(),
+                    other.session.authorize(Some("token")).await.unwrap(),
+                    ExecutionDeadline::from_duration(Instant::now(), Duration::ZERO).unwrap(),
+                    AdmissionLimits {
+                        ready_timeout: Duration::from_secs(if expire { 121 } else { 60 }),
+                        ..limits()
+                    },
+                )
+                .unwrap();
+            let other_identity = other_pending.prepared().await.unwrap();
+            let _other_guard = kernel_guard(other_identity);
             let (occupied, started) = tokio::sync::oneshot::channel();
             let (release, gate) = std::sync::mpsc::channel();
             let blocker = tokio::task::spawn_blocking(move || {
@@ -176,10 +195,11 @@ fn queued_claim_keeps_storage_capacity_after_cancellation_and_process_deadline()
             }
             // A second owner cannot bypass the independent shared storage slot,
             // even after the first child was actually reaped and credited.
-            let pending = other.pending(other.spec()).await;
-            let mut rejected = pending.observer();
+            let mut rejected = other_pending.observer();
             assert!(matches!(
-                pending.register_pid(registrar.clone(), binding()).await,
+                other_pending
+                    .register_pid(registrar.clone(), binding())
+                    .await,
                 Err(RegistrationError::Storage(ClaimError::Busy))
             ));
             assert_eq!(stopped(&mut rejected).await, CommandError::Cancelled);

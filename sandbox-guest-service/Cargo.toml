@@ -11,7 +11,7 @@ axum = { version = "=0.8.9", features = ["tokio", "http1"] }
 bytes = "=1.12.1"
 http-body-util = "=0.1.5"
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
-tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 base64 = "=0.22.1"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.142"

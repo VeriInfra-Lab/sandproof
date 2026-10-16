@@ -113,7 +113,7 @@ def owned_candidate(path, *, allowed_owners=None):
         raise ValueError("private single-link downloaded candidate required")
 
 
-def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id, ownership=None, registry_owner_uid=None):
+def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id, ownership=None, registry_owner_uid=None, rust_guest_profile=None):
     """Consume one supervisor-owned download after its builder was reclaimed.
 
     Same-filesystem rename transfers the inode; it never shares a writable
@@ -145,7 +145,7 @@ def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_me
             # manifest/status/kernel must still match on every retry.
             return stage(root, kernel, final / "rootfs.ext4", status, owner, cpu,
                          memory_mib, host_memory_mib, candidate_id=candidate_id, ownership=ownership,
-                         registry_owner_uid=registry_owner_uid)
+                         registry_owner_uid=registry_owner_uid, rust_guest_profile=rust_guest_profile)
         if pending.exists():
             if ownership is not None:
                 # Resume in the nonce-bound directory without deleting any
@@ -156,7 +156,7 @@ def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_me
                 return _stage(root, kernel, pending / "rootfs.ext4", status, owner, cpu,
                               memory_mib, host_memory_mib, candidate_id=candidate_id,
                               move_disk=False, ownership=ownership, resume_download=True,
-                              registry_owner_uid=registry_owner_uid)
+                              registry_owner_uid=registry_owner_uid, rust_guest_profile=rust_guest_profile)
             private_directory(pending)
             owned_candidate(pending / "rootfs.ext4")
             os.rename(pending / "rootfs.ext4", disk)
@@ -165,13 +165,13 @@ def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_me
     owned_candidate(disk)
     return _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib,
                   candidate_id=candidate_id, move_disk=True, ownership=ownership, resume_download=True,
-                  registry_owner_uid=registry_owner_uid)
+                  registry_owner_uid=registry_owner_uid, rust_guest_profile=rust_guest_profile)
 
 
-def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id=None, ownership=None, registry_owner_uid=None):
+def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id=None, ownership=None, registry_owner_uid=None, rust_guest_profile=None):
     return _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib,
                   candidate_id=candidate_id, move_disk=False, ownership=ownership,
-                  registry_owner_uid=registry_owner_uid)
+                  registry_owner_uid=registry_owner_uid, rust_guest_profile=rust_guest_profile)
 
 
 def stage_sync(path):
@@ -257,7 +257,7 @@ def stage_delete(path, manifest, *, registry_owner_uid=None):
 
 
 def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id,
-           move_disk, ownership=None, resume_download=False, registry_owner_uid=None):
+           move_disk, ownership=None, resume_download=False, registry_owner_uid=None, rust_guest_profile=None):
     root, kernel, disk = map(Path, (root, kernel, disk))
     registry_owner_uid = os.geteuid() if registry_owner_uid is None else registry_owner_uid
     owners = (os.geteuid(), registry_owner_uid)
@@ -272,6 +272,17 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
             or type(status.get("disk_bytes")) is not int or status["disk_bytes"] <= 0
             or type(status.get("min_free_bytes")) is not int or not 0 <= status["min_free_bytes"] <= status["disk_bytes"]):
         raise ValueError("not a complete unpublished candidate")
+    guest = None
+    if rust_guest_profile is not None:
+        if __package__:
+            from .template_guest import load_profile
+        else:
+            from template_guest import load_profile
+        _, guest = load_profile(rust_guest_profile)
+    # Compare JSON representations so bool/float cannot masquerade as integer
+    # fingerprints through Python equality. Guest output cannot select its pin.
+    if json.dumps(status.get('guest'), sort_keys=True) != json.dumps(guest, sort_keys=True):
+        raise ValueError('candidate guest differs from protected installation profile')
     digest = status.get("image_digest", "")
     if (not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71
             or any(c not in "0123456789abcdef" for c in digest[7:])):
@@ -300,6 +311,7 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
                 or binding["resources"] != {"cpu_count": cpu, "memory_mib": memory_mib,
                     "disk_bytes": status["disk_bytes"], "host_memory_bytes": host_memory_mib * 1024 * 1024}
                 or binding["startup"] != status["runtime_defaults"] or manifest["image_digest"] != digest
+                or json.dumps(binding.get('guest'), sort_keys=True) != json.dumps(guest, sort_keys=True)
                 or manifest["min_free_bytes"] != status["min_free_bytes"]
                 or file_hash(final / "rootfs.ext4") != status["rootfs_sha256"]
                 or file_hash(final / "kernel") != file_hash(kernel)):
@@ -363,6 +375,8 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
                                   "host_memory_bytes": host_memory_mib * 1024 * 1024},
                     "envd_version": "0.9.0", "startup": status["runtime_defaults"]},
                     "image_digest": digest, "min_free_bytes": status["min_free_bytes"]}
+        if guest is not None:
+            manifest['binding']['guest'] = guest
         encoded = json.dumps(manifest).encode()
         if len(encoded) > 64 * 1024:
             raise ValueError("manifest too large")
@@ -429,8 +443,9 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=True)
     for name in ("owner", "cpu", "memory-mib", "host-memory-mib"):
         parser.add_argument("--" + name, type=int, required=True)
+    parser.add_argument("--rust-guest-profile", type=Path)
     args = parser.parse_args()
     if args.status.stat().st_size > 128 * 1024:
         raise SystemExit("status too large")
     print(stage(args.root, args.kernel, args.disk, json.loads(args.status.read_text()),
-                args.owner, args.cpu, args.memory_mib, args.host_memory_mib))
+                args.owner, args.cpu, args.memory_mib, args.host_memory_mib, rust_guest_profile=args.rust_guest_profile))

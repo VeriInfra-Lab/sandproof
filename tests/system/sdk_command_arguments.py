@@ -23,23 +23,26 @@ import uuid
 from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import AuthenticationException, InvalidArgumentException
 
-from sdk_command_input import call
+from sdk_command_input import KnownCommand, call, destroy_probes
+from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
 
 
 async def healthy_context(sandbox, directory, user, background=False):
     command = "pwd; id -un; printf '%s\\n' \"$SP_ARGUMENT_VALUE\""
+    def validate(result):
+        assert (result.stdout, result.stderr, result.exit_code, result.error) == (
+            f'{directory}\n{user}\nspaces and 中文\n', '', 0, None)
     result = await call(sandbox.commands.run, command, cwd=directory, user=user,
                         envs={'SP_ARGUMENT_VALUE': 'spaces and 中文'},
                         background=background, timeout=15)
     if background:
         handle = result
-        try:
-            result = await call(handle.wait)
-        finally:
-            await call(handle.disconnect)
-    assert (result.stdout, result.stderr, result.exit_code) == (
-        f'{directory}\n{user}\nspaces and 中文\n', '', 0)
+        async with KnownCommand(sandbox.commands, handle) as owned:
+            result = await owned.wait(handle)
+            validate(result)
+    else:
+        validate(result)
 
 
 async def argument_cases(sandbox):
@@ -73,39 +76,52 @@ async def argument_cases(sandbox):
             except Exception as error:
                 assert type(error) is expected, (name, type(error).__name__, repr(error))
             else:
+                error = AssertionError(f'{name} Start unexpectedly succeeded')
                 if background:
-                    await call(result.kill)
-                    await call(result.disconnect)
-                raise AssertionError(f'{name} Start unexpectedly succeeded')
-            assert not await call(sandbox.files.exists, marker), name
+                    async with KnownCommand(sandbox.commands, result):
+                        raise error
+                raise error
+            exists = await call(sandbox.files.exists, marker)
+            assert exists is False, name
             await healthy_context(sandbox, directory, 'ubuntu')
             results.append(dict(case=name, user='unknown' if user == unknown else user,
                                 background=background, exception=expected.__name__,
                                 marker_absent=True, subsequent_command_healthy=True))
-    assert await call(sandbox.files.read, directory + '/file') == 'ordinary file'
+    original = await call(sandbox.files.read, directory + '/file')
+    assert original == 'ordinary file'
     return results
 
 
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
+    template, candidate = guest_candidate(args)
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     report = []
     for cls in (Sandbox, AsyncSandbox):
-        sandbox = await call(cls.create, template='base', timeout=180,
+        sandbox = await call(cls.create, template=template, timeout=180,
                              allow_internet_access=False, **owner)
         try:
-            report.append(dict(sdk=cls.__name__, cases=await argument_cases(sandbox)))
+            before = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+            item = dict(sdk=cls.__name__, cases=await argument_cases(sandbox))
+            after = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+            assert before == after, 'Rust guest identity changed during argument cases'
+            if candidate is not None:
+                item.update(sandbox_id=sandbox.sandbox_id, rust_guest=before)
+            report.append(item)
         finally:
-            _kill_confirmed = (await call(sandbox.kill))
-            assert _kill_confirmed
-    print(json.dumps(dict(sdk_version='2.51.0', results=report,
-                          scope='real foreground/background user/cwd failures and valid '
-                                'cwd/env/user controls; no fallback or Start marker; '
-                                'not every malformed argument or timeout combination'), indent=2))
+            await destroy_probes([sandbox])
+    result = dict(sdk_version='2.51.0', results=report,
+                  scope='real foreground/background user/cwd failures and valid '
+                        'cwd/env/user controls; no fallback or Start marker; '
+                        'not every malformed argument or timeout combination')
+    if getattr(args, 'template', None) is not None:
+        result['template'] = template
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
+    guest_arguments(parser)
     asyncio.run(exercise(parser.parse_args()))

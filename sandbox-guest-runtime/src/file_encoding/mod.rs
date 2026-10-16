@@ -26,7 +26,8 @@ pub enum Error {
 
 /// Bounds raw header bytes and comma-separated entries before allocation.
 /// The caller must separately bound all request headers, including duplicates.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub header_bytes: usize,
     pub items: usize,

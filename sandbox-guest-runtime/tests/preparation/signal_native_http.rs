@@ -68,6 +68,12 @@ async fn original_reaped(parent: &KernelGuard) {
 
 #[tokio::test]
 async fn reaped_original_pidfd_signal_does_not_target_descendant_holding_output() {
+    for signal in ["SIGNAL_SIGTERM", "SIGNAL_SIGKILL"] {
+        reaped_signal(signal).await;
+    }
+}
+
+async fn reaped_signal(signal: &str) {
     let fixture = fixture().await;
     let registry = registry();
     let ordinary = requests(1);
@@ -85,38 +91,65 @@ async fn reaped_original_pidfd_signal_does_not_target_descendant_holding_output(
     // Observe ECHILD without reaping: the original owner already waited, but
     // the descendant's pipes still prevent End and keep the same record live.
     original_reaped(&parent).await;
-    for signal in ["SIGNAL_SIGTERM", "SIGNAL_SIGKILL"] {
-        assert!(registry.live(pid).is_ok());
-        let reply = http
-            .handle(request(
-                "SendSignal",
-                &json!({"process":{"pid":pid},"signal":signal}),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(reply.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let bytes = bytes(reply).await;
-        assert_eq!(
-            serde_json::from_slice::<Value>(&bytes).unwrap(),
-            json!({"code":"internal","message":"error sending signal: os: process already finished"})
-        );
-        let last = bytes.clone();
-        drop(bytes);
-        full(&control);
-        rotates(&fixture).await;
-        assert!(command.0.status().completion.is_none());
-        drop(last);
-        timeout(Duration::from_secs(5), async {
-            loop {
-                if control.admit().is_ok() {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
+    let invalid = http
+        .handle(request(
+            "SendSignal",
+            &json!({"process":{"pid":pid},"signal":99}),
+        ))
         .await
         .unwrap();
-    }
+    assert_eq!(invalid.status(), StatusCode::NOT_IMPLEMENTED);
+    drop(bytes(invalid).await);
+    assert!(command.0.status().completion.is_none());
+    assert!(registry.live(pid).is_ok());
+    let reply = http
+        .handle(request(
+            "SendSignal",
+            &json!({"process":{"pid":pid},"signal":signal}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(reply.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = bytes(reply).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap(),
+        json!({"code":"internal","message":"error sending signal: os: process already finished"})
+    );
+    let last = bytes.clone();
+    drop(bytes);
+    full(&control);
+    rotates(&fixture).await;
+    assert_eq!(
+        timeout(Duration::from_secs(5), command.0.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .code,
+        0
+    );
+    // A failed native signal still cancels output waiting, as fixed Go
+    // does. Main wait is real, while the descendant remains blocked/live.
+    end(&mut output).await;
+    let exit = tokio::io::unix::AsyncFd::new(child.0.as_fd()).unwrap();
+    let mut ready = Box::pin(exit.readable());
+    assert!(
+        std::future::poll_fn(|cx| Poll::Ready(ready.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
+    drop(ready);
+    drop(exit);
+    drop(last);
+    timeout(Duration::from_secs(5), async {
+        loop {
+            if control.admit().is_ok() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(
         command
             .0
@@ -124,7 +157,6 @@ async fn reaped_original_pidfd_signal_does_not_target_descendant_holding_output(
         Err(CommandError::Unavailable)
     );
     drop(finish);
-    end(&mut output).await;
     drop(output);
     clean(&fixture, &registry, command).await;
     // Retain the descendant's exact pidfd through its real exit too.
@@ -135,4 +167,38 @@ async fn reaped_original_pidfd_signal_does_not_target_descendant_holding_output(
         .unwrap();
     assert!(ordinary.admit().is_ok());
     assert!(control.admit().is_ok());
+}
+
+#[tokio::test]
+async fn ignored_term_keeps_output_until_main_wait_and_does_not_invent_exit() {
+    let fixture = fixture().await;
+    let registry = registry();
+    let ordinary = requests(1);
+    let control = requests(1);
+    let http = http(&fixture, &registry, &ordinary, &control);
+    let mut output = http.handle(request("Start", &json!({"process":{
+        "cmd":"/bin/sh", "args":["-c","trap '' TERM; mkfifo next finish; printf ready; read done < next; printf after; read done < finish"]
+    }}))).await.unwrap().into_body().into_data_stream();
+    let command = started(&mut output, &registry).await;
+    data(&mut output, "stdout", b"ready").await;
+    let finish = fifo(&fixture, "finish");
+    let reply = http
+        .handle(request(
+            "SendSignal",
+            &json!({
+                "process":{"pid":command.0.identity().pid},"signal":"SIGNAL_SIGTERM"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(reply.status(), StatusCode::OK);
+    drop(bytes(reply).await);
+    assert!(command.0.status().completion.is_none());
+    drop(fifo(&fixture, "next").await);
+    data(&mut output, "stdout", b"after").await;
+    assert!(command.0.status().completion.is_none());
+    drop(finish.await);
+    end(&mut output).await;
+    drop(output);
+    clean(&fixture, &registry, command).await;
 }

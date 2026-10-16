@@ -254,7 +254,8 @@ impl FileStreams {
         .map_err(IdentityDownloadError::Download)
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DownloadLimits {
     pub response: Limits,
     pub encoding: crate::file_encoding::Limits,

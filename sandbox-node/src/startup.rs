@@ -131,6 +131,7 @@ mod tests {
             vmm_pid: 123,
             start_ticks: 456,
             template: TemplateBinding {
+                guest: None,
                 template_id: "one".into(),
                 revision: "r1".into(),
                 owner: Some(1),

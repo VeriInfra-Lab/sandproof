@@ -112,6 +112,13 @@ func main() {
 	scanner.Buffer(make([]byte, 65536), 2<<20)
 	out := bufio.NewWriter(os.Stdout)
 	for scanner.Scan() {
+		if value, ok := strings.CutPrefix(scanner.Text(), "I\t"); ok {
+			fmt.Fprintln(out, observeKeepalive(value))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
 		if value, ok := strings.CutPrefix(scanner.Text(), "B\t"); ok {
 			raw, err := hex.DecodeString(value)
 			if err != nil {

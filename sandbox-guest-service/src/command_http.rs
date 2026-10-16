@@ -47,11 +47,24 @@ pub struct Processes {
     pub admission_limits: AdmissionLimits,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResponseLimits {
     pub message: CommandBodyLimits,
     pub http: http::reply::Limits,
     pub account_headers: usize,
+}
+impl ResponseLimits {
+    pub(crate) fn validate(self) -> Result<(), InvalidConfiguration> {
+        if self.message.validate(Instant::now()).is_err()
+            || http::reply::check_limits(self.http).is_err()
+            || self.account_headers == 0
+            || self.account_headers > isize::MAX as usize / 16
+        {
+            return Err(InvalidConfiguration);
+        }
+        Ok(())
+    }
 }
 
 pub struct CommandHttp<M, S> {
@@ -128,10 +141,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
                 .as_bytes()
                 .contains(&0)
             || crate::execution::validate_command_settings(&settings).is_err()
-            || response.message.validate(Instant::now()).is_err()
-            || http::reply::check_limits(response.http).is_err()
-            || response.account_headers == 0
-            || response.account_headers > isize::MAX as usize / 16
+            || response.validate().is_err()
         {
             return Err(InvalidConfiguration);
         }

@@ -201,6 +201,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 但核心**使用**模板绑定、资源形状记账、恢复匹配与实例精确清理仍在后续验证范围，不能借模板排除条款一起排除。部署前提是产物校验后不可变、交接前关闭写者、路径可信且无不合作写者；ctime 与摘要缓存本身不是这一前提的证明。不宣传用户镜像、供应链或整个沙箱平台都已形式化验证。
 
+#311 在 [TemplateBinding](../controller-service/src/templates.rs)增加可选 [guest 身份](../controller-service/src/templates/guest.rs)，扩展原 canonical digest、不可变登记和恢复比较的数据域。既有缺省描述保留原字节；新字段与原路径/owner 投影、SQLite 提交及中心 Redis 权威块的精确对应通过工程回归核对，尚未抽取或证明。后续连接义务包括独立 manifest/config pin、配置与 worker 版本/摘要一致性，以及被声明的产物确已安装在对应 rootfs 中；摘要相同不自行证明安装或源码到机器码对应。未改变纯核心、抽取规则、LLBC/Lean 或已有定理适用提交；历史结论不覆盖扩展后的模板输入及其服务连接。
+
 ## 历史纯核心覆盖
 
 | 输入或能力 | Rust 与模型的对应证明 | 统一入口 |
@@ -370,9 +372,11 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [启动包装](../sandbox-guest-runtime/src/launch_wrapper.rs)、原 worker 及[命令上下文](../sandbox-guest-service/src/execution.rs)新增可信 PATH 与请求环境分离、有效身份查找/相对命中规则、继承 nice 转换、有界脚本/argv 构造和缺失 process 原元数据保留的自有连接义务。READY 前准备、持久 claim 后唯一放行、同一 PID 贯穿 exec、取消查找后的真实 wait 及两次编码预算到实际驻留尚未抽取或证明。288 组 Go 构造对照不执行原 handler；Linux 真实 shell/工具、HTTP 与固定 SDK 证据分别记录，不证明完整 E03、系统调用竞态或整机资源上界。纯核心、历史已证明 Rust、LLBC/Lean 未改，旧结论不覆盖该候选。
 
-[工作目录检查](../sandbox-guest-runtime/src/worker.rs)与[Start 拒绝发送](../sandbox-guest-service/src/command_requests/http/start.rs)新增原 gated worker 的 ENOENT 到私有握手、准备所有者到不可替换失败事实、原路径与原错误/期限到协商 EOS 的自有义务。专属标记只在真实观察后发布，取消/未知收尾不得复用旧事实；成功 Stat 与后续 chdir 的竞态仍属明确边界。该检查、跨任务事实和响应所有权未抽取/证明，有限 Go 错误渲染不执行原 Stat/handler。纯核心和已证明 Rust/Lean 未改。
+[工作目录检查](../sandbox-guest-runtime/src/process/preparation.rs)与[Start 拒绝发送](../sandbox-guest-service/src/command_requests/http/start.rs)的当前义务为父侧原阻塞准备的 ENOENT 到互斥观察、准备所有者到不可替换失败事实、原路径与原错误/期限到协商 EOS 的连接。此观察只在真实 Stat 失败后发布，取消/未知收尾不得复用旧事实；旧 worker 私有握手已不承担当前预检，成功 Stat 与后续 chdir 的竞态仍属明确边界。该检查、跨任务事实和响应所有权未抽取/证明，有限 Go 错误渲染不执行原 Stat/handler。纯核心和已证明 Rust/Lean 未改。
 
-[原生启动分类](../sandbox-guest-runtime/src/worker.rs)和[回复连接](../sandbox-guest-service/src/command_requests/http/start/native.rs)新增完整原放行到原生阶段、正 errno 与内部协议故障区分、新握手拒绝旧 worker、原请求字段与失败事实不可替换及固定错误映射的自有义务。阶段标记、参数移动、已烧号后的真实收尾与 HTTP 最后字节责任均未抽取或证明。固定 Go 符号 errno 渲染及真实 Linux 有限故障分别报告，不证明所有 syscall 失败、完整启动序列或资源耗尽。共享 errno 表只有用途注释调整，纯核心、历史已证明 Rust/Lean 未改。
+[原生启动分类](../sandbox-guest-runtime/src/worker.rs)和[回复连接](../sandbox-guest-service/src/command_requests/http/start/native.rs)新增完整原放行到原生阶段、正 errno 与内部协议故障区分、新握手拒绝旧 worker、原请求字段与失败事实不可替换及固定错误映射的自有义务。阶段标记、参数移动、已烧号后的真实收尾与 HTTP 最后字节责任均未抽取或证明。固定 Go 符号 errno 渲染及真实 Linux 有限故障分别报告，不证明所有 syscall 失败、完整启动序列或资源耗尽。新增显式管道分配还需证明：stdout→stderr→可选 stdin 的原失败阶段、父/子端及异步注册的所有权转移、未 spawn 分支的部分材料释放、准备观察与同次粗错误一致、原字段到 internal EOS 的连接及最后副本计费。实际 pipe2 失败与受控 Go 渲染分别验证，未证明完整启动故障优先级、Tokio/内核或整机预算。纯核心、历史已证明 Rust/Lean 未改，旧结论不覆盖新版准备与回复适配。
+
+[PTY 准备错误](../sandbox-guest-runtime/src/pty.rs)新增原固定路径 open/解锁/窗口 ioctl 到互斥阶段和正 errno 的对应义务，包括避免 openpt 的 ENOSPC 归一化、失败时 master/slave 精确回收、原 owner 状态/粗错误核对，以及原 PTY 请求字段到有界 EOS 的连接。peer ioctl、复制/异步注册和 worker spawn 不借该事实分类；这些适配改动尚未抽取或证明，工程故障点与 Go 受控格式对照不能背书完整启动优先级或内核终端语义。纯核心、历史已证明 Rust/Lean 未改，旧结论不覆盖该新版运行适配。
 
 [Start NUL 校验连接](../sandbox-guest-runtime/src/worker.rs)新增原请求 NUL 保留到可信 worker、工作目录检查先于 NUL、环境校验先于 argv/cwd 转换、READY 前互斥拒绝事实及原准备所有者实际收尾的对应义务。准备观察经共享锁和状态检查进入有界错误发送器，不从粗 InvalidArgument 推导事实；锁失败/未知清理不生成诊断。原生 errno 和校验失败保持分离，raw 入口的早期拒绝仍在。固定 Go Cmd.Start 的实际校验与有限 HTTP 渲染对照、Linux 候选回归均属工程证据；这些改动尚未抽取或证明，历史纯核心和 Lean 未改。
 
@@ -388,7 +392,11 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [异步命令响应体](../sandbox-guest-service/src/command/body.rs)增加原订阅到 Connect 事件/终结顺序、Bytes 最后引用到请求/订阅/输出/记录额度释放、原响应期限与执行期限分离、取消后原进程责任、编码/滞后失败不补成功终局的自有义务，尚未抽取或证明。[keepalive 时钟](../sandbox-guest-service/src/command_clock.rs)与原帧释放时间回执进一步改变上述适配：Start/Data 重置、保活不重置、延迟轮询和周期跳过、同一最后所有者释放边界到异步时钟的对应尚未证明；有限原时间库及假时钟回归不证明完整 HTTP 时序或库/调度器实时性。Linux 执行结果新增 core_dumped，结束文本使用固定 Go 信号名；真实 wait 到字段及 wire 编码的对应同样未证明。异步 driver 与运行端口已改，已证明纯核心未变，旧结论不覆盖这些适配与传输所有权。
 
+在 b98a44c51dd1b0935553f92daa6c94f0fabd5756 基线后新增的 [keepalive 头选择](../sandbox-guest-service/src/command_keepalive.rs)尚未抽取或证明。首字段选择、字节/十进制 i64 解析、90 秒回退、显式 wrapping_mul 与 Go 有符号纳秒的对应，以及正周期/原构造器 panic 分类均是自有待证义务；有限 Go 对照不等于全输入等价证明。组件没有接入 HTTP、配置或调度时钟，后续政策、拒绝顺序、瞬时时间可表示性及资源界仍须单独连接和验证。已证明控制器 Rust、纯来宾核心、抽取输入及 Lean 源码未改，原定理不覆盖新增组件。
+
 [命令准备请求所有权](../sandbox-guest-service/src/command/preparation.rs)新增原请求期限到准备/登记接受的最早时刻、守卫到独立准备任务和持久登记票据、取消后真实收尾/阻塞任务退出、接受后移交至实际放行观察的连接义务。原授权/执行期限与后续进程记录责任保持，但准备 owner 和执行 driver 的本候选均未抽取或证明；真实进程有限检查不能证明服务重启、未知系统调用或完整 HTTP Start。已证明纯核心未改。
+
+准备 owner 在 359ced1c8edfa474057f518eb8aaf07654edf76d 之后进一步将同步 spawn 材料制备移入阻塞任务。新增待证义务包括：原记录预留对排队/运行任务数量的约束、原请求/授权在等待者丢失时仍随闭包保留、出队后原期限及撤回检查先于副作用、返回的原 child 到异步握手的唯一移交、返回值未被消费或 panic 时的停止请求与未知责任隔离。屏障及假时钟回归不证明 Tokio/内核取消或实际 RAM 上界；该新版编排未抽取或证明，旧工程回执和历史定理不能背书它。纯核心、既有 LLBC/Lean 及已证明 Rust 均未改变。在 59b13e9fbce0078a9231ab84a472ec80c1193154 之后，cwd Stat 又从 worker 移到原阻塞准备任务、先于 gate/管道/PTY 分配。此顺序、同次 ENOENT 观察到公开错误的连接、阻塞期间责任保持及预检后路径变化到实际 chdir 错误的对应均属未证明适配；不把成功 Stat 当作访问授权或无竞态保证。
 
 [共用 Connect 期限解析](../sandbox-guest-service/src/connect_timeout.rs)从文件请求组件提取，命令执行期限改为首值、空值及有符号整数的固定语义；同一非正 wire 值到 HTTP 立即到期和无执行期限的不同映射、原起点及派发前过期拒绝仍须连接证明。既有有限解析对照和新边界测试不证明完整命令 HTTP 生命周期；已证明纯核心未变。
 
@@ -418,7 +426,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [原生输入失败连接](../sandbox-guest-service/src/command.rs)新增同一实际写入的正 errno、原错误/身份/通道到 [HTTP 回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的自有对应义务。旧粗错误保持、模式事实不覆盖原生事实、部分效果不重试，以及合成挂断/取消/完成不伪造 syscall 失败均未抽取或证明。固定 Go 错误格式、真实 os.Pipe 和 Linux 有限 stdin/PTY 组件分别报告，不证明所有输入故障、调度竞态或完整 E03。历史已证明 Rust、纯核心与 Lean 未改。
 
-[原生信号失败连接](../sandbox-guest-service/src/command.rs)新增原 pidfd syscall 的正 errno 到 [固定错误回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的对应义务，包含 ESRCH 到 Go 进程已结束错误、原粗结果/期限核对及无再次查找或发送。主进程已回收、后代仍持管道、登记终局与最后字节容量之间的顺序仍未抽取或证明；有限真实 pidfd 场景与受控 Go 格式对照不代替 PID 复用、完整 Go 信号/输出调度或系统收尾证明。纯核心、历史已证明 Rust 和 Lean 未改。
+[原生信号失败连接](../sandbox-guest-service/src/command.rs)新增原 pidfd syscall 的正 errno 到 [固定错误回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的对应义务，包含 ESRCH 到 Go 进程已结束错误、原粗结果/期限核对及无再次查找或发送。新增 TERM/KILL 及执行期限先解除输出等待、真实主进程 wait 后关闭剩余输出的适配路径；它绕过普通 EOF 收尾而不伪造纯核心 EOF，旧 CommandStream 定理不覆盖此路径。信号失败仍触发取消、既有错误不被成功覆盖、已排队字节先于 End、登记终局/容量与真实收尾的对应均待证。[PTY 共享描述符](../sandbox-guest-runtime/src/pty.rs)的撤销、等待者唤醒、在途 FD 最后引用及 close/ioctl 竞争同样未抽取或证明。固定 Go 源码顺序核对及有限 pidfd/PTY 回归不代替 PID 复用、完整 Go 信号/输出调度或系统收尾证明。纯核心、历史已证明 Rust 和 Lean 未改，旧证明不能背书新版运行适配。
 
 [原生窗口调整失败连接](../sandbox-guest-service/src/command.rs)新增同一终端 ioctl 正 errno、原粗错误和 [HTTP 回复](../sandbox-guest-service/src/command_requests/http/operation.rs) 的对应义务。实际 EINVAL 不被无 PTY 分类覆盖、挂断写入不推断 resize 失败、uint16 转换及无重试/新查询均未抽取或证明；有限真实挂断场景和受控 Go 格式对照不证明全部 ioctl 故障、调度或系统收尾。纯核心、历史已证明 Rust 与 Lean 未改。
 
@@ -448,7 +456,16 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [一元令牌拒绝回执](../sandbox-guest-service/src/file_rpc_response/token.rs)新增实际 Session 拒绝到外层数字 401 JSON、HEAD 完整预算/正文抑制、原请求槽位/期限与最后字节副本及失败对象的连接义务。令牌接受谓词、受保护初始化及纯核心不变；重复头/初始化前严格拒绝不能用原 Go 已初始化首字段对照背书。回执和 Linux/SDK 组合尚未抽取或证明，不把固定消息或协议测试当作全鉴权证明。
 
+[正式来宾入口](../sandbox-guest-service/src/daemon.rs)新增配置字节上限到原组件预算、必需/未知/重复字段拒绝、当前有效 UID 与私有输入、独立普通/控制池、同一 VM/服务编号与 Session 到全部路由、一次启动期限、先装配后监听和传输停机边界的自有义务；[启动文件端口](../sandbox-guest-runtime/src/startup_files.rs)另新增原目录 FD 遍历、祖先/最终对象权限与身份、NOFOLLOW/NONBLOCK 和类型拒绝义务。入口及新增 Serde 解码尚未抽取或证明，构造/静态检查不证明机器资源足够、实际模板安装或全部后台工作已停止。Rustix/Linux、文件锁/持久存储、serde_json、MMDS 来源、MIME/TZif 材料、Tokio/Hyper 与可信 root/owner 仍须分别建立最小外部合同。线程栈乘法界不等同总 RSS 上界，worker 路径检查不等同二进制摘要见证。原已证明 Rust、LLBC/Lean 未改，旧定理不覆盖本次配置、文件和异步装配。
+
 [持久服务会话](../sandbox-guest-runtime/src/pid_claims/session.rs)将原 PID 图像升级为 v2，并复用原写入/校验/同步/毒化路径。新增有界非零编号、跨重开单调性、未知或丢失结果不回收、耗尽不回绕、会话与 PID 共享毒化，以及旧格式拒绝而不重建的自有义务；上述新版 runtime 和启动分配连接尚未抽取或证明，旧位图测试或模型不背书新增计数字段。fsync、文件锁、存储不回滚和等待者取消仍为对应外部前提；软件故障点只提供测试证据。未修改原已证明 Rust 或 LLBC/Lean。
+
+[worker 指纹](../sandbox-guest-runtime/src/artifact.rs)及配置 v2 增加期望版本/摘要的受信任来源、同一 FD 的固定缓冲/精确长度与摘要核对、原期限及先核对后读取 MMDS/状态的连接义务。版本常量复用到原 PID 格式头与 worker 握手断言，持久格式/握手字节未变；版本报告只标识编译接口，不证明源码出处或已安装字节。上述新增 runtime/service 代码尚未抽取或证明；SHA-256、文件系统观察、可信安装在服务生命周期内不变及随后按路径 exec 的关系仍是显式外部前提。有限增长/截断/取消测试不证明任意并发文件快照，旧纯核心及历史 LLBC/Lean 不背书该启动校验。
+
+[来宾产物准备](../tools/prepare_guest.py)及[清单消费](../tools/guest_artifacts.py)增加精确 Git 归档/工具配方到实际构建、原输入锁到双二进制版本、同一文件观察/复制/同步到摘要、外部受保护 manifest pin 到后续消费，以及失败/超期/发布不确定的连接义务。实现和有限工具测试不构成源码到机器码对应证明，也不验证编译器、链接器、构建镜像、Python/Git、文件系统、原生库或完整内存/磁盘峰值。新工具尚未在真实 Linux 运行原 release 配方或连接受保护模板安装；构建替身不背书这些未执行项。未修改已证明 Rust、LLBC/Lean，旧定理不覆盖新 Python 适配或其模板组合。
+
+
+[模板 Rust 安装连接](../tools/template_guest.py)新增独立 profile pin 到安装副本、实际 daemon check 到再次指纹校验、已消费的新 VM 标记到只执行一次 initialize，以及候选状态/原暂存恢复到同一 TemplateBinding.guest 的连接义务。普通文件副本、实际 shell 控制流与故障替身测试不构成真实 daemon/BusyBox/文件系统持久化、镜像 ABI 或 KVM 证明。重命名及 sync 后不得因缺失 PID 文件重新制备是自有控制要求；内核/文件系统、可信新镜像、私有运行盘、MMDS 身份不变及来宾 root/旧盘回滚排除仍为外部前提。未修改已证明 Rust、抽取或 LLBC/Lean；这些 Python/boot 连接尚未证明。 [自助监督接线](../tools/template_build_guest.py)另增加受保护 profile 到原 SQLite 配置摘要、完整源码审计到运行材料子集、同一上传 inode/期限到候选拒绝、原候选恢复到相同 guest 身份的连接义务。SDK 异步取消/连接释放、普通文件读取线程及实际挂载/来宾启动仍属外部实现依赖；本地组件和回环实测不构成证明，也未修改已证明 Rust 或继承其结论。
 
 [正常启动状态装配](../sandbox-guest-service/src/startup.rs)新增可信 VM/模板 ID 的有界校验、域分离与长度分帧摘要、同绑定正常 open、未初始化 Session 与元数据身份钉住、令牌轮换不更换 PID 绑定，以及启动绝对期限/单名额/阻塞结果析构顺序义务；均尚未抽取或证明。元数据来源真实性和 VM ID 不复用、SHA-256、目录来源、原 PID 文件与 fsync、Tokio 排队/取消为显式外部连接前提。有限临时文件/故障点回归不证明服务已部署、有效旧盘回滚防护、启动可中断或整机内存上界。未修改已证明 Rust、LLBC/Lean，也不扩大原定理覆盖。
 

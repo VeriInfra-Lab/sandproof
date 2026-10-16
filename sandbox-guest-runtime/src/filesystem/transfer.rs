@@ -21,7 +21,8 @@ pub enum TransferIoError {
 
 /// Explicit component parameters, not production defaults. At most one body
 /// chunk is owned here; callers must separately bound their queues and input.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TransferLimits {
     pub file: FileLimits,
     pub chunk_bytes: usize,

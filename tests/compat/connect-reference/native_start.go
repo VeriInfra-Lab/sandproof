@@ -55,6 +55,35 @@ func nativeStartError(input commandOperationInput) error {
 	return formatStartError(input, native)
 }
 
+func pipeStartError(input commandOperationInput) error {
+	if input.Pty || (input.Pipe != "stdin" && input.Pipe != "stdout" && input.Pipe != "stderr") {
+		panic("invalid pipe fixture")
+	}
+	command := strings.Join(append([]string{input.Cmd}, input.Args...), " ")
+	// Fixed Go Linux os.Pipe uses Pipe2 and names this syscall in its error.
+	native := os.NewSyscallError("pipe2", nativeErrno(input.Native))
+	failure := fmt.Errorf("error creating %s pipe for command '%s': %w", input.Pipe, command, native)
+	return connect.NewError(connect.CodeInternal, failure)
+}
+
+// The pinned envd uses creack/pty v1.1.24: Linux open() returns the
+// os.OpenFile /dev/ptmx error, while unlockpt and Setsize return bare ioctl
+// errno. Controlled facts here do not execute those terminal operations.
+func ptyPrepareError(input commandOperationInput) error {
+	if !input.Pty {
+		panic("invalid PTY fixture")
+	}
+	var native error = nativeErrno(input.Native)
+	switch input.Stage {
+	case "open-master":
+		native = &os.PathError{Op: "open", Path: "/dev/ptmx", Err: native}
+	case "unlock", "resize":
+	default:
+		panic("invalid PTY preparation stage")
+	}
+	return formatStartError(input, native)
+}
+
 func formatStartError(input commandOperationInput, native error) error {
 	command := strings.Join(append([]string{input.Cmd}, input.Args...), " ")
 	var failure error

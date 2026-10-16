@@ -1,0 +1,349 @@
+{
+  "version": 2,
+  "listen": "127.0.0.1:49983",
+  "runtime": {
+    "worker_threads": 2,
+    "blocking_threads": 4,
+    "thread_stack_bytes": 2097152,
+    "shutdown_timeout": {
+      "secs": 5,
+      "nanos": 0
+    }
+  },
+  "paths": {
+    "owner_uid": 0,
+    "pid_directory": "/var/lib/sandproof-guest",
+    "worker": "/usr/libexec/sandproof-guest-worker",
+    "gate_directory": "/run/sandproof-guest/gates",
+    "max_pid": 4194304
+  },
+  "worker": {
+    "package_version": "0.1.0",
+    "protocol_version": 2,
+    "artifact": {
+      "bytes": 3,
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    }
+  },
+  "startup": {
+    "identity_bytes": 4096,
+    "timeout": {
+      "secs": 30,
+      "nanos": 0
+    }
+  },
+  "metadata": {
+    "body_bytes": 8192,
+    "receive_bytes": 16384,
+    "timeout": {
+      "secs": 5,
+      "nanos": 0
+    }
+  },
+  "initialization": {
+    "body_bytes": 8192,
+    "token_bytes": 1024,
+    "state_bytes": 16384,
+    "env_entries": 64,
+    "in_flight": 2,
+    "timeout": {
+      "secs": 10,
+      "nanos": 0
+    }
+  },
+  "transport": {
+    "connections": 32,
+    "header_count": 64,
+    "buffer_bytes": 16384,
+    "header_timeout": {
+      "secs": 10,
+      "nanos": 0
+    },
+    "connection_timeout": {
+      "secs": 300,
+      "nanos": 0
+    }
+  },
+  "accounts": {
+    "source": {
+      "file_bytes": 65536,
+      "groups": 64
+    },
+    "in_flight": 4,
+    "timeout": {
+      "secs": 5,
+      "nanos": 0
+    }
+  },
+  "commands": {
+    "context": {
+      "daemon_path": "/usr/bin:/bin",
+      "daemon_workdir": "/",
+      "limits": {
+        "bytes": 16384,
+        "env_entries": 64,
+        "arguments": 64,
+        "username_bytes": 256,
+        "authorization_bytes": 4096
+      }
+    },
+    "process": {
+      "chunk_bytes": 4096,
+      "launch_bytes": 32768,
+      "handshake_timeout": {
+        "secs": 5,
+        "nanos": 0
+      }
+    },
+    "owners": {
+      "records": 8,
+      "subscribers": 4,
+      "queued_chunks": 4,
+      "output_bytes": 8192,
+      "stdin_bytes": 4096
+    },
+    "admission": {
+      "ready_timeout": {
+        "secs": 10,
+        "nanos": 0
+      },
+      "cleanup_timeout": {
+        "secs": 5,
+        "nanos": 0
+      },
+      "retry_delay": {
+        "secs": 1,
+        "nanos": 0
+      }
+    },
+    "registry": {
+      "records": 8,
+      "metadata_bytes": 8192,
+      "retention": {
+        "secs": 30,
+        "nanos": 0
+      }
+    },
+    "ordinary": {
+      "in_flight": 8,
+      "timeout": {
+        "secs": 30,
+        "nanos": 0
+      },
+      "headers": {
+        "bytes": 4096,
+        "fields": 32
+      },
+      "body": {
+        "total_bytes": 16777216,
+        "frame_bytes": 16384,
+        "frames": 4096,
+        "trailer_bytes": 4096,
+        "trailer_fields": 16
+      }
+    },
+    "control": {
+      "in_flight": 2,
+      "timeout": {
+        "secs": 30,
+        "nanos": 0
+      },
+      "headers": {
+        "bytes": 4096,
+        "fields": 32
+      },
+      "body": {
+        "total_bytes": 16777216,
+        "frame_bytes": 16384,
+        "frames": 4096,
+        "trailer_bytes": 4096,
+        "trailer_fields": 16
+      }
+    },
+    "response": {
+      "message": {
+        "message_bytes": 16384,
+        "keepalive": {
+          "secs": 1,
+          "nanos": 0
+        }
+      },
+      "http": {
+        "wire_bytes": 16384,
+        "chunk_bytes": 4096
+      },
+      "account_headers": 4096
+    }
+  },
+  "files": {
+    "context": {
+      "daemon_workdir": "/",
+      "limits": {
+        "path_bytes": 4096,
+        "username_bytes": 256,
+        "authorization_bytes": 4096
+      }
+    },
+    "requests": {
+      "in_flight": 8,
+      "timeout": {
+        "secs": 30,
+        "nanos": 0
+      },
+      "query": {
+        "raw_bytes": 4096,
+        "fields": 32
+      },
+      "authorization": {
+        "headers": {
+          "bytes": 4096,
+          "fields": 32
+        },
+        "query_bytes": 4096
+      },
+      "rejection": {
+        "wire_bytes": 16384,
+        "chunk_bytes": 4096
+      }
+    },
+    "rpc_requests": {
+      "in_flight": 8,
+      "timeout": {
+        "secs": 30,
+        "nanos": 0
+      },
+      "headers": {
+        "bytes": 4096,
+        "fields": 32
+      },
+      "body": {
+        "total_bytes": 16777216,
+        "frame_bytes": 16384,
+        "frames": 4096,
+        "trailer_bytes": 4096,
+        "trailer_fields": 16
+      }
+    },
+    "operations": {
+      "in_flight": 4,
+      "limits": {
+        "path_bytes": 4096,
+        "entries": 64,
+        "retained_bytes": 32768,
+        "visited": 128,
+        "xattr_bytes": 16384,
+        "account_bytes": 65536
+      },
+      "timeout": {
+        "secs": 30,
+        "nanos": 0
+      }
+    },
+    "transfers": {
+      "in_flight": 4,
+      "limits": {
+        "file": {
+          "path_bytes": 4096,
+          "entries": 64,
+          "retained_bytes": 32768,
+          "visited": 128,
+          "xattr_bytes": 16384,
+          "account_bytes": 65536
+        },
+        "chunk_bytes": 4096,
+        "total_bytes": 16777216
+      },
+      "timeout": {
+        "secs": 30,
+        "nanos": 0
+      }
+    },
+    "upload": {
+      "headers": {
+        "bytes": 4096,
+        "fields": 32
+      },
+      "encoding": {
+        "header_bytes": 4096,
+        "items": 32
+      },
+      "gzip": {
+        "http": {
+          "total_bytes": 16777216,
+          "frame_bytes": 16384,
+          "frames": 4096,
+          "trailer_bytes": 4096,
+          "trailer_fields": 16
+        },
+        "decode": {
+          "chunk_bytes": 4096,
+          "encoded_bytes": 16777216,
+          "decoded_bytes": 16777216,
+          "header_bytes": 4096,
+          "members": 16
+        }
+      },
+      "multipart": {
+        "wire": {
+          "chunk_bytes": 4096,
+          "boundary_bytes": 256,
+          "header_bytes": 8192,
+          "header_count": 32,
+          "line_bytes": 4096,
+          "parts": 64,
+          "total_bytes": 16777216
+        },
+        "frame_bytes": 16384,
+        "frames": 4096,
+        "trailer_bytes": 4096,
+        "trailer_fields": 16
+      },
+      "batch": {
+        "files": 64,
+        "total_bytes": 16777216,
+        "retained_bytes": 32768
+      }
+    },
+    "download": {
+      "response": {
+        "request": {
+          "header_bytes": 4096,
+          "items": 32
+        },
+        "response_header_bytes": 8192,
+        "wire_bytes": 16777216
+      },
+      "encoding": {
+        "header_bytes": 4096,
+        "items": 32
+      },
+      "compressed_bytes": 16777216
+    },
+    "upload_response": {
+      "wire_bytes": 16384,
+      "chunk_bytes": 4096
+    },
+    "rpc_response": {
+      "wire_bytes": 16384,
+      "chunk_bytes": 4096
+    }
+  },
+  "snapshots": {
+    "mime": {
+      "input_bytes": 1048576,
+      "line_bytes": 4096,
+      "entries": 4096,
+      "retained_bytes": 1048576,
+      "value_bytes": 8192
+    },
+    "timezone": "/etc/localtime",
+    "timezone_limits": {
+      "path_bytes": 4096,
+      "snapshot": {
+        "input_bytes": 1048576,
+        "transitions": 65536,
+        "zones": 256
+      }
+    }
+  }
+}

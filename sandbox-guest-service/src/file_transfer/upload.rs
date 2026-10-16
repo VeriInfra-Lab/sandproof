@@ -28,7 +28,8 @@ pub struct AuthorizedUpload {
     pub body: Body,
     pub expected: Option<u64>,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UploadLimits {
     pub headers: file_upload::HeaderLimits,
     pub encoding: file_encoding::Limits,

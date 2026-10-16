@@ -5,7 +5,8 @@ use tokio::time::{Instant, timeout_at};
 
 /// Limits on accepted HTTP frames; allocations made by the HTTP library before
 /// this boundary must be constrained separately by the eventual listener.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HttpBodyLimits {
     pub total_bytes: u64,
     pub frame_bytes: usize,

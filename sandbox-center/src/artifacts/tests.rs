@@ -82,6 +82,7 @@ fn store(fixture: &engine::Engine) -> (Arc<CandidateStore>, TemplateBinding) {
     fs::write(&rootfs, &image).unwrap();
     fs::set_permissions(&rootfs, fs::Permissions::from_mode(0o400)).unwrap();
     let binding = TemplateBinding {
+        guest: None,
         template_id: "base".into(),
         revision: "r1".into(),
         owner: None,

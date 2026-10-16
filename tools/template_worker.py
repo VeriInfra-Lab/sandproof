@@ -128,12 +128,12 @@ class Commands:
         else:
             event("completed")
 
-    def run(self, args, *, daemon=False, env=None):
+    def run(self, args, *, daemon=False, env=None, cwd=None):
         if time.monotonic() >= self.deadline:
             raise TimeoutError("build deadline")
         child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, start_new_session=True,
-                                 env=COMMAND_ENV if env is None else env)
+                                 env=COMMAND_ENV if env is None else env, cwd=cwd)
         if daemon:
             return child
         try:
@@ -218,7 +218,7 @@ def guest_path(root, name):
     return root.joinpath(*current)
 
 
-def install_platform(root, envd, busybox, dns_servers=None):
+def install_platform(root, envd, busybox, dns_servers=None, *, rust_guest=None, commands=None):
     release = guest_path(root, "/etc/os-release")
     if release.stat().st_size > 8192:
         raise InvalidTemplate("os-release limit")
@@ -232,10 +232,19 @@ def install_platform(root, envd, busybox, dns_servers=None):
     if platform != root / "opt/sandproof" or platform.exists():
         raise InvalidTemplate("reserved platform path occupied or redirected")
     platform.mkdir(parents=True, mode=0o755)
-    for source, name in ((envd, "envd"), (busybox, "busybox")):
+    binaries = ((envd, "envd"), (busybox, "busybox")) if rust_guest is None else ((busybox, "busybox"),)
+    for source, name in binaries:
         shutil.copyfile(source, platform / name)
         (platform / name).chmod(0o755)
-    for name, content in (("boot", BOOT), ("agent", AGENT)):
+    boot, agent = BOOT, AGENT
+    if rust_guest is not None:
+        if __package__:
+            from .template_guest import install
+        else:
+            from template_guest import install
+        profile, identity = rust_guest
+        boot, agent = install(root, platform, profile, identity, commands, boot, agent)
+    for name, content in (("boot", boot), ("agent", agent)):
         (platform / name).write_text(content)
         (platform / name).chmod(0o755)
     # Intentionally replace the container's init selection, not arbitrary
@@ -372,8 +381,8 @@ def validate_request(request):
         mirror_registry(request["docker_hub_mirror"])
 
 
-def check_tools(profile, *, registry=False):
-    validate_tool_names(profile, registry=registry)
+def check_tools(profile, *, registry=False, rust_guest=False):
+    validate_tool_names(profile, registry=registry, rust_guest=rust_guest)
     tools = {}
     for name, artifact in profile.items():
         if set(artifact) != {"path", "sha256"}:
@@ -389,6 +398,8 @@ def check_tools(profile, *, registry=False):
     if not {"sh", "init", "mount", "grep", "mkdir", "chmod", "ln", "ip", "touch", "reboot", "umount",
             "rm", "stat"}.issubset(applets):
         raise InvalidTemplate("BusyBox missing required platform applets")
+    if rust_guest and not {"mv", "sync"}.issubset(applets):
+        raise InvalidTemplate("BusyBox missing Rust guest bootstrap applets")
     # stat can exist without filesystem/format support in a custom BusyBox.
     # Probe the exact read-only operation used by the cold-boot envd gate.
     filesystem = subprocess.check_output([str(tools["busybox"]), "stat", "-f", "-c", "%t", "/"], timeout=5)
@@ -554,7 +565,7 @@ def populate_ext4(commands, root, disk):
             failure.add_note("candidate mount cleanup failed; external VM cleanup required")
 
 
-def build(work, source, request, profile, *, guest_boot_id):
+def build(work, source, request, profile, *, guest_boot_id, rust_guest_profile=None):
     validate_request(request)
     # Accidental-host guard only, NOT remote attestation. The supervisor must
     # create a new VM, read that VM's boot_id and execute this worker there.
@@ -562,7 +573,14 @@ def build(work, source, request, profile, *, guest_boot_id):
             or Path("/proc/sys/kernel/random/boot_id").read_text().strip() != guest_boot_id
             or not Path("/dev/vda").is_block_device()):
         raise InvalidTemplate("worker requires its assigned disposable build VM")
-    tools = check_tools(profile, registry=request["kind"] == "oci-reference")
+    rust_guest = None
+    if rust_guest_profile is not None:
+        if __package__:
+            from .template_guest import load_runtime_profile
+        else:
+            from template_guest import load_runtime_profile
+        rust_guest = load_runtime_profile(rust_guest_profile)
+    tools = check_tools(profile, registry=request["kind"] == "oci-reference", rust_guest=rust_guest is not None)
     if not stat.S_ISREG(source.lstat().st_mode) or source.stat().st_size > request["max_input_bytes"]:
         raise InvalidTemplate("input archive limit or type")
     download_space = 2 * request["max_input_bytes"] if request["kind"] == "oci-reference" else 0
@@ -646,7 +664,8 @@ def build(work, source, request, profile, *, guest_boot_id):
             with commands.phase("rootfs_unpack"):
                 root = unpack_rootfs(commands, tools["umoci"], layout, work / "bundle")
             with commands.phase("platform_install"):
-                install_platform(root, tools["envd"], tools["busybox"], request.get("dns_servers"))
+                install_platform(root, tools.get("envd"), tools["busybox"], request.get("dns_servers"),
+                                 rust_guest=rust_guest, commands=commands)
                 defaults = runtime_defaults(root, startup)
             disk = work / "candidate.ext4"
             with disk.open("xb") as output:
@@ -673,6 +692,8 @@ def build(work, source, request, profile, *, guest_boot_id):
                      "free_bytes": free * 4096, "min_free_bytes": request["min_free_mib"] * MIB,
                      "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
                      "requires": ["external VM cleanup", "launch/envd/owner publish gate"]}
+            if rust_guest is not None:
+                state['guest'] = rust_guest[1]
             if public_source is not None:
                 if image["image_digest"] != public_source.get("converted_digest", public_source["selected_digest"]):
                     raise InvalidTemplate("public image provenance mismatch")
@@ -692,6 +713,7 @@ if __name__ == "__main__":
     for name in ("work", "source", "request", "profile"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--guest-boot-id", required=True)
+    parser.add_argument("--rust-guest-profile", type=Path)
     args = parser.parse_args()
     print(json.dumps(build(args.work, args.source, bounded_json(args.request), bounded_json(args.profile),
-                           guest_boot_id=args.guest_boot_id)))
+                           guest_boot_id=args.guest_boot_id, rust_guest_profile=args.rust_guest_profile)))

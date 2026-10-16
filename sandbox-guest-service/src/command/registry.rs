@@ -20,7 +20,8 @@ use tokio::{
     time::Instant,
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegistryLimits {
     /// Includes reservations, live records, retained exits and unknown owners.
     pub records: usize,
@@ -30,6 +31,23 @@ pub struct RegistryLimits {
     /// Explicit component retention. The fixed Go endpoint uses 30 seconds;
     /// the eventual public assembly must select its reviewed policy.
     pub retention: Duration,
+}
+impl RegistryLimits {
+    pub(crate) fn validate(self) -> Result<Self, RegistryError> {
+        if self.records == 0
+            || self.records > Semaphore::MAX_PERMITS
+            || self.metadata_bytes == 0
+            || self.retention.is_zero()
+            || self
+                .records
+                .checked_mul(self.metadata_bytes)
+                .is_none_or(|n| n > isize::MAX as usize)
+            || Instant::now().checked_add(self.retention).is_none()
+        {
+            return Err(RegistryError::InvalidArgument);
+        }
+        Ok(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,19 +100,10 @@ impl PidRegistry {
         session: u64,
         limits: RegistryLimits,
     ) -> Result<Self, RegistryError> {
-        if session == 0
-            || limits.records == 0
-            || limits.records > Semaphore::MAX_PERMITS
-            || limits.metadata_bytes == 0
-            || limits.retention.is_zero()
-            || limits
-                .records
-                .checked_mul(limits.metadata_bytes)
-                .is_none_or(|n| n > isize::MAX as usize)
-            || Instant::now().checked_add(limits.retention).is_none()
-        {
+        if session == 0 {
             return Err(RegistryError::InvalidArgument);
         }
+        let limits = limits.validate()?;
         Ok(Self {
             inner: Arc::new(Inner {
                 binding,
