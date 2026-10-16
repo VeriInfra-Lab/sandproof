@@ -1,7 +1,7 @@
 //! Controlled delivery faults around the real Redis engine, never a fake store.
 use crate::engine::connect;
 use std::{
-    io::{BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     sync::{
         Arc,
@@ -49,7 +49,7 @@ impl ReplyLoss {
                 }
                 let mut client = BufReader::new(client);
                 let mut upstream = BufReader::new(upstream);
-                while let Ok(request) = frame(&mut client) {
+                while let Ok(Some(request)) = next_request(&mut client, &worker_stop) {
                     let fault = if request.windows(4).any(|part| part == b"HSET") {
                         if worker_skip
                             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
@@ -110,12 +110,31 @@ impl Drop for ReplyLoss {
         self.worker.take().unwrap().join().unwrap();
     }
 }
-fn frame(reader: &mut BufReader<TcpStream>) -> std::io::Result<Vec<u8>> {
-    fn read(
-        reader: &mut BufReader<TcpStream>,
-        output: &mut Vec<u8>,
-        depth: usize,
-    ) -> std::io::Result<()> {
+fn next_request<R: BufRead>(reader: &mut R, stop: &AtomicBool) -> std::io::Result<Option<Vec<u8>>> {
+    loop {
+        if stop.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
+        // The original read timeout bounds a frame in progress, not the idle
+        // lifetime of this owned connection while a test prepares a real
+        // SQLite certificate. Do not invent a delivery fault before byte one.
+        match reader.fill_buf() {
+            Ok([]) => return Ok(None),
+            Ok(_) => return frame(reader).map(Some),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::Interrupted
+                        | std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn frame<R: Read>(reader: &mut R) -> std::io::Result<Vec<u8>> {
+    fn read<R: Read>(reader: &mut R, output: &mut Vec<u8>, depth: usize) -> std::io::Result<()> {
         if depth > 8 {
             return Err(std::io::Error::other("fixture frame depth"));
         }
@@ -167,4 +186,121 @@ fn frame(reader: &mut BufReader<TcpStream>) -> std::io::Result<Vec<u8>> {
     let mut output = Vec::new();
     read(reader, &mut output, 0)?;
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{collections::VecDeque, io::Cursor};
+
+    struct Reader {
+        bytes: Cursor<Vec<u8>>,
+        before: VecDeque<std::io::ErrorKind>,
+        end: Option<std::io::ErrorKind>,
+    }
+
+    impl Reader {
+        fn new(bytes: &[u8]) -> Self {
+            Self {
+                bytes: Cursor::new(bytes.to_vec()),
+                before: VecDeque::new(),
+                end: None,
+            }
+        }
+    }
+
+    impl Read for Reader {
+        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+            if let Some(error) = self.before.pop_front() {
+                return Err(error.into());
+            }
+            if self.bytes.position() == self.bytes.get_ref().len() as u64
+                && let Some(error) = self.end
+            {
+                return Err(error.into());
+            }
+            self.bytes.read(bytes)
+        }
+    }
+
+    impl BufRead for Reader {
+        fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+            if let Some(error) = self.before.pop_front() {
+                return Err(error.into());
+            }
+            self.bytes.fill_buf()
+        }
+
+        fn consume(&mut self, count: usize) {
+            self.bytes.consume(count);
+        }
+    }
+
+    #[test]
+    fn idle_read_observations_do_not_disconnect_or_consume_the_next_request() {
+        let mut reader = Reader::new(b"*1\r\n$4\r\nPING\r\n");
+        reader.before.extend([
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::WouldBlock,
+            std::io::ErrorKind::Interrupted,
+        ]);
+        let stop = AtomicBool::new(false);
+        assert_eq!(
+            next_request(&mut reader, &stop).unwrap(),
+            Some(b"*1\r\n$4\r\nPING\r\n".to_vec())
+        );
+        assert!(reader.before.is_empty());
+        assert_eq!(next_request(&mut reader, &stop).unwrap(), None);
+    }
+
+    #[test]
+    fn partial_frame_timeout_and_truncation_remain_real_delivery_failures() {
+        for end in [
+            None,
+            Some(std::io::ErrorKind::TimedOut),
+            Some(std::io::ErrorKind::WouldBlock),
+        ] {
+            let mut reader = Reader::new(b"$3\r\na");
+            reader.end = end;
+            assert_eq!(
+                next_request(&mut reader, &AtomicBool::new(false))
+                    .unwrap_err()
+                    .kind(),
+                end.unwrap_or(std::io::ErrorKind::UnexpectedEof)
+            );
+        }
+    }
+
+    #[test]
+    fn connection_reset_is_not_idle_and_owner_stop_does_not_read_again() {
+        let mut reader = Reader::new(b"+OK\r\n");
+        reader.before.push_back(std::io::ErrorKind::ConnectionReset);
+        assert_eq!(
+            next_request(&mut reader, &AtomicBool::new(true)).unwrap(),
+            None
+        );
+        assert_eq!(reader.before.len(), 1);
+        assert_eq!(
+            next_request(&mut reader, &AtomicBool::new(false))
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::ConnectionReset
+        );
+    }
+
+    #[test]
+    fn original_scalar_and_aggregate_frame_limits_are_not_relaxed() {
+        assert_eq!(
+            frame(&mut Cursor::new(b"$32768\r\n"))
+                .unwrap_err()
+                .to_string(),
+            "fixture frame bound"
+        );
+        let body = "x".repeat(32767);
+        let wire = format!("*3\r\n$32767\r\n{body}\r\n$32767\r\n{body}\r\n$32767\r\n{body}\r\n");
+        assert_eq!(
+            frame(&mut Cursor::new(wire)).unwrap_err().to_string(),
+            "fixture aggregate bound"
+        );
+    }
 }
