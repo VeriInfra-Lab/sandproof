@@ -31,11 +31,12 @@ class Peer:
                          else (sync_client, process_connect.ProcessClientSync))
         self.client = factory(kind, settings['url'], ConnectionConfig())
 
-    def call(self, method, request):
-        return getattr(self.client, method)(request, headers=self.headers, timeout_ms=10000)
+    def call(self, method, request, headers=None):
+        return getattr(self.client, method)(request, headers=self.headers | (headers or {}),
+                                            timeout_ms=10000)
 
-    async def unary(self, method, kind, payload):
-        result = self.call(method, kind.from_json(json.dumps(payload)))
+    async def unary(self, method, kind, payload, headers=None):
+        result = self.call(method, kind.from_json(json.dumps(payload)), headers)
         return await result if self.asynchronous else result
 
     async def next(self, stream):
@@ -47,16 +48,16 @@ class Peer:
         else:
             stream.close()
 
-    async def rejected(self, method, kind, payload, code, message):
+    async def rejected(self, method, kind, payload, code, message, headers=None):
         try:
-            if method == 'connect':
-                stream = self.call(method, kind.from_json(json.dumps(payload)))
+            if method in ('start', 'connect'):
+                stream = self.call(method, kind.from_json(json.dumps(payload)), headers)
                 try:
                     await self.next(stream)
                 finally:
                     await self.close(stream)
             else:
-                await self.unary(method, kind, payload)
+                await self.unary(method, kind, payload, headers)
         except ConnectError as error:
             assert (error.code, error.message) == (code, message), repr(error)
         else:
@@ -128,6 +129,17 @@ class Peer:
 
 async def run(settings):
     peer, mode = Peer(settings), settings['mode']
+    # The original generated RPC client may supply this explicit header. The
+    # higher-level commands/PTY APIs normally send their fixed 50-second value.
+    # Each rejected Start must finish before the one permitted real Start.
+    for value in settings['keepalive_values']:
+        for method, kind, payload in [
+            ('start', process_pb.StartRequest, settings['request']),
+            ('connect', process_pb.ConnectRequest, {'process': {'pid': 4294967295}}),
+        ]:
+            await peer.rejected(method, kind, payload, Code.INVALID_ARGUMENT,
+                                'keepalive interval must be between 1 and 9223372036 seconds',
+                                {'keepalive-ping-interval': value})
     request = process_pb.StartRequest.from_json(json.dumps(settings['request']))
     stream = peer.call('start', request)
     try:
@@ -231,4 +243,5 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         asyncio.run(run(settings))
     print(f"authenticated PID SDK: {settings['mode']}, async={settings['asynchronous']} passed; "
+          f"{2 * len(settings['keepalive_values'])} keepalive rejections passed; "
           f"{11 if settings['mode'] in ('term', 'kill') else 9} operation rejections passed")

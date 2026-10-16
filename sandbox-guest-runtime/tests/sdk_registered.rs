@@ -53,6 +53,14 @@ use tokio::{
 const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
 const LIMIT: usize = 16384;
 const REQUESTS: usize = 4;
+const INVALID_KEEPALIVE: [&str; 6] = [
+    "0",
+    "-1",
+    "9223372037",
+    "-9223372037",
+    "20211507185753197",
+    "9223372036854775807",
+];
 
 struct MetadataFixture;
 impl MetadataSource for MetadataFixture {
@@ -99,6 +107,7 @@ struct Fixture {
     http: CommandHttp<MetadataFixture, CurrentAccount>,
     lookups: Arc<AtomicUsize>,
     calls: AtomicUsize,
+    keepalive_rejections: AtomicUsize,
     requests: CommandRequests,
     controls: CommandRequests,
     owners: CommandOwners,
@@ -251,6 +260,7 @@ impl Fixture {
             http,
             lookups,
             calls: AtomicUsize::new(0),
+            keepalive_rejections: AtomicUsize::new(0),
             requests,
             controls,
             owners,
@@ -271,12 +281,47 @@ async fn dispatch(
     let start = uri.path() == "/process.Process/Start";
     let stream = start || uri.path() == "/process.Process/Connect";
     selected_json(&headers, stream);
+    let invalid_keepalive = headers.get("keepalive-ping-interval").map(|value| {
+        assert!(stream);
+        assert!(
+            INVALID_KEEPALIVE
+                .iter()
+                .any(|expected| value.as_bytes() == expected.as_bytes())
+        );
+        std::fs::read(fixture.directory.path().join("pid-claims.bin")).unwrap()
+    });
     let mut request = HttpRequest::new(body);
     *request.method_mut() = Method::POST;
     *request.uri_mut() = uri;
     *request.headers_mut() = headers;
     let prepared = fixture.http.prepare(request).await.unwrap();
     fixture.calls.fetch_add(1, Ordering::SeqCst);
+    if let Some(before) = invalid_keepalive {
+        let Prepared::Response(response) = prepared else {
+            panic!("invalid keepalive was not rejected before decoding");
+        };
+        assert!(!fixture.started.load(Ordering::SeqCst));
+        assert!(!fixture.directory.path().join("effect").exists());
+        assert_eq!(fixture.registry.available_slots(), 1);
+        assert!(fixture.owners.reserve().is_ok());
+        assert_eq!(
+            std::fs::read_dir(fixture.directory.path().join("gates"))
+                .unwrap()
+                .count(),
+            0
+        );
+        assert_eq!(
+            std::fs::read(fixture.directory.path().join("pid-claims.bin")).unwrap(),
+            before
+        );
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/connect+json"
+        );
+        fixture.keepalive_rejections.fetch_add(1, Ordering::SeqCst);
+        return response;
+    }
     let Prepared::Ready(ready) = prepared else {
         panic!("unexpected fixture preflight rejection");
     };
@@ -318,6 +363,10 @@ fn selected_json(headers: &HeaderMap, stream: bool) {
 }
 
 async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
+    assert_eq!(
+        fixture.keepalive_rejections.load(Ordering::SeqCst),
+        2 * INVALID_KEEPALIVE.len()
+    );
     let command = fixture.command.lock().unwrap().take().unwrap();
     let exit = timeout(Duration::from_secs(5), command.0.wait())
         .await
@@ -444,7 +493,7 @@ async fn probe(asynchronous: bool, mode: &str) {
         .spawn()
         .unwrap();
     let settings = json!({"url":format!("http://{address}"),"asynchronous":asynchronous,
-        "basic":asynchronous,"mode":mode,"request":request});
+        "basic":asynchronous,"mode":mode,"request":request,"keepalive_values":INVALID_KEEPALIVE});
     sdk.stdin
         .take()
         .unwrap()
