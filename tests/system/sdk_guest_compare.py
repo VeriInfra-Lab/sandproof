@@ -34,6 +34,7 @@ from sdk_pty_compare import pty_case, comparable_pty
 from sdk_file_compare import file_cases, sdk_file_cases, comparable_batch
 from sdk_list_compare import list_case, comparable_list
 from sdk_argument_compare import argument_cases, comparable_argument
+from sdk_subscriber_compare import subscriber_case, comparable_subscribers
 
 FIXED_MTIME = 1_700_000_000
 
@@ -103,6 +104,8 @@ async def cases(sandbox, inputs, asynchronous, rows=None):
     for user in inputs['users']:
         for mode in ('direct', 'reconnect-exit', 'kill'):
             await background_case(observed, user, root + '/' + user, mode)
+        for mode in ('detach-start', 'detach-peer'):
+            await subscriber_case(observed, user, root + '/' + user, mode)
         identity = await observed.invoke('commands.run', 'id -u ' + shlex.quote(user), user='root', timeout=20)
         assert identity.exit_code == 0 and not identity.stderr and identity.stdout.strip().isdecimal()
         for mode in ('direct', 'reconnect-exit', 'kill'):
@@ -129,6 +132,8 @@ def comparable(rows):
             row = comparable_list(row)
         if row['method'] == 'commands.argument_case':
             row = comparable_argument(row)
+        if row['method'] == 'commands.subscriber_case':
+            row = comparable_subscribers(row)
         if 'callbacks' in row:
             row['callbacks'] = {key: ''.join(parts) for key, parts in row['callbacks'].items()}
         if row['method'] == 'files.list' and 'result' in row:
@@ -207,6 +212,7 @@ async def exercise(args):
                  'bounded transient file observations retained separately; '
                  'complete controlled command/PTY List snapshots and known-entry retirement; '
                  'foreground/background cwd and user rejections with absent side effects and healthy follow-ups; '
+                 'three simultaneous command subscriptions with independent detach and shared terminal output; '
                  'not full fault/resource matrices or E03/E06 acceptance'}
     try:
         for cls in (Sandbox, AsyncSandbox):
