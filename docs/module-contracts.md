@@ -411,6 +411,8 @@ Rust 模式下全部准备上传由[有界上传适配器](../tools/template_bui
 
 live 只取已启动未终结的原控制句柄，connectable 另允许保留期内的原终局订阅；都不凭数值 PID 接管进程，正式分派仍须每请求重新鉴权。List 只编码当前已观察活跃项，完整回复有独立预算。真实 wait 与对应输出收尾完成时由命令 owner 保存 completed_at；终局到期从此时计算，重连、延迟唤醒或 Start 回复丢失均不刷新。读取路径即使早于定时器清理也拒绝到期项；删除只匹配原记录，未知责任不按 TTL 释放，失败不能缓存成成功 End。登记元数据到期后可归还自身名额；仍持有命令/订阅/输出的外部使用者继续占原 CommandOwners 记录名额。tag 当前只作为 List 元数据保存，重复仲裁与 tag 查询尚未实现；该组件不自行批准公开 tag 差异，不恢复跨服务活跃进程。
 
+固定 Go 的 tag 行为还包含遍历顺序差异：[getProcess](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/internal/services/process/service.go) 跳过 nil tag，匹配后继续，遇到第一个不同的非 nil tag 就停止；因此重复 tag 取停止前最后一个匹配，唯一目标也可能因别的 tag 先被访问而返回 not_found。原 sync.Map 不保证遍历顺序。[lookupTerminated](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/internal/services/process/connect.go) 则跳过不匹配项并取第一个匹配；clearTerminatedForTag 清除全部同 tag 的旧退出记录，以指针比较避免删除期间替换的新记录。空 tag 与 nil 不同。上述原方法已有受控遍历顺序观察，不表示完整 envd/SDK 双端已运行；Rust 是否保留漏查、如何仲裁重复 tag 及何时清除旧记录仍属待确认的兼容政策，不能从 PID 或 keepalive 的批准推导。
+
 已加入的 [sandproof-guest-core](../sandbox-guest-core/src/lib.rs) 只承担两个有限局部决定，不依赖 HTTP、Tokio、文件系统或宿主控制器：
 
 | 类型 / 入口 | 输入及决定 | 适配器仍须履行的责任 |
