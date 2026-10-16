@@ -33,7 +33,7 @@ BODY_LIMIT = 'command request exceeds configured body limits'
 def configured_limit(args):
     # guest_candidate validates the release and all four pins before this read.
     from tools import guest_artifacts
-    info, data = guest_artifacts.fingerprint(args.guest_configuration, 1024**2, content=True)
+    info, data = guest_artifacts.fingerprint(_GuardPath(args.guest_configuration), 1024**2, content=True)
     assert info['sha256'] == args.guest_configuration_sha256
     value = json.loads(data)['commands']['owners']['stdin_bytes']
     assert type(value) is int and 0 < value <= 65536, 'bounded input-limit fixture required'
