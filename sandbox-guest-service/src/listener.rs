@@ -16,6 +16,7 @@ use tokio::{
     time::Instant,
 };
 
+mod read_cap;
 #[cfg(test)]
 mod tests;
 
@@ -179,6 +180,11 @@ where
         let future = handler(request.map(Body::new));
         async move { future.await.map_err(HandlerFailure) }
     });
+    // Pinned Hyper's max_buf_size controls requested reserve, not the full
+    // BytesMut capacity subsequently offered to poll_read. Buffer reclaim can
+    // expose 24 KiB with a 16 KiB budget and make valid uploads fail their frame
+    // guard. Cap the original socket read, without enlarging any body budget.
+    let socket = read_cap::ReadCap::new(socket, limits.buffer_bytes);
     let connection = builder.serve_connection(TokioIo::new(socket), service);
     tokio::pin!(connection);
     if *stopped.borrow() {

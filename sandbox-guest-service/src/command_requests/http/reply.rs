@@ -109,6 +109,9 @@ impl Plan {
             });
         }
         let status = match error {
+            SelectionError::Request(crate::command_requests::Error::BodyLimit) => {
+                StatusCode::TOO_MANY_REQUESTS
+            }
             SelectionError::Compression(_) => StatusCode::NOT_IMPLEMENTED,
             SelectionError::Version(_)
             | SelectionError::Timeout(_)

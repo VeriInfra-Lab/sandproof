@@ -197,6 +197,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     .state
                     .node_is_reachable(&first.request.identity.node, now)
                 {
+                    sandproof_controller_service::application::fault::FaultRecord::application(
+                        sandproof_controller_service::application::fault::FaultStage::CenterNodeFreshness,
+                        &PortError::Busy,
+                        sandproof_controller_service::application::fault::FaultContext::default(),
+                    ).emit();
                     return Err(PortError::Busy);
                 }
                 result = Some(Self::route_for_record(record, now)?);
