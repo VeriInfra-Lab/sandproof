@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import hashlib
 import importlib.metadata
+import inspect
 import json
 import os
 from pathlib import Path
@@ -36,6 +37,84 @@ from sdk_data_samples import (
     COMMAND, ENV, FILES, NONZERO_COMMAND, file_entries, validate_command,
     validate_content, validate_entries, validate_file_info, validate_nonzero,
 )
+
+
+async def call(function, *args, **kwargs):
+    if inspect.iscoroutinefunction(function):
+        return await function(*args, **kwargs)
+    result = await asyncio.to_thread(function, *args, **kwargs)
+    return await result if inspect.isawaitable(result) else result
+
+
+def public_pid(pid):
+    assert type(pid) is int and 0 < pid <= 4194304, 'invalid original command PID'
+    return pid
+
+
+class KnownCommand:
+    """One returned Start identity; subscription close and process End are distinct."""
+    def __init__(self, commands, original):
+        self.commands, self.original = commands, original
+        self.handles, self.closed = [original], set()
+        self.pid, self.finished, self.signal_attempted = None, False, False
+
+    async def __aenter__(self):
+        try:
+            self.pid = public_pid(self.original.pid)
+        except BaseException as error:
+            await self.cleanup(error)
+            raise
+        return self
+
+    async def __aexit__(self, _kind, error, _traceback):
+        await self.cleanup(error)
+        return False
+
+    def add(self, handle):
+        # Retain even a wrong-PID reply so its subscription can be closed.
+        if all(handle is not known for known in self.handles):
+            self.handles.append(handle)
+        assert public_pid(handle.pid) == self.pid, 'reconnect changed original PID'
+        return handle
+
+    async def wait(self, handle, **kwargs):
+        assert any(handle is known for known in self.handles)
+        assert public_pid(handle.pid) == self.pid
+        try:
+            result = await call(handle.wait, **kwargs)
+        except CommandExitException:
+            self.finished = True
+            raise
+        self.finished = True
+        return result
+
+    async def disconnect(self, handle):
+        assert any(handle is known for known in self.handles)
+        if id(handle) not in self.closed:
+            self.closed.add(id(handle))  # Unknown replies never cause a retry.
+            await call(handle.disconnect)
+
+    async def kill(self, **kwargs):
+        assert self.pid is not None and not self.finished, 'no unfinished original command'
+        assert not self.signal_attempted, 'original signal was already attempted'
+        self.signal_attempted = True
+        return await call(self.commands.kill, self.pid, **kwargs)
+
+    async def cleanup(self, primary):
+        errors = []
+        if self.pid is not None and not self.finished and not self.signal_attempted:
+            try:
+                await self.kill(request_timeout=15)
+            except BaseException as error:
+                errors.append(error)
+        for handle in reversed(self.handles):
+            try:
+                await self.disconnect(handle)
+            except BaseException as error:
+                errors.append(error)
+        if errors:
+            raise BaseExceptionGroup('known command and subscription cleanup failed',
+                                     ([primary] if primary is not None else []) + errors)
 
 
 def guest_candidate(args):
@@ -100,6 +179,54 @@ def barrier_command(directory):
             f"read -r value < {gate}; printf 'done\\n'")
 
 
+async def command_cases(sandbox, directory, user, *, asynchronous):
+    ready = asyncio.Event()
+    ready_output = ""
+
+    def on_stdout(chunk):
+        nonlocal ready_output
+        ready_output += chunk
+        if "ready\n" in ready_output:
+            ready.set()
+
+    def read_ready(handle):
+        for stdout, _stderr, _pty in handle:
+            on_stdout(stdout or "")
+            if ready.is_set():
+                return True
+        return False
+
+    handle = await call(sandbox.commands.run, barrier_command(directory),
+                        cwd=directory, user=user, background=True, timeout=30,
+                        **({'on_stdout': on_stdout} if asynchronous else {}))
+    async with KnownCommand(sandbox.commands, handle) as owned:
+        if asynchronous:
+            # The pinned async handle consumes output through its callbacks.
+            await asyncio.wait_for(ready.wait(), timeout=15)
+        elif not await call(read_ready, handle):
+            await owned.wait(handle)  # Record any actual End before rejecting.
+            raise AssertionError("background command missed barrier")
+        await owned.disconnect(handle)
+        resumed = owned.add(await call(sandbox.commands.connect, owned.pid, timeout=30))
+        await call(sandbox.commands.run,
+                   f"printf 'release\\n' > {shlex.quote(directory + '/release.fifo')}", user=user)
+        result = await owned.wait(resumed)
+        assert (result.stdout, result.stderr, result.exit_code, result.error) == ('done\n', '', 0, None)
+        assert await call(sandbox.files.read, f"{directory}/starts", user=user) == "once\n"
+
+    killed = await call(sandbox.commands.run, "sleep 60", user=user, background=True, timeout=30)
+    async with KnownCommand(sandbox.commands, killed) as owned:
+        confirmed = await owned.kill(request_timeout=15)
+        assert confirmed, "command kill not confirmed"
+        try:
+            await owned.wait(killed)
+        except CommandExitException as error:
+            assert error.exit_code != 0
+        else:
+            raise AssertionError("killed command reported success")
+    return {"reconnected_pid": handle.pid, "killed_pid": killed.pid}
+
+
 def sync_case(sandbox, directory, user):
     home = sandbox.commands.run("printf '%s' \"$HOME\"", user=user).stdout
     default_cwd = sandbox.commands.run("pwd", user=user)
@@ -127,35 +254,9 @@ def sync_case(sandbox, directory, user):
         validate_nonzero(error)
     else:
         raise AssertionError("nonzero command reported success")
-    handle = sandbox.commands.run(barrier_command(directory), cwd=directory, user=user,
-                                  background=True, timeout=30)
-    try:
-        ready = ""
-        for stdout, _stderr, _pty in handle:
-            ready += stdout or ""
-            if "ready\n" in ready:
-                break
-        else:
-            raise AssertionError("background command missed barrier")
-        handle.disconnect()
-        resumed = sandbox.commands.connect(handle.pid, timeout=30)
-        assert resumed.pid == handle.pid
-        sandbox.commands.run(f"printf 'release\\n' > {shlex.quote(directory + '/release.fifo')}", user=user)
-        assert "done\n" in resumed.wait().stdout
-        assert sandbox.files.read(f"{directory}/starts", user=user) == "once\n"
-    finally:
-        handle.kill()  # Only the known PID, never another Start to discover its result.
-    killed = sandbox.commands.run("sleep 60", user=user, background=True, timeout=30)
-    _kill_confirmed = (killed.kill())
-    assert _kill_confirmed
-    try:
-        killed.wait()
-    except CommandExitException as error:
-        assert error.exit_code != 0
-    else:
-        raise AssertionError("killed command reported success")
+    commands = asyncio.run(command_cases(sandbox, directory, user, asynchronous=False))
     assert sandbox.commands.run("printf healthy", user=user).stdout == "healthy"
-    return {"user": user, "sha256": hashes, "reconnected_pid": handle.pid, "killed_pid": killed.pid}
+    return {"user": user, "sha256": hashes, **commands}
 
 
 async def async_case(sandbox, directory, user):
@@ -185,39 +286,9 @@ async def async_case(sandbox, directory, user):
         validate_nonzero(error)
     else:
         raise AssertionError("async nonzero command reported success")
-    ready = asyncio.Event()
-    ready_output = ""
-
-    def on_stdout(chunk):
-        nonlocal ready_output
-        ready_output += chunk
-        if "ready\n" in ready_output:
-            ready.set()
-
-    handle = await sandbox.commands.run(barrier_command(directory), cwd=directory, user=user,
-                                        background=True, timeout=30, on_stdout=on_stdout)
-    try:
-        # Unlike sync handles, the pinned async SDK delivers output callbacks.
-        await asyncio.wait_for(ready.wait(), timeout=15)
-        await handle.disconnect()
-        resumed = await sandbox.commands.connect(handle.pid, timeout=30)
-        assert resumed.pid == handle.pid
-        await sandbox.commands.run(f"printf 'release\\n' > {shlex.quote(directory + '/release.fifo')}", user=user)
-        assert "done\n" in (await resumed.wait()).stdout
-        assert await sandbox.files.read(f"{directory}/starts", user=user) == "once\n"
-    finally:
-        await handle.kill()
-    killed = await sandbox.commands.run("sleep 60", user=user, background=True, timeout=30)
-    _kill_confirmed = (await killed.kill())
-    assert _kill_confirmed
-    try:
-        await killed.wait()
-    except CommandExitException as error:
-        assert error.exit_code != 0
-    else:
-        raise AssertionError("async killed command reported success")
+    commands = await command_cases(sandbox, directory, user, asynchronous=True)
     assert (await sandbox.commands.run("printf healthy", user=user)).stdout == "healthy"
-    return {"user": user, "sha256": hashes, "reconnected_pid": handle.pid, "killed_pid": killed.pid}
+    return {"user": user, "sha256": hashes, **commands}
 
 
 async def async_service_cases(args, owner, template, candidate):
