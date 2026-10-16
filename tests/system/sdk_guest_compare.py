@@ -31,6 +31,7 @@ from sdk_server_smoke import options
 from sdk_observations import CONTENT_LIMIT, Calls, Capture, value
 from sdk_background_compare import background_case, comparable_background
 from sdk_pty_compare import pty_case, comparable_pty
+from sdk_file_compare import file_cases, sdk_file_cases, comparable_batch
 
 FIXED_MTIME = 1_700_000_000
 
@@ -95,6 +96,7 @@ async def cases(sandbox, inputs, asynchronous, rows=None):
                               user=user, timeout=15, expected=InvalidArgumentException)
     await observed.invoke('commands.run', 'printf forbidden', user=inputs['unknown_user'],
                           timeout=15, expected=AuthenticationException)
+    await file_cases(observed, inputs)
     for user in inputs['users']:
         for mode in ('direct', 'reconnect-exit', 'kill'):
             await background_case(observed, user, root + '/' + user, mode)
@@ -117,6 +119,8 @@ def comparable(rows):
             row = comparable_background(row)
         if row['method'] == 'pty.case':
             row = comparable_pty(row)
+        if row['method'] == 'files.octet_batch':
+            row = comparable_batch(row)
         if 'callbacks' in row:
             row['callbacks'] = {key: ''.join(parts) for key, parts in row['callbacks'].items()}
         if row['method'] == 'files.list' and 'result' in row:
@@ -158,9 +162,12 @@ async def paired(cls, owner, inputs, go, rust, templates, item):
             entry['before'] = await observe()
             entry['calls'] = []
             entry['calls'] = await cases(sandbox, inputs, cls is AsyncSandbox, entry['calls'])
+            entry['sdk_files'] = []
+            await sdk_file_cases(sandbox, inputs, cls is AsyncSandbox, entry['sdk_files'])
             entry['after'] = await observe()
             assert entry['after'] == entry['before'], kind + ' daemon changed during paired cases'
         compare(item['pair'][0]['calls'], item['pair'][1]['calls'], 'Go/Rust')
+        compare(item['pair'][0]['sdk_files'], item['pair'][1]['sdk_files'], 'Go/Rust SDK-specific octet batches')
     except BaseException as error:
         failure = error
     try:
@@ -187,6 +194,9 @@ async def exercise(args):
     report = {'schema_version': 1, 'sdk_version': '2.51.0', 'inputs': inputs, 'results': results,
         'scope': 'paired foreground/background commands and PTY, stdin, resize, same-PID reconnect, exit/kill and retained End; '
                  'cwd/account errors, callbacks and unary/batch/gzip/stream files; '
+                 'file user/home/ownership, path errors and multipart partial writes; '
+                 'octet partial batches compared Go/Rust within each SDK mode, '
+                 'bounded transient file observations retained separately; '
                  'not List, full fault/resource matrices or E03/E06 acceptance'}
     try:
         for cls in (Sandbox, AsyncSandbox):

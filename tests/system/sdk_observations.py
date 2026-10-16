@@ -58,7 +58,7 @@ class Calls:
         self.sandbox, self.asynchronous = sandbox, asynchronous
         self.rows = []
 
-    async def invoke(self, method, *args, expected=None, **kwargs):
+    async def invoke(self, method, *args, expected=None, allow_success=False, **kwargs):
         target = self.sandbox
         for segment in method.split('.'):
             target = getattr(target, segment)
@@ -73,10 +73,10 @@ class Calls:
         evidence = {} if callbacks is None else {
             'callbacks': {channel: capture.parts for channel, capture in callbacks.items()}}
         return await self.operation(method, target, *args, expected=expected,
-                                    evidence=evidence, validate=validate, **kwargs)
+                                    allow_success=allow_success, evidence=evidence, validate=validate, **kwargs)
 
     async def operation(self, method, target, *args, expected=None, serialize=value,
-                        evidence=None, validate=None, **kwargs):
+                        evidence=None, validate=None, allow_success=False, **kwargs):
         row = {'method': method, 'args': value(args), 'kwargs': value(kwargs),
                'status': 'incomplete', **(evidence or {})}
         self.rows.append(row)
@@ -92,7 +92,7 @@ class Calls:
                 raise
         else:
             row['result'] = serialize(result)
-            assert expected is None, (method, 'expected failure returned success')
+            assert expected is None or allow_success, (method, 'expected failure returned success')
         if validate is not None:
             validate(result)
         row['status'] = 'complete'

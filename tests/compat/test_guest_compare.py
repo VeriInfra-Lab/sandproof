@@ -189,6 +189,9 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.async_create = self.replace(probe.AsyncSandbox, 'create', AsyncMock(side_effect=self.guests[2:]))
         self.observe = self.replace(probe, 'observe_candidate', AsyncMock(return_value={'pinned': 'rust'}))
         self.run_cases = self.replace(probe, 'cases', AsyncMock(side_effect=lambda *_args: rows()))
+        async def file_cases(_sandbox, _inputs, asynchronous, partial):
+            partial.append(dict(method='files.mode', args=[asynchronous], status='complete'))
+        self.run_files = self.replace(probe, 'sdk_file_cases', AsyncMock(side_effect=file_cases))
 
     def replace(self, target, name, replacement):
         return self.stack.enter_context(patch.object(target, name, replacement))
@@ -210,6 +213,9 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.run_cases.await_count, 4)
         plans = [call.args[1] for call in self.run_cases.await_args_list]
         self.assertTrue(all(item is plans[0] for item in plans))
+        self.assertEqual(self.run_files.await_count, 4)
+        self.assertTrue(all(call.args[1] is plans[0] for call in self.run_files.await_args_list))
+        self.assertEqual([call.args[2] for call in self.run_files.await_args_list], [False, False, True, True])
         self.assertEqual(plans[0], result['inputs'])
         for create in (self.sync_create, self.async_create):
             self.assertEqual([call.kwargs['template'] for call in create.call_args_list],
@@ -284,6 +290,31 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.async_create.assert_not_called()
         for guest in self.guests[:2]:
             guest.kill.assert_called_once()
+
+    async def test_sdk_specific_batch_mismatch_is_rejected_and_partial_failure_is_retained(self):
+        async def mismatch(sandbox, _inputs, _asynchronous, partial):
+            partial.append(dict(method='files.mode', args=[sandbox.sandbox_id], status='complete'))
+        self.run_files.side_effect = mismatch
+        result = await self.run_probe(AssertionError)
+        self.assertIn('SDK-specific octet', str(self.failure))
+        self.assertEqual(len(result['results'][0]['pair']), 2)
+        self.async_create.assert_not_called()
+        for guest in self.guests[:2]:
+            guest.kill.assert_called_once()
+
+    async def test_incomplete_batch_observations_survive_without_repeating_uploads(self):
+        async def incomplete(_sandbox, _inputs, _asynchronous, partial):
+            partial.append(dict(method='files.octet_batch', status='incomplete',
+                                settlement={'status': 'incomplete', 'calls': ['partial evidence']}))
+            raise TimeoutError('batch observation incomplete')
+        self.run_files.side_effect = incomplete
+        result = await self.run_probe(TimeoutError)
+        entry = result['results'][0]['pair'][0]
+        self.assertEqual(entry['sdk_files'][0]['settlement']['calls'], ['partial evidence'])
+        self.assertNotIn('after', entry)
+        self.run_files.assert_awaited_once()
+        self.sync_create.assert_called_once()
+        self.guests[0].kill.assert_called_once()
 
     async def test_missing_rust_pin_or_same_template_rejects_before_create(self):
         self.args.guest_manifest_sha256 = None
