@@ -30,6 +30,7 @@ from sdk_data_samples import (COMMAND, ENV, FILES, NONZERO_COMMAND, file_entries
 from sdk_server_smoke import options
 from sdk_observations import CONTENT_LIMIT, Calls, Capture, value
 from sdk_background_compare import background_case, comparable_background
+from sdk_pty_compare import pty_case, comparable_pty
 
 FIXED_MTIME = 1_700_000_000
 
@@ -97,6 +98,10 @@ async def cases(sandbox, inputs, asynchronous, rows=None):
     for user in inputs['users']:
         for mode in ('direct', 'reconnect-exit', 'kill'):
             await background_case(observed, user, root + '/' + user, mode)
+        identity = await observed.invoke('commands.run', 'id -u ' + shlex.quote(user), user='root', timeout=20)
+        assert identity.exit_code == 0 and not identity.stderr and identity.stdout.strip().isdecimal()
+        for mode in ('direct', 'reconnect-exit', 'kill'):
+            await pty_case(observed, user, int(identity.stdout.strip()), root + '/' + user, mode)
     healthy = await observed.invoke('commands.run', 'printf paired-healthy', user='ubuntu', timeout=15)
     assert (healthy.stdout, healthy.stderr, healthy.exit_code) == ('paired-healthy', '', 0)
     return observed.rows
@@ -110,6 +115,8 @@ def comparable(rows):
         row = {key: part for key, part in original.items() if key != 'transport_chunk_bytes'}
         if row['method'] == 'background.case':
             row = comparable_background(row)
+        if row['method'] == 'pty.case':
+            row = comparable_pty(row)
         if 'callbacks' in row:
             row['callbacks'] = {key: ''.join(parts) for key, parts in row['callbacks'].items()}
         if row['method'] == 'files.list' and 'result' in row:
@@ -178,9 +185,9 @@ async def exercise(args):
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     results = []
     report = {'schema_version': 1, 'sdk_version': '2.51.0', 'inputs': inputs, 'results': results,
-        'scope': 'paired foreground/background commands, stdin, same-PID reconnect, exit/kill and retained End; '
+        'scope': 'paired foreground/background commands and PTY, stdin, resize, same-PID reconnect, exit/kill and retained End; '
                  'cwd/account errors, callbacks and unary/batch/gzip/stream files; '
-                 'not List/PTY, full fault/resource matrices or E03/E06 acceptance'}
+                 'not List, full fault/resource matrices or E03/E06 acceptance'}
     try:
         for cls in (Sandbox, AsyncSandbox):
             item = {'sdk': cls.__name__, 'pair': [], 'create_attempts': []}

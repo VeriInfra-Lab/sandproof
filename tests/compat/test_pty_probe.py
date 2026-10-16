@@ -30,6 +30,7 @@ from sdk_support import isolated_sdk_environment
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'system'))
 import sdk_pty as probe
+import sdk_pty_compare as paired_probe
 
 
 def winsize(fd, rows, cols):
@@ -60,8 +61,8 @@ def read_ready(fd, master, capture):
 
 class PrivatePtyProgramTests(unittest.TestCase):
     def test_exact_bootstrap_raw_all_bytes_merged_output_resize_exit_and_kill(self):
-        for exit_code in (0, 17, -9):
-            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as temp:
+        for exit_code, report_ready in ((code, flag) for code in (0, 17, -9) for flag in (False, True)):
+            with self.subTest(exit_code=exit_code, report_ready=report_ready), tempfile.TemporaryDirectory() as temp:
                 directory = str(Path(temp).resolve())
                 os.mkfifo(directory + '/ready', 0o600)
                 Path(directory, 'program.py').write_text(probe.GUEST_PROGRAM)
@@ -77,7 +78,10 @@ class PrivatePtyProgramTests(unittest.TestCase):
                         env={**os.environ, 'SANDPROOF_PTY_VALUE': probe.VALUE}, start_new_session=True)
                     os.close(slave)
                     slave = None
-                    line = probe.bootstrap(probe.configuration(directory, max(exit_code, 0)))
+                    config = probe.configuration(directory, max(exit_code, 0))
+                    if report_ready:
+                        config['report_ready'] = True
+                    line = probe.bootstrap(config)
                     self.assertEqual(os.write(master, line), len(line))
                     capture = probe.Capture()
                     ready = read_ready(fifo, master, capture)
@@ -106,9 +110,13 @@ class PrivatePtyProgramTests(unittest.TestCase):
                     self.assertEqual(child.wait(timeout=5), exit_code)
                     if exit_code == -9:
                         self.assertNotIn(probe.HEADER, capture.data)
+                        if report_ready:
+                            self.assertTrue(capture.data.endswith(probe.READY_HEADER))
                     else:
                         result = probe.validate_frame(capture.data, ready, [30, 100])
                         self.assertEqual(result['received_bytes'], len(probe.PAYLOAD))
+                        if report_ready:
+                            paired_probe.frame(bytes(capture.data), ready, startup=True)
                     self.assertEqual(Path(directory, 'started').read_bytes(), b'once\n')
                 finally:
                     if child is not None:

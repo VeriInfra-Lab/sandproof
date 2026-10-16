@@ -91,8 +91,8 @@ class Calls:
             if expected is None or type(error) is not expected:
                 raise
         else:
-            assert expected is None, (method, 'expected failure returned success')
             row['result'] = serialize(result)
+            assert expected is None, (method, 'expected failure returned success')
         if validate is not None:
             validate(result)
         row['status'] = 'complete'

@@ -29,6 +29,7 @@ from sdk_server_smoke import options
 
 PAYLOAD = bytes(range(256)) * 9
 HEADER = b'\x00sandproof-pty\x00'
+READY_HEADER = b'\x00sandproof-pty-ready\x00'
 OUTPUT_LIMIT = 128 * 1024
 VALUE = 'PTY value 中文'
 
@@ -50,6 +51,7 @@ ready=dict(pid=os.getpid(),uid=os.getuid(),cwd=os.getcwd(),
            value=os.environ.get('SANDPROOF_PTY_VALUE'),
            size=size(),tty=[os.isatty(fd) for fd in (0,1,2)])
 with open(c['directory']+'/started','xb') as f: f.write(b'once\n')
+if c.get('report_ready'): write(1,b'\0sandproof-pty-ready\0')
 with open(c['directory']+'/ready','wb',buffering=0) as f:
     f.write(json.dumps(ready).encode()+b'\n')
 data=b''

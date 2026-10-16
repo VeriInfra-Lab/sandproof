@@ -563,11 +563,11 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 [同输入双端数据探针](../tests/system/sdk_guest_compare.py)在同一固定 SDK 2.51.0 的同步/异步模式下，各创建固定 Go 与 Rust 候选两台独立 VM。必须显式传入 `--go-template` 和上述完整 Rust 候选参数；同一实例 API/网关、用户、临时路径、未知账户名、输入字节及超时计划只生成一次，复用[原命令/文件样例](../tests/compat/sdk_data_samples.py)。两端分别核对调用前后的实际 daemon 身份；Go 限定[固定 base 输入](../tests/system/base-inputs.json)的二进制摘要/长度、`/usr/local/bin/envd -verbose`、root/0755、原 exe inode/start_ticks/监听 socket，源码须匹配原 runtime 锁。它不接受其他安装路径、不同摘要的同版本文件或 generic Go 模板作为这个基线，Rust 继续使用四项原产物 pin。
 
-本入口的预定比较规则：逐项比较实际 SDK 调用参数、返回值、错误的准确类型/文本及非零退出字段；stdout/stderr 分别保持回调内顺序，原分块仍记录，比较时只拼接各自通道；文件流比较完整字节，同时记录块长度。ListDir 保持原词法深度优先顺序，不排序、不丢目录属性，并拒绝重复路径；文件和目录的实际 mtime 在读取前统一设置为 1700000000 秒并校验，返回的时间、大小、模式、归属及 metadata 均保留。JSON 比较区分布尔与整数。路径、错误和时间字段保持原样；后台命令的 PID 采用下述按原 Start 验证的显式字段规则，前台结果不做 PID 替换。daemon 运行身份放在独立证据中，不作为跨 VM 相等字段。此规则与样例在首次获准实跑前供技术复核，不据本地替身成绩冻结完整 E03。
+本入口的预定比较规则：逐项比较实际 SDK 调用参数、返回值、错误的准确类型/文本及非零退出字段；stdout/stderr 分别保持回调内顺序，原分块仍记录，比较时只拼接各自通道；文件流比较完整字节，同时记录块长度。ListDir 保持原词法深度优先顺序，不排序、不丢目录属性，并拒绝重复路径；文件和目录的实际 mtime 在读取前统一设置为 1700000000 秒并校验，返回的时间、大小、模式、归属及 metadata 均保留。JSON 比较区分布尔与整数。路径、错误和时间字段保持原样；后台命令与 PTY 的 PID 采用下述按原 Start 验证的显式字段规则；仅 PTY 测试程序的 FIFO 身份结果按后述严格规则处理，其他前台结果不做 PID 替换。daemon 运行身份放在独立证据中，不作为跨 VM 相等字段。此规则与样例在首次获准实跑前供技术复核，不据本地替身成绩冻结完整 E03。
 
 该片段覆盖 root/ubuntu 的前台命令、cwd/环境、非零退出、缺失 cwd/账户错误，以及目录创建/重复创建、原批次上传、gzip 覆盖、普通/流式二进制和零字节下载、属性/递归列表、移动/删除及缺失文件错误；最后检查合法命令仍可执行。前台案例命令执行及文件请求各 15 秒、身份观察命令执行 20 秒、原 SDK 请求默认 30 秒、每台 VM 300 秒；命令回调与下载各限制本测试输入的 128 KiB 观察材料，不改变产品输出上限。创建结果未知只记录该原尝试，不重试或补造实例身份；失败报告保留已经取得的两端结果、尚未完成的调用和已知 VM 的销毁确认，全部已知实例各尝试一次收尾并保留原错误与所有收尾错误。SDK 销毁确认不代替宿主物理资源审计，未知创建也不能因已知 VM 销毁而消失。
 
-[双端探针回归](../tests/compat/test_guest_compare.py)核对输入/输出/错误/类型/列表顺序变化不能通过、分块差异不改变内容、超限与截断不能成为完整结果、部分证据与未知创建不重试、前后身份变化拒绝和所有已知 VM 收尾。原固定同步/异步 SDK 另通过既有合成回环服务实际执行记录器的回调、非零退出、文件流及错误解析；其余编排使用受控 SDK 操作，不启动产品 VM。该入口尚未在真实 Go/Rust VM 运行，不包含完整 List/PTY、故障/资源矩阵、正式服务重启或完整 E03/E06；C02 固定监督调用集与发布门槛保持原样。
+[双端探针回归](../tests/compat/test_guest_compare.py)核对输入/输出/错误/类型/列表顺序变化不能通过、分块差异不改变内容、超限与截断不能成为完整结果、部分证据与未知创建不重试、前后身份变化拒绝和所有已知 VM 收尾。原固定同步/异步 SDK 另通过既有合成回环服务实际执行记录器的回调、非零退出、文件流及错误解析；其余编排使用受控 SDK 操作，不启动产品 VM。该入口尚未在真实 Go/Rust VM 运行，不包含完整 List、故障/资源矩阵、正式服务重启或完整 E03/E06；C02 固定监督调用集与发布门槛保持原样。
 
 #503 的前台/文件双端探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38807809473) 通过：源 4eeba251b499ce2c643fc0cc31a81aea75e779d2、checkout bdf96feec3f0f443bcb74bfa209d25bd93554cda；固定 SDK 121 项、封存 Redis 与四项 CI 成功。它不包含以下后续后台扩展，也不表示已执行产品 VM 对照。
 
@@ -576,6 +576,16 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 后台 PID 的预定比较规则限定为每个案例唯一原 Start 返回的正整数 PID：执行时先验证每个 Connect 返回值，控制请求只使用已知原值；原报告保存 Start/Connect、句柄、订阅和控制参数中的全部数字。比较副本只将该案例顶层 PID、Start/Connect 的 result.pid、Connect/SendStdin/CloseStdin/Kill 的第一个参数、句柄操作的 handle_pid、订阅的 pid 替换为同一个逻辑引用，且每项必须先与该端原 Start PID 严格相等。布尔 PID、错误引用、缺失终局、重复 Start 或未完成调用均拒绝；stdout/stderr、错误文本、命令字符串、文件内容、其他数字和元数据不按 PID 搜索或替换。各订阅的回调只合并同一通道分块。此规则仍须随入口在真实执行前技术复核，不能据局部回归冻结完整 E03。
 
 后台失败保留部分调用与订阅；未知 Start 不补造 PID，不重试 Start。错误 Connect PID 只用于关闭返回的订阅，失败信号只发向原已知 PID；Kill 或 disconnect 的未知回执不重复发送。所有已知句柄逐个收尾，保留原失败及全部收尾错误，外层仍销毁已知 VM。[后台回归](../tests/compat/test_background_compare.py)使用原固定同步/异步 Commands/CommandHandle 和受控 RPC 事件核对上述步骤、输入字节、错误 PID、输出损坏、缺 End、历史重放及未知结果；setup/FIFO 读者在该夹具中受控返回。另在真实私有子进程运行同一完整命令程序，实查 FIFO 屏障、空/二进制 stdin、真实退出和 kill 后 wait；不读取宿主 shell profile、不切换身份、不执行 envd。共享[记录器](../tests/system/sdk_observations.py)继续接受原前台/文件回归。当前扩展尚未在真实 Go/Rust VM 执行，不能代替网关、正式来宾、进程树、完整 E04 或 KVM 验收。
+
+#504 的后台双端编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38825340099) 通过：源 a216e3b6c8b0f2d214641325151b53a5f6688cf9、checkout 752d92c3057036fa4eb3b9f8ab1a0824e467d0b4；新增 8 项后台回归、固定 SDK 129 项、封存 Redis 与四项 CI 成功。它不包含以下后续 PTY 扩展，也不表示产品 VM 双端验收通过。
+
+[PTY 双端片段](../tests/system/sdk_pty_compare.py)复用同一输入计划和固定 SDK 的原 Pty/CommandHandle，对 root/ubuntu 分别检查直接退出、断线原 PID 重连后退出 17，以及输入等待中的 SIGKILL。通过 root 的原命令查询所选账户 UID；使用同一私有目录、上传程序、短 bootstrap、环境值和全部 byte 载荷，检查实际 PID/UID/cwd/环境/三个 tty 描述符、初始尺寸和 resize；重连案例保留 65536 偏移的 uint16 尺寸窄化检查。结束后原 PID Connect 只返回同一终局，不得重放数据，一次性标记必须仍只有一次执行。每次 SDK 调用、结果/错误与原始 PTY 字节分块均保存，含失败前的部分观察。
+
+共用来宾程序新增可选 report_ready：写好一次性标记并进入 raw 模式后，先向 PTY 写固定的 NUL 分隔 ready 标记，再写 FIFO 中的完整身份 JSON；旧独立 PTY 探针不启用此选项，原行为保持。同步 SDK 通过公开迭代接口消费到该字节标记，后续 wait 继续原事件流；异步 SDK 使用原 on_data 回调并等待标记，最长 20 秒。同步读取受原 60 秒流期限限制。只有已观察标记才启动 FIFO 读者，FIFO 身份完整匹配后才断线、调整窗口或发送载荷；不用 sleep 猜测启动时序。所有启动提示与命令回显原字节都保留并精确比较；不忽略未知前缀，不为模板登录配置、hostname 或任意输出差异设置宽松替换。
+
+PTY 的预定 PID 规则只处理已严格匹配原 Start 的顶层/句柄/订阅 PID、Pty 控制参数、Start/Connect 的 result.pid，以及测试程序 FIFO JSON 和最终二进制帧中 ready.pid。FIFO stdout 必须逐字节等于该上传程序的规范 JSON 加换行；二进制帧必须完整匹配 NUL 头、准确长度、规范 JSON、窗口值及原载荷。验证后仅在比较副本中重建这个确定的 PID 字段及由其位数决定的帧长度，原 JSON/帧字节仍留在证据中；不接受重复 JSON 键、额外空白、替代编码、截断或多余内容。所有其他输入、UID/环境/尺寸、错误文本、startup 前缀和载荷保持精确相等；只合并回调分块。未知 Start/信号/disconnect 不重放，错误 Connect 仅关闭该订阅，失败收尾只控制原 PID，并汇总原错误与所有收尾错误。它不调用全局 List，也不把 End 当成同步列表移除或整棵进程树停止。
+
+[PTY 对照回归](../tests/compat/test_pty_compare.py)通过原固定同步/异步 SDK 和受控 RPC 事件检查相同步骤、不同位数原 PID、启动前缀、分块、窗口、输入、真实 SDK 终局解析、错误重连/ready 身份、坏帧/历史重放、未知回执与部分收尾失败；setup/文件/身份读者在该夹具中受控返回。原[真实私有 PTY 检查](../tests/compat/test_pty_probe.py)另同时运行旧模式和可选 ready 模式的同一上传程序，检查完整字节、规范帧、resize、退出和 kill/wait；不读取宿主 profile、不执行 envd 或用户切换。此扩展已实现但尚未执行真实 Go/Rust VM、正式网关/来宾、完整故障/期限/资源矩阵或 KVM；比较规则仍须首次获准实跑前技术复核，C02 固定调用集和发布门槛未改。
 
 [stdin](../tests/system/sdk_command_input.py)、[命令参数](../tests/system/sdk_command_arguments.py)和[文件权限/部分批次](../tests/system/sdk_file_permissions.py)探针也接受上述同一组候选参数：同步/异步模式均在原调用集前后核对身份，文件探针分别核对两台实例，报告将每份观察绑定到原 sandbox_id；原调用输入、VM 寿命和未指定参数时的报告保持不变。已知实例按逆序各尝试一次销毁，某台拒绝、报错或取消不能跳过另一台；全部收尾异常连同原调用异常保留，创建结果未知不重试。[受控编排回归](../tests/compat/test_candidate_probes.py)覆盖这些顺序、身份变化拒绝和部分失败；它替换 SDK 操作及案例函数，不执行真实案例、主机 canary 或产品 VM。SDK 销毁确认仍须由获准的实机监督器补充精确资源审计。
 
