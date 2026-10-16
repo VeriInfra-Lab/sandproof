@@ -62,22 +62,25 @@ check_begin preflight setup
 bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode" --preflight-only
 check_end
 
-# Long-running state-machine tests are CPU-heavy even with no other CI job.
-# Optimize executable code, never remove checks. Use the same settings for dev
-# helpers and tests so Cargo can reuse dependencies between original commands.
+# Optimize only the measured controller hotspots, not the whole workspace.
+# Fresh CI guests do not reuse incremental caches. Limited debug information
+# keeps backtrace line numbers without generating full variable/type metadata.
 # Explicitly override ambient profile knobs: debug-only fault injection and
 # arithmetic panic checks must remain enabled, including in dependencies.
-export CARGO_PROFILE_DEV_OPT_LEVEL=1
-export CARGO_PROFILE_TEST_OPT_LEVEL=1
+export CARGO_PROFILE_DEV_OPT_LEVEL=0
+export CARGO_PROFILE_TEST_OPT_LEVEL=0
+export CARGO_PROFILE_DEV_DEBUG=1
+export CARGO_PROFILE_TEST_DEBUG=1
 export CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true
 export CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true
 export CARGO_PROFILE_DEV_OVERFLOW_CHECKS=true
 export CARGO_PROFILE_TEST_OVERFLOW_CHECKS=true
+export CARGO_INCREMENTAL=0
 
 # Standalone node contracts must not pull in the journal/C toolchain. Feature
 # unification in the complete server is expected and is checked separately.
 check_begin node-dependency-contract contract
-node_dependencies="$(cargo tree --locked -p sandproof-node --edges normal,build --prefix none --format '{p}')"
+node_dependencies="$(cargo --config scripts/check-profiles.toml tree --locked -p sandproof-node --edges normal,build --prefix none --format '{p}')"
 case "$node_dependencies" in
   *'rusqlite '*|*'libsqlite3-sys '*)
     echo 'standalone node unexpectedly depends on SQLite' >&2
@@ -86,10 +89,10 @@ case "$node_dependencies" in
 esac
 check_end
 check_begin node-clippy lint
-cargo clippy --locked -p sandproof-node --lib -- -D warnings
+cargo --config scripts/check-profiles.toml clippy --locked -p sandproof-node --lib -- -D warnings
 check_end
 check_begin controller-no-default-tests test
-cargo test --locked -p sandproof-controller-service --no-default-features --lib
+cargo --config scripts/check-profiles.toml test --locked -p sandproof-controller-service --no-default-features --lib
 check_end
 
 # Build the real reducer once outside the component-test timeout. Fresh CI
@@ -97,7 +100,7 @@ check_end
 # The enclosing CI job deadline remains unchanged and a build failure is fatal.
 if [[ "$check_mode" == linux ]]; then
   check_begin reducer-build build
-  cargo build --locked -p sandproof-controller-service --bin sandproof-window-reducer
+  cargo --config scripts/check-profiles.toml build --locked -p sandproof-controller-service --bin sandproof-window-reducer
   check_end
 fi
 check_begin tool-tests test
@@ -107,22 +110,22 @@ check_begin documentation documentation
 bash scripts/python-entry.sh tools/check_docs.py
 check_end
 check_begin rust-format lint
-cargo fmt --all -- --check
+cargo --config scripts/check-profiles.toml fmt --all -- --check
 check_end
 check_begin workspace-clippy lint
-cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo --config scripts/check-profiles.toml clippy --workspace --all-targets --locked -- -D warnings
 check_end
 check_begin workspace-tests test
-cargo test --workspace --all-targets --locked
+cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked
 check_end
 check_begin workspace-doctests test
-cargo test --workspace --doc --locked
+cargo --config scripts/check-profiles.toml test --workspace --doc --locked
 check_end
 check_begin diagnostics-clippy lint
-cargo clippy --locked -p sandproof-controller-service --all-targets --features contention-diagnostics -- -D warnings
+cargo --config scripts/check-profiles.toml clippy --locked -p sandproof-controller-service --all-targets --features contention-diagnostics -- -D warnings
 check_end
 check_begin diagnostics-tests test
-cargo test --locked -p sandproof-controller-service --features contention-diagnostics
+cargo --config scripts/check-profiles.toml test --locked -p sandproof-controller-service --features contention-diagnostics
 check_end
 
 if [[ "$check_mode" == linux ]]; then

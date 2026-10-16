@@ -187,15 +187,20 @@ if os.environ.get('CHECK_FAIL_TOOLS') and '--preflight-only' not in sys.argv:
         cargo = '''#!PYTHON
 import json, os, signal, sys
 from pathlib import Path
+if sys.argv[1:3] != ['--config', 'scripts/check-profiles.toml']:
+    raise SystemExit(33)
+sys.argv = [sys.argv[0], *sys.argv[3:]]
 with open(os.environ['CHECK_TRACE'], 'a') as output:
     output.write(json.dumps(['cargo', *sys.argv[1:]]) + '\\n')
 if os.environ.get('CHECK_REQUIRE_REPORT_ISOLATION') and 'SANDPROOF_CHECK_EVENTS' in os.environ:
     raise SystemExit(31)
 if os.environ.get('CHECK_REQUIRE_CHECKED_OPTIMIZATION'):
     for profile in ('DEV', 'TEST'):
-        for key, expected in (('OPT_LEVEL', '1'), ('DEBUG_ASSERTIONS', 'true'), ('OVERFLOW_CHECKS', 'true')):
+        for key, expected in (('OPT_LEVEL', '0'), ('DEBUG', '1'), ('DEBUG_ASSERTIONS', 'true'), ('OVERFLOW_CHECKS', 'true')):
             if os.environ.get('CARGO_PROFILE_' + profile + '_' + key) != expected:
                 raise SystemExit(32)
+    if os.environ.get('CARGO_INCREMENTAL') != '0':
+        raise SystemExit(32)
 if os.environ.get('CHECK_BREAK_REPORT') and sys.argv[1] == 'fmt':
     Path(os.environ['CHECK_TRACE']).with_name('events.jsonl').unlink()
     raise SystemExit(int(os.environ['CHECK_BREAK_REPORT']))
@@ -279,8 +284,9 @@ if sys.argv[1] == 'tree':
             self.fixture(directory)
             overrides = {'CHECK_REQUIRE_CHECKED_OPTIMIZATION': '1'}
             for profile in ('DEV', 'TEST'):
-                for key in ('OPT_LEVEL', 'DEBUG_ASSERTIONS', 'OVERFLOW_CHECKS'):
-                    overrides['CARGO_PROFILE_' + profile + '_' + key] = '0' if key == 'OPT_LEVEL' else 'false'
+                for key in ('OPT_LEVEL', 'DEBUG', 'DEBUG_ASSERTIONS', 'OVERFLOW_CHECKS'):
+                    overrides['CARGO_PROFILE_' + profile + '_' + key] = '3' if key == 'OPT_LEVEL' else 'false'
+            overrides['CARGO_INCREMENTAL'] = '1'
             result, trace, report = self.execute(directory, extra=overrides)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(report['exit_code'], 0)
