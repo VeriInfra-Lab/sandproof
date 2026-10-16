@@ -388,7 +388,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [持久 PID 集](../sandbox-guest-runtime/src/pid_claims.rs)和[准备登记连接](../sandbox-guest-service/src/command/registration.rs)增加 VM 绑定/范围到固定图像、单写者锁、单调位图与真实 fsync、损坏/未知时拒绝、不可替换回执到原 gated child、阻塞任务取消和原容量/期限保持的自有义务，尚未抽取或证明。owner 已确认拒绝 PID 复用政策，不等于代码或端到端身份已经验证；目录来源/VM 绑定、首次制备、存储持久性和防有效快照回滚的外部边界仍须明确。新位图不恢复活跃进程，当前纯核心及已证明 Rust 未改，旧定理不覆盖这些文件操作和异步连接。
 
-[内存 PID 登记](../sandbox-guest-service/src/command/registry.rs)增加准备前登记预算、VM/会话与实际持久回执匹配、装表先于 exec、独立交接所有者不因丢回复失去原句柄、真实结束时钟到保留期限、迟到读取拒绝和原条目删除的自有义务。未知记录继续占额，登记/进程/外部订阅的额度分离及元数据编码到实际驻留也未抽取或证明；该组件不处理 tag 仲裁或每请求鉴权。CommandStatus 新增真实完成时刻，异步命令 owner 已改，原纯控制核心与已证明 Rust 未改；测试不使旧定理自动覆盖新代码。
+[内存 PID 登记](../sandbox-guest-service/src/command/registry.rs)增加准备前登记预算、VM/会话与实际持久回执匹配、装表先于 exec、独立交接所有者不因丢回复失去原句柄、真实结束时钟到保留期限、迟到读取拒绝和原条目删除的自有义务。未知记录继续占额，登记/进程/外部订阅的额度分离及元数据编码到实际驻留也未抽取或证明；该组件的每请求鉴权由外层负责。4aadbf6120ea11de4e0a0d99ec46b8e02517ec3a 基线后新增确定性 tag 预约/查询与复用清理：同一表锁下唯一预约、取消释放、未知责任阻止复用、原保留时刻、原子替换旧终局和通知旧任务退出、迟到删除不影响新记录及 tag 元数据额外驻留，均属未抽取/未证明的自有义务；owner 批准行为不构成证明。CommandStatus 新增真实完成时刻，异步命令 owner 已改，原纯控制核心与已证明 Rust 未改；测试不使旧定理自动覆盖新代码。
 
 [异步命令响应体](../sandbox-guest-service/src/command/body.rs)增加原订阅到 Connect 事件/终结顺序、Bytes 最后引用到请求/订阅/输出/记录额度释放、原响应期限与执行期限分离、取消后原进程责任、编码/滞后失败不补成功终局的自有义务，尚未抽取或证明。[keepalive 时钟](../sandbox-guest-service/src/command_clock.rs)与原帧释放时间回执进一步改变上述适配：Start/Data 重置、保活不重置、延迟轮询和周期跳过、同一最后所有者释放边界到异步时钟的对应尚未证明；有限原时间库及假时钟回归不证明完整 HTTP 时序或库/调度器实时性。Linux 执行结果新增 core_dumped，结束文本使用固定 Go 信号名；真实 wait 到字段及 wire 编码的对应同样未证明。异步 driver 与运行端口已改，已证明纯核心未变，旧结论不覆盖这些适配与传输所有权。
 

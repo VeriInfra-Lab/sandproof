@@ -4,6 +4,8 @@ use sandproof_guest_service::command::{PidRegistry, RegistryError, RegistryLimit
 
 #[path = "request_dispatch.rs"]
 mod requests;
+#[path = "pid_registry/tags.rs"]
+mod tags;
 
 fn registry() -> PidRegistry {
     PidRegistry::new(
@@ -40,7 +42,9 @@ async fn registry_capacity(registry: &PidRegistry) {
 async fn cancelled_before_registry_acceptance_aborts_original_child_and_burns_pid() {
     let fixture = Fixture::new().await;
     let registry = registry();
-    let reservation = registry.reserve(&config(&fixture), None).unwrap();
+    let reservation = registry
+        .reserve(&config(&fixture), Some("cancelled"))
+        .unwrap();
     let registrar = PidRegistrar::new(store(&fixture));
     let ticket = fixture
         .pending(fixture.spec())
@@ -62,6 +66,15 @@ async fn cancelled_before_registry_acceptance_aborts_original_child_and_burns_pi
     drop(pending);
     assert_eq!(stopped(&mut observer).await, CommandError::Cancelled);
     registry_capacity(&registry).await;
+    assert!(matches!(
+        registry.connectable_tag("cancelled"),
+        Err(RegistryError::NotFound)
+    ));
+    drop(
+        registry
+            .reserve(&config(&fixture), Some("cancelled"))
+            .unwrap(),
+    );
     capacity_restored(&fixture.owners).await;
     fixture.assert_no_effect();
     assert_eq!(fixture.gate_count(), 0);

@@ -1,6 +1,7 @@
 //! Bounded active/retained PID records. This component consumes a durable claim
-//! before the original preparation ticket can dispatch. It does not implement
-//! tag arbitration, HTTP error mapping or per-request authorization.
+//! before the original preparation ticket can dispatch. Tags are reserved
+//! before preparation and resolve deterministically within this service session.
+//! HTTP error mapping and per-request authorization belong to the caller.
 use super::{
     AdmissionObserver, AdmissionStatus, CommandError, CommandSubscription, LaunchStatus,
     ManagedCommand, PidRegisteredCommand,
@@ -11,12 +12,12 @@ use sandproof_guest_runtime::{
     protocol::{ProcessConfig, ProcessInfo, Response, encode_response},
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex, PoisonError},
     time::Duration,
 };
 use tokio::{
-    sync::{OwnedSemaphorePermit, Semaphore, oneshot},
+    sync::{Notify, OwnedSemaphorePermit, Semaphore, oneshot},
     time::Instant,
 };
 
@@ -54,6 +55,7 @@ impl RegistryLimits {
 pub enum RegistryError {
     InvalidArgument,
     ResourceExhausted,
+    AlreadyExists,
     StaleIdentity,
     NotFound,
     NotReady,
@@ -69,13 +71,19 @@ struct Inner {
     session: u64,
     limits: RegistryLimits,
     slots: Arc<Semaphore>,
-    records: Mutex<BTreeMap<u32, Arc<Record>>>,
+    table: Mutex<Table>,
+}
+#[derive(Default)]
+struct Table {
+    records: BTreeMap<u32, Arc<Record>>,
+    pending_tags: BTreeSet<Arc<str>>,
 }
 struct Record {
     identity: CommandIdentity,
     metadata: Metadata,
     state: Mutex<State>,
-    _slot: OwnedSemaphorePermit,
+    retired: Notify,
+    _slot: Arc<OwnedSemaphorePermit>,
 }
 struct Metadata {
     config: Option<ProcessConfig>,
@@ -110,17 +118,19 @@ impl PidRegistry {
                 session,
                 limits,
                 slots: Arc::new(Semaphore::new(limits.records)),
-                records: Mutex::new(BTreeMap::new()),
+                table: Mutex::new(Table::default()),
             }),
         })
     }
 
     /// Reserve registry capacity before preparing the worker. Metadata must be
     /// the trusted caller's original public command configuration; no daemon
-    /// environment or credential is inferred here. Tag is opaque List metadata,
-    /// NOT a lookup capability or a duplicate-tag decision.
+    /// environment or credential is inferred here. A present tag (including the
+    /// empty string) excludes another reservation or live command with that tag.
+    /// Dropping a reservation releases only its tag claim and capacity; an older
+    /// retained result is cleared only when the new durable ticket is published.
     /// # Errors
-    /// Full capacity or metadata that cannot fit in its encoded record budget.
+    /// Duplicate/unknown tag, full capacity or oversized encoded metadata.
     pub fn reserve(
         &self,
         config: &ProcessConfig,
@@ -136,12 +146,6 @@ impl PidRegistry {
         config: Option<&ProcessConfig>,
         tag: Option<&str>,
     ) -> Result<RegistryReservation, RegistryError> {
-        let slot = self
-            .inner
-            .slots
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| RegistryError::ResourceExhausted)?;
         // Include the widest possible public PID before accepting metadata, so
         // later registration cannot increase the promised record wire size.
         let entries = [ProcessInfo {
@@ -151,13 +155,46 @@ impl PidRegistry {
         }];
         encode_response(Response::List(&entries), self.inner.limits.metadata_bytes)
             .map_err(|_| RegistryError::ResourceExhausted)?;
+        let metadata = Metadata {
+            config: config.cloned(),
+            tag: tag.map(str::to_owned),
+        };
+        let mut table = self
+            .inner
+            .table
+            .lock()
+            .map_err(|_| RegistryError::Unavailable)?;
+        if let Some(tag) = tag {
+            if table.pending_tags.contains(tag) {
+                return Err(RegistryError::AlreadyExists);
+            }
+            if let Some(record) = tagged(&table, tag)?
+                && !record.finished()?
+            {
+                return Err(RegistryError::AlreadyExists);
+            }
+        }
+        let slot = Arc::new(
+            self.inner
+                .slots
+                .clone()
+                .try_acquire_owned()
+                .map_err(|_| RegistryError::ResourceExhausted)?,
+        );
+        let tag_claim = tag.map(|tag| {
+            let tag: Arc<str> = tag.into();
+            table.pending_tags.insert(tag.clone());
+            TagClaim {
+                inner: self.inner.clone(),
+                tag: Some(tag),
+                _slot: slot.clone(),
+            }
+        });
         Ok(RegistryReservation {
             inner: self.inner.clone(),
             slot,
-            metadata: Metadata {
-                config: config.cloned(),
-                tag: tag.map(str::to_owned),
-            },
+            tag_claim,
+            metadata,
         })
     }
 
@@ -183,13 +220,54 @@ impl PidRegistry {
         self.lookup(pid, true)
     }
 
-    fn lookup(&self, pid: u32, retained: bool) -> Result<ManagedCommand, RegistryError> {
-        let records = self
+    /// Resolve the unique live command with this exact tag. Unknown owners and
+    /// pending starts never fall back to a different record or numeric PID.
+    /// # Errors
+    /// The same identity/state refusals as `live`, or an absent tag.
+    pub fn live_tag(&self, tag: &str) -> Result<ManagedCommand, RegistryError> {
+        self.lookup_tag(tag, false)
+    }
+
+    /// Resolve the original live or retained command with this exact tag.
+    /// Lookup does not refresh retention; a new published use clears the old
+    /// record for both PID and tag lookup. Existing handles keep their ownership.
+    /// # Errors
+    /// The same identity/state refusals as `connectable`, or an absent tag.
+    pub fn connectable_tag(&self, tag: &str) -> Result<ManagedCommand, RegistryError> {
+        self.lookup_tag(tag, true)
+    }
+
+    fn lookup_tag(&self, tag: &str, retained: bool) -> Result<ManagedCommand, RegistryError> {
+        let table = self
             .inner
-            .records
+            .table
             .lock()
             .map_err(|_| RegistryError::Unavailable)?;
-        let record = records.get(&pid).ok_or(RegistryError::NotFound)?;
+        let record = tagged(&table, tag)?.ok_or_else(|| {
+            if table.pending_tags.contains(tag) {
+                RegistryError::NotReady
+            } else {
+                RegistryError::NotFound
+            }
+        })?;
+        self.lookup_record(record, retained)
+    }
+
+    fn lookup(&self, pid: u32, retained: bool) -> Result<ManagedCommand, RegistryError> {
+        let table = self
+            .inner
+            .table
+            .lock()
+            .map_err(|_| RegistryError::Unavailable)?;
+        let record = table.records.get(&pid).ok_or(RegistryError::NotFound)?;
+        self.lookup_record(record, retained)
+    }
+
+    fn lookup_record(
+        &self,
+        record: &Record,
+        retained: bool,
+    ) -> Result<ManagedCommand, RegistryError> {
         let state = record
             .state
             .lock()
@@ -227,16 +305,16 @@ impl PidRegistry {
     /// # Errors
     /// Unavailable table/owner state or an insufficient full response budget.
     pub fn list_json(&self, bytes: usize) -> Result<Vec<u8>, RegistryError> {
-        let records = self
+        let table = self
             .inner
-            .records
+            .table
             .lock()
             .map_err(|_| RegistryError::Unavailable)?;
         let mut entries = Vec::new();
         entries
-            .try_reserve_exact(records.len())
+            .try_reserve_exact(table.records.len())
             .map_err(|_| RegistryError::ResourceExhausted)?;
-        for record in records.values() {
+        for record in table.records.values() {
             let state = record
                 .state
                 .lock()
@@ -266,7 +344,66 @@ impl PidRegistry {
 pub struct RegistryReservation {
     inner: Arc<Inner>,
     metadata: Metadata,
-    slot: OwnedSemaphorePermit,
+    slot: Arc<OwnedSemaphorePermit>,
+    tag_claim: Option<TagClaim>,
+}
+
+struct TagClaim {
+    inner: Arc<Inner>,
+    tag: Option<Arc<str>>,
+    // Keep capacity even if publication drops its new record before this
+    // claim's destructor can acquire the table lock and remove the tag.
+    _slot: Arc<OwnedSemaphorePermit>,
+}
+impl TagClaim {
+    fn release(&mut self, table: &mut Table) {
+        if let Some(tag) = self.tag.take() {
+            table.pending_tags.remove(&tag);
+        }
+    }
+}
+impl Drop for TagClaim {
+    fn drop(&mut self) {
+        if self.tag.is_some() {
+            let inner = self.inner.clone();
+            // Poison remains observable to subsequent operations. Drop may only
+            // release this unconsumed claim; it never repairs an active record.
+            self.release(&mut inner.table.lock().unwrap_or_else(PoisonError::into_inner));
+        }
+    }
+}
+
+fn tagged<'a>(table: &'a Table, tag: &str) -> Result<Option<&'a Arc<Record>>, RegistryError> {
+    let mut matching = table
+        .records
+        .values()
+        .filter(|record| record.metadata.tag.as_deref() == Some(tag));
+    let record = matching.next();
+    if matching.next().is_some() {
+        return Err(RegistryError::Unavailable);
+    }
+    Ok(record)
+}
+impl Record {
+    fn finished(&self) -> Result<bool, RegistryError> {
+        let state = self.state.lock().map_err(|_| RegistryError::Unavailable)?;
+        if state.unknown {
+            return Err(RegistryError::Unavailable);
+        }
+        let Some(command) = &state.command else {
+            return Ok(false);
+        };
+        let status = command.status();
+        if status.owner_lost
+            || matches!(status.launch, LaunchStatus::Failed(_))
+            || status.completion.is_some_and(|result| result.is_err())
+        {
+            return Err(RegistryError::Unavailable);
+        }
+        Ok(status.launch == LaunchStatus::Started
+            && status.completed_at.is_some()
+            && status.completion.is_some_and(|result| result.is_ok()))
+    }
 }
 pub struct RegisteredStart {
     identity: CommandIdentity,
@@ -295,7 +432,10 @@ impl RegistryReservation {
     /// Wrong VM/session or an already registered PID; the ticket is cancelled.
     /// # Panics
     /// Requires a running Tokio runtime.
-    pub fn publish(self, ticket: PidRegisteredCommand) -> Result<RegisteredStart, RegistryError> {
+    pub fn publish(
+        mut self,
+        ticket: PidRegisteredCommand,
+    ) -> Result<RegisteredStart, RegistryError> {
         let identity = ticket.identity();
         if identity.session != self.inner.session || !ticket.belongs_to(self.inner.binding) {
             return Err(RegistryError::StaleIdentity);
@@ -304,18 +444,35 @@ impl RegistryReservation {
             identity,
             metadata: self.metadata,
             state: Mutex::new(State::default()),
+            retired: Notify::new(),
             _slot: self.slot,
         });
         {
-            let mut records = self
+            let mut table = self
                 .inner
-                .records
+                .table
                 .lock()
                 .map_err(|_| RegistryError::Unavailable)?;
-            if records.contains_key(&identity.pid) {
+            if table.records.contains_key(&identity.pid) {
                 return Err(RegistryError::StaleIdentity);
             }
-            records.insert(identity.pid, record.clone());
+            if let Some(tag) = record.metadata.tag.as_deref() {
+                let claim = self.tag_claim.as_mut().ok_or(RegistryError::Unavailable)?;
+                if claim.tag.as_deref() != Some(tag) || !table.pending_tags.contains(tag) {
+                    return Err(RegistryError::Unavailable);
+                }
+                if let Some(previous) = tagged(&table, tag)?.cloned() {
+                    if !previous.finished()? {
+                        return Err(RegistryError::AlreadyExists);
+                    }
+                    table.records.remove(&previous.identity.pid);
+                    // The original timer/handles release their own permits.
+                    // Waking retirement does not fabricate capacity or stop a process.
+                    previous.retired.notify_one();
+                }
+                claim.release(&mut table);
+            }
+            table.records.insert(identity.pid, record.clone());
         }
         let (reply, receive) = oneshot::channel();
         // Created before spawning: even an unpolled/aborted task leaves an
@@ -340,16 +497,17 @@ struct Guard {
 }
 impl Guard {
     fn remove(&mut self) -> Result<(), RegistryError> {
-        let mut records = self
+        let mut table = self
             .inner
-            .records
+            .table
             .lock()
             .map_err(|_| RegistryError::Unavailable)?;
-        if records
+        if table
+            .records
             .get(&self.record.identity.pid)
             .is_some_and(|actual| Arc::ptr_eq(actual, &self.record))
         {
-            records.remove(&self.record.identity.pid);
+            table.records.remove(&self.record.identity.pid);
         }
         self.removed = true;
         Ok(())
@@ -434,7 +592,10 @@ async fn run(
         else {
             return;
         };
-        tokio::time::sleep_until(expiry).await;
+        tokio::select! {
+            () = tokio::time::sleep_until(expiry) => {}
+            () = guard.record.retired.notified() => {}
+        }
     }
     let _ = guard.remove();
 }
