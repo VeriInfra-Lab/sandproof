@@ -633,6 +633,14 @@ stdin 和命令期限探针共用原 Start 身份的收尾记录：只有已返�
 
 wait 记录 initial_wait_outcome，再通过同一原 PID 的恢复订阅验证后续终局。执行期限可能在用户程序写入一次性标记之前到期，所以 Start 期限案例允许观察到 0 或 1 次标记，报告实际计数；已有标记仍必须完整且恰好一次。Connect 期限后主动关闭 stdin 并成功完成的案例仍要求标记为 1。若 SDK 在消费 End 后又收到 RPC 流错误，两个固定客户端均优先抛出流错误；探针按这个公开失败记录，不读取 SDK 私有缓存来改判成功。[期限结果回归](../tests/compat/test_command_deadline_outcomes.py)用预定 RPC 事件控制两种结果、尾随错误和标记时点，核对原同步/异步 SDK、原 1 ms/1 s/60 s 参数、同 PID 恢复、全部终局字段和单次收尾。受控事件不证明真实 Go/Rust 的竞态频率或执行期限精度；真实 VM 矩阵仍待运行。
 
+#511 的期限结果回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38836815182) 通过：源 36b6864f95679238c9368f9248042fe9e521b5ef、checkout 58951e4dc42d501721908a67b39d392734fbe9a8，新增 7 项包含在固定 SDK 186 项中，封存 Redis 及四项 CI 成功。该证据不包含下述一元命令收尾改动或真实 VM 期限矩阵。
+
+一元命令期限探针同样使用原 Start 的收尾记录。被测试的 kill 在调用前记为已尝试；成功、失败、取消、无确认或超长头拒绝后都不再补发第二次 kill。未知 CloseStdin 不重发，必要时只对原 PID 尝试一次独立的收尾信号；收到公开 wait 终局后不再发信号。每个返回订阅各关闭一次，原错误及信号/关闭错误共同保留；仅案例与收尾成功后运行健康命令，避免后续健康失败覆盖原错误。原 VM 销毁和实机资源审计仍承担最终停止责任，不将未知 kill 或信号确认记作进程退出。
+
+对超长头明确拒绝的 kill/CloseStdin，不能只凭 List 条目证明原命令仍可用：探针向原 stdin 发送一次独立输入，再正常关闭并核对原流的完整十六进制输出及终局。该恢复只用于已确认拒绝，未知调用不重放。其他输入案例也严格核对完整 stdout/stderr/exit_code/error，不能用 strip/fromhex 忽略额外空白或重复输入；未知输入仅允许原输入完整出现一次或未出现。报告将旧 observed_live 改名为 observed_listed，明确只是列表成员观察；新增 original_pid、terminal_observed、signal_attempt_source 和 rejection_recovered，分别记录原身份、公开终局、信号尝试来源与拒绝后恢复结果。首个被测 RPC 的参数保持不变，后续 List 和收尾控制请求显式使用 15 秒期限；wait 仍继承原 Start 的 60 秒期限。
+
+[一元命令回归](../tests/compat/test_unary_command_probe.py)使用固定同步/异步 SDK Commands 和句柄，按预定 RPC 回复并在明确控制调用后放行 End，覆盖全部六类命令 API 与四类期限参数、负值成功/未知的两种结果、旧 List 条目、缺 End、未知 Start、错误终局、错误十六进制输出、取消、false 信号回执以及原错误和收尾错误同时保留。同一等待输入程序在私有 Python 子进程验证空/二进制输入的准确输出。它不实现来宾注册表，不执行 envd、真实期限竞争或产品 VM；一元文件案例和 C02 固定调用集不在此修改范围。
+
 [PTY 候选入口](../tests/system/sdk_pty.py)通过原固定 SDK 的公开 `pty.create/connect/send_stdin/resize/kill` 和同步/异步句柄，对 root、ubuntu 各执行直接退出、断线重连后 code 17、等待输入时 SIGKILL 三种案例。使用 SDK 原 `/bin/bash -i -l`，在私有目录写入有限 Python 程序，通过 FIFO 就绪屏障核对原 PID、UID、cwd、环境及三个终端描述符；之后发送空输入及分块的全部 256 种字节，验证 2304 字节原样合并输出、初始/调整窗口、超出 uint16 的尺寸收窄、准确终局、立即晚连只返回 End、单次启动标记及存活时 List 包含原 PID。结束后的 List 状态只记录观察值：固定 Go 先广播 End 再调用终局保存/删除钩子，不能额外承诺 End 后立即查不到 PID。交互启动命令小于 512 字节，输出上限 128 KiB、元数据上限 4 KiB；登录 shell 的前缀单独记录长度/摘要，不当作固定二进制帧，也不擅自归一化为 Go/Rust 完整对照。原 shell profile 须保留请求的 cwd/自定义环境；模板还须具备 `/usr/bin/python3`。每个 PTY 60 秒、晚连 20 秒，VM 300 秒，不延长寿命以掩盖超时。
 
 该入口采用同一候选参数和前后运行身份观察，Start 结果未知不重试；错误 PID 的连接只关闭该订阅，失败收尾只尝试原已知 PID 的信号，信号结果未知不重放，随后关闭全部已知句柄并销毁原 VM，保留全部收尾错误和原异常。它已实现但尚未在产品 VM 执行。[本地回归](../tests/compat/test_pty_probe.py)分别运行真实私有 PTY 上的原上传程序/短命令，以及受控 RPC 事件下的原固定 SDK Pty/CommandHandle，核对二进制损坏、截断/多余字节、历史重放、错误重连 PID、未知 Start/信号和部分收尾失败。私有 PTY 不读取宿主 shell profile、不切换身份、不操作宿主终端；受控 RPC 不执行 envd。它们不能代替真实登录配置、Linux 身份切换、网关/来宾服务、进程树收尾、完整 PTY 故障/期限矩阵、双端 E03 或 KVM 验收，也未加入 C02 固定监督调用集。

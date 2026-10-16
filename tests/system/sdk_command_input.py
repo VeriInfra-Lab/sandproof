@@ -101,12 +101,17 @@ class KnownCommand:
             self.closed.add(id(handle))  # Unknown replies never cause a retry.
             await call(handle.disconnect)
 
+    async def kill(self, **kwargs):
+        assert self.pid is not None and not self.finished, 'no unfinished original command'
+        assert not self.signal_attempted, 'original signal was already attempted'
+        self.signal_attempted = True
+        return await call(self.commands.kill, self.pid, **kwargs)
+
     async def cleanup(self, primary):
         errors = []
         if self.pid is not None and not self.finished and not self.signal_attempted:
-            self.signal_attempted = True
             try:
-                await call(self.commands.kill, self.pid, request_timeout=15)
+                await self.kill(request_timeout=15)
             except BaseException as error:
                 errors.append(error)
         for handle in reversed(self.handles):
