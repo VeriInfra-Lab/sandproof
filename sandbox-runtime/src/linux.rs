@@ -41,7 +41,10 @@ pub use retirement::RetirementManifest;
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
 #[cfg(test)]
-static PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+// Fork temporarily inherits other threads' open file descriptions, even when
+// CLOEXEC will close them at exec. Keep process-spawning fixtures out of tests
+// asserting immediate last-owner flock release; production stays fail-closed.
+pub(crate) static PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const API_SOCKET: &str = "api.socket";
 const START_TIMEOUT: Duration = Duration::from_secs(10);
@@ -2164,6 +2167,7 @@ mod console_policy_tests {
 
     #[test]
     fn explicit_discard_creates_no_console_file_and_drops_both_streams() {
+        let _serial = PROCESS_TEST_LOCK.lock().unwrap();
         let directory = tempfile::tempdir().unwrap();
         let (stdout, stderr) =
             console_output(directory.path(), Some(ConsolePolicy::Discard)).unwrap();
@@ -2179,6 +2183,7 @@ mod console_policy_tests {
 
     #[test]
     fn legacy_file_logging_is_preserved_without_an_explicit_policy() {
+        let _serial = PROCESS_TEST_LOCK.lock().unwrap();
         let directory = tempfile::tempdir().unwrap();
         let (stdout, stderr) = console_output(directory.path(), None).unwrap();
         let status = Command::new("/bin/sh")

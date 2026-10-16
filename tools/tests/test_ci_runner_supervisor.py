@@ -401,12 +401,25 @@ class RuntimeTests(unittest.TestCase):
             self.assertIn('MemoryMax=1280M', joined)
             self.assertIn('RuntimeMaxSec=2200', joined)
             self.assertIn('--timeout 1800', joined)
-            self.assertGreater(ci_vm.RUNNER_UNIT_SECONDS,
-                               ci_vm.RUNNER_WAIT_SECONDS + ci_vm.RUNNER_JOB_SECONDS)
+            self.assertGreater(ci_vm.RUNNER_UNIT_SECONDS['title'],
+                               ci_vm.RUNNER_WAIT_SECONDS + ci_vm.RUNNER_JOB_SECONDS['title'])
             self.assertIn('LoadCredential=jit:', joined)
             self.assertIn('--slot title', joined)
             for secret in ('app-key', 'Iv23', 'fake-token'):
                 self.assertNotIn(secret, joined)
+
+    def test_only_rust_has_reporting_margin_above_its_30_minute_workflow(self):
+        for role in ci_vm.RUNNER_JOBS:
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root / 'runs').mkdir()
+                seconds = 2100 if role == 'rust' else 1800
+                with patch.object(ci, 'ROOT', root), patch.object(ci.subprocess, 'run') as run:
+                    ci.Runtime().start({'id': 'f' * 32, 'role': role}, root / 'private.jit')
+                argv = run.call_args.args[0]
+                self.assertIn('--property=RuntimeMaxSec=' + str(300 + seconds + 100), argv)
+                self.assertEqual(argv[argv.index('--timeout') + 1], str(seconds))
+                self.assertIn('--property=MemoryMax=' + str(ci_vm.ROLES[role][0] + 512) + 'M', argv)
 
     def test_systemd_unknown_not_treated_as_dead(self):
         result = Mock(returncode=1, stdout='')

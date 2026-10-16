@@ -140,7 +140,7 @@ class Runtime:
         command = ['systemd-run', '--quiet', '--collect', '--service-type=exec', '--unit=' + unit,
             '--property=LoadCredential=jit:' + str(jit_path),
             '--property=KillMode=control-group', '--property=TimeoutStopSec=25',
-            '--property=RuntimeMaxSec=' + str(RUNNER_UNIT_SECONDS),
+            '--property=RuntimeMaxSec=' + str(RUNNER_UNIT_SECONDS[lease['role']]),
             '--property=MemoryMax=' + str(ROLES[lease['role']][0] + 512) + 'M',
             '--property=MemorySwapMax=0', '--property=TasksMax=128',
             '--property=NoNewPrivileges=yes', '--property=ProtectSystem=strict',
@@ -150,7 +150,7 @@ class Runtime:
             '--property=StandardError=append:' + str(directory / 'host.log'),
             '/usr/bin/python3', '/opt/sandproof-ci/ci_vm.py', '--role', lease['role'],
             '--slot', valid_slot(lease['role'], lease.get('slot', lease['role'])),
-            '--run-id', identity, '--timeout', str(RUNNER_JOB_SECONDS),
+            '--run-id', identity, '--timeout', str(RUNNER_JOB_SECONDS[lease['role']]),
             '--jit-file', '/run/credentials/' + unit + '/jit']
         subprocess.run(command, check=True, capture_output=True, timeout=30)
 

@@ -1056,6 +1056,35 @@ mod tests {
     }
 
     #[test]
+    fn last_open_file_description_owner_must_release_before_gate_can_be_reacquired() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_temp, context) = fixture(1);
+        let guard = acquire(&context, false).unwrap();
+        // Model the same OFD held by an unrelated fork before its exec closes
+        // CLOEXEC descriptors. No sleeps, retries or production unlock shortcut.
+        let inherited = guard.file.try_clone().unwrap();
+        let (ready, started) = std::sync::mpsc::sync_channel(0);
+        let (release, waiting) = std::sync::mpsc::sync_channel(0);
+        let owner = std::thread::spawn(move || {
+            ready.send(()).unwrap();
+            let _ = waiting.recv();
+            drop(inherited);
+        });
+        started.recv().unwrap();
+        drop(guard);
+        let refused = matches!(
+            acquire(&context, false),
+            Err(RuntimeError::InvalidConfiguration(
+                "previous physical-slot lease is still active"
+            ))
+        );
+        release.send(()).unwrap();
+        owner.join().unwrap();
+        assert!(refused);
+        assert!(acquire(&context, false).is_ok());
+    }
+
+    #[test]
     fn exact_live_marker_blocks_even_when_original_parent_lock_and_all_child_gate_fds_are_gone() {
         let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (_temp, context) = fixture(2);
@@ -1229,6 +1258,7 @@ mod tests {
 
     #[test]
     fn failed_gate_spawn_clears_its_stage_while_a_clean_shared_data_pin_remains() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (_temp, context) = fixture(3);
         let pin = acquire(&context, true).unwrap().into_file();
         let mut guard = acquire(&context, true).unwrap();
