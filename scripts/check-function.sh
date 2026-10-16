@@ -62,6 +62,18 @@ check_begin preflight setup
 bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode" --preflight-only
 check_end
 
+# Long-running state-machine tests are CPU-heavy even with no other CI job.
+# Optimize executable code, never remove checks. Use the same settings for dev
+# helpers and tests so Cargo can reuse dependencies between original commands.
+# Explicitly override ambient profile knobs: debug-only fault injection and
+# arithmetic panic checks must remain enabled, including in dependencies.
+export CARGO_PROFILE_DEV_OPT_LEVEL=1
+export CARGO_PROFILE_TEST_OPT_LEVEL=1
+export CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true
+export CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true
+export CARGO_PROFILE_DEV_OVERFLOW_CHECKS=true
+export CARGO_PROFILE_TEST_OVERFLOW_CHECKS=true
+
 # Standalone node contracts must not pull in the journal/C toolchain. Feature
 # unification in the complete server is expected and is checked separately.
 check_begin node-dependency-contract contract

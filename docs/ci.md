@@ -26,6 +26,8 @@ SDK 与 Harbor 的原锁定检查使用 `UV_OFFLINE=1`、`CARGO_NET_OFFLINE=true
 
 完整 Rust 入口用[阶段诊断工具](../tools/check_stages.py)记录单调时钟耗时、阶段类型与原退出码；构建、工具测试、工作区测试、文档测试和诊断特性分别报告。阶段时间包含该原命令的全部开销；构建细分直接使用 Cargo 原 `Finished … in …`、测试目标使用原 harness 的 `finished in …`，不为计时增加 `--no-run` 或重复编译。无默认特性、工作区及 `contention-diagnostics` 不相互替代，不改变测试参数、持久化或原 20 分钟门槛。工具不代理子进程输入输出、不管理进程清理、不重试命令。
 
+完整基础入口为 dev 辅助程序与 test 构建统一设置 `opt-level=1`，减少长期状态机循环的执行成本，并让原命令复用相同配置的依赖产物；显式保持 `debug-assertions=true` 与 `overflow-checks=true`，不改为 release、不关闭调试故障点或整数溢出检查。工具回归核对原命令矩阵和环境覆盖，并用独立无依赖 Rust 小程序实测调试断言与溢出确实 panic，同时核对 Cargo 实际 profile。未改产品 Rust、Cargo 锁、测试次数、SQL 同步、特性矩阵、原容量或超时；普通部署构建与证明抽取配置不受该入口环境影响。耗时对比须绑定同提交、相同容量和外部并发情况，区分编译与执行，不能把宿主争用推断成断言失败。
+
 每轮使用独立有界事件文件（最多 128 KiB），已有文件或符号链接不得复用；本地未指定 `SANDPROOF_CHECK_EVENTS` 时创建私有临时目录，CI 放在本轮 `RUNNER_TEMP`。原检查子命令不继承外层事件文件路径，嵌套检查各自新建记录。正常失败记录首个失败阶段并保持原非零退出码，后续检查不执行；诊断写入失败也不能把检查变绿。工作流收尾尝试生成阶段摘要，但强制中断可能没有终局，最后一个 start 不代表成功或断言失败。摘要只是诊断，不是子进程停止、资源清理或测试通过证据；Actions 原结论保持权威，不能仅凭退出码 124 判断超时。
 
 需要定位失败或比较热点时，把 `gh run view <运行编号> --log` 的输出保存在本地忽略的 `artifacts/`，再运行 `bash scripts/python-entry.sh tools/check_stages.py analyze-log --log artifacts/ci.log --conclusion failure`；`--conclusion` 必须取实际 Actions 结果（`success|failure|cancelled|timed_out`）。工具列出原 Rust harness 的慢测试目标与网络、依赖/材料、超时、断言、清理等**候选信号**；混合原因并列，无法识别保留未分类，不把关键字猜测作为确定归因或自动重跑依据。输出不附带原日志/命令参数，完整日志仍按私有证据保存。未增加 Go 对照、Rust PR 自动触发、KVM 或证明检查。

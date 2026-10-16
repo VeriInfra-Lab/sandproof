@@ -1,5 +1,7 @@
 from pathlib import Path
 import os
+import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -7,6 +9,49 @@ import unittest
 
 
 class FunctionEntryTests(unittest.TestCase):
+    def test_real_optimized_test_profile_retains_debug_assertions_and_overflow_panics(self):
+        root = Path(__file__).resolve().parents[2]
+        script = (root / 'scripts/check-function.sh').read_text()
+        settings = dict(re.findall(r'^export (CARGO_PROFILE_(?:DEV|TEST)_[A-Z_]+)=([^\n]+)$',
+                                   script, re.MULTILINE))
+        self.assertEqual(len(settings), 6)
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            (stage / 'src').mkdir()
+            (stage / 'Cargo.toml').write_text(
+                '[package]\nname="sandproof-checked-profile-probe"\nversion="0.0.0"\n'
+                'edition="2024"\n[workspace]\n')
+            (stage / 'Cargo.lock').write_text(
+                'version = 4\n[[package]]\nname = "sandproof-checked-profile-probe"\nversion = "0.0.0"\n')
+            (stage / 'src/lib.rs').write_text('''
+#[test]
+fn debug_configuration_is_enabled() { assert!(cfg!(debug_assertions)); }
+#[test]
+#[should_panic]
+fn debug_assertion_executes() { debug_assert!(std::hint::black_box(false)); }
+#[test]
+#[should_panic]
+fn integer_overflow_panics() {
+    let mut value = std::hint::black_box(u8::MAX);
+    value += 1;
+    std::hint::black_box(value);
+}
+''')
+            env = os.environ | settings | {'CARGO_TARGET_DIR': str(stage / 'target'),
+                                           'CARGO_NET_OFFLINE': 'true'}
+            result = subprocess.run(['cargo', 'test', '--locked', '--offline', '--lib',
+                                      '--message-format=json'], cwd=stage, env=env,
+                                     capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            artifacts = [json.loads(line) for line in result.stdout.splitlines() if line.startswith('{')]
+            tests = [a['profile'] for a in artifacts if a.get('reason') == 'compiler-artifact'
+                     and a.get('executable') and a['profile']['test']]
+            self.assertEqual(len(tests), 1)
+            self.assertEqual(tests[0]['opt_level'], '1')
+            self.assertIs(tests[0]['debug_assertions'], True)
+            self.assertIs(tests[0]['overflow_checks'], True)
+            self.assertIn('3 passed; 0 failed', result.stdout)
+
     def test_readiness_does_not_restart_unchanged_checks_but_code_and_metadata_still_do(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / '.github/workflows/function-ci.yml').read_text()

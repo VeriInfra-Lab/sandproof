@@ -191,6 +191,11 @@ with open(os.environ['CHECK_TRACE'], 'a') as output:
     output.write(json.dumps(['cargo', *sys.argv[1:]]) + '\\n')
 if os.environ.get('CHECK_REQUIRE_REPORT_ISOLATION') and 'SANDPROOF_CHECK_EVENTS' in os.environ:
     raise SystemExit(31)
+if os.environ.get('CHECK_REQUIRE_CHECKED_OPTIMIZATION'):
+    for profile in ('DEV', 'TEST'):
+        for key, expected in (('OPT_LEVEL', '1'), ('DEBUG_ASSERTIONS', 'true'), ('OVERFLOW_CHECKS', 'true')):
+            if os.environ.get('CARGO_PROFILE_' + profile + '_' + key) != expected:
+                raise SystemExit(32)
 if os.environ.get('CHECK_BREAK_REPORT') and sys.argv[1] == 'fmt':
     Path(os.environ['CHECK_TRACE']).with_name('events.jsonl').unlink()
     raise SystemExit(int(os.environ['CHECK_BREAK_REPORT']))
@@ -267,6 +272,19 @@ if sys.argv[1] == 'tree':
             result, trace, report = self.execute(directory, extra={'CHECK_REQUIRE_REPORT_ISOLATION': '1'})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(report['exit_code'], 0)
+
+    def test_all_original_cargo_commands_keep_checked_optimization_despite_ambient_overrides(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.fixture(directory)
+            overrides = {'CHECK_REQUIRE_CHECKED_OPTIMIZATION': '1'}
+            for profile in ('DEV', 'TEST'):
+                for key in ('OPT_LEVEL', 'DEBUG_ASSERTIONS', 'OVERFLOW_CHECKS'):
+                    overrides['CARGO_PROFILE_' + profile + '_' + key] = '0' if key == 'OPT_LEVEL' else 'false'
+            result, trace, report = self.execute(directory, extra=overrides)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(report['exit_code'], 0)
+            self.assertEqual(len([item for item in trace if item[0] == 'cargo']), 10)
 
     def test_diagnostic_write_loss_cannot_mask_original_failure_or_create_green(self):
         for command_exit in (0, 23):
