@@ -24,6 +24,14 @@
 
 SDK 与 Harbor 的原锁定检查使用 `UV_OFFLINE=1`、`CARGO_NET_OFFLINE=true`，只读取受控黄金盘中已制备的固定依赖，避免缓存未命中后等待 GitHub/PyPI/crates.io 下载。缺材料立即失败，审核新锁后重新制备和验收黄金盘；不静默改锁、联网补料或跳过测试。GitHub 源码检出、任务领取及结果回传仍经原受限网络，依赖离线不表示整条 CI 无网络。
 
+完整 Rust 入口用[阶段诊断工具](../tools/check_stages.py)记录单调时钟耗时、阶段类型与原退出码；构建、工具测试、工作区测试、文档测试和诊断特性分别报告。阶段时间包含该原命令的全部开销；构建细分直接使用 Cargo 原 `Finished … in …`、测试目标使用原 harness 的 `finished in …`，不为计时增加 `--no-run` 或重复编译。无默认特性、工作区及 `contention-diagnostics` 不相互替代，不改变测试参数、持久化或原 20 分钟门槛。工具不代理子进程输入输出、不管理进程清理、不重试命令。
+
+每轮使用独立有界事件文件（最多 128 KiB），已有文件或符号链接不得复用；本地未指定 `SANDPROOF_CHECK_EVENTS` 时创建私有临时目录，CI 放在本轮 `RUNNER_TEMP`。原检查子命令不继承外层事件文件路径，嵌套检查各自新建记录。正常失败记录首个失败阶段并保持原非零退出码，后续检查不执行；诊断写入失败也不能把检查变绿。工作流收尾尝试生成阶段摘要，但强制中断可能没有终局，最后一个 start 不代表成功或断言失败。摘要只是诊断，不是子进程停止、资源清理或测试通过证据；Actions 原结论保持权威，不能仅凭退出码 124 判断超时。
+
+需要定位失败或比较热点时，把 `gh run view <运行编号> --log` 的输出保存在本地忽略的 `artifacts/`，再运行 `bash scripts/python-entry.sh tools/check_stages.py analyze-log --log artifacts/ci.log --conclusion failure`；`--conclusion` 必须取实际 Actions 结果（`success|failure|cancelled|timed_out`）。工具列出原 Rust harness 的慢测试目标与网络、依赖/材料、超时、断言、清理等**候选信号**；混合原因并列，无法识别保留未分类，不把关键字猜测作为确定归因或自动重跑依据。输出不附带原日志/命令参数，完整日志仍按私有证据保存。未增加 Go 对照、Rust PR 自动触发、KVM 或证明检查。
+
+Actions 的任务期限可能以 `cancelled` 结算，不能擅自把原结论改成 `timed_out`。可另将原检查的 annotations JSON 私下保存，以 `--annotations artifacts/annotations.json` 提供原平台明确的最大执行时间注释；分析器分别保留原结论和期限证据。已通过的负向测试名称不作为故障信号，清理候选仍需原清理回执确认。
+
 SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tools/ci_redis.py check` 校验黄金盘中受保护的固定 Redis 源/二进制摘要及可执行权限，再以离线 Cargo 运行选定协议、中心、HTTPS 和原 SQLite 收件组件。只在本轮隔离来宾启动私有回环 Redis；没有宿主凭据或产品 KVM。缺引擎、材料损坏或 Rust 依赖缺失立即失败，不下载 Redis、跳过或回退旧组件。该步骤启用前必须实测候选黄金盘的两次全新离线来宾及故意缺料失败，然后受控切换；源码有此步骤不等于宿主已完成安装，实际切换证据归关联 PR/issue。
 
 中心/宿主的[双产物清单](../tools/ci_e2e_artifacts.py)复用唯一[离线准备入口](../tools/ci_e2e_prepare.py)：同一干净候选离线构建 `sandproof-center`、`sandproof-host`、原窗口工具及原迟到动作检查助手，实际执行两个服务的 `contract-versions` 并核对一致。准备不带 App 凭据，不运行 VM，缺固定材料立即失败。固定验收构建使用 `--release` 并明确开启 `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`，让原受控故障点可实际触发；DK 和两题使用同一对真实产物，不另编译一套宿主。这是测试构建，不是普通部署 release 或证明证据。助手必须来自该候选构建目录，其摘要在准备完成后固化，DK 启动前和实际使用前再次核对。监督器源码已拒绝旧 `server` 配置、单服务报告和旧运行状态；工具自测不是已安装或已执行双服务的证据。真实运行、DK 故障组和两题报告仍须同候选组合验收，成功/故意失败/取消收尾完成后才可受控切换原 App 必需检查。不得用现役单服务成功满足新架构验收。

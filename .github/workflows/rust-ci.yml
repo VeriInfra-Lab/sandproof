@@ -22,6 +22,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Check pinned Rust workspace
+        id: workspace
+        env:
+          SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
         # The full workspace includes real Redis-backed component contracts.
         # Missing sealed material must fail before the original check entry.
         run: |
@@ -29,3 +32,14 @@ jobs:
           export SANDPROOF_REDIS_SERVER="$redis_server"
           export CARGO_NET_OFFLINE=true
           bash scripts/check-function.sh
+      - name: Summarize check stages
+        if: ${{ always() && steps.workspace.outcome != 'skipped' }}
+        env:
+          SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
+        run: |
+          if [[ -f "$SANDPROOF_CHECK_EVENTS" ]]; then
+            bash scripts/python-entry.sh tools/check_stages.py summary \
+              --events "$SANDPROOF_CHECK_EVENTS" --github-summary "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' '阶段报告未生成；核对前置依赖或运行中断，不能据此判断测试通过。' >> "$GITHUB_STEP_SUMMARY"
+          fi
