@@ -32,6 +32,7 @@ from sdk_observations import CONTENT_LIMIT, Calls, Capture, value
 from sdk_background_compare import background_case, comparable_background
 from sdk_pty_compare import pty_case, comparable_pty
 from sdk_file_compare import file_cases, sdk_file_cases, comparable_batch
+from sdk_list_compare import list_case, comparable_list
 
 FIXED_MTIME = 1_700_000_000
 
@@ -104,6 +105,7 @@ async def cases(sandbox, inputs, asynchronous, rows=None):
         assert identity.exit_code == 0 and not identity.stderr and identity.stdout.strip().isdecimal()
         for mode in ('direct', 'reconnect-exit', 'kill'):
             await pty_case(observed, user, int(identity.stdout.strip()), root + '/' + user, mode)
+    await list_case(observed, inputs)
     healthy = await observed.invoke('commands.run', 'printf paired-healthy', user='ubuntu', timeout=15)
     assert (healthy.stdout, healthy.stderr, healthy.exit_code) == ('paired-healthy', '', 0)
     return observed.rows
@@ -121,6 +123,8 @@ def comparable(rows):
             row = comparable_pty(row)
         if row['method'] == 'files.octet_batch':
             row = comparable_batch(row)
+        if row['method'] == 'commands.list_case':
+            row = comparable_list(row)
         if 'callbacks' in row:
             row['callbacks'] = {key: ''.join(parts) for key, parts in row['callbacks'].items()}
         if row['method'] == 'files.list' and 'result' in row:
@@ -197,7 +201,8 @@ async def exercise(args):
                  'file user/home/ownership, path errors and multipart partial writes; '
                  'octet partial batches compared Go/Rust within each SDK mode, '
                  'bounded transient file observations retained separately; '
-                 'not List, full fault/resource matrices or E03/E06 acceptance'}
+                 'complete controlled command/PTY List snapshots and known-entry retirement; '
+                 'not full fault/resource matrices or E03/E06 acceptance'}
     try:
         for cls in (Sandbox, AsyncSandbox):
             item = {'sdk': cls.__name__, 'pair': [], 'create_attempts': []}
