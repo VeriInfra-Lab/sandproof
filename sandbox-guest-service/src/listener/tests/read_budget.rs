@@ -40,17 +40,23 @@ impl AsyncWrite for BufferedWire {
 async fn coalesced_http_body_frames_do_not_exceed_the_original_transport_read_budget() {
     const PAYLOAD: usize = 131072;
     for padding in [0, 31, 511, 4095] {
-        let budget = Limits { buffer_bytes: 16384, ..limits() };
+        let budget = Limits {
+            buffer_bytes: 16384,
+            ..limits()
+        };
         let mut wire = format!(
             "POST /files HTTP/1.1\r\nHost: local\r\nConnection: close\r\nContent-Length: {PAYLOAD}\r\nX-Padding: {}\r\n\r\n",
             "p".repeat(padding),
-        ).into_bytes();
+        )
+        .into_bytes();
         wire.extend(std::iter::repeat_n(b'x', PAYLOAD));
         let peak = Arc::new(AtomicUsize::new(0));
         let observed = peak.clone();
         let (_stop, stopped) = watch::channel(false);
         let result = connection(
-            BufferedWire { input: std::io::Cursor::new(wire) },
+            BufferedWire {
+                input: std::io::Cursor::new(wire),
+            },
             move |request| {
                 let observed = observed.clone();
                 async move {
@@ -71,9 +77,65 @@ async fn coalesced_http_body_frames_do_not_exceed_the_original_transport_read_bu
             budget,
             Instant::now() + budget.connection_timeout,
             stopped,
-        ).await;
+        )
+        .await;
         assert_eq!(result, Outcome::Completed);
-        assert!(peak.load(Ordering::SeqCst) <= budget.buffer_bytes,
-            "body frame exceeded original read budget: {}", peak.load(Ordering::SeqCst));
+        assert!(
+            peak.load(Ordering::SeqCst) <= budget.buffer_bytes,
+            "body frame exceeded original read budget: {}",
+            peak.load(Ordering::SeqCst)
+        );
     }
+}
+
+#[tokio::test]
+async fn original_upload_guard_accepts_a_coalesced_body_without_larger_limits() {
+    const PAYLOAD: usize = 131072;
+    let budget = Limits {
+        buffer_bytes: 16384,
+        ..limits()
+    };
+    let mut wire = format!(
+        "POST /files HTTP/1.1\r\nHost: local\r\nConnection: close\r\nContent-Length: {PAYLOAD}\r\n\r\n"
+    )
+    .into_bytes();
+    wire.extend(std::iter::repeat_n(b'x', PAYLOAD));
+    let received = Arc::new(AtomicUsize::new(0));
+    let observed = received.clone();
+    let (_stop, stopped) = watch::channel(false);
+    let result = connection(
+        BufferedWire {
+            input: std::io::Cursor::new(wire),
+        },
+        move |request| {
+            let observed = observed.clone();
+            async move {
+                let mut body = crate::upload_body::Input::new(
+                    request.into_body(),
+                    Some(PAYLOAD as u64),
+                    crate::upload_body::HttpBodyLimits {
+                        total_bytes: PAYLOAD as u64,
+                        frame_bytes: 16384,
+                        frames: 4096,
+                        trailer_bytes: 4096,
+                        trailer_fields: 16,
+                    },
+                    Instant::now() + budget.connection_timeout,
+                )?;
+                while let Some(bytes) = body.next().await? {
+                    assert!(bytes.iter().all(|byte| *byte == b'x'));
+                    observed.fetch_add(bytes.len(), Ordering::SeqCst);
+                }
+                Ok::<_, crate::upload_body::GzipError>(Response::new(Body::empty()))
+            }
+        },
+        budget,
+        Instant::now() + budget.connection_timeout,
+        stopped,
+    )
+    .await;
+    // The original handler error closes the connection, which the gateway
+    // maps to 502; it is not a genuine SDK/client execution deadline.
+    assert_eq!(result, Outcome::Completed);
+    assert_eq!(received.load(Ordering::SeqCst), PAYLOAD);
 }
