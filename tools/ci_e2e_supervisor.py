@@ -116,6 +116,8 @@ def validate_host_inputs(config):
         trusted_path(Path(config['toolchain_bin']))
     for name in ('scratch_parent', 'state_root', 'ci_state_root'):
         private_path(config[name], directory=True)
+    from tools.envd_acceptance import policy as envd_policy
+    envd_policy(config)
 
 
 def git(*args, cwd=None, source_client=None, proxy=None):
@@ -583,6 +585,83 @@ class Supervisor:
             unit=UNIT_PREFIX + uuid.uuid4().hex + '.service', phase='launching')
         self.save()  # Intent before launching; original identity survives crash.
 
+    def observe_envd(self):
+        """Use the same host lease and candidate, never a privileged PR job."""
+        from tools import envd_acceptance as envd
+        try:
+            if envd.policy(self.config) is None:
+                if 'envd' in self.state:
+                    raise ValueError('in-flight Rust stage cannot become a Go-only run')
+                return True  # No Rust result is published for the existing Go gate.
+            expected = envd.identity(dict(self.config, candidate=self.state['candidate'],
+                                          candidate_manifest=self.state['candidate_manifest']))
+        except (OSError,ValueError):
+            self.block('rust_envd_candidate_identity_unknown')
+            return False
+        group = self.state.setdefault('envd', dict(phase='new'))
+        if group['phase'] == 'done':
+            envd.require_result(group['result'], candidate=self.state['candidate'],
+                                run_id=self.state['id'], expected_guest=expected)
+            return True
+        if group['phase'] == 'new':
+            self.verified_candidate()
+            root = Path(self.config['scratch_parent']) / uuid.uuid4().hex[:8]
+            fields = ('checkout', 'center', 'host', 'kernel', 'firecracker', 'jailer', 'tools',
+                'redis_material', 'tls_material', 'service_staging_parent', 'center_uid', 'center_gid',
+                'redis_uid', 'redis_gid', 'uid_base', 'scratch_parent', 'cgroup_parent',
+                'build_cgroup_parent', 'service_cgroup_parent', 'window_helper', 'budget_profile',
+                'host_assets', 'rust_envd_acceptance')
+            config = {key:self.config[key] for key in fields}
+            config.update(candidate=self.state['candidate'], candidate_manifest=self.state['candidate_manifest'],
+                          run_id=self.state['id'], run_root=str(root))
+            path = self.root / (self.state['id'] + '-envd.json')
+            write_once(path, config)
+            checkout = Path(self.config['checkout'])
+            group.update(root=str(root), checkout=str(checkout), phase='launching',
+                command=[str(checkout/'benchmarks/.venv/bin/python'),
+                         str(checkout/'tests/system/envd_acceptance.py'),'--config',str(path)],
+                unit=UNIT_PREFIX+'envd-'+uuid.uuid4().hex+'.service',deadline_seconds=3600)
+            self.save()  # Lost launch reply is unknown, never permission to relaunch.
+            launch(group)
+            group['phase'] = 'running'
+            self.save()
+            return False
+        fields = unit_state(group['unit'])
+        if fields.get('ActiveState') in ('activating','deactivating') or (
+                fields.get('ActiveState')=='active' and fields.get('ExecMainCode')=='0'):
+            return False
+        try:
+            if fields.get('ExecMainCode')!='1' or fields.get('ExecMainStatus')!='0':
+                raise ValueError('envd stage failed or termination unknown')
+            root = Path(group['root'])
+            if group['phase'] != 'reclaiming':
+                report=json_file(private_path(root/'report.json'),limit=4*1024**2)
+                manifest=self.verified_candidate()
+                service_artifacts.require_service_boundary(report,manifest)
+                execution=service_artifacts.require_execution_manifest(report.get('execution_manifest'),manifest,
+                    expected=json_file(private_path(root/'execution-manifest.json'),limit=32768))
+                service_artifacts.require_process_evidence(report.get('service_processes'),execution)
+                from tools.system_acceptance import digest as file_digest
+                if (execution['run_id']!=self.state['id']
+                        or execution['candidate_manifest_sha256']!=file_digest(Path(self.state['candidate_manifest']))
+                        or json_file(private_path(root/'service-cleanup.json')).get('removed') is not True):
+                    raise ValueError('envd original execution or service cleanup unconfirmed')
+                result=envd.require_result(report,candidate=self.state['candidate'],
+                    run_id=self.state['id'],expected_guest=expected)
+                group.update(result=result,root_identity=[root.stat().st_dev,root.stat().st_ino],phase='reclaiming')
+                self.save()
+            envd.require_result(group['result'],candidate=self.state['candidate'],
+                                run_id=self.state['id'],expected_guest=expected)
+            if root.exists():
+                remove_private_tree(root,group['root_identity'])
+            subprocess.run(['systemctl','stop',group['unit']],check=True,capture_output=True,timeout=20)
+            group['phase']='done'
+            self.save()
+            return True
+        except (OSError,ValueError):
+            self.block('rust_envd_failed_or_cleanup_unknown')
+            return False
+
     def tick(self):
         state = self.state
         if not state:
@@ -648,6 +727,8 @@ class Supervisor:
             self.save()
         if not self.observe_dk():
             return
+        if not self.observe_envd():
+            return
         for index, batch in enumerate(state['batches']):
             if batch['phase'] == 'done':
                 continue
@@ -705,6 +786,8 @@ class Supervisor:
         result = aggregate(state['candidate'], [b['result'] for b in state['batches']], state['expected'],
                            all_tasks=state['all_tasks'], dataset=state.get('dataset', 'terminal-bench@2.1'),
                            **self.result_policy())
+        if 'envd' in state:
+            result['rust_envd'] = state['envd']['result']
         state['result'] = result
         self.save()
         lease.release()  # All batch units and original resources are gone.

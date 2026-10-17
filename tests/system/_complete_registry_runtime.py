@@ -220,7 +220,8 @@ class RegistryDeployment:
 
 
 def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits,
-                             runtime_shape=(1, 256), builder_shape=(2, 2048), ports):
+                             runtime_shape=(1, 256), builder_shape=(2, 2048), ports,
+                             data_transfer=None, activation_ceiling_bytes=None):
     """Create fresh DTOs only from an explicit complete operator policy."""
     policy = acceptance_build_policy(args.bounded_policy)
     require_bounded_host_tools()
@@ -266,6 +267,8 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
                 "rpc_response_bytes": MIB, "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
                 "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60}}
         settings.append(config)
+        if data_transfer is not None:
+            config['data_transfer'] = copy.deepcopy(data_transfer)
     declared = policy['runtime']['bounded_host']['physical_storage']['public_build']
     build = {"root": str(root / "builds"), "registry": {"root": declared['registry_root'], **copy.deepcopy(registry_limits)},
         "registry_owner_uid": declared['registry_owner_uid'],
@@ -280,7 +283,8 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
             window_duration_ms=windows['window_duration_ms'], max_anchors=windows['max_anchors'], builder_revision='builder-base-r1',
             policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',
                                                       'max_lifetime_secs','startup_timeout_secs')}),
-        registry_config=build['registry'], extra_credentials=[{'tenant':2,'secret':foreign_key}])
+        registry_config=build['registry'], extra_credentials=[{'tenant':2,'secret':foreign_key}],
+        activation_ceiling_bytes=activation_ceiling_bytes)
     settings = services.native_pools
     build.update(bind=services.layout['helper_backend_address'],
         runtime_config=str(services.processes.bindings['host-0']['config']),
