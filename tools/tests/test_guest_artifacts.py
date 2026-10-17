@@ -11,7 +11,7 @@ from tools import guest_artifacts as artifacts
 from tools.system_acceptance import write_once
 
 VERSIONS = dict(service_package_version='0.1.0', worker_package_version='0.1.0',
-                config_version=2, worker_protocol_version=2, pid_format_version=2)
+                config_version=3, worker_protocol_version=2, pid_format_version=2)
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -123,7 +123,7 @@ class GuestArtifactTests(unittest.TestCase):
                 with self.subTest(key=key), self.assertRaises(ValueError): artifacts.check_reports(VERSIONS, service, worker)
                 report[key] = original
         with self.assertRaises(ValueError): artifacts.check_reports(VERSIONS, dict(service, extra=1), worker)
-        with self.assertRaises(ValueError): artifacts.check_reports(dict(VERSIONS, config_version=3), service, worker)
+        with self.assertRaises(ValueError): artifacts.check_reports(dict(VERSIONS, config_version=4), service, worker)
 
     def configuration(self):
         config = json.loads((ROOT / 'sandbox-guest-service/src/daemon/tests/configuration.json').read_bytes())
@@ -168,7 +168,7 @@ class GuestArtifactTests(unittest.TestCase):
             path.write_text(json.dumps(bad))
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 artifacts.template_identity(self.root, pin, path, hashlib.sha256(path.read_bytes()).hexdigest())
-        raw = json.dumps(config).replace('"version": 2', '"version": 2,"version": 2').encode()
+        raw = json.dumps(config).replace('"version": 3', '"version": 3,"version": 3').encode()
         path.write_bytes(raw)
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             artifacts.template_identity(self.root, pin, path, hashlib.sha256(raw).hexdigest())

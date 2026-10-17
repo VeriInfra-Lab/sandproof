@@ -1,6 +1,6 @@
 //! Local interface identifiers, independent of Go envd's SDK negotiation
 //! version. Binary/source fingerprints belong to the trusted template inputs.
-pub const CONFIG_VERSION: u32 = 2;
+pub const CONFIG_VERSION: u32 = 3;
 
 /// This does not read configuration, contact MMDS or start a service/worker.
 #[must_use]

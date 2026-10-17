@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "listen": "127.0.0.1:49983",
   "runtime": {
     "worker_threads": 2,

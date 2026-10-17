@@ -1,5 +1,6 @@
 use super::*;
 use sandproof_stream_codec::{EncodeLimits, Encoder};
+use std::future::Future;
 
 fn encoded(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = Encoder::new(
@@ -153,7 +154,11 @@ async fn gzip_output_clones_keep_both_admission_and_decoder_backpressure() {
     let copy = bytes.clone();
     drop(bytes);
     let mut next = Box::pin(body.frame());
-    assert!(futures_util::poll!(&mut next).is_pending());
+    std::future::poll_fn(|cx| {
+        assert!(next.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
     assert_eq!(slots.available_permits(), 0);
     drop(copy);
     let bytes = timeout(Duration::from_secs(5), next)

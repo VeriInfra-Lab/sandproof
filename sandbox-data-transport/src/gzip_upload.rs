@@ -24,6 +24,7 @@ type Reply = oneshot::Sender<Result<Option<Bytes>, StatusCode>>;
 #[derive(Clone)]
 pub struct BodyWorkOwner(Owner);
 impl BodyWorkOwner {
+    #[must_use]
     pub fn new(owner: impl Send + Sync + 'static) -> Self {
         Self(Arc::new(owner))
     }
