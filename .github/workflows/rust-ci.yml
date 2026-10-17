@@ -32,6 +32,13 @@ jobs:
           export SANDPROOF_REDIS_SERVER="$redis_server"
           export CARGO_NET_OFFLINE=true
           bash scripts/check-function.sh
+      - name: Check root-owned guest startup installation
+        env:
+          CARGO_NET_OFFLINE: "true"
+          SANDPROOF_GUEST_ROOT_WORKER: /usr/bin/false
+        # Ordinary unit tests use private fixtures. This separate check must
+        # fail if the CI installation lacks the required root ownership.
+        run: cargo --config scripts/check-profiles.toml test --locked -p sandproof-guest-runtime --lib startup_files::tests::root_owned_installation_is_opened_from_os_root -- --exact --ignored --nocapture
       - name: Summarize check stages
         if: ${{ always() && steps.workspace.outcome != 'skipped' }}
         env:
