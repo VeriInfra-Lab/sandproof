@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read this isolated batch's real Cargo logs on a6000; reject false negatives."""
+"""Read the approved Linux proof run's Cargo logs; reject false negatives."""
 from pathlib import Path
 import hashlib
 import json

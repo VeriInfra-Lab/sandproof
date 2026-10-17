@@ -228,6 +228,59 @@ def extract(source, family, label, namespace, output, config, env, llbc_digest):
                 f"generated Lean drift: {namespace}/{name}")
 
 
+def worker_retry_allowed(record):
+    result = record.get("result", {})
+    content = result.get("content", [])
+    return (record.get("stale") is False and result.get("isError") is True
+            and result.get("timed_out") in (None, False) and not result.get("diagnostics")
+            and result.get("success") is not True and result.get("resultType") == "complete"
+            and len(content) == 1 and content[0].get("type") == "text"
+            and re.fullmatch(r"Error executing tool lean_run_code: File worker for [^\r\n]+ died: "
+                r"Server process for [^\r\n]+ crashed, likely due to a stack overflow or a bug\.",
+                content[0].get("text", "")) is not None)
+
+
+def service_record(proof, runtime, request, log, env, config, proof_inputs, retries):
+    def exchange():
+        with log.open("w") as stream:
+            result = subprocess.run([str(runtime / "bin/python"), "tools/lean_session.py"],
+                input=json.dumps(request) + '\n{"tool":"exit"}\n', text=True,
+                cwd=proof, env=env, stdout=stream, stderr=subprocess.STDOUT,
+                timeout=600, check=False)
+        require(result.returncode == 0, "service transport failed")
+        records = []
+        for line in log.read_text().splitlines():
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if "request" in item:
+                records.append(item)
+        require(len(records) == 1, "missing service record")
+        return records[0]
+
+    record = exchange()
+    if worker_retry_allowed(record):
+        # Only this explicit worker-death tool error can retry once. No proof
+        # diagnostic, stale result, timeout, transport or import error retries.
+        verify_files(proof, proof_inputs)
+        require(record["revision"].get("file_sha256") == request["expected_sha256"], "worker source drift")
+        for key, name in (("lakefile_sha256", "lakefile.toml"), ("manifest_sha256", "lake-manifest.json")):
+            require(record["revision"].get(key) == proof_inputs[name], "worker config drift")
+        for key, value in config["service_versions"].items():
+            require(record["revision"].get(key) == value, "worker service version drift")
+        original = log.with_name(log.stem + "-first-worker-error.log")
+        require(not original.exists(), "worker retry already used")
+        log.rename(original)
+        retries.append({"code_file": request["code_file"], "file_sha256": request["expected_sha256"],
+                        "lakefile_sha256": proof_inputs["lakefile.toml"],
+                        "manifest_sha256": proof_inputs["lake-manifest.json"],
+                        "first_worker_error_log": original.name, "final_service_log": log.name,
+                        "retries": 1})
+        record = exchange()
+    return record
+
+
 def proof_checks(label, output, source_repository, runtime, packages, config, env):
     config = dict(config, **config["proof_projects"][label])
     proof = output / f"proof-{label}"
@@ -246,6 +299,7 @@ def proof_checks(label, output, source_repository, runtime, packages, config, en
         shutil.copyfile(source_repository / name, target)
         require(sha(target) == config["service_files"][name], "client/launcher copy drift")
     proof_inputs = tree(proof)
+    retries = []
     (proof / ".tools").mkdir()
     (proof / ".tools/lean-mcp").symlink_to(runtime, target_is_directory=True)
     (proof / ".lake").mkdir()
@@ -267,22 +321,7 @@ def proof_checks(label, output, source_repository, runtime, packages, config, en
         request = {"tool": "lean_run_code", "code_file": code_file,
                    "expected_sha256": sha(proof / code_file)}
         log = output / "evidence" / f"{label}-{module}-service.log"
-        with log.open("w") as stream:
-            result = subprocess.run([str(runtime / "bin/python"), "tools/lean_session.py"],
-                input=json.dumps(request) + '\n{"tool":"exit"}\n', text=True,
-                cwd=proof, env=env, stdout=stream, stderr=subprocess.STDOUT,
-                timeout=600, check=False)
-        require(result.returncode == 0, f"service transport failed: {module}")
-        records = []
-        for line in log.read_text().splitlines():
-            try:
-                item = json.loads(line)
-            except ValueError:
-                continue
-            if "request" in item:
-                records.append(item)
-        require(len(records) == 1, f"missing service record: {module}")
-        record = records[0]
+        record = service_record(proof, runtime, request, log, env, config, proof_inputs, retries)
         require(record.get("stale") is False and record["result"].get("success") is True
                 and record["result"].get("timed_out") is False,
                 f"stale/failed proof: {module}")
@@ -316,21 +355,7 @@ def proof_checks(label, output, source_repository, runtime, packages, config, en
         request = {"tool": "lean_run_code", "code_file": file,
                    "expected_sha256": sha(proof / file)}
         log = output / "evidence" / f"{label}-{name}-rejected-service.log"
-        with log.open("w") as stream:
-            response = subprocess.run([str(runtime / "bin/python"), "tools/lean_session.py"],
-                input=json.dumps(request) + '\n{"tool":"exit"}\n', text=True, cwd=proof, env=env,
-                stdout=stream, stderr=subprocess.STDOUT, timeout=600, check=False)
-        require(response.returncode == 0, "negative proof service transport failed")
-        records = []
-        for line in log.read_text().splitlines():
-            try:
-                record = json.loads(line)
-            except ValueError:
-                continue
-            if "request" in record:
-                records.append(record)
-        require(len(records) == 1, "missing negative proof service record")
-        record = records[0]
+        record = service_record(proof, runtime, request, log, env, config, proof_inputs, retries)
         require(record.get("stale") is False and record["result"].get("success") is False
                 and record["result"].get("timed_out") is False, "not a fresh mathematical rejection")
         require(record["revision"].get("file_sha256") == request["expected_sha256"], "negative file drift")
@@ -349,7 +374,8 @@ def proof_checks(label, output, source_repository, runtime, packages, config, en
     run(["lake", "build"], proof, output / "evidence" / f"{label}-full-experiment-kernel.log", env, timeout=600)
     verify_files(proof, proof_inputs)
     return {"input_sha256": proof_inputs, "proof_modules": config["proof_order"],
-            "audit_roots": config["audit_roots"], "expected_failures": config.get("expected_failures", [])}
+            "audit_roots": config["audit_roots"], "expected_failures": config.get("expected_failures", []),
+            "service_retries": retries}
 
 
 def main():

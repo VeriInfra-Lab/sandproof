@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install identical test-only hooks and real application tests into scratch copies.
 
-Run only on a6000: python3 install-tests.py SOURCE_ROOT RECEIPT_JSON.
+Run only in the approved Linux proof environment: SOURCE_ROOT RECEIPT_JSON.
 No original integration fixture or production function body is replaced.
 """
 from pathlib import Path
