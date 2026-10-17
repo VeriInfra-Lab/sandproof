@@ -627,6 +627,8 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 [PTY 双端片段](../tests/system/sdk_pty_compare.py)复用同一输入计划和固定 SDK 的原 Pty/CommandHandle，对 root/ubuntu 分别检查直接退出、断线原 PID 重连后退出 17，以及输入等待中的 SIGKILL。通过 root 的原命令查询所选账户 UID；使用同一私有目录、上传程序、短 bootstrap、环境值和全部 byte 载荷，检查实际 PID/UID/cwd/环境/三个 tty 描述符、初始尺寸和 resize；重连案例保留 65536 偏移的 uint16 尺寸窄化检查。结束后原 PID Connect 只返回同一终局，不得重放数据，一次性标记必须仍只有一次执行。每次 SDK 调用、结果/错误与原始 PTY 字节分块均保存，含失败前的部分观察。
 
+双端工作目录统一位于 `/var/tmp`：两个固定测试模板的 `/tmp` 分别可能是内存文件系统与 ext4，目录的真实大小不能直接混比。每台新 VM 的测试初始化读取实际 mountinfo 与 statvfs，要求工作父目录确实位于 ext4，并记录挂载点、块/片段大小、名称上限及目录权限；两端和同步/异步模式均须一致。初始化只在本轮 VM 中设置共同主机名 `sandproof-paired`，不修改模板、envd 或系统资源限制；全部案例后再次只读核对同一环境，变化即失败，不修复或重放初始化。目录大小、mtime、完整 PTY 前缀及其主机名仍保留并逐字段比较，不能改写返回值来消除差异。原不同环境的失败证据与统一环境后的验收分别记录。
+
 共用来宾程序新增可选 report_ready：写好一次性标记并进入 raw 模式后，先向 PTY 写固定的 NUL 分隔 ready 标记，再写 FIFO 中的完整身份 JSON；旧独立 PTY 探针不启用此选项，原行为保持。同步 SDK 通过公开迭代接口消费到该字节标记，后续 wait 继续原事件流；异步 SDK 使用原 on_data 回调并等待标记，最长 20 秒。同步读取受原 60 秒流期限限制。只有已观察标记才启动 FIFO 读者，FIFO 身份完整匹配后才断线、调整窗口或发送载荷；不用 sleep 猜测启动时序。所有启动提示与命令回显原字节都保留并精确比较；不忽略未知前缀，不为模板登录配置、hostname 或任意输出差异设置宽松替换。
 
 PTY 的预定 PID 规则只处理已严格匹配原 Start 的顶层/句柄/订阅 PID、Pty 控制参数、Start/Connect 的 result.pid，以及测试程序 FIFO JSON 和最终二进制帧中 ready.pid。FIFO stdout 必须逐字节等于该上传程序的规范 JSON 加换行；二进制帧必须完整匹配 NUL 头、准确长度、规范 JSON、窗口值及原载荷。验证后仅在比较副本中重建这个确定的 PID 字段及由其位数决定的帧长度，原 JSON/帧字节仍留在证据中；不接受重复 JSON 键、额外空白、替代编码、截断或多余内容。所有其他输入、UID/环境/尺寸、错误文本、startup 前缀和载荷保持精确相等；只合并回调分块。未知 Start/信号/disconnect 不重放，错误 Connect 仅关闭该订阅，失败收尾只控制原 PID，并汇总原错误与所有收尾错误。它不调用全局 List，也不把 End 当成同步列表移除或整棵进程树停止。

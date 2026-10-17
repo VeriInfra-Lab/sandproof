@@ -174,6 +174,18 @@ class PairedPtyTests(unittest.IsolatedAsyncioTestCase):
             subscription['chunks'] = [value(data)]
         paired.compare([original], [other], 'segmentation only')
 
+    async def test_actual_hostname_in_startup_bytes_is_not_normalized_away(self):
+        observed = []
+        for hostname in (b'ubuntu-fc-uvm', b'sandproof-paired'):
+            calls, backend = self.fixture(False)
+            backend.startup = b'ubuntu@' + hostname + b':~$ '
+            await probe.pty_case(calls, 'ubuntu', 1000, '/var/tmp/shared/ubuntu', 'direct')
+            observed.append(calls.rows)
+        preserved = copy.deepcopy(observed)
+        with self.assertRaises(AssertionError):
+            paired.compare(*observed, 'different real hostnames')
+        self.assertEqual(observed, preserved, 'never rewrite raw PTY evidence')
+
     async def test_wrong_ready_or_reconnect_never_signals_the_returned_wrong_pid(self):
         for asynchronous in (False, True):
             for fault in ('ready', 'connect'):

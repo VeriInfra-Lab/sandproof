@@ -1,7 +1,8 @@
 """Paired original SDK command/file observations on isolated Go/Rust VMs.
 
 Requires explicit immutable templates and the protected Rust release/config.
-Creates only its own VMs through the existing gateway; never repairs a guest.
+Creates only its own VMs through the existing gateway. Initializes the shared
+test hostname, but never repairs envd or rewrites observed results.
 This command/file slice is not the complete #311 E03 or KVM acceptance.
 """
 import runpy as _runpy
@@ -40,13 +41,64 @@ from sdk_tag_compare import tag_case, comparable_tag
 from sdk_tag_policy import policy_cases
 
 FIXED_MTIME = 1_700_000_000
+WORK_PARENT = '/var/tmp'
+FIXED_HOSTNAME = 'sandproof-paired'
 
 
 def plan():
     token = uuid.uuid4().hex
-    return {'directory': '/tmp/sandproof-paired-' + token,
+    return {'directory': WORK_PARENT + '/sandproof-paired-' + token,
             'unknown_user': 'sp_missing_' + token[:16], 'users': ['root', 'ubuntu'],
             'mtime': FIXED_MTIME}
+
+
+def environment_command(*, initialize):
+    """Observe the actual mount, not the disk image's nominal filesystem."""
+    assert type(initialize) is bool
+    program = r'''import json, os, socket, stat
+parent = '/var/tmp'
+info = os.lstat(parent)
+assert stat.S_ISDIR(info.st_mode), 'work parent is not a real directory'
+mounts = []
+with open('/proc/self/mountinfo') as source:
+    for line in source:
+        left, right = line.rstrip().split(' - ', 1)
+        target = left.split()[4]
+        for escaped, raw in ((r'\040', ' '), (r'\011', '\t'), (r'\012', '\n'), (r'\134', '\\')):
+            target = target.replace(escaped, raw)
+        if target == '/' or parent == target or parent.startswith(target + '/'):
+            mounts.append((target, right.split()[0]))
+mountpoint, filesystem = max(mounts, key=lambda item: len(item[0]))
+assert filesystem == 'ext4', 'paired work parent must actually use ext4'
+'''
+    if initialize:
+        program += 'socket.sethostname(' + repr(FIXED_HOSTNAME.encode()) + ')\n'
+    program += '''space = os.statvfs(parent)
+print(json.dumps(dict(parent=parent, mountpoint=mountpoint, filesystem=filesystem,
+    block_size=space.f_bsize, fragment_size=space.f_frsize, name_max=space.f_namemax,
+    mode=stat.S_IMODE(info.st_mode), hostname=socket.gethostname()), sort_keys=True))
+'''
+    return '/usr/bin/python3 -I -c ' + shlex.quote(program)
+
+
+async def environment(sandbox, evidence, *, initialize):
+    """One native observation, retained even on refusal; never replay setup."""
+    evidence['status'] = 'incomplete'
+    result = await call(sandbox.commands.run, environment_command(initialize=initialize),
+                        user='root', timeout=15, request_timeout=15)
+    evidence['result'] = value(result)
+    assert (result.exit_code, result.error, result.stderr) == (0, None, '')
+    assert len(result.stdout.encode()) <= 4096, 'environment receipt budget'
+    receipt = json.loads(result.stdout)
+    assert set(receipt) == {'parent', 'mountpoint', 'filesystem', 'block_size',
+                            'fragment_size', 'name_max', 'mode', 'hostname'}
+    assert (receipt['parent'], receipt['filesystem'], receipt['hostname'], receipt['mode']) == (
+        WORK_PARENT, 'ext4', FIXED_HOSTNAME, 0o1777)
+    assert type(receipt['mountpoint']) is str and receipt['mountpoint'].startswith('/')
+    assert all(type(receipt[key]) is int and receipt[key] > 0
+               for key in ('block_size', 'fragment_size', 'name_max'))
+    evidence.update(status='complete', receipt=receipt)
+    return receipt
 
 
 async def cases(sandbox, inputs, asynchronous, rows=None, *, resource_sample=None):
@@ -181,6 +233,10 @@ async def paired(cls, owner, inputs, go, rust, templates, item, *, observe_resou
                                     user='root', timeout=20)
                 return {'identity': go, 'observation': guest_probe.go_receipt(result, go['file'])}
             entry['before'] = await observe()
+            entry['environment_before'] = {}
+            receipt = await environment(sandbox, entry['environment_before'], initialize=True)
+            if len(item['pair']) == 2:
+                assert receipt == item['pair'][0]['environment_before']['receipt'], 'Go/Rust work environment differs'
             samples = None
             if observe_resources:
                 expected = rust[1] if kind == 'rust' else {'fixed_go': go['file']}
@@ -197,6 +253,9 @@ async def paired(cls, owner, inputs, go, rust, templates, item, *, observe_resou
             if samples is not None:
                 await samples.take('after-cases')
                 samples.complete()
+            entry['environment_after'] = {}
+            after = await environment(sandbox, entry['environment_after'], initialize=False)
+            assert after == receipt, kind + ' work environment changed during paired cases'
             entry['after'] = await observe()
             assert entry['after'] == entry['before'], kind + ' daemon changed during paired cases'
         compare(item['pair'][0]['calls'], item['pair'][1]['calls'], 'Go/Rust')
@@ -248,6 +307,7 @@ async def exercise(args):
                          [('go', args.go_template), ('rust', template)], item,
                          observe_resources=observe_resources)
         compare(results[0]['pair'][0]['calls'], results[1]['pair'][0]['calls'], 'sync/async')
+        assert results[0]['pair'][0]['environment_before']['receipt'] == results[1]['pair'][0]['environment_before']['receipt'], 'sync/async work environment differs'
         report['status'] = 'pass'
     except BaseException as error:
         report.update(status='failed', failure=type(error).__name__)
