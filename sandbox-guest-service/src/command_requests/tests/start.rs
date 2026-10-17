@@ -20,6 +20,9 @@ mod gzip;
 #[path = "start/expansion.rs"]
 mod expansion;
 
+#[path = "start/capacity.rs"]
+mod capacity;
+
 struct StartFixture {
     directory: tempfile::TempDir,
     owners: CommandOwners,

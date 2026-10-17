@@ -14,6 +14,7 @@ pub(crate) use native::{LaunchFailure, LaunchFailureKind, PipeStream, PtyStage};
 // error or from a later path/account lookup.
 pub(crate) enum Rejection {
     TagAlreadyExists(String),
+    RegistryCapacity,
     MissingCwd(String),
     Launch(LaunchFailure),
     Expansion(crate::upload_response::PathExpansion),
@@ -25,6 +26,9 @@ impl Rejection {
         match self {
             Self::TagAlreadyExists(_) => {
                 *error == RequestError::Registry(crate::command::RegistryError::AlreadyExists)
+            }
+            Self::RegistryCapacity => {
+                *error == RequestError::Registry(crate::command::RegistryError::ResourceExhausted)
             }
             Self::MissingCwd(_) => {
                 *error
@@ -74,6 +78,11 @@ impl Rejection {
             Self::TagAlreadyExists(tag) => message_with_code(
                 b"already_exists",
                 &[b"process with tag ", tag.as_bytes(), b" already exists"],
+                limit,
+            ),
+            Self::RegistryCapacity => message_with_code(
+                b"resource_exhausted",
+                &[b"command registry capacity exceeded"],
                 limit,
             ),
             Self::MissingCwd(path) => {

@@ -12,6 +12,8 @@ from e2b.connection_config import ConnectionConfig
 from e2b.envd.client_async import create_rpc_client as async_client
 from e2b.envd.client_sync import create_rpc_client as sync_client
 from e2b.envd.process import process_connect, process_pb
+from e2b.envd.rpc import handle_rpc_exception
+from e2b.exceptions import RateLimitException
 from e2b.sandbox.commands.command_handle import CommandExitException
 from e2b.sandbox_sync.commands.command_handle import CommandHandle
 from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
@@ -60,6 +62,10 @@ class Peer:
                 await self.unary(method, kind, payload, headers)
         except ConnectError as error:
             assert (error.code, error.message) == (code, message), repr(error)
+            if code == Code.RESOURCE_EXHAUSTED:
+                mapped = handle_rpc_exception(error)
+                assert isinstance(mapped, RateLimitException), repr(mapped)
+                assert str(mapped) == message + ': Rate limit exceeded, please try again later.'
         else:
             raise AssertionError(f'{method} unexpectedly accepted rejected request')
 
@@ -161,6 +167,9 @@ async def run(settings):
         if tagged:
             await peer.rejected('start', process_pb.StartRequest, settings['request'],
                                 Code.ALREADY_EXISTS, f'process with tag {tag} already exists')
+        else:
+            await peer.rejected('start', process_pb.StartRequest, settings['request'],
+                                Code.RESOURCE_EXHAUSTED, 'command registry capacity exceeded')
     finally:
         await peer.close(stream)
 
@@ -269,3 +278,5 @@ if __name__ == '__main__':
           f"{11 if settings['mode'] in ('term', 'kill') else 9} base operation rejections passed")
     if 'tag' in settings['request']:
         print('exact tag selection, duplicate Start and missing/live-only tag rejections passed')
+    else:
+        print('original full registry rejection decoded as SDK RateLimitException')
