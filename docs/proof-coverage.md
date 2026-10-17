@@ -12,6 +12,18 @@
 
 已有纯核心成果基线为 `0f1901a210e24da50d259e07df75e8c2cb9d181f`；历史本地生成 Lean 最近一次源码更新为 `8612ef1bf99e1ecbddcbd61e8b5fdeedd69e58fe`。历史表记录指定版本的具体对应定理，**不为当前 Rust 服务或当前二进制背书**。当前公共协议、IPv4 判断及网络入口/出口的局部对应范围见下节；新版本地核心、持久化、寿命、宿主执行及网关仍未完成当前版本的全套对应证明。逐批工程测试结果查相关 PR，不在这里复制实验日志。
 
+## T5/T6 边界：DataLease 只读判定
+
+归 #515/#510，V0 只复用该接口登记和验证接线，不将网关业务加入 #333 完成前置。生产源码定位为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`，本批承接 #544 的依赖复验和 #540 测试修复；实际源码、生成物、模型和验收输入以 [DataLease 输入清单](../verification/data-drain-inputs.sha256)为准。原文件 `controller-service/src/application/data_drain.rs` SHA256 为 `12833632ecaeb1d37088119d6b9ea7e03c40f550dc484e5d2b0003f6629b02a5`，未修改生产 Rust、Charon/Aeneas 或证明工具版本。
+
+独立正式库为 [DataDrain](../SandboxModel/Boundaries/DataDrain.lean)，包含自然数／布尔观察策略、实际类型表示和真实生成函数的对应，12 条定理纳入[审计](../SandboxModel/Boundaries/DataDrain/Audit.lean)。实际生产文件通过 `#[path]` 引用，两个转调根只调用原 `routes_dropped/drained`；四个可达自有函数均保留实际结构化体。`routes_dropped` 精确判断本次 Arc 强计数是否为 1；`drained` 返回真当且仅当本次计数为 1 且条件读取的 unknown 为假，unknown／非单持有者拒绝及可表示正常接受均已连接。此结论不是整个共享状态协议或排空／释放证明。
+
+三项标准库读接口的符合性是显式 [A6-data-drain-read](formal/dependencies.md#a6-datalease-只读观察接口) 条件，不是已证明的 Arc／Atomic 实现。观察可以发生在不同时间，模型不承诺原子快照、跨调用稳定或全部写入可见。实际 Acquire 调用、原文件来源、可达函数／类型／外部接口、无错误或析构扩张及两版库源码由独立检查器核对。管理锁、禁止新增 pin、对象绑定、unknown 的建立、持久撤销和物理退出／释放决定仍由使用者提供，不能因本读体证明而整体可信化。
+
+负向复现修改私有副本中唯一真实表达式，删掉 unknown 检查；错误版编译／抽取成功，但原生同一测试以 unknown 断言失败拒绝，Lean 以可表示的 `(count=1, unknown=true)` 输入证明它不满足与正确版相同的 `RustReadSafe`。原文件保持不变，反例经同一服务及独立内核／依赖审计；编译失败或服务失败不算反例。复现命令见[验证链说明](../verification/README.zh-CN.md)。
+
+正式模块入口为 `scripts/verify-data-drain.sh`，已接入完整控制器验收及总依赖审计；仍分别报告模块结果与完整入口结果。新增库和合同文档影响的公共冻结记录只在原抽取／内核复验后同步。整套入口中的历史生成物迁移仍归 #337，本批不迁移旧业务证明，不新增 V4 生命周期或系统完成性覆盖。
+
 ## V0/V4 组合基线的分层验收
 
 本次依赖复验源码组合为 `5fc87754ae8f7814d2cc155f4569041f7ce029c7`：integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2` 加入 #540 的启动文件测试修复。实际证明输入仍由本次更新的 [V0 清单](../verification/foundations-inputs.sha256)、[共享状态清单](../verification/network-inputs.sha256)、[Linux 首链清单](../verification/first-chain-linux-inputs.sha256)及[首链模型清单](../verification/first-chain-inputs.sha256)绑定；没有修改生产 Rust、独立抽取工程、生成 Lean、模型、定理或工具版本。

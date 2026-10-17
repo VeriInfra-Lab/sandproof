@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "source_anchor": "4a5dfdafd4465fef8ec2832f89798f1f16dd09b2",
+  "source_identity": "verification/data-drain-inputs.sha256",
+  "tool_environment": "verification/first-chain-linux-environment.json",
+  "charon_options": {
+    "ullbc": false,
+    "precise_drops": false,
+    "mir": null,
+    "rustc_args": [
+      "--edition",
+      "2024",
+      "--crate-type",
+      "lib",
+      "--crate-name",
+      "sandproof_data_drain_extract",
+      "verification/extract-data-drain/src/lib.rs"
+    ],
+    "targets": [],
+    "sysroot": "default",
+    "monomorphize": false,
+    "monomorphize_mut": null,
+    "start_from": [
+      "crate::read_drained",
+      "crate::read_routes_dropped"
+    ],
+    "start_from_if_exists": [],
+    "start_from_attribute": [],
+    "start_from_pub": false,
+    "include": [
+      "crate"
+    ],
+    "opaque": [],
+    "exclude": [],
+    "extract_opaque_bodies": false,
+    "translate_all_methods": false,
+    "duplicate_defaulted_methods": false,
+    "lift_associated_types": [
+      "*"
+    ],
+    "hide_marker_traits": true,
+    "hide_allocator": true,
+    "remove_unused_clauses": false,
+    "remove_unused_self_clauses": true,
+    "remove_adt_clauses": true,
+    "desugar_drops": false,
+    "ops_to_function_calls": true,
+    "index_to_function_calls": true,
+    "treat_box_as_builtin": true,
+    "no_gen_tuple_structs": true,
+    "raw_consts": false,
+    "consts": null,
+    "unsized_strings": false,
+    "reconstruct_fallible_operations": true,
+    "reconstruct_asserts": true,
+    "reconstruct_matches": true,
+    "deallocate_all_locals": true,
+    "unbind_item_vars": true,
+    "print_original_ullbc": false,
+    "print_ullbc": false,
+    "print_built_llbc": false,
+    "print_llbc": false,
+    "dest_dir": null,
+    "dest_file": "verification/aeneas/llbc/sandproof_data_drain.llbc",
+    "no_dedup_serialized_ast": false,
+    "format": null,
+    "no_serialize": false,
+    "skip_borrowck": false,
+    "no_typecheck": false,
+    "no_normalize": false,
+    "no_reorder_decls": false,
+    "abort_on_error": false,
+    "error_on_warnings": true,
+    "preset": "Aeneas"
+  },
+  "standard_library": {
+    "production": {
+      "alloc/src/sync.rs": "768776d4a37cfeb28c71a0c6d8b2ad33332d11ceaef7e47cb01463bd71b9048a",
+      "core/src/sync/atomic.rs": "9419e324d7b63d0e7a37f591930ae7171e625feaef8deb4a2787c49cc205b282"
+    },
+    "extraction": {
+      "alloc/src/sync.rs": "97a7fa07830c6a660689418d52568cfa6bc216ed9586e146ce63c9a19596f4f1",
+      "core/src/sync/atomic.rs": "e7fb1cb948db983adb086c68019f10392ca76609d768dbdb9fe7f5ef81ea756f"
+    }
+  },
+  "external_contracts": [
+    "A6-data-drain-read",
+    "toolchain-translation"
+  ],
+  "scope": "one call's count and conditional Acquire-load observations; not an atomic snapshot or a release certificate",
+  "excludes": [
+    "Arc clone/store/Weak/Drop",
+    "arbitrary memory ordering",
+    "management-lock discipline",
+    "revocation and exclusion of new pins",
+    "relay or process exit",
+    "physical release",
+    "liveness"
+  ]
+}
