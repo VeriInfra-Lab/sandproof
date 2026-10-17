@@ -136,7 +136,7 @@ def cargo_tests(source, label, output, config, env):
     return receipts
 
 
-def extract(source, label, namespace, output, config, env):
+def extract(source, label, namespace, output, config, env, llbc_digest):
     probe = output / "probes" / label
     probe.mkdir(parents=True)
     core = source / CORE
@@ -151,9 +151,10 @@ def extract(source, label, namespace, output, config, env):
          "--", "--edition", "2024", "--crate-type", "lib", "--crate-name", "data_permit_entry",
          "--remap-path-prefix", f"{output}=.", str(probe / "entry.rs")],
         output, probe / "charon.log", extraction, timeout=120)
-    require((probe / "input.llbc").read_bytes() == (PACKAGE / "llbc" / f"{label}.llbc").read_bytes(),
-            f"LLBC drift: {label}")
-    llbc = json.loads((probe / "input.llbc").read_text())["translated"]
+    actual_llbc = json.loads((probe / "input.llbc").read_text())
+    expected_llbc = json.loads((PACKAGE / "llbc" / f"{label}.llbc").read_text())
+    require(llbc_digest(actual_llbc) == llbc_digest(expected_llbc), f"LLBC drift: {label}")
+    llbc = actual_llbc["translated"]
     local = [f for f in llbc["fun_decls"] if f is not None and f["item_meta"]["is_local"]]
     names = {f["item_meta"]["name"][-1]["Ident"][0] for f in local}
     require(names == FUNCTIONS and len(local) == len(FUNCTIONS), "wrong Rust extraction roots")
@@ -282,6 +283,12 @@ def main():
     require(config["schema"] == 1, "unsupported experiment schema")
     require(config["frozen_baseline"] == "0a23b57af60752f61067fc00b0b0b656e98347cb", "wrong baseline")
     verify_files(args.source_repository, config["service_files"])
+    verify_files(args.source_repository, config["audit_files"])
+    # Reuse the frozen project's existing map normalization, not another algorithm.
+    normalizer_file = args.source_repository / "tools/check_foundations_extraction.py"
+    audit_namespace = {"__file__": str(normalizer_file), "__name__": "frozen_data_permit_audit"}
+    exec(compile(normalizer_file.read_bytes(), str(normalizer_file), "exec"), audit_namespace)
+    llbc_digest = audit_namespace["llbc_digest"]
     verify_files(args.tool_root, config["tool_binaries"])
     for name, revision in config["tool_revisions"].items():
         actual = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=args.tool_root / name, text=True).strip()
@@ -337,12 +344,13 @@ def main():
     require(baseline and baseline == candidate, "original/candidate semantic receipts differ/empty")
     cargo_tests(bad, "bad", output, config, env)
     config["tool_root"] = str(args.tool_root.resolve())
-    extract(output / "source", "correct", "Permit", output, config, env)
-    extract(bad, "bypass-revoked", "BadPermit", output, config, env)
+    extract(output / "source", "correct", "Permit", output, config, env, llbc_digest)
+    extract(bad, "bypass-revoked", "BadPermit", output, config, env, llbc_digest)
     proof_checks(output, args.source_repository, args.mcp_runtime, args.lake_packages, config, env)
     verify_files(PACKAGE, expected_inputs)
     verify_files(args.tool_root, config["tool_binaries"])
     verify_files(args.source_repository, config["service_files"])
+    verify_files(args.source_repository, config["audit_files"])
     # Check source drift after all tools; Cargo output remains outside source copies.
     require(altered(output / "baseline", base_files) == config["overlays"]["baseline"], "baseline drift")
     require(altered(output / "source", base_files) == config["overlays"]["source"], "candidate drift")

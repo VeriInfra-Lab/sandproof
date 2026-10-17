@@ -16,6 +16,9 @@
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f"
   },
+  "audit_files": {
+    "tools/check_foundations_extraction.py": "871185daf8bbc91e563117bb807816b11148b82196f8393fd34d3cabd7e8d8c8"
+  },
   "service_versions": {
     "server_version": "0.30.0",
     "client_version": "0.13.2",

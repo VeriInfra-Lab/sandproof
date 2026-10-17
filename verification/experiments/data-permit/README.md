@@ -38,7 +38,7 @@
 
 1. 在含该 Git 对象的仓库准备 `git archive 0a23b57af60752f61067fc00b0b0b656e98347cb` 的 tar；压缩可选。输入清单逐文件核对，压缩时间戳不参与语义摘要。
 2. 准备原 Aeneas 工具根、固定 Lean/MCP runtime、原 Lake packages 缓存、离线 Cargo home。环境与输入摘要见本包清单，任何不匹配直接失败。
-3. 使用原项目中未修改且摘要匹配的 `tools/lean_session.py` 与 `scripts/lean-mcp-server.sh`。总入口仅将本次指定源的这两份文件复制到私有 proof 工程，连接现有 runtime；不携带旧客户端副本，不修改工具。
+3. 使用原项目中未修改且摘要匹配的 `tools/lean_session.py` 与 `scripts/lean-mcp-server.sh`。总入口仅将本次指定源的这两份文件复制到私有 proof 工程，连接现有 runtime；不携带旧客户端副本，不修改工具。LLBC 规范化直接使用该源中固定摘要的 `tools/check_foundations_extraction.py::llbc_digest`，运行前后都核对该审计文件。
 
 ```sh
 python3 verification/experiments/data-permit/scripts/verify.py \
@@ -56,6 +56,6 @@ python3 verification/experiments/data-permit/scripts/verify.py \
 
 总入口核对输入 → 导出原始/候选/错误副本 → 安装严格 overlay → 原始与候选测试/语义记录对照 → 编译并拒绝错误副本 → 原工具重新抽取及生成 Lean 对照 → 同一真实 Lean 服务 → 内核构建与实际依赖审计。失败、超时、零测试或输入漂移不会输出整体通过。原始完整验收 `scripts/check-function.sh` 和 `scripts/verify-controller.sh` 仍独立执行，局部成功不能代替它们。
 
-原始、候选、错误副本分别使用独立 Cargo target 重新编译；不通过共享 target 的旧产物确认新源码。LLBC 与生成 Lean 均原样比对，不删除字段或手改生成文件。
+原始、候选、错误副本分别使用独立 Cargo target 重新编译；不通过共享 target 的旧产物确认新源码。LLBC 只按现有检查器规范化 `translated.short_names` 这一无序 HashMap 的排列并拒绝重复 key，保留其他全部字段及有序数组；实际生成 Lean 继续逐字节比较。原始 LLBC 保留，不删除字段或手改生成文件。
 
 `receipt.json` 与分步日志写在输出目录，记录本批实际输入摘要与退出状态；结果只适用于该冻结闭包。源码/overlay/core/模型/证明变化后重新生成和验证，不只刷新摘要沿用旧证明。公共仓库不保存机器地址、访问方式、完整日志或构建缓存。
