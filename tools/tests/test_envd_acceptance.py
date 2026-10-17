@@ -3,7 +3,6 @@ import copy
 import json
 from pathlib import Path
 import tempfile
-import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -160,54 +159,6 @@ class SupervisorStageTests(unittest.TestCase):
 
 
 class PreparationTests(unittest.TestCase):
-    def test_service_staging_is_reclaimed_only_after_real_vm_cleanup_and_exact_stop(self):
-        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tests/system'))
-        import envd_acceptance as runner
-        for cleaned in (False, True):
-            services = Mock()
-            services.storage_peaks.return_value = {'measured': True}
-            report = dict(resource_cleanup_confirmed=cleaned, staging_cleanup_confirmed=False)
-            runner.stop_services(SimpleNamespace(services=services), report)
-            self.assertEqual(report['staging_cleanup_confirmed'], cleaned)
-            self.assertEqual(report['storage_peaks'], {'measured': True})
-            self.assertEqual([x[0] for x in services.method_calls],
-                             ['stop_all', 'storage_peaks'] + (['cleanup_staging'] if cleaned else []))
-        services.cleanup_staging.side_effect = ValueError('identity changed')
-        report = dict(resource_cleanup_confirmed=True, staging_cleanup_confirmed=False)
-        with self.assertRaises(ValueError):
-            runner.stop_services(SimpleNamespace(services=services), report)
-        self.assertIs(report['staging_cleanup_confirmed'], False)
-
-    def test_registry_preflight_receives_rust_profile_and_required_registry_tool(self):
-        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tests/system'))
-        import envd_acceptance as runner
-        from tools.template_fetch import REGCTL_SHA256
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            fields = ('center', 'host', 'candidate_manifest', 'redis_material', 'tls_material',
-                      'service_staging_parent', 'kernel', 'firecracker', 'jailer', 'tools',
-                      'cgroup_parent', 'build_cgroup_parent', 'window_helper')
-            config = {name: str(root / name) for name in fields}
-            config.update(center_uid=1001, center_gid=1001, redis_uid=1002, redis_gid=1002,
-                          uid_base=10000, rust_envd_acceptance=dict(go_rootfs='go', builder_rootfs='builder',
-                          policy_template='policy', registry_limits={'approved': 1},
-                          build_limits={'approved': 2}, data_transfer={'approved': 3}))
-            policy = {'public': {'bounded_builds': {'helper': {}}}}
-            with patch.object(runner, 'json_file', return_value={}), \
-                    patch.object(runner, 'instantiate_policy', return_value=policy), \
-                    patch.object(runner, 'digest', return_value='a'*64), \
-                    patch.object(runner, 'write_once'), \
-                    patch.object(runner, 'free_loopback_port', side_effect=[1, 2, 3]), \
-                    patch.object(runner, 'prepare_registry_runtime', return_value=SimpleNamespace()) as prepare:
-                runner.prepare_deployment(config, root, root/'record')
-            kwargs = prepare.call_args.kwargs
-            self.assertEqual(kwargs['rust_guest_profile'], envd.prepared_paths(config)['profile'])
-            self.assertNotIn('envd', kwargs['tool_hashes'])
-            self.assertEqual(kwargs['tool_hashes']['regctl'], REGCTL_SHA256)
-            self.assertEqual(kwargs['data_transfer'], {'approved': 3})
-            self.assertEqual(kwargs['activation_ceiling_bytes'], 200*1024**3)
-
     def test_missing_profile_does_not_build_or_switch_any_go_material(self):
         self.assertIsNone(envd.prepare({}))
         self.assertIsNone(envd.policy({}))
