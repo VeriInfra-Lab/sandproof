@@ -54,8 +54,19 @@ fn private_inputs_and_executable_are_read_from_original_descriptors() {
     let mut contents = String::new();
     config.read_to_string(&mut contents).unwrap();
     assert_eq!(contents, "original");
-    // The real absolute entry also traverses the OS root. No process executes.
-    assert!(worker(Path::new("/usr/bin/false"), 0, 4096).is_ok());
+}
+
+#[test]
+#[ignore = "explicit root-owned installation; see docs/testing-plan.md"]
+fn root_owned_installation_is_opened_from_os_root() {
+    let path = std::env::var_os("SANDPROOF_GUEST_ROOT_WORKER")
+        .expect("set SANDPROOF_GUEST_ROOT_WORKER to a protected root-owned executable");
+    let path = Path::new(&path);
+    // Exercise the actual OS root and production opener. No process executes;
+    // this requires file ownership, not a privileged test process.
+    let executable = worker(path, 0, 4096).expect("root installation must satisfy startup checks");
+    assert_eq!(executable.metadata().unwrap().uid(), 0);
+    assert_eq!(worker(path, 1, 4096).err(), Some(Error::Untrusted));
 }
 
 #[test]

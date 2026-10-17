@@ -116,7 +116,18 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #495 的三项正式 CLI 拒绝测试已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38788690795) 执行成功：源 9f71ef6ecd68ef3ae829ae75dd81aec42453355e、checkout e334e7904a132e0eca37ffea87c4813c0240ea6b；固定 SDK 84 项、封存 Redis 与四项 CI 全部成功。该回执只推进上述启动拒绝覆盖，不包含成功启动或下述运行身份观察工具。
 
-[受信任启动文件检查](../sandbox-guest-runtime/src/startup_files/tests.rs)四项在 macOS 使用真实私有目录/文件通过：原 FD 在路径替换后仍读取原内容，组/其他可写祖先、非私有状态/配置、不可执行或可写 worker、硬链接/软链接/错类型/错 UID 拒绝，FIFO 无写者时非阻塞打开后拒绝，以及路径/预算先行。目录遍历主体使用私有锚点，避免把公共临时目录祖先当成可信安装路径；另只读打开实际 `/usr/bin/false` 检查从 OS 根开始的入口，不执行它。定向入口为 `cargo test -p sandproof-guest-runtime --locked --lib startup_files::`。不覆盖并发挂载替换、root/同 owner 对抗、worker 摘要或整套安装验收。
+[受信任启动文件检查](../sandbox-guest-runtime/src/startup_files/tests.rs)的四项普通单元测试使用当前账号拥有的私有目录和文件：原 FD 在路径替换后仍读取原内容，组/其他可写祖先、非私有状态/配置、不可执行或可写 worker、硬链接/软链接/错类型/错 UID 拒绝，FIFO 无写者时非阻塞打开后拒绝，以及路径/预算先行。目录遍历主体使用私有锚点，不依赖系统二进制属主，也不把公共临时目录祖先当成可信安装路径。普通定向入口为 `cargo test -p sandproof-guest-runtime --locked --lib startup_files::`。
+
+从真实 OS 根开始的 root 安装场景单独保留为显式测试，`SANDPROOF_GUEST_ROOT_WORKER` 必须指定已存在、属主 UID 0、祖先受保护且满足原 worker 检查的可执行文件。测试原样调用生产 opener，核对返回 FD 的 root 属主及错误 owner 拒绝；不执行该程序、不修改系统文件或模拟 UID。缺少参数、权限或属主不符均失败，不自动跳过。Linux Rust CI 在完整基础检查后独立执行此项；普通账号拥有的自建 rootfs 不满足该前提时，需要另在满足条件的文件树实测，不能将普通单元测试通过计为 root 安装验收通过：
+
+```sh
+SANDPROOF_GUEST_ROOT_WORKER=/usr/bin/false \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  startup_files::tests::root_owned_installation_is_opened_from_os_root \
+  -- --exact --ignored --nocapture
+```
+
+这些检查不覆盖并发挂载替换、root/同 owner 对抗、worker 摘要或整套安装验收。
 
 #486 的精确组合已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38756082071) 通过：源 e75966a0bf0d9917c436ca538fb91753ec698fd8，checkout 99b8d56a547810cfe95f9930dbdef01e9e5f7b20；离线 tz-rs 0.7.3 已可用，runtime PID 11 项、preparation 56 passed / 2 helper ignored、process 24 passed、service lib 429 passed / 71 ignored、固定 SDK 77 项、Harbor 262 项、封存 Redis 与四项 CI 均成功。该提交包括下述启动状态/持久会话和先前时区组合；当前正式 daemon 入口是后续改动，不借用该回执声称新入口通过。
 
