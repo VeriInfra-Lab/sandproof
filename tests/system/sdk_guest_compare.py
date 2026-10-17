@@ -55,8 +55,22 @@ def plan():
 def environment_command(*, initialize):
     """Observe the actual mount, not the disk image's nominal filesystem."""
     assert type(initialize) is bool
-    program = r'''import json, os, socket, stat
+    program = '''import json, os, socket, stat
 parent = '/var/tmp'
+'''
+    if initialize:
+        # A minimal template need not contain this standard test parent. Make
+        # only the missing directory; never chmod/replace an existing one.
+        program += '''old_mask = os.umask(0)
+try:
+    try:
+        os.mkdir(parent, 0o1777)
+    except FileExistsError:
+        pass
+finally:
+    os.umask(old_mask)
+'''
+    program += r'''
 info = os.lstat(parent)
 assert stat.S_ISDIR(info.st_mode), 'work parent is not a real directory'
 mounts = []
@@ -84,8 +98,12 @@ print(json.dumps(dict(parent=parent, mountpoint=mountpoint, filesystem=filesyste
 async def environment(sandbox, evidence, *, initialize):
     """One native observation, retained even on refusal; never replay setup."""
     evidence['status'] = 'incomplete'
-    result = await call(sandbox.commands.run, environment_command(initialize=initialize),
-                        user='root', timeout=15, request_timeout=15)
+    try:
+        result = await call(sandbox.commands.run, environment_command(initialize=initialize),
+                            user='root', timeout=15, request_timeout=15)
+    except CommandExitException as error:
+        evidence['result'] = value(error)
+        raise
     evidence['result'] = value(result)
     assert (result.exit_code, result.error, result.stderr) == (0, None, '')
     assert len(result.stdout.encode()) <= 4096, 'environment receipt budget'

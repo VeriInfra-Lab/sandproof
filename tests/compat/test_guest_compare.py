@@ -111,9 +111,11 @@ class ComparisonTests(unittest.TestCase):
 class EnvironmentCommandTests(unittest.TestCase):
     def test_native_fixture_checks_actual_mount_before_hostname_and_never_rewrites_metadata(self):
         self.assertTrue(probe.plan()['directory'].startswith('/var/tmp/sandproof-paired-'))
-        for initialize, mount, symlink in ((True, 'ext4', False), (False, 'ext4', False),
-                                           (True, 'tmpfs', False), (True, 'ext4', True)):
-            with self.subTest(initialize=initialize, mount=mount, symlink=symlink), ExitStack() as stack:
+        for initialize, mount, symlink, missing in (
+                (True, 'ext4', False, False), (True, 'ext4', False, True),
+                (False, 'ext4', False, False), (True, 'tmpfs', False, False),
+                (True, 'ext4', True, False)):
+            with self.subTest(initialize=initialize, mount=mount, symlink=symlink, missing=missing), ExitStack() as stack:
                 command = shlex.split(probe.environment_command(initialize=initialize))
                 self.assertEqual(command[:3], ['/usr/bin/python3', '-I', '-c'])
                 # /tmp really is a different mount; only /var/tmp's longest
@@ -127,6 +129,9 @@ class EnvironmentCommandTests(unittest.TestCase):
                     st_mode=(stat.S_IFLNK if symlink else stat.S_IFDIR) | 0o1777)))
                 stack.enter_context(patch('os.statvfs', return_value=SimpleNamespace(
                     f_bsize=4096, f_frsize=4096, f_namemax=255)))
+                mkdir = stack.enter_context(patch('os.mkdir', side_effect=None if missing else FileExistsError))
+                umask = stack.enter_context(patch('os.umask', return_value=0o022))
+                chmod = stack.enter_context(patch('os.chmod'))
                 set_hostname = stack.enter_context(patch('socket.sethostname', create=True))
                 stack.enter_context(patch('socket.gethostname', return_value='sandproof-paired'))
                 output = stack.enter_context(redirect_stdout(io.StringIO()))
@@ -141,6 +146,13 @@ class EnvironmentCommandTests(unittest.TestCase):
                         set_hostname.assert_called_once_with(b'sandproof-paired')
                     else:
                         set_hostname.assert_not_called()
+                if initialize:
+                    mkdir.assert_called_once_with('/var/tmp', 0o1777)
+                    self.assertEqual(umask.call_args_list, [unittest.mock.call(0), unittest.mock.call(0o022)])
+                else:
+                    mkdir.assert_not_called()
+                    umask.assert_not_called()
+                chmod.assert_not_called()
 
 
 class OriginalSdkRecordingTests(unittest.IsolatedAsyncioTestCase):
@@ -242,6 +254,24 @@ class OriginalSdkRecordingTests(unittest.IsolatedAsyncioTestCase):
                     start = self.app.process.starts[-1]
                     self.assertEqual(list(start.process.args), ['-l', '-c', probe.environment_command(initialize=True)])
                     self.assertEqual(self.app.process.signals, [])
+
+    async def test_native_environment_failure_keeps_original_exception_and_bytes_without_retry(self):
+        for cls in (Sandbox, AsyncSandbox):
+            sandbox = await self.connect(cls)
+            self.app.process.stdout_chunks = [b'original partial receipt']
+            self.app.process.stderr_chunks = [b'original native setup failure']
+            self.app.process.exit_code = 1
+            before = len(self.app.process.starts)
+            evidence = {}
+            with self.assertRaises(CommandExitException):
+                await probe.environment(sandbox, evidence, initialize=True)
+            self.assertEqual(evidence['status'], 'incomplete')
+            self.assertNotIn('receipt', evidence)
+            self.assertEqual(evidence['result']['exit_code'], 1)
+            self.assertEqual(evidence['result']['stdout'], 'original partial receipt')
+            self.assertEqual(evidence['result']['stderr'], 'original native setup failure')
+            self.assertEqual(len(self.app.process.starts), before + 1)
+            self.assertEqual(self.app.process.signals, [])
 
     async def test_resource_samples_use_both_original_sdks_once_per_phase_without_budget_verdict(self):
         expected = {'fixed_go': guest_probe.load_go_expected()['file']}
