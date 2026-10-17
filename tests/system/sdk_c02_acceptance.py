@@ -99,7 +99,7 @@ def processes_in_uid_range(first, last):
     return sorted(found)
 
 
-def durable_rows(database, namespace):
+def durable_rows(database, namespace, *, owners=None):
     """Observe current SQL or exact quiescent retirement; never infer IDs from logs."""
     _require_assertions(Failure)
     require(database.is_file() and not database.is_symlink(), "database_unknown")
@@ -109,13 +109,24 @@ def durable_rows(database, namespace):
             rows = connection.execute(
                 "SELECT sandbox_id, owner_id, state_blob FROM sandboxes ORDER BY sandbox_id"
             ).fetchall()
-            retired = retired_sandboxes(connection, namespace)
+            if owners is not None:
+                require(type(owners) is dict and len(owners) <= EXPECTED_SANDBOXES
+                        and all(valid_sandbox_id(ident, namespace) and type(owner) is int
+                                and 0 < owner < 2**64 for ident, owner in owners.items()), "identity_unknown")
+            retired = {}
+            for owner in {1} if owners is None else set(owners.values()):
+                for ident in retired_sandboxes(connection, namespace, owner=owner):
+                    require(ident not in retired and (owners is None or owners.get(ident) == owner),
+                            "identity_unknown")
+                    retired[ident] = owner
         observed = {}
         for ident, owner, raw in rows:
-            require(valid_sandbox_id(ident, namespace) and owner == "tenant-1", "identity_unknown")
+            expected_owner = 1 if owners is None else owners.get(ident)
+            require(valid_sandbox_id(ident, namespace) and expected_owner is not None
+                    and owner == "tenant-" + str(expected_owner), "identity_unknown")
             value = json.loads(raw, object_pairs_hook=host.unique_keys)
             require(isinstance(value, dict) and type(value.get("owner")) is int
-                    and value["owner"] == 1 and value.get("phase") in
+                    and value["owner"] == expected_owner and value.get("phase") in
                     ("Starting", "Running", "Pausing", "Paused", "Revoking", "Destroyed")
                     and type(value.get("terminal")) is bool, "database_unknown")
             for field in ("current_vm", "net_slot"):
@@ -127,7 +138,7 @@ def durable_rows(database, namespace):
             # This is an observation tag, not a fabricated SandboxRecord or
             # worker receipt. The exact terminal reducer already retired it.
             observed[ident] = {"phase": "Retired", "terminal": True,
-                               "current_vm": None, "net_slot": None, "owner": 1}
+                               "current_vm": None, "net_slot": None, "owner": retired[ident]}
         require(len(observed) <= EXPECTED_SANDBOXES, "identity_unknown")
         return observed
     except (sqlite3.Error, ValueError, TypeError, KeyError) as error:
@@ -140,11 +151,11 @@ def destroyed(rows):
                for value in rows.values())
 
 
-def wait_for_destroyed(database, namespace, identities, *, timeout=30):
+def wait_for_destroyed(database, namespace, identities, *, timeout=30, owners=None):
     _require_assertions(Failure)
     deadline = time.monotonic() + timeout
     while True:
-        rows = durable_rows(database, namespace)
+        rows = durable_rows(database, namespace, owners=owners)
         require(set(rows) == set(identities), "identity_unknown")
         if destroyed(rows):
             return rows
@@ -160,7 +171,7 @@ def entries(path):
         return []
 
 
-def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, expected=None):
+def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, expected=None, owners=None):
     """Observe only; never stop a host PID or delete a claim/resource directly."""
     _require_assertions(Failure)
     require(re.fullmatch(r"[0-9a-f]{16}", namespace) is not None, "identity_unknown")
@@ -178,7 +189,9 @@ def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, e
         require(valid_sandbox_id(ident, namespace) and evidence.name == ident + ".json", "identity_unknown")
         context, record, network = value["context"], value["record"], value["network"]
         require(context["binding"]["sandbox"] == int(ident.rsplit("-", 1)[1])
-                and context["binding"]["owner"] == 1 and type(context["position"]) is int
+                and type(context["binding"]["owner"]) is int
+                and context["binding"]["owner"] == (1 if owners is None else owners.get(ident))
+                and type(context["position"]) is int
                 and 0 <= context["position"] < PHYSICAL_SLOTS
                 and record["resource_id"] == prefix + str(context["binding"]["vm"]), "identity_unknown")
         require(type(record["pid"]) is int and 0 < record["pid"] < 2**32
@@ -278,12 +291,15 @@ def record_requests(root,services,report):
         try:
             audit=services.processes.audit('host-0')
             local=local_binding(audit,ident,expected_node=services.host_configs[0]['inbox']['node'])
-            require(local['owner']==1,'identity_unknown')
+            require(type(local['owner']) is int and 0 < local['owner'] < 2**64,'identity_unknown')
+            current=[row for row in audit['operations']
+                     if row['current'] is True and row['identity']['sandbox_id']==ident]
+            require(len(current)==1 and current[0]['identity']==identity,'identity_unknown')
             number=local['sandbox']
             native_id='sb-'+services.native_pools[0]['namespace']+'-'+str(number)
             contexts=[context for context,_phase in audit['host_slots']
                       if type(context.get('binding')) is dict and context['binding']['sandbox']==number
-                      and context['binding']['owner']==1]
+                      and context['binding']['owner']==local['owner']]
             require(len(contexts)==1,'identity_unknown')
             context=contexts[0]
             name_vm='vm-'+services.native_pools[0]['namespace']+'-'+str(context['binding']['vm'])
@@ -298,6 +314,7 @@ def record_requests(root,services,report):
                 create_identity=identity,context=context,record=record,network=network))
             report.setdefault('global_identities',{})[ident]=identity
             report.setdefault('global_native',{})[ident]=native_id
+            report.setdefault('native_owners',{})[native_id]=local['owner']
         finally:
             services.processes.start('host-0')
         services.wait_ready(for_admission=False)
@@ -544,9 +561,11 @@ def cleanup(root, namespace, args, opener, base_url, owner_key, services, report
     native=dict(report.get('global_native',{}))
     require(set(native)==set(observed),'identity_unknown')
     report['identities']=sorted(native.values())
-    wait_for_destroyed(root / 'db/controller.db',namespace,native.values())
+    owners=report.get('native_owners',{})
+    require(set(owners)==set(native.values()),'identity_unknown')
+    wait_for_destroyed(root / 'db/controller.db',namespace,native.values(),owners=owners)
     report["known_claims"] = assert_no_exact_resources(
-        root, namespace, args.uid_base, args.firecracker.name)
+        root, namespace, args.uid_base, args.firecracker.name,owners=owners)
     require(all(child.poll() is None for child in services.processes.children.values()),'server_exited')
     require(not report["cleanup_errors"], "cleanup_failed")
     if len(observed) == EXPECTED_SANDBOXES:
@@ -668,17 +687,19 @@ def run_profile(args, root, report):
             require(all(child.poll() is None for child in services.processes.children.values()),'server_exited')
             report["phases"][stage] = "pass"
         stage = "terminal_state"
-        rows = durable_rows(root / "db/controller.db", namespace)
+        owners=report.get('native_owners',{})
+        require(set(owners)==set(report.get('global_native',{}).values()),'identity_unknown')
+        rows = durable_rows(root / "db/controller.db", namespace,owners=owners)
         report["known_sandboxes"] = len(rows)
         report["identities"] = sorted(rows)
         require(len(rows) == EXPECTED_SANDBOXES, "terminal_state_invalid")
         require(set(report.get('global_identities',{}))==set(report.get('global_native',{}))
                 and len(report.get('global_identities',{}))==EXPECTED_SANDBOXES,'identity_unknown')
-        wait_for_destroyed(root / "db/controller.db", namespace, rows)
+        wait_for_destroyed(root / "db/controller.db", namespace, rows,owners=owners)
         report["phases"][stage] = "pass"
         stage = "resource_audit"
         report["known_claims"] = assert_no_exact_resources(
-            root, namespace, args.uid_base, args.firecracker.name, expected=EXPECTED_SANDBOXES)
+            root, namespace, args.uid_base, args.firecracker.name, expected=EXPECTED_SANDBOXES,owners=owners)
         report["phases"][stage] = "pass"
         stage = "source_unchanged"
         unchanged(args, root, report)
@@ -712,9 +733,10 @@ def run_profile(args, root, report):
         # Never restart/replay automatically when the now-stopped service cannot help.
         if identities is not None:
             try:
-                rows = durable_rows(root / "db/controller.db", namespace)
+                owners=report.get('native_owners',{})
+                rows = durable_rows(root / "db/controller.db", namespace,owners=owners)
                 require(set(rows) == identities and destroyed(rows), "identity_unknown")
-                assert_no_exact_resources(root, namespace, args.uid_base, args.firecracker.name)
+                assert_no_exact_resources(root, namespace, args.uid_base, args.firecracker.name,owners=owners)
             except BaseException as error:
                 record_failure(report, "cleanup", error, cleanup=True)
                 report["cleanup"] = "unknown"

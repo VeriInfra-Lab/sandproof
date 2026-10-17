@@ -756,6 +756,8 @@ wait 记录 initial_wait_outcome，再通过同一原 PID 的恢复订阅验证�
 
 C02 在交给中心/宿主装配前显式声明原启动期限 300 秒和禁用公网，保持原 NativeSettings 缺省行为；装配发生在 Rust 反序列化之前，不能依赖它补字段。执行时必须提供 `--cgroup-parent` 指向批准的空且已委派 VM cgroup 父组，宿主内存上限沿用实际模板的 `host_memory_bytes`；服务进程仍使用独立的 `--service-cgroup-record`。[准备回归](../tests/compat/test_c02_preparation.py)把原 C02 池配置交给实际共享渲染器，核对两端收到同一配置及模板对应的宿主资源声明；只构造私有文件，不启动服务或 VM。
 
+C02 的公开租户与宿主本地 owner 分别核对：公开身份来自原中心审计，本地 sandbox/owner 来自同一完整创建身份的原宿主 inbox。保存这份映射后，SQL 状态、退休证书和物理资源回执必须匹配各自的本地 owner；不能将公开租户编号当成本地 owner，也不能从公开 sandbox 编号推导本地编号。[监督回归](../tools/tests/test_system_acceptance.py)覆盖不同本地 owner 的活动/退休记录及错租户、错 owner 拒绝；原 SDK 调用集和 5 秒到期场景保持不变。
+
 C02 原始目录含凭据、配置及完整日志，只在私有目录保存；`--export-run` 输出有限脱敏摘要。安全导出须确认原执行结束/锁状态，不因丢失结果补造通过。监督器无法确认收尾时保留未知占用和现场；禁止全局杀 Firecracker、宽泛删除 jail/网络/目录。清理后核对原 PID/启动时间、目录身份、namespace、cgroup、磁盘及源镜像摘要。
 
 ## 4. 通用模板与 Terminal-Bench

@@ -236,8 +236,10 @@ def idle_snapshot(database):
         }
 
 
-def retired_sandboxes(connection, namespace):
+def retired_sandboxes(connection, namespace, *, owner=1):
     """Read exact retained results and committed retirement tail in one DB snapshot."""
+    if type(owner) is not int or not 0 < owner < 2**64:
+        raise ValueError("exact native owner required")
     cut, payload = connection.execute("SELECT input_cut,payload FROM controller_checkpoint WHERE id=1").fetchone()
     envelope = json.loads(payload)
     if envelope["namespace"] != namespace:
@@ -246,14 +248,15 @@ def retired_sandboxes(connection, namespace):
     for key, value in envelope["core"]["maintenance"]["retained"]:
         ledger = value["ledger"]
         result = ledger["result"]
-        if (value["owner"] == 1 and key["sandbox"] == ledger["sandbox"]
+        if (type(value["owner"]) is int and value["owner"] == owner and key["sandbox"] == ledger["sandbox"]
                 and (result == "Destroyed" or isinstance(result, dict) and "Failed" in result)):
             retired.add(f"sb-{namespace}-{key['sandbox']}")
     for (encoded,) in connection.execute("SELECT input_json FROM controller_inputs WHERE sequence>?", (cut,)):
         request = json.loads(encoded)["input"].get("Maintenance", {}).get("Retire")
         if request is not None:
             certificate = request["quiescence"]
-            if (request["owner"] == certificate["owner"] == 1
+            if (type(request["owner"]) is int and type(certificate["owner"]) is int
+                    and request["owner"] == certificate["owner"] == owner
                     and request["sandbox"] == certificate["sandbox"] and all(certificate[key] == "Confirmed" for key in (
                         "worker_drained", "data_connections_drained", "host_resources_reclaimed", "external_pins_released"))):
                 retired.add(f"sb-{namespace}-{request['sandbox']}")
