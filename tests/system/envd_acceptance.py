@@ -140,12 +140,23 @@ def run_probe(deployment, config, root, name, template):
     return result
 
 
+def stop_services(deployment, report):
+    """Original role cleanup is allowed only after independent VM absence."""
+    services = deployment.services
+    services.stop_all()
+    report['storage_peaks'] = services.storage_peaks()
+    if report.get('resource_cleanup_confirmed') is True:
+        services.cleanup_staging()
+        report['staging_cleanup_confirmed'] = True
+
+
 def worker(config, expected):
     root = Path(config['run_root'])
     record = root / 'service-cgroup.json'
     service_cgroup.observe(record, pids=[os.getpid()])
     report = dict(candidate=config['candidate'],run_id=config['run_id'],guest=expected,
-                  status='failed',checks=[],resource_cleanup_confirmed=False,service_cleanup_confirmed=False)
+                  status='failed',checks=[],resource_cleanup_confirmed=False,
+                  staging_cleanup_confirmed=False,service_cleanup_confirmed=False)
     deployment = None
     try:
         deployment, args = prepare_deployment(config,root,record)
@@ -188,8 +199,7 @@ def worker(config, expected):
                 report['resource_cleanup_confirmed']=True
         finally:
             if deployment is not None:
-                deployment.services.stop_all()
-                report['storage_peaks']=deployment.services.storage_peaks()
+                stop_services(deployment, report)
             _save(root/'report.json',report)
     return report
 
@@ -224,8 +234,9 @@ def main(argv=None):
     if code!=0:
         raise RuntimeError('Rust envd stage failed; retain exact recovery identity')
     report=json_file(private_path(root/'report.json'),limit=4*1024**2)
-    if report['resource_cleanup_confirmed'] is not True:
-        raise ValueError('real VM cleanup remains unknown')
+    if (report['resource_cleanup_confirmed'] is not True
+            or report.get('staging_cleanup_confirmed') is not True):
+        raise ValueError('real VM or original role-directory cleanup remains unknown')
     cleanup=service_cgroup.remove(record)
     write_once(root/'service-cleanup.json',cleanup)
     report['service_cleanup_confirmed']=cleanup.get('removed') is True

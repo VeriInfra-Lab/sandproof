@@ -160,6 +160,24 @@ class SupervisorStageTests(unittest.TestCase):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_service_staging_is_reclaimed_only_after_real_vm_cleanup_and_exact_stop(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tests/system'))
+        import envd_acceptance as runner
+        for cleaned in (False, True):
+            services = Mock()
+            services.storage_peaks.return_value = {'measured': True}
+            report = dict(resource_cleanup_confirmed=cleaned, staging_cleanup_confirmed=False)
+            runner.stop_services(SimpleNamespace(services=services), report)
+            self.assertEqual(report['staging_cleanup_confirmed'], cleaned)
+            self.assertEqual(report['storage_peaks'], {'measured': True})
+            self.assertEqual([x[0] for x in services.method_calls],
+                             ['stop_all', 'storage_peaks'] + (['cleanup_staging'] if cleaned else []))
+        services.cleanup_staging.side_effect = ValueError('identity changed')
+        report = dict(resource_cleanup_confirmed=True, staging_cleanup_confirmed=False)
+        with self.assertRaises(ValueError):
+            runner.stop_services(SimpleNamespace(services=services), report)
+        self.assertIs(report['staging_cleanup_confirmed'], False)
+
     def test_registry_preflight_receives_rust_profile_and_required_registry_tool(self):
         sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tests/system'))
         import envd_acceptance as runner
