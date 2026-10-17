@@ -31,7 +31,7 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
         self.check_service_preflight()
 
     def test_explicit_paired_capacity_keeps_global_and_builder_limits(self):
-        self.check_service_preflight(runtime_transfers_per_vm=5)
+        self.check_service_preflight(runtime_transfers_per_vm=6)
 
     def test_invalid_runtime_capacity_fails_before_policy_or_filesystem_access(self):
         for value in (True, 0, 1, 9, 5.0, '5', None):
