@@ -209,7 +209,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 固定 Tokio 1.49.0：同一池中每次领取一个独占许可，容量不足时非等待领取拒绝；等待领取允许排队，取消撤销排队责任并归还已经分配给该 future 的许可；正常 Drop 归还原池且不复制许可。许可可以在唤醒 future 之前分配，因此 `.await` 尚未返回不等于尚未获额。固定源码的队列/关闭/Drop 路径在环境清单登记；Cargo.lock 的 `.crate` 校验和及全部解包文件由检查器核对。此完整性检查不是 Tokio 已形式化证明。
 
-`spawn_blocking` 至多执行给定 FnOnce 一次，并保持移入闭包的许可直到闭包退出／析构。丢弃 JoinHandle 只停止观察；已开始的阻塞任务不能靠 abort 证明退出。尚未开始的任务可能被运行时丢弃，许可随实际闭包析构归还。回调错误和 unwind 前都可能已有业务效果；JoinError 只表示结果不可按正常成功使用，不提供回滚事实。[固定版 JoinHandle](https://docs.rs/tokio/1.49.0/tokio/task/struct.JoinHandle.html)、[固定版 Semaphore](https://docs.rs/tokio/1.49.0/tokio/sync/struct.Semaphore.html)。
+`spawn_blocking` 接管给定 FnOnce 及捕获值，至多调用该 FnOnce 一次；丢弃 JoinHandle 不主动丢弃仍在排队／运行的闭包。**许可是否一直跨越业务回调，由下方 B1 的命名绑定与作用域负责**；Tokio 不阻止闭包主动提前 `drop` 捕获值。已开始的阻塞任务不能靠 abort 证明退出。尚未开始的任务可能被运行时丢弃，捕获值按实际 Rust 析构路径处理。回调错误和 unwind 前都可能已有业务效果；JoinError 只表示结果不可按正常成功使用，不提供回滚事实。[固定版 JoinHandle](https://docs.rs/tokio/1.49.0/tokio/task/struct.JoinHandle.html)、[固定版 Semaphore](https://docs.rs/tokio/1.49.0/tokio/sync/struct.Semaphore.html)。
 
 这些是有限接口的外部条件，允许排队、执行延迟、关闭和失败，不假定公平调度或后台工作必然结束。进程 abort、崩溃、OOM、泄漏／forget 许可及未登记的增额、合并／拆分操作不由正常 Drop 合同担保。宿主进程崩溃后的持久责任、VM 与外部进程清理由原恢复模块处理，本合同不把内存许可当作物理资源释放证据。
 
