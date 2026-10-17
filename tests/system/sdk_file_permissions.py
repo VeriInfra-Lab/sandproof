@@ -181,7 +181,7 @@ async def isolation_cases(victim, control, directory, host_canary):
     # Only a new harness-owned canary path is allowed; never probe real secrets.
     target = PurePosixPath(host_canary)
     assert target.is_absolute() and target.name == 'host-canary'
-    assert '..' not in target.parts and str(target).startswith('/var/lib/sp-01a0e1bd/fp8-')
+    assert '..' not in target.parts and str(target) == host_canary
     assert not await call(victim.files.exists, host_canary)
     assert not await call(control.files.exists, host_canary)
     original = b'control VM independent file\n'
