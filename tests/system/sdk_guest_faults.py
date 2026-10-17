@@ -272,17 +272,33 @@ def registry_reclaim(vm, directory, candidate, settings):
 def unavailable_expiry(vm, owner, client, candidate):
     observation = asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
     daemon = observation['observation']['daemon']
-    vm.set_timeout(8)
-    program = ('import os,signal,pathlib\npid='+str(daemon['pid'])+'\nfd=os.pidfd_open(pid)\n'
+    directory='/var/tmp/expiry-fault-'+uuid.uuid4().hex
+    vm.commands.run('mkdir -m 0700 '+shlex.quote(directory),user='root',timeout=15)
+    ready,gate=directory+'/armed',directory+'/go'
+    program = ('import os,signal,pathlib,time\npid='+str(daemon['pid'])+'\nfd=os.pidfd_open(pid)\n'
         +'assert int(pathlib.Path("/proc/"+str(pid)+"/stat").read_text().rsplit(")",1)[1].split()[19])=='
         +str(daemon['start_ticks'])+'\nos.rename("/opt/sandproof/state/pid-claims.bin",'
-        +'"/opt/sandproof/state/original-pid-claims.test-backup")\nsignal.pidfd_send_signal(fd,signal.SIGKILL)\n')
+        +'"/opt/sandproof/state/original-pid-claims.test-backup")\n'
+        +'assert not pathlib.Path("/opt/sandproof/state/pid-claims.bin").exists()\n'
+        +'pathlib.Path('+repr(ready)+').write_text("armed")\ndeadline=time.monotonic()+30\n'
+        +'while not pathlib.Path('+repr(gate)+').exists():\n'
+        +'    assert time.monotonic()<deadline\n    time.sleep(.05)\n'
+        +'signal.pidfd_send_signal(fd,signal.SIGKILL)\n')
+    handle=vm.commands.run(python(program),user='root',background=True,timeout=30)
+    handle.disconnect()
+    wait_for(lambda:vm.files.exists(ready,user='root'),bool)
+    assert vm.files.read(ready,user='root')=='armed'
+    vm.set_timeout(8)
     try:
-        vm.commands.run(python(program), user='root', timeout=3, request_timeout=3)
+        vm.files.write(gate,'go',user='root',request_timeout=3)
     except Exception:
-        pass
-    else:
-        raise AssertionError('killed daemon falsely completed its command')
+        pass  # The one release write can lose its reply; never replay it.
+    assert vm.get_info().state=='running', 'expiry cannot stand in for a service fault'
+    def unavailable():
+        status=client.get('/health',headers={'X-Access-Token':vm._envd_access_token},timeout=1).status_code
+        assert status in (200,502,503), 'expired/unauthorized/rate-limited is not the injected service fault'
+        return status
+    wait_for(unavailable,lambda status:status in (502,503),seconds=5)
     def expired():
         try:
             vm.get_info()
@@ -292,7 +308,8 @@ def unavailable_expiry(vm, owner, client, candidate):
     wait_for(expired, bool, seconds=30)
     response = client.get('/health', headers={'X-Access-Token':vm._envd_access_token})
     assert response.status_code == 401
-    return dict(daemon_killed=True,pid_file_missing=True,expiry_observed=True,old_token_rejected=True)
+    return dict(fault_armed=True,unavailable_while_running=True,pid_file_missing=True,
+                expiry_observed=True,old_token_rejected=True)
 
 
 def exercise(args):

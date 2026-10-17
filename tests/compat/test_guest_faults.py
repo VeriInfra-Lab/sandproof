@@ -128,6 +128,22 @@ class FaultProbeTests(unittest.TestCase):
         with self.assertRaises(OSError): probe.full_filesystem(vm,'/private/test')
         vm.files.read.assert_not_called()
 
+    def test_expiry_or_rate_limit_cannot_substitute_for_an_injected_service_outage(self):
+        async def observed(*_args,**_kwargs):
+            return {'observation':{'daemon':{'pid':123,'start_ticks':456}}}
+        for status in (401,429):
+            vm=Mock(_envd_access_token='test-only')
+            vm.files.exists.return_value=True
+            vm.files.read.return_value='armed'
+            vm.get_info.return_value=SimpleNamespace(state='running')
+            client=Mock()
+            client.get.return_value=SimpleNamespace(status_code=status)
+            with patch.object(probe,'observe_candidate',side_effect=observed):
+                with self.subTest(status=status),self.assertRaises(AssertionError):
+                    probe.unavailable_expiry(vm,{},client,())
+            self.assertEqual(vm.files.write.call_count,1)
+            vm.commands.run.return_value.disconnect.assert_called_once()
+
 
 if __name__=='__main__':
     unittest.main()
