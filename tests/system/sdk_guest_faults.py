@@ -128,6 +128,8 @@ def restart_old_pid(vm, directory, candidate):
     old = vm.commands.run('printf once > ' + shlex.quote(marker) + '; exec sleep 120',
                           user='root', background=True, timeout=120)
     old.disconnect()
+    wait_for(lambda:vm.files.exists(marker),bool)
+    assert vm.files.read(marker)=='once'
     # Only this sandbox's existing SDK token enters its own private test file;
     # no center, host, App or CI credential is sent into the guest.
     vm.files.write(directory + '/restart.json', json.dumps(dict(
@@ -229,9 +231,10 @@ def registry_reclaim(vm, directory, candidate, settings):
     vm.files.write(marker,'',user='root')
     delivered=refused=0
     samples=[]
-    for _ in range(2*capacity+2):
+    def execute(command):
+        nonlocal refused
         try:
-            result=vm.commands.run('printf x >> '+shlex.quote(marker),user='root',timeout=15,request_timeout=15)
+            return vm.commands.run(command,user='root',timeout=15,request_timeout=15)
         except RateLimitException:
             # This is an explicit admission refusal, not an uncertain Start.
             # Confirm no extra effect, wait the original 30-second retention,
@@ -240,17 +243,24 @@ def registry_reclaim(vm, directory, candidate, settings):
             assert vm.files.read(marker,user='root')=='x'*delivered
             due=time.monotonic()+30
             while time.monotonic()<due:
-                time.sleep(min(.2,due-time.monotonic()))
-            result=vm.commands.run('printf x >> '+shlex.quote(marker),user='root',timeout=15,request_timeout=15)
+                time.sleep(max(0,min(.2,due-time.monotonic())))
+            return vm.commands.run(command,user='root',timeout=15,request_timeout=15)
+    claims_before=vm.files.get_info('/opt/sandproof/state/pid-claims.bin',user='root').size
+    for _ in range(2*capacity+2):
+        result=execute('printf x >> '+shlex.quote(marker))
         assert result.exit_code==0 and result.stdout=='' and result.stderr==''
         delivered+=1
         if delivered in (1,capacity,2*capacity+2):
-            status=vm.files.read('/proc/'+str(daemon)+'/status',user='root')
+            # procfs pseudo-files have st_size==0. Observe them through the
+            # native command, not a length-based HTTP file download.
+            status=execute('cat /proc/'+str(daemon)+'/status').stdout
+            assert len(status.encode())<=8192
             fields={line.split(':',1)[0]:line.split(':',1)[1].strip() for line in status.splitlines() if ':' in line}
             samples.append({key:int(fields[key].split()[0]) for key in ('VmRSS','VmHWM','Threads')})
             assert samples[-1]['VmHWM']*1024<=512*1024**2, 'daemon exceeds declared whole-guest memory envelope'
     assert delivered>2*capacity and vm.files.read(marker,user='root')=='x'*delivered
     assert vm.commands.list()==[]
+    assert vm.files.get_info('/opt/sandproof/state/pid-claims.bin',user='root').size==claims_before
     return dict(record_capacity=capacity,completed=delivered,explicit_refusals=refused,
                 original_retention_seconds=30,samples=samples,scope='finite churn and observed guest RSS, not an entire-process memory proof')
 

@@ -113,6 +113,44 @@ class SupervisorStageTests(unittest.TestCase):
             self.assertFalse(self.stage.observe_envd())
         self.stage.block.assert_called_with('rust_envd_candidate_identity_unknown')
 
+    def test_harbor_cannot_start_while_rust_stage_is_pending(self):
+        self.stage.checks=None
+        self.stage.config['ci_state_root']=str(self.root)
+        self.stage.state.update(phase='running',batches=[{'phase':'new'}])
+        with patch.object(self.stage,'observe_dk',return_value=True), \
+                patch.object(self.stage,'observe_envd',return_value=False), \
+                patch.object(self.stage,'prepare') as prepare,patch.object(ci,'launch') as launch:
+            self.stage.tick()
+        prepare.assert_not_called()
+        launch.assert_not_called()
+
+    def test_success_requires_execution_and_cleanup_before_durable_reclamation(self):
+        from tools.system_acceptance import digest
+        run=self.root/'owned'; run.mkdir(mode=0o700)
+        candidate=Path(self.stage.state['candidate_manifest']); candidate.write_text('{}')
+        candidate.chmod(0o600)
+        self.stage.state['envd']=dict(phase='running',unit='owned.service',root=str(run))
+        report=dict(candidate='a'*40,run_id='b'*64,guest={'source_commit':'a'*40},status='pass',
+            checks=[dict(name=name,returncode=0,seconds=1) for name in envd.SUITE],
+            faults=[dict(name=name,status='pass') for name in envd.FAULTS],
+            resource_cleanup_confirmed=True,service_cleanup_confirmed=True,
+            execution_manifest={},service_processes={})
+        for filename,value in (('report.json',report),('execution-manifest.json',{}),
+                               ('service-cleanup.json',{'removed':True})):
+            (run/filename).write_text(json.dumps(value)); (run/filename).chmod(0o600)
+        execution=dict(run_id='b'*64,candidate_manifest_sha256=digest(candidate))
+        with patch.object(ci,'unit_state',return_value=dict(ExecMainCode='1',ExecMainStatus='0')), \
+                patch.object(ci.service_artifacts,'require_service_boundary'), \
+                patch.object(ci.service_artifacts,'require_execution_manifest',return_value=execution), \
+                patch.object(ci.service_artifacts,'require_process_evidence'), \
+                patch.object(ci.subprocess,'run') as stop:
+            self.assertTrue(self.stage.observe_envd())
+        self.assertFalse(run.exists())
+        self.assertEqual(self.stage.state['envd']['phase'],'done')
+        self.assertEqual(self.stage.state['envd']['result']['guest'],report['guest'])
+        stop.assert_called_once()
+        self.assertTrue(self.stage.observe_envd())  # Original checked durable result, no rerun.
+
 
 class PreparationTests(unittest.TestCase):
     def test_missing_profile_does_not_build_or_switch_any_go_material(self):

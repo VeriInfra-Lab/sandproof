@@ -91,6 +91,16 @@ SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tool
 
 ### 可信 KVM 端到端监督与晋升门槛
 
+Rust envd 的受控验收阶段（#311）：
+
+同一[监督器](../tools/ci_e2e_supervisor.py)可显式配置 `rust_envd_acceptance`，在原 DK 组之后、原 Harbor 题集之前运行[来宾验收入口](../tests/system/envd_acceptance.py)。这不是普通 PR root runner，也不切换产品默认 Go 模板；旧配置不发布 Rust envd 成功结论。已运行任务仍使用原冻结配置，不在途中追加或移除该阶段。安装与实跑结果须绑定精确候选，源码合入不能代替宿主受控安装。
+
+该私有对象的唯一字段由[验收策略](../tools/envd_acceptance.py)校验：`configuration`、`policy_template`、`oci_archive`、`go_rootfs`、`builder_rootfs` 是审核后登记在原 `host_assets` 的只读材料；另显式提供原 `registry_limits`、`build_limits`、`data_transfer`，不从题名推导或自动扩大预算。配置不含 App 密钥。制备沿用原离线 Rust 来宾工具，输出绑定同一源码的新清单，只将批准配置中的 worker 身份替换为真实新产物，保留原数值、路径及版本检查。固定 OCI 输入在原私有构建 VM 内转换并经原中心发布/实际启动验证，不在宿主运行容器构建或把旧镜像重标为新源码。
+
+阶段复用原双端 SDK、stdin、PTY、命令/RPC/文件期限及文件权限用例；补充丢 Start 回执、服务重启/旧 PID、来宾文件系统写满、慢输出、登记回收及独立寿命清理。真实结果还核对实际中心/宿主执行清单、Rust 服务/worker/配置身份、每组原终态和物理残留、服务 cgroup 收尾。完整固定清单缺项、错误候选、非零退出、未知或清理失败均不能进入后续题集或发布绿灯；启动意图先持久化，丢派发回执不再启动一轮。原两题、评分、App 身份及分支保护保持，普通 CI 仍不持有宿主权限。
+
+受控安装必须先在同一候选实测成功、真实失败和取消/精确恢复，再启用该宿主配置。默认 Go envd 切换属于验收通过后的独立交付，不能借该阶段提前更换模板。采样与有限压力是工程证据，不表示任意负载内存证明或整个 E01–E10 自动完成。
+
 [监督器](../tools/ci_e2e_supervisor.py)、[准备工具](../tools/ci_e2e_prepare.py)、[服务单元](../tools/ci_e2e_supervisor.service)与[私有配置示例](../tools/ci_e2e_supervisor.example.json)已实现；宿主安装与真实结果回传须以对应 issue/PR 的实测证据为准。当前通过[2.0 兼容题集](../benchmarks/terminal-bench-2.0-suites.json)回归，[2.1 原题配置](../benchmarks/terminal-bench-2.1-suites.json)保留为发布前待办；判据以[验收清单](testing-plan.md)为准，支持完整题集不等于已通过。
 
 不新增 root GitHub runner，不执行外部 PR 宿主代码或 `pull_request_target`。监督程序、配置、任务来源和工具均由 root 受控安装；自动晋升模式须显式启用，只从固定仓库读取受保护 integration/test/main 的精确引用，接受 integration→test、test→main 及既有 main→test 同步，不接受任务分支、fork 或 PR 自带命令。候选必须包含当前目标基线；已经进入目标的源版本不重复执行。目标独有变更需要先通过正常同步 PR 合入源分支，不能只测源版本而忽略最终组合。未满足历史／普通检查的方向保持阻塞，但不阻止另一个合法且已就绪的方向；服务不主动创建或合并同步 PR。最终合并依赖严格保护防止目标更新竞态。配置和编译产物绑定原运行，重启不能改用新配置或重跑未知工作。

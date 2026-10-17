@@ -236,6 +236,8 @@ class Checks:
                 '通过数量：' + str(sum(r['status'] == 'passed' for r in result['tasks'])) + '/' + str(len(result['required_tasks'])) + '。',
                 '未运行、评分失败、超时及清理未知均按失败处理；没有使用付费模型。']
         rows.extend(r['name'] + ': ' + str(r['status']) + ' (' + r.get('oracle_mode', 'original') + ')' for r in result['tasks'])
+        if 'rust_envd' in result:
+            rows.append('同候选 Rust envd 实机阶段：通过；原 SDK 双端/输入/PTY/期限、文件及所选故障组和精确清理均已确认。默认 Go 模板未因此切换。')
         self.api.request('PATCH', PREFIX + 'check-runs/' + str(state['check_id']), dict(
             status='completed', conclusion=conclusion, output=dict(
                 title='配置题集验收通过' if result['passed'] else '配置题集验收未通过', summary='\n\n'.join(rows))))
