@@ -382,6 +382,10 @@ async fn cache_replay_refuses_changed_artifact_identity_or_untrusted_parent_with
             "{failure}"
         );
         assert_eq!(f.requests.load(Ordering::SeqCst), 2, "{failure}");
+        let mut binding = local::request().create;
+        binding.template_revision = f.request.revision.clone();
+        binding.template_digest = f.request.digest;
+        assert!(f.cache.verification(&binding).is_none(), "{failure}");
         assert!(directory.join("manifest.json").exists());
         if matches!(failure, "replacement" | "contents") {
             let config = f.cache.config.clone();
@@ -709,6 +713,58 @@ fn driver_config() -> DriverConfig {
         compute: local::compute(),
         interval: Duration::from_millis(100),
     }
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cached_verification_reaches_original_admission_without_bypassing_node_validation() {
+    let f = fixture(false).await;
+    Arc::clone(&f.cache)
+        .receive(f.request.clone())
+        .await
+        .unwrap();
+    let lifecycle = f.cache.lifecycle.clone();
+    let mut create = local::request();
+    create.create.template_revision = f.request.revision.clone();
+    create.create.template_digest = f.request.digest;
+    assert!(f.cache.verification(&create.create).is_some());
+    let mut wrong = create.create.clone();
+    wrong.template_digest[0] ^= 1;
+    assert!(f.cache.verification(&wrong).is_none());
+    wrong = create.create.clone();
+    wrong.template_revision = "other-revision".try_into().unwrap();
+    assert!(f.cache.verification(&wrong).is_none());
+
+    lifecycle.receive(create.clone()).await.unwrap();
+    f.host.lock().unwrap().template_error = Some(ApplicationError::Invalid);
+    let report = lifecycle
+        .drive_once(driver_config(), Arc::clone(&f.cache))
+        .await
+        .unwrap();
+    assert_eq!(report.unavailable, 1);
+    {
+        let state = f.host.lock().unwrap();
+        assert_eq!(state.cached_verifications, 1);
+        assert_eq!(state.template_checks, 1);
+        assert!(state.actions.is_empty());
+        assert!(state.configurations.is_empty());
+    }
+    // The same original responsibility can proceed only after the original
+    // host's validation succeeds. Evidence itself never grants execution.
+    f.host.lock().unwrap().template_error = None;
+    lifecycle
+        .drive_once(driver_config(), Arc::clone(&f.cache))
+        .await
+        .unwrap();
+    assert!(matches!(
+        lifecycle.receive(create.clone()).await.unwrap().fact,
+        LifecycleFact::Ready { .. }
+    ));
+    assert_eq!(f.host.lock().unwrap().template_checks, 2);
+    assert_eq!(f.host.lock().unwrap().cached_verifications, 2);
+    finish_original_destroy(&lifecycle, Arc::clone(&f.cache), create).await;
+    f.shutdown.send(()).unwrap();
+    f.server.await.unwrap().unwrap();
 }
 
 async fn finish_original_destroy(

@@ -17,6 +17,7 @@ use sandproof_controller_service::{
         WorkRecovery,
     },
     physical_storage::{PhysicalPool, PhysicalStorageProfile},
+    template_registry::CandidateVerification,
     templates::{ComputeLimits, ResourceShape, TemplateArtifact, TemplateBinding},
 };
 use sandproof_protocol::{
@@ -49,6 +50,8 @@ pub struct State {
     pub release_unknown: bool,
     pub disk_available: Option<u64>,
     pub template_error: Option<ApplicationError>,
+    pub template_checks: usize,
+    pub cached_verifications: usize,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -197,8 +200,19 @@ impl LaunchConfiguration for TestHost {
     }
 }
 impl TemplateArtifacts for TestHost {
+    fn cache_candidate_verification(
+        &self,
+        template: &TemplateBinding,
+        verification: &CandidateVerification,
+    ) {
+        if verification.matches(&template.kernel) && verification.matches(&template.rootfs) {
+            self.0.lock().unwrap().cached_verifications += 1;
+        }
+    }
     fn validate_template(&self, template: &TemplateBinding) -> Result<(), ApplicationError> {
-        if let Some(error) = self.0.lock().unwrap().template_error {
+        let mut state = self.0.lock().unwrap();
+        state.template_checks += 1;
+        if let Some(error) = state.template_error {
             return Err(error);
         }
         if template.is_valid() {

@@ -50,7 +50,7 @@ struct State {
 /// bounded entry owns both the exact descriptor and its verification.
 struct VerifiedTemplate {
     template: InternalTemplate,
-    verification: CandidateVerification,
+    verification: Arc<CandidateVerification>,
 }
 impl VerifiedTemplate {
     fn still_matches(&self) -> bool {
@@ -282,7 +282,7 @@ impl State {
                                     registered: manifest.request.descriptor,
                                     local: manifest.local,
                                 },
-                                verification,
+                                verification: Arc::new(verification),
                             }),
                         )
                         .is_some()
@@ -625,7 +625,7 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
                     registered: manifest.request.descriptor,
                     local: manifest.local,
                 },
-                verification,
+                verification: Arc::new(verification),
             }),
         );
         Ok(())
@@ -665,6 +665,17 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> TemplateSource for TemplateCache<H> {
+    fn verification(&self, binding: &CreateBinding) -> Option<Arc<CandidateVerification>> {
+        let cache = self.state.lock().ok()?;
+        let value = cache
+            .ready()
+            .ok()?
+            .ready
+            .get(binding.template_revision.as_str())?;
+        (value.template.digest == binding.template_digest && value.still_matches())
+            .then(|| Arc::clone(&value.verification))
+    }
+
     fn bound(&self, binding: &CreateBinding) -> Result<InternalTemplate, ApplicationError> {
         let cache = self.state.lock().map_err(|_| ApplicationError::Busy)?;
         let state = cache.ready().map_err(|_| ApplicationError::Busy)?;
