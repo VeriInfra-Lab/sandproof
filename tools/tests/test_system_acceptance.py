@@ -133,6 +133,7 @@ def original_report(count=4):
     identities=[row['create']['identity'] for row in original_center(count)['sandboxes']]
     report['global_identities']={value['sandbox_id']:value for value in identities}
     report['global_native']={value['sandbox_id']:native for value,native in zip(identities,rows(count))}
+    report['native_owners']={native:1 for native in report['global_native'].values()}
     return report
 
 
@@ -344,6 +345,30 @@ class IdentityTests(unittest.TestCase):
             self.assertTrue(runner.destroyed(observed))
             self.assertEqual(runner.wait_for_destroyed(path, NS, observed), observed)
 
+    def test_distinct_checked_native_owners_survive_sql_retirement(self):
+        active, retained, tail = (f'sb-{NS}-{number}' for number in (41, 42, 43))
+        owners = {active: 7, retained: 9, tail: 11}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'controller.db'
+            database(path, [(active, 'tenant-7', json.dumps(dict(state(), owner=7)))])
+            checkpoint = {'namespace': NS, 'core': {'maintenance': {'retained': [
+                [{'sandbox': 42}, {'owner': 9, 'ledger': {'sandbox': 42, 'result': 'Destroyed'}}]]}}}
+            certificate = dict(sandbox=43, owner=11, worker_drained='Confirmed',
+                data_connections_drained='Confirmed', host_resources_reclaimed='Confirmed',
+                external_pins_released='Confirmed')
+            request = dict(input=dict(Maintenance=dict(Retire=dict(
+                sandbox=43, owner=11, quiescence=certificate))))
+            with closing(sqlite3.connect(path)) as connection, connection:
+                connection.execute('UPDATE controller_checkpoint SET payload=?', (json.dumps(checkpoint),))
+                connection.execute('INSERT INTO controller_inputs VALUES(1,?)', (json.dumps(request),))
+            observed = runner.wait_for_destroyed(path, NS, owners, owners=owners, timeout=0)
+            self.assertEqual({ident: value['owner'] for ident, value in observed.items()}, owners)
+            self.assertTrue(runner.destroyed(observed))
+            for bad in ({**owners, active: 9}, {**owners, retained: 7},
+                        {**owners, tail: True}, {active: 7, retained: 9}):
+                with self.subTest(owners=bad), self.assertRaises(reports.Failure):
+                    runner.wait_for_destroyed(path, NS, owners, owners=bad, timeout=0)
+
     def test_missing_database_never_created(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "missing.db"
@@ -420,6 +445,49 @@ class IdentityTests(unittest.TestCase):
 
 
 class ProbeProcessTests(unittest.TestCase):
+    def test_parent_records_original_global_to_distinct_local_owner_mapping(self):
+        identity = original_center(2)['sandboxes'][1]['create']['identity']
+        local = dict(owner=9, sandbox=42)
+        context = dict(position=0, binding=dict(owner=9, sandbox=42, vm=11))
+        audit = dict(node=identity['node'], operations=[dict(current=True, identity=identity,
+            response=dict(identity=identity), local=local)], host_slots=[[context, 'Running']])
+        record = dict(resource_id=f'vm-{NS}-11', pid=123, start_time_ticks=456)
+        network = dict(resource_id=record['resource_id'], namespace_inode=789)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('resource-requests', 'resource-evidence', 'jails/.claims/' + record['resource_id']):
+                (root / name).mkdir(parents=True)
+            name = hashlib.sha256(b'sandbox-2').hexdigest()
+            reports.write_once(root/'resource-requests'/(name+'.request.json'), dict(sandbox='sandbox-2'))
+            claim = root/'jails/.claims'/record['resource_id']
+            reports.write_once(claim/'record.json', record)
+            reports.write_once(claim/'network.json', network)
+            services = SimpleNamespace(planned_audit=Mock(return_value=original_center(2)),
+                processes=SimpleNamespace(stop=Mock(), audit=Mock(return_value=audit), start=Mock()),
+                host_configs=[dict(inbox=dict(node=identity['node']))],
+                native_pools=[dict(namespace=NS, bounded_host=dict(uid_base=1000))], wait_ready=Mock())
+            original_stat, original_read = Path.lstat, Path.read_text
+            def root_owned(path, *args, **kwargs):
+                values = list(original_stat(path, *args, **kwargs))
+                values[4] = 0
+                return os.stat_result(values)
+            def status(path, *args, **kwargs):
+                return 'Uid:\t1000\t1000\t1000\t1000\n' if path == Path('/proc/123/status') else original_read(path, *args, **kwargs)
+            with patch.object(Path, 'lstat', root_owned), patch.object(Path, 'read_text', status), \
+                    patch.object(runner, 'process_start_ticks', return_value=456):
+                report = reports.new_report('sp12-abcdefgh')
+                runner.record_requests(root, services, report)
+                self.assertEqual(report['global_native'], {'sandbox-2': f'sb-{NS}-42'})
+                self.assertEqual(report['native_owners'], {f'sb-{NS}-42': 9})
+                self.assertEqual(reports.json_file(root/'resource-requests'/(name+'.ack.json')),
+                                 dict(sandbox='sandbox-2', recorded=True))
+                (root/'resource-requests'/(name+'.ack.json')).unlink()
+                audit['operations'][0]['identity'] = dict(identity, tenant_id='2')
+                audit['operations'][0]['response']['identity'] = audit['operations'][0]['identity']
+                with self.assertRaises(reports.Failure):
+                    runner.record_requests(root, services, reports.new_report('sp12-abcdefgh'))
+                self.assertFalse((root/'resource-requests'/(name+'.ack.json')).exists())
+
     def test_private_resource_callback_uses_exact_global_id_and_never_guesses_native(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary).resolve()
@@ -538,6 +606,14 @@ class ResourceAuditTests(unittest.TestCase):
                     patch.object(runner.os, 'walk', return_value=iter([])), \
                     patch.object(Path, 'is_dir', return_value=True):
                 self.assertEqual(runner.assert_no_exact_resources(root, NS, 1000, 'firecracker', expected=1), 1)
+                value['context']['binding']['owner'] = 9
+                (evidence / (ident + '.json')).write_text(json.dumps(value))
+                self.assertEqual(runner.assert_no_exact_resources(root, NS, 1000, 'firecracker',
+                    expected=1, owners={ident: 9}), 1)
+                with self.assertRaises(reports.Failure):
+                    runner.assert_no_exact_resources(root, NS, 1000, 'firecracker', owners={ident: 1})
+                value['context']['binding']['owner'] = 1
+                (evidence / (ident + '.json')).write_text(json.dumps(value))
                 with self.assertRaises(reports.Failure):
                     runner.assert_no_exact_resources(root, NS, 1000, 'firecracker', expected=4)
                 with patch.object(runner, 'process_start_ticks', return_value=456):
@@ -606,6 +682,7 @@ class SupervisorTests(unittest.TestCase):
             report['services']=complete_report()['services']
             report['global_identities']=original_report()['global_identities']
             report['global_native']=original_report()['global_native']
+            report['native_owners']=original_report()['native_owners']
         def cleanup(*args):
             events.append("cleanup")
             out = args[-1]

@@ -309,7 +309,8 @@ print("all_c02_actions_rejected")
             root = Path(temporary)
             arguments = [str(SYSTEM / "sdk_c02_acceptance.py")]
             for name in ('center','host','candidate-manifest','redis-material','tls-material',
-                         'service-staging-parent','service-cgroup-record',"jailer", "firecracker", "kernel", "rootfs", "host-config"):
+                         'service-staging-parent','service-cgroup-record','cgroup-parent',
+                         "jailer", "firecracker", "kernel", "rootfs", "host-config"):
                 arguments.extend(["--" + name, str(root / name)])
             arguments.extend(["--scratch-parent", str(root), "--uid-base", "1000",
                               "--expected-commit", "a" * 40])
