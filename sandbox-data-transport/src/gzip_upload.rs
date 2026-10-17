@@ -15,7 +15,6 @@ use tokio::{
 };
 
 const CHUNK: usize = 16 * 1024;
-const INPUT_FRAME: usize = 64 * 1024;
 type Owner = Arc<dyn Send + Sync>;
 type Reply = oneshot::Sender<Result<Option<Bytes>, StatusCode>>;
 
@@ -252,9 +251,6 @@ impl BufRead for Reader {
                         };
                         let frame = frame.map_err(io::Error::other)?;
                         if let Ok(bytes) = frame.into_data() {
-                            if bytes.len() > INPUT_FRAME {
-                                return Err(io::Error::other("oversized transport frame"));
-                            }
                             if !bytes.is_empty() {
                                 return Ok(bytes);
                             }

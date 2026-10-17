@@ -207,6 +207,66 @@ async fn gzip_output_clones_keep_both_admission_and_decoder_backpressure() {
     drop(permit);
 }
 
+struct PendingAfterHeader {
+    header: Option<Bytes>,
+    blocked: Option<oneshot::Sender<()>>,
+}
+impl hyper::body::Body for PendingAfterHeader {
+    type Data = Bytes;
+    type Error = io::Error;
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, io::Error>>> {
+        if let Some(header) = self.header.take() {
+            return Poll::Ready(Some(Ok(Frame::data(header))));
+        }
+        if let Some(blocked) = self.blocked.take() {
+            let _ = blocked.send(());
+        }
+        Poll::Pending
+    }
+}
+
+#[tokio::test]
+async fn cancelling_gzip_during_a_pending_source_read_wakes_the_original_worker_and_releases_its_slot()
+ {
+    let slots = Arc::new(tokio::sync::Semaphore::new(1));
+    let (blocked, observed) = oneshot::channel();
+    let mut request = upload(Vec::new());
+    *request.body_mut() = Body::new(PendingAfterHeader {
+        header: Some(Bytes::copy_from_slice(&encoded(b"data")[..10])),
+        blocked: Some(blocked),
+    });
+    request.headers_mut().remove(header::CONTENT_LENGTH);
+    request.extensions_mut().insert(BodyWorkOwner::new(
+        slots.clone().try_acquire_owned().unwrap(),
+    ));
+    let mut body = prepare_body(request, true, Some(&TransferLimits::fixture()))
+        .await
+        .unwrap()
+        .into_body();
+    let mut next = Box::pin(body.frame());
+    std::future::poll_fn(|cx| {
+        assert!(next.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    timeout(Duration::from_secs(5), observed)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(slots.available_permits(), 0);
+    drop(next);
+    drop(body);
+    drop(
+        timeout(Duration::from_secs(5), slots.acquire())
+            .await
+            .unwrap()
+            .unwrap(),
+    );
+}
+
 #[tokio::test]
 async fn gzip_upload_crosses_real_http_before_success_and_never_forwards_encoding_twice() {
     let limits = TransferLimits::fixture();

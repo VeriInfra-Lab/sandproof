@@ -509,6 +509,70 @@ async fn blocked_input_does_not_block_control_and_cancellation_does_not_close_sh
 }
 
 #[tokio::test]
+async fn chunked_input_keeps_one_writer_across_yields_and_never_interleaves_a_second_call() {
+    let directory = tempfile::tempdir().unwrap();
+    let owners = CommandOwners::new(OwnerLimits {
+        input_chunk_bytes: 4,
+        ..budgets()
+    })
+    .unwrap();
+    let (command, mut stream) = start(
+        &owners,
+        directory.path(),
+        "printf once >> effect; printf ready; exec /bin/cat",
+        session().await.authorize(Some("token")).await.unwrap(),
+        deadline(Duration::ZERO),
+    )
+    .await;
+    command.0.started().await.unwrap();
+    assert_eq!(data(&mut stream).await, b"ready");
+    let bytes: Vec<u8> = (0..=255).cycle().take(4097).collect();
+    let mut writing = Box::pin(command.0.write_input(command.0.identity(), &bytes));
+    assert!(
+        std::future::poll_fn(|cx| Poll::Ready(writing.as_mut().poll(cx)))
+            .await
+            .is_pending()
+    );
+    assert_eq!(
+        command
+            .0
+            .write_input(command.0.identity(), b"must-not-interleave")
+            .await,
+        Err(CommandError::ResourceExhausted)
+    );
+    assert_eq!(
+        command.0.close_input(command.0.identity()),
+        Err(CommandError::ResourceExhausted)
+    );
+    let receive = async {
+        let mut received = Vec::new();
+        while received.len() < bytes.len() {
+            received.extend(data(&mut stream).await);
+        }
+        assert_eq!(received, bytes);
+    };
+    let (written, ()) = timeout(Duration::from_secs(10), async {
+        tokio::join!(writing, receive)
+    })
+    .await
+    .unwrap();
+    written.unwrap();
+    command.0.close_input(command.0.identity()).unwrap();
+    assert_eq!(command.0.wait().await.unwrap().code, 0);
+    assert_eq!(
+        std::fs::read(directory.path().join("effect")).unwrap(),
+        b"once"
+    );
+    assert!(matches!(
+        stream.next().await.unwrap().unwrap(),
+        OutputEvent::End(_)
+    ));
+    drop(stream);
+    drop(command);
+    assert!(owners.reserve().is_ok());
+}
+
+#[tokio::test]
 async fn task_dropped_before_first_poll_reports_owner_loss_and_quarantines_record() {
     let directory = tempfile::tempdir().unwrap();
     let owners = CommandOwners::new(budgets()).unwrap();
