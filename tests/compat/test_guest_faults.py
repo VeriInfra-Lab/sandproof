@@ -92,6 +92,7 @@ class FaultProbeTests(unittest.TestCase):
         self.assertEqual(int.from_bytes(body[1:5],'big'),len(body)-5)
         payload=json.loads(body[5:])
         self.assertIn('printf once',payload['process']['args'][1])
+        self.assertIn('printf once >> ',payload['process']['args'][1])
         self.assertEqual(kwargs['headers']['Authorization'],'Basic cm9vdDo=')
 
     def test_unknown_response_or_missing_real_effect_does_not_pass(self):
@@ -103,6 +104,17 @@ class FaultProbeTests(unittest.TestCase):
         vm.commands.run.assert_not_called()
         with patch.object(probe.time,'monotonic',side_effect=[0,21]):
             with self.assertRaises(AssertionError): probe.wait_for(lambda:False,bool)
+
+    def test_duplicate_effect_is_not_hidden_by_overwriting_the_marker(self):
+        client=Mock()
+        client.stream.return_value.__enter__=Mock(return_value=Mock(status_code=200))
+        client.stream.return_value.__exit__=Mock(return_value=False)
+        vm=Mock(_envd_access_token='test-only')
+        vm.files.exists.return_value=True
+        vm.files.read.return_value='onceonce'
+        with self.assertRaises(AssertionError): probe.lost_start(vm,'/private/test',client)
+        client.stream.assert_called_once()
+        vm.commands.run.assert_not_called()
 
     def test_native_restart_is_parseable_and_uses_stable_handles_not_pid_guessing(self):
         compile(probe.RESTART.replace('ROOT',repr('/private/test')),'native-restart','exec')

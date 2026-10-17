@@ -56,7 +56,7 @@ def lost_start(vm, directory, client):
     marker = directory + '/unknown-start'
     # Read headers only: do NOT consume/obtain a Start PID. The effect, rather
     # than a guessed PID or a second Start, proves that execution happened.
-    with raw_start(client, vm, 'printf once > ' + shlex.quote(marker) + '; sleep 2') as response:
+    with raw_start(client, vm, 'printf once >> ' + shlex.quote(marker) + '; sleep 2') as response:
         assert response.status_code == 200
         # Keep the stream open until the real effect is observed independently,
         # then discard it without reading a PID. Closing immediately could
@@ -129,7 +129,7 @@ except BaseException as error:
 def restart_old_pid(vm, directory, candidate):
     before = asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
     marker = directory + '/old-effects'
-    old = vm.commands.run('printf once > ' + shlex.quote(marker) + '; exec sleep 120',
+    old = vm.commands.run('printf once >> ' + shlex.quote(marker) + '; exec sleep 120',
                           user='root', background=True, timeout=120)
     old.disconnect()
     wait_for(lambda:vm.files.exists(marker),bool)
@@ -200,7 +200,7 @@ with open(p+'/ballast','wb',buffering=0) as f:
 def slow_output(vm, directory, client):
     marker = directory + '/output-start'
     gate = directory + '/output-go'
-    command = 'printf once > '+shlex.quote(marker)+'; while ! test -e '+shlex.quote(gate)+'; do sleep .05; done; '
+    command = 'printf once >> '+shlex.quote(marker)+'; while ! test -e '+shlex.quote(gate)+'; do sleep .05; done; '
     command += 'head -c 16777216 /dev/zero; printf done > '+shlex.quote(directory+'/output-done')
     with raw_start(client, vm, command) as response:
         assert response.status_code == 200
