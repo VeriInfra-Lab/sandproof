@@ -14,10 +14,10 @@ fn worker(path: &Path) -> LinuxWorker {
     fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
     let config = NodeConfig {
         namespace: "0123456789abcdef".into(),
-        state_dir: state,
+        state_dir: state.clone(),
         jailer: path.into(),
         firecracker: path.into(),
-        chroot_base: path.into(),
+        chroot_base: path.join("unused-jails"),
         kernel: path.into(),
         rootfs: path.into(),
         vcpu_count: 1,
@@ -25,7 +25,12 @@ fn worker(path: &Path) -> LinuxWorker {
         host_resources: None,
         file_policy_digest: core::PolicyDigest(1),
         bounded_host: BoundedHostConfig {
-            physical_storage: None,
+            physical_storage: Some(super::test_support::physical_profile(
+                "0123456789abcdef",
+                &state,
+                &path.join("unused-jails"),
+                1,
+            )),
             console_policy: Some(sandproof_controller_service::ConsolePolicy::Discard),
             uid_base: 1,
             uplink_base: 0,
