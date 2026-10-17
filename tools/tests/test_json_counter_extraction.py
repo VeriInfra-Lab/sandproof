@@ -22,6 +22,7 @@ class JsonCounterExtractionTests(unittest.TestCase):
                          'verification/extract-foundations/src/lib.rs',
                          'verification/extract-foundations/src/numeric.rs',
                          'verification/extract-foundations/src/receipts.rs',
+                         'verification/extract-foundations/src/json_ids.rs',
                          audit.DEST + '/SandproofFoundations/Funs.lean'):
             target = self.root / relative
             target.parent.mkdir(parents=True, exist_ok=True)

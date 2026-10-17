@@ -4,7 +4,7 @@
   "crate": "sandproof_foundations_extract",
   "functions": [
     {
-      "def_id": 204,
+      "def_id": 223,
       "lean_name": "core.bool.Bool.then_some",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::bool::{bool}::then_some",
@@ -21,7 +21,24 @@
       "reducible": false
     },
     {
-      "def_id": 385,
+      "def_id": 458,
+      "lean_name": "Shared0T.Insts.CoreFmtDisplay.fmt",
+      "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
+      "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/mod.rs",
+        "begin_line": 2887,
+        "end_line": 2887
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 426,
       "lean_name": "core.num.U8.is_ascii_alphanumeric",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::num::{u8}::is_ascii_alphanumeric",
@@ -38,7 +55,7 @@
       "reducible": false
     },
     {
-      "def_id": 268,
+      "def_id": 308,
       "lean_name": "U64.Insts.CoreStrTraitsFromStrParseIntError.from_str",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}::from_str",
@@ -55,7 +72,7 @@
       "reducible": false
     },
     {
-      "def_id": 228,
+      "def_id": 247,
       "lean_name": "core.option.Option.is_some_and",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::option::{core::option::Option<T>}::is_some_and",
@@ -72,7 +89,7 @@
       "reducible": false
     },
     {
-      "def_id": 91,
+      "def_id": 113,
       "lean_name": "core.option.Option.is_none_or",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::option::{core::option::Option<T>}::is_none_or",
@@ -89,7 +106,7 @@
       "reducible": false
     },
     {
-      "def_id": 198,
+      "def_id": 217,
       "lean_name": "core.option.Option.as_ref",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::option::{core::option::Option<T>}::as_ref",
@@ -106,7 +123,7 @@
       "reducible": false
     },
     {
-      "def_id": 178,
+      "def_id": 197,
       "lean_name": "core.option.Option.Insts.CoreOpsTry_traitTry.branch",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::option::{impl core::ops::try_trait::Try for core::option::Option<T>}::branch",
@@ -123,7 +140,7 @@
       "reducible": false
     },
     {
-      "def_id": 180,
+      "def_id": 199,
       "lean_name": "core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::option::{impl core::ops::try_trait::FromResidual<core::option::Option<core::convert::Infallible>> for core::option::Option<T>}::from_residual",
@@ -140,7 +157,7 @@
       "reducible": false
     },
     {
-      "def_id": 181,
+      "def_id": 200,
       "lean_name": "core.result.Result.ok",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::result::{core::result::Result<T, E>}::ok",
@@ -157,7 +174,7 @@
       "reducible": false
     },
     {
-      "def_id": 274,
+      "def_id": 314,
       "lean_name": "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::str::iter::{impl core::iter::traits::iterator::Iterator<u8> for core::str::iter::Bytes<'_0>}::all",
@@ -174,7 +191,7 @@
       "reducible": false
     },
     {
-      "def_id": 199,
+      "def_id": 218,
       "lean_name": "core.str.Str.len",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::str::{str}::len",
@@ -191,7 +208,7 @@
       "reducible": false
     },
     {
-      "def_id": 272,
+      "def_id": 312,
       "lean_name": "core.str.Str.is_empty",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::str::{str}::is_empty",
@@ -208,7 +225,7 @@
       "reducible": false
     },
     {
-      "def_id": 200,
+      "def_id": 219,
       "lean_name": "core.str.Str.split_at_checked",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::str::{str}::split_at_checked",
@@ -225,7 +242,7 @@
       "reducible": false
     },
     {
-      "def_id": 273,
+      "def_id": 313,
       "lean_name": "core.str.Str.bytes",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::str::{str}::bytes",
@@ -242,7 +259,7 @@
       "reducible": false
     },
     {
-      "def_id": 202,
+      "def_id": 221,
       "lean_name": "core.str.Str.parse",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::str::{str}::parse",
@@ -259,7 +276,7 @@
       "reducible": false
     },
     {
-      "def_id": 267,
+      "def_id": 307,
       "lean_name": "Str.Insts.CoreCmpPartialEqStr.eq",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "core::str::traits::{impl core::cmp::PartialEq<str> for str}::eq",
@@ -276,7 +293,7 @@
       "reducible": false
     },
     {
-      "def_id": 208,
+      "def_id": 227,
       "lean_name": "Str.Insts.AllocBorrowToOwnedString.to_owned",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "alloc::str::{impl alloc::borrow::ToOwned<alloc::string::String> for str}::to_owned",
@@ -293,7 +310,7 @@
       "reducible": false
     },
     {
-      "def_id": 384,
+      "def_id": 425,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
@@ -310,7 +327,7 @@
       "reducible": false
     },
     {
-      "def_id": 203,
+      "def_id": 222,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::PartialEq<&'_0 str> for alloc::string::String}::eq",
@@ -327,7 +344,7 @@
       "reducible": false
     },
     {
-      "def_id": 205,
+      "def_id": 224,
       "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
@@ -344,7 +361,7 @@
       "reducible": false
     },
     {
-      "def_id": 86,
+      "def_id": 108,
       "lean_name": "alloc.string.ToString.Blanket.to_string",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl alloc::string::ToString for T}::to_string",
@@ -361,7 +378,7 @@
       "reducible": false
     },
     {
-      "def_id": 192,
+      "def_id": 211,
       "lean_name": "alloc.vec.Vec.retain",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::retain",
@@ -378,7 +395,7 @@
       "reducible": false
     },
     {
-      "def_id": 195,
+      "def_id": 214,
       "lean_name": "alloc.vec.Vec.is_empty",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
@@ -395,7 +412,58 @@
       "reducible": false
     },
     {
+      "def_id": 13,
+      "lean_name": "serde_core.de.Visitor.visit_string.default",
+      "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
+      "rust_name": "serde_core::de::Visitor::visit_string",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs",
+        "begin_line": 1568,
+        "end_line": 1570
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
       "def_id": 14,
+      "lean_name": "serde_core.de.Visitor.visit_borrowed_str.default",
+      "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
+      "rust_name": "serde_core::de::Visitor::visit_borrowed_str",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs",
+        "begin_line": 1543,
+        "end_line": 1545
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "serde_core.de.Visitor.visit_str.default",
+      "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
+      "rust_name": "serde_core::de::Visitor::visit_str",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs",
+        "begin_line": 1526,
+        "end_line": 1528
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 27,
       "lean_name": "serde_core.de.Visitor.visit_u64.default",
       "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
       "rust_name": "serde_core::de::Visitor::visit_u64",
@@ -412,7 +480,24 @@
       "reducible": false
     },
     {
-      "def_id": 89,
+      "def_id": 11,
+      "lean_name": "serde_core.de.Error.invalid_type.default",
+      "lean_file": "SandproofFoundations/FunsExternal_Template.lean",
+      "rust_name": "serde_core::de::Error::invalid_type",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs",
+        "begin_line": 213,
+        "end_line": 213
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 111,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.put_loop.body",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put",
@@ -431,7 +516,7 @@
       "parent_lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.put"
     },
     {
-      "def_id": 89,
+      "def_id": 111,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.put_loop",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put",
@@ -450,7 +535,7 @@
       "parent_lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.put"
     },
     {
-      "def_id": 89,
+      "def_id": 111,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.put",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put",
@@ -467,7 +552,7 @@
       "reducible": false
     },
     {
-      "def_id": 262,
+      "def_id": 302,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairBool.call_mut",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnMut<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}::call_mut",
@@ -484,7 +569,7 @@
       "reducible": false
     },
     {
-      "def_id": 261,
+      "def_id": 301,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairBool.call_once",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}::call_once",
@@ -501,7 +586,7 @@
       "reducible": false
     },
     {
-      "def_id": 90,
+      "def_id": 112,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.retain",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain",
@@ -518,7 +603,7 @@
       "reducible": false
     },
     {
-      "def_id": 88,
+      "def_id": 110,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.get_copy_loop.body",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy",
@@ -537,7 +622,7 @@
       "parent_lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.get_copy"
     },
     {
-      "def_id": 88,
+      "def_id": 110,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.get_copy_loop",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy",
@@ -556,7 +641,7 @@
       "parent_lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.get_copy"
     },
     {
-      "def_id": 88,
+      "def_id": 110,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.get_copy",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy",
@@ -573,7 +658,7 @@
       "reducible": true
     },
     {
-      "def_id": 82,
+      "def_id": 104,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from",
@@ -590,7 +675,7 @@
       "reducible": false
     },
     {
-      "def_id": 87,
+      "def_id": 109,
       "lean_name": "SandproofFoundationsRust.sandproof_center_core.model.RetentionLane.current",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_center_core::model::{sandproof_center_core::model::RetentionLane}::current",
@@ -607,7 +692,7 @@
       "reducible": false
     },
     {
-      "def_id": 100,
+      "def_id": 122,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.identifiers.parse_allocated_number",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::identifiers::parse_allocated_number",
@@ -624,7 +709,7 @@
       "reducible": false
     },
     {
-      "def_id": 126,
+      "def_id": 148,
       "lean_name": "SandproofFoundationsRust.sandproof_center_core.validation.number",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_center_core::validation::number",
@@ -641,7 +726,7 @@
       "reducible": false
     },
     {
-      "def_id": 95,
+      "def_id": 117,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.Resources.values",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values",
@@ -658,7 +743,7 @@
       "reducible": false
     },
     {
-      "def_id": 93,
+      "def_id": 115,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.Resources.positive",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive",
@@ -675,7 +760,7 @@
       "reducible": false
     },
     {
-      "def_id": 92,
+      "def_id": 114,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.Resources.checked_add",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::checked_add",
@@ -692,7 +777,7 @@
       "reducible": false
     },
     {
-      "def_id": 94,
+      "def_id": 116,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.Resources.fits",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::fits",
@@ -709,7 +794,7 @@
       "reducible": false
     },
     {
-      "def_id": 96,
+      "def_id": 118,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.CreateBinding.is_valid",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::CreateBinding}::is_valid",
@@ -726,7 +811,7 @@
       "reducible": false
     },
     {
-      "def_id": 287,
+      "def_id": 327,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
@@ -743,7 +828,7 @@
       "reducible": false
     },
     {
-      "def_id": 241,
+      "def_id": 294,
       "lean_name": "SandproofFoundationsRust.serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64.visit_u64",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}::visit_u64",
@@ -760,7 +845,7 @@
       "reducible": false
     },
     {
-      "def_id": 233,
+      "def_id": 286,
       "lean_name": "SandproofFoundationsRust.serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64.expecting",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}::expecting",
@@ -777,7 +862,7 @@
       "reducible": false
     },
     {
-      "def_id": 81,
+      "def_id": 103,
       "lean_name": "SandproofFoundationsRust.U64.Insts.Serde_coreDeDeserialize.deserialize",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize",
@@ -794,7 +879,7 @@
       "reducible": false
     },
     {
-      "def_id": 177,
+      "def_id": 196,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.InternalError.Insts.CoreFmtDisplay.fmt",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt",
@@ -811,7 +896,7 @@
       "reducible": false
     },
     {
-      "def_id": 229,
+      "def_id": 284,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorClause0_Error.call_once",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
@@ -828,7 +913,7 @@
       "reducible": false
     },
     {
-      "def_id": 80,
+      "def_id": 102,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.PositiveCounter.Insts.Serde_coreDeDeserialize.deserialize",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize",
@@ -845,7 +930,7 @@
       "reducible": false
     },
     {
-      "def_id": 84,
+      "def_id": 106,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.PositiveCounter.get",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get",
@@ -862,7 +947,7 @@
       "reducible": false
     },
     {
-      "def_id": 83,
+      "def_id": 105,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.PositiveCounter.checked_next",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::checked_next",
@@ -879,7 +964,7 @@
       "reducible": false
     },
     {
-      "def_id": 85,
+      "def_id": 107,
       "lean_name": "SandproofFoundationsRust.U64.Insts.CoreConvertFromPositiveCounter.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from",
@@ -896,7 +981,7 @@
       "reducible": false
     },
     {
-      "def_id": 383,
+      "def_id": 424,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
@@ -913,7 +998,7 @@
       "reducible": false
     },
     {
-      "def_id": 382,
+      "def_id": 423,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
@@ -930,7 +1015,7 @@
       "reducible": false
     },
     {
-      "def_id": 283,
+      "def_id": 323,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
@@ -947,7 +1032,7 @@
       "reducible": false
     },
     {
-      "def_id": 286,
+      "def_id": 326,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::OperationId> for sandproof_protocol::OperationId}::eq",
@@ -964,7 +1049,7 @@
       "reducible": false
     },
     {
-      "def_id": 285,
+      "def_id": 325,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq",
@@ -981,7 +1066,7 @@
       "reducible": false
     },
     {
-      "def_id": 284,
+      "def_id": 324,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
@@ -998,7 +1083,7 @@
       "reducible": false
     },
     {
-      "def_id": 266,
+      "def_id": 306,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.ControlIdentity.Insts.CoreCmpPartialEqControlIdentity.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}::eq",
@@ -1015,7 +1100,7 @@
       "reducible": false
     },
     {
-      "def_id": 265,
+      "def_id": 305,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.validate_node",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::validate_node",
@@ -1032,7 +1117,7 @@
       "reducible": false
     },
     {
-      "def_id": 264,
+      "def_id": 304,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.validate_version",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::validate_version",
@@ -1049,7 +1134,7 @@
       "reducible": false
     },
     {
-      "def_id": 197,
+      "def_id": 216,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.ControlIdentity.validate_node",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_node",
@@ -1066,7 +1151,7 @@
       "reducible": false
     },
     {
-      "def_id": 97,
+      "def_id": 119,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.ControlIdentity.validate_response",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_response",
@@ -1083,7 +1168,24 @@
       "reducible": false
     },
     {
-      "def_id": 289,
+      "def_id": 420,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ContractError.Insts.CoreFmtDisplay.fmt",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}::fmt",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 39,
+        "end_line": 39
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 329,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_mut",
@@ -1100,7 +1202,7 @@
       "reducible": false
     },
     {
-      "def_id": 288,
+      "def_id": 328,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_once",
@@ -1117,7 +1219,7 @@
       "reducible": false
     },
     {
-      "def_id": 206,
+      "def_id": 225,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.valid_identifier",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::valid_identifier",
@@ -1134,7 +1236,7 @@
       "reducible": false
     },
     {
-      "def_id": 378,
+      "def_id": 418,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::LogicalActionId> for sandproof_protocol::LogicalActionId}::eq",
@@ -1151,7 +1253,7 @@
       "reducible": false
     },
     {
-      "def_id": 410,
+      "def_id": 451,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq",
@@ -1168,15 +1270,15 @@
       "reducible": false
     },
     {
-      "def_id": 103,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.TenantId.as_str",
+      "def_id": 281,
+      "lean_name": "SandproofFoundationsRust.serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::TenantId}::as_str",
+      "rust_name": "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}::visit_string",
       "is_local": false,
       "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs",
+        "begin_line": 599,
+        "end_line": 601
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1185,15 +1287,15 @@
       "reducible": false
     },
     {
-      "def_id": 107,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.SandboxId.as_str",
+      "def_id": 280,
+      "lean_name": "SandproofFoundationsRust.serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_str",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::SandboxId}::as_str",
+      "rust_name": "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}::visit_str",
       "is_local": false,
       "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs",
+        "begin_line": 592,
+        "end_line": 594
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1202,100 +1304,15 @@
       "reducible": false
     },
     {
-      "def_id": 110,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.OperationId.as_str",
+      "def_id": 279,
+      "lean_name": "SandproofFoundationsRust.serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.expecting",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::OperationId}::as_str",
+      "rust_name": "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}::expecting",
       "is_local": false,
       "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
-      },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 113,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.LogicalActionId.as_str",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::LogicalActionId}::as_str",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
-      },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 116,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceId.as_str",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::ResourceId}::as_str",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
-      },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 119,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ClientRequestId.as_str",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::ClientRequestId}::as_str",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
-      },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 122,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeploymentId.as_str",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::DeploymentId}::as_str",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
-      },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 125,
-      "lean_name": "SandproofFoundationsRust.sandproof_protocol.NodeId.as_str",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_protocol::{sandproof_protocol::NodeId}::as_str",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 85,
-        "end_line": 85
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs",
+        "begin_line": 588,
+        "end_line": 588
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1305,6 +1322,23 @@
     },
     {
       "def_id": 101,
+      "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for alloc::string::String}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs",
+        "begin_line": 689,
+        "end_line": 691
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 123,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::TenantId}::try_from",
@@ -1321,7 +1355,41 @@
       "reducible": false
     },
     {
-      "def_id": 105,
+      "def_id": 261,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeTenantId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 93,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.TenantId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 127,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from",
@@ -1338,7 +1406,41 @@
       "reducible": false
     },
     {
-      "def_id": 108,
+      "def_id": 265,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeSandboxId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 94,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.SandboxId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 130,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::OperationId}::try_from",
@@ -1355,7 +1457,41 @@
       "reducible": false
     },
     {
-      "def_id": 111,
+      "def_id": 267,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeOperationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 95,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.OperationId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 133,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::LogicalActionId}::try_from",
@@ -1372,7 +1508,41 @@
       "reducible": false
     },
     {
-      "def_id": 114,
+      "def_id": 269,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 96,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.LogicalActionId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 136,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::ResourceId}::try_from",
@@ -1389,7 +1559,41 @@
       "reducible": false
     },
     {
-      "def_id": 117,
+      "def_id": 271,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeResourceId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 97,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 139,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::ClientRequestId}::try_from",
@@ -1406,7 +1610,41 @@
       "reducible": false
     },
     {
-      "def_id": 120,
+      "def_id": 273,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 98,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ClientRequestId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 142,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::DeploymentId}::try_from",
@@ -1423,7 +1661,41 @@
       "reducible": false
     },
     {
-      "def_id": 123,
+      "def_id": 275,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 99,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeploymentId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 145,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::NodeId}::try_from",
@@ -1440,7 +1712,177 @@
       "reducible": false
     },
     {
-      "def_id": 102,
+      "def_id": 277,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeNodeId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 100,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.NodeId.Insts.Serde_coreDeDeserialize.deserialize",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 72,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 125,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.TenantId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::TenantId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 129,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.SandboxId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::SandboxId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 132,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.OperationId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::OperationId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 135,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.LogicalActionId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::LogicalActionId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 138,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::ResourceId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 141,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ClientRequestId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::ClientRequestId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 144,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeploymentId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::DeploymentId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 147,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.NodeId.as_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::NodeId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 124,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.TenantId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::TenantId}::try_from",
@@ -1457,7 +1899,7 @@
       "reducible": false
     },
     {
-      "def_id": 106,
+      "def_id": 128,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.SandboxId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from",
@@ -1474,7 +1916,7 @@
       "reducible": false
     },
     {
-      "def_id": 109,
+      "def_id": 131,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.OperationId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::OperationId}::try_from",
@@ -1491,7 +1933,7 @@
       "reducible": false
     },
     {
-      "def_id": 112,
+      "def_id": 134,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::LogicalActionId}::try_from",
@@ -1508,7 +1950,7 @@
       "reducible": false
     },
     {
-      "def_id": 115,
+      "def_id": 137,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::ResourceId}::try_from",
@@ -1525,7 +1967,7 @@
       "reducible": false
     },
     {
-      "def_id": 118,
+      "def_id": 140,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::ClientRequestId}::try_from",
@@ -1542,7 +1984,7 @@
       "reducible": false
     },
     {
-      "def_id": 121,
+      "def_id": 143,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::DeploymentId}::try_from",
@@ -1559,7 +2001,7 @@
       "reducible": false
     },
     {
-      "def_id": 124,
+      "def_id": 146,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.NodeId.Insts.CoreConvertTryFromShared0StrContractError.try_from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::NodeId}::try_from",
@@ -1576,7 +2018,7 @@
       "reducible": false
     },
     {
-      "def_id": 209,
+      "def_id": 228,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromTenantId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}::from",
@@ -1593,7 +2035,7 @@
       "reducible": false
     },
     {
-      "def_id": 211,
+      "def_id": 230,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromSandboxId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}::from",
@@ -1610,7 +2052,7 @@
       "reducible": false
     },
     {
-      "def_id": 213,
+      "def_id": 232,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromOperationId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}::from",
@@ -1627,7 +2069,7 @@
       "reducible": false
     },
     {
-      "def_id": 215,
+      "def_id": 234,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromLogicalActionId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}::from",
@@ -1644,7 +2086,7 @@
       "reducible": false
     },
     {
-      "def_id": 217,
+      "def_id": 236,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromResourceId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}::from",
@@ -1661,7 +2103,7 @@
       "reducible": false
     },
     {
-      "def_id": 219,
+      "def_id": 238,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromClientRequestId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ClientRequestId> for alloc::string::String}::from",
@@ -1678,7 +2120,7 @@
       "reducible": false
     },
     {
-      "def_id": 221,
+      "def_id": 240,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromDeploymentId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::DeploymentId> for alloc::string::String}::from",
@@ -1695,7 +2137,7 @@
       "reducible": false
     },
     {
-      "def_id": 223,
+      "def_id": 242,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromNodeId.from",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::NodeId> for alloc::string::String}::from",
@@ -1712,7 +2154,7 @@
       "reducible": false
     },
     {
-      "def_id": 409,
+      "def_id": 450,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceKind> for sandproof_protocol::ResourceKind}::eq",
@@ -1729,7 +2171,7 @@
       "reducible": false
     },
     {
-      "def_id": 379,
+      "def_id": 419,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}::eq",
@@ -1746,7 +2188,7 @@
       "reducible": false
     },
     {
-      "def_id": 279,
+      "def_id": 319,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ActionIdentity> for sandproof_protocol::ActionIdentity}::eq",
@@ -1763,7 +2205,7 @@
       "reducible": false
     },
     {
-      "def_id": 130,
+      "def_id": 152,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ActionIdentity.validate_version",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{sandproof_protocol::ActionIdentity}::validate_version",
@@ -1780,7 +2222,7 @@
       "reducible": false
     },
     {
-      "def_id": 98,
+      "def_id": 120,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkOutcome.permits_new_attempt",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{sandproof_protocol::WorkOutcome<E>}::permits_new_attempt",
@@ -1797,7 +2239,7 @@
       "reducible": false
     },
     {
-      "def_id": 99,
+      "def_id": 121,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkOutcome.observation",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{sandproof_protocol::WorkOutcome<E>}::observation",
@@ -1814,7 +2256,7 @@
       "reducible": false
     },
     {
-      "def_id": 278,
+      "def_id": 318,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{impl core::ops::function::FnOnce<(&'_ E,), bool> for sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}<'_0, E, C>}::call_once",
@@ -1831,7 +2273,7 @@
       "reducible": false
     },
     {
-      "def_id": 131,
+      "def_id": 153,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkReceipt.validate_for",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for",
@@ -1848,7 +2290,7 @@
       "reducible": false
     },
     {
-      "def_id": 127,
+      "def_id": 149,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.numeric.seconds_to_milliseconds",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::numeric::seconds_to_milliseconds",
@@ -1865,7 +2307,7 @@
       "reducible": false
     },
     {
-      "def_id": 128,
+      "def_id": 150,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.numeric.bytes_to_mebibytes",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::numeric::bytes_to_mebibytes",
@@ -1882,7 +2324,7 @@
       "reducible": false
     },
     {
-      "def_id": 129,
+      "def_id": 151,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.numeric.available_resource",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::numeric::available_resource",
@@ -1899,7 +2341,7 @@
       "reducible": false
     },
     {
-      "def_id": 11,
+      "def_id": 24,
       "lean_name": "SandproofFoundationsRust.json.counter_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::json::counter_decode",
@@ -1912,7 +2354,7 @@
       "reducible": false
     },
     {
-      "def_id": 12,
+      "def_id": 25,
       "lean_name": "SandproofFoundationsRust.json.counter_primitive",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::json::counter_primitive",
@@ -1925,7 +2367,7 @@
       "reducible": false
     },
     {
-      "def_id": 13,
+      "def_id": 26,
       "lean_name": "SandproofFoundationsRust.json.json_error_passthrough",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::json::json_error_passthrough",
@@ -1939,11 +2381,15 @@
     },
     {
       "def_id": 15,
-      "lean_name": "SandproofFoundationsRust.counter_from_u64",
+      "lean_name": "SandproofFoundationsRust.json_ids.tenant_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::counter_from_u64",
+      "rust_name": "sandproof_foundations_extract::json_ids::tenant_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 16, "end_line": 18 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 6,
+        "end_line": 10
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -1952,11 +2398,15 @@
     },
     {
       "def_id": 16,
-      "lean_name": "SandproofFoundationsRust.counter_next",
+      "lean_name": "SandproofFoundationsRust.json_ids.sandbox_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::counter_next",
+      "rust_name": "sandproof_foundations_extract::json_ids::sandbox_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 20, "end_line": 22 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 12,
+        "end_line": 16
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -1965,11 +2415,15 @@
     },
     {
       "def_id": 17,
-      "lean_name": "SandproofFoundationsRust.counter_value",
+      "lean_name": "SandproofFoundationsRust.json_ids.operation_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::counter_value",
+      "rust_name": "sandproof_foundations_extract::json_ids::operation_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 24, "end_line": 26 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 18,
+        "end_line": 22
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -1978,11 +2432,15 @@
     },
     {
       "def_id": 18,
-      "lean_name": "SandproofFoundationsRust.counter_into_u64",
+      "lean_name": "SandproofFoundationsRust.json_ids.logical_action_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::counter_into_u64",
+      "rust_name": "sandproof_foundations_extract::json_ids::logical_action_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 28, "end_line": 30 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 24,
+        "end_line": 28
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -1991,11 +2449,15 @@
     },
     {
       "def_id": 19,
-      "lean_name": "SandproofFoundationsRust.internal_error_text",
+      "lean_name": "SandproofFoundationsRust.json_ids.resource_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::internal_error_text",
+      "rust_name": "sandproof_foundations_extract::json_ids::resource_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 32, "end_line": 34 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 30,
+        "end_line": 34
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2004,11 +2466,15 @@
     },
     {
       "def_id": 20,
-      "lean_name": "SandproofFoundationsRust.lane_current",
+      "lean_name": "SandproofFoundationsRust.json_ids.client_request_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::lane_current",
+      "rust_name": "sandproof_foundations_extract::json_ids::client_request_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 36, "end_line": 38 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 36,
+        "end_line": 40
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2017,37 +2483,15 @@
     },
     {
       "def_id": 21,
-      "lean_name": "SandproofFoundationsRust.store_get_copy",
+      "lean_name": "SandproofFoundationsRust.json_ids.deployment_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::store_get_copy",
+      "rust_name": "sandproof_foundations_extract::json_ids::deployment_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 40, "end_line": 42 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": true,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 22,
-      "lean_name": "SandproofFoundationsRust.store_put",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::store_put",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 44, "end_line": 46 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": true,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 191,
-      "lean_name": "SandproofFoundationsRust.store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool.call_mut",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_mut",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 49, "end_line": 49 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 42,
+        "end_line": 46
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2055,12 +2499,16 @@
       "reducible": false
     },
     {
-      "def_id": 190,
-      "lean_name": "SandproofFoundationsRust.store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool.call_once",
+      "def_id": 22,
+      "lean_name": "SandproofFoundationsRust.json_ids.node_decode",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_once",
+      "rust_name": "sandproof_foundations_extract::json_ids::node_decode",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 49, "end_line": 49 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 48,
+        "end_line": 52
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2069,76 +2517,15 @@
     },
     {
       "def_id": 23,
-      "lean_name": "SandproofFoundationsRust.store_retain_above",
+      "lean_name": "SandproofFoundationsRust.json_ids.string_primitive",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::store_retain_above",
+      "rust_name": "sandproof_foundations_extract::json_ids::string_primitive",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 48, "end_line": 50 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 193,
-      "lean_name": "SandproofFoundationsRust.option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}::call_once",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 53, "end_line": 53 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 24,
-      "lean_name": "SandproofFoundationsRust.option_is_none_or",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::option_is_none_or",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 52, "end_line": 54 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 25,
-      "lean_name": "SandproofFoundationsRust.resource_add",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_add",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 56, "end_line": 58 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 26,
-      "lean_name": "SandproofFoundationsRust.resource_positive",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_positive",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 60, "end_line": 62 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 27,
-      "lean_name": "SandproofFoundationsRust.resource_fits",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_fits",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 64, "end_line": 66 },
+      "source": {
+        "file": "src/json_ids.rs",
+        "begin_line": 54,
+        "end_line": 56
+      },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2147,11 +2534,11 @@
     },
     {
       "def_id": 28,
-      "lean_name": "SandproofFoundationsRust.resource_values",
+      "lean_name": "SandproofFoundationsRust.counter_from_u64",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_values",
+      "rust_name": "sandproof_foundations_extract::counter_from_u64",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 68, "end_line": 70 },
+      "source": { "file": "src/lib.rs", "begin_line": 17, "end_line": 19 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2160,11 +2547,11 @@
     },
     {
       "def_id": 29,
-      "lean_name": "SandproofFoundationsRust.create_binding_valid",
+      "lean_name": "SandproofFoundationsRust.counter_next",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::create_binding_valid",
+      "rust_name": "sandproof_foundations_extract::counter_next",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 72, "end_line": 74 },
+      "source": { "file": "src/lib.rs", "begin_line": 21, "end_line": 23 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2173,11 +2560,11 @@
     },
     {
       "def_id": 30,
-      "lean_name": "SandproofFoundationsRust.identity_response",
+      "lean_name": "SandproofFoundationsRust.counter_value",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::identity_response",
+      "rust_name": "sandproof_foundations_extract::counter_value",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 76, "end_line": 81 },
+      "source": { "file": "src/lib.rs", "begin_line": 25, "end_line": 27 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2186,11 +2573,11 @@
     },
     {
       "def_id": 31,
-      "lean_name": "SandproofFoundationsRust.retry_hint",
+      "lean_name": "SandproofFoundationsRust.counter_into_u64",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::retry_hint",
+      "rust_name": "sandproof_foundations_extract::counter_into_u64",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 83, "end_line": 85 },
+      "source": { "file": "src/lib.rs", "begin_line": 29, "end_line": 31 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2199,11 +2586,11 @@
     },
     {
       "def_id": 32,
-      "lean_name": "SandproofFoundationsRust.outcome_observation",
+      "lean_name": "SandproofFoundationsRust.internal_error_text",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::outcome_observation",
+      "rust_name": "sandproof_foundations_extract::internal_error_text",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 87, "end_line": 89 },
+      "source": { "file": "src/lib.rs", "begin_line": 33, "end_line": 35 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2212,24 +2599,11 @@
     },
     {
       "def_id": 33,
-      "lean_name": "SandproofFoundationsRust.allocated_number",
+      "lean_name": "SandproofFoundationsRust.lane_current",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::allocated_number",
+      "rust_name": "sandproof_foundations_extract::lane_current",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 91, "end_line": 93 },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
-      "def_id": 66,
-      "lean_name": "SandproofFoundationsRust.center_allocated_number",
-      "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::center_allocated_number",
-      "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 94, "end_line": 96 },
+      "source": { "file": "src/lib.rs", "begin_line": 37, "end_line": 39 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2238,11 +2612,37 @@
     },
     {
       "def_id": 34,
-      "lean_name": "SandproofFoundationsRust.tenant_from_string",
+      "lean_name": "SandproofFoundationsRust.store_get_copy",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::tenant_from_string",
+      "rust_name": "sandproof_foundations_extract::store_get_copy",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 98, "end_line": 100 },
+      "source": { "file": "src/lib.rs", "begin_line": 41, "end_line": 43 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofFoundationsRust.store_put",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::store_put",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 45, "end_line": 47 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 210,
+      "lean_name": "SandproofFoundationsRust.store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool.call_mut",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_mut",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 50, "end_line": 50 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2250,12 +2650,12 @@
       "reducible": false
     },
     {
-      "def_id": 35,
-      "lean_name": "SandproofFoundationsRust.tenant_from_str",
+      "def_id": 209,
+      "lean_name": "SandproofFoundationsRust.store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool.call_once",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::tenant_from_str",
+      "rust_name": "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_once",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 101, "end_line": 103 },
+      "source": { "file": "src/lib.rs", "begin_line": 50, "end_line": 50 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2264,11 +2664,24 @@
     },
     {
       "def_id": 36,
-      "lean_name": "SandproofFoundationsRust.tenant_value",
+      "lean_name": "SandproofFoundationsRust.store_retain_above",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::tenant_value",
+      "rust_name": "sandproof_foundations_extract::store_retain_above",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 104, "end_line": 106 },
+      "source": { "file": "src/lib.rs", "begin_line": 49, "end_line": 51 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 212,
+      "lean_name": "SandproofFoundationsRust.option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}::call_once",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 54, "end_line": 54 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2277,11 +2690,11 @@
     },
     {
       "def_id": 37,
-      "lean_name": "SandproofFoundationsRust.tenant_into_string",
+      "lean_name": "SandproofFoundationsRust.option_is_none_or",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::tenant_into_string",
+      "rust_name": "sandproof_foundations_extract::option_is_none_or",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 107, "end_line": 109 },
+      "source": { "file": "src/lib.rs", "begin_line": 53, "end_line": 55 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2290,11 +2703,11 @@
     },
     {
       "def_id": 38,
-      "lean_name": "SandproofFoundationsRust.sandbox_from_string",
+      "lean_name": "SandproofFoundationsRust.resource_add",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::sandbox_from_string",
+      "rust_name": "sandproof_foundations_extract::resource_add",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 110, "end_line": 112 },
+      "source": { "file": "src/lib.rs", "begin_line": 57, "end_line": 59 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2303,11 +2716,11 @@
     },
     {
       "def_id": 39,
-      "lean_name": "SandproofFoundationsRust.sandbox_from_str",
+      "lean_name": "SandproofFoundationsRust.resource_positive",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::sandbox_from_str",
+      "rust_name": "sandproof_foundations_extract::resource_positive",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 113, "end_line": 115 },
+      "source": { "file": "src/lib.rs", "begin_line": 61, "end_line": 63 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2316,11 +2729,11 @@
     },
     {
       "def_id": 40,
-      "lean_name": "SandproofFoundationsRust.sandbox_value",
+      "lean_name": "SandproofFoundationsRust.resource_fits",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::sandbox_value",
+      "rust_name": "sandproof_foundations_extract::resource_fits",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 116, "end_line": 118 },
+      "source": { "file": "src/lib.rs", "begin_line": 65, "end_line": 67 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2329,11 +2742,11 @@
     },
     {
       "def_id": 41,
-      "lean_name": "SandproofFoundationsRust.sandbox_into_string",
+      "lean_name": "SandproofFoundationsRust.resource_values",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::sandbox_into_string",
+      "rust_name": "sandproof_foundations_extract::resource_values",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 119, "end_line": 121 },
+      "source": { "file": "src/lib.rs", "begin_line": 69, "end_line": 71 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2342,11 +2755,11 @@
     },
     {
       "def_id": 42,
-      "lean_name": "SandproofFoundationsRust.operation_from_string",
+      "lean_name": "SandproofFoundationsRust.create_binding_valid",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::operation_from_string",
+      "rust_name": "sandproof_foundations_extract::create_binding_valid",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 122, "end_line": 124 },
+      "source": { "file": "src/lib.rs", "begin_line": 73, "end_line": 75 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2355,11 +2768,11 @@
     },
     {
       "def_id": 43,
-      "lean_name": "SandproofFoundationsRust.operation_from_str",
+      "lean_name": "SandproofFoundationsRust.identity_response",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::operation_from_str",
+      "rust_name": "sandproof_foundations_extract::identity_response",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 125, "end_line": 127 },
+      "source": { "file": "src/lib.rs", "begin_line": 77, "end_line": 82 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2368,11 +2781,11 @@
     },
     {
       "def_id": 44,
-      "lean_name": "SandproofFoundationsRust.operation_value",
+      "lean_name": "SandproofFoundationsRust.retry_hint",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::operation_value",
+      "rust_name": "sandproof_foundations_extract::retry_hint",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 128, "end_line": 130 },
+      "source": { "file": "src/lib.rs", "begin_line": 84, "end_line": 86 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2381,11 +2794,11 @@
     },
     {
       "def_id": 45,
-      "lean_name": "SandproofFoundationsRust.operation_into_string",
+      "lean_name": "SandproofFoundationsRust.outcome_observation",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::operation_into_string",
+      "rust_name": "sandproof_foundations_extract::outcome_observation",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 131, "end_line": 133 },
+      "source": { "file": "src/lib.rs", "begin_line": 88, "end_line": 90 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2394,11 +2807,24 @@
     },
     {
       "def_id": 46,
-      "lean_name": "SandproofFoundationsRust.logical_action_from_string",
+      "lean_name": "SandproofFoundationsRust.allocated_number",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::logical_action_from_string",
+      "rust_name": "sandproof_foundations_extract::allocated_number",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 134, "end_line": 136 },
+      "source": { "file": "src/lib.rs", "begin_line": 92, "end_line": 94 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 79,
+      "lean_name": "SandproofFoundationsRust.center_allocated_number",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::center_allocated_number",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 95, "end_line": 97 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2407,11 +2833,11 @@
     },
     {
       "def_id": 47,
-      "lean_name": "SandproofFoundationsRust.logical_action_from_str",
+      "lean_name": "SandproofFoundationsRust.tenant_from_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::logical_action_from_str",
+      "rust_name": "sandproof_foundations_extract::tenant_from_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 137, "end_line": 139 },
+      "source": { "file": "src/lib.rs", "begin_line": 99, "end_line": 101 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2420,11 +2846,11 @@
     },
     {
       "def_id": 48,
-      "lean_name": "SandproofFoundationsRust.logical_action_value",
+      "lean_name": "SandproofFoundationsRust.tenant_from_str",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::logical_action_value",
+      "rust_name": "sandproof_foundations_extract::tenant_from_str",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 140, "end_line": 142 },
+      "source": { "file": "src/lib.rs", "begin_line": 102, "end_line": 104 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2433,11 +2859,11 @@
     },
     {
       "def_id": 49,
-      "lean_name": "SandproofFoundationsRust.logical_action_into_string",
+      "lean_name": "SandproofFoundationsRust.tenant_value",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::logical_action_into_string",
+      "rust_name": "sandproof_foundations_extract::tenant_value",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 143, "end_line": 145 },
+      "source": { "file": "src/lib.rs", "begin_line": 105, "end_line": 107 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2446,11 +2872,11 @@
     },
     {
       "def_id": 50,
-      "lean_name": "SandproofFoundationsRust.resource_from_string",
+      "lean_name": "SandproofFoundationsRust.tenant_into_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_from_string",
+      "rust_name": "sandproof_foundations_extract::tenant_into_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 146, "end_line": 148 },
+      "source": { "file": "src/lib.rs", "begin_line": 108, "end_line": 110 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2459,11 +2885,11 @@
     },
     {
       "def_id": 51,
-      "lean_name": "SandproofFoundationsRust.resource_from_str",
+      "lean_name": "SandproofFoundationsRust.sandbox_from_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_from_str",
+      "rust_name": "sandproof_foundations_extract::sandbox_from_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 149, "end_line": 151 },
+      "source": { "file": "src/lib.rs", "begin_line": 111, "end_line": 113 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2472,11 +2898,11 @@
     },
     {
       "def_id": 52,
-      "lean_name": "SandproofFoundationsRust.resource_value",
+      "lean_name": "SandproofFoundationsRust.sandbox_from_str",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_value",
+      "rust_name": "sandproof_foundations_extract::sandbox_from_str",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 152, "end_line": 154 },
+      "source": { "file": "src/lib.rs", "begin_line": 114, "end_line": 116 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2485,11 +2911,11 @@
     },
     {
       "def_id": 53,
-      "lean_name": "SandproofFoundationsRust.resource_into_string",
+      "lean_name": "SandproofFoundationsRust.sandbox_value",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::resource_into_string",
+      "rust_name": "sandproof_foundations_extract::sandbox_value",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 155, "end_line": 157 },
+      "source": { "file": "src/lib.rs", "begin_line": 117, "end_line": 119 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2498,11 +2924,11 @@
     },
     {
       "def_id": 54,
-      "lean_name": "SandproofFoundationsRust.client_request_from_string",
+      "lean_name": "SandproofFoundationsRust.sandbox_into_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::client_request_from_string",
+      "rust_name": "sandproof_foundations_extract::sandbox_into_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 158, "end_line": 160 },
+      "source": { "file": "src/lib.rs", "begin_line": 120, "end_line": 122 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2511,11 +2937,11 @@
     },
     {
       "def_id": 55,
-      "lean_name": "SandproofFoundationsRust.client_request_from_str",
+      "lean_name": "SandproofFoundationsRust.operation_from_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::client_request_from_str",
+      "rust_name": "sandproof_foundations_extract::operation_from_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 161, "end_line": 163 },
+      "source": { "file": "src/lib.rs", "begin_line": 123, "end_line": 125 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2524,11 +2950,11 @@
     },
     {
       "def_id": 56,
-      "lean_name": "SandproofFoundationsRust.client_request_value",
+      "lean_name": "SandproofFoundationsRust.operation_from_str",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::client_request_value",
+      "rust_name": "sandproof_foundations_extract::operation_from_str",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 164, "end_line": 166 },
+      "source": { "file": "src/lib.rs", "begin_line": 126, "end_line": 128 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2537,11 +2963,11 @@
     },
     {
       "def_id": 57,
-      "lean_name": "SandproofFoundationsRust.client_request_into_string",
+      "lean_name": "SandproofFoundationsRust.operation_value",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::client_request_into_string",
+      "rust_name": "sandproof_foundations_extract::operation_value",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 167, "end_line": 169 },
+      "source": { "file": "src/lib.rs", "begin_line": 129, "end_line": 131 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2550,11 +2976,11 @@
     },
     {
       "def_id": 58,
-      "lean_name": "SandproofFoundationsRust.deployment_from_string",
+      "lean_name": "SandproofFoundationsRust.operation_into_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::deployment_from_string",
+      "rust_name": "sandproof_foundations_extract::operation_into_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 170, "end_line": 172 },
+      "source": { "file": "src/lib.rs", "begin_line": 132, "end_line": 134 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2563,11 +2989,11 @@
     },
     {
       "def_id": 59,
-      "lean_name": "SandproofFoundationsRust.deployment_from_str",
+      "lean_name": "SandproofFoundationsRust.logical_action_from_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::deployment_from_str",
+      "rust_name": "sandproof_foundations_extract::logical_action_from_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 173, "end_line": 175 },
+      "source": { "file": "src/lib.rs", "begin_line": 135, "end_line": 137 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2576,11 +3002,11 @@
     },
     {
       "def_id": 60,
-      "lean_name": "SandproofFoundationsRust.deployment_value",
+      "lean_name": "SandproofFoundationsRust.logical_action_from_str",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::deployment_value",
+      "rust_name": "sandproof_foundations_extract::logical_action_from_str",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 176, "end_line": 178 },
+      "source": { "file": "src/lib.rs", "begin_line": 138, "end_line": 140 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2589,11 +3015,11 @@
     },
     {
       "def_id": 61,
-      "lean_name": "SandproofFoundationsRust.deployment_into_string",
+      "lean_name": "SandproofFoundationsRust.logical_action_value",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::deployment_into_string",
+      "rust_name": "sandproof_foundations_extract::logical_action_value",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 179, "end_line": 181 },
+      "source": { "file": "src/lib.rs", "begin_line": 141, "end_line": 143 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2602,11 +3028,11 @@
     },
     {
       "def_id": 62,
-      "lean_name": "SandproofFoundationsRust.node_from_string",
+      "lean_name": "SandproofFoundationsRust.logical_action_into_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::node_from_string",
+      "rust_name": "sandproof_foundations_extract::logical_action_into_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 182, "end_line": 184 },
+      "source": { "file": "src/lib.rs", "begin_line": 144, "end_line": 146 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2615,11 +3041,11 @@
     },
     {
       "def_id": 63,
-      "lean_name": "SandproofFoundationsRust.node_from_str",
+      "lean_name": "SandproofFoundationsRust.resource_from_string",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::node_from_str",
+      "rust_name": "sandproof_foundations_extract::resource_from_string",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 185, "end_line": 187 },
+      "source": { "file": "src/lib.rs", "begin_line": 147, "end_line": 149 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2628,11 +3054,11 @@
     },
     {
       "def_id": 64,
-      "lean_name": "SandproofFoundationsRust.node_value",
+      "lean_name": "SandproofFoundationsRust.resource_from_str",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::node_value",
+      "rust_name": "sandproof_foundations_extract::resource_from_str",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 188, "end_line": 190 },
+      "source": { "file": "src/lib.rs", "begin_line": 150, "end_line": 152 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2641,11 +3067,24 @@
     },
     {
       "def_id": 65,
-      "lean_name": "SandproofFoundationsRust.node_into_string",
+      "lean_name": "SandproofFoundationsRust.resource_value",
       "lean_file": "SandproofFoundations/Funs.lean",
-      "rust_name": "sandproof_foundations_extract::node_into_string",
+      "rust_name": "sandproof_foundations_extract::resource_value",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 191, "end_line": 193 },
+      "source": { "file": "src/lib.rs", "begin_line": 153, "end_line": 155 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 66,
+      "lean_name": "SandproofFoundationsRust.resource_into_string",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::resource_into_string",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 156, "end_line": 158 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -2654,6 +3093,162 @@
     },
     {
       "def_id": 67,
+      "lean_name": "SandproofFoundationsRust.client_request_from_string",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::client_request_from_string",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 159, "end_line": 161 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 68,
+      "lean_name": "SandproofFoundationsRust.client_request_from_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::client_request_from_str",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 162, "end_line": 164 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 69,
+      "lean_name": "SandproofFoundationsRust.client_request_value",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::client_request_value",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 165, "end_line": 167 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 70,
+      "lean_name": "SandproofFoundationsRust.client_request_into_string",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::client_request_into_string",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 168, "end_line": 170 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 71,
+      "lean_name": "SandproofFoundationsRust.deployment_from_string",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::deployment_from_string",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 171, "end_line": 173 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 72,
+      "lean_name": "SandproofFoundationsRust.deployment_from_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::deployment_from_str",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 174, "end_line": 176 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 73,
+      "lean_name": "SandproofFoundationsRust.deployment_value",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::deployment_value",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 177, "end_line": 179 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 74,
+      "lean_name": "SandproofFoundationsRust.deployment_into_string",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::deployment_into_string",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 180, "end_line": 182 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 75,
+      "lean_name": "SandproofFoundationsRust.node_from_string",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::node_from_string",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 183, "end_line": 185 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 76,
+      "lean_name": "SandproofFoundationsRust.node_from_str",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::node_from_str",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 186, "end_line": 188 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 77,
+      "lean_name": "SandproofFoundationsRust.node_value",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::node_value",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 189, "end_line": 191 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 78,
+      "lean_name": "SandproofFoundationsRust.node_into_string",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_foundations_extract::node_into_string",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 192, "end_line": 194 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 80,
       "lean_name": "SandproofFoundationsRust.numeric.seconds_to_milliseconds",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::numeric::seconds_to_milliseconds",
@@ -2666,7 +3261,7 @@
       "reducible": false
     },
     {
-      "def_id": 68,
+      "def_id": 81,
       "lean_name": "SandproofFoundationsRust.numeric.bytes_to_mebibytes",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::numeric::bytes_to_mebibytes",
@@ -2679,7 +3274,7 @@
       "reducible": false
     },
     {
-      "def_id": 69,
+      "def_id": 82,
       "lean_name": "SandproofFoundationsRust.numeric.available_resource",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::numeric::available_resource",
@@ -2696,7 +3291,7 @@
       "reducible": false
     },
     {
-      "def_id": 70,
+      "def_id": 83,
       "lean_name": "SandproofFoundationsRust.receipts.action_version",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::receipts::action_version",
@@ -2709,7 +3304,7 @@
       "reducible": false
     },
     {
-      "def_id": 71,
+      "def_id": 84,
       "lean_name": "SandproofFoundationsRust.receipts.receipt_validate",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::receipts::receipt_validate",
@@ -2728,7 +3323,7 @@
   ],
   "types": [
     {
-      "def_id": 53,
+      "def_id": 62,
       "lean_name": "core.num.error.ParseIntError",
       "lean_file": "SandproofFoundations/TypesExternal_Template.lean",
       "rust_name": "core::num::error::ParseIntError",
@@ -2740,7 +3335,7 @@
       }
     },
     {
-      "def_id": 64,
+      "def_id": 73,
       "lean_name": "core.str.iter.Bytes",
       "lean_file": "SandproofFoundations/TypesExternal_Template.lean",
       "rust_name": "core::str::iter::Bytes",
@@ -2752,7 +3347,7 @@
       }
     },
     {
-      "def_id": 4,
+      "def_id": 16,
       "lean_name": "serde_json.error.Error",
       "lean_file": "SandproofFoundations/TypesExternal_Template.lean",
       "rust_name": "serde_json::error::Error",
@@ -2764,7 +3359,7 @@
       }
     },
     {
-      "def_id": 9,
+      "def_id": 20,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandbox_controller_core::store::Store",
@@ -2776,7 +3371,7 @@
       }
     },
     {
-      "def_id": 48,
+      "def_id": 57,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.retain.closure",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}",
@@ -2788,7 +3383,7 @@
       }
     },
     {
-      "def_id": 45,
+      "def_id": 54,
       "lean_name": "SandproofFoundationsRust.sandproof_center_core.model.LanePhase",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_center_core::model::LanePhase",
@@ -2800,7 +3395,7 @@
       }
     },
     {
-      "def_id": 25,
+      "def_id": 14,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.NodeId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::NodeId",
@@ -2812,7 +3407,7 @@
       }
     },
     {
-      "def_id": 24,
+      "def_id": 13,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeploymentId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::DeploymentId",
@@ -2824,7 +3419,7 @@
       }
     },
     {
-      "def_id": 3,
+      "def_id": 15,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.PositiveCounter",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::PositiveCounter",
@@ -2836,7 +3431,7 @@
       }
     },
     {
-      "def_id": 44,
+      "def_id": 53,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.NodeIdentity",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::NodeIdentity",
@@ -2848,7 +3443,7 @@
       }
     },
     {
-      "def_id": 20,
+      "def_id": 9,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.OperationId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::OperationId",
@@ -2860,7 +3455,7 @@
       }
     },
     {
-      "def_id": 19,
+      "def_id": 8,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.SandboxId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::SandboxId",
@@ -2872,7 +3467,7 @@
       }
     },
     {
-      "def_id": 17,
+      "def_id": 7,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.TenantId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::TenantId",
@@ -2884,7 +3479,7 @@
       }
     },
     {
-      "def_id": 14,
+      "def_id": 25,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.ControlIdentity",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::ControlIdentity",
@@ -2896,7 +3491,7 @@
       }
     },
     {
-      "def_id": 63,
+      "def_id": 72,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.LifecycleFact",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::LifecycleFact",
@@ -2908,7 +3503,7 @@
       }
     },
     {
-      "def_id": 46,
+      "def_id": 55,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.LifecycleResponse",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::LifecycleResponse",
@@ -2920,7 +3515,7 @@
       }
     },
     {
-      "def_id": 7,
+      "def_id": 18,
       "lean_name": "SandproofFoundationsRust.sandproof_center_core.model.RetentionLane",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_center_core::model::RetentionLane",
@@ -2932,7 +3527,7 @@
       }
     },
     {
-      "def_id": 5,
+      "def_id": 17,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.InternalError",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::InternalError",
@@ -2944,7 +3539,7 @@
       }
     },
     {
-      "def_id": 12,
+      "def_id": 23,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.Resources",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::Resources",
@@ -2956,7 +3551,7 @@
       }
     },
     {
-      "def_id": 22,
+      "def_id": 11,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::ResourceId",
@@ -2968,7 +3563,7 @@
       }
     },
     {
-      "def_id": 13,
+      "def_id": 24,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.lifecycle.CreateBinding",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::CreateBinding",
@@ -2980,7 +3575,19 @@
       }
     },
     {
-      "def_id": 36,
+      "def_id": 2,
+      "lean_name": "SandproofFoundationsRust.serde_core.de.Unexpected",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "serde_core::de::Unexpected",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs",
+        "begin_line": 338,
+        "end_line": 338
+      }
+    },
+    {
+      "def_id": 51,
       "lean_name": "SandproofFoundationsRust.serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor",
@@ -2992,7 +3599,7 @@
       }
     },
     {
-      "def_id": 35,
+      "def_id": 50,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}",
@@ -3004,7 +3611,7 @@
       }
     },
     {
-      "def_id": 18,
+      "def_id": 27,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ContractError",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::ContractError",
@@ -3016,7 +3623,7 @@
       }
     },
     {
-      "def_id": 65,
+      "def_id": 74,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.valid_identifier.closure",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::valid_identifier::{closure}",
@@ -3028,7 +3635,7 @@
       }
     },
     {
-      "def_id": 21,
+      "def_id": 10,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.LogicalActionId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::LogicalActionId",
@@ -3040,7 +3647,7 @@
       }
     },
     {
-      "def_id": 23,
+      "def_id": 12,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ClientRequestId",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::ClientRequestId",
@@ -3052,7 +3659,115 @@
       }
     },
     {
-      "def_id": 66,
+      "def_id": 49,
+      "lean_name": "SandproofFoundationsRust.serde_core.de.impls.StringVisitor",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "serde_core::de::impls::StringVisitor",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs",
+        "begin_line": 580,
+        "end_line": 580
+      }
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeTenantId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 42,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeSandboxId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 43,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeOperationId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 44,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 45,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeResourceId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 46,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 47,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 48,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeNodeId.deserialize.closure",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 75,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceKind",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::ResourceKind",
@@ -3064,7 +3779,7 @@
       }
     },
     {
-      "def_id": 54,
+      "def_id": 63,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceRef",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::ResourceRef",
@@ -3076,7 +3791,7 @@
       }
     },
     {
-      "def_id": 26,
+      "def_id": 28,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ActionIdentity",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::ActionIdentity",
@@ -3088,7 +3803,7 @@
       }
     },
     {
-      "def_id": 28,
+      "def_id": 30,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkAction",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::WorkAction",
@@ -3100,7 +3815,7 @@
       }
     },
     {
-      "def_id": 51,
+      "def_id": 60,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.FailureCode",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::FailureCode",
@@ -3112,7 +3827,7 @@
       }
     },
     {
-      "def_id": 52,
+      "def_id": 61,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.UnknownReason",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::UnknownReason",
@@ -3124,7 +3839,7 @@
       }
     },
     {
-      "def_id": 15,
+      "def_id": 26,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkOutcome",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::WorkOutcome",
@@ -3136,7 +3851,7 @@
       }
     },
     {
-      "def_id": 27,
+      "def_id": 29,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkReceipt",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::WorkReceipt",
@@ -3148,7 +3863,7 @@
       }
     },
     {
-      "def_id": 56,
+      "def_id": 65,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkReceipt.validate_for.closure",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}",
@@ -3160,20 +3875,20 @@
       }
     },
     {
-      "def_id": 10,
+      "def_id": 21,
       "lean_name": "SandproofFoundationsRust.store_retain_above.closure",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_foundations_extract::store_retain_above::{closure}",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 49, "end_line": 49 }
+      "source": { "file": "src/lib.rs", "begin_line": 50, "end_line": 50 }
     },
     {
-      "def_id": 11,
+      "def_id": 22,
       "lean_name": "SandproofFoundationsRust.option_is_none_or.closure",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_foundations_extract::option_is_none_or::{closure}",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 53, "end_line": 53 }
+      "source": { "file": "src/lib.rs", "begin_line": 54, "end_line": 54 }
     }
   ],
   "globals": [
@@ -3191,7 +3906,7 @@
       "can_fail": false
     },
     {
-      "def_id": 28,
+      "def_id": 36,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.INTERNAL_PROTOCOL_VERSION",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION",
@@ -3231,7 +3946,19 @@
       }
     },
     {
-      "def_id": 7,
+      "def_id": 5,
+      "lean_name": "SandproofFoundationsRust.serde_core.de.Expected",
+      "lean_file": "SandproofFoundations/Types.lean",
+      "rust_name": "serde_core::de::Expected",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs",
+        "begin_line": 484,
+        "end_line": 484
+      }
+    },
+    {
+      "def_id": 4,
       "lean_name": "SandproofFoundationsRust.serde_core.de.Error",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "serde_core::de::Error",
@@ -3255,7 +3982,7 @@
       }
     },
     {
-      "def_id": 4,
+      "def_id": 7,
       "lean_name": "SandproofFoundationsRust.serde_core.de.Deserializer",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "serde_core::de::Deserializer",
@@ -3267,7 +3994,7 @@
       }
     },
     {
-      "def_id": 14,
+      "def_id": 15,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceEvidence",
       "lean_file": "SandproofFoundations/Types.lean",
       "rust_name": "sandproof_protocol::ResourceEvidence",
@@ -3281,7 +4008,22 @@
   ],
   "trait_impls": [
     {
-      "def_id": 75,
+      "def_id": 134,
+      "lean_name": "SandproofFoundationsRust.Shared0T.Insts.CoreFmtDisplay",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/mod.rs",
+        "begin_line": 2886,
+        "end_line": 2886
+      },
+      "impl_trait_def_id": 9,
+      "impl_trait_rust_name": "core::fmt::Display",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 101,
       "lean_name": "SandproofFoundationsRust.U64.Insts.CoreFmtDisplay",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "core::fmt::num::imp::{impl core::fmt::Display for u64}",
@@ -3291,12 +4033,27 @@
         "begin_line": 134,
         "end_line": 134
       },
-      "impl_trait_def_id": 8,
+      "impl_trait_def_id": 9,
       "impl_trait_rust_name": "core::fmt::Display",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 73,
+      "def_id": 135,
+      "lean_name": "SandproofFoundationsRust.U16.Insts.CoreFmtDisplay",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "core::fmt::num::imp::{impl core::fmt::Display for u16}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/num.rs",
+        "begin_line": 134,
+        "end_line": 134
+      },
+      "impl_trait_def_id": 9,
+      "impl_trait_rust_name": "core::fmt::Display",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 99,
       "lean_name": "SandproofFoundationsRust.U64.Insts.CoreStrTraitsFromStrParseIntError",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}",
@@ -3311,7 +4068,7 @@
       "impl_trait_is_builtin": false
     },
     {
-      "def_id": 72,
+      "def_id": 98,
       "lean_name": "SandproofFoundationsRust.Str.Insts.CoreCmpPartialEqStr",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "core::str::traits::{impl core::cmp::PartialEq<str> for str}",
@@ -3321,12 +4078,12 @@
         "begin_line": 27,
         "end_line": 27
       },
-      "impl_trait_def_id": 9,
+      "impl_trait_def_id": 10,
       "impl_trait_rust_name": "core::cmp::PartialEq",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 69,
+      "def_id": 95,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairBool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
@@ -3336,12 +4093,12 @@
         "begin_line": 50,
         "end_line": 50
       },
-      "impl_trait_def_id": 12,
+      "impl_trait_def_id": 13,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 70,
+      "def_id": 96,
       "lean_name": "SandproofFoundationsRust.sandbox_controller_core.store.Store.retain.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairBool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnMut<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
@@ -3351,12 +4108,12 @@
         "begin_line": 50,
         "end_line": 50
       },
-      "impl_trait_def_id": 11,
+      "impl_trait_def_id": 12,
       "impl_trait_rust_name": "core::ops::function::FnMut",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 58,
+      "def_id": 84,
       "lean_name": "SandproofFoundationsRust.serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}",
@@ -3371,7 +4128,7 @@
       "impl_trait_is_builtin": false
     },
     {
-      "def_id": 12,
+      "def_id": 21,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.InternalError.Insts.CoreFmtDisplay",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}",
@@ -3381,12 +4138,12 @@
         "begin_line": 231,
         "end_line": 231
       },
-      "impl_trait_def_id": 8,
+      "impl_trait_def_id": 9,
       "impl_trait_rust_name": "core::fmt::Display",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 53,
+      "def_id": 82,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorClause0_Error",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}",
@@ -3396,12 +4153,12 @@
         "begin_line": 61,
         "end_line": 61
       },
-      "impl_trait_def_id": 12,
+      "impl_trait_def_id": 13,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 91,
+      "def_id": 118,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}",
@@ -3411,12 +4168,12 @@
         "begin_line": 101,
         "end_line": 101
       },
-      "impl_trait_def_id": 9,
+      "impl_trait_def_id": 10,
       "impl_trait_rust_name": "core::cmp::PartialEq",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 71,
+      "def_id": 97,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.internal.ControlIdentity.Insts.CoreCmpPartialEqControlIdentity",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}",
@@ -3426,12 +4183,27 @@
         "begin_line": 112,
         "end_line": 112
       },
-      "impl_trait_def_id": 9,
+      "impl_trait_def_id": 10,
       "impl_trait_rust_name": "core::cmp::PartialEq",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 86,
+      "def_id": 116,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.ContractError.Insts.CoreFmtDisplay",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 38,
+        "end_line": 38
+      },
+      "impl_trait_def_id": 9,
+      "impl_trait_rust_name": "core::fmt::Display",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 112,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
@@ -3441,12 +4213,12 @@
         "begin_line": 62,
         "end_line": 62
       },
-      "impl_trait_def_id": 12,
+      "impl_trait_def_id": 13,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 87,
+      "def_id": 113,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
@@ -3456,12 +4228,147 @@
         "begin_line": 62,
         "end_line": 62
       },
-      "impl_trait_def_id": 11,
+      "impl_trait_def_id": 12,
       "impl_trait_rust_name": "core::ops::function::FnMut",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 23,
+      "def_id": 81,
+      "lean_name": "SandproofFoundationsRust.serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs",
+        "begin_line": 585,
+        "end_line": 585
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "serde_core::de::Visitor",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 62,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeTenantId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 67,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeSandboxId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 69,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeOperationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 71,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 73,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeResourceId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 75,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 77,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 79,
+      "lean_name": "SandproofFoundationsRust.sandproof_protocol.DeserializeDeNodeId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error",
+      "lean_file": "SandproofFoundations/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 79,
+        "end_line": 79
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 32,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromTenantId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}",
@@ -3471,12 +4378,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 27,
+      "def_id": 36,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromSandboxId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}",
@@ -3486,12 +4393,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 31,
+      "def_id": 40,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromOperationId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}",
@@ -3501,12 +4408,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 35,
+      "def_id": 44,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromLogicalActionId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}",
@@ -3516,12 +4423,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 39,
+      "def_id": 48,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromResourceId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}",
@@ -3531,12 +4438,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 43,
+      "def_id": 52,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromClientRequestId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ClientRequestId> for alloc::string::String}",
@@ -3546,12 +4453,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 47,
+      "def_id": 56,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromDeploymentId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::DeploymentId> for alloc::string::String}",
@@ -3561,12 +4468,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 51,
+      "def_id": 60,
       "lean_name": "SandproofFoundationsRust.alloc.string.String.Insts.CoreConvertFromNodeId",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::convert::From<sandproof_protocol::NodeId> for alloc::string::String}",
@@ -3576,12 +4483,12 @@
         "begin_line": 110,
         "end_line": 110
       },
-      "impl_trait_def_id": 13,
+      "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::convert::From",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 97,
+      "def_id": 124,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}",
@@ -3591,12 +4498,12 @@
         "begin_line": 192,
         "end_line": 192
       },
-      "impl_trait_def_id": 9,
+      "impl_trait_def_id": 10,
       "impl_trait_rust_name": "core::cmp::PartialEq",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 81,
+      "def_id": 107,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ActionIdentity> for sandproof_protocol::ActionIdentity}",
@@ -3606,12 +4513,12 @@
         "begin_line": 200,
         "end_line": 200
       },
-      "impl_trait_def_id": 9,
+      "impl_trait_def_id": 10,
       "impl_trait_rust_name": "core::cmp::PartialEq",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 80,
+      "def_id": 106,
       "lean_name": "SandproofFoundationsRust.sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{impl core::ops::function::FnOnce<(&'_ E,), bool> for sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}<'_0, E, C>}",
@@ -3621,40 +4528,40 @@
         "begin_line": 333,
         "end_line": 333
       },
-      "impl_trait_def_id": 12,
+      "impl_trait_def_id": 13,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 15,
+      "def_id": 24,
       "lean_name": "SandproofFoundationsRust.store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 49, "end_line": 49 },
-      "impl_trait_def_id": 12,
+      "source": { "file": "src/lib.rs", "begin_line": 50, "end_line": 50 },
+      "impl_trait_def_id": 13,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 16,
+      "def_id": 25,
       "lean_name": "SandproofFoundationsRust.store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 49, "end_line": 49 },
-      "impl_trait_def_id": 11,
+      "source": { "file": "src/lib.rs", "begin_line": 50, "end_line": 50 },
+      "impl_trait_def_id": 12,
       "impl_trait_rust_name": "core::ops::function::FnMut",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 17,
+      "def_id": 26,
       "lean_name": "SandproofFoundationsRust.option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool",
       "lean_file": "SandproofFoundations/Funs.lean",
       "rust_name": "sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 53, "end_line": 53 },
-      "impl_trait_def_id": 12,
+      "source": { "file": "src/lib.rs", "begin_line": 54, "end_line": 54 },
+      "impl_trait_def_id": 13,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
       "impl_trait_is_builtin": true
     }

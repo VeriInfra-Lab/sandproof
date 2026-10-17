@@ -45,4 +45,17 @@ structure serde_json.error.Error where
   line : Nat
   column : Nat
 
+
+-- The only retained use of f64 is an inert Unexpected::Float payload.
+-- Preserve all 64 IEEE-754 bits; no float arithmetic or formatting is modeled.
+abbrev F64 := BitVec 64
+
+structure core.fmt.rt.Argument where
+  render : core.fmt.Formatter →
+    Result (core.result.Result Unit core.fmt.Error × core.fmt.Formatter)
+
+structure core.fmt.Arguments where
+  bytecode : List U8
+  arguments : List core.fmt.rt.Argument
+
 end SandproofFoundationsRust

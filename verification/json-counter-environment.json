@@ -12,6 +12,19 @@
     "monomorphize": false,
     "monomorphize_mut": null,
     "start_from": [
+      "serde_core::de::Error::invalid_type",
+      "serde_core::de::Visitor::visit_str",
+      "serde_core::de::Visitor::visit_string",
+      "serde_core::de::Visitor::visit_borrowed_str",
+      "crate::json_ids::tenant_decode",
+      "crate::json_ids::sandbox_decode",
+      "crate::json_ids::operation_decode",
+      "crate::json_ids::logical_action_decode",
+      "crate::json_ids::resource_decode",
+      "crate::json_ids::client_request_decode",
+      "crate::json_ids::deployment_decode",
+      "crate::json_ids::node_decode",
+      "crate::json_ids::string_primitive",
       "crate::json::counter_decode",
       "crate::json::counter_primitive",
       "crate::json::json_error_passthrough",
@@ -78,6 +91,11 @@
     "start_from_attribute": [],
     "start_from_pub": false,
     "include": [
+      "serde_core::de::impls::{impl serde_core::de::Deserialize for alloc::string::String}::deserialize",
+      "serde_core::de::impls::StringVisitor",
+      "serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::expecting",
+      "serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_str",
+      "serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_string",
       "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize",
       "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::PrimitiveVisitor",
       "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_::expecting",
@@ -87,6 +105,11 @@
       "sandbox_controller_core"
     ],
     "opaque": [
+      "serde_core::de::impls::StringVisitor::_",
+      "serde_core::de::Error::invalid_type",
+      "serde_core::de::Visitor::visit_str",
+      "serde_core::de::Visitor::visit_string",
+      "serde_core::de::Visitor::visit_borrowed_str",
       "serde_core::de::Visitor::visit_u64",
       "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_"
     ],
@@ -132,7 +155,7 @@
     "error_on_warnings": true,
     "preset": "Aeneas"
   },
-  "llbc_sha256": "5ffaac2fa15158dc4d468c81582b15a16ebac907aae2c2a95c8e69efa377c18b",
+  "llbc_sha256": "bceb4c965524112a92059067b1380ef577afc01b3e18b65042f781e0ce0d0c93",
   "functions": [
     "sandproof_foundations_extract::json::counter_decode",
     "sandproof_foundations_extract::json::counter_primitive",
@@ -169,42 +192,14 @@
             "Local": 2
           },
           "ty": {
-            "Deduplicated": 32
+            "Deduplicated": 34
           }
         },
         "fn_ptr": {
           "kind": {
             "Trait": [
               {
-                "Value": [
-                  13,
-                  {
-                    "kind": {
-                      "BuiltinOrAuto": {
-                        "builtin_data": "UntrackedDestruct",
-                        "parent_trait_refs": [],
-                        "types": [],
-                        "vtable": null
-                      }
-                    },
-                    "trait_decl_ref": {
-                      "regions": [],
-                      "skip_binder": {
-                        "id": 5,
-                        "generics": {
-                          "regions": [],
-                          "types": [
-                            {
-                              "Deduplicated": 32
-                            }
-                          ],
-                          "const_generics": [],
-                          "trait_refs": []
-                        }
-                      }
-                    }
-                  }
-                ]
+                "Deduplicated": 13
               },
               0
             ]
@@ -223,15 +218,15 @@
         "kind": "Conditional",
         "on_unwind": {
           "span": {
-            "Deduplicated": 18
+            "Deduplicated": 111
           },
-          "id": 1,
+          "id": 109,
           "statements": [
             {
               "span": {
-                "Deduplicated": 18
+                "Deduplicated": 111
               },
-              "id": 3,
+              "id": 165,
               "kind": {
                 "StorageDead": 1
               },
@@ -239,9 +234,9 @@
             },
             {
               "span": {
-                "Deduplicated": 18
+                "Deduplicated": 111
               },
-              "id": 4,
+              "id": 166,
               "kind": {
                 "Abort": "UnwindTerminate"
               },
@@ -256,7 +251,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 32
+            "Deduplicated": 34
           }
         },
         "fn_ptr": {
@@ -282,15 +277,15 @@
         "kind": "Conditional",
         "on_unwind": {
           "span": {
-            "Deduplicated": 19
+            "Deduplicated": 112
           },
-          "id": 3,
+          "id": 111,
           "statements": [
             {
               "span": {
-                "Deduplicated": 19
+                "Deduplicated": 112
               },
-              "id": 6,
+              "id": 168,
               "kind": {
                 "StorageDead": 1
               },
@@ -298,9 +293,9 @@
             },
             {
               "span": {
-                "Deduplicated": 19
+                "Deduplicated": 112
               },
-              "id": 7,
+              "id": 169,
               "kind": {
                 "Abort": "UnwindTerminate"
               },
@@ -315,7 +310,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 32
+            "Deduplicated": 34
           }
         },
         "fn_ptr": {
@@ -341,15 +336,15 @@
         "kind": "Conditional",
         "on_unwind": {
           "span": {
-            "Deduplicated": 12
+            "Deduplicated": 105
           },
-          "id": 7,
+          "id": 115,
           "statements": [
             {
               "span": {
-                "Deduplicated": 12
+                "Deduplicated": 105
               },
-              "id": 13,
+              "id": 175,
               "kind": {
                 "StorageDead": 1
               },
@@ -357,9 +352,9 @@
             },
             {
               "span": {
-                "Deduplicated": 12
+                "Deduplicated": 105
               },
-              "id": 14,
+              "id": 176,
               "kind": "UnwindResume",
               "comments_before": []
             }
@@ -374,7 +369,7 @@
             "Local": 2
           },
           "ty": {
-            "Deduplicated": 32
+            "Deduplicated": 34
           }
         },
         "fn_ptr": {
@@ -400,15 +395,15 @@
         "kind": "Conditional",
         "on_unwind": {
           "span": {
-            "Deduplicated": 28
+            "Deduplicated": 121
           },
-          "id": 13,
+          "id": 121,
           "statements": [
             {
               "span": {
-                "Deduplicated": 28
+                "Deduplicated": 121
               },
-              "id": 21,
+              "id": 183,
               "kind": {
                 "StorageDead": 1
               },
@@ -416,9 +411,9 @@
             },
             {
               "span": {
-                "Deduplicated": 28
+                "Deduplicated": 121
               },
-              "id": 22,
+              "id": 184,
               "kind": {
                 "Abort": "UnwindTerminate"
               },
@@ -433,7 +428,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 32
+            "Deduplicated": 34
           }
         },
         "fn_ptr": {
@@ -459,15 +454,15 @@
         "kind": "Conditional",
         "on_unwind": {
           "span": {
-            "Deduplicated": 29
+            "Deduplicated": 122
           },
-          "id": 15,
+          "id": 123,
           "statements": [
             {
               "span": {
-                "Deduplicated": 29
+                "Deduplicated": 122
               },
-              "id": 24,
+              "id": 186,
               "kind": {
                 "StorageDead": 1
               },
@@ -475,9 +470,9 @@
             },
             {
               "span": {
-                "Deduplicated": 29
+                "Deduplicated": 122
               },
-              "id": 25,
+              "id": 187,
               "kind": {
                 "Abort": "UnwindTerminate"
               },
@@ -492,7 +487,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 32
+            "Deduplicated": 34
           }
         },
         "fn_ptr": {
@@ -518,15 +513,15 @@
         "kind": "Conditional",
         "on_unwind": {
           "span": {
-            "Deduplicated": 22
+            "Deduplicated": 115
           },
-          "id": 19,
+          "id": 127,
           "statements": [
             {
               "span": {
-                "Deduplicated": 22
+                "Deduplicated": 115
               },
-              "id": 31,
+              "id": 193,
               "kind": {
                 "StorageDead": 1
               },
@@ -534,9 +529,9 @@
             },
             {
               "span": {
-                "Deduplicated": 22
+                "Deduplicated": 115
               },
-              "id": 32,
+              "id": 194,
               "kind": "UnwindResume",
               "comments_before": []
             }
@@ -551,12 +546,12 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 93
+            "Deduplicated": 110
           }
         },
         "fn_ptr": {
           "kind": {
-            "Fun": 141
+            "Fun": 194
           },
           "generics": {
             "regions": [
@@ -572,15 +567,15 @@
         "kind": "Conditional",
         "on_unwind": {
           "span": {
-            "Deduplicated": 31
+            "Deduplicated": 124
           },
-          "id": 25,
+          "id": 133,
           "statements": [
             {
               "span": {
-                "Deduplicated": 31
+                "Deduplicated": 124
               },
-              "id": 38,
+              "id": 200,
               "kind": {
                 "StorageDead": 1
               },
@@ -588,9 +583,9 @@
             },
             {
               "span": {
-                "Deduplicated": 31
+                "Deduplicated": 124
               },
-              "id": 39,
+              "id": 201,
               "kind": "UnwindResume",
               "comments_before": []
             }
@@ -622,12 +617,22 @@
     "sandproof_protocol::internal::lifecycle::Resources",
     "sandproof_protocol::ResourceId",
     "sandproof_protocol::internal::lifecycle::CreateBinding",
+    "serde_core::de::Unexpected",
     "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor",
     "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}",
     "sandproof_protocol::ContractError",
     "sandproof_protocol::valid_identifier::{closure}",
     "sandproof_protocol::LogicalActionId",
     "sandproof_protocol::ClientRequestId",
+    "serde_core::de::impls::StringVisitor",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}",
     "sandproof_protocol::ResourceKind",
     "sandproof_protocol::ResourceRef",
     "sandproof_protocol::ActionIdentity",
@@ -642,13 +647,16 @@
   ],
   "trait_decls": [
     "core::str::traits::FromStr",
+    "serde_core::de::Expected",
     "serde_core::de::Error",
     "serde_core::de::Visitor",
     "serde_core::de::Deserializer",
     "sandproof_protocol::ResourceEvidence"
   ],
   "trait_impls": [
+    "core::fmt::{impl core::fmt::Display for &'_0 T}",
     "core::fmt::num::imp::{impl core::fmt::Display for u64}",
+    "core::fmt::num::imp::{impl core::fmt::Display for u16}",
     "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}",
     "core::str::traits::{impl core::cmp::PartialEq<str> for str}",
     "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
@@ -658,8 +666,18 @@
     "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}",
     "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}",
     "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}",
+    "sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}",
     "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
     "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
+    "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}",
     "sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}",
     "sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}",
     "sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}",

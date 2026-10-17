@@ -19,6 +19,29 @@ test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
 # --dest-file below reaches the same LLBC and is portable across checkouts.
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for alloc::string::String}::deserialize' \
+  --opaque 'serde_core::de::impls::StringVisitor::_' \
+  --include 'serde_core::de::impls::StringVisitor' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::expecting' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_str' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_string' \
+  --start-from serde_core::de::Error::invalid_type \
+  --opaque serde_core::de::Error::invalid_type \
+  --start-from serde_core::de::Visitor::visit_str \
+  --opaque serde_core::de::Visitor::visit_str \
+  --start-from serde_core::de::Visitor::visit_string \
+  --opaque serde_core::de::Visitor::visit_string \
+  --start-from serde_core::de::Visitor::visit_borrowed_str \
+  --opaque serde_core::de::Visitor::visit_borrowed_str \
+  --start-from crate::json_ids::tenant_decode \
+  --start-from crate::json_ids::sandbox_decode \
+  --start-from crate::json_ids::operation_decode \
+  --start-from crate::json_ids::logical_action_decode \
+  --start-from crate::json_ids::resource_decode \
+  --start-from crate::json_ids::client_request_decode \
+  --start-from crate::json_ids::deployment_decode \
+  --start-from crate::json_ids::node_decode \
+  --start-from crate::json_ids::string_primitive \
   --start-from crate::json::counter_decode \
   --start-from crate::json::counter_primitive \
   --start-from crate::json::json_error_passthrough \
