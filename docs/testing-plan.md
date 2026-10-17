@@ -657,6 +657,8 @@ sudo timeout --signal=KILL 150 unshare --mount --net --pid --fork --kill-child -
 
 共用来宾程序新增可选 report_ready：写好一次性标记并进入 raw 模式后，先向 PTY 写固定的 NUL 分隔 ready 标记，再写 FIFO 中的完整身份 JSON；旧独立 PTY 探针不启用此选项，原行为保持。同步 SDK 通过公开迭代接口消费到该字节标记，后续 wait 继续原事件流；异步 SDK 使用原 on_data 回调并等待标记，最长 20 秒。同步读取受原 60 秒流期限限制。只有已观察标记才启动 FIFO 读者，FIFO 身份完整匹配后才断线、调整窗口或发送载荷；不用 sleep 猜测启动时序。所有启动提示与命令回显原字节都保留并精确比较；不忽略未知前缀，不为模板登录配置、hostname 或任意输出差异设置宽松替换。
 
+双端 PTY 在原 Start 后先读取固定来宾 Bash 的提示符终止字节（root 为 `# `，ubuntu 为 `$ `），再发送原 bootstrap；仅收到 PID 不等于 shell 已读取输入。提示符和程序 ready 共用原 20 秒观察期限，原 60 秒 PTY 期限、VM 寿命、参数和输入字节不变。两端所有启动输出、回显和分块仍进入原记录与逐字比较，不删除重复前缀来消除差异。实际私有 PTY 回归用启动前已发生的行规程回显控制交错，核对早写回显两次、等待提示符后一次；固定 SDK 回归核对分块提示符、未就绪不得发送、早期 EOF、期限拒绝及原 PID 收尾。这些组件证据不替代修改后候选的完整实机对照。
+
 PTY 的预定 PID 规则只处理已严格匹配原 Start 的顶层/句柄/订阅 PID、Pty 控制参数、Start/Connect 的 result.pid，以及测试程序 FIFO JSON 和最终二进制帧中 ready.pid。FIFO stdout 必须逐字节等于该上传程序的规范 JSON 加换行；二进制帧必须完整匹配 NUL 头、准确长度、规范 JSON、窗口值及原载荷。验证后仅在比较副本中重建这个确定的 PID 字段及由其位数决定的帧长度，原 JSON/帧字节仍留在证据中；不接受重复 JSON 键、额外空白、替代编码、截断或多余内容。所有其他输入、UID/环境/尺寸、错误文本、startup 前缀和载荷保持精确相等；只合并回调分块。未知 Start/信号/disconnect 不重放，错误 Connect 仅关闭该订阅，失败收尾只控制原 PID，并汇总原错误与所有收尾错误。它不调用全局 List，也不把 End 当成同步列表移除或整棵进程树停止。
 
 [PTY 对照回归](../tests/compat/test_pty_compare.py)通过原固定同步/异步 SDK 和受控 RPC 事件检查相同步骤、不同位数原 PID、启动前缀、分块、窗口、输入、真实 SDK 终局解析、错误重连/ready 身份、坏帧/历史重放、未知回执与部分收尾失败；setup/文件/身份读者在该夹具中受控返回。原[真实私有 PTY 检查](../tests/compat/test_pty_probe.py)另同时运行旧模式和可选 ready 模式的同一上传程序，检查完整字节、规范帧、resize、退出和 kill/wait；不读取宿主 profile、不执行 envd 或用户切换。此扩展已实现但尚未执行真实 Go/Rust VM、正式网关/来宾、完整故障/期限/资源矩阵或 KVM；比较规则仍须首次获准实跑前技术复核，C02 固定调用集和发布门槛未改。
