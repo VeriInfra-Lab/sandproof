@@ -93,7 +93,7 @@ fn budgets() -> OwnerLimits {
         subscribers: 2,
         queued_chunks: 8,
         output_bytes: 8192,
-        stdin_bytes: 1024 * 1024,
+        input_chunk_bytes: 1024 * 1024,
     }
 }
 
@@ -484,7 +484,7 @@ async fn blocked_input_does_not_block_control_and_cancellation_does_not_close_sh
     .await;
     command.0.started().await.unwrap();
     assert_eq!(data(&mut stream).await, b"ready");
-    let bytes = vec![b'x'; budgets().stdin_bytes];
+    let bytes = vec![b'x'; budgets().input_chunk_bytes];
     let mut writing = Box::pin(command.0.write_input(command.0.identity(), &bytes));
     assert!(
         std::future::poll_fn(|cx| Poll::Ready(writing.as_mut().poll(cx)))
@@ -575,7 +575,7 @@ async fn expiry_still_kills_the_original_child_with_full_output_and_blocked_inpu
         .await
         .unwrap();
     assert!(!data(&mut slow).await.is_empty()); // yes is executing, output now left unread
-    let bytes = vec![b'x'; budgets().stdin_bytes];
+    let bytes = vec![b'x'; budgets().input_chunk_bytes];
     let mut writing = Box::pin(command.0.write_input(command.0.identity(), &bytes));
     assert!(
         std::future::poll_fn(|cx| Poll::Ready(writing.as_mut().poll(cx)))

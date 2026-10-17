@@ -20,6 +20,8 @@ use std::{
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 mod admission;
+mod gzip_upload;
+pub use gzip_upload::BodyWorkOwner;
 mod idle;
 mod limits;
 mod request;
@@ -70,7 +72,11 @@ pub async fn prepare_body(
     if request.version() != Version::HTTP_11 {
         return Err(response(StatusCode::HTTP_VERSION_NOT_SUPPORTED));
     }
-    if limits.is_some() && !identity_encoding(request.headers()) {
+    let gzip_upload = limits.is_some()
+        && request.uri().path() == "/files"
+        && request.method() == Method::POST
+        && gzip_upload_encoding(request.headers());
+    if limits.is_some() && !identity_encoding(request.headers()) && !gzip_upload {
         return Err(response(StatusCode::UNSUPPORTED_MEDIA_TYPE));
     }
     if let Some(limits) = limits {
@@ -86,9 +92,22 @@ pub async fn prepare_body(
         && request.uri().path() == "/files"
         && request.method() == Method::POST
     {
-        let (mut parts, body) = request.into_parts();
+        let (mut parts, mut body) = request.into_parts();
         if body.size_hint().lower() > limits.file_upload_bytes as u64 {
             return Err(response(StatusCode::PAYLOAD_TOO_LARGE));
+        }
+        if gzip_upload {
+            let owner = parts.extensions.get::<BodyWorkOwner>().cloned();
+            let (decoded, progress) = gzip_upload::open(body, limits, owner)
+                .await
+                .map_err(response)?;
+            body = decoded;
+            // These bytes really are decoded, unlike silently stripping an
+            // encoding from an unchanged request. Never retain encoded length.
+            parts.headers.remove(header::CONTENT_ENCODING);
+            parts.headers.remove(header::CONTENT_LENGTH);
+            parts.headers.remove(header::TRANSFER_ENCODING);
+            parts.extensions.insert(progress);
         }
         let (body, progress) = UploadBody::new(body, limits.file_upload_bytes);
         parts.extensions.insert(progress);
@@ -131,8 +150,7 @@ pub async fn prepare_body(
 }
 
 fn identity_encoding(headers: &axum::http::HeaderMap) -> bool {
-    // envd can decompress both HTTP uploads and Connect streams. Until a
-    // separate decoded-byte budget exists, neither encoding is supported.
+    // Compressed command/RPC envelopes remain outside this file-only change.
     [
         "content-encoding",
         "connect-content-encoding",
@@ -148,6 +166,24 @@ fn identity_encoding(headers: &axum::http::HeaderMap) -> bool {
     })
 }
 
+fn gzip_upload_encoding(headers: &axum::http::HeaderMap) -> bool {
+    let mut encodings = headers.get_all(header::CONTENT_ENCODING).iter();
+    let gzip = encodings.next().is_some_and(|value| {
+        value
+            .to_str()
+            .is_ok_and(|value| value.trim().eq_ignore_ascii_case("gzip"))
+    }) && encodings.next().is_none();
+    gzip && ["connect-content-encoding", "grpc-encoding"]
+        .iter()
+        .all(|name| {
+            headers.get_all(*name).iter().all(|value| {
+                value
+                    .to_str()
+                    .is_ok_and(|value| value.trim().eq_ignore_ascii_case("identity"))
+            })
+        })
+}
+
 pub async fn forward_request(
     sender: &mut SendRequest<Body>,
     mut request: Request<Body>,
@@ -155,6 +191,7 @@ pub async fn forward_request(
 ) -> Response<Body> {
     let downstream_version = request.version();
     let upload = request.extensions().get::<UploadProgress>().cloned();
+    let gzip = request.extensions().get::<gzip_upload::Progress>().cloned();
     let activity = request.extensions().get::<Activity>().cloned();
     let file_response = request.uri().path() == "/files"
         || request.uri().path().starts_with("/filesystem.Filesystem/");
@@ -223,6 +260,9 @@ pub async fn forward_request(
     };
     if activity.as_ref().is_some_and(Activity::timed_out) {
         return response(StatusCode::REQUEST_TIMEOUT);
+    }
+    if let Some(status) = gzip.as_ref().and_then(gzip_upload::Progress::status) {
+        return response(status);
     }
     if upload.as_ref().is_some_and(UploadProgress::over_limit) {
         return response(StatusCode::PAYLOAD_TOO_LARGE);

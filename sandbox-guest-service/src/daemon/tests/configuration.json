@@ -100,7 +100,7 @@
       "subscribers": 4,
       "queued_chunks": 4,
       "output_bytes": 8192,
-      "stdin_bytes": 4096
+      "input_chunk_bytes": 4096
     },
     "admission": {
       "ready_timeout": {

@@ -226,11 +226,12 @@ class GatewayStreamingContract(GatewayWireContract):
                         self.sandbox.files.write("/tmp/input.txt", stream)
                 self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
 
-    def test_compressed_upload_rejected_and_download_negotiates_identity(self):
+    def test_compressed_upload_decodes_and_download_negotiates_identity(self):
         before = len(self.app.records)
-        with self.assertRaisesRegex(SandboxException, "^415:"):
-            self.sandbox.files.write("/tmp/input.txt", BytesIO(b"must-not-be-written"), gzip=True)
-        self.assertEqual(len(self.app.records), before)
+        content = b"gzip upload through original gateway" * 2048
+        self.sandbox.files.write("/tmp/input.txt", BytesIO(content), gzip=True)
+        self.assertEqual(len(self.app.records), before + 1)
+        self.assertEqual(self.app.records[-1]["body"], content)
         self.assertEqual(self.sandbox.files.read("/tmp/input.txt", gzip=True), "synthetic file content\n")
         self.assertEqual(self.app.records[-1]["accept_encoding"], "identity")
 

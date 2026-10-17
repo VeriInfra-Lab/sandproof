@@ -511,7 +511,7 @@ async fn managed(
         subscribers: 3,
         queued_chunks: 16,
         output_bytes: 16384,
-        stdin_bytes: 1024 * 1024,
+        input_chunk_bytes: 1024 * 1024,
     })
     .unwrap();
     let session = Session::new(

@@ -12,23 +12,23 @@ mod native_signal;
 mod tag;
 
 #[tokio::test]
-async fn observed_input_limit_is_an_explicit_reply_not_a_dropped_connection() {
+async fn observed_closed_input_is_an_explicit_reply_and_keeps_capacity_through_byte_clones() {
     let slots = Arc::new(Semaphore::new(1));
     let owner: Owner = Arc::new(slots.clone().try_acquire_owned().unwrap());
     let mut source = source(
-        Some(Rejection::InputTooLarge),
+        Some(Rejection::StdinClosed),
         Some(format(Rpc::SendInput, false, false)),
         owner,
     );
-    source.request_error = RequestError::Command(crate::command::CommandError::ResourceExhausted);
+    source.request_error = RequestError::Command(crate::command::CommandError::Unavailable);
     let response = send(source, limits()).await.unwrap();
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(response.headers()["content-type"], "application/json");
     let mut body = response.into_body();
     let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
     assert_eq!(
         bytes.as_ref(),
-        br#"{"code":"resource_exhausted","message":"command input exceeds configured byte limit"}"#
+        br#"{"code":"internal","message":"error writing to stdin: stdin not enabled or closed"}"#
     );
     let copy = bytes.clone();
     drop(bytes);

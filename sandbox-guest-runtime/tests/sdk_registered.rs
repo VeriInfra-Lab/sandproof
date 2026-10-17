@@ -215,7 +215,7 @@ impl Fixture {
             subscribers: 3,
             queued_chunks: 16,
             output_bytes: 8192,
-            stdin_bytes: 8192,
+            input_chunk_bytes: 8192,
         })
         .unwrap();
         let registry = PidRegistry::new(

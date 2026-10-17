@@ -32,13 +32,13 @@ mod drain;
 #[cfg(target_os = "linux")]
 mod relay_stdio;
 pub use admission::Gateway;
+use sandproof_data_transport::{
+    BodyWorkOwner, WriteIdle, access_token, control_request, forward_request, hold_response,
+    prepare_body, request_kind, response, until_revoked,
+};
 #[cfg(all(target_os = "linux", test, feature = "sdk-contract-tests"))]
 use sandproof_data_transport::{FILE_REQUEST_LIMIT, RESPONSE_LIMIT};
 pub use sandproof_data_transport::{GatewayListener, TransferLimits};
-use sandproof_data_transport::{
-    WriteIdle, access_token, control_request, forward_request, hold_response, prepare_body,
-    request_kind, response, until_revoked,
-};
 #[cfg(target_os = "linux")]
 use {sandproof_data_transport::tunnel, std::error::Error};
 
@@ -172,6 +172,9 @@ async fn handle_prepared<P: DataAccessPort>(
         None => None,
     };
     let limits = gateway.as_ref().map(|gateway| &gateway.limits);
+    request
+        .extensions_mut()
+        .insert(BodyWorkOwner::new((lease.clone(), request_lease.clone())));
     let request = match until_revoked(
         permit.revocation(),
         prepare_body(request, file_request, limits),

@@ -1,5 +1,5 @@
 // Header behavior adapted from Go 1.26.8 compress/gzip/gunzip.go.
-// Copyright 2009 The Go Authors. BSD license: ../multipart/GO-LICENSE.
+// Copyright 2009 The Go Authors. BSD license: ../GO-LICENSE.
 // Metadata is checked and discarded through a fixed stack buffer, never stored.
 use super::Error;
 use crc32fast::Hasher;

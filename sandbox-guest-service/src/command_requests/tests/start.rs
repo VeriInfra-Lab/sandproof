@@ -45,7 +45,7 @@ impl StartFixture {
                 subscribers: 1,
                 queued_chunks: 2,
                 output_bytes: 1024,
-                stdin_bytes: 1024,
+                input_chunk_bytes: 1024,
             })
             .unwrap(),
             registry: registry(),

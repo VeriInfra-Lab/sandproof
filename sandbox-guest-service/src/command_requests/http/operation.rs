@@ -19,7 +19,6 @@ pub(crate) enum Rejection {
     Channel(ChannelRejection),
     StdinClosed,
     StdinDisabled,
-    InputTooLarge,
     NativeSignal(i32),
     NativeResize(i32),
     NativeInput { pid: u32, pty: bool, errno: i32 },
@@ -52,9 +51,6 @@ impl Rejection {
     #[cfg(target_os = "linux")]
     pub(crate) fn matches(&self, error: &RequestError) -> bool {
         match self {
-            Self::InputTooLarge => {
-                error == &RequestError::Command(crate::command::CommandError::ResourceExhausted)
-            }
             Self::NativeSignal(errno) => {
                 *errno > 0
                     && error == &RequestError::Command(crate::command::CommandError::Unavailable)
@@ -163,7 +159,6 @@ async fn send(source: Source, limits: reply::Limits) -> Result<Response, Failure
             return Err(reply::Error::UnclassifiedFault);
         }
         let status = match rejection {
-            Rejection::InputTooLarge => StatusCode::TOO_MANY_REQUESTS,
             Rejection::PidNotFound(_) | Rejection::TagNotFound(_) => StatusCode::NOT_FOUND,
             Rejection::Channel(_)
             | Rejection::StdinClosed
@@ -203,7 +198,6 @@ fn payload(rejection: &Rejection, stream: bool, limit: usize) -> Result<Vec<u8>,
         }
         put(br#"{"code":""#)?;
         put(match rejection {
-            Rejection::InputTooLarge => b"resource_exhausted",
             Rejection::PidNotFound(_) | Rejection::TagNotFound(_) => b"not_found",
             Rejection::Channel(channel) => channel.code(),
             Rejection::StdinClosed
@@ -216,7 +210,6 @@ fn payload(rejection: &Rejection, stream: bool, limit: usize) -> Result<Vec<u8>,
         put(br#"","message":""#)?;
         let mut message = |bytes: &[u8]| crate::go_json::string_content(bytes, put);
         match rejection {
-            Rejection::InputTooLarge => message(b"command input exceeds configured byte limit")?,
             Rejection::NativeResize(errno) => {
                 message(b"error resizing tty: ")?;
                 message(

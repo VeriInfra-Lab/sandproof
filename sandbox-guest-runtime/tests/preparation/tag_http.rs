@@ -148,7 +148,7 @@ async fn tagged_http_lifecycle_preserves_pid_identity_and_reuses_only_after_term
             subscribers: 2,
             queued_chunks: 8,
             output_bytes: 8192,
-            stdin_bytes: 8192,
+            input_chunk_bytes: 8192,
         })
         .unwrap();
         let registry = PidRegistry::new(
