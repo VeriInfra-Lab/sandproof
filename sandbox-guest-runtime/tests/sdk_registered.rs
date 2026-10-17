@@ -630,9 +630,16 @@ async fn keepalive_rejection_receives_the_bounded_wire_body_without_decoding_or_
     release.send(()).unwrap();
     let response = response.await;
     assert_eq!(response.status(), 200);
-    let wire = axum::body::to_bytes(response.into_body(), LIMIT)
-        .await
-        .unwrap();
+    // Like the existing component readers, copy each bounded owned chunk and
+    // release it BEFORE asking for EOF. A retaining aggregate collector waits
+    // on the very capacity it still owns; that is not a service timeout.
+    let mut body = response.into_body().into_data_stream();
+    let mut wire = Vec::new();
+    while let Some(chunk) = futures_util::StreamExt::next(&mut body).await {
+        let chunk = chunk.unwrap();
+        assert!(chunk.len() <= LIMIT - wire.len());
+        wire.extend_from_slice(&chunk);
+    }
     assert_eq!(wire[0], 2);
     assert_eq!(
         usize::try_from(u32::from_be_bytes(wire[1..5].try_into().unwrap())).unwrap(),
