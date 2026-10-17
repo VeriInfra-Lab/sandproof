@@ -84,6 +84,11 @@ class SupervisorStageTests(unittest.TestCase):
             self.assertEqual(config['candidate'],'a'*40)
             self.assertEqual(config['run_id'],'b'*64)
             self.assertEqual(group['command'][1],str(self.root/'checkout/tests/system/envd_acceptance.py'))
+            # Exercise the REAL strict identity parser, not a mock of it. The
+            # new stage is an original batch unit, not a second naming scheme.
+            response=SimpleNamespace(returncode=0, stdout='LoadState=loaded\nActiveState=active\nExecMainCode=0\n')
+            with patch.object(ci.subprocess, 'run', return_value=response):
+                self.assertEqual(ci.unit_state(group['unit'])['LoadState'], 'loaded')
         with patch.object(ci,'launch',side_effect=launch) as started:
             self.assertFalse(self.stage.observe_envd())
         started.assert_called_once()

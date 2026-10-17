@@ -622,7 +622,7 @@ class Supervisor:
             group.update(root=str(root), checkout=str(checkout), phase='launching',
                 command=[str(checkout/'benchmarks/.venv/bin/python'),
                          str(checkout/'tests/system/envd_acceptance.py'),'--config',str(path)],
-                unit=UNIT_PREFIX+'envd-'+uuid.uuid4().hex+'.service',deadline_seconds=3600)
+                unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',deadline_seconds=3600)
             self.save()  # Lost launch reply is unknown, never permission to relaunch.
             launch(group)
             group['phase'] = 'running'
