@@ -711,7 +711,9 @@ octet 异常之后不重发整批，只查询原路径。同步确认首项，�
 
 #513 的参数双端回归已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38840358332) 通过：源 59ad1cd9a64592170d4aa44c09c9d1af175da7e5、checkout 81fd6689002e2482c7f421824e6f966201ec387c，新增 9 项包含在固定 SDK 204 项中，原 Linux SDK/Rust 组合、封存 Redis 及四项 CI 成功。它不包含下述独立参数探针的收尾修正，也不代表真实 Go/Rust 产品 VM 对照。
 
-[stdin](../tests/system/sdk_command_input.py)、[命令参数](../tests/system/sdk_command_arguments.py)和[文件权限/部分批次](../tests/system/sdk_file_permissions.py)探针也接受上述同一组候选参数：同步/异步模式均在原调用集前后核对身份，文件探针分别核对两台实例，报告将每份观察绑定到原 sandbox_id；原调用输入、VM 寿命和未指定参数时的报告保持不变。已知实例按逆序各尝试一次销毁，某台拒绝、报错或取消不能跳过另一台；全部收尾异常连同原调用异常保留，创建结果未知不重试。[受控编排回归](../tests/compat/test_candidate_probes.py)覆盖这些顺序、身份变化拒绝和部分失败；它替换 SDK 操作及案例函数，不执行真实案例、主机 canary 或产品 VM。SDK 销毁确认仍须由获准的实机监督器补充精确资源审计。
+[stdin](../tests/system/sdk_command_input.py)、[命令参数](../tests/system/sdk_command_arguments.py)和[文件权限/部分批次](../tests/system/sdk_file_permissions.py)探针也接受上述同一组候选参数：同步/异步模式均在原调用集前后核对身份，文件探针分别核对两台实例，报告将每份观察绑定到原 sandbox_id；原调用输入和 VM 寿命保持不变。已知实例按逆序各尝试一次销毁，某台拒绝、报错或取消不能跳过另一台；全部收尾异常连同原调用异常保留，创建结果未知不重试。[受控编排回归](../tests/compat/test_candidate_probes.py)覆盖这些顺序、身份变化拒绝和部分失败；它替换 SDK 操作及案例函数，不执行真实案例、主机 canary 或产品 VM。SDK 销毁确认仍须由获准的实机监督器补充精确资源审计。
+
+文件权限探针在失败时也输出有限报告：逐模式保留已完成案例组、失败阶段和错误类别，创建前登记原尝试序号，只有原 create 返回才补充 sandbox_id；未知结果不会因已知实例的销毁确认而消失。未完成案例组不计通过，原调用和全部清理错误共同保留。组合监督入口在探针进程失败后、恢复和清理前，经原宿主固定 TLS 来源做一次中心状态观察，并记录原服务 cgroup；最多使用原 900 秒探针期限内剩余的 5 秒，不扩展期限、不重试创建或停止服务。私有诊断记录观察时间和观察失败类别；它是失败后的状态，不代表请求发生时的状态或新的准入判据，观察失败也不能覆盖原探针失败或跳过清理。[监督回归](../tests/compat/test_guest_faults.py)覆盖一次观察、期限已尽、观察失败和报告写入失败。
 
 #497 的候选探针编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38793635811) 通过：源 586a8e4fb0473c813d8baec9601a548be8e353d6、checkout 4140d26ad2780573401422311406b8177185af93；新增 9 项编排包含在固定 SDK 98 项中，封存 Redis及四项 CI 成功。此处仍为受控 SDK 操作，不是三组案例在真实候选 VM 上的执行回执。
 

@@ -209,12 +209,58 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(BaseExceptionGroup) as caught:
                     await self.execute(files)
                 group = caught.exception
-                self.assertEqual([type(error) for error in group.exceptions], [RuntimeError, OSError])
-                self.assertIsInstance(group.__context__, ValueError)
-                self.assertEqual(str(group.__context__), 'controlled case failure')
+                self.assertIsInstance(group.exceptions[0], ValueError)
+                self.assertEqual(str(group.exceptions[0]), 'controlled case failure')
+                self.assertEqual([type(error) for error in group.exceptions[1].exceptions],
+                                 [RuntimeError, OSError])
                 self.assertEqual([event[1] for event in self.trace if event[0] == 'kill'][-2:],
                                  [mode + '-2', mode + '-1'])
                 self.assert_cleaned_once()
+
+    async def test_file_failure_report_preserves_modes_and_unknown_create_without_replay(self):
+        for mode in ('sync', 'async'):
+            for number in (1, 2):
+                with self.subTest(mode=mode, number=number):
+                    self.reset()
+                    self.fail_create = (mode, number)
+                    output = io.StringIO()
+                    with redirect_stdout(output), self.assertRaisesRegex(RuntimeError, 'create outcome unknown'):
+                        await files.exercise(self.args)
+                    report = json.loads(output.getvalue())
+                    self.assertEqual(report['status'], 'failed')
+                    self.assertEqual(report['failure'], 'RuntimeError')
+                    self.assertEqual(len(report['results']), 1 if mode == 'sync' else 2)
+                    if mode == 'async':
+                        self.assertEqual(report['results'][0]['status'], 'pass')
+                        self.assertEqual(len(report['results'][0]['cases']), 4)
+                    failed = report['results'][-1]
+                    self.assertEqual(failed['status'], 'failed')
+                    self.assertEqual(failed['phase'], 'create')
+                    self.assertEqual(failed['cases'], [])
+                    self.assertEqual(len(failed['create_attempts']), number)
+                    self.assertEqual(failed['create_attempts'][-1], dict(ordinal=number, outcome='unknown'))
+                    self.assertTrue(failed['known_destroy_acknowledged'])
+                    self.assertEqual(self.count[mode], number)
+                    self.assert_cleaned_once()
+                    self.assertNotIn('synthetic-owner', output.getvalue())
+
+    async def test_file_failure_report_keeps_completed_groups_and_cleanup_errors(self):
+        self.fail_case = ('sync-1', 'batch')
+        self.kill_failures['sync-2'] = False
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(BaseExceptionGroup) as caught:
+            await files.exercise(self.args)
+        report = json.loads(output.getvalue())
+        failed = report['results'][0]
+        self.assertEqual(report['status'], 'failed')
+        self.assertEqual(failed['phase'], 'batch')
+        self.assertEqual(failed['failure'], 'ValueError')
+        self.assertEqual([item['case'] for item in failed['cases']], ['users', 'paths'])
+        self.assertFalse(failed['known_destroy_acknowledged'])
+        self.assertEqual(failed['cleanup_failure'], 'ExceptionGroup')
+        self.assertIsInstance(caught.exception.exceptions[0], ValueError)
+        self.assertEqual(self.count['async'], 0)
+        self.assert_cleaned_once()
 
     async def test_second_create_failure_only_cleans_known_instance_without_replay(self):
         for mode in ('sync', 'async'):
@@ -235,6 +281,8 @@ class CandidateProbeTests(unittest.IsolatedAsyncioTestCase):
                 self.reset()
                 report = await self.execute(module)
                 expected = {'sdk_version', 'scope', 'cases' if module is inputs else 'results'}
+                if module is files:
+                    expected.add('status')
                 if module is file_timeouts:
                     expected.update(('payload_bytes', 'sha256'))
                     self.assertEqual(report['payload_bytes'], len(file_timeouts.PAYLOAD))

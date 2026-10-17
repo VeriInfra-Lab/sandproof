@@ -108,6 +108,36 @@ def prepare_deployment(config, root, record):
         rust_guest_profile=envd_acceptance.prepared_paths(config)['profile']), args
 
 
+def observe_probe_failure(deployment, root, name, deadline, primary):
+    """One read-only diagnostic before recovery, within the original deadline.
+
+    This is a later observation, never evidence of the exact failing request's
+    state or permission to replay it. No service stop/restart or audit occurs.
+    """
+    started = time.monotonic()
+    report = dict(probe=name, probe_failure=type(primary).__name__,
+                  started_unix_ms=time.time_ns()//1_000_000,
+                  scope='after probe exit, before recovery; not request-time state or a readiness verdict')
+    remaining = min(5, deadline-started)
+    if remaining <= 0:
+        report['center_failure'] = 'probe_deadline_elapsed'
+    else:
+        try:
+            report['center'] = deployment.services.processes.center_readiness(timeout=remaining)
+        except BaseException as error:
+            report['center_failure'] = type(error).__name__[:128]
+    try:
+        report['cgroup'] = service_cgroup.observe(root/'service-cgroup.json')
+    except BaseException as error:
+        report['cgroup_failure'] = type(error).__name__[:128]
+    report.update(finished_unix_ms=time.time_ns()//1_000_000,
+                  elapsed_seconds=round(time.monotonic()-started, 3))
+    try:
+        write_once(root/(name+'-failure.json'), report)
+    except BaseException as error:
+        raise BaseExceptionGroup('probe and diagnostic persistence failed', [primary, error])
+
+
 def run_probe(deployment, config, root, name, template):
     """Run the original cases, not another implementation of their assertions."""
     from tools.envd_acceptance import PROBES, prepared_paths
@@ -134,8 +164,12 @@ def run_probe(deployment, config, root, name, template):
         arguments.extend(['--host-canary',str(canary)])
     with (root/(name+'.log')).open('xb') as output:
         owner = Commands(started+900, output, 16*1024**2)
-        owner.run(arguments, env={'PATH':'/usr/local/bin:/usr/bin:/bin', 'LANG':'C.UTF-8',
-            'SANDPROOF_TEST_API_KEY':deployment.key, 'NO_PROXY':'*','no_proxy':'*'})
+        try:
+            owner.run(arguments, env={'PATH':'/usr/local/bin:/usr/bin:/bin', 'LANG':'C.UTF-8',
+                'SANDPROOF_TEST_API_KEY':deployment.key, 'NO_PROXY':'*','no_proxy':'*'})
+        except BaseException as error:
+            observe_probe_failure(deployment, root, name, started+900, error)
+            raise
     # Commands.run rejects failed exit/deadline/output: never manufacture code0.
     result = dict(name=name,returncode=0,seconds=round(time.monotonic()-started,3))
     no_resources(deployment)

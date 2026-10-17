@@ -21,6 +21,60 @@ SPEC.loader.exec_module(runner)
 
 class AcceptanceHarnessTests(unittest.TestCase):
     """The real harness imports the fixed SDK; keep these in its locked lane."""
+    def test_failed_probe_observes_original_center_once_before_returning_original_error(self):
+        for observation_error in (None, TimeoutError('unavailable')):
+            with self.subTest(error=observation_error), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                services = Mock(sdk_url='http://127.0.0.1')
+                services.processes.center_readiness.return_value = {'nodes': [], 'catalogs': {}}
+                services.processes.center_readiness.side_effect = observation_error
+                deployment = SimpleNamespace(services=services, key='private')
+                pins = dict(release='release', manifest_sha256='manifest', configuration='config',
+                            configuration_sha256='config-hash')
+                original = RuntimeError('original probe failed')
+                with patch.object(runner, 'load_profile', return_value=(pins, {})), \
+                        patch.object(runner.time, 'monotonic', side_effect=[10, 908, 909]), \
+                        patch.object(runner, 'Commands') as commands, \
+                        patch.object(runner.service_cgroup, 'observe', return_value={'memory_peak': 7}) as observe, \
+                        patch.object(runner, 'no_resources') as cleanup, \
+                        self.assertRaises(RuntimeError) as caught:
+                    commands.return_value.run.side_effect = original
+                    runner.run_probe(deployment, {'candidate_manifest': str(root/'manifest')},
+                                     root, 'file-permissions', 'rust')
+                self.assertIs(caught.exception, original)
+                services.processes.center_readiness.assert_called_once_with(timeout=2)
+                observe.assert_called_once_with(root/'service-cgroup.json')
+                commands.return_value.run.assert_called_once()
+                cleanup.assert_not_called()
+                self.assertEqual([item[0] for item in services.mock_calls],
+                                 ['wait_ready', 'processes.center_readiness'])
+                diagnostic = json.loads((root/'file-permissions-failure.json').read_text())
+                self.assertEqual(diagnostic['probe_failure'], 'RuntimeError')
+                self.assertEqual(diagnostic['cgroup'], {'memory_peak': 7})
+                self.assertLessEqual(diagnostic['started_unix_ms'], diagnostic['finished_unix_ms'])
+                self.assertEqual(diagnostic['elapsed_seconds'], 1)
+                if observation_error is None:
+                    self.assertEqual(diagnostic['center'], {'nodes': [], 'catalogs': {}})
+                else:
+                    self.assertNotIn('center', diagnostic)
+                    self.assertEqual(diagnostic['center_failure'], 'TimeoutError')
+
+    def test_failure_observation_respects_original_deadline_and_keeps_write_error(self):
+        services = Mock()
+        primary, write = RuntimeError('probe failed'), OSError('evidence unavailable')
+        with patch.object(runner.time, 'monotonic', side_effect=[901, 901]), \
+                patch.object(runner.service_cgroup, 'observe', side_effect=ValueError('identity changed')), \
+                patch.object(runner, 'write_once', side_effect=write) as save, \
+                self.assertRaises(BaseExceptionGroup) as caught:
+            runner.observe_probe_failure(SimpleNamespace(services=services), Path('/unused'),
+                                         'file-permissions', 900, primary)
+        services.processes.center_readiness.assert_not_called()
+        self.assertEqual(caught.exception.exceptions, (primary, write))
+        diagnostic = save.call_args.args[1]
+        self.assertNotIn('center', diagnostic)
+        self.assertEqual(diagnostic['center_failure'], 'probe_deadline_elapsed')
+        self.assertEqual(diagnostic['cgroup_failure'], 'ValueError')
+
     def test_final_storage_failure_preserves_completed_cases_and_original_cleanup_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
