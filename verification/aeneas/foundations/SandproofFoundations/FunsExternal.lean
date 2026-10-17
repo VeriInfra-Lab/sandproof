@@ -179,4 +179,72 @@ def core.fmt.Formatter.write_str (formatter : core.fmt.Formatter) (value : Str) 
   | some text => .ok (.Ok (), ⟨formatter.output ++ text⟩)
   | none => .fail .panic
 
+
+def Shared0T.Insts.CoreFmtDisplay.fmt {T : Type}
+    (display : core.fmt.Display T) (value : T) (formatter : core.fmt.Formatter) :=
+  display.fmt value formatter
+
+def core.fmt.num.imp.DisplayU16.fmt (value : U16) (formatter : core.fmt.Formatter) :
+    Result (core.result.Result Unit core.fmt.Error × core.fmt.Formatter) :=
+  .ok (.Ok (), ⟨formatter.output ++ toString value.val⟩)
+
+def core.fmt.rt.Argument.new_display {T : Type}
+    (display : core.fmt.Display T) (value : T) : Result core.fmt.rt.Argument :=
+  .ok ⟨display.fmt value⟩
+
+def core.fmt.Arguments.new {N M : Usize}
+    (bytes : Aeneas.Std.Array U8 N)
+    (arguments : Aeneas.Std.Array core.fmt.rt.Argument M) :
+    Result core.fmt.Arguments :=
+  .ok ⟨bytes.val, arguments.val⟩
+
+-- Registered default-format domain only. Source admission must pin every
+-- reachable Arguments::new call to this one-literal, one-u16 display shape.
+-- The argument callback is executed once and its errors/effects are preserved.
+def core.fmt.Formatter.write_fmt (formatter : core.fmt.Formatter)
+    (arguments : core.fmt.Arguments) :
+    Result (core.result.Result Unit core.fmt.Error × core.fmt.Formatter) :=
+  if arguments.bytecode.map (·.val) =
+      [29] ++ (IdentifierLibrary.stringBytes
+        "unsupported protocol version ").map (·.val) ++ [192, 0] then
+    match arguments.arguments with
+    | [argument] => argument.render
+        ⟨formatter.output ++ "unsupported protocol version "⟩
+    | _ => .fail .panic
+  else .fail .panic
+
+
+-- Serde library default adapters. These are the four reviewed default bodies,
+-- expressed using direct dictionary projections so the unchanged impl_def can
+-- eliminate self references. Error.invalid_type and every callback remain
+-- effectful. In particular, no rejection or formatting outcome is fabricated.
+@[trait_default]
+def serde_core.de.Visitor.visit_u64.default {Self E Value : Type}
+    (visitor : serde_core.de.Visitor Self Value) (errors : serde_core.de.Error E)
+    (self : Self) (value : U64) : Result (core.result.Result Value E) := do
+  let error ← errors.invalid_type (.Unsigned value)
+    ⟨Self, ⟨visitor.expecting⟩, self⟩
+  .ok (.Err error)
+
+@[trait_default]
+def serde_core.de.Visitor.visit_str.default {Self E Value : Type}
+    (visitor : serde_core.de.Visitor Self Value) (errors : serde_core.de.Error E)
+    (self : Self) (value : Str) : Result (core.result.Result Value E) := do
+  let error ← errors.invalid_type (.Str value)
+    ⟨Self, ⟨visitor.expecting⟩, self⟩
+  .ok (.Err error)
+
+@[trait_default]
+def serde_core.de.Visitor.visit_borrowed_str.default {Self E Value : Type}
+    (visitor : serde_core.de.Visitor Self Value) (errors : serde_core.de.Error E)
+    (self : Self) (value : Str) : Result (core.result.Result Value E) :=
+  visitor.visit_str errors self value
+
+@[trait_default]
+def serde_core.de.Visitor.visit_string.default {Self E Value : Type}
+    (visitor : serde_core.de.Visitor Self Value) (errors : serde_core.de.Error E)
+    (self : Self) (value : String) : Result (core.result.Result Value E) := do
+  let borrowed ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  visitor.visit_str errors self borrowed
+
 end SandproofFoundationsRust

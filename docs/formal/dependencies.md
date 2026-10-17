@@ -98,11 +98,25 @@ V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议
 
 解码器和错误字典是显式参数：整数解码成功后才运行非零检查；非零值原样返回，零走原 `custom(InvalidCounter)`，已有引擎错误、模型失败、发散及外部效果按原顺序传播。`custom` 允许失败。这是生成函数与独立后处理规格的对应，不是 JSON 扫描器、完整字节入口或可变 parser 已验证。具体引擎须落实正确的 u64 读取和原输入/状态/错误/字典绑定，不能先完整读取并检查尾随字符再检查非零；真实 `0 x` 数据错误与 `1 x` 尾随语法错误由引擎回归核对。
 
-[类型模型](../../verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean)提供普通错误观察和默认字符串格式化的有限表示；[写入操作](../../verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean)保持有效 UTF-8 的完整字节和缓冲追加。仅本批固定 ASCII 字面量使用此路径，不覆盖任意 Formatter 配置、用户 Display、错误 source 链或物理分配失败。库符合性仍是显式 A6 条件，不因内核检查成为库内部实现证明。未使用的 visitor 默认方法没有实现；实际字典覆盖它，意外引用应在编译时拒绝，不导入模板公理。
+[类型模型](../../verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean)提供普通错误观察和默认字符串格式化的有限表示；[写入操作](../../verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean)保持有效 UTF-8 的完整字节和缓冲追加。仅本批固定 ASCII 字面量使用此路径，不覆盖任意 Formatter 配置、用户 Display、错误 source 链或物理分配失败。库符合性仍是显式 A6 条件，不因内核检查成为库内部实现证明。计数器的真实 visit_u64 覆盖默认实现；字符串叶子新增的四个有限默认方法模型按下一节登记，不导入模板公理。
 
 固定 preset 仍擦除 Drop。两个泛型包装根和错误透传根共七处条件清理逐项登记于[环境清单](../../verification/json-counter-environment.json)，完整 AST 摘要保留其位置、类型、目标及 unwind 内容；准入检查拒绝业务析构或未登记变化。**本接口不覆盖 D/E 的可观察自定义析构、许可/FD 持有、panic/unwind 收尾或 abort/崩溃释放**。普通借用解析器及库错误对象的表示/析构条件由使用点核对；泛型 Lean 定理不背书任意带资源 Rust 解码器，外部效果传播也不是 async/取消证明。
 
 固定 serde/serde_core 1.0.228、serde_json 1.0.142，实际库源码、Charon 选项、完整 LLBC、声明和条件清理见环境记录。工具/两版编译器/cfg 复用[Linux 工具登记](../../verification/first-chain-linux-environment.json)，全部输入由[接口摘要](../../verification/json-counter-inputs.sha256)冻结。调用方仍须落实字节/大小预算、schema/属性及其他自有叶子、完整请求/身份、版本/节点/槽位、授权及业务拒绝顺序。源文件、依赖、模型、工具或配置变化使本模块和使用方失效，须重新抽取检查，不能仅刷新摘要。
+
+### A6 JSON 字符串编号叶子接口
+
+`A6-json-identifier-leaf` 覆盖 TenantId、SandboxId、OperationId、LogicalActionId、ResourceId、ClientRequestId、DeploymentId、NodeId 的实际泛型反序列化接线。它复用 #481 的显式闭包候选和原 V0 身份构造证明；这一批不新增生产 Rust 改动。九个[直接调用根](../../verification/extract-foundations/src/json_ids.rs)与原 V0、计数器共用生成类型。自有 Deserialize、TryFrom、校验器、错误闭包和 ContractError::fmt 均保留原工具生成的透明函数体。
+
+给定解码器读出的字符串，合法编号原样接受，不裁剪、不截断、不规范化；非法编号走原 custom(InvalidIdentifier)。成功值满足非空、UTF-8 字节长度最多 128、字节属于 ASCII 字母/数字或 `-_.`。已有错误、外层失败、发散和外部效果保留。该结论验证自有后处理，不从数学值读取器推出 JSON 字节引擎正确，也不证明任何授权或完整请求绑定。invalid_type 是显式错误字典参数；本批未实例化 Error 的通用默认实现，后续若直接引用未实现的默认函数仍须补充库连接，不能将泛型定理称为 from_slice 的完整单态入口证明。
+
+实际 String::deserialize、StringVisitor 的 expecting/visit_str/visit_string 由原 Charon/Aeneas 抽取；拥有字符串原样返回，借用和临时字符串按有效 UTF-8 复制完整文本。原后端在默认方法构造 Expected 字典处无法消除递归引用，因此四个 Serde 库默认方法在 [FunsExternal](../../verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean) 用有限模型登记：visit_borrowed_str 转发原 visit_str；visit_string 先借用再转发；默认 visit_str/visit_u64 调用原错误字典的 invalid_type，携带原输入值及原 expecting 回调，然后返回其错误。所有回调保持效果和失败；这些模型与固定 Serde 源码一致属于 A6 条件。没有给自有校验写替代实现，也不假定错误回调总成功。Unexpected::Float 的 F64 仅以 64 位载荷表示，不提供浮点运算、转换或格式化保证。
+
+默认 String-backed 格式化另外登记共享引用 Display 的转发、u16 默认十进制输出、Argument 对原回调的捕获，以及唯一冻结的 Arguments::new 调用形状：29 字节文字 `unsupported protocol version ` 加一个默认 u16 Display 参数。模型保存格式字节及参数，write_fmt 恰执行原参数回调一次，保留其返回结果和效果；不使用后端丢弃全部格式内容的简化实现。其他格式形状不在合同域内，准入检查固定真实调用点；不推广为通用格式化器。正常分配、有效 UTF-8、缓冲可表示条件沿用现有 A6，不覆盖任意设备、格式标志、OOM/abort 或 panic 收尾。
+
+接口继续受固定 preset 擦除 Drop 的限制。泛型调用根的条件清理，以及自有构造/解码路径实际调用的标准 String DropGlue 均逐项登记；后者只按正常返回域中的标准堆释放处理，不证明释放效果或物理内存用量。准入检查核对其确为外部 String 清理，拒绝改为业务析构。实际 D/E/visitor/回调的使用点必须无本接口忽略的可观察自定义析构和资源持有语义。本批不是 Future、取消、许可或 Drop 证明。完整 JSON 扫描、尾随字节处理、复合 schema、编码往返、实际输入/状态/字典绑定以及业务拒绝顺序仍由具体使用点落实。有限值读取器只作合法接受和拒绝的非空见证；真实 JSON 回归覆盖未转义、转义及拥有字符串分支和首错顺序，回归不代替引擎证明。
+
+独立 [IdentifierSafe](../../SandboxModel/Boundaries/JsonIdentifiers/Model.lean) 复用[公共编号词汇](../../SandboxModel/Foundations/IdentifierModel.lean)，不导入自有构造正确性证明，允许在真实校验缺失版重新抽取后用同一性质给出反例。源码/依赖/模型/工具/配置改变后重查整个共享 V0 和计数器闭包；实际证明状态和版本只见覆盖记录，不以刷新冻结摘要替代复验。
 
 ### A6 网络地址库模型使用登记
 

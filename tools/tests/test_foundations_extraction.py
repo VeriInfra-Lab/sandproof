@@ -16,8 +16,8 @@ class FoundationsExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/foundations/translation.json').read_text())
 
     def test_real_checked_roots_are_present(self):
-        # Sixty production-call roots plus one explicitly opaque visitor root.
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 61)
+        # Preserve sixty old calls, add nine identifier calls and five library roots.
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), 74)
 
     def test_value_conversion_roots_cannot_disappear(self):
         for name in ('sandproof_foundations_extract::counter_into_u64',

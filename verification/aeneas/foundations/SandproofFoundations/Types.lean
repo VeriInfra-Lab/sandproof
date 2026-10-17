@@ -202,6 +202,40 @@ structure sandproof_protocol.internal.lifecycle.CreateBinding where
   timeout_ms : Std.U64
   max_lifetime_ms : Std.U64
 
+/-- Trait declaration: [serde_core::de::Expected]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 484:0-484:18
+    Name pattern: [serde_core::de::Expected]
+    Visibility: public -/
+@[rust_trait "serde_core::de::Expected"]
+structure serde_core.de.Expected (Self : Type) where
+  fmt : Self → core.fmt.Formatter → Result ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [serde_core::de::Unexpected]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 338:0-338:23
+    Name pattern: [serde_core::de::Unexpected]
+    Visibility: public -/
+@[discriminant isize, rust_type "serde_core::de::Unexpected"]
+inductive serde_core.de.Unexpected where
+| Bool : Bool → serde_core.de.Unexpected
+| Unsigned : Std.U64 → serde_core.de.Unexpected
+| Signed : Std.I64 → serde_core.de.Unexpected
+| Float : F64 → serde_core.de.Unexpected
+| Char : Char → serde_core.de.Unexpected
+| Str : Str → serde_core.de.Unexpected
+| Bytes : Slice Std.U8 → serde_core.de.Unexpected
+| Unit : serde_core.de.Unexpected
+| Option : serde_core.de.Unexpected
+| NewtypeStruct : serde_core.de.Unexpected
+| Seq : serde_core.de.Unexpected
+| Map : serde_core.de.Unexpected
+| Enum : serde_core.de.Unexpected
+| UnitVariant : serde_core.de.Unexpected
+| NewtypeVariant : serde_core.de.Unexpected
+| TupleVariant : serde_core.de.Unexpected
+| StructVariant : serde_core.de.Unexpected
+| Other : Str → serde_core.de.Unexpected
+
 /-- Trait declaration: [serde_core::de::Error]
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 165:8-165:48
     Name pattern: [serde_core::de::Error]
@@ -211,6 +245,8 @@ structure serde_core.de.Error (Self : Type) where
   coreerrorErrorInst : core.error.Error Self
   custom : forall {T : Type} (corefmtDisplayInst : core.fmt.Display T), T →
     Result Self
+  invalid_type : serde_core.de.Unexpected → Dyn (fun _dyn =>
+    serde_core.de.Expected _dyn) → Result Self
 
 /-- Trait declaration: [serde_core::de::Visitor]
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 1317:0-1317:29
@@ -222,6 +258,12 @@ structure serde_core.de.Visitor (Self : Type) (Self_Value : Type) where
     core.fmt.Error) × core.fmt.Formatter)
   visit_u64 : forall {E : Type} (ErrorInst : serde_core.de.Error E), Self →
     Std.U64 → Result (core.result.Result Self_Value E)
+  visit_str : forall {E : Type} (ErrorInst : serde_core.de.Error E), Self →
+    Str → Result (core.result.Result Self_Value E)
+  visit_borrowed_str : forall {E : Type} (ErrorInst : serde_core.de.Error E),
+    Self → Str → Result (core.result.Result Self_Value E)
+  visit_string : forall {E : Type} (ErrorInst : serde_core.de.Error E), Self
+    → String → Result (core.result.Result Self_Value E)
 
 /-- Trait declaration: [serde_core::de::Deserializer]
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 945:0-945:34
@@ -365,6 +407,84 @@ def sandproof_protocol.LogicalActionId := String
 @[reducible, rust_type "sandproof_protocol::ClientRequestId"]
 def sandproof_protocol.ClientRequestId := String
 
+/-- [serde_core::de::impls::StringVisitor]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 580:0-580:20
+    Name pattern: [serde_core::de::impls::StringVisitor] -/
+@[reducible, rust_type "serde_core::de::impls::StringVisitor"]
+def serde_core.de.impls.StringVisitor := Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeTenantId.deserialize.closure (D : Type)
+  (Clause0_Error : Type) :=
+Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeSandboxId.deserialize.closure (D : Type)
+  (Clause0_Error : Type) :=
+Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeOperationId.deserialize.closure (D : Type)
+  (Clause0_Error : Type) :=
+Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure (D :
+  Type) (Clause0_Error : Type) :=
+Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeResourceId.deserialize.closure (D : Type)
+  (Clause0_Error : Type) :=
+Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure (D :
+  Type) (Clause0_Error : Type) :=
+Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure (D : Type)
+  (Clause0_Error : Type) :=
+Unit
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::closure"]
+def sandproof_protocol.DeserializeDeNodeId.deserialize.closure (D : Type)
+  (Clause0_Error : Type) :=
+Unit
+
 /-- [sandproof_protocol::ResourceKind]
     Source: './sandbox-protocol/src/lib.rs', lines 184:0-184:21
     Name pattern: [sandproof_protocol::ResourceKind]
@@ -477,12 +597,12 @@ def sandproof_protocol.WorkReceipt.validate_for.closure (E : Type) (C : Type)
   sandproof_protocol.WorkAction C
 
 /-- [sandproof_foundations_extract::store_retain_above::{closure}]
-    Source: 'src/lib.rs', lines 49:17-49:42 -/
+    Source: 'src/lib.rs', lines 50:17-50:42 -/
 @[reducible]
 def store_retain_above.closure := Std.U64
 
 /-- [sandproof_foundations_extract::option_is_none_or::{closure}]
-    Source: 'src/lib.rs', lines 53:21-53:42 -/
+    Source: 'src/lib.rs', lines 54:21-54:42 -/
 @[reducible]
 def option_is_none_or.closure := Std.U64
 

@@ -9,6 +9,11 @@ import sys
 import subprocess
 
 EXTERNALS = {
+    "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
+    "serde_core::de::Error::invalid_type",
+    "serde_core::de::Visitor::visit_borrowed_str",
+    "serde_core::de::Visitor::visit_str",
+    "serde_core::de::Visitor::visit_string",
     "serde_core::de::Visitor::visit_u64",
     "core::option::{core::option::Option<T>}::as_ref",
     "core::option::{impl core::ops::try_trait::Try for core::option::Option<T>}::branch",
@@ -38,6 +43,10 @@ EXTERNALS = {
 # A public root cannot disappear by removing it from both the Rust adapter and
 # extraction script. Each expansion is an explicit, reviewed coverage change.
 ROOTS = {
+    "json_ids::tenant_decode", "json_ids::sandbox_decode",
+    "json_ids::operation_decode", "json_ids::logical_action_decode",
+    "json_ids::resource_decode", "json_ids::client_request_decode",
+    "json_ids::deployment_decode", "json_ids::node_decode", "json_ids::string_primitive",
     "json::counter_decode", "json::counter_primitive", "json::json_error_passthrough",
     "counter_from_u64", "counter_next", "counter_value", "counter_into_u64", "internal_error_text", "lane_current",
     "store_get_copy", "store_put", "store_retain_above", "option_is_none_or",
@@ -56,8 +65,12 @@ ROOTS = {
     "numeric::seconds_to_milliseconds", "numeric::bytes_to_mebibytes",
     "numeric::available_resource", "receipts::action_version", "receipts::receipt_validate",
 }
-ROOT_MODULES = {'numeric', 'receipts', 'json'}
-LIBRARY_ROOTS = {'serde_core::de::Visitor::visit_u64'}
+ROOT_MODULES = {'numeric', 'receipts', 'json', 'json_ids'}
+LIBRARY_ROOTS = {
+    'serde_core::de::Visitor::visit_u64', 'serde_core::de::Visitor::visit_str',
+    'serde_core::de::Visitor::visit_string', 'serde_core::de::Visitor::visit_borrowed_str',
+    'serde_core::de::Error::invalid_type',
+}
 REQUIRED_IDENTITY_CALLS = {
     "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt",
     "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from",
@@ -76,7 +89,7 @@ LIBRARY_SOURCES = {
     'alloc/src/vec/mod.rs', 'core/src/option.rs', 'alloc/src/string.rs',
     'alloc/src/str.rs', 'core/src/str/mod.rs', 'core/src/str/iter.rs',
     'core/src/str/traits.rs', 'core/src/num/mod.rs', 'core/src/num/error.rs',
-    'core/src/fmt/num.rs',
+    'core/src/fmt/num.rs', 'core/src/fmt/rt.rs',
     'core/src/bool.rs', 'core/src/fmt/mod.rs', 'core/src/num/uint_macros.rs',
     'core/src/result.rs',
 }
