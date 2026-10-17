@@ -21,6 +21,46 @@ SPEC.loader.exec_module(runner)
 
 class AcceptanceHarnessTests(unittest.TestCase):
     """The real harness imports the fixed SDK; keep these in its locked lane."""
+    def test_final_storage_failure_preserves_completed_cases_and_original_cleanup_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            from tools.service_storage_observation import ObservationUnknown
+            error = ObservationUnknown('original inventory unavailable')
+            services = Mock()
+            services.storage_diagnostics.return_value = {'failure':{'kind':'inventory_rejected'}}
+            deployment = SimpleNamespace(services=services)
+            report = dict(status='pass', checks=[{'name':'faults','returncode':0}],
+                          resource_cleanup_confirmed=False, staging_cleanup_confirmed=False)
+            def reclaimed(_deployment, value, **_kwargs): value['resource_cleanup_confirmed'] = True
+            with patch.object(runner, 'reclaim_resources', side_effect=reclaimed), \
+                    patch.object(runner, 'stop_services', side_effect=error), \
+                    self.assertRaises(BaseExceptionGroup) as caught:
+                runner.finish_worker(deployment, report, root, services_started=True, primary=None)
+            self.assertEqual(caught.exception.exceptions, (error,))
+            saved = json.loads((root/'report.json').read_text())
+            self.assertEqual(saved['status'], 'failed')
+            self.assertEqual(saved['checks'], [{'name':'faults','returncode':0}])
+            self.assertTrue(saved['resource_cleanup_confirmed'])
+            self.assertFalse(saved['staging_cleanup_confirmed'])
+            self.assertEqual(saved['cleanup_failures'], [{'phase':'services','error_type':'ObservationUnknown'}])
+            self.assertEqual(saved['storage_diagnostics'], services.storage_diagnostics.return_value)
+
+    def test_primary_cleanup_and_report_write_failures_remain_distinct_without_retries(self):
+        primary, resource, service, write = (ValueError('primary'), OSError('resource'),
+                                           RuntimeError('service'), OSError('write'))
+        deployment = SimpleNamespace(services=Mock())
+        deployment.services.storage_diagnostics.return_value = {'failure':None}
+        report = dict(status='failed')
+        with patch.object(runner, 'reclaim_resources', side_effect=resource) as reclaim, \
+                patch.object(runner, 'stop_services', side_effect=service) as stop, \
+                patch.object(runner, '_save', side_effect=write) as save, \
+                self.assertRaises(BaseExceptionGroup) as caught:
+            runner.finish_worker(deployment, report, Path('/unused'), services_started=True, primary=primary)
+        self.assertEqual(caught.exception.exceptions, (primary, resource, service, write))
+        reclaim.assert_called_once()
+        stop.assert_called_once()
+        save.assert_called_once()
+
     def test_restart_preparation_uses_original_probe_deadline_and_protected_handoff(self):
         import _guest_restart_fixture as fixture
         with tempfile.TemporaryDirectory() as temporary:

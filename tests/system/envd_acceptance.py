@@ -178,6 +178,37 @@ def reclaim_resources(deployment, report, *, services_started):
     report['resource_cleanup_confirmed']=True
 
 
+def finish_worker(deployment, report, root, *, services_started, primary):
+    """Persist original case/cleanup evidence even when final observation fails."""
+    errors = []
+    if deployment is not None:
+        for phase, operation in (
+                ('resources', lambda: reclaim_resources(deployment, report, services_started=services_started)),
+                ('services', lambda: stop_services(deployment, report))):
+            try:
+                operation()
+            except BaseException as error:
+                errors.append(error)
+                report.setdefault('cleanup_failures', []).append(
+                    dict(phase=phase, error_type=type(error).__name__[:128]))
+        if errors:
+            try:
+                report['storage_diagnostics'] = deployment.services.storage_diagnostics()
+            except BaseException as error:
+                errors.append(error)
+                report.setdefault('cleanup_failures', []).append(
+                    dict(phase='storage-diagnostics', error_type=type(error).__name__[:128]))
+    if primary is not None or errors:
+        report['status'] = 'failed'
+    try:
+        _save(root/'report.json', report)
+    except BaseException as error:
+        errors.append(error)
+    if errors:
+        raise BaseExceptionGroup('envd stage or original cleanup failed',
+                                 ([primary] if primary is not None else []) + errors)
+
+
 def worker(config, expected):
     root = Path(config['run_root'])
     record = root / 'service-cgroup.json'
@@ -187,6 +218,7 @@ def worker(config, expected):
                   staging_cleanup_confirmed=False,service_cleanup_confirmed=False)
     deployment = None
     services_started = False
+    primary = None
     try:
         report['phase']='preparing-deployment'
         _save(root/'report.json',report)
@@ -223,15 +255,11 @@ def worker(config, expected):
         report['status'] = 'pass'
     except BaseException as error:
         report['failure_type']=type(error).__name__
-        raise
+        primary = error
     finally:
-        try:
-            if deployment is not None:
-                reclaim_resources(deployment, report, services_started=services_started)
-        finally:
-            if deployment is not None:
-                stop_services(deployment, report)
-            _save(root/'report.json',report)
+        finish_worker(deployment, report, root, services_started=services_started, primary=primary)
+    if primary is not None:
+        raise primary
     return report
 
 
