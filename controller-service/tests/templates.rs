@@ -187,7 +187,10 @@ fn guest_identity_preserves_legacy_bytes_and_binds_every_protected_field() {
             "/versions/worker_package_version",
             serde_json::json!("0.2.0"),
         ),
-        ("/versions/config_version", serde_json::json!(3)),
+        (
+            "/versions/config_version",
+            serde_json::json!(guest().versions.config_version.checked_add(1).unwrap()),
+        ),
         ("/versions/worker_protocol_version", serde_json::json!(3)),
         ("/versions/pid_format_version", serde_json::json!(3)),
         ("/artifacts/service/bytes", serde_json::json!(100)),
@@ -204,6 +207,11 @@ fn guest_identity_preserves_legacy_bytes_and_binds_every_protected_field() {
         ("/configuration/sha256", serde_json::json!("2".repeat(64))),
     ] {
         let mut changed = serde_json::to_value(guest()).unwrap();
+        assert_ne!(
+            changed.pointer(path).unwrap(),
+            &value,
+            "{path}: identity fault must change the original field"
+        );
         *changed.pointer_mut(path).unwrap() = value;
         let mut template = original.clone();
         template.guest = Some(serde_json::from_value(changed).unwrap());
