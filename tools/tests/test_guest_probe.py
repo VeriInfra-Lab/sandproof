@@ -245,7 +245,8 @@ class GuestObservationTests(unittest.TestCase):
         value = manifest(release)
         write_once(release / 'manifest.json', value)
         config = self.root / 'configuration.json'
-        write_once(config, dict(version=2, worker=artifacts.worker_configuration(value)))
+        version = value['versions']['config_version']
+        write_once(config, dict(version=version, worker=artifacts.worker_configuration(value)))
         manifest_hash = hashlib.sha256((release / 'manifest.json').read_bytes()).hexdigest()
         config_hash = hashlib.sha256(config.read_bytes()).hexdigest()
         identity, expected = probe.load_expected(release, manifest_hash, config, config_hash)
@@ -254,6 +255,11 @@ class GuestObservationTests(unittest.TestCase):
         for pins in (('0'*64, config_hash), (manifest_hash, '0'*64)):
             with self.subTest(pins=pins), self.assertRaises(ValueError):
                 probe.load_expected(release, pins[0], config, pins[1])
+        old_config = self.root / 'old-configuration.json'
+        write_once(old_config, dict(version=version - 1, worker=artifacts.worker_configuration(value)))
+        old_hash = hashlib.sha256(old_config.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'configuration version differs'):
+            probe.load_expected(release, manifest_hash, old_config, old_hash)
 
     def test_fixed_go_observation_uses_same_real_executable_and_socket_checks(self):
         path = self.platform / 'envd'
