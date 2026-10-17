@@ -30,6 +30,7 @@ class C02PreparationTests(unittest.TestCase):
                 path.write_bytes(b'explicit non-executable component fixture')
                 inputs[name] = path
             args = SimpleNamespace(**inputs, jailer=parent / 'jailer', uid_base=3200000,
+                                   cgroup_parent=parent / 'not-a-real-cgroup',
                                    service_cgroup_record=parent / 'not-executed.json')
             report = reports.new_report('sp12-abcdefgh')
             report['hashes'] = {name: reports.digest(inputs[name]) for name in ('kernel', 'rootfs')}
@@ -45,6 +46,9 @@ class C02PreparationTests(unittest.TestCase):
                 center, hosts = fixture.FixtureTests().render([native])
                 self.assertEqual(center['startup_timeout_secs'], 300)
                 self.assertIs(center['public_ipv4_enabled'], False)
+                self.assertEqual(hosts[0]['native']['host_resources'], dict(
+                    cgroup_parent=str(args.cgroup_parent),
+                    memory_max_bytes=catalogs[0]['templates'][0]['resources']['host_memory_bytes']))
                 self.assertEqual(hosts[0]['native'], before)
                 raise Rendered
 

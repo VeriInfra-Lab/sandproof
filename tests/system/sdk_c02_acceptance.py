@@ -457,6 +457,8 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
     config["data_transfer"]["file_upload_bytes"] = 8 * 1024 * 1024
     provision_runtime(config)
     binding=descriptor('base',root/'vmlinux',root/'rootfs.ext4',1,512)
+    config['host_resources'] = dict(cgroup_parent=str(args.cgroup_parent),
+        memory_max_bytes=binding['resources']['host_memory_bytes'])
     catalog=dict(templates=[binding],aliases={},compute_limits=dict(
         max_vcpus_global=2,max_vcpus_per_tenant=2,max_memory_bytes_global=2*768*1024**2,
         max_memory_bytes_per_tenant=2*768*1024**2))
@@ -801,7 +803,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export-run", type=Path, help="read-only safe summary; no resume or cleanup")
     for name in ("center","host","candidate-manifest","redis-material","tls-material",
-                 "service-staging-parent","service-cgroup-record","jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "host-config"):
+                 "service-staging-parent","service-cgroup-record","cgroup-parent","jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "host-config"):
         parser.add_argument("--" + name, type=Path)
     parser.add_argument("--uid-base", type=int)
     parser.add_argument("--expected-commit")
@@ -818,7 +820,7 @@ def main(argv=None):
                               "cleanup": "unknown", "error": "report_unavailable"}))
             return 1
     required = ("center","host","candidate_manifest","redis_material","tls_material","service_staging_parent",
-                "service_cgroup_record","center_uid","center_gid","redis_uid","redis_gid", "jailer", "firecracker", "kernel", "rootfs", "scratch_parent", "host_config",
+                "service_cgroup_record","cgroup_parent","center_uid","center_gid","redis_uid","redis_gid", "jailer", "firecracker", "kernel", "rootfs", "scratch_parent", "host_config",
                 "uid_base", "expected_commit")
     if any(getattr(args, name) is None for name in required):
         parser.error("execution requires the exact center/host manifest, fixed Redis/TLS/role inputs and approved host profile")
