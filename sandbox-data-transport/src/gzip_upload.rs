@@ -1,12 +1,17 @@
 //! Decode only authenticated file uploads. One existing admission guard follows
 //! the worker and every output clone; cancellation never frees a running slot.
-use super::*;
+use super::{Body, TransferLimits};
 use axum::body::Bytes;
+use axum::http::StatusCode;
 use http_body_util::BodyExt;
 use sandproof_stream_codec::{DecodeLimits, Decoder};
 use std::{
-    io::{BufRead, Read},
-    sync::atomic::{AtomicU16, Ordering},
+    io::{self, BufRead, Read},
+    sync::{
+        Arc,
+        atomic::{AtomicU16, Ordering},
+    },
+    time::Duration,
 };
 use tokio::{
     runtime::Handle,
@@ -250,10 +255,10 @@ impl BufRead for Reader {
                             return Ok::<Bytes, io::Error>(Bytes::new());
                         };
                         let frame = frame.map_err(io::Error::other)?;
-                        if let Ok(bytes) = frame.into_data() {
-                            if !bytes.is_empty() {
-                                return Ok(bytes);
-                            }
+                        if let Ok(bytes) = frame.into_data()
+                            && !bytes.is_empty()
+                        {
+                            return Ok(bytes);
                         }
                         tokio::task::yield_now().await;
                     }

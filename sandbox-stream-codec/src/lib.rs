@@ -6,6 +6,8 @@
 //! The caller's `BufRead` allocation and the fixed DEFLATE library workspace are
 //! separate from the one configured output chunk allocated here.
 
+#![forbid(unsafe_code)]
+
 mod header;
 mod input;
 

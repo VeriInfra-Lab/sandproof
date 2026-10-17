@@ -92,26 +92,7 @@ pub async fn prepare_body(
         && request.uri().path() == "/files"
         && request.method() == Method::POST
     {
-        let (mut parts, mut body) = request.into_parts();
-        if body.size_hint().lower() > limits.file_upload_bytes as u64 {
-            return Err(response(StatusCode::PAYLOAD_TOO_LARGE));
-        }
-        if gzip_upload {
-            let owner = parts.extensions.get::<BodyWorkOwner>().cloned();
-            let (decoded, progress) = gzip_upload::open(body, limits, owner)
-                .await
-                .map_err(response)?;
-            body = decoded;
-            // These bytes really are decoded, unlike silently stripping an
-            // encoding from an unchanged request. Never retain encoded length.
-            parts.headers.remove(header::CONTENT_ENCODING);
-            parts.headers.remove(header::CONTENT_LENGTH);
-            parts.headers.remove(header::TRANSFER_ENCODING);
-            parts.extensions.insert(progress);
-        }
-        let (body, progress) = UploadBody::new(body, limits.file_upload_bytes);
-        parts.extensions.insert(progress);
-        request = Request::from_parts(parts, Body::new(body));
+        request = prepare_upload(request, limits, gzip_upload).await?;
     } else if file_request {
         let (parts, body) = request.into_parts();
         let budget = limits.map_or(FILE_REQUEST_LIMIT, |value| value.rpc_request_bytes);
@@ -147,6 +128,32 @@ pub async fn prepare_body(
         );
     }
     Ok(request)
+}
+
+async fn prepare_upload(
+    request: Request<Body>,
+    limits: &TransferLimits,
+    gzip: bool,
+) -> Result<Request<Body>, Response<Body>> {
+    let (mut parts, mut body) = request.into_parts();
+    if body.size_hint().lower() > limits.file_upload_bytes as u64 {
+        return Err(response(StatusCode::PAYLOAD_TOO_LARGE));
+    }
+    if gzip {
+        let owner = parts.extensions.get::<BodyWorkOwner>().cloned();
+        let (decoded, progress) = gzip_upload::open(body, limits, owner)
+            .await
+            .map_err(response)?;
+        body = decoded;
+        // These bytes really are decoded. Never retain the encoded length.
+        parts.headers.remove(header::CONTENT_ENCODING);
+        parts.headers.remove(header::CONTENT_LENGTH);
+        parts.headers.remove(header::TRANSFER_ENCODING);
+        parts.extensions.insert(progress);
+    }
+    let (body, progress) = UploadBody::new(body, limits.file_upload_bytes);
+    parts.extensions.insert(progress);
+    Ok(Request::from_parts(parts, Body::new(body)))
 }
 
 fn identity_encoding(headers: &axum::http::HeaderMap) -> bool {

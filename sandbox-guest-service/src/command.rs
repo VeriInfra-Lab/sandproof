@@ -441,7 +441,8 @@ impl ManagedCommand {
     }
 
     /// # Errors
-    /// Invalid/stale, oversized or overlapping writes fail without queuing.
+    /// Invalid/stale or overlapping writes fail without queuing. The caller
+    /// must bound the complete request; the owner only slices each write.
     /// Failure/cancellation can follow a delivered prefix; never replay it.
     pub async fn write_input(
         &self,
@@ -461,9 +462,9 @@ impl ManagedCommand {
         self.write_channel(identity, bytes, false).await
     }
 
-    /// Write terminal-channel bytes with the same independent input budget.
+    /// Write terminal-channel bytes with the same internal slice budget.
     /// # Errors
-    /// Stale/wrong channel, closed input, oversized/overlapping write or I/O.
+    /// Stale/wrong channel, closed input, overlapping write or I/O.
     pub async fn write_pty(
         &self,
         identity: CommandIdentity,
