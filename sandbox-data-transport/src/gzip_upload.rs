@@ -68,9 +68,10 @@ pub(super) async fn open(
     owner: Option<BodyWorkOwner>,
 ) -> Result<(Body, Progress), StatusCode> {
     let owner = owner.map_or_else(|| Arc::new(()) as Owner, |owner| owner.0);
-    let idle = Duration::from_secs(limits.request_idle_seconds);
+    let input_idle = Duration::from_secs(limits.request_idle_seconds);
+    let idle = Duration::from_secs(limits.file_idle_seconds);
     let (cancel, cancelled) = watch::channel(false);
-    let (requests, mut receiver) = mpsc::channel::<Reply>(1);
+    let (requests, receiver) = mpsc::channel::<Reply>(1);
     let (ready, opened) = oneshot::channel();
     let stream = Stream {
         requests,
@@ -90,14 +91,71 @@ pub(super) async fn open(
         // Each additional member consumes encoded bytes; no unbounded counter.
         members: limits.file_upload_bytes / 18 + 1,
     };
-    tokio::task::spawn_blocking(move || {
-        let reader = Reader {
+    let worker = Worker {
+        reader: Reader {
             body,
             pending: Bytes::new(),
-            runtime: runtime.clone(),
-            cancel: cancelled.clone(),
+            runtime,
+            cancel: cancelled,
+            idle: input_idle,
+        },
+        decode,
+        owner,
+        observed,
+        receiver,
+        ready,
+        idle,
+    };
+    tokio::task::spawn_blocking(move || worker.run());
+    timeout(input_idle, opened)
+        .await
+        .map_err(|_| StatusCode::REQUEST_TIMEOUT)?
+        .map_err(|_| StatusCode::BAD_GATEWAY)??;
+    let body = Body::from_stream(futures_util::stream::unfold(
+        Some(stream),
+        |state| async move {
+            let stream = state?;
+            let (reply, response) = oneshot::channel();
+            let result = async {
+                stream
+                    .requests
+                    .send(reply)
+                    .await
+                    .map_err(|_| StatusCode::BAD_GATEWAY)?;
+                response.await.map_err(|_| StatusCode::BAD_GATEWAY)?
+            };
+            match timeout(stream.idle, result).await {
+                Ok(Ok(Some(bytes))) => Some((Ok(bytes), Some(stream))),
+                Ok(Ok(None)) => None,
+                _ => Some((Err(io::Error::other("incomplete gzip upload")), None)),
+            }
+        },
+    ));
+    Ok((body, progress))
+}
+
+struct Worker {
+    reader: Reader,
+    decode: DecodeLimits,
+    owner: Owner,
+    observed: Progress,
+    receiver: mpsc::Receiver<Reply>,
+    ready: oneshot::Sender<Result<(), StatusCode>>,
+    idle: Duration,
+}
+impl Worker {
+    fn run(self) {
+        let Self {
+            reader,
+            decode,
+            owner,
+            observed,
+            mut receiver,
+            ready,
             idle,
-        };
+        } = self;
+        let runtime = reader.runtime.clone();
+        let mut cancelled = reader.cancel.clone();
         let mut decoder = match Decoder::new(reader, decode) {
             Ok(decoder) => decoder,
             Err(error) => {
@@ -108,7 +166,6 @@ pub(super) async fn open(
         if ready.send(Ok(())).is_err() {
             return;
         }
-        let mut cancelled = cancelled;
         loop {
             let Some(reply) = runtime
                 .block_on(wait(&mut cancelled, idle, receiver.recv()))
@@ -155,32 +212,7 @@ pub(super) async fn open(
         // decoder owns the original source; destroy it before releasing guards.
         drop(decoder);
         drop(owner);
-    });
-    timeout(idle, opened)
-        .await
-        .map_err(|_| StatusCode::REQUEST_TIMEOUT)?
-        .map_err(|_| StatusCode::BAD_GATEWAY)??;
-    let body = Body::from_stream(futures_util::stream::unfold(
-        Some(stream),
-        |state| async move {
-            let stream = state?;
-            let (reply, response) = oneshot::channel();
-            let result = async {
-                stream
-                    .requests
-                    .send(reply)
-                    .await
-                    .map_err(|_| StatusCode::BAD_GATEWAY)?;
-                response.await.map_err(|_| StatusCode::BAD_GATEWAY)?
-            };
-            match timeout(stream.idle, result).await {
-                Ok(Ok(Some(bytes))) => Some((Ok(bytes), Some(stream))),
-                Ok(Ok(None)) => None,
-                _ => Some((Err(io::Error::other("incomplete gzip upload")), None)),
-            }
-        },
-    ));
-    Ok((body, progress))
+    }
 }
 
 async fn wait<T>(
@@ -251,6 +283,16 @@ impl Read for Reader {
 }
 fn classify(error: &sandproof_stream_codec::Error) -> StatusCode {
     use sandproof_stream_codec::Error;
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(error) = source {
+        if error
+            .downcast_ref::<io::Error>()
+            .is_some_and(|error| error.kind() == io::ErrorKind::TimedOut)
+        {
+            return StatusCode::REQUEST_TIMEOUT;
+        }
+        source = error.source();
+    }
     match error {
         Error::EncodedLimit | Error::DecodedLimit | Error::HeaderLimit | Error::MemberLimit => {
             StatusCode::PAYLOAD_TOO_LARGE

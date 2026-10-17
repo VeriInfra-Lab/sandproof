@@ -571,7 +571,9 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 来宾监听器的[合并正文回归](../sandbox-guest-service/src/listener/tests/read_budget.rs)使用真实固定 HTTP 解析器和保持连接的确定性输入，不依赖 TCP 时序；核对原 16 KiB 读取边界及原上传帧检查。原版本可能交付 24 KiB 帧并触发断流/上游 502；必须保留失败断言，修复不能增大正文/块/期限。另核对等待和 I/O 错误不能变成成功 EOF。组件通过后仍须用同提交来宾产物在真实沙箱执行原 SDK 文件矩阵，不能用带诊断日志的一轮未复现代替原失败归因。
 
-#311 的输入限额回归使用[固定 SDK 独立入口](../tests/system/sdk_guest_input_limits.py)，必须提供完整 Rust 候选与配置摘要；读取实际安装配置的单次输入预算，覆盖同步/异步、root/ubuntu 的恰好边界、边界加一及 65,792 字节单次拒绝，再按原预算分块传送同一二进制并核对最终长度/摘要。拒绝必须是精确容量错误，不能把超时算通过；最终字节中不得混入被拒绝输入，服务/PID 不重启，原实例须销毁并另行核对物理残留。它不替换或修改既有 `sdk_command_input.py` 大输入调用集，也不把该限额差异记成完整双端兼容。
+#311 的[固定 SDK 输入回归](../tests/system/sdk_guest_input_limits.py)读取实际安装的版本 3 配置及摘要，保持原内部写块数值，覆盖同步/异步、root/ubuntu：恰好写块、写块加一和 65,792 字节均以单次 SDK 调用成功，再保留多次调用传输同一二进制的检查，最终核对全部长度/摘要和原 PID/服务身份。它不替换或修改既有 `sdk_command_input.py`。原 HTTP 正文超限的写前拒绝、后续合法调用、一次性效果及容量归还继续由[真实 worker HTTP 回归](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)验收；不能把取消/超时算成精确预算拒绝。
+
+[gzip 网关回归](../sandbox-data-transport/src/tests/gzip.rs)覆盖压缩与展开双预算、零字节、精确边界/超限、坏头/CRC/截断、实际 HTTP 转发、最后字节副本背压及取消后真实工作退出再归还容量；原固定 SDK 的 `gzip=True` 进入实际网关组合检查。完整 KVM 仍运行原 `sdk_guest_compare.py`，要求新不可变 Rust 模板和固定 Go 模板分别通过同一调用集，保留失败与精确销毁/残留结果。组件、SDK 组合与实机结果分别记录，未执行不得标为通过。
 
 对应组件回归检查[原工作门的有界健康采样](../sandbox-host-service/tests/driver.rs)、[无上传 EOF 的来宾断流](../sandbox-data-transport/src/tunnel.rs)和[真实 worker 输入拒绝后的继续读写](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)。定点诊断先保留 503 与节点健康期限、原中心/宿主无载荷故障分类，不因单轮未复现就宣布旧故障已解决；不得延长有效期、增加测试容量或移除原检查。上述入口仍须按精确候选分别记录组件、SDK 和 KVM 实跑证据。
 

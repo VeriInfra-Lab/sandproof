@@ -140,6 +140,33 @@ async fn gzip_upload_enforces_expanded_budget_and_validated_eof_not_compressed_l
 }
 
 #[tokio::test]
+async fn gzip_encoded_limit_is_independent_even_when_decoded_file_is_empty() {
+    let encoded = encoded(b"");
+    for limit in [encoded.len() - 1, encoded.len()] {
+        let limits = TransferLimits {
+            file_upload_bytes: limit,
+            ..TransferLimits::fixture()
+        };
+        let prepared = prepare_body(upload(encoded.clone()), true, Some(&limits))
+            .await
+            .unwrap();
+        let gzip = prepared
+            .extensions()
+            .get::<gzip_upload::Progress>()
+            .unwrap()
+            .clone();
+        let result = drain(prepared.into_body()).await;
+        if limit < encoded.len() {
+            assert!(result.is_err());
+            assert_eq!(gzip.status(), Some(StatusCode::PAYLOAD_TOO_LARGE));
+        } else {
+            assert!(result.unwrap().is_empty());
+            assert_eq!(gzip.status(), None);
+        }
+    }
+}
+
+#[tokio::test]
 async fn gzip_output_clones_keep_both_admission_and_decoder_backpressure() {
     let slots = Arc::new(tokio::sync::Semaphore::new(1));
     let mut request = upload(encoded(&vec![b'Z'; 40_000]));
