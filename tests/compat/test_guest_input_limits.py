@@ -21,7 +21,7 @@ class InputLimitsTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'configuration.json'
             for value in (4096, 0, True, 65537):
-                data = json.dumps(dict(commands=dict(owners=dict(stdin_bytes=value)))).encode()
+                data = json.dumps(dict(commands=dict(owners=dict(input_chunk_bytes=value)))).encode()
                 path.write_bytes(data)
                 args = SimpleNamespace(guest_configuration=str(path),
                     guest_configuration_sha256=hashlib.sha256(data).hexdigest())
@@ -32,21 +32,21 @@ class InputLimitsTests(unittest.IsolatedAsyncioTestCase):
                     probe.configured_limit(args)
 
     async def test_only_the_exact_observed_capacity_error_counts_as_rejection(self):
-        for code, message in [(Code.RESOURCE_EXHAUSTED, probe.INPUT_LIMIT),
+        for code, message in [(Code.RESOURCE_EXHAUSTED, probe.BODY_LIMIT),
                               (Code.RESOURCE_EXHAUSTED, 'other policy'),
-                              (Code.DEADLINE_EXCEEDED, probe.INPUT_LIMIT)]:
+                              (Code.DEADLINE_EXCEEDED, probe.BODY_LIMIT)]:
             error = RateLimitException(message + ': Rate limit exceeded, please try again later.')
             error.__context__ = ConnectError(code, message)
             call = AsyncMock(side_effect=error)
-            if code is Code.RESOURCE_EXHAUSTED and message == probe.INPUT_LIMIT:
-                self.assertEqual(await probe.rejected(call, 42, b'x', messages=(probe.INPUT_LIMIT,)), message)
+            if code is Code.RESOURCE_EXHAUSTED and message == probe.BODY_LIMIT:
+                self.assertEqual(await probe.rejected(call, 42, b'x', messages=(probe.BODY_LIMIT,)), message)
             else:
                 with self.assertRaises(AssertionError):
-                    await probe.rejected(call, 42, b'x', messages=(probe.INPUT_LIMIT,))
+                    await probe.rejected(call, 42, b'x', messages=(probe.BODY_LIMIT,))
             call.assert_awaited_once_with(42, b'x', request_timeout=15)
         call = AsyncMock(side_effect=TimeoutException('not quota evidence'))
         with self.assertRaises(TimeoutException):
-            await probe.rejected(call, 42, b'x', messages=(probe.INPUT_LIMIT,))
+            await probe.rejected(call, 42, b'x', messages=(probe.BODY_LIMIT,))
         call.assert_awaited_once()
 
 

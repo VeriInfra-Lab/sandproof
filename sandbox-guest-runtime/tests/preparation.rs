@@ -53,7 +53,7 @@ impl Fixture {
             subscribers: 2,
             queued_chunks: 8,
             output_bytes: 8192,
-            stdin_bytes: 8192,
+            input_chunk_bytes: 8192,
         })
         .unwrap();
         let session = Session::new(

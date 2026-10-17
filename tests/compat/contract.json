@@ -131,7 +131,7 @@
     "test_command_large_output_completes_without_replaying_start",
     "test_command_truncated_frame_is_not_replayed_and_next_command_works",
     "test_command_uses_connect_stream_and_preserves_result",
-    "test_compressed_upload_rejected_and_download_negotiates_identity",
+    "test_compressed_upload_decodes_and_download_negotiates_identity",
     "test_directory_calls_use_filesystem_rpc",
     "test_download_limit_fixed_and_streamed_through_sdk",
     "test_file_info_and_batch_upload_preserve_paths_and_bytes",
@@ -157,7 +157,7 @@
     "fixture_only_bytes": {"file_upload": 67108864, "file_download": 100663296, "command_input": 1048576, "command_output": 33554432},
     "concurrency": "global and per VM/generation; bounded admission with reserved control capacity; excess returns 429",
     "idle": "request producer 408; file headers 504; file body or blocked writes terminate transport; quiet command output has no file idle timer",
-    "compression": "non-identity request encodings return 415; identity negotiated upstream; unexpected encoded response returns 502",
+    "compression": "POST /files gzip streams through bounded decoding; other non-identity request encodings return 415; identity negotiated upstream; unexpected encoded response returns 502",
     "write_failure": "unknown-length overflow may leave partial or truncated files; no atomic batch/overwrite or automatic replay guarantee",
     "memory_evidence": "gated streaming and Rust RSS high-water observations; synthetic envd buffers separately; not a host resource guarantee",
     "pending": ["host filesystem/inode exhaustion and exhaustive concurrency/slow-stream fault schedules beyond selected real probes", "full sync/async SDK argument combinations", "remaining concurrent lifecycle/restart races beyond selected in-flight kill/expiry cases", "final limits measured with frozen tasks and host quotas"]

@@ -1081,11 +1081,13 @@ name = "sandproof-data-transport"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
  "percent-encoding",
  "sandproof-protocol",
+ "sandproof-stream-codec",
  "serde",
  "tokio",
 ]
@@ -1101,11 +1103,11 @@ dependencies = [
  "axum",
  "base64",
  "crc32fast",
- "flate2",
  "futures-util",
  "rustix",
  "sandproof-guest-core",
  "sandproof-guest-service",
+ "sandproof-stream-codec",
  "serde",
  "serde_json",
  "sha2",
@@ -1232,6 +1234,15 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "sandproof-stream-codec"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "serde",
 ]
 
 [[package]]

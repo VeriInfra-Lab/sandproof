@@ -7,6 +7,8 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
+import stat
 import sys
 import threading
 from types import SimpleNamespace
@@ -32,12 +34,17 @@ def resource_report(expected, daemon, rss=8192):
         sample=dict(rss_bytes=rss, reported_peak_rss_bytes=16384, threads=3, open_fds=9, elapsed_ns=100))
 
 
+def environment_receipt():
+    return dict(parent='/var/tmp', mountpoint='/', filesystem='ext4', block_size=4096,
+        fragment_size=4096, name_max=255, mode=0o1777, hostname='sandproof-paired')
+
+
 def rows():
     return [{'method': 'commands.run', 'args': ['fixed input'], 'kwargs': {'user': 'root'},
              'result': {'stdout': 'a中b', 'stderr': '', 'exit_code': 0, 'error': None},
              'callbacks': {'stdout': ['a', '中b'], 'stderr': []}},
             {'method': 'files.list', 'args': ['/tmp/shared'], 'kwargs': {'depth': 4},
-             'result': [{'path': '/tmp/shared/a', 'mode': 1, 'modified_time': 'fixed'},
+             'result': [{'path': '/tmp/shared/a', 'mode': 1, 'modified_time': 'fixed', 'size': 4096},
                         {'path': '/tmp/shared/b', 'mode': 2, 'modified_time': 'fixed'}]},
             {'method': 'files.read', 'args': ['/tmp/shared/a'], 'kwargs': {'format': 'stream'},
              'result': {'base64': 'YWJj'}, 'transport_chunk_bytes': [1, 2]},
@@ -74,6 +81,7 @@ class ComparisonTests(unittest.TestCase):
                      lambda r: r[0]['result'].__setitem__('exit_code', False),
                      lambda r: r[1]['result'][0].__setitem__('mode', True),
                      lambda r: r[1]['result'][0].__setitem__('modified_time', 'different'),
+                     lambda r: r[1]['result'][0].__setitem__('size', 80),
                      lambda r: r[2]['result'].__setitem__('base64', 'YWJk'),
                      lambda r: r[3]['error'].__setitem__('message', 'different error'),
                      lambda r: r[3]['error'].__setitem__('class', 'OtherError')]
@@ -98,6 +106,53 @@ class ComparisonTests(unittest.TestCase):
         stream.read(1)
         with self.assertRaises(AssertionError):
             probe.value(stream)
+
+
+class EnvironmentCommandTests(unittest.TestCase):
+    def test_native_fixture_checks_actual_mount_before_hostname_and_never_rewrites_metadata(self):
+        self.assertTrue(probe.plan()['directory'].startswith('/var/tmp/sandproof-paired-'))
+        for initialize, mount, symlink, missing in (
+                (True, 'ext4', False, False), (True, 'ext4', False, True),
+                (False, 'ext4', False, False), (True, 'tmpfs', False, False),
+                (True, 'ext4', True, False)):
+            with self.subTest(initialize=initialize, mount=mount, symlink=symlink, missing=missing), ExitStack() as stack:
+                command = shlex.split(probe.environment_command(initialize=initialize))
+                self.assertEqual(command[:3], ['/usr/bin/python3', '-I', '-c'])
+                # /tmp really is a different mount; only /var/tmp's longest
+                # actual covering mount determines whether this fixture fits.
+                mounts = ('1 0 8:0 / / rw - ext4 /dev/vda rw\n'
+                          '2 1 0:1 / /tmp rw - tmpfs tmpfs rw\n')
+                if mount == 'tmpfs':
+                    mounts += '3 1 0:2 / /var/tmp rw - tmpfs tmpfs rw\n'
+                stack.enter_context(patch('builtins.open', return_value=io.StringIO(mounts)))
+                stack.enter_context(patch('os.lstat', return_value=SimpleNamespace(
+                    st_mode=(stat.S_IFLNK if symlink else stat.S_IFDIR) | 0o1777)))
+                stack.enter_context(patch('os.statvfs', return_value=SimpleNamespace(
+                    f_bsize=4096, f_frsize=4096, f_namemax=255)))
+                mkdir = stack.enter_context(patch('os.mkdir', side_effect=None if missing else FileExistsError))
+                umask = stack.enter_context(patch('os.umask', return_value=0o022))
+                chmod = stack.enter_context(patch('os.chmod'))
+                set_hostname = stack.enter_context(patch('socket.sethostname', create=True))
+                stack.enter_context(patch('socket.gethostname', return_value='sandproof-paired'))
+                output = stack.enter_context(redirect_stdout(io.StringIO()))
+                if mount == 'tmpfs' or symlink:
+                    with self.assertRaises(AssertionError):
+                        exec(compile(command[3], '<native-environment-fixture>', 'exec'), {})
+                    set_hostname.assert_not_called()
+                else:
+                    exec(compile(command[3], '<native-environment-fixture>', 'exec'), {})
+                    self.assertEqual(json.loads(output.getvalue()), environment_receipt())
+                    if initialize:
+                        set_hostname.assert_called_once_with(b'sandproof-paired')
+                    else:
+                        set_hostname.assert_not_called()
+                if initialize:
+                    mkdir.assert_called_once_with('/var/tmp', 0o1777)
+                    self.assertEqual(umask.call_args_list, [unittest.mock.call(0), unittest.mock.call(0o022)])
+                else:
+                    mkdir.assert_not_called()
+                    umask.assert_not_called()
+                chmod.assert_not_called()
 
 
 class OriginalSdkRecordingTests(unittest.IsolatedAsyncioTestCase):
@@ -168,6 +223,55 @@ class OriginalSdkRecordingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('result', calls.rows[0])
             self.app.truncate_file = False
             self.assertEqual(await calls.stream('/tmp/healthy', 'root'), b'synthetic file content\n')
+
+    async def test_environment_receipt_both_sdks_retains_raw_failure_and_never_replays_setup(self):
+        for cls in (Sandbox, AsyncSandbox):
+            sandbox = await self.connect(cls)
+            for fault in (None, 'filesystem', 'hostname', 'boolean-block-size'):
+                receipt = environment_receipt()
+                if fault == 'filesystem':
+                    receipt['filesystem'] = 'tmpfs'
+                elif fault == 'hostname':
+                    receipt['hostname'] = 'other-host'
+                elif fault == 'boolean-block-size':
+                    receipt['block_size'] = True
+                raw = json.dumps(receipt)
+                self.app.process.stdout_chunks = [raw.encode()]
+                self.app.process.stderr_chunks = []
+                before = len(self.app.process.starts)
+                evidence = {}
+                with self.subTest(sdk=cls.__name__, fault=fault):
+                    if fault is None:
+                        self.assertEqual(await probe.environment(sandbox, evidence, initialize=True), receipt)
+                        self.assertEqual(evidence['status'], 'complete')
+                    else:
+                        with self.assertRaises(AssertionError):
+                            await probe.environment(sandbox, evidence, initialize=True)
+                        self.assertEqual(evidence['status'], 'incomplete')
+                        self.assertNotIn('receipt', evidence)
+                    self.assertEqual(evidence['result']['stdout'], raw)
+                    self.assertEqual(len(self.app.process.starts), before + 1)
+                    start = self.app.process.starts[-1]
+                    self.assertEqual(list(start.process.args), ['-l', '-c', probe.environment_command(initialize=True)])
+                    self.assertEqual(self.app.process.signals, [])
+
+    async def test_native_environment_failure_keeps_original_exception_and_bytes_without_retry(self):
+        for cls in (Sandbox, AsyncSandbox):
+            sandbox = await self.connect(cls)
+            self.app.process.stdout_chunks = [b'original partial receipt']
+            self.app.process.stderr_chunks = [b'original native setup failure']
+            self.app.process.exit_code = 1
+            before = len(self.app.process.starts)
+            evidence = {}
+            with self.assertRaises(CommandExitException):
+                await probe.environment(sandbox, evidence, initialize=True)
+            self.assertEqual(evidence['status'], 'incomplete')
+            self.assertNotIn('receipt', evidence)
+            self.assertEqual(evidence['result']['exit_code'], 1)
+            self.assertEqual(evidence['result']['stdout'], 'original partial receipt')
+            self.assertEqual(evidence['result']['stderr'], 'original native setup failure')
+            self.assertEqual(len(self.app.process.starts), before + 1)
+            self.assertEqual(self.app.process.signals, [])
 
     async def test_resource_samples_use_both_original_sdks_once_per_phase_without_budget_verdict(self):
         expected = {'fixed_go': guest_probe.load_go_expected()['file']}
@@ -290,6 +394,10 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.sync_create = self.replace(probe.Sandbox, 'create', Mock(side_effect=self.guests[:2]))
         self.async_create = self.replace(probe.AsyncSandbox, 'create', AsyncMock(side_effect=self.guests[2:]))
         self.observe = self.replace(probe, 'observe_candidate', AsyncMock(return_value={'pinned': 'rust'}))
+        async def environment(_sandbox, evidence, *, initialize):
+            evidence.update(status='complete', receipt=environment_receipt())
+            return environment_receipt()
+        self.environment = self.replace(probe, 'environment', AsyncMock(side_effect=environment))
         self.run_cases = self.replace(probe, 'cases', AsyncMock(side_effect=lambda *_args: rows()))
         async def file_cases(_sandbox, _inputs, asynchronous, partial):
             partial.append(dict(method='files.mode', args=[asynchronous], status='complete'))
@@ -336,13 +444,38 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             guest.kill.assert_called_once_with()
             self.assertEqual(guest.commands.run.call_count, 2 if index % 2 == 0 else 0)
         self.assertEqual(self.observe.await_count, 4)
+        self.assertEqual([item.kwargs['initialize'] for item in self.environment.await_args_list],
+                         [True, False] * 4)
         for item in result['results']:
             self.assertTrue(item['known_destroy_acknowledged'])
             self.assertEqual(len(item['pair']), 2)
             self.assertTrue(all('resources' not in entry for entry in item['pair']))
             for entry in item['pair']:
                 self.assertEqual(entry['tag_policy'], [dict(kind=entry['kind'], status='complete')])
+                self.assertEqual(entry['environment_before'], entry['environment_after'])
         self.assertNotIn('resource_sampling', result)
+
+    async def assert_environment_fault(self, *, after_change):
+        async def environment(sandbox, evidence, *, initialize):
+            receipt = environment_receipt()
+            if (after_change and not initialize) or (not after_change and sandbox is self.guests[1]):
+                receipt['block_size'] = 1024
+            evidence.update(status='complete', receipt=receipt)
+            return receipt
+        self.environment.side_effect = environment
+        result = await self.run_probe(AssertionError)
+        pair = result['results'][0]['pair']
+        self.assertEqual(len(pair), 1 if after_change else 2)
+        self.assertEqual(self.run_cases.await_count, 1)
+        self.assertEqual(self.environment.await_count, 2 if after_change else 3)
+        self.assertTrue(result['results'][0]['known_destroy_acknowledged'])
+        self.async_create.assert_not_called()
+
+    async def test_actual_filesystem_shape_mismatch_stops_before_second_side_cases(self):
+        await self.assert_environment_fault(after_change=False)
+
+    async def test_environment_change_after_cases_fails_without_repair_or_replay(self):
+        await self.assert_environment_fault(after_change=True)
 
     async def test_optional_resource_plan_samples_each_pinned_vm_and_preserves_protocol_comparison(self):
         self.args.observe_resources = True

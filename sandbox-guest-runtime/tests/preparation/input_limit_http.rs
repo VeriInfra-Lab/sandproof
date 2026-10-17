@@ -1,7 +1,64 @@
 use super::*;
 
 #[tokio::test]
-async fn input_limit_is_observed_before_writing_and_a_later_valid_input_still_works() {
+async fn large_single_input_crosses_internal_chunks_without_restarting_or_releasing_capacity() {
+    let fixture = fixture().await;
+    let registry = registry();
+    let ordinary = requests(2);
+    let control = requests(1);
+    let http = http(&fixture, &registry, &ordinary, &control);
+    let mut output = http.handle(request("Start", &json!({
+        "process":{"cmd":"/bin/sh","args":["-c","printf once >> effect; printf ready; /bin/cat > received; printf completed"]},
+        "stdin":true,
+    }))).await.unwrap().into_body().into_data_stream();
+    let command = started(&mut output, &registry).await;
+    let pid = command.0.identity().pid;
+    data(&mut output, "stdout", b"ready").await;
+    // Original fixture: internal chunk 8192 and HTTP body 16384, unchanged.
+    // JSON/base64 overhead still fits the existing request budget.
+    let large: Vec<u8> = (0..=255).cycle().take(8193).collect();
+    let response = http
+        .handle(request(
+            "SendInput",
+            &json!({
+                "process":{"pid":pid},"input":{"stdin":STANDARD.encode(&large)},
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(bytes(response).await, "{}");
+    assert!(registry.live(pid).is_ok());
+    assert_eq!(
+        std::fs::read(fixture.directory.path().join("effect")).unwrap(),
+        b"once"
+    );
+    assert_eq!(
+        bytes(
+            http.handle(request("CloseStdin", &json!({"process":{"pid":pid}})))
+                .await
+                .unwrap()
+        )
+        .await,
+        "{}"
+    );
+    // The child drains to a real file, isolating input chunking from the
+    // deliberately small subscriber queue. EOF proves the entire input was
+    // consumed, not merely accepted into the pipe or replayed on a new PID.
+    data(&mut output, "stdout", b"completed").await;
+    end(&mut output).await;
+    assert_eq!(
+        std::fs::read(fixture.directory.path().join("received")).unwrap(),
+        large
+    );
+    drop(output);
+    clean(&fixture, &registry, command).await;
+    assert!(ordinary.admit().is_ok());
+    assert!(control.admit().is_ok());
+}
+
+#[tokio::test]
+async fn body_limit_is_observed_before_writing_and_a_later_valid_input_still_works() {
     let fixture = fixture().await;
     let registry = registry();
     let ordinary = requests(2);
@@ -18,7 +75,7 @@ async fn input_limit_is_observed_before_writing_and_a_later_valid_input_still_wo
         .handle(request(
             "SendInput",
             &json!({
-                "process":{"pid":pid},"input":{"stdin":STANDARD.encode(vec![b'X';8193])},
+                "process":{"pid":pid},"input":{"stdin":STANDARD.encode(vec![b'X';16_385])},
             }),
         ))
         .await
@@ -28,7 +85,7 @@ async fn input_limit_is_observed_before_writing_and_a_later_valid_input_still_wo
     assert_eq!(
         serde_json::from_slice::<Value>(&reply).unwrap(),
         json!({
-            "code":"resource_exhausted","message":"command input exceeds configured byte limit",
+            "code":"resource_exhausted","message":"command request exceeds configured body limits",
         })
     );
     full(&ordinary);

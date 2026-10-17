@@ -140,7 +140,7 @@ fn record_and_output_limits_are_explicit_and_shared_by_pool_clones() {
         subscribers: 2,
         queued_chunks: 2,
         output_bytes: 1024,
-        stdin_bytes: 1024,
+        input_chunk_bytes: 1024,
     };
     for bad in [
         OwnerLimits {
@@ -160,7 +160,7 @@ fn record_and_output_limits_are_explicit_and_shared_by_pool_clones() {
             ..limits
         },
         OwnerLimits {
-            stdin_bytes: 0,
+            input_chunk_bytes: 0,
             ..limits
         },
         OwnerLimits {

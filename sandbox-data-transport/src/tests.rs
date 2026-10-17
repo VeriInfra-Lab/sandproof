@@ -25,6 +25,7 @@ use tokio::{
 
 const CHUNK: usize = 64 * 1024;
 
+mod gzip;
 mod streaming;
 
 struct Chunks {

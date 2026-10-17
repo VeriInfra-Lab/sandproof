@@ -31,7 +31,7 @@ fn complete_strict_schema_rejects_missing_unknown_duplicate_and_malformed_fields
     let text = serde_json::to_string(&original).unwrap();
     assert!(matches!(
         Configuration::decode(
-            text.replace("\"version\":2", "\"version\":2,\"version\":2")
+            text.replace("\"version\":3", "\"version\":3,\"version\":3")
                 .as_bytes()
         ),
         Err(DecodeError::Json)

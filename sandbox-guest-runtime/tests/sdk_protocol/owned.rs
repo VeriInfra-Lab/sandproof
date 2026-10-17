@@ -63,7 +63,7 @@ pub(super) async fn response(process: CommandProcess, fixture: &Fixture) -> Resp
         subscribers: 1,
         queued_chunks: 8,
         output_bytes: 8192,
-        stdin_bytes: 1024,
+        input_chunk_bytes: 1024,
     })
     .unwrap();
     let (command, subscription) = owners.reserve().unwrap().start_registered(

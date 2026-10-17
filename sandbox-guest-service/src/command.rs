@@ -55,7 +55,6 @@ pub enum CommandError {
 /// callers retain their original coarse error; HTTP may consume the fact.
 pub(crate) enum InputFailure {
     Command(CommandError),
-    TooLarge,
     Native { error: CommandError, errno: i32 },
     StdinClosed,
     StdinDisabled,
@@ -64,7 +63,6 @@ impl InputFailure {
     pub(crate) const fn error(self) -> CommandError {
         match self {
             Self::Command(error) | Self::Native { error, .. } => error,
-            Self::TooLarge => CommandError::ResourceExhausted,
             Self::StdinClosed => CommandError::Unavailable,
             Self::StdinDisabled => CommandError::ClosedInput,
         }
@@ -208,7 +206,10 @@ pub struct OwnerLimits {
     /// Per subscriber, includes a chunk already returned to its caller until
     /// that `CommandOutput` is dropped. Configure at least the process chunk size.
     pub output_bytes: usize,
-    pub stdin_bytes: usize,
+    /// Maximum borrowed slice passed to one pipe/PTY write, not a per-RPC
+    /// acceptance limit. HTTP admission separately bounds the complete decoded
+    /// request and retains its capacity through dispatch and cancellation.
+    pub input_chunk_bytes: usize,
 }
 
 impl OwnerLimits {
@@ -218,7 +219,7 @@ impl OwnerLimits {
             self.subscribers,
             self.queued_chunks,
             self.output_bytes,
-            self.stdin_bytes,
+            self.input_chunk_bytes,
         ]
         .into_iter()
         .any(|n| n == 0 || n > Semaphore::MAX_PERMITS)
@@ -440,7 +441,8 @@ impl ManagedCommand {
     }
 
     /// # Errors
-    /// Invalid/stale, oversized or overlapping writes fail without queuing.
+    /// Invalid/stale or overlapping writes fail without queuing. The caller
+    /// must bound the complete request; the owner only slices each write.
     /// Failure/cancellation can follow a delivered prefix; never replay it.
     pub async fn write_input(
         &self,
@@ -460,9 +462,9 @@ impl ManagedCommand {
         self.write_channel(identity, bytes, false).await
     }
 
-    /// Write terminal-channel bytes with the same independent input budget.
+    /// Write terminal-channel bytes with the same internal slice budget.
     /// # Errors
-    /// Stale/wrong channel, closed input, oversized/overlapping write or I/O.
+    /// Stale/wrong channel, closed input, overlapping write or I/O.
     pub async fn write_pty(
         &self,
         identity: CommandIdentity,
@@ -509,9 +511,6 @@ impl ManagedCommand {
         pty: bool,
     ) -> Result<(), InputFailure> {
         self.check(identity)?;
-        if bytes.len() > self.shared.limits.stdin_bytes {
-            return Err(InputFailure::TooLarge);
-        }
         let mut input = self
             .shared
             .input
@@ -536,9 +535,23 @@ impl ManagedCommand {
                 // actual attempt still runs once. No later PID/state lookup
                 // may infer this reason from a generic BrokenPipe/Unavailable.
                 let closed_stdin = !pty && !self.has_pty() && writer.is_closed();
-                let result = if pty { writer.write_pty(identity, bytes).await }
-                    else { writer.write_input(identity, bytes).await };
-                result.map_err(|error| input_failure(&error, closed_stdin))
+                // One original writer lock spans ALL slices. A concurrent
+                // request cannot interleave or queue behind a partial input.
+                // Empty input still checks channel/closed-port semantics.
+                let mut remaining = bytes;
+                loop {
+                    let count = remaining.len().min(self.shared.limits.input_chunk_bytes);
+                    let (chunk, rest) = remaining.split_at(count);
+                    let result = if pty { writer.write_pty(identity, chunk).await }
+                        else { writer.write_input(identity, chunk).await };
+                    result.map_err(|error| input_failure(&error, closed_stdin))?;
+                    if rest.is_empty() { return Ok(()); }
+                    remaining = rest;
+                    // Bound cooperative work even if the receiving program
+                    // drains every slice immediately. Cancellation never
+                    // replays an already delivered prefix.
+                    tokio::task::yield_now().await;
+                }
             } => result,
         }
     }

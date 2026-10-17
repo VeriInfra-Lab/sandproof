@@ -50,7 +50,7 @@ impl Fixture {
                 subscribers: 1,
                 queued_chunks: 1,
                 output_bytes: 4096,
-                stdin_bytes: 4096,
+                input_chunk_bytes: 4096,
             })
             .unwrap(),
             requests: Arc::new(Semaphore::new(1)),

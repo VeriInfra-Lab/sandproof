@@ -285,7 +285,6 @@ fn observe_input(
     observed: &mut Option<Rejection>,
 ) {
     *observed = match result {
-        Err(InputFailure::TooLarge) => Some(Rejection::InputTooLarge),
         Err(InputFailure::StdinClosed) => Some(Rejection::StdinClosed),
         Err(InputFailure::StdinDisabled) => Some(Rejection::StdinDisabled),
         Err(InputFailure::Native { errno, .. }) => Some(Rejection::NativeInput {
@@ -360,12 +359,6 @@ mod tests {
             observe_input(&result, 123, false, &mut observed);
             assert!(observed.is_none());
         }
-        let mut observed = None;
-        observe_input(&Err(InputFailure::TooLarge), 123, false, &mut observed);
-        let fact = observed.unwrap();
-        assert!(matches!(fact, Rejection::InputTooLarge));
-        assert!(fact.matches(&Error::Command(CommandError::ResourceExhausted)));
-        assert!(!fact.matches(&Error::Command(CommandError::Unavailable)));
         assert!(
             !Rejection::NativeInput {
                 pid: 123,

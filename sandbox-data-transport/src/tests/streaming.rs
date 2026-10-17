@@ -182,7 +182,7 @@ async fn early_upload_success_is_not_accepted_as_complete() {
 }
 
 #[tokio::test]
-async fn encoded_input_is_rejected_before_reading_or_forwarding() {
+async fn compressed_rpc_and_unsupported_file_encodings_are_rejected_before_reading() {
     let limits = TransferLimits::fixture();
     for header in [
         "content-encoding",
@@ -190,6 +190,9 @@ async fn encoded_input_is_rejected_before_reading_or_forwarding() {
         "grpc-encoding",
     ] {
         let (mut request, polled) = request(10, true, false);
+        if header == "content-encoding" {
+            *request.uri_mut() = "/filesystem.Filesystem/Stat".parse().unwrap();
+        }
         request
             .headers_mut()
             .insert(header, "gzip".parse().unwrap());

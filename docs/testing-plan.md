@@ -571,7 +571,9 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 来宾监听器的[合并正文回归](../sandbox-guest-service/src/listener/tests/read_budget.rs)使用真实固定 HTTP 解析器和保持连接的确定性输入，不依赖 TCP 时序；核对原 16 KiB 读取边界及原上传帧检查。原版本可能交付 24 KiB 帧并触发断流/上游 502；必须保留失败断言，修复不能增大正文/块/期限。另核对等待和 I/O 错误不能变成成功 EOF。组件通过后仍须用同提交来宾产物在真实沙箱执行原 SDK 文件矩阵，不能用带诊断日志的一轮未复现代替原失败归因。
 
-#311 的输入限额回归使用[固定 SDK 独立入口](../tests/system/sdk_guest_input_limits.py)，必须提供完整 Rust 候选与配置摘要；读取实际安装配置的单次输入预算，覆盖同步/异步、root/ubuntu 的恰好边界、边界加一及 65,792 字节单次拒绝，再按原预算分块传送同一二进制并核对最终长度/摘要。拒绝必须是精确容量错误，不能把超时算通过；最终字节中不得混入被拒绝输入，服务/PID 不重启，原实例须销毁并另行核对物理残留。它不替换或修改既有 `sdk_command_input.py` 大输入调用集，也不把该限额差异记成完整双端兼容。
+#311 的[固定 SDK 输入回归](../tests/system/sdk_guest_input_limits.py)读取实际安装的版本 3 配置及摘要，保持原内部写块数值，覆盖同步/异步、root/ubuntu：恰好写块、写块加一和 65,792 字节均以单次 SDK 调用成功，再保留多次调用传输同一二进制的检查，最终核对全部长度/摘要和原 PID/服务身份。它不替换或修改既有 `sdk_command_input.py`。原 HTTP 正文超限的写前拒绝、后续合法调用、一次性效果及容量归还继续由[真实 worker HTTP 回归](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)验收；不能把取消/超时算成精确预算拒绝。
+
+[gzip 网关回归](../sandbox-data-transport/src/tests/gzip.rs)覆盖压缩与展开双预算、零字节、精确边界/超限、坏头/CRC/截断、实际 HTTP 转发、最后字节副本背压及取消后真实工作退出再归还容量；原固定 SDK 的 `gzip=True` 进入实际网关组合检查。完整 KVM 仍运行原 `sdk_guest_compare.py`，要求新不可变 Rust 模板和固定 Go 模板分别通过同一调用集，保留失败与精确销毁/残留结果。组件、SDK 组合与实机结果分别记录，未执行不得标为通过。
 
 对应组件回归检查[原工作门的有界健康采样](../sandbox-host-service/tests/driver.rs)、[无上传 EOF 的来宾断流](../sandbox-data-transport/src/tunnel.rs)和[真实 worker 输入拒绝后的继续读写](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)。定点诊断先保留 503 与节点健康期限、原中心/宿主无载荷故障分类，不因单轮未复现就宣布旧故障已解决；不得延长有效期、增加测试容量或移除原检查。上述入口仍须按精确候选分别记录组件、SDK 和 KVM 实跑证据。
 
@@ -624,6 +626,8 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 #504 的后台双端编排已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38825340099) 通过：源 a216e3b6c8b0f2d214641325151b53a5f6688cf9、checkout 752d92c3057036fa4eb3b9f8ab1a0824e467d0b4；新增 8 项后台回归、固定 SDK 129 项、封存 Redis 与四项 CI 成功。它不包含以下后续 PTY 扩展，也不表示产品 VM 双端验收通过。
 
 [PTY 双端片段](../tests/system/sdk_pty_compare.py)复用同一输入计划和固定 SDK 的原 Pty/CommandHandle，对 root/ubuntu 分别检查直接退出、断线原 PID 重连后退出 17，以及输入等待中的 SIGKILL。通过 root 的原命令查询所选账户 UID；使用同一私有目录、上传程序、短 bootstrap、环境值和全部 byte 载荷，检查实际 PID/UID/cwd/环境/三个 tty 描述符、初始尺寸和 resize；重连案例保留 65536 偏移的 uint16 尺寸窄化检查。结束后原 PID Connect 只返回同一终局，不得重放数据，一次性标记必须仍只有一次执行。每次 SDK 调用、结果/错误与原始 PTY 字节分块均保存，含失败前的部分观察。
+
+双端工作目录统一位于 `/var/tmp`：两个固定测试模板的 `/tmp` 分别可能是内存文件系统与 ext4，目录的真实大小不能直接混比。最小镜像缺失 `/var/tmp` 时，初始化只创建这个测试父目录；不覆盖、替换或改权限修复已有目录。每台新 VM 读取实际 mountinfo 与 statvfs，要求工作父目录确实位于 ext4，并记录挂载点、块/片段大小、名称上限及目录权限；两端和同步/异步模式均须一致。初始化只在本轮 VM 中设置共同主机名 `sandproof-paired`，不修改模板、envd 或系统资源限制；全部案例后再次只读核对同一环境，变化即失败，不修复或重放初始化。目录大小、mtime、完整 PTY 前缀及其主机名仍保留并逐字段比较，不能改写返回值来消除差异。原不同环境的失败证据与统一环境后的验收分别记录。
 
 共用来宾程序新增可选 report_ready：写好一次性标记并进入 raw 模式后，先向 PTY 写固定的 NUL 分隔 ready 标记，再写 FIFO 中的完整身份 JSON；旧独立 PTY 探针不启用此选项，原行为保持。同步 SDK 通过公开迭代接口消费到该字节标记，后续 wait 继续原事件流；异步 SDK 使用原 on_data 回调并等待标记，最长 20 秒。同步读取受原 60 秒流期限限制。只有已观察标记才启动 FIFO 读者，FIFO 身份完整匹配后才断线、调整窗口或发送载荷；不用 sleep 猜测启动时序。所有启动提示与命令回显原字节都保留并精确比较；不忽略未知前缀，不为模板登录配置、hostname 或任意输出差异设置宽松替换。
 
