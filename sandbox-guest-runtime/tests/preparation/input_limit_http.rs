@@ -8,7 +8,7 @@ async fn large_single_input_crosses_internal_chunks_without_restarting_or_releas
     let control = requests(1);
     let http = http(&fixture, &registry, &ordinary, &control);
     let mut output = http.handle(request("Start", &json!({
-        "process":{"cmd":"/bin/sh","args":["-c","printf once >> effect; printf ready; exec /bin/cat"]},
+        "process":{"cmd":"/bin/sh","args":["-c","printf once >> effect; printf ready; /bin/cat > received; printf completed"]},
         "stdin":true,
     }))).await.unwrap().into_body().into_data_stream();
     let command = started(&mut output, &registry).await;
@@ -17,25 +17,17 @@ async fn large_single_input_crosses_internal_chunks_without_restarting_or_releas
     // Original fixture: internal chunk 8192 and HTTP body 16384, unchanged.
     // JSON/base64 overhead still fits the existing request budget.
     let large: Vec<u8> = (0..=255).cycle().take(8193).collect();
-    let write = async {
-        let response = http
-            .handle(request(
-                "SendInput",
-                &json!({
-                    "process":{"pid":pid},"input":{"stdin":STANDARD.encode(&large)},
-                }),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(bytes(response).await, "{}");
-    };
-    let read = data(&mut output, "stdout", &large);
-    timeout(Duration::from_secs(5), async {
-        tokio::join!(write, read);
-    })
-    .await
-    .unwrap();
+    let response = http
+        .handle(request(
+            "SendInput",
+            &json!({
+                "process":{"pid":pid},"input":{"stdin":STANDARD.encode(&large)},
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(bytes(response).await, "{}");
     assert!(registry.live(pid).is_ok());
     assert_eq!(
         std::fs::read(fixture.directory.path().join("effect")).unwrap(),
@@ -50,7 +42,15 @@ async fn large_single_input_crosses_internal_chunks_without_restarting_or_releas
         .await,
         "{}"
     );
+    // The child drains to a real file, isolating input chunking from the
+    // deliberately small subscriber queue. EOF proves the entire input was
+    // consumed, not merely accepted into the pipe or replayed on a new PID.
+    data(&mut output, "stdout", b"completed").await;
     end(&mut output).await;
+    assert_eq!(
+        std::fs::read(fixture.directory.path().join("received")).unwrap(),
+        large
+    );
     drop(output);
     clean(&fixture, &registry, command).await;
     assert!(ordinary.admit().is_ok());
