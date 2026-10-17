@@ -528,6 +528,39 @@ fn actual_private_driver_reuses_global_lifecycle_and_original_token_but_never_pu
         .unwrap();
     assert_eq!(routed.request.identity.node, wire::node("builder-a"));
     assert_eq!(routed.request.identity.sandbox_id.as_str(), vm.sandbox_id);
+    let node = business
+        .snapshot()
+        .unwrap()
+        .center
+        .nodes()
+        .iter()
+        .find(|node| node.identity == routed.request.identity.node)
+        .unwrap()
+        .clone();
+    business.refresh_node(&node.identity, 0, node.free).unwrap();
+    let expired = serde_json::to_value(business.snapshot().unwrap()).unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            app.resolve_private_data_route("8", &session.envd_access_token),
+            Err(PortError::Busy)
+        );
+        assert_eq!(
+            app.resolve_private_data_route("9", &session.envd_access_token),
+            Err(PortError::NotFound)
+        );
+    }
+    assert_eq!(
+        serde_json::to_value(business.snapshot().unwrap()).unwrap(),
+        expired
+    );
+    business
+        .refresh_node(&node.identity, node.healthy_until_ms, node.free)
+        .unwrap();
+    assert_eq!(
+        app.resolve_private_data_route("8", &session.envd_access_token)
+            .unwrap(),
+        routed
+    );
     assert!(matches!(
         port.kill_build_vm("8", "sandbox-999"),
         Err(PortError::NotFound)

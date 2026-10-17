@@ -601,6 +601,8 @@ sudo timeout --signal=KILL 150 unshare --mount --net --pid --fork --kill-child -
 
 对应组件回归检查[原工作门的有界健康采样](../sandbox-host-service/tests/driver.rs)、[无上传 EOF 的来宾断流](../sandbox-data-transport/src/tunnel.rs)和[真实 worker 输入拒绝后的继续读写](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)。定点诊断先保留 503 与节点健康期限、原中心/宿主无载荷故障分类，不因单轮未复现就宣布旧故障已解决；不得延长有效期、增加测试容量或移除原检查。上述入口仍须按精确候选分别记录组件、SDK 和 KVM 实跑证据。
 
+私有构建数据路由也输出原节点新鲜度拒绝的固定 `CenterNodeFreshness` 分类，仍返回 Busy；仅有通用 `CenterDataAuthorization` 不能直接断言是健康过期。实际 Redis 回归核对过期拒绝不修改权威状态、其他租户拒绝和原观察恢复后的同一路由，不自动重传失败上传或创建替代 VM。
+
 使用隔离 Linux x86_64 主机，KVM API 12、cgroup v2、固定工具及镜像摘要；通用配置见[示例](../tests/system/host.example.json)，真实地址、SSH 名称和凭据在仓库外提供。使用 root 私有目录、独占 UID/网络范围、空且已委派的 cgroup 父组；不能修改共享祖先或全局网络来让测试通过。确需全局变更须先获批准并恢复原值。
 
 先运行[宿主预检](../tools/check_kvm_host.py)，它只验证环境，不能代替产品测试。系统脚本参数以各自 `--help` 为准，不复制某台机器的绝对路径。新建私有 Git 检出与构建使用 `umask 077`；受保护可执行文件及祖先不能被组或其他用户写入。环境拒绝须修正执行环境，不能降低身份检查。

@@ -272,6 +272,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     .center
                     .node_is_reachable(&anchor.original_create.identity.node, now)
                 {
+                    sandproof_controller_service::application::fault::FaultRecord::application(
+                        sandproof_controller_service::application::fault::FaultStage::CenterNodeFreshness,
+                        &PortError::Busy,
+                        sandproof_controller_service::application::fault::FaultContext::default(),
+                    ).emit();
                     return Err(PortError::Busy);
                 }
                 if result.is_some() {
