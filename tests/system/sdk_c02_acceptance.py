@@ -447,6 +447,9 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         "max_disk_bytes_global": disk_bytes * 6, "max_disk_bytes_per_tenant": disk_bytes * 4,
         "cleanup_reserve_bytes": disk_bytes, "max_timeout_secs": 600,
         "max_lifetime_secs": 600, "default_timeout_secs": 300, "expiry_scan_seconds": 1,
+        # Preserve the original NativeSettings defaults explicitly: the shared
+        # center/host assembly consumes these before Rust deserializes native.
+        "startup_timeout_secs": 300, "public_ipv4_enabled": False,
     }
     config = complete_runtime(config, slots=PHYSICAL_SLOTS)
     # The fixed smoke's 8 MiB+1 refusal and data-contract corpus share this
