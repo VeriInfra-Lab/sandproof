@@ -209,13 +209,7 @@ pub async fn forward_request(
         request.uri().path(),
         "/process.Process/Start" | "/process.Process/Connect"
     );
-    let response_limit = limits.map_or(RESPONSE_LIMIT, |limits| {
-        if file_download {
-            limits.file_download_bytes
-        } else {
-            limits.rpc_response_bytes
-        }
-    });
+    let response_limit = response_limit(limits, file_download);
     if limits.is_some() {
         // This is a valid HTTP content negotiation choice, including when a
         // SDK asks for gzip: identity bytes make the enforced budget unambiguous.
@@ -308,6 +302,16 @@ pub async fn forward_request(
         }
         Err(_) => response(StatusCode::BAD_GATEWAY),
     }
+}
+
+fn response_limit(limits: Option<&TransferLimits>, file_download: bool) -> usize {
+    limits.map_or(RESPONSE_LIMIT, |limits| {
+        if file_download {
+            limits.file_download_bytes
+        } else {
+            limits.rpc_response_bytes
+        }
+    })
 }
 
 #[cfg(test)]
