@@ -183,6 +183,20 @@ class CiDependencyInputsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             deps.validate_input(bundle)
 
+    def test_shared_codec_preheat_registers_manifest_without_packaging_implementation(self):
+        path = 'sandbox-stream-codec/Cargo.toml'
+        files = deps.validate_input(self.bundle)
+        self.assertIn('sandbox-stream-codec', deps.MEMBERS)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-stream-codec/src/header.rs', files)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / path).read_bytes(), files[path])
+            self.assertEqual((directory / 'sandbox-stream-codec/src/lib.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+            self.assertFalse((directory / 'sandbox-stream-codec/src/header.rs').exists())
+
     def test_prepare_rejects_wrong_approval_dirty_blob_or_existing_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'
