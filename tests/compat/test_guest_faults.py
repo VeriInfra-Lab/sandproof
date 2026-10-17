@@ -1,5 +1,6 @@
 """Deterministic probe regressions; none of these tests run a VM or signal a PID."""
 import json
+import importlib.util
 from pathlib import Path
 import sys
 import tempfile
@@ -10,11 +11,15 @@ from unittest.mock import Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'system'))
 import sdk_guest_faults as probe
 
+SPEC = importlib.util.spec_from_file_location('envd_acceptance_harness',
+    Path(__file__).resolve().parents[1]/'system/envd_acceptance.py')
+runner = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(runner)
+
 
 class AcceptanceHarnessTests(unittest.TestCase):
     """The real harness imports the fixed SDK; keep these in its locked lane."""
     def test_service_staging_is_reclaimed_only_after_real_vm_cleanup_and_exact_stop(self):
-        import envd_acceptance as runner
         for cleaned in (False, True):
             services = Mock()
             services.storage_peaks.return_value = {'measured': True}
@@ -31,7 +36,6 @@ class AcceptanceHarnessTests(unittest.TestCase):
         self.assertIs(report['staging_cleanup_confirmed'], False)
 
     def test_registry_preflight_receives_rust_profile_and_required_registry_tool(self):
-        import envd_acceptance as runner
         from tools import envd_acceptance as envd
         from tools.template_fetch import REGCTL_SHA256
 
