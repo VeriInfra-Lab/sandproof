@@ -569,6 +569,18 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 ## 3. Linux/KVM 验收
 
+[正式 daemon 重启检查](../tests/system/guest_daemon_restart.py)在新的 Linux x86_64 PID、网络和挂载命名空间中执行实际 `initialize/serve` 二进制与 worker，固定 MMDS 地址由隔离的受控服务提供；不改生产地址、监听器或处理器。固定 SDK 的同步/异步原 RPC 客户端分别保持一个真实命令，强杀原 daemon 后核对原 pidfd 仍存活且订阅没有伪造 End；重开原持久文件后，未初始化及错误令牌拒绝，重新初始化后旧 PID/tag 的 Connect、输入、关闭输入、信号和 resize 全部明确拒绝。新命令可复用 tag 正常结束而不接管旧进程；原进程只由测试的原 FIFO 释放并按 pidfd 等待。错误 VM 身份启动拒绝且原文件内容/inode 保持。测试进程本身必须为隔离空间的 root/PID 1，网络只含 lo，普通直接执行及 `-O` 均拒绝。失败收尾仅操作本轮捕获的 pidfd，PID 命名空间退出是未知后代的额外收尾边界。
+
+这是正式入口的特权组件检查，**不代替真实 Firecracker MMDS、模板启动、中心/宿主网关、VM 寿命/销毁或 E04/E07 整体验收**。先构建同提交的 `sandproof-guest-service` 和 `sandproof-guest-worker`；在批准的隔离 Linux 测试机，使用 `tests/compat` 锁定 SDK 解释器运行下列入口，超时监督必须在命名空间外。配置样例只提供显式测试预算；脚本仅在自己的私有目录改路径、owner 及实际 worker 指纹，禁止把测试值作为生产默认值。输出包含实际二进制、脚本及配置摘要，结果必须与源码提交一同封存。
+
+```sh
+sudo timeout --signal=KILL 150 unshare --mount --net --pid --fork --kill-child --mount-proc \
+  "$PWD/tests/compat/.venv/bin/python" "$PWD/tests/system/guest_daemon_restart.py" \
+  --service "$PWD/target/debug/sandproof-guest-service" \
+  --worker "$PWD/target/debug/sandproof-guest-worker" \
+  --configuration "$PWD/sandbox-guest-service/src/daemon/tests/configuration.json"
+```
+
 来宾监听器的[合并正文回归](../sandbox-guest-service/src/listener/tests/read_budget.rs)使用真实固定 HTTP 解析器和保持连接的确定性输入，不依赖 TCP 时序；核对原 16 KiB 读取边界及原上传帧检查。原版本可能交付 24 KiB 帧并触发断流/上游 502；必须保留失败断言，修复不能增大正文/块/期限。另核对等待和 I/O 错误不能变成成功 EOF。组件通过后仍须用同提交来宾产物在真实沙箱执行原 SDK 文件矩阵，不能用带诊断日志的一轮未复现代替原失败归因。
 
 #311 的[固定 SDK 输入回归](../tests/system/sdk_guest_input_limits.py)读取实际安装的版本 3 配置及摘要，保持原内部写块数值，覆盖同步/异步、root/ubuntu：恰好写块、写块加一和 65,792 字节均以单次 SDK 调用成功，再保留多次调用传输同一二进制的检查，最终核对全部长度/摘要和原 PID/服务身份。它不替换或修改既有 `sdk_command_input.py`。原 HTTP 正文超限的写前拒绝、后续合法调用、一次性效果及容量归还继续由[真实 worker HTTP 回归](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)验收；不能把取消/超时算成精确预算拒绝。
