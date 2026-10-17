@@ -221,7 +221,7 @@ class RegistryDeployment:
 
 def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits,
                              runtime_shape=(1, 256), builder_shape=(2, 2048), ports,
-                             data_transfer=None, activation_ceiling_bytes=None):
+                             data_transfer=None, activation_ceiling_bytes=None, rust_guest_profile=None):
     """Create fresh DTOs only from an explicit complete operator policy."""
     policy = acceptance_build_policy(args.bounded_policy)
     require_bounded_host_tools()
@@ -275,6 +275,8 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
         "tools": {name: {"path": str((args.tools / name).resolve(strict=True)), "sha256": digest}
                   for name, digest in tool_hashes.items()},
         "dns_servers": ["1.1.1.1", "8.8.8.8"], "limits": copy.deepcopy(build_limits)}
+    if rust_guest_profile is not None:
+        build['rust_guest_profile'] = str(rust_guest_profile)
     apply_acceptance_build_policy(settings[0], settings[1], build, policy)
     windows = policy['builder']['build_retry_windows']
     services = RuntimeServices.prepare(args, root, settings, [pool['templates'] for pool in settings], key,

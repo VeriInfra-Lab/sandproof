@@ -58,7 +58,11 @@ def lost_start(vm, directory, client):
     # than a guessed PID or a second Start, proves that execution happened.
     with raw_start(client, vm, 'printf once > ' + shlex.quote(marker) + '; sleep 2') as response:
         assert response.status_code == 200
-    wait_for(lambda: vm.files.exists(marker), bool)
+        # Keep the stream open until the real effect is observed independently,
+        # then discard it without reading a PID. Closing immediately could
+        # legitimately cancel preparation before execution and miss this fault.
+        wait_for(lambda: vm.files.exists(marker), bool)
+        assert vm.files.read(marker) == 'once'
     assert vm.files.read(marker) == 'once'
     assert vm.commands.run('printf healthy').stdout == 'healthy'
     assert vm.files.read(marker) == 'once'
@@ -172,7 +176,7 @@ def full_filesystem(vm, directory):
                     + shlex.quote(target), user='root', timeout=15)
     program = '''import errno,os
 p=PATH
-with open(p+'/ballast','wb') as f:
+with open(p+'/ballast','wb',buffering=0) as f:
     try:
         while True: f.write(b'B'*65536); f.flush()
     except OSError as e:

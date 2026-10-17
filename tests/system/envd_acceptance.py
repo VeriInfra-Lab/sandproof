@@ -37,6 +37,7 @@ from sdk_c02_acceptance import processes_in_uid_range
 from server_process_crash import free_loopback_port, fetch
 from server_vm_id_capacity import check_no_resources
 from template_build import BUILDKIT_HASHES
+from tools.template_fetch import REGCTL_SHA256
 
 GROUP_SECONDS = 3600
 
@@ -100,10 +101,11 @@ def prepare_deployment(config, root, record):
     helper.update(path=config['window_helper'], sha256=digest(Path(config['window_helper'])))
     args.bounded_policy = root / 'policy.json'
     write_once(args.bounded_policy, policy)
-    return prepare_registry_runtime(args, tool_hashes={k:v for k,v in BUILDKIT_HASHES.items() if k != 'envd'},
+    return prepare_registry_runtime(args, tool_hashes={k:v for k,v in BUILDKIT_HASHES.items() if k != 'envd'} | {'regctl':REGCTL_SHA256},
         registry_limits=value['registry_limits'], build_limits=value['build_limits'], runtime_shape=(1,512),
         ports=[free_loopback_port() for _ in range(3)], data_transfer=value['data_transfer'],
-        activation_ceiling_bytes=200*1024**3), args
+        activation_ceiling_bytes=200*1024**3,
+        rust_guest_profile=envd_acceptance.prepared_paths(config)['profile']), args
 
 
 def run_probe(deployment, config, root, name, template):

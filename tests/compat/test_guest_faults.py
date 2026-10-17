@@ -20,6 +20,11 @@ class FaultProbeTests(unittest.TestCase):
         vm.files.exists.return_value=True
         vm.files.read.return_value='once'
         vm.commands.run.return_value=SimpleNamespace(stdout='healthy')
+        def close_after_effect(*_args):
+            vm.files.exists.assert_called_once()
+            vm.files.read.assert_called_once()
+            return False
+        client.stream.return_value.__exit__.side_effect=close_after_effect
         result=probe.lost_start(vm,'/private/test',client)
         self.assertEqual(result,dict(start_posts=1,start_pid_observed=False,effects=1))
         client.stream.assert_called_once()
