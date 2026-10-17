@@ -6,9 +6,36 @@ open Aeneas.Std SandproofFoundationsRust
 theorem counter_constructor_refines (value : U64) :
     ∃ out, counter_from_u64 value = .ok out ∧
       counterResultView out = makeCounter value.val := by
+  have bound : value.val ≤ maxCounter := by simp only [maxCounter]; scalar_tac
   simp only [counter_from_u64,
     sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from]
   split <;> simp_all [counterResultView, makeCounter]
+
+theorem make_counter_accepts_iff (n result : Nat) :
+    makeCounter n = some result ↔ validCounter n ∧ result = n := by
+  by_cases zero : n = 0 <;> by_cases bounded : n ≤ maxCounter
+  all_goals simp [makeCounter, validCounter, zero, bounded]
+  all_goals omega
+
+theorem make_counter_rejects_iff (n : Nat) :
+    makeCounter n = none ↔ n = 0 ∨ maxCounter < n := by
+  by_cases zero : n = 0 <;> by_cases bounded : n ≤ maxCounter
+  all_goals simp [makeCounter, zero, bounded]
+  all_goals omega
+
+theorem make_counter_success_valid (n result : Nat)
+    (accepted : makeCounter n = some result) : validCounter result := by
+  obtain ⟨valid, same⟩ := (make_counter_accepts_iff n result).mp accepted
+  simpa [same] using valid
+
+theorem make_counter_on_machine_domain (n : Nat) (bound : n ≤ maxCounter) :
+    makeCounter n = (if n = 0 then none else some n) := by
+  simp [makeCounter, bound]
+
+theorem make_counter_boundaries :
+    makeCounter 0 = none ∧ makeCounter 1 = some 1 ∧
+    makeCounter maxCounter = some maxCounter ∧ makeCounter (2 ^ 64) = none := by
+  norm_num [makeCounter, maxCounter]
 
 theorem counter_constructor_valid (value result : U64)
     (h : counter_from_u64 value = .ok (.Ok result)) :
