@@ -111,8 +111,9 @@ def prepare_deployment(config, root, record):
 def run_probe(deployment, config, root, name, template):
     """Run the original cases, not another implementation of their assertions."""
     from tools.envd_acceptance import PROBES, prepared_paths
+    started = time.monotonic()
     deployment.services.wait_ready()
-    pins, _ = load_profile(prepared_paths(config)['profile'])
+    pins, guest = load_profile(prepared_paths(config)['profile'])
     arguments = [sys.executable, str(ROOT/'tests/system'/PROBES[name]),
         '--api-url', deployment.services.sdk_url, '--sandbox-url', deployment.services.sdk_url,
         '--template',template,'--guest-release',pins['release'],
@@ -121,6 +122,10 @@ def run_probe(deployment, config, root, name, template):
         '--guest-configuration-sha256',pins['configuration_sha256']]
     if name == 'paired':
         arguments.extend(['--go-template','runtime-base','--observe-resources'])
+    if name == 'faults':
+        from _guest_restart_fixture import prepare
+        fixture = prepare(deployment, root, template, guest)
+        arguments.extend(['--restart-fixture', str(fixture)])
     if name == 'file-permissions':
         canary = root / 'host-canary'
         if not canary.exists():
@@ -128,8 +133,7 @@ def run_probe(deployment, config, root, name, template):
                 output.write(b'private-harness-canary\n')
         arguments.extend(['--host-canary',str(canary)])
     with (root/(name+'.log')).open('xb') as output:
-        owner = Commands(time.monotonic()+900, output, 16*1024**2)
-        started = time.monotonic()
+        owner = Commands(started+900, output, 16*1024**2)
         owner.run(arguments, env={'PATH':'/usr/local/bin:/usr/bin:/bin', 'LANG':'C.UTF-8',
             'SANDPROOF_TEST_API_KEY':deployment.key, 'NO_PROXY':'*','no_proxy':'*'})
     # Commands.run rejects failed exit/deadline/output: never manufacture code0.

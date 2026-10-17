@@ -21,6 +21,27 @@ SPEC.loader.exec_module(runner)
 
 class AcceptanceHarnessTests(unittest.TestCase):
     """The real harness imports the fixed SDK; keep these in its locked lane."""
+    def test_restart_preparation_uses_original_probe_deadline_and_protected_handoff(self):
+        import _guest_restart_fixture as fixture
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            deployment = SimpleNamespace(services=Mock(sdk_url='http://127.0.0.1'), key='private')
+            pins = dict(release='release', manifest_sha256='manifest', configuration='config',
+                        configuration_sha256='config-hash')
+            with patch.object(runner, 'load_profile', return_value=(pins, {'guest':'identity'})), \
+                    patch.object(fixture, 'prepare', return_value=root/'handoff') as prepare, \
+                    patch.object(runner.time, 'monotonic', side_effect=[10, 50]), \
+                    patch.object(runner, 'Commands') as commands, \
+                    patch.object(runner, 'no_resources') as cleaned:
+                result = runner.run_probe(deployment, {'candidate_manifest':str(root/'manifest')},
+                                          root, 'faults', 'rust')
+            prepare.assert_called_once_with(deployment, root, 'rust', {'guest':'identity'})
+            self.assertEqual(commands.call_args.args[0], 910)
+            self.assertEqual(result['seconds'], 40)
+            self.assertEqual(commands.return_value.run.call_args.args[0][-2:],
+                             ['--restart-fixture', str(root/'handoff')])
+            cleaned.assert_called_once_with(deployment)
+
     def test_partial_initialization_does_not_reinitialize_or_wait_for_an_absent_center(self):
         deployment=Mock()
         report=dict(resource_cleanup_confirmed=False)

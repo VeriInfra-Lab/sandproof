@@ -81,6 +81,9 @@ def lost_start(vm, directory, client):
 RESTART = r'''import http.client,json,os,pathlib,select,signal,time
 root=pathlib.Path(ROOT)
 config=json.loads((root/'restart.json').read_text())
+with open(config['init_path'],'rb') as source: init=source.read(65537)
+assert 0<len(init)<=65536
+assert set(json.loads(init)) <= {'accessToken','defaultUser','defaultWorkdir','envVars'}
 daemon=config['daemon']; old_pid=config['command_pid']
 pid=os.fork()
 if pid: raise SystemExit(0)
@@ -114,7 +117,7 @@ try:
     while time.monotonic()<deadline:
         connection=http.client.HTTPConnection('127.0.0.1',49983,timeout=1)
         try:
-            connection.request('POST','/init',json.dumps({'accessToken':config['token'],'defaultUser':'root'}),
+            connection.request('POST','/init',init,
                                {'Content-Type':'application/json'})
             response=connection.getresponse(); response.read(1024)
             if response.status==204:
@@ -135,7 +138,18 @@ except BaseException as error:
 '''
 
 
-def restart_old_pid(vm, directory, candidate):
+def restart_result(vm, path, diagnostics):
+    def observed():
+        try:
+            return vm.files.read(path, user='root', request_timeout=2)
+        except Exception as error:
+            diagnostics['result_read_errors'] = diagnostics.get('result_read_errors', 0) + 1
+            diagnostics['last_result_read_error'] = type(error).__name__[:128]
+            return None
+    return json.loads(wait_for(observed, lambda value: value is not None, seconds=30))
+
+
+def restart_old_pid(vm, directory, candidate, init_path, diagnostics):
     before = asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
     marker = directory + '/old-effects'
     old = vm.commands.run('printf once >> ' + shlex.quote(marker) + '; exec sleep 120',
@@ -143,22 +157,17 @@ def restart_old_pid(vm, directory, candidate):
     old.disconnect()
     wait_for(lambda:vm.files.exists(marker),bool)
     assert vm.files.read(marker)=='once'
-    # Only this sandbox's existing SDK token enters its own private test file;
-    # no center, host, App or CI credential is sent into the guest.
+    # The protected harness staged this VM's original native init payload.
+    # The SDK public gateway bearer is deliberately absent from this config.
     vm.files.write(directory + '/restart.json', json.dumps(dict(
-        daemon=before['observation']['daemon'], command_pid=old.pid, token=vm._envd_access_token)), user='root')
+        daemon=before['observation']['daemon'], command_pid=old.pid, init_path=init_path)), user='root')
     vm.commands.run(python(RESTART.replace('ROOT', repr(directory))), user='root', timeout=15)
     wait_for(lambda: vm.files.exists(directory + '/restart-ready'), bool)
     try:
         vm.commands.run('touch ' + shlex.quote(directory + '/restart-go'), timeout=15, request_timeout=15)
     except Exception:
         pass  # This one trigger may lose its reply; never send it a second time.
-    def observed():
-        try:
-            return vm.files.read(directory + '/restart-result', user='root', request_timeout=2)
-        except Exception:
-            return None
-    result = json.loads(wait_for(observed, lambda value: value is not None, seconds=30))
+    result = restart_result(vm, directory + '/restart-result', diagnostics)
     assert result['status'] == 'pass', result
     after = asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
     assert before['identity'] == after['identity']
@@ -322,43 +331,74 @@ def unavailable_expiry(vm, owner, client, candidate):
 
 
 def exercise(args):
-    template, candidate = guest_candidate(args)
-    assert candidate is not None
-    owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
-    settings=json.loads(Path(args.guest_configuration).read_text())
-    rows = []
-    for name in ('lost-start', 'restart-old-pid', 'full-filesystem', 'slow-output', 'registry-reclaim', 'lifecycle', 'unavailable-expiry'):
-        vm = Sandbox.create(template=template, timeout=300, allow_internet_access=False, **owner)
-        control=None
-        row = dict(name=name, status='incomplete', sandbox_id=vm.sandbox_id)
-        rows.append(row)
-        try:
-            asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
-            if name in ('restart-old-pid','unavailable-expiry'):
-                control=Sandbox.create(template=template,timeout=300,allow_internet_access=False,**owner)
-            directory = '/var/tmp/envd-fault-' + uuid.uuid4().hex
-            prepare_directory(vm, directory)
-            with httpx.Client(base_url=args.sandbox_url, trust_env=False, timeout=30) as client:
-                if name == 'lost-start': details = lost_start(vm, directory, client)
-                elif name == 'restart-old-pid': details = restart_old_pid(vm, directory, candidate)
-                elif name == 'full-filesystem': details = full_filesystem(vm, directory)
-                elif name == 'slow-output': details = slow_output(vm, directory, client)
-                elif name == 'registry-reclaim': details = registry_reclaim(vm,directory,candidate,settings)
-                elif name == 'lifecycle': details = lifecycle(vm, owner, client)
-                else: details = unavailable_expiry(vm, owner, client, candidate)
-            if control is not None:
-                assert control.commands.run('printf unaffected',timeout=15).stdout=='unaffected'
-            row.update(status='pass', details=details)
-        finally:
+    report = dict(sdk_version='2.51.0', status='failed', faults=[],
+        scope='selected guest faults; physical cleanup/host budgets must be confirmed by original harness')
+    try:
+        template, candidate = guest_candidate(args)
+        assert candidate is not None
+        from _guest_restart_fixture import load
+        fixture = load(args.restart_fixture, template, candidate[0])
+        owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
+        settings=json.loads(Path(args.guest_configuration).read_text())
+        for name in ('lost-start', 'restart-old-pid', 'full-filesystem', 'slow-output', 'registry-reclaim', 'lifecycle', 'unavailable-expiry'):
+            vm = control = None
+            row = dict(name=name, status='incomplete', diagnostics={}, cleanup={})
+            report['faults'].append(row)
+            primary = None
+            cleanup_errors = []
             try:
-                acknowledged = vm.kill()
-                assert acknowledged is True or name == 'unavailable-expiry'
-            finally:
+                if name == 'restart-old-pid':
+                    vm = Sandbox.connect(fixture['sandbox_id'], **owner)
+                    assert vm.sandbox_id == fixture['sandbox_id']
+                else:
+                    vm = Sandbox.create(template=template, timeout=300, allow_internet_access=False, **owner)
+                row['sandbox_id'] = vm.sandbox_id
+                asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
+                if name in ('restart-old-pid','unavailable-expiry'):
+                    control=Sandbox.create(template=template,timeout=300,allow_internet_access=False,**owner)
+                    row['control_sandbox_id'] = control.sandbox_id
+                directory = '/var/tmp/envd-fault-' + uuid.uuid4().hex
+                prepare_directory(vm, directory)
+                with httpx.Client(base_url=args.sandbox_url, trust_env=False, timeout=30) as client:
+                    if name == 'lost-start': details = lost_start(vm, directory, client)
+                    elif name == 'restart-old-pid':
+                        details = restart_old_pid(vm, directory, candidate, fixture['init_path'], row['diagnostics'])
+                    elif name == 'full-filesystem': details = full_filesystem(vm, directory)
+                    elif name == 'slow-output': details = slow_output(vm, directory, client)
+                    elif name == 'registry-reclaim': details = registry_reclaim(vm,directory,candidate,settings)
+                    elif name == 'lifecycle': details = lifecycle(vm, owner, client)
+                    else: details = unavailable_expiry(vm, owner, client, candidate)
                 if control is not None:
-                    control_ack=control.kill()
-                    assert control_ack is True
-    print(json.dumps(dict(sdk_version='2.51.0', faults=rows,
-        scope='selected guest faults; physical cleanup/host budgets must be confirmed by original harness'), indent=2))
+                    assert control.commands.run('printf unaffected',timeout=15).stdout=='unaffected'
+                row.update(status='pass', details=details)
+            except BaseException as error:
+                primary = error
+                row.update(status='failed', failure_type=type(error).__name__[:128])
+            finally:
+                for role, instance in (('fault', vm), ('control', control)):
+                    if instance is None:
+                        continue
+                    try:
+                        acknowledged = instance.kill()
+                        row['cleanup'][role] = dict(acknowledged=acknowledged)
+                        assert acknowledged is True or (role == 'fault' and name == 'unavailable-expiry')
+                    except BaseException as error:
+                        row['cleanup'][role] = dict(error_type=type(error).__name__[:128])
+                        cleanup_errors.append(error)
+                if cleanup_errors:
+                    row['status'] = 'failed'
+                    raise BaseExceptionGroup('fault probe and original cleanup failed',
+                        ([primary] if primary is not None else []) + cleanup_errors)
+                if primary is not None:
+                    raise primary
+        report['status'] = 'pass'
+    except BaseException as error:
+        report['failure_type'] = type(error).__name__[:128]
+        raise
+    finally:
+        # Bounded case records survive failed creation, observation and cleanup.
+        # Exception messages, credentials and arbitrary guest output stay out.
+        print(json.dumps(report, indent=2), flush=True)
 
 
 if __name__ == '__main__':
@@ -366,4 +406,5 @@ if __name__ == '__main__':
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
     guest_arguments(parser)
+    parser.add_argument('--restart-fixture', required=True)
     exercise(parser.parse_args())
