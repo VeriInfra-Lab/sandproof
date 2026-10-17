@@ -1,0 +1,8 @@
+import FinitePolicy
+import ExpiryNegativeProofs
+
+#print axioms LifetimeFiniteProofs.DeadlineSafety
+#print axioms ExpiryNegativeProofs.bypass_accepts_at_deadline
+#print axioms ExpiryNegativeProofs.witness
+#print axioms ExpiryNegativeProofs.same_deadline_safety_false
+#print axioms BadExpiry.lifetime_core.check_live

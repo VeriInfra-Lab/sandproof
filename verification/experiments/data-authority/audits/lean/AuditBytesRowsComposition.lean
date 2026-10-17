@@ -1,0 +1,76 @@
+import BytePolicy
+import ByteProofs
+import TokenFormatProofs
+import RawRowProofs
+import RedispatchComposition
+
+#print axioms BytePolicy.Digest
+#print axioms BytePolicy.DigestSafe
+#print axioms ByteProofs.TailEq
+#print axioms ByteProofs.same_secret_body_spec
+#print axioms ByteProofs.tail_step
+#print axioms ByteProofs.same_secret_loop_spec
+#print axioms ByteProofs.tail_zero_iff
+#print axioms ByteProofs.same_secret_spec
+#print axioms ByteProofs.same_secret_exact
+#print axioms ByteProofs.lifetime_same_secret_exact
+#print axioms ByteProofs.digest_matches_exact
+#print axioms ByteProofs.digest_safe
+#print axioms TokenFormatProofs.HexByte
+#print axioms TokenFormatProofs.Format
+#print axioms TokenFormatProofs.is_hex_exact
+#print axioms TokenFormatProofs.is_hex_spec
+#print axioms TokenFormatProofs.TailHex
+#print axioms TokenFormatProofs.hex_tail_step
+#print axioms TokenFormatProofs.token_format_body_spec
+#print axioms TokenFormatProofs.token_format_loop_spec
+#print axioms TokenFormatProofs.tail_hex_zero
+#print axioms TokenFormatProofs.token_format_spec
+#print axioms TokenFormatProofs.token_format_exact
+#print axioms RawRowProofs.StartedValid
+#print axioms RawRowProofs.RowValid
+#print axioms RawRowProofs.decoded
+#print axioms RawRowProofs.started_within_deadline_exact
+#print axioms RawRowProofs.decode_row_exact
+#print axioms RawRowProofs.decoded_disk_exact
+#print axioms RawRowProofs.decode_success_iff
+#print axioms RedispatchComposition.World
+#print axioms RedispatchComposition.Record
+#print axioms RedispatchComposition.Actor
+#print axioms RedispatchComposition.Sid
+#print axioms RedispatchComposition.Vm
+#print axioms RedispatchComposition.Digest
+#print axioms RedispatchComposition.actorProjection
+#print axioms RedispatchComposition.phaseProjection
+#print axioms RedispatchComposition.actor_projection_iff
+#print axioms RedispatchComposition.phase_projection_running_iff
+#print axioms RedispatchComposition.token_success_iff
+#print axioms RedispatchComposition.digest_success_iff
+#print axioms RedispatchComposition.row_success_iff
+#print axioms RedispatchComposition.accessObservation
+#print axioms RedispatchComposition.expectedEvent
+#print axioms RedispatchComposition.AccessBinding
+#print axioms RedispatchComposition.access_success_iff
+#print axioms RedispatchComposition.Checks
+#print axioms RedispatchComposition.Requirements
+#print axioms RedispatchComposition.checks_iff_requirements
+#print axioms RedispatchComposition.closed_authority_cannot_satisfy_checks
+#print axioms RedispatchComposition.decoded_disk_is_original_positive_field
+#print axioms Authority.credential_core.byte_core.is_hex
+#print axioms Authority.credential_core.byte_core.token_format_loop.body
+#print axioms Authority.credential_core.byte_core.token_format_loop
+#print axioms Authority.credential_core.byte_core.token_format
+#print axioms Authority.credential_core.byte_core.same_secret_loop.body
+#print axioms Authority.credential_core.byte_core.same_secret_loop
+#print axioms Authority.credential_core.byte_core.same_secret
+#print axioms Authority.credential_core.digest_matches
+#print axioms Authority.credential_core.registered_digest
+#print axioms Authority.credential_core.inverse_binding
+#print axioms Authority.lifetime_core.byte_core.same_secret_loop.body
+#print axioms Authority.lifetime_core.byte_core.same_secret_loop
+#print axioms Authority.lifetime_core.byte_core.same_secret
+#print axioms Authority.lifetime_core.started_within_deadline
+#print axioms Authority.lifetime_core.decode_row
+#print axioms Authority.lifetime_core.check_clock
+#print axioms Authority.lifetime_core.check_record
+#print axioms Authority.lifetime_core.check_live

@@ -1,0 +1,231 @@
+{
+  "schema": 1,
+  "frozen_baseline": "0a23b57af60752f61067fc00b0b0b656e98347cb",
+  "target": "x86_64-unknown-linux-gnu",
+  "features": "default durable service features; extraction is standalone actual guard module",
+  "tool_revisions": {
+    "": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+    "charon": "b104e24fea7d721b71e6c39fd70f26ff20bc0980"
+  },
+  "tool_binaries": {
+    "bin/aeneas": "22b326476f854e19b52ca5a2acfd953fd186da7694cd10d8d008ed5502f7c46a",
+    "charon/bin/charon": "2603f720f0d26a4c77ae215485e2457029d69504dbd9d318a497ed866f21d4fd",
+    "charon/bin/charon-driver": "428e5331f3a436daef97fb859056cd77453f00eaef1b526d432e42e7b46234cf"
+  },
+  "service_files": {
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f"
+  },
+  "audit_files": {
+    "tools/check_foundations_extraction.py": "871185daf8bbc91e563117bb807816b11148b82196f8393fd34d3cabd7e8d8c8"
+  },
+  "service_versions": {
+    "server_version": "0.30.0",
+    "client_version": "0.13.2",
+    "mcp_version": "2.0.0"
+  },
+  "versions": [
+    [
+      [
+        "rustc",
+        "--version"
+      ],
+      "rustc 1.97.0 (2d8144b78 2026-07-07)"
+    ],
+    [
+      [
+        "rustc",
+        "+nightly-2026-08-18",
+        "--version"
+      ],
+      "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)"
+    ],
+    [
+      [
+        "rustfmt",
+        "--version"
+      ],
+      "rustfmt 1.9.0-stable (2d8144b788 2026-07-07)"
+    ],
+    [
+      [
+        "lean",
+        "--version"
+      ],
+      "Lean (version 4.31.0, x86_64-unknown-linux-gnu, commit 68218e876d2a38b1985b8590fff244a83c321783, Release)"
+    ]
+  ],
+  "overlays": {
+    "baseline": {
+      "controller-service/src/data_permit_pilot_support.rs": "734863e69bddb57e463c877487dbdaf27920bb8b551e1184e7ba808b0ccfac2a",
+      "controller-service/src/data_permit_pilot_tests.rs": "5668b111ef54a578de9a306b094e9ae007ea3ae1a759219fc91ba236953f051c",
+      "controller-service/src/lib.rs": "c7e41342bdb5613cb0285ed303d2ead1c78a985f410df5d7d50890c85d226b66",
+      "controller-service/src/application/coordinator.rs": "cb67c108ebfac5a378a3f968c6279fdb987968e75db9a279af9afdd0fed2fa55",
+      "controller-service/src/controller/tests_support.rs": "b35b5b71f74aa98da4726cbb7687b38812124332446cc8592b56acc42611366b",
+      "controller-service/src/controller/mod.rs": "df27c61c4b83d14d0830f1fc840dff2b6b8a7e72df2d4e11a99806f894ec986e"
+    },
+    "source": {
+      "controller-service/src/data_permit_pilot_support.rs": "734863e69bddb57e463c877487dbdaf27920bb8b551e1184e7ba808b0ccfac2a",
+      "controller-service/src/data_permit_pilot_tests.rs": "5668b111ef54a578de9a306b094e9ae007ea3ae1a759219fc91ba236953f051c",
+      "controller-service/src/lib.rs": "c7e41342bdb5613cb0285ed303d2ead1c78a985f410df5d7d50890c85d226b66",
+      "controller-service/src/application/coordinator.rs": "cb67c108ebfac5a378a3f968c6279fdb987968e75db9a279af9afdd0fed2fa55",
+      "controller-service/src/controller/tests_support.rs": "b35b5b71f74aa98da4726cbb7687b38812124332446cc8592b56acc42611366b",
+      "controller-service/src/controller/mod.rs": "df27c61c4b83d14d0830f1fc840dff2b6b8a7e72df2d4e11a99806f894ec986e",
+      "controller-service/src/application/coordinator/data_access.rs": "a8e2c567a1c4f1a7abd0b57ba71f052c00761f963211f59731f9b2249d354f25",
+      "controller-service/src/application/coordinator/data_access/permit_guards.rs": "64e3a2f34b375b9217b3adcb308ba76acfde2acbe8b6f079890e3de6a3aca35d"
+    }
+  },
+  "mutation": {
+    "before": "pub fn dispatch_not_revoked(revoked: bool) -> bool {\n    !revoked\n}",
+    "after": "pub fn dispatch_not_revoked(revoked: bool) -> bool {\n    !revoked || revoked\n}",
+    "sha256": "249ba235917782013cd44a07a604e3c3f87bf6049a4a3ebca86773c83b8970d9"
+  },
+  "tests": {
+    "baseline": {
+      "counts": [
+        5,
+        0
+      ]
+    },
+    "source": {
+      "counts": [
+        5,
+        0
+      ]
+    },
+    "bad": {
+      "counts": [
+        4,
+        1
+      ],
+      "failing_cases": [
+        "data_permit_pilot_tests::dp_revoked_watch_refuses_even_after_real_timeout_rollback"
+      ]
+    },
+    "receipt_count": 7
+  },
+  "proof_order": [
+    "Policy",
+    "PermitProofs",
+    "NegativeProofs"
+  ],
+  "proof_prerequisites": {
+    "Policy": [],
+    "PermitProofs": [
+      "Policy",
+      "Permit.Funs"
+    ],
+    "NegativeProofs": [
+      "Policy",
+      "BadPermit.Funs"
+    ]
+  },
+  "audit_roots": {
+    "AuditCorrect": [
+      "PermitPolicy.dispatch_policy_iff",
+      "PermitPolicy.stages_retain_exact",
+      "PermitPolicy.stages_dispatch_exact",
+      "PermitPolicy.semantics_implies_safe",
+      "PermitPolicy.TargetGuard",
+      "PermitPolicy.expectedTarget",
+      "PermitPolicy.expectedCreate",
+      "PermitPolicy.Semantics",
+      "PermitPolicy.retainSignal",
+      "PermitPolicy.canDispatch",
+      "PermitPolicy.mayDispatch",
+      "PermitPolicy.DispatchSafe",
+      "PermitProofs.register_exact",
+      "PermitProofs.read_exact",
+      "PermitProofs.retain_exact",
+      "PermitProofs.create_exact",
+      "PermitProofs.first_exact",
+      "PermitProofs.config_exact",
+      "PermitProofs.target_exact",
+      "PermitProofs.source_semantics",
+      "PermitProofs.registration_iff",
+      "PermitProofs.retain_signal_iff",
+      "PermitProofs.live_receiver_ignores_watch",
+      "PermitProofs.create_signal_iff",
+      "PermitProofs.reuse_signal_iff",
+      "PermitProofs.dispatch_exact",
+      "PermitProofs.dispatch_iff",
+      "PermitProofs.dispatch_safe",
+      "PermitProofs.revoked_ignores_later_functions",
+      "PermitProofs.unconfigured_ignores_target",
+      "Permit.permit_guards.register_gate_allows",
+      "Permit.permit_guards.signal_needs_revocation_read",
+      "Permit.permit_guards.retain_after_revocation",
+      "Permit.permit_guards.create_signal_required",
+      "Permit.permit_guards.dispatch_not_revoked",
+      "Permit.permit_guards.dispatch_configured",
+      "Permit.permit_guards.dispatch_target_matches"
+    ],
+    "AuditBypassRevoked": [
+      "PermitPolicy.dispatch_policy_iff",
+      "PermitPolicy.stages_retain_exact",
+      "PermitPolicy.stages_dispatch_exact",
+      "PermitPolicy.semantics_implies_safe",
+      "PermitPolicy.TargetGuard",
+      "PermitPolicy.expectedTarget",
+      "PermitPolicy.expectedCreate",
+      "PermitPolicy.Semantics",
+      "PermitPolicy.retainSignal",
+      "PermitPolicy.canDispatch",
+      "PermitPolicy.mayDispatch",
+      "PermitPolicy.DispatchSafe",
+      "NegativeProofs.bad_source_witness",
+      "NegativeProofs.rejected_same_dispatch_safe",
+      "NegativeProofs.rejected_same_semantics",
+      "BadPermit.permit_guards.register_gate_allows",
+      "BadPermit.permit_guards.signal_needs_revocation_read",
+      "BadPermit.permit_guards.retain_after_revocation",
+      "BadPermit.permit_guards.create_signal_required",
+      "BadPermit.permit_guards.dispatch_not_revoked",
+      "BadPermit.permit_guards.dispatch_configured",
+      "BadPermit.permit_guards.dispatch_target_matches"
+    ]
+  },
+  "lake_dependencies": [
+    {
+      "name": "aeneas",
+      "rev": "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+    },
+    {
+      "name": "mathlib",
+      "rev": "fabf563a7c95a166b8d7b6efca11c8b4dc9d911f"
+    },
+    {
+      "name": "plausible",
+      "rev": "63045536fe95024e6c18fc7b48e03f506701c5bc"
+    },
+    {
+      "name": "LeanSearchClient",
+      "rev": "c5d5b8fe6e5158def25cd28eb94e4141ad97c843"
+    },
+    {
+      "name": "importGraph",
+      "rev": "5c7542ed018c78194f1e2b903eaf6a792b74c03d"
+    },
+    {
+      "name": "proofwidgets",
+      "rev": "24b0d9dc081c5423f8eec7e866c441e5184f29d9"
+    },
+    {
+      "name": "aesop",
+      "rev": "e3cb2f741431ce31bf73549fb52316a57368b06f"
+    },
+    {
+      "name": "Qq",
+      "rev": "f46324995fca5f0483b742e4eb4daec7f4ee50d2"
+    },
+    {
+      "name": "batteries",
+      "rev": "fa08db58b30eb033edcdab331bba000827f9f785"
+    },
+    {
+      "name": "Cli",
+      "rev": "92564e5770e4d09f2d86dfbf8ada1e9c715b384c"
+    }
+  ],
+  "scope": "isolated guard refactor and finite business differential tests; no production integration or universal adapter equivalence"
+}
