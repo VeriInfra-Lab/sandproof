@@ -18,7 +18,7 @@ fn encoded(bytes: &[u8]) -> Vec<u8> {
     }
     output
 }
-fn upload(bytes: Vec<u8>) -> Request<Body> {
+fn upload(bytes: &[u8]) -> Request<Body> {
     let frames: Vec<_> = bytes
         .chunks(4096)
         .map(|bytes| Ok::<_, io::Error>(Bytes::copy_from_slice(bytes)))
@@ -47,7 +47,7 @@ async fn gzip_upload_decodes_in_bounded_chunks_and_removes_only_obsolete_framing
     for size in [0, 1, 16_383, 16_384, 65_792] {
         let expected: Vec<u8> = (0..=255).cycle().take(size).collect();
         let prepared = prepare_body(
-            upload(encoded(&expected)),
+            upload(&encoded(&expected)),
             true,
             Some(&TransferLimits::fixture()),
         )
@@ -89,7 +89,7 @@ async fn gzip_upload_enforces_expanded_budget_and_validated_eof_not_compressed_l
     ] {
         let bytes = encoded(&vec![b'A'; size]);
         assert!(bytes.len() < limits.file_upload_bytes);
-        let prepared = prepare_body(upload(bytes), true, Some(&limits))
+        let prepared = prepare_body(upload(&bytes), true, Some(&limits))
             .await
             .unwrap();
         let progress = prepared
@@ -117,7 +117,7 @@ async fn gzip_upload_enforces_expanded_budget_and_validated_eof_not_compressed_l
     for mut bad in [valid[..valid.len() - 1].to_vec(), valid.clone()] {
         let last = bad.len() - 1;
         bad[last] ^= 1;
-        let prepared = prepare_body(upload(bad), true, Some(&limits))
+        let prepared = prepare_body(upload(&bad), true, Some(&limits))
             .await
             .unwrap();
         let progress = prepared
@@ -130,7 +130,7 @@ async fn gzip_upload_enforces_expanded_budget_and_validated_eof_not_compressed_l
     }
     for bytes in [Vec::new(), b"not gzip".to_vec()] {
         assert_eq!(
-            prepare_body(upload(bytes), true, Some(&limits))
+            prepare_body(upload(&bytes), true, Some(&limits))
                 .await
                 .unwrap_err()
                 .status(),
@@ -147,7 +147,7 @@ async fn gzip_encoded_limit_is_independent_even_when_decoded_file_is_empty() {
             file_upload_bytes: limit,
             ..TransferLimits::fixture()
         };
-        let prepared = prepare_body(upload(encoded.clone()), true, Some(&limits))
+        let prepared = prepare_body(upload(&encoded), true, Some(&limits))
             .await
             .unwrap();
         let gzip = prepared
@@ -169,7 +169,7 @@ async fn gzip_encoded_limit_is_independent_even_when_decoded_file_is_empty() {
 #[tokio::test]
 async fn gzip_output_clones_keep_both_admission_and_decoder_backpressure() {
     let slots = Arc::new(tokio::sync::Semaphore::new(1));
-    let mut request = upload(encoded(&vec![b'Z'; 40_000]));
+    let mut request = upload(&encoded(&vec![b'Z'; 40_000]));
     request.extensions_mut().insert(BodyWorkOwner::new(
         slots.clone().try_acquire_owned().unwrap(),
     ));
@@ -215,7 +215,7 @@ struct PendingAfterHeader {
 #[tokio::test]
 async fn decoded_gzip_progress_refreshes_original_upload_idle_clock_without_new_source_reads() {
     let prepared = prepare_body(
-        upload(encoded(&vec![b'Z'; 40_000])),
+        upload(&encoded(&vec![b'Z'; 40_000])),
         true,
         Some(&TransferLimits::fixture()),
     )
@@ -264,7 +264,7 @@ async fn cancelling_gzip_during_a_pending_source_read_wakes_the_original_worker_
  {
     let slots = Arc::new(tokio::sync::Semaphore::new(1));
     let (blocked, observed) = oneshot::channel();
-    let mut request = upload(Vec::new());
+    let mut request = upload(&[]);
     *request.body_mut() = Body::new(PendingAfterHeader {
         header: Some(Bytes::copy_from_slice(&encoded(b"data")[..10])),
         blocked: Some(blocked),
@@ -302,7 +302,7 @@ async fn cancelling_gzip_during_a_pending_source_read_wakes_the_original_worker_
 async fn gzip_upload_crosses_real_http_before_success_and_never_forwards_encoding_twice() {
     let limits = TransferLimits::fixture();
     let expected = vec![b'G'; 65_792];
-    let prepared = prepare_body(upload(encoded(&expected)), true, Some(&limits))
+    let prepared = prepare_body(upload(&encoded(&expected)), true, Some(&limits))
         .await
         .unwrap();
     let (client_io, server_io) = tokio::io::duplex(CHUNK);
