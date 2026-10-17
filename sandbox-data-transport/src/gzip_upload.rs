@@ -247,7 +247,7 @@ impl BufRead for Reader {
                 .block_on(wait(&mut self.cancel, self.idle, async {
                     loop {
                         let Some(frame) = self.body.frame().await else {
-                            return Ok(Bytes::new());
+                            return Ok::<Bytes, io::Error>(Bytes::new());
                         };
                         let frame = frame.map_err(io::Error::other)?;
                         if let Ok(bytes) = frame.into_data() {
