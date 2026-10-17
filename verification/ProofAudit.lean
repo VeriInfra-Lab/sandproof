@@ -1,6 +1,7 @@
 import SandboxModel
 import SandboxModel.ProofAuditCommand
 import SandboxModel.Foundations.Audit
+import SandboxModel.Boundaries.DataDrain.Audit
 
 /-! Audit actual theorem dependencies, including imported libraries.  Source
 text scanning alone cannot detect an unproved assumption hidden in an import.

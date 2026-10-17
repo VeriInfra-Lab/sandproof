@@ -1,0 +1,191 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_data_drain_extract",
+  "functions": [
+    {
+      "def_id": 25,
+      "lean_name": "core.sync.atomic.AtomicBool.load",
+      "lean_file": "SandproofDataDrain/FunsExternal_Template.lean",
+      "rust_name": "core::sync::atomic::{core::sync::atomic::Atomic<bool>[core::sync::atomic::{impl core::sync::atomic::AtomicPrimitive<core::sync::atomic::private::Align1<u8>> for bool}]}::load",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/sync/atomic.rs",
+        "begin_line": 759,
+        "end_line": 759
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "alloc.sync.Arc.strong_count",
+      "lean_file": "SandproofDataDrain/FunsExternal_Template.lean",
+      "rust_name": "alloc::sync::{alloc::sync::Arc<T>}::strong_count",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/sync.rs",
+        "begin_line": 2032,
+        "end_line": 2032
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 24,
+      "lean_name": "alloc.sync.Arc.Insts.CoreOpsDerefDeref.deref",
+      "lean_file": "SandproofDataDrain/FunsExternal_Template.lean",
+      "rust_name": "alloc::sync::{impl core::ops::deref::Deref<T> for alloc::sync::Arc<T>}::deref",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/sync.rs",
+        "begin_line": 2453,
+        "end_line": 2453
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 22,
+      "lean_name": "SandproofDataDrainRust.data_drain.DataLease.routes_dropped",
+      "lean_file": "SandproofDataDrain/Funs.lean",
+      "rust_name": "sandproof_data_drain_extract::data_drain::{sandproof_data_drain_extract::data_drain::DataLease}::routes_dropped",
+      "is_local": true,
+      "source": {
+        "file": "verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs",
+        "begin_line": 23,
+        "end_line": 25
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofDataDrainRust.data_drain.DataLease.drained",
+      "lean_file": "SandproofDataDrain/Funs.lean",
+      "rust_name": "sandproof_data_drain_extract::data_drain::{sandproof_data_drain_extract::data_drain::DataLease}::drained",
+      "is_local": true,
+      "source": {
+        "file": "verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs",
+        "begin_line": 16,
+        "end_line": 18
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofDataDrainRust.read_drained",
+      "lean_file": "SandproofDataDrain/Funs.lean",
+      "rust_name": "sandproof_data_drain_extract::read_drained",
+      "is_local": true,
+      "source": {
+        "file": "verification/extract-data-drain/src/lib.rs",
+        "begin_line": 6,
+        "end_line": 8
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofDataDrainRust.read_routes_dropped",
+      "lean_file": "SandproofDataDrain/Funs.lean",
+      "rust_name": "sandproof_data_drain_extract::read_routes_dropped",
+      "is_local": true,
+      "source": {
+        "file": "verification/extract-data-drain/src/lib.rs",
+        "begin_line": 10,
+        "end_line": 12
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 11,
+      "lean_name": "core.sync.atomic.private.Align1",
+      "lean_file": "SandproofDataDrain/TypesExternal_Template.lean",
+      "rust_name": "core::sync::atomic::private::Align1",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/sync/atomic.rs",
+        "begin_line": 262,
+        "end_line": 262
+      }
+    },
+    {
+      "def_id": 8,
+      "lean_name": "core.sync.atomic.Atomic",
+      "lean_file": "SandproofDataDrain/TypesExternal_Template.lean",
+      "rust_name": "core::sync::atomic::Atomic",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/sync/atomic.rs",
+        "begin_line": 385,
+        "end_line": 385
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "alloc.sync.Arc",
+      "lean_file": "SandproofDataDrain/TypesExternal_Template.lean",
+      "rust_name": "alloc::sync::Arc",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/sync.rs",
+        "begin_line": 274,
+        "end_line": 277
+      }
+    },
+    {
+      "def_id": 10,
+      "lean_name": "SandproofDataDrainRust.core.sync.atomic.Ordering",
+      "lean_file": "SandproofDataDrain/Types.lean",
+      "rust_name": "core::sync::atomic::Ordering",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/sync/atomic.rs",
+        "begin_line": 466,
+        "end_line": 466
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofDataDrainRust.data_drain.DataLease",
+      "lean_file": "SandproofDataDrain/Types.lean",
+      "rust_name": "sandproof_data_drain_extract::data_drain::DataLease",
+      "is_local": true,
+      "source": {
+        "file": "verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs",
+        "begin_line": 8,
+        "end_line": 10
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}

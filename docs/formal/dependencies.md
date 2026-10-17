@@ -101,6 +101,22 @@ Linux 前端还产生固定类型的自动 `DropGlue`，纯后端不输出这些
 
 `fresh_identity` 的三个真实闭包分别捕获两个、一个、一个不可变 u64 编号引用。固定后端将它们表示为标量对或标量；审计逐项核对捕获数量、顺序、共享引用及原 u64 类型，不允许任意闭包都使用类型别名。闭包调用体与编译器胶水仍逐项检查；这不是遗漏业务函数或自定义析构的豁免，也不加入物理分配失败的保证。
 
+### A6 DataLease 只读观察接口
+
+`A6-data-drain-read` 只用于真实 [DataLease](../../controller-service/src/application/data_drain.rs) 的 `routes_dropped/drained` 两个共享借用读方法。抽取入口通过 `#[path]` 引用原生产文件；实际自有判断保留生成体，由 [独立策略](../../SandboxModel/Boundaries/DataDrain/Model.lean)、[表示关系](../../SandboxModel/Boundaries/DataDrain/Representation.lean)及[对应证明](../../SandboxModel/Boundaries/DataDrain/Refinement.lean)连接。源码、三项库模型、抽取参数、两版标准库、工具与审计根由[输入清单](../../verification/data-drain-inputs.sha256)及[环境清单](../../verification/data-drain-environment.json)固定。工具检查复用已有 Linux 环境，不引入新工具版本。
+
+| 实际依赖接口 | 本批使用的保证 | 不能推出 |
+|---|---|---|
+| `Arc::strong_count(&arc)` | 有效共享借用下返回此分配的一次强引用计数观察，模型保留原 `usize` 值；固定两版实现使用内部 Relaxed load | 计数在返回后保持不变、观察与随后原子布尔读取构成同一快照、以后不能新增 pin、所有物理进程已经退出 |
+| `Arc::deref` | 共享借用指向原 Arc 分配中的同一 AtomicBool 对象，不选择另一个对象 | 解引用本身读取布尔值，或建立管理锁、租户身份和退出证据 |
+| `AtomicBool::load(Acquire)` | 对原布尔对象执行一次 Acquire 读取，返回该次观察值；实际调用的排序由 LLBC 审计限定 | 一定观察到所有并发或未来写入、`false` 自身等于真实退出、对另一对象或整个系统建立同步 |
+
+外部模型的 `Arc` 记录是**单次调用的观察载体**：计数与条件性布尔读取可以发生在不同时间；布尔字段不是在 deref 时取得的快照。同一记录不能作为跨调用不变的共享堆使用。计数不是 1 时原程序短路，不需要发生布尔读取。模型只为实际三个读接口提供定义；其他内存排序以外层失败拒绝为范围外，不是断言真实标准库的 Relaxed/SeqCst load 会失败。没有 Arc 创建、clone、Weak、store、Drop、任务取消或任意 unsafe 的模型。
+
+实际 `drained` 的已证接口是：相对于本次提供的观察，返回真当且仅当计数为 1 且 unknown 为假；同时证明 unknown 为真或计数不为 1 时返回假及正常可表示输入被接受。`routes_dropped` 只判断计数，不判断 unknown。三项原语模型与真实标准库的一致性仍为显式 A6 条件，源码审查、原生回归和摘要不是标准库的形式化证明。
+
+调用者继续负责：绑定原 lease/AtomicBool 与协调方保留的句柄、管理锁和所有 pin 来源；在释放决策期间阻止新持有者，包括可能的旧持有者克隆或 Weak 升级路径；建立并保持持久授权失效；哪些失败必须 `mark_unknown`；依据精确宿主观察处理未知；保持检查至实际释放间的条件。本批没有把这些自有业务义务假定为已证，也不提供真实排空、释放、存储恢复或完成性定理。生产源码的“known exit”注释不能替代上述使用条件。变更原方法、库接口、调用排序、对象绑定或模型后重查本批及未来调用者的证明闭包。
+
 ## A 底层依赖的详细约定
 
 本附录把正文中的“依赖外部软件”细化为证明前提。总目标写成：

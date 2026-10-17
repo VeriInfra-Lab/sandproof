@@ -54,6 +54,10 @@ scripts/verify-controller.sh
 
 共享当前状态的局部集合可独立执行 `bash scripts/verify-network.sh`：检查真实查询/名单循环、平台常量及初始化体、固定两版 Rust 标准库源码、最小外部接口，以及 Network、Access、Local 三个证明审计。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，但不会因此跳过历史本地控制核心的一致性和全部证明检查；局部准入/位置证明不等于统一控制器分派、可达状态围栏、物理清理或宿主防火墙已验证。冻结的 V0/共享状态验收目标为 x86_64 Linux；目标、工具二进制或 cfg 不匹配即拒绝，不静默按本机平台重写清单。
 
+DataLease 的只读接口执行 `bash scripts/verify-data-drain.sh`：直接引用原生产文件抽取两个读方法与两个转调入口，核对三项读原语、Acquire 排序、两版标准库、输入摘要和全 LLBC 再生一致性，再编译独立策略／表示关系／对应定理并审计依赖。正式库为 `SandboxModel.Boundaries.DataDrain`；接口条件见[依赖登记](../docs/formal/dependencies.md#a6-datalease-只读观察接口)。这是单次观察下的判定证明，不提供真实退出或释放许可。
+
+缺失 unknown 检查的错误版可在同一固定 Linux 环境用 `bash scripts/python-entry.sh tools/check_data_drain_negative.py --output artifacts/data-drain-negative-check` 复现，输出目录必须不存在。入口在私有副本修改真实表达式、编译／抽取错误版，运行原 Rust 回归，并通过同一真实 Lean 服务和内核证明错误版不满足正确版相同的 `RustReadSafe` 性质；失败日志保留，只有全部步骤通过才生成成功收据。服务使用项目 `.tools/lean-mcp` 和原标准客户端；不修改生产文件或正式生成体。
+
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
 见证明覆盖记录。已有纯核心定理不自动覆盖新增服务或真实持久化与执行。
 
