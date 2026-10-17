@@ -50,6 +50,8 @@ scripts/verify-controller.sh
 
 公共基础及共享状态的 Charon 输出参数使用抽取 crate 内的固定相对路径 `../aeneas/llbc/...`，因为 Cargo 的编译进程在 crate 目录执行；脚本随后从项目根读取同一输出。每次保留旧产物并要求本次实际生成，规则见[证明工作流](../docs/proof-workflow.md#翻译障碍的识别与处理)。该参数仍在完整 LLBC 摘要中检查，源码位置仍由原 `--remap-path-prefix` 绑定。换工作目录不应只因输出路径而产生差异，错误或绝对输出参数仍拒绝。摘要仅规范化无序 `short_names` 表，不删除路径或其它有序输入字段。
 
+JSON 非零计数器叶子另执行 `bash scripts/verify-json-counter.sh`，检查[真实根](extract-foundations/src/json.rs)、[环境](json-counter-environment.json)、[输入摘要](json-counter-inputs.sha256)、原样再生及 12 条审计。正确版和实际 Rust 零校验缺失版可用 `bash scripts/python-entry.sh tools/check_json_counter_negative.py --output artifacts/json-counter-negative-run` 对照；输出目录必须不存在，失败日志保留。该入口要求已提交的本批源码及原工具/依赖/真实 Lean 服务，错误版必须先编译、抽取成功，再由同一 `CounterSafe` 被形式反例否定。接口保证、原条件析构及字节/parser/schema/调用者剩余义务见[唯一合同](../docs/formal/dependencies.md#a6-json-非零计数器叶子接口)，不能把叶子成功称为完整 JSON 或异步证明。
+
 模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；完整入口被历史控制器迁移阻断也不使历史业务证明成为 V0 的完成条件。完整入口始终保留，局部/整套结果分别登记。
 
 共享当前状态的局部集合可独立执行 `bash scripts/verify-network.sh`：检查真实查询/名单循环、平台常量及初始化体、固定两版 Rust 标准库源码、最小外部接口，以及 Network、Access、Local 三个证明审计。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，但不会因此跳过历史本地控制核心的一致性和全部证明检查；局部准入/位置证明不等于统一控制器分派、可达状态围栏、物理清理或宿主防火墙已验证。冻结的 V0/共享状态验收目标为 x86_64 Linux；目标、工具二进制或 cfg 不匹配即拒绝，不静默按本机平台重写清单。

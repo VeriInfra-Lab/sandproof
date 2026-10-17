@@ -202,6 +202,138 @@ structure sandproof_protocol.internal.lifecycle.CreateBinding where
   timeout_ms : Std.U64
   max_lifetime_ms : Std.U64
 
+/-- Trait declaration: [serde_core::de::Error]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 165:8-165:48
+    Name pattern: [serde_core::de::Error]
+    Visibility: public -/
+@[rust_trait "serde_core::de::Error" (parentClauses := ["coreerrorErrorInst"])]
+structure serde_core.de.Error (Self : Type) where
+  coreerrorErrorInst : core.error.Error Self
+  custom : forall {T : Type} (corefmtDisplayInst : core.fmt.Display T), T →
+    Result Self
+
+/-- Trait declaration: [serde_core::de::Visitor]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 1317:0-1317:29
+    Name pattern: [serde_core::de::Visitor]
+    Visibility: public -/
+@[rust_trait "serde_core::de::Visitor"]
+structure serde_core.de.Visitor (Self : Type) (Self_Value : Type) where
+  expecting : Self → core.fmt.Formatter → Result ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+  visit_u64 : forall {E : Type} (ErrorInst : serde_core.de.Error E), Self →
+    Std.U64 → Result (core.result.Result Self_Value E)
+
+/-- Trait declaration: [serde_core::de::Deserializer]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 945:0-945:34
+    Name pattern: [serde_core::de::Deserializer]
+    Visibility: public -/
+@[rust_trait "serde_core::de::Deserializer" (parentClauses := ["ErrorInst"])]
+structure serde_core.de.Deserializer (Self : Type) (Self_Error : Type) where
+  ErrorInst : serde_core.de.Error Self_Error
+  deserialize_any : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_bool : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_i8 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_i16 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_i32 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_i64 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_u8 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_u16 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_u32 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_u64 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_f32 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_f64 : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_char : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_str : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_string : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_bytes : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_byte_buf : forall {V : Type} {Clause0_Value : Type} (VisitorInst
+    : serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_option : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_unit : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_unit_struct : forall {V : Type} {Clause0_Value : Type}
+    (VisitorInst : serde_core.de.Visitor V Clause0_Value), Self → Str → V
+    → Result (core.result.Result Clause0_Value Self_Error)
+  deserialize_newtype_struct : forall {V : Type} {Clause0_Value : Type}
+    (VisitorInst : serde_core.de.Visitor V Clause0_Value), Self → Str → V
+    → Result (core.result.Result Clause0_Value Self_Error)
+  deserialize_seq : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_tuple : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → Std.Usize → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_tuple_struct : forall {V : Type} {Clause0_Value : Type}
+    (VisitorInst : serde_core.de.Visitor V Clause0_Value), Self → Str →
+    Std.Usize → V → Result (core.result.Result Clause0_Value Self_Error)
+  deserialize_map : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → V → Result
+    (core.result.Result Clause0_Value Self_Error)
+  deserialize_struct : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → Str → Slice Str → V
+    → Result (core.result.Result Clause0_Value Self_Error)
+  deserialize_enum : forall {V : Type} {Clause0_Value : Type} (VisitorInst :
+    serde_core.de.Visitor V Clause0_Value), Self → Str → Slice Str → V
+    → Result (core.result.Result Clause0_Value Self_Error)
+  deserialize_identifier : forall {V : Type} {Clause0_Value : Type}
+    (VisitorInst : serde_core.de.Visitor V Clause0_Value), Self → V →
+    Result (core.result.Result Clause0_Value Self_Error)
+  deserialize_ignored_any : forall {V : Type} {Clause0_Value : Type}
+    (VisitorInst : serde_core.de.Visitor V Clause0_Value), Self → V →
+    Result (core.result.Result Clause0_Value Self_Error)
+
+/-- [serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 136:16-136:39
+    Name pattern: [serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor] -/
+@[reducible, rust_type
+  "serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor"]
+def serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor := Unit
+
+/-- [sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}]
+    Source: './sandbox-protocol/src/internal.rs', lines 61:38-61:45
+    Name pattern: [sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::closure] -/
+@[reducible, rust_type
+  "sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::closure"]
+def sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure
+  (D : Type) (Clause0_Error : Type) :=
+Unit
+
 /-- [sandproof_protocol::ContractError]
     Source: './sandbox-protocol/src/lib.rs', lines 31:0-31:22
     Name pattern: [sandproof_protocol::ContractError]
@@ -345,12 +477,12 @@ def sandproof_protocol.WorkReceipt.validate_for.closure (E : Type) (C : Type)
   sandproof_protocol.WorkAction C
 
 /-- [sandproof_foundations_extract::store_retain_above::{closure}]
-    Source: 'src/lib.rs', lines 48:17-48:42 -/
+    Source: 'src/lib.rs', lines 49:17-49:42 -/
 @[reducible]
 def store_retain_above.closure := Std.U64
 
 /-- [sandproof_foundations_extract::option_is_none_or::{closure}]
-    Source: 'src/lib.rs', lines 52:21-52:42 -/
+    Source: 'src/lib.rs', lines 53:21-53:42 -/
 @[reducible]
 def option_is_none_or.closure := Std.U64
 

@@ -90,6 +90,20 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议规范编号解析与中心实际包装；不是将这些自有行为作为外部假设。中心恢复中完整 `CenterState::is_valid`、存储身份恢复、JSON 自有字段访问及全部调用资格仍分别属于未闭合连接。Serde/serde_json 的整套编解码不纳入本合同：将 `from_slice/to_vec<ControlIdentity>` 整体设成不透明，即使翻译成功也不能计作自有字段往返已证。
 
+### A6 JSON 非零计数器叶子接口
+
+这组根并入原 V0 抽取，与已有身份/数值共享同一份生成 Rust 类型；实现对应和原公共定理可以在同一 Lean 环境组合，不维护第二份同名类型。
+
+`A6-json-counter-leaf` 只覆盖 [PositiveCounter](../../sandbox-protocol/src/internal.rs) 的真实泛型 `Deserialize`、原 `TryFrom<u64>` 和有限错误分支。它依赖已有显式闭包重构，未新增生产改动；不将整个 `from_slice<ControlIdentity>` 或自有校验设为不透明接口。实际 `u64::deserialize`、具体整数 visitor、校验、错误闭包及 `InternalError::fmt` 均保留透明生成体。三个[抽取根](../../verification/extract-foundations/src/json.rs)直接调用原实现；错误透传根仅登记引擎错误的表示，不认证其内容。
+
+解码器和错误字典是显式参数：整数解码成功后才运行非零检查；非零值原样返回，零走原 `custom(InvalidCounter)`，已有引擎错误、模型失败、发散及外部效果按原顺序传播。`custom` 允许失败。这是生成函数与独立后处理规格的对应，不是 JSON 扫描器、完整字节入口或可变 parser 已验证。具体引擎须落实正确的 u64 读取和原输入/状态/错误/字典绑定，不能先完整读取并检查尾随字符再检查非零；真实 `0 x` 数据错误与 `1 x` 尾随语法错误由引擎回归核对。
+
+[类型模型](../../verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean)提供普通错误观察和默认字符串格式化的有限表示；[写入操作](../../verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean)保持有效 UTF-8 的完整字节和缓冲追加。仅本批固定 ASCII 字面量使用此路径，不覆盖任意 Formatter 配置、用户 Display、错误 source 链或物理分配失败。库符合性仍是显式 A6 条件，不因内核检查成为库内部实现证明。未使用的 visitor 默认方法没有实现；实际字典覆盖它，意外引用应在编译时拒绝，不导入模板公理。
+
+固定 preset 仍擦除 Drop。两个泛型包装根和错误透传根共七处条件清理逐项登记于[环境清单](../../verification/json-counter-environment.json)，完整 AST 摘要保留其位置、类型、目标及 unwind 内容；准入检查拒绝业务析构或未登记变化。**本接口不覆盖 D/E 的可观察自定义析构、许可/FD 持有、panic/unwind 收尾或 abort/崩溃释放**。普通借用解析器及库错误对象的表示/析构条件由使用点核对；泛型 Lean 定理不背书任意带资源 Rust 解码器，外部效果传播也不是 async/取消证明。
+
+固定 serde/serde_core 1.0.228、serde_json 1.0.142，实际库源码、Charon 选项、完整 LLBC、声明和条件清理见环境记录。工具/两版编译器/cfg 复用[Linux 工具登记](../../verification/first-chain-linux-environment.json)，全部输入由[接口摘要](../../verification/json-counter-inputs.sha256)冻结。调用方仍须落实字节/大小预算、schema/属性及其他自有叶子、完整请求/身份、版本/节点/槽位、授权及业务拒绝顺序。源文件、依赖、模型、工具或配置变化使本模块和使用方失效，须重新抽取检查，不能仅刷新摘要。
+
 ### A6 网络地址库模型使用登记
 
 `A6-network-stdlib` 是独立于上述六函数的最小 IPv4 标准库合同，覆盖真实调用的 `String` 精确相等、`String` 到 `str` 借用、`str::parse` 的字典调用、`Ipv4Addr::from_str` 及 `u32::from(Ipv4Addr)`，以及所需的 `Ipv4Addr`、`AddrParseError` 表示；下方克隆与析构登记限定新增的两个接口及内置模型使用条件。生产编译器为 Rust 1.97.0，抽取前端为 `nightly-2026-08-18`；两版标准库解析器的实现和文件摘要不同，不将抽取版源码等同于生产版源码。精确编译器提交、两版库源码摘要、目标及配置冻结在[网络模型环境清单](../../verification/network-environment.json)，源码/模型/检查脚本摘要见[网络输入清单](../../verification/network-inputs.sha256)，生成物由重新抽取逐字节核对；变更后重新核对依赖闭包。[生产版解析器源码](https://github.com/rust-lang/rust/blob/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/net/parser.rs)、[抽取版解析器源码](https://github.com/rust-lang/rust/blob/8fa1c96cfd489e4c27654c144ae871ce2c4db6c6/library/core/src/net/parser.rs)

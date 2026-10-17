@@ -11,3 +11,5 @@ publish = false
 sandbox-controller-core = { path = "../../controller-core" }
 sandproof-center-core = { path = "../../sandbox-center-core" }
 sandproof-protocol = { path = "../../sandbox-protocol" }
+serde = "=1.0.228"
+serde_json = "=1.0.142"

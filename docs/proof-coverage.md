@@ -18,6 +18,18 @@
 
 首链模型另在 `3235e7ee5f0a6428cc5b78c7675769332bfbdc2d` 执行原 `verify-first-chain.sh`：传递输入摘要、V0 再生检查、模型编译及 53 项依赖审计通过。它仍是模型不变量与条件连接，不能代替中心/节点真实持久微步骤、宿主证据或完成性证明。同一 Lean 服务已在组合版本实测目标读取、隔离尝试及正式诊断；检查的公共插入文件 `stale=false`、`partial=false` 且无错误，不将交互检查推广为未检查模块已证。
 
+## T2 / V0：JSON 非零计数器叶子接口
+
+实际采用共享 V0 抽取：60 个生产调用根和一个明确不透明的标准库辅助根均受原准入检查约束。原 260 条公共定理及新增 12 条叶子定理已重新编译、审计，并核对同环境组合导入；没有删除旧根或旧证明。
+
+本批依赖 #481 及其前置真实 Rust 重构，原协议输入为 `208fb4e1bdba78be269a14626b3185d275249b1a`；不表示候选已合入 integration。新根调用原 `PositiveCounter::deserialize`，没有复制校验器或修改生产 Rust、Charon/Aeneas。适用输入/目标/工具和模型见[接口环境](../verification/json-counter-environment.json)及[输入摘要](../verification/json-counter-inputs.sha256)；新入口加入原完整证明入口和总审计，未删除旧门槛。
+
+[公共接口](../SandboxModel/Boundaries/JsonCounter.lean)的 12 条模型/实现/可实现性定理已在固定 Linux 环境通过真实 Lean 服务、独立内核及依赖审计，仅使用标准逻辑。真实泛型 Deserialize 保持原整数 provider 的错误传播与非零检查顺序；非零值保持，零调用原自有错误映射，模型失败/发散/外部效果保留。`CounterSafe` 要求成功值非零；有限 value reader 提供合法接受及零拒绝见证，它不是 JSON parser 实现。
+
+首轮真实 Rust JSON 回归及原 `0 x`/`1 x` 首错回归通过；删除 TryFrom 零守卫的真实错误版编译和原工具抽取成功后，被同一成功非零断言拒绝，并有同一独立 `CounterSafe` 的形式反例。正式复现、冻结接线与整套验收仍待本批完成，局部结果不计为整套通过。
+
+外部条件见 [A6-json-counter-leaf](formal/dependencies.md#a6-json-非零计数器叶子接口)：实际字典/表示符合性、有限格式化观察和固定工具信任；七处条件清理仅登记，未获得 Drop 证明。可观察自定义 Drop、资源持有及 panic/unwind/abort 收尾不在支持范围。完整字节入口、可变 parser/尾随检查、复合 schema、其他编号叶子及真实调用绑定仍开放，不关闭 T2/V0，也不解决 T5/T6 或历史 #337。
+
 ## V0 公共基础：指定输入的局部证明
 
 归 #333/#101。表写入批次从 `882427adfae74ee3933244b3e5e3c983996e86a3` 展开（依赖未合入的 #362 及其前置证明批次；不含 #364 的 V4 完整状态/输入迁移）；实际生产源码、抽取根、独立模型、库模型和检查脚本以[输入摘要](../verification/foundations-inputs.sha256)为准，目标/features/cfg、生产/抽取编译器及工具/后端指纹见[环境清单](../verification/foundations-environment.json)。本记录不将起点提交等同于改动后源码；合入后核对指纹。适用目标已冻结为 `x86_64-unknown-linux-gnu`，同版工具在 Linux 重新抽取并通过本模块验收；不将它解释为 KVM 或服务已验证。

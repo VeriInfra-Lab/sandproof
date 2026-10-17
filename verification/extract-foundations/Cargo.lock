@@ -57,6 +57,8 @@ dependencies = [
  "sandbox-controller-core",
  "sandproof-center-core",
  "sandproof-protocol",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
