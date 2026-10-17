@@ -144,7 +144,14 @@ async fn prepare_upload(
         let (decoded, progress) = gzip_upload::open(body, limits, owner)
             .await
             .map_err(response)?;
-        body = decoded;
+        // A highly compressible input can produce many output chunks from
+        // one source read. Decoded forwarding is real progress too; otherwise
+        // the unchanged upload idle deadline can fire during active transfer.
+        body = IdleBody::wrap(
+            decoded,
+            limits.file_idle_seconds,
+            parts.extensions.get::<Activity>().cloned().unwrap(),
+        );
         // These bytes really are decoded. Never retain the encoded length.
         parts.headers.remove(header::CONTENT_ENCODING);
         parts.headers.remove(header::CONTENT_LENGTH);

@@ -211,6 +211,37 @@ struct PendingAfterHeader {
     header: Option<Bytes>,
     blocked: Option<oneshot::Sender<()>>,
 }
+
+#[tokio::test]
+async fn decoded_gzip_progress_refreshes_original_upload_idle_clock_without_new_source_reads() {
+    let prepared = prepare_body(
+        upload(encoded(&vec![b'Z'; 40_000])),
+        true,
+        Some(&TransferLimits::fixture()),
+    )
+    .await
+    .unwrap();
+    let activity = prepared.extensions().get::<Activity>().unwrap().clone();
+    let mut body = prepared.into_body();
+    let first = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    assert_eq!(first.len(), 16 * 1024);
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(6)).await;
+    drop(first);
+    let second = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    assert_eq!(second.len(), 16 * 1024);
+    tokio::time::advance(Duration::from_secs(6)).await;
+    let mut stalled = Box::pin(activity.stalled(Duration::from_secs(10)));
+    std::future::poll_fn(|cx| {
+        assert!(stalled.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    drop(stalled);
+    tokio::time::resume();
+    drop(second);
+    assert_eq!(drain(body).await.unwrap(), vec![b'Z'; 40_000 - 32_768]);
+}
 impl hyper::body::Body for PendingAfterHeader {
     type Data = Bytes;
     type Error = io::Error;
