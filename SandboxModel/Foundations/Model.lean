@@ -6,7 +6,10 @@ namespace SandboxModel.Foundations
 
 def maxCounter : Nat := 2 ^ 64 - 1
 def validCounter (n : Nat) : Prop := 0 < n ∧ n ≤ maxCounter
-def makeCounter (n : Nat) : Option Nat := if n = 0 then none else some n
+-- A mathematical constructor must reject values that no machine U64 can hold.
+-- nextCounter also permits frontier 0; its successor is not an identity parser.
+def makeCounter (n : Nat) : Option Nat :=
+  if n = 0 then none else if n ≤ maxCounter then some n else none
 def nextCounter (n : Nat) : Option Nat :=
   if n < maxCounter then some (n + 1) else none
 
