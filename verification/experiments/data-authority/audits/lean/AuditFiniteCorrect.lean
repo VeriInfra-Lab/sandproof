@@ -1,0 +1,32 @@
+import FinitePolicy
+import CredentialProofs
+import LifetimeFiniteProofs
+
+#print axioms LifetimeFiniteProofs.DeadlineSafety
+#print axioms CredentialProofs.registeredExpected
+#print axioms CredentialProofs.inverseExpected
+#print axioms CredentialProofs.registered_refines
+#print axioms CredentialProofs.registered_success_iff
+#print axioms CredentialProofs.missing_rejected
+#print axioms CredentialProofs.generation_mismatch_rejected
+#print axioms CredentialProofs.inverse_refines
+#print axioms CredentialProofs.inverse_success_iff
+#print axioms CredentialProofs.inverse_missing_rejected
+#print axioms CredentialProofs.inverse_mismatch_rejected
+#print axioms LifetimeFiniteProofs.clockExpected
+#print axioms LifetimeFiniteProofs.recordExpected
+#print axioms LifetimeFiniteProofs.liveExpected
+#print axioms LifetimeFiniteProofs.clock_refines
+#print axioms LifetimeFiniteProofs.clock_success_iff
+#print axioms LifetimeFiniteProofs.record_refines
+#print axioms LifetimeFiniteProofs.record_success_iff
+#print axioms LifetimeFiniteProofs.live_refines
+#print axioms LifetimeFiniteProofs.live_success_iff
+#print axioms LifetimeFiniteProofs.deadline_safety
+#print axioms LifetimeFiniteProofs.missing_lifetime_rejected
+#print axioms LifetimeFiniteProofs.unauthorized_precedes_wrong_phase
+#print axioms Authority.credential_core.registered_digest
+#print axioms Authority.credential_core.inverse_binding
+#print axioms Authority.lifetime_core.check_clock
+#print axioms Authority.lifetime_core.check_record
+#print axioms Authority.lifetime_core.check_live
