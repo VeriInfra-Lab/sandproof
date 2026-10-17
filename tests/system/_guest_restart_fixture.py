@@ -3,6 +3,13 @@
 The original host audit maps the public identity. No secret search, public
 gateway token substitution, startup replay, or management credential export.
 """
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 import hashlib
 import json
 from pathlib import Path
