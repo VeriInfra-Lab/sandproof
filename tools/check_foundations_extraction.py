@@ -9,6 +9,7 @@ import sys
 import subprocess
 
 EXTERNALS = {
+    "serde_core::de::Visitor::visit_u64",
     "core::option::{core::option::Option<T>}::as_ref",
     "core::option::{impl core::ops::try_trait::Try for core::option::Option<T>}::branch",
     "core::option::{impl core::ops::try_trait::FromResidual<core::option::Option<core::convert::Infallible>> for core::option::Option<T>}::from_residual",
@@ -37,6 +38,7 @@ EXTERNALS = {
 # A public root cannot disappear by removing it from both the Rust adapter and
 # extraction script. Each expansion is an explicit, reviewed coverage change.
 ROOTS = {
+    "json::counter_decode", "json::counter_primitive", "json::json_error_passthrough",
     "counter_from_u64", "counter_next", "counter_value", "counter_into_u64", "internal_error_text", "lane_current",
     "store_get_copy", "store_put", "store_retain_above", "option_is_none_or",
     "resource_add", "resource_positive",
@@ -54,7 +56,8 @@ ROOTS = {
     "numeric::seconds_to_milliseconds", "numeric::bytes_to_mebibytes",
     "numeric::available_resource", "receipts::action_version", "receipts::receipt_validate",
 }
-ROOT_MODULES = {'numeric', 'receipts'}
+ROOT_MODULES = {'numeric', 'receipts', 'json'}
+LIBRARY_ROOTS = {'serde_core::de::Visitor::visit_u64'}
 REQUIRED_IDENTITY_CALLS = {
     "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt",
     "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from",
@@ -126,8 +129,8 @@ def check(root, llbc, inventory):
         # Include generic roots without treating their type parameters as names.
         names = re.findall(r'pub fn ([a-z0-9_]+)(?:<[^\n{]*>)?\s*\(', module_source)
         public.extend(f'{module}::{name}' for name in names)
-    all_roots = re.findall(r'--start-from ([a-z0-9_:]+)', script)
-    expected_roots = {'crate::' + name for name in ROOTS}
+    all_roots = re.findall(r'--start-from ([A-Za-z0-9_:]+)', script)
+    expected_roots = {'crate::' + name for name in ROOTS} | LIBRARY_ROOTS
     if (len(roots) != len(set(roots)) or len(public) != len(set(public))
             or set(roots) != ROOTS or set(public) != ROOTS
             or len(all_roots) != len(set(all_roots)) or set(all_roots) != expected_roots):

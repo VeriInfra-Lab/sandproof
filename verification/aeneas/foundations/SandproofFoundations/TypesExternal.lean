@@ -29,4 +29,20 @@ structure core.fmt.Display (Self : Type) where
   fmt : Self → core.fmt.Formatter →
     Result (core.result.Result Unit core.fmt.Error × core.fmt.Formatter)
 
+-- Finite JSON leaf observations, not a full parser or a custom Drop model.
+structure core.fmt.Debug (Self : Type) where
+  fmt : Self → core.fmt.Formatter →
+    Result (core.result.Result Unit core.fmt.Error × core.fmt.Formatter)
+structure core.error.Error (Self : Type) where
+  fmtDebugInst : core.fmt.Debug Self
+  fmtDisplayInst : core.fmt.Display Self
+
+inductive JsonErrorCategory where
+  | data | syntax | io | eof
+structure serde_json.error.Error where
+  message : String
+  category : JsonErrorCategory
+  line : Nat
+  column : Nat
+
 end SandproofFoundationsRust

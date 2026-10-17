@@ -18,6 +18,20 @@
 
 首链模型另在 `3235e7ee5f0a6428cc5b78c7675769332bfbdc2d` 执行原 `verify-first-chain.sh`：传递输入摘要、V0 再生检查、模型编译及 53 项依赖审计通过。它仍是模型不变量与条件连接，不能代替中心/节点真实持久微步骤、宿主证据或完成性证明。同一 Lean 服务已在组合版本实测目标读取、隔离尝试及正式诊断；检查的公共插入文件 `stale=false`、`partial=false` 且无错误，不将交互检查推广为未检查模块已证。
 
+## T2 / V0：JSON 非零计数器叶子接口
+
+实际采用共享 V0 抽取：60 个生产调用根和一个明确不透明的标准库辅助根均受原准入检查约束。原 260 条公共定理及新增 12 条叶子定理已重新编译、审计，并核对同环境组合导入；没有删除旧根或旧证明。
+
+本批依赖 #481 及其前置真实 Rust 重构，原协议输入为 `208fb4e1bdba78be269a14626b3185d275249b1a`；不表示候选已合入 integration。新根调用原 `PositiveCounter::deserialize`，没有复制校验器或修改生产 Rust、Charon/Aeneas。适用输入/目标/工具和模型见[接口环境](../verification/json-counter-environment.json)及[输入摘要](../verification/json-counter-inputs.sha256)；新入口加入原完整证明入口和总审计，未删除旧门槛。
+
+[公共接口](../SandboxModel/Boundaries/JsonCounter.lean)的 12 条模型/实现/可实现性定理已在固定 Linux 环境通过真实 Lean 服务、独立内核及依赖审计，仅使用标准逻辑。真实泛型 Deserialize 保持原整数 provider 的错误传播与非零检查顺序；非零值保持，零调用原自有错误映射，模型失败/发散/外部效果保留。`CounterSafe` 要求成功值非零；有限 value reader 提供合法接受及零拒绝见证，它不是 JSON parser 实现。
+
+冻结代码 `94dfdcd2a107f7f731bf42ca481483059709f852` 的最终完整负向复现退出 0：真实错误版先编译及原工具抽取成功，再被同一非零成功断言以退出 101 拒绝，并有同一独立 `CounterSafe` 的两个正式反例；真实服务诊断完整、非过期，内核和实际依赖审计通过。正确版 JSON 回归及原 `0 x`/`1 x` 首错回归通过。第三个干净检出的生成 Lean/清单逐字及完整规范化 LLBC 一致；新增门槛和四个原模块入口通过。
+
+同一代码提交的原 Linux `check-function.sh` 退出 0，1053 项工具测试及工作区 Rust/文档/格式/Clippy/doctest/诊断 feature 检查通过。完整 `verify-controller.sh` 退出 1：Rust/Clippy、新叶子 12、公共 260、网络 43、授权 85、本地 153、Linux 首链 32 项审计均执行通过，全量 446 个透明函数翻译 226.700366 秒后，仅因 #337 的历史 Types/Funs/清单不一致拒绝，未进入后续旧证明总编译/审计。六项跟踪生成差异封存后恢复，未导入的类型模板另封存；前后 1376 个跟踪输入一致，233 个正式 Lean 源的指纹与最终真实服务相同。最终机器收据 SHA256 为 `ec739dcfdd24da275e7b81e8bb80b2a74098024c6081ac1f44a2b5557ef0a0c9`。原特权/opt-in 忽略项仍保留，不计为已执行；没有 KVM、云 SDK 或题集验收。**本接口局部验收完成，整套证明未通过**；#337 仅记录阻断，不迁移。
+
+外部条件见 [A6-json-counter-leaf](formal/dependencies.md#a6-json-非零计数器叶子接口)：实际字典/表示符合性、有限格式化观察和固定工具信任；七处条件清理仅登记，未获得 Drop 证明。可观察自定义 Drop、资源持有及 panic/unwind/abort 收尾不在支持范围。完整字节入口、可变 parser/尾随检查、复合 schema、其他编号叶子及真实调用绑定仍开放，不关闭 T2/V0，也不解决 T5/T6 或历史 #337。
+
 ## V0 公共基础：指定输入的局部证明
 
 归 #333/#101。表写入批次从 `882427adfae74ee3933244b3e5e3c983996e86a3` 展开（依赖未合入的 #362 及其前置证明批次；不含 #364 的 V4 完整状态/输入迁移）；实际生产源码、抽取根、独立模型、库模型和检查脚本以[输入摘要](../verification/foundations-inputs.sha256)为准，目标/features/cfg、生产/抽取编译器及工具/后端指纹见[环境清单](../verification/foundations-environment.json)。本记录不将起点提交等同于改动后源码；合入后核对指纹。适用目标已冻结为 `x86_64-unknown-linux-gnu`，同版工具在 Linux 重新抽取并通过本模块验收；不将它解释为 KVM 或服务已验证。

@@ -19,6 +19,16 @@ test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
 # --dest-file below reaches the same LLBC and is portable across checkouts.
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
+  --start-from crate::json::counter_decode \
+  --start-from crate::json::counter_primitive \
+  --start-from crate::json::json_error_passthrough \
+  --start-from serde_core::de::Visitor::visit_u64 \
+  --opaque serde_core::de::Visitor::visit_u64 \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize' \
+  --opaque 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::PrimitiveVisitor' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_::expecting' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_::visit_u64' \
   --start-from crate::counter_from_u64 \
   --start-from crate::counter_next \
   --start-from crate::counter_value \
