@@ -816,7 +816,7 @@ KVM 继续使用可信外部监督器，候选同一提交离线构建 `sandproo
 
 最小真实创建／销毁的组件证据可通过[独立实机入口](../tests/system/internal_lifecycle_smoke.py)手动验收：普通用户以 `cargo build --release --locked -p sandproof-center-store --example kvm_lifecycle` 构建[组件装配](../sandbox-center-store/examples/kvm_lifecycle.rs)，配合同源码 `sandproof-host relay`；保护精确提交/固定产物后按 `--help` 提供批准配置。它沿用原独占、真实 Redis/mTLS/SQLite/VM 及精确资源审计，不下载镜像、不接付费模型、不改全局网络；仅为组件装配，不是另一生产入口或旧公开服务降级。
 
-正式 SDK、Harbor 与晋升必须使用唯一中心/宿主 `initialize|serve|audit --config` 入口及[共同角色夹具](../tests/system/_center_host_services.py)，不能用组件示例代替。故障明确作用于中心、某个宿主或 Redis，重启保持原受保护配置与账本；公开客户端只访问中心。全局实例与本地 VM 编号通过原已校验宿主收件审计映射，不解析编号后缀。只读中心审计须停止该中心并取得原写者租约；无法观察原请求是否提交时保留未知责任，不将缺记录猜成 Cleaned。成功要求同一 Ready/Cleaned 身份、正确寿命与额度、实际进程账号/目录/cgroup、原 VM PID/时钟/网络/磁盘以及最终残留核对。缺角色、故障组、两题或精确收尾不能通过，安装与结果绑定 issue/PR 精确提交，不仅凭源码关闭 #292。
+正式 SDK、Harbor 与晋升必须使用唯一中心/宿主 `initialize|serve|audit --config` 入口及[共同角色夹具](../tests/system/_center_host_services.py)，不能用组件示例代替。合并运行池与构建池静态目录时，前缀别名不得遮蔽模板 ID；与目标 ID 同名时直接使用该 ID，指向另一模板时拒绝装配。故障明确作用于中心、某个宿主或 Redis，重启保持原受保护配置与账本；公开客户端只访问中心。全局实例与本地 VM 编号通过原已校验宿主收件审计映射，不解析编号后缀。只读中心审计须停止该中心并取得原写者租约；无法观察原请求是否提交时保留未知责任，不将缺记录猜成 Cleaned。成功要求同一 Ready/Cleaned 身份、正确寿命与额度、实际进程账号/目录/cgroup、原 VM PID/时钟/网络/磁盘以及最终残留核对。缺角色、故障组、两题或精确收尾不能通过，安装与结果绑定 issue/PR 精确提交，不仅凭源码关闭 #292。
 
 | 编号 | 注入/输入 | 必需结果 |
 |---|---|---|
