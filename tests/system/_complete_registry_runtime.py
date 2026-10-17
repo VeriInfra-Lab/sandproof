@@ -220,8 +220,13 @@ class RegistryDeployment:
 
 
 def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits,
-                             runtime_shape=(1, 256), builder_shape=(2, 2048), ports):
+                             runtime_shape=(1, 256), builder_shape=(2, 2048), ports,
+                             runtime_transfers_per_vm=4):
     """Create fresh DTOs only from an explicit complete operator policy."""
+    # Explicit test allocation inside the unchanged eight-transfer host bound.
+    # Keep one control slot; never infer extra capacity from a failed request.
+    if type(runtime_transfers_per_vm) is not int or not 2 <= runtime_transfers_per_vm <= 8:
+        raise ValueError("runtime per-VM transfers must fit the original global bound and control reserve")
     policy = acceptance_build_policy(args.bounded_policy)
     require_bounded_host_tools()
     root, namespaces = bounded_acceptance_layout(policy, run_root=args.run_root,
@@ -263,7 +268,8 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
                     "max_memory_bytes_global": 4608 * MIB, "max_memory_bytes_per_tenant": 4608 * MIB}},
             "data_transfer": {"file_upload_bytes": 512 * MIB, "file_download_bytes": 2048 * MIB,
                 "command_input_bytes": MIB, "rpc_request_bytes": MIB,
-                "rpc_response_bytes": MIB, "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
+                "rpc_response_bytes": MIB, "max_transfers": 8,
+                "max_transfers_per_vm": 4 if index else runtime_transfers_per_vm, "control_reserve": 1,
                 "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60}}
         settings.append(config)
     declared = policy['runtime']['bounded_host']['physical_storage']['public_build']

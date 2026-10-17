@@ -28,6 +28,20 @@ SPEC.loader.exec_module(FIXTURE)
 
 class CompleteRegistryFixtureTests(unittest.TestCase):
     def test_explicit_two_pool_policy_reaches_real_static_service_preflight(self):
+        self.check_service_preflight()
+
+    def test_explicit_paired_capacity_keeps_global_and_builder_limits(self):
+        self.check_service_preflight(runtime_transfers_per_vm=5)
+
+    def test_invalid_runtime_capacity_fails_before_policy_or_filesystem_access(self):
+        for value in (True, 0, 1, 9, 5.0, '5', None):
+            with self.subTest(value=value), patch.object(FIXTURE, 'acceptance_build_policy') as policy:
+                with self.assertRaisesRegex(ValueError, 'original global bound'):
+                    FIXTURE.prepare_registry_runtime(None, tool_hashes={}, registry_limits={},
+                        build_limits={}, ports=[1, 2, 3], runtime_transfers_per_vm=value)
+                policy.assert_not_called()
+
+    def check_service_preflight(self, **options):
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
             parent = Path(temporary).resolve()
             source = parent / "source"
@@ -72,6 +86,10 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                     (root / suffix).mkdir(mode=0o700)
                 for index, native in enumerate(settings):
                     self.assertFalse({'bind','credentials','internal_build_vms','build_retry_windows'} & native.keys())
+                    transfers = native['data_transfer']
+                    expected = 4 if index else options.get('runtime_transfers_per_vm', 4)
+                    self.assertEqual((transfers['max_transfers'], transfers['max_transfers_per_vm'],
+                                      transfers['control_reserve']), (8, expected, 1))
                     path=root / str(index) / 'host.json'
                     path.write_text(json.dumps(dict(native=native,inbox={},internal={},
                                                     template_cache={},artifact_source={})))
@@ -93,7 +111,7 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                     patch.object(FIXTURE.RuntimeServices, 'prepare', side_effect=assembled):
                 deployment = FIXTURE.prepare_registry_runtime(args,
                     tool_hashes={name: digest for name in prior["tools"]}, registry_limits=registry,
-                    build_limits=limits, ports=[3100, 3101, 3102])
+                    build_limits=limits, ports=[3100, 3101, 3102], **options)
             checked = configuration(deployment.build_config, require_physical_lease=False)
             self.assertEqual(checked["physical_storage_profile"], policy["runtime"]["bounded_host"]["physical_storage"])
             self.assertNotIn("internal_build_vms", checked["builder"])
