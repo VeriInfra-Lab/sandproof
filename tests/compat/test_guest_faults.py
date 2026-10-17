@@ -2,6 +2,8 @@
 import json
 import importlib.util
 from pathlib import Path
+import stat
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -73,6 +75,35 @@ class AcceptanceHarnessTests(unittest.TestCase):
 
 
 class FaultProbeTests(unittest.TestCase):
+    def test_private_directory_creates_missing_parent_but_never_reuses_a_probe_leaf(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary) / "missing parent 'quoted'"
+            directory = parent / "probe 'one'"
+            vm = Mock()
+            def execute(command, **kwargs):
+                self.assertEqual(kwargs, dict(user='root', timeout=15))
+                return subprocess.run(['/bin/sh', '-c', command], check=True,
+                                      capture_output=True, timeout=15)
+            vm.commands.run.side_effect = execute
+            probe.prepare_directory(vm, str(directory))
+            self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
+            marker = directory / 'original-effect'
+            marker.write_text('once')
+            with self.assertRaises(subprocess.CalledProcessError):
+                probe.prepare_directory(vm, str(directory))
+            self.assertEqual(marker.read_text(), 'once')
+            self.assertEqual(vm.commands.run.call_count, 2)
+            parent.chmod(0o750)
+            probe.prepare_directory(vm, str(parent / 'second'))
+            self.assertEqual(stat.S_IMODE(parent.stat().st_mode), 0o750)
+            self.assertEqual(stat.S_IMODE((parent / 'second').stat().st_mode), 0o700)
+            file_parent = Path(temporary) / 'ordinary-file'
+            file_parent.write_text('unchanged')
+            with self.assertRaises(subprocess.CalledProcessError):
+                probe.prepare_directory(vm, str(file_parent / 'rejected'))
+            self.assertEqual(file_parent.read_text(), 'unchanged')
+            self.assertEqual(vm.commands.run.call_count, 4)
+
     def test_unknown_start_posts_once_and_does_not_consume_a_pid_or_replay(self):
         client=Mock()
         response=Mock(status_code=200)

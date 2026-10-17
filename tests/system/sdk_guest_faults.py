@@ -32,6 +32,15 @@ def python(program):
     return '/usr/bin/python3 -I -c ' + shlex.quote(program)
 
 
+def prepare_directory(vm, directory):
+    # Minimal accepted images need not include /var/tmp. Only the parent is
+    # idempotent: an existing per-probe leaf must fail, never reuse old effects.
+    parent = str(Path(directory).parent)
+    vm.commands.run('mkdir -p -- ' + shlex.quote(parent)
+                    + ' && mkdir -m 0700 -- ' + shlex.quote(directory),
+                    user='root', timeout=15)
+
+
 def wait_for(observe, accept, *, seconds=20):
     deadline = time.monotonic() + seconds
     while True:
@@ -273,7 +282,7 @@ def unavailable_expiry(vm, owner, client, candidate):
     observation = asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
     daemon = observation['observation']['daemon']
     directory='/var/tmp/expiry-fault-'+uuid.uuid4().hex
-    vm.commands.run('mkdir -m 0700 '+shlex.quote(directory),user='root',timeout=15)
+    prepare_directory(vm, directory)
     ready,gate=directory+'/armed',directory+'/go'
     program = ('import os,signal,pathlib,time\npid='+str(daemon['pid'])+'\nfd=os.pidfd_open(pid)\n'
         +'assert int(pathlib.Path("/proc/"+str(pid)+"/stat").read_text().rsplit(")",1)[1].split()[19])=='
@@ -328,7 +337,7 @@ def exercise(args):
             if name in ('restart-old-pid','unavailable-expiry'):
                 control=Sandbox.create(template=template,timeout=300,allow_internet_access=False,**owner)
             directory = '/var/tmp/envd-fault-' + uuid.uuid4().hex
-            vm.commands.run('mkdir -m 0700 '+shlex.quote(directory), user='root', timeout=15)
+            prepare_directory(vm, directory)
             with httpx.Client(base_url=args.sandbox_url, trust_env=False, timeout=30) as client:
                 if name == 'lost-start': details = lost_start(vm, directory, client)
                 elif name == 'restart-old-pid': details = restart_old_pid(vm, directory, candidate)
