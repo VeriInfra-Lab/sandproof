@@ -294,6 +294,22 @@ async fn dispatch(
         );
         std::fs::read(fixture.directory.path().join("pid-claims.bin")).unwrap()
     });
+    // This restricted Axum transport is not the production listener. Dropping
+    // an unread HTTP/1 request after an early header rejection can reset the
+    // socket while the original SDK is still sending its body, hiding the
+    // intended Connect error behind BrokenPipe. Receive only this fixture's
+    // finite request before calling the ORIGINAL preparation code; do not
+    // decode it, relax the rejection, replay it or change production limits.
+    let body = if invalid_keepalive.is_some() {
+        Body::from(
+            timeout(Duration::from_secs(5), axum::body::to_bytes(body, LIMIT))
+                .await
+                .expect("fixture request body deadline")
+                .expect("fixture request body limit or transport failure"),
+        )
+    } else {
+        body
+    };
     let mut request = HttpRequest::new(body);
     *request.method_mut() = Method::POST;
     *request.uri_mut() = uri;
@@ -569,6 +585,76 @@ async fn probe(asynchronous: bool, mode: &str, tag: Option<&str>) {
     );
     assert!(fixture.started.load(Ordering::SeqCst));
     settled(&fixture, asynchronous, mode).await;
+}
+
+#[tokio::test]
+async fn keepalive_rejection_receives_the_bounded_wire_body_without_decoding_or_starting() {
+    let fixture = Arc::new(Fixture::new(&json!({"process":{"cmd":"/bin/true"}})).await);
+    let claims = fixture.directory.path().join("pid-claims.bin");
+    let before = std::fs::read(&claims).unwrap();
+    let (release, released) = oneshot::channel();
+    let polled = Arc::new(AtomicBool::new(false));
+    let observed = polled.clone();
+    let body = Body::from_stream(futures_util::stream::once(async move {
+        observed.store(true, Ordering::SeqCst);
+        released.await.unwrap();
+        // Deliberately not a protocol frame: the ORIGINAL header rejection
+        // must still win over body decoding after transport receipt finishes.
+        Ok::<_, std::io::Error>(b"not a Connect frame".as_slice())
+    }));
+    let headers = HeaderMap::from_iter([
+        (
+            "content-type".parse().unwrap(),
+            "application/connect+json".parse().unwrap(),
+        ),
+        (
+            "connect-timeout-ms".parse().unwrap(),
+            "10000".parse().unwrap(),
+        ),
+        (
+            "keepalive-ping-interval".parse().unwrap(),
+            "0".parse().unwrap(),
+        ),
+        ("x-access-token".parse().unwrap(), "token".parse().unwrap()),
+    ]);
+    let mut response = Box::pin(dispatch(
+        State(fixture.clone()),
+        OriginalUri("/process.Process/Start".parse().unwrap()),
+        headers,
+        body,
+    ));
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(std::future::Future::poll(response.as_mut(), &mut context).is_pending());
+    assert!(polled.load(Ordering::SeqCst));
+    assert!(!fixture.started.load(Ordering::SeqCst));
+    release.send(()).unwrap();
+    let response = response.await;
+    assert_eq!(response.status(), 200);
+    // Like the existing component readers, copy each bounded owned chunk and
+    // release it BEFORE asking for EOF. A retaining aggregate collector waits
+    // on the very capacity it still owns; that is not a service timeout.
+    let mut body = response.into_body().into_data_stream();
+    let mut wire = Vec::new();
+    while let Some(chunk) = futures_util::StreamExt::next(&mut body).await {
+        let chunk = chunk.unwrap();
+        assert!(chunk.len() <= LIMIT - wire.len());
+        wire.extend_from_slice(&chunk);
+    }
+    assert_eq!(wire[0], 2);
+    assert_eq!(
+        usize::try_from(u32::from_be_bytes(wire[1..5].try_into().unwrap())).unwrap(),
+        wire.len() - 5
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&wire[5..]).unwrap(),
+        json!({"error":{
+        "code":"invalid_argument","message":"keepalive interval must be between 1 and 9223372036 seconds"}})
+    );
+    assert_eq!(std::fs::read(claims).unwrap(), before);
+    assert!(!fixture.directory.path().join("effect").exists());
+    assert_eq!(fixture.registry.available_slots(), 1);
+    assert!(fixture.owners.reserve().is_ok());
+    assert_eq!(fixture.keepalive_rejections.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

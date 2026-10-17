@@ -41,6 +41,13 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                         build_limits={}, ports=[1, 2, 3], runtime_transfers_per_vm=value)
                 policy.assert_not_called()
 
+    def test_two_overlapping_transfer_profiles_fail_before_assembly(self):
+        with patch.object(FIXTURE, 'acceptance_build_policy') as policy:
+            with self.assertRaisesRegex(ValueError, 'overlapping profiles'):
+                FIXTURE.prepare_registry_runtime(None, tool_hashes={}, registry_limits={},
+                    build_limits={}, ports=[1, 2, 3], runtime_transfers_per_vm=5, data_transfer={})
+            policy.assert_not_called()
+
     def check_service_preflight(self, **options):
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
             parent = Path(temporary).resolve()
@@ -82,6 +89,11 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                 # this static test does not claim TLS/Redis or KVM startup.
                 credentials = test_credentials(key, kwargs['extra_credentials'])
                 self.assertEqual([entry['tenant'] for entry in credentials], [1, 2])
+                self.assertEqual(catalogs[0]['aliases'], {'base':'runtime-base'})
+                # The common renderer prefixes builder aliases. Advertising
+                # base here becomes builder-base, colliding with its real ID
+                # and correctly rejected by the original Rust catalog.
+                self.assertEqual(catalogs[1]['aliases'], {})
                 for suffix in ('registry','registry/inbox','registry/artifacts'):
                     (root / suffix).mkdir(mode=0o700)
                 for index, native in enumerate(settings):

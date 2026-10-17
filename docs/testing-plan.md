@@ -581,6 +581,14 @@ sudo timeout --signal=KILL 150 unshare --mount --net --pid --fork --kill-child -
   --configuration "$PWD/sandbox-guest-service/src/daemon/tests/configuration.json"
 ```
 
+### Rust envd 的组合验收（#311）
+
+[原监督链的来宾阶段](../tests/system/envd_acceptance.py)复用同一中心/宿主、Redis、私有构建和不可变发布入口，不更改现役默认模板。固定支持清单和故障清单由[同一策略](../tools/envd_acceptance.py)维护；CI 接线和受控安装要求见[CI 环境](ci.md)。所有结果仍须在关联 PR 绑定实际提交、清单/配置/镜像摘要、原退出与精确残留；新增入口存在不等于已经实跑或 #311 可以关单。
+
+复用原 Go/Rust 同步/异步对照和资源观察、单次大输入与内部块、PTY、命令/RPC/文件期限及文件权限场景，不删目录大小、原字节或错误断言。[故障片段](../tests/system/sdk_guest_faults.py)只在自己新建的 VM 注入：不消费 Start PID 即断开并核对一次性效果；真实 pidfd 绑定的 daemon 强制退出/原 init、原用户进程存活、旧 PID 拒绝、原持久位和会话递增；独立小 tmpfs 写满与部分文件；不读第一订阅时其他请求和生产者仍推进；跨原登记容量的有限回收与原 30 秒保留；连接/续期，以及 PID 文件丢失后无法服务但宿主仍到期清理。写满挂载仅在来宾内，不能改宿主全局磁盘或网络。重启测试只将本实例已有令牌放入其私有测试目录，不传中心/宿主或 CI 管理凭据；原 init 仅由来宾原生故障夹具调用，不新增公开初始化旁路。
+
+各组均检查原 SQLite 终局和进程/网络/磁盘精确残留，服务名额及 cgroup 也须实际收尾。容量显式拒绝可在确认无效果并等待原保留期后发起新尝试，未知 Start/写入不重放。资源采样记录实际 RSS/峰值/线程及固定 PID 文件长度，并核对原 VM 和控制服务预算；有限观察不推出无限历史或整进程内存证明。强制 PID 数字回绕、任意故障交错和外部内核正确性不因该组变成已验证；原单元/故障点证据仍单独保留。
+
 来宾监听器的[合并正文回归](../sandbox-guest-service/src/listener/tests/read_budget.rs)使用真实固定 HTTP 解析器和保持连接的确定性输入，不依赖 TCP 时序；核对原 16 KiB 读取边界及原上传帧检查。原版本可能交付 24 KiB 帧并触发断流/上游 502；必须保留失败断言，修复不能增大正文/块/期限。另核对等待和 I/O 错误不能变成成功 EOF。组件通过后仍须用同提交来宾产物在真实沙箱执行原 SDK 文件矩阵，不能用带诊断日志的一轮未复现代替原失败归因。
 
 #311 的[固定 SDK 输入回归](../tests/system/sdk_guest_input_limits.py)读取实际安装的版本 3 配置及摘要，保持原内部写块数值，覆盖同步/异步、root/ubuntu：恰好写块、写块加一和 65,792 字节均以单次 SDK 调用成功，再保留多次调用传输同一二进制的检查，最终核对全部长度/摘要和原 PID/服务身份。它不替换或修改既有 `sdk_command_input.py`。原 HTTP 正文超限的写前拒绝、后续合法调用、一次性效果及容量归还继续由[真实 worker HTTP 回归](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)验收；不能把取消/超时算成精确预算拒绝。

@@ -221,12 +221,15 @@ class RegistryDeployment:
 
 def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits,
                              runtime_shape=(1, 256), builder_shape=(2, 2048), ports,
-                             runtime_transfers_per_vm=4):
+                             runtime_transfers_per_vm=4, data_transfer=None,
+                             activation_ceiling_bytes=None, rust_guest_profile=None):
     """Create fresh DTOs only from an explicit complete operator policy."""
     # Explicit test allocation inside the unchanged eight-transfer host bound.
     # Keep one control slot; never infer extra capacity from a failed request.
     if type(runtime_transfers_per_vm) is not int or not 2 <= runtime_transfers_per_vm <= 8:
         raise ValueError("runtime per-VM transfers must fit the original global bound and control reserve")
+    if data_transfer is not None and runtime_transfers_per_vm != 4:
+        raise ValueError("choose one explicit transfer allocation, not overlapping profiles")
     policy = acceptance_build_policy(args.bounded_policy)
     require_bounded_host_tools()
     root, namespaces = bounded_acceptance_layout(policy, run_root=args.run_root,
@@ -263,7 +266,7 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
             "max_active_per_tenant": 2, "max_timeout_secs": 1300, "startup_timeout_secs": 40,
             "max_lifetime_secs": 1300, "expiry_scan_seconds": 2, "public_ipv4_enabled": bool(index),
             **acceptance_pool_disk_budget(policy, "builder" if index else "runtime", rootfs.stat().st_size),
-            "templates": {"templates": [base], "aliases": {"base": base["template_id"]},
+            "templates": {"templates": [base], "aliases": {} if index else {"base": base["template_id"]},
                 "compute_limits": {"max_vcpus_global": 4, "max_vcpus_per_tenant": 4,
                     "max_memory_bytes_global": 4608 * MIB, "max_memory_bytes_per_tenant": 4608 * MIB}},
             "data_transfer": {"file_upload_bytes": 512 * MIB, "file_download_bytes": 2048 * MIB,
@@ -272,12 +275,16 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
                 "max_transfers_per_vm": 4 if index else runtime_transfers_per_vm, "control_reserve": 1,
                 "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60}}
         settings.append(config)
+        if data_transfer is not None:
+            config['data_transfer'] = copy.deepcopy(data_transfer)
     declared = policy['runtime']['bounded_host']['physical_storage']['public_build']
     build = {"root": str(root / "builds"), "registry": {"root": declared['registry_root'], **copy.deepcopy(registry_limits)},
         "registry_owner_uid": declared['registry_owner_uid'],
         "tools": {name: {"path": str((args.tools / name).resolve(strict=True)), "sha256": digest}
                   for name, digest in tool_hashes.items()},
         "dns_servers": ["1.1.1.1", "8.8.8.8"], "limits": copy.deepcopy(build_limits)}
+    if rust_guest_profile is not None:
+        build['rust_guest_profile'] = str(rust_guest_profile)
     apply_acceptance_build_policy(settings[0], settings[1], build, policy)
     windows = policy['builder']['build_retry_windows']
     services = RuntimeServices.prepare(args, root, settings, [pool['templates'] for pool in settings], key,
@@ -286,7 +293,8 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
             window_duration_ms=windows['window_duration_ms'], max_anchors=windows['max_anchors'], builder_revision='builder-base-r1',
             policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',
                                                       'max_lifetime_secs','startup_timeout_secs')}),
-        registry_config=build['registry'], extra_credentials=[{'tenant':2,'secret':foreign_key}])
+        registry_config=build['registry'], extra_credentials=[{'tenant':2,'secret':foreign_key}],
+        activation_ceiling_bytes=activation_ceiling_bytes)
     settings = services.native_pools
     build.update(bind=services.layout['helper_backend_address'],
         runtime_config=str(services.processes.bindings['host-0']['config']),
