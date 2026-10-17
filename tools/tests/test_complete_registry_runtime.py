@@ -68,6 +68,11 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                 # this static test does not claim TLS/Redis or KVM startup.
                 credentials = test_credentials(key, kwargs['extra_credentials'])
                 self.assertEqual([entry['tenant'] for entry in credentials], [1, 2])
+                self.assertEqual(catalogs[0]['aliases'], {'base':'runtime-base'})
+                # The common renderer prefixes builder aliases. Advertising
+                # base here becomes builder-base, colliding with its real ID
+                # and correctly rejected by the original Rust catalog.
+                self.assertEqual(catalogs[1]['aliases'], {})
                 for suffix in ('registry','registry/inbox','registry/artifacts'):
                     (root / suffix).mkdir(mode=0o700)
                 for index, native in enumerate(settings):

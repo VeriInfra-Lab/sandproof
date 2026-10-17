@@ -150,6 +150,30 @@ def stop_services(deployment, report):
         report['staging_cleanup_confirmed'] = True
 
 
+def reclaim_resources(deployment, report, *, services_started):
+    # No VM request is issued before start completes. A partially initialized
+    # authority is NOT permission to initialize again or wait for its listener.
+    # Stop the exact children in the caller, retain role inputs/identity, and
+    # let the original supervisor block for operator inspection.
+    if services_started is not True:
+        return
+    services = deployment.services
+    for role in ('host-0','host-1','center'):
+        child=services.processes.children.get(role)
+        if child is not None and child.poll() is not None:
+            services.processes.start(role)
+    services.wait_ready(for_admission=False)
+    deployment.close_builders()
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    for row in deployment.center_snapshot()['sandboxes']:
+        if row['private'] is False and row['released'] is False:
+            code,_=fetch(opener,services.sdk_url,'DELETE',
+                '/sandboxes/'+row['create']['identity']['sandbox_id'],deployment.key)
+            assert code in (200,204,404)
+    no_resources(deployment)
+    report['resource_cleanup_confirmed']=True
+
+
 def worker(config, expected):
     root = Path(config['run_root'])
     record = root / 'service-cgroup.json'
@@ -158,10 +182,20 @@ def worker(config, expected):
                   status='failed',checks=[],resource_cleanup_confirmed=False,
                   staging_cleanup_confirmed=False,service_cleanup_confirmed=False)
     deployment = None
+    services_started = False
     try:
+        report['phase']='preparing-deployment'
+        _save(root/'report.json',report)
         deployment, args = prepare_deployment(config,root,record)
         services = deployment.services
+        write_once(root/'role-directories.json', {name:dict(path=str(services.layout[name]),
+            identity=list(services.staging_identity[name])) for name in ('common','center','redis')})
+        report['phase']='initializing-services'
+        _save(root/'report.json',report)
         services.start()
+        services_started = True
+        report['phase']='waiting-for-templates'
+        _save(root/'report.json',report)
         services.wait_ready()
         report.update(services=ci_e2e_artifacts.public_identity(services.manifest),
                       service_boundary=ci_e2e_artifacts.require_boundary(dict(public_api='center',
@@ -169,34 +203,27 @@ def worker(config, expected):
         execution, processes = services.execution(config['run_id'], root/'policy.json')
         write_once(root/'execution-manifest.json',execution)
         report.update(execution_manifest=execution, service_processes=processes)
+        report['phase']='building-rust-template'
+        _save(root/'report.json',report)
         template = build_template(deployment,checkout=ROOT,source=Path(config['rust_envd_acceptance']['oci_archive']),
             profile=Path(envd_acceptance.prepared_paths(config)['profile']),kernel=args.kernel)
         report['rust_template'] = template
         for name in envd_acceptance.SUITE:
+            report['phase']='probe-'+name
+            _save(root/'report.json',report)
             report['checks'].append(run_probe(deployment,config,root,name,template))
             _save(root/'report.json',report)
         # The original fault probe emits only its finite JSON report, not logs.
         raw = json_file(root/'faults.log', limit=16*1024**2)
         report['faults'] = raw['faults']
         report['status'] = 'pass'
+    except BaseException as error:
+        report['failure_type']=type(error).__name__
+        raise
     finally:
         try:
             if deployment is not None:
-                services = deployment.services
-                for role in ('host-0','host-1','center'):
-                    child=services.processes.children.get(role)
-                    if child is not None and child.poll() is not None:
-                        services.processes.start(role)
-                services.wait_ready(for_admission=False)
-                deployment.close_builders()
-                opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
-                for row in deployment.center_snapshot()['sandboxes']:
-                    if row['private'] is False and row['released'] is False:
-                        code,_=fetch(opener,services.sdk_url,'DELETE',
-                            '/sandboxes/'+row['create']['identity']['sandbox_id'],deployment.key)
-                        assert code in (200,204,404)
-                no_resources(deployment)
-                report['resource_cleanup_confirmed']=True
+                reclaim_resources(deployment, report, services_started=services_started)
         finally:
             if deployment is not None:
                 stop_services(deployment, report)

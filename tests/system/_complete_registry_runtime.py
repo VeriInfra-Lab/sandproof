@@ -259,7 +259,7 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
             "max_active_per_tenant": 2, "max_timeout_secs": 1300, "startup_timeout_secs": 40,
             "max_lifetime_secs": 1300, "expiry_scan_seconds": 2, "public_ipv4_enabled": bool(index),
             **acceptance_pool_disk_budget(policy, "builder" if index else "runtime", rootfs.stat().st_size),
-            "templates": {"templates": [base], "aliases": {"base": base["template_id"]},
+            "templates": {"templates": [base], "aliases": {} if index else {"base": base["template_id"]},
                 "compute_limits": {"max_vcpus_global": 4, "max_vcpus_per_tenant": 4,
                     "max_memory_bytes_global": 4608 * MIB, "max_memory_bytes_per_tenant": 4608 * MIB}},
             "data_transfer": {"file_upload_bytes": 512 * MIB, "file_download_bytes": 2048 * MIB,

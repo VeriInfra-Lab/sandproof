@@ -19,6 +19,13 @@ SPEC.loader.exec_module(runner)
 
 class AcceptanceHarnessTests(unittest.TestCase):
     """The real harness imports the fixed SDK; keep these in its locked lane."""
+    def test_partial_initialization_does_not_reinitialize_or_wait_for_an_absent_center(self):
+        deployment=Mock()
+        report=dict(resource_cleanup_confirmed=False)
+        runner.reclaim_resources(deployment,report,services_started=False)
+        self.assertEqual(deployment.mock_calls,[])
+        self.assertIs(report['resource_cleanup_confirmed'],False)
+
     def test_service_staging_is_reclaimed_only_after_real_vm_cleanup_and_exact_stop(self):
         for cleaned in (False, True):
             services = Mock()
