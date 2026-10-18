@@ -26,12 +26,22 @@ def policy(config):
     value = config.get('rust_envd_acceptance')
     if value is None:
         return None  # Existing Go gate remains unchanged; no Rust PASS implied.
-    require_keys(value, {*FILES, 'registry_limits', 'build_limits', 'data_transfer'}, 'Rust envd acceptance')
+    require_keys(value, {*FILES, 'tls_material', 'registry_limits', 'build_limits', 'data_transfer'}, 'Rust envd acceptance')
     for name in FILES:
         path = private_path(value[name])
         expected = config['host_assets'].get(str(path))
         if expected is None or digest(path) != expected:
             raise ValueError('unapproved or changed envd acceptance input')
+    # The existing prepared two-task gate has only one host certificate. This
+    # stage builds privately on a second host role; never rotate the old gate's
+    # material or reuse one node's leaf for both roles just to make it start.
+    from tools.ci_e2e_artifacts import tls_material_files
+    tls=private_path(value['tls_material'],directory=True)
+    for name in tls_material_files(('runtime','builder')):
+        path=private_path(tls/name)
+        expected=config['host_assets'].get(str(path))
+        if not 0<path.stat().st_size<=64*1024 or expected is None or digest(path)!=expected:
+            raise ValueError('complete approved stage-specific TLS material required')
     from tools.template_build_config import bounded_data_route_limits
     bounded_data_route_limits({'data_transfer': value['data_transfer']})
     return value

@@ -90,7 +90,7 @@ class AcceptanceHarnessTests(unittest.TestCase):
             config = {name: str(root / name) for name in fields}
             config.update(center_uid=1001, center_gid=1001, redis_uid=1002, redis_gid=1002,
                           uid_base=10000, rust_envd_acceptance=dict(go_rootfs='go', builder_rootfs='builder',
-                          policy_template='policy', registry_limits={'approved': 1},
+                          policy_template='policy', tls_material='stage-tls',registry_limits={'approved': 1},
                           build_limits={'approved': 2}, data_transfer={'approved': 3}))
             policy = {'public': {'bounded_builds': {'helper': {}}}}
             with patch.object(runner, 'json_file', return_value={}), \
@@ -106,6 +106,7 @@ class AcceptanceHarnessTests(unittest.TestCase):
             self.assertEqual(kwargs['tool_hashes']['regctl'], REGCTL_SHA256)
             self.assertEqual(kwargs['data_transfer'], {'approved': 3})
             self.assertEqual(kwargs['activation_ceiling_bytes'], 200*1024**3)
+            self.assertEqual(prepare.call_args.args[0].tls_material,Path('stage-tls'))
 
 
 class FaultProbeTests(unittest.TestCase):

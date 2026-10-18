@@ -87,10 +87,11 @@ def prepare_deployment(config, root, record):
     from types import SimpleNamespace
     value = config['rust_envd_acceptance']
     args = SimpleNamespace(**{name:Path(config[name]) for name in (
-        'center', 'host', 'candidate_manifest', 'redis_material', 'tls_material', 'service_staging_parent',
+        'center', 'host', 'candidate_manifest', 'redis_material', 'service_staging_parent',
         'kernel', 'firecracker', 'jailer', 'tools', 'cgroup_parent', 'build_cgroup_parent')})
     for name in ('center_uid', 'center_gid', 'redis_uid', 'redis_gid', 'uid_base'):
         setattr(args, name, config[name])
+    args.tls_material=Path(value['tls_material'])
     args.rootfs, args.builder_rootfs = Path(value['go_rootfs']), Path(value['builder_rootfs'])
     args.run_root, args.scratch_parent = root / 'runtime', root
     args.namespace, args.build_namespace = [secrets.token_hex(8) for _ in range(2)]

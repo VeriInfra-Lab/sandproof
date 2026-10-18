@@ -202,6 +202,30 @@ class SupervisorStageTests(unittest.TestCase):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_stage_tls_is_separate_complete_and_digest_bound(self):
+        from tools.ci_e2e_artifacts import tls_material_files
+        from tools.system_acceptance import digest
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve(); root.chmod(0o700)
+            value=dict(registry_limits={},build_limits={},data_transfer={})
+            assets={}
+            for name in envd.FILES:
+                p=root/name; p.write_bytes(b'approved input'); p.chmod(0o600)
+                value[name]=str(p); assets[str(p)]=digest(p)
+            tls=root/'stage-tls'; tls.mkdir(mode=0o700); value['tls_material']=str(tls)
+            for name in tls_material_files(('runtime','builder')):
+                p=tls/name; p.write_bytes(name.encode()); p.chmod(0o600);assets[str(p)]=digest(p)
+            config=dict(rust_envd_acceptance=value,host_assets=assets,tls_material='unchanged-existing-gate')
+            with patch('tools.template_build_config.bounded_data_route_limits'):
+                self.assertEqual(envd.policy(config),value)
+                builder=tls/'host-builder.der'
+                original=assets.pop(str(builder))
+                with self.assertRaises(ValueError): envd.policy(config)
+                assets[str(builder)]=original
+                builder.write_bytes(b'changed')
+                with self.assertRaises(ValueError): envd.policy(config)
+            self.assertEqual(config['tls_material'],'unchanged-existing-gate')
+
     def test_missing_profile_does_not_build_or_switch_any_go_material(self):
         self.assertIsNone(envd.prepare({}))
         self.assertIsNone(envd.policy({}))
