@@ -119,6 +119,39 @@ fn environment_refusal_cannot_hide_late_frames_or_body_budget_failure() {
     );
 }
 
+#[test]
+fn exact_environment_duplicates_across_scratch_chunks_keep_original_results() {
+    use std::fmt::Write;
+
+    // Exercise both sides of the internal chunk boundary without making that
+    // allocation granularity a public environment limit.
+    for count in [4095, 4096, 4097, 8193] {
+        let mut payload = String::from(r#"{"process":{"envs":{"#);
+        for index in (0..count).rev() {
+            if index + 1 != count {
+                payload.push(',');
+            }
+            write!(&mut payload, "\"k{index}\":\"\"").unwrap();
+        }
+        for suffix in ["}}}", r#", "\u006b0":""}}}"#, r#", "k4094":null}}}"#] {
+            let complete = format!("{payload}{suffix}");
+            let wire = frame(complete.as_bytes());
+            let original = decode_request("Start", &wire, wire.len());
+            let actual = decode_request_with_start_limits("Start", &wire, wire.len(), limits(64));
+            if suffix == "}}}" {
+                assert!(matches!(original, Ok(Request::Start(_))));
+                assert!(matches!(
+                    actual,
+                    Ok(Request::StartEnvironmentExceeded { .. })
+                ));
+            } else {
+                assert_eq!(original, Err(ProtocolError::InvalidArgument));
+                assert_eq!(actual, original);
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn oversized_environment_decodes_in_an_independent_memory_limited_process() {

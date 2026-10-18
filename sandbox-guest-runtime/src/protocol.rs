@@ -96,10 +96,10 @@ impl<'de> Deserialize<'de> for Selector {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(bound(
-    deserialize = "A: Deserialize<'de> + Default, K: Deserialize<'de> + Ord, V: Deserialize<'de>",
-    serialize = "A: Serialize + Default + PartialEq, K: Serialize + Ord, V: Serialize"
+    deserialize = "A: Deserialize<'de> + Default, E: request_json::Environment<'de>",
+    serialize = "A: Serialize + Default + PartialEq, E: Serialize + Default + PartialEq"
 ))]
-pub struct ProcessConfig<A = Vec<String>, K = String, V = String> {
+pub struct ProcessConfig<A = Vec<String>, E = BTreeMap<String, String>> {
     #[serde(default, deserialize_with = "null_default")]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub cmd: String,
@@ -107,8 +107,8 @@ pub struct ProcessConfig<A = Vec<String>, K = String, V = String> {
     #[serde(skip_serializing_if = "is_default")]
     pub args: A,
     #[serde(default, deserialize_with = "envs")]
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub envs: BTreeMap<K, V>,
+    #[serde(skip_serializing_if = "is_default")]
+    pub envs: E,
     #[serde(default, deserialize_with = "null_default")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
@@ -176,12 +176,10 @@ pub struct PtySize {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[serde(bound(
-    deserialize = "A: Deserialize<'de> + Default, K: Deserialize<'de> + Ord, V: Deserialize<'de>"
-))]
-pub struct StartRequest<A = Vec<String>, K = String, V = String> {
+#[serde(bound(deserialize = "A: Deserialize<'de> + Default, E: request_json::Environment<'de>"))]
+pub struct StartRequest<A = Vec<String>, E = BTreeMap<String, String>> {
     #[serde(default, deserialize_with = "optional_object")]
-    pub process: Option<ProcessConfig<A, K, V>>,
+    pub process: Option<ProcessConfig<A, E>>,
     #[serde(default, deserialize_with = "optional_object")]
     pub pty: Option<Pty>,
     #[serde(default, deserialize_with = "null_default")]
