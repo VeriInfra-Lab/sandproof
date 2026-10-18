@@ -443,16 +443,14 @@ fn decode_message_limited(
     let payload = prepared.as_ref();
     if method == "Start"
         && let Some(limit) = arguments
+        && argument_count::exceeds(payload, limit)?
     {
+        // The inspection above is not an alternate schema. Validate every
+        // field using the same Start/Process definitions before deferring the
+        // existing execution refusal. Within-limit requests decode only once.
         let checked: StartRequest<argument_count::Count> = parse(payload)?;
-        if checked
-            .process
-            .as_ref()
-            .is_some_and(|process| process.args.0 > limit)
-        {
-            return Ok(Request::StartArgumentsExceeded { limit });
-        }
         drop(checked);
+        return Ok(Request::StartArgumentsExceeded { limit });
     }
     match method {
         "Start" => Ok(Request::Start(parse(payload)?)),

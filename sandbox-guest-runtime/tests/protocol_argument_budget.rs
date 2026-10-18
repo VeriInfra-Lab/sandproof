@@ -45,6 +45,10 @@ fn oversized_arguments_do_not_hide_late_json_or_framing_errors() {
         br#"{"process":{"args":["a","b"]},"pty":[]}"#,
         br#"{"process":{"args":["a","b"]},"unknown":"\ud800"}"#,
         br#"{"process":{"args":["a","b"]}} true"#,
+        br#"{"process":{"args":[],"envs":{"A":"b","A":"c"}}}"#,
+        br#"{"process":{"args":[],"envs":[]}}"#,
+        br#"{"process":{"args":[],"cmd":42}}"#,
+        br#"{"process":{"args":[]},"pty":[]}"#,
     ] {
         let wire = frame(payload);
         assert_eq!(
