@@ -171,12 +171,10 @@ async fn shared_http_keeps_control_admission_available_while_start_stream_owns_o
     for method in ["List", "SendInput", "Connect", "Start"] {
         let mut rejected = request(method, &json!({}));
         unread(&mut rejected);
-        assert!(matches!(
-            http.clone().handle(rejected).await,
-            Err(Failure::Admission(
-                command_requests::AdmissionError::ResourceExhausted
-            ))
-        ));
+        assert_eq!(
+            http.clone().handle(rejected).await.unwrap().status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
     }
     let reply = http
         .clone()
@@ -189,16 +187,16 @@ async fn shared_http_keeps_control_admission_available_while_start_stream_owns_o
     let last = first.clone();
     drop(first);
     full(&control); // Completed HTTP payload clones retain the original slot.
-    assert!(matches!(
+    assert_eq!(
         http.handle(request(
             "SendSignal",
             &json!({"process":{"pid":pid},"signal":"SIGNAL_KILL"})
         ))
-        .await,
-        Err(Failure::Admission(
-            command_requests::AdmissionError::ResourceExhausted
-        ))
-    ));
+        .await
+        .unwrap()
+        .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
     drop(last);
     assert_eq!(
         bytes(

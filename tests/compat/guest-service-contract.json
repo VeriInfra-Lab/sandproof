@@ -351,38 +351,6 @@
       "status": 204
     }
   ],
-  "errors": [
-    {
-      "code": "not_found",
-      "http_status": 404,
-      "meaning": "unknown command selector or missing file; no replay"
-    },
-    {
-      "code": "invalid_argument",
-      "http_status": 400,
-      "meaning": "invalid fields/path; never fall back to a different user"
-    },
-    {
-      "code": "permission_denied",
-      "http_status": 403,
-      "meaning": "operation refused; preserve already observed partial file effects"
-    },
-    {
-      "code": "unauthenticated",
-      "http_status": 401,
-      "meaning": "no valid instance credential or requested user"
-    },
-    {
-      "code": "resource_exhausted",
-      "http_status": 429,
-      "meaning": "declared local capacity exhausted; not a successful start"
-    },
-    {
-      "code": "deadline_exceeded",
-      "http_status": 504,
-      "meaning": "requested result not observed in time; effects may have happened"
-    }
-  ],
   "current_gateway_rejections": [
     "WatchDir",
     "CreateWatcher",
@@ -390,7 +358,272 @@
     "RemoveWatcher"
   ],
   "open_contract_decisions": [
-    "Public PID reuse and service restart need an explicit reviewed policy; internal full identity alone is insufficient.",
-    "File watcher routes are rejected by the current gateway; exposing them requires an explicit scope decision."
+    "File watcher routes are rejected by the current gateway; exposing them requires an explicit scope decision.",
+    "Whole-service task and memory accounting and acceptance budgets remain open; component limits alone do not close E05."
+  ],
+  "error_code_catalog": [
+    {
+      "code": "not_found",
+      "meaning": "unknown command selector or missing file; no replay",
+      "unary_http_status": 404
+    },
+    {
+      "code": "invalid_argument",
+      "meaning": "invalid fields/path; never fall back to a different user",
+      "unary_http_status": 400
+    },
+    {
+      "code": "permission_denied",
+      "meaning": "operation refused; preserve already observed partial file effects",
+      "unary_http_status": 403
+    },
+    {
+      "code": "unauthenticated",
+      "meaning": "no valid instance credential or requested user",
+      "unary_http_status": 401
+    },
+    {
+      "code": "resource_exhausted",
+      "meaning": "declared local capacity exhausted; not a successful start",
+      "unary_http_status": 429
+    },
+    {
+      "code": "deadline_exceeded",
+      "meaning": "requested result not observed in time; effects may have happened",
+      "unary_http_status": 504
+    }
+  ],
+  "error_code_catalog_scope": "Connect code vocabulary and unary status only; not a universal endpoint mapping. Streaming EOS uses HTTP 200; an unclassified or partial transport failure has no complete error response.",
+  "errors": [
+    {
+      "id": "admission-post-Start",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/Start"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Connect",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/Connect"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-List",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/List"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-SendInput",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/SendInput"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-CloseStdin",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/CloseStdin"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-SendSignal",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/SendSignal"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Update",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/Update"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Stat",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/Stat"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-MakeDir",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/MakeDir"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-ListDir",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/ListDir"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Move",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/Move"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Remove",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/Remove"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-get-files",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "GET",
+        "path": "/files?path=never"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-files",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/files?path=never"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-head-files",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "HEAD",
+        "path": "/files?path=never"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": ""
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    }
+  ],
+  "accepted_contract_decisions": [
+    "Public PID claims are durable and never reused within one VM; restart opens the original state and rejects missing, corrupt or foreign state. Restart does not restore the active command registry.",
+    "Tags use deterministic lookup, reject active duplicates before execution and retain terminal records for 30 seconds.",
+    "Explicit keepalive must be a positive whole-second value in 1..9223372036; missing or unparsable values use 90 seconds."
   ]
 }

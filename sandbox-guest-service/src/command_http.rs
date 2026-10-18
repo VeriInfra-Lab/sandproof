@@ -164,7 +164,8 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
     /// Admit before token/Basic/body work and execute exactly once. Errors from
     /// partial/accepted operations never authorize replay or a replacement PID.
     /// # Errors
-    /// Saturation, unknown route, unmapped original faults, expiry or encoding.
+    /// Invalid admission clock, unknown route, unmapped faults, expiry or encoding.
+    /// Saturation returns the fixed bounded 429 before any request work.
     /// Retained failures keep the original capacity until their last owner exits.
     pub async fn handle(&self, request: Request<Body>) -> Result<Response, Failure> {
         match self.prepare(request).await? {
@@ -185,7 +186,15 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
         } else {
             &inner.requests.ordinary
         };
-        let admitted = pool.admit().map_err(Failure::Admission)?;
+        let admitted = match pool.admit() {
+            Ok(admitted) => admitted,
+            Err(command_requests::AdmissionError::ResourceExhausted) => {
+                return Ok(Prepared::Response(crate::admission_response::exhausted(
+                    request.method(),
+                )));
+            }
+            Err(error) => return Err(Failure::Admission(error)),
+        };
         let Some(rpc) = rpc else {
             return Err(Failure::Route(Retained {
                 deadline: admitted.deadline(),

@@ -128,16 +128,24 @@ impl<M: MetadataSource, S: AccountSource, Z: LocalZone + Send + Sync + 'static> 
     /// download cannot select its own MIME path, multipart boundary or response
     /// headers. Only an actually completed upload becomes a success response.
     /// # Errors
-    /// Unsupported route, failed admission, unmapped preparation/transfer error
+    /// Unsupported route, invalid admission clock, unmapped preparation/transfer error
     /// or failed response delivery. Errors preserve the original request slot
     /// until dropped; callers must use a separately bounded listener policy.
     pub async fn handle(&self, request: Request<Body>) -> Result<Response, Failure> {
         let inner = &self.inner;
-        let admitted = inner.requests.admit().map_err(|error| Failure {
-            error: Error::Admission(error),
-            deadline: None,
-            _owner: None,
-        })?;
+        let admitted = match inner.requests.admit() {
+            Ok(admitted) => admitted,
+            Err(AdmissionError::ResourceExhausted) => {
+                return Ok(crate::admission_response::exhausted(request.method()));
+            }
+            Err(error) => {
+                return Err(Failure {
+                    error: Error::Admission(error),
+                    deadline: None,
+                    _owner: None,
+                });
+            }
+        };
         let deadline = admitted.deadline();
         let owner = admitted.owner();
         if request.uri().path() != "/files" {

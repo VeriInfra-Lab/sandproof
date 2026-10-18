@@ -22,6 +22,8 @@ mod transport;
 #[path = "guest_http/wire.rs"]
 mod wire;
 use configuration::parts;
+#[path = "guest_http/admission.rs"]
+mod admission;
 
 fn at(method: Method, path: &str, body: impl Into<Body>) -> HttpRequest<Body> {
     HttpRequest::builder()
