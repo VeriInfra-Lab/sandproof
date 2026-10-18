@@ -7,7 +7,7 @@
 use axum::{body::Body, http::Request, response::Response};
 use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
-use std::{fmt, future::Future, io, time::Duration};
+use std::{fmt, future::Future, io, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpListener,
@@ -17,6 +17,7 @@ use tokio::{
 };
 
 mod read_cap;
+mod rejection;
 #[cfg(test)]
 mod tests;
 
@@ -24,6 +25,9 @@ mod tests;
 /// connection lifetime covers headers, body, handler, response and keep-alive;
 /// it is never restarted by bytes or another request. Closing transport does
 /// not establish that a file effect or command stopped, and never retries it.
+/// After an unread body is abandoned, closing discards at most `buffer_bytes`
+/// additional raw bytes, using a 1024-byte scratch buffer and at most
+/// `header_timeout` more time, still clipped by the original connection deadline.
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
@@ -170,6 +174,8 @@ where
     F: Future<Output = Result<Response, E>>,
     E: Send + Sync + 'static,
 {
+    let abandoned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let observed = Arc::clone(&abandoned);
     let mut builder = http1::Builder::new();
     builder
         .timer(TokioTimer::new())
@@ -177,14 +183,29 @@ where
         .max_buf_size(limits.buffer_bytes)
         .header_read_timeout(limits.header_timeout);
     let service = service_fn(move |request: Request<hyper::body::Incoming>| {
-        let future = handler(request.map(Body::new));
-        async move { future.await.map_err(HandlerFailure) }
+        let observed = Arc::clone(&observed);
+        let future = handler(
+            request
+                .map(|body| Body::new(rejection::ObservedBody::new(body, Arc::clone(&observed)))),
+        );
+        async move {
+            let mut response = future.await.map_err(HandlerFailure)?;
+            if observed.load(std::sync::atomic::Ordering::Acquire) {
+                // Never let unread bytes become another application request.
+                response.headers_mut().insert(
+                    axum::http::header::CONNECTION,
+                    axum::http::HeaderValue::from_static("close"),
+                );
+            }
+            Ok::<_, HandlerFailure<E>>(response)
+        }
     });
     // Pinned Hyper's max_buf_size controls requested reserve, not the full
     // BytesMut capacity subsequently offered to poll_read. Buffer reclaim can
     // expose 24 KiB with a 16 KiB budget and make valid uploads fail their frame
     // guard. Cap the original socket read, without enlarging any body budget.
     let socket = read_cap::ReadCap::new(socket, limits.buffer_bytes);
+    let socket = rejection::ClosingIo::new(socket, abandoned, limits, deadline);
     let connection = builder.serve_connection(TokioIo::new(socket), service);
     tokio::pin!(connection);
     if *stopped.borrow() {
