@@ -857,8 +857,25 @@ V0/共享状态及首链抽取的输出路径按实际驱动工作目录冻结�
 
 批次自查已完成，相邻模块的人工独立复核仍待认领。原请求的真实选择、完整中心更新、持久提交、宿主证据、权限撤销/排空与系统投递连接及条件最终完成性仍未闭合；FC-ID/COMMIT/EVIDENCE/DRAIN/INIT/EXTEND/IMPLEMENT 保持未解，不关闭 #342/#101。
 
-### 生命周期 JSON 容器收尾与直接调用登记（#558，局部）
+### 完整生命周期 JSON 请求的有条件验证（#558）
 
-`SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean` 增加固定库容器结束、首错、游标保持和错误位置的十条条件定理，连接实际生成的无效编号/零计数器分支。真实 `from_slice` 回归覆盖六类字段位置、三个计数器位置及多行空白：保留原错误全文/类别，最近容器补齐位置，外层不改写；直接叶子的 `(0,0)` 与复合请求区分。它不计算任意输入的 parser 位置。此前 42 条局部结论及具体 mTLS 字段回归的范围保持。
+本批连接原 `server::receive_intent` / `InternalClient::lifecycle` 使用的完整 `LifecycleRequest`，复用共享编号、计数器和身份类型。原 `LifecycleRequest::validate`、`ControlIdentity::validate_node`、`CreateBinding::is_valid` 及自有校验/转换保留固定 Charon/Aeneas 的真实生成体。实际字节入口的完整 Serde 图仍不能由原后端生成 Lean；两个只调用原 `from_slice<LifecycleRequest>` / `to_vec<LifecycleRequest>` 的包装，按[依赖登记 A6/B4](formal/dependencies.md#a6-json-与标准派生的最小合同)保留逐符号可信条件，没有增加独立 Rust 解释器或把自有业务守卫整体设为 opaque。
 
-`verification/json-request-binding.json` 将原 `from_slice<LifecycleRequest>` / `to_vec<LifecycleRequest>` 的两个验证包装归入逐符号 A6/B4 可信连接；自有守卫继续保留真实公共生成体。登记和 AST/源码准入、有限对照是该条件的工程依据，不是完整 async Rust/库语义已证明。[具体字节组合](../SandboxModel/Boundaries/JsonRequest/SliceBinding.lean)已按本固定请求的原切片、错误字典、字段现场和正常分配域接通，新增十五条条件定理：原错误文本/类别、输入来源、公共 recipe 实例化、完整形状、逐值往返、守卫保持、自有长度约束和所有合法有界输入/初始输入的接受见证。合计 67 条局部审计；固定库/派生与实际机械绑定仍以依赖登记的 A6/B4 符合性为条件，没有机器证明 JSON 扫描器、标准派生或 async 外壳。39 项真实 extraction crate 回归含各字段最大长度、u64/u16/u8 极值及三个 intent，均保留原正文限额和自有守卫。原固定输入更新、永久负向入口和两项完整验收仍在 #558 收尾；本段不宣布 #558、T1/T2 或 V0 完成。
+| 已证明的结论 | 适用条件和限制 |
+| --- | --- |
+| 原守卫的完整结果、接受条件和首个拒绝 | 检查原版本、完整节点、槽位、创建参数及三个 intent 的形状；不提供授权、寿命准入、持久提交或接收回调业务结论 |
+| 全字段表示及逐值相等 | 保留身份、资源、32字节摘要、options、时间和 intent；投影相等推出原请求相等，没有隐藏截断或省略字段 |
+| 完整字段读写、往返和有界合法接受 | [具体组合](../SandboxModel/Boundaries/JsonRequest/SliceBinding.lean)使用原叶子/转换与固定标准派生、SliceRead和紧凑渲染条件；原输入域及创建守卫推出存在不超过270336字节的编码和逐值往返，含非空初态见证。往返保持请求值，不要求原始JSON的空白、字段顺序或转义逐字不变 |
+| 原错误及容器/文档结束顺序 | 原编号/计数器错误文本、类别和初始位置有对应；容器结束在visitor普通错误后仍可能推进游标，原错误优先，已有位置不被外层改写；最外层document end仅在解码成功后执行。不计算任意输入的parser位置，也不把失败解释成输入状态回滚 |
+
+固定 serde/serde_core/serde_derive 1.0.228、serde_json 1.0.142 的扫描、UTF-8/转义、数值、标准派生、普通Clone及正常分配/有限渲染，实际切片、原错误字典和参数/结果机械绑定，仍由A6/B4提供。源码审查、完整AST准入和原生对照支持这些条件的采用，不是JSON库或async外壳的机器精化。普通String、Vec<u8>及无自定义IO来源的SliceRead/Vec错误属于本域；自定义可观察Drop、FD/许可/锁、panic/unwind、OOM/abort、异步取消及任意有状态序列化器没有据此覆盖。
+
+[调用登记](../verification/json-request-binding.json)绑定五份生产源、十份相关库源、实际编译特性、完整字段/属性/声明顺序、两个完整根AST及完整LLBC摘要。标准结构体按实际派生接受对象或声明顺序的序列；固定Create/Destroy单元分支忽略可成功解析的额外字段，Renew拒绝未知字段，生产策略没有改变。原HTTP输入上限由真实`Limited`提供，options上限仍由原守卫提供，不能把`from_slice`本身当作HTTP限额。旧180个透明生成定义逐字不变，只加入两个真实守卫函数及对应类型；完整中间表示只沿用原无序`short_names`表排序规则，其余有序字段、清理记录和完整源文件文本全部保留。
+
+本模块67条声明进入[依赖审计](../SandboxModel/Boundaries/JsonRequest/Audit.lean)。真实extraction crate的39项回归、严格Clippy和原客户端→mTLS→服务器字段/拒绝检查通过；后者为组件接线证据。永久错误版只移除原身份守卫，先构建和实际重抽取成功，再被原Rust错误顺序断言及同一`GuardContract`的否定证书拒绝，真实Lean服务和内核均核对通过；编译失败不算性质反例。
+
+可执行代码和测试冻结于`a5b43c9b76eec060fbc201737d67c7bcbf451104`。a6000隔离Linux的原完整`verify-controller.sh`退出0（1172.612秒），157份保留项目Lean文件及入口编译、835个唯一声明审计和占位检查通过；原完整`check-function.sh`退出0（1734.82秒，1210项工具测试、13阶段）。1680项跟踪输入前后一致，仅对既有无序短名表采用原规范摘要；本模块与总审计的最终真实服务诊断均完整、非陈旧、无错误/失败依赖，证明源码指纹相同。最终报告只更新本覆盖小节，可执行/证明输入与该验收提交相同，并另核对文档及全部保留冻结清单。
+
+此前完整入口检出的两次失败均保留：一次为字节LLBC嵌入的整份验证文件测试文本过期，按完整字段重新生成后增加提前源码身份检查；另一次为两个旧检查器私有夹具漏复制新公共依赖，19项在原断言前缺文件。修复只补13行夹具依赖和六份摘要，19个测试方法AST、全部检查器及原输入集合未变，最终完整套件中的19项均通过。没有放宽断言、安全检查或AST准入，也未改变生产Rust、Charon/Aeneas、工具版本或清理`.lake`。
+
+原opt-in/特权忽略项未计为已运行；完整VM、部署TLS/网络、授权/存储/宿主效果、真实排空及系统完成性未由本批验收。本项提供代表性完整请求的有条件接入，不关闭T1/T2的其它使用点、T0–T8或整个V0，T9继续排除。
