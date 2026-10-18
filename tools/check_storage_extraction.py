@@ -134,31 +134,96 @@ def check_audit_surface(root):
     return expected
 
 
-def check_service(root, path):
+def proof_sources_digest(root):
+    fingerprint = hashlib.sha256()
+    sources = sorted((root / 'SandboxModel').rglob('*.lean'))
+    sources += sorted((root / 'verification/aeneas').rglob('*.lean'))
+    for source in sources:
+        name = str(source.relative_to(root)).encode()
+        fingerprint.update(len(name).to_bytes(8, 'big'))
+        fingerprint.update(name)
+        fingerprint.update(hashlib.sha256(source.read_bytes()).digest())
+    return fingerprint.hexdigest()
+
+
+def check_service_record(root, record):
     expected = check_audit_surface(root)
-    records = []
-    for line in path.read_text().splitlines():
-        if line.startswith('{'):
-            record = json.loads(line)
-            if record.get('request', {}).get('code_file') == 'verification/aeneas/storage/SandproofStorage/Audit.lean':
-                records.append(record)
-    if len(records) != 1:
-        raise ValueError('one actual Redis Audit service result is required')
-    record = records[0]
-    result = record['result']
-    audit = root / 'verification/aeneas/storage/SandproofStorage/Audit.lean'
+    name = 'verification/aeneas/storage/SandproofStorage/Audit.lean'
+    digest = hashlib.sha256((root / name).read_bytes()).hexdigest()
+    request = record['request']
+    if (request.get('tool') != 'lean_diagnostic_messages'
+            or request.get('arguments') != {'file_path': name}
+            or request.get('expected_sha256') != digest):
+        raise ValueError('unfiltered physical Redis Audit request with exact source pin is required')
+    envelope = record['result']
+    if set(envelope) != {'result'}:
+        raise ValueError('actual Redis file diagnostics returned an error or unreviewed envelope')
+    result = envelope['result']
     if (record.get('stale') is not False or result.get('success') is not True
-            or result.get('timed_out') is not False or result.get('partial') is True
-            or record['revision']['file_sha256'] != hashlib.sha256(audit.read_bytes()).hexdigest()):
+            or result.get('timed_out') is not False or result.get('partial') is not False
+            or result.get('still_elaborating_lines') not in (None, [])
+            or result.get('failed_dependencies') not in (None, [])
+            or record['revision']['file_sha256'] != digest
+            or record['revision']['sources_sha256'] != proof_sources_digest(root)):
         raise ValueError('actual Redis Audit service result was incomplete, stale or unsuccessful')
-    diagnostics = result['diagnostics']
-    if any(d['severity'] in {'error', 'warning'} for d in diagnostics):
-        raise ValueError('Redis Audit service returned errors or warnings')
+    diagnostics = result['items']
+    if any(d['severity'] in {'error', 'warning'} or 'unsolvedGoals' in (d.get('lean_tags') or [])
+           for d in diagnostics):
+        raise ValueError('Redis Audit service returned errors, warnings or unsolved goals')
     checked = [re.match(r'^Checked ([A-Za-z0-9_.]+):', d['message']) for d in diagnostics]
     names = [m.group(1) for m in checked if m]
     if len(names) != len(expected) or set(names) != expected:
         raise ValueError('actual Redis service dependency audit omitted a theorem')
     return len(expected)
+
+
+def check_service_mutations(root, record):
+    changes = [
+        lambda r: r.update(stale=True),
+        lambda r: r['revision'].update(file_sha256='changed'),
+        lambda r: r['revision'].update(sources_sha256='changed'),
+        lambda r: r['request'].update(expected_sha256='changed'),
+        lambda r: r['request'].update(tool='lean_run_code'),
+        lambda r: r['request']['arguments'].update(severity='info'),
+        lambda r: r['request']['arguments'].update(file_path='another.lean'),
+        lambda r: r['result'].update(isError=True),
+        lambda r: r['result']['result'].update(success=False),
+        lambda r: r['result']['result'].update(partial=True),
+        lambda r: r['result']['result'].update(timed_out=True),
+        lambda r: r['result']['result'].update(still_elaborating_lines=[[1, 135]]),
+        lambda r: r['result']['result'].update(failed_dependencies=['missing.lean']),
+        lambda r: r['result']['result']['items'][0].update(severity='warning'),
+        lambda r: r['result']['result']['items'][0].update(lean_tags=['unsolvedGoals']),
+        lambda r: r['result']['result']['items'].pop(),
+        lambda r: r['result']['result']['items'].append(copy.deepcopy(r['result']['result']['items'][0])),
+        lambda r: r['result']['result']['items'][0].update(message='Checked Unregistered.theorem: 0 standard logical dependencies'),
+    ]
+    for change in changes:
+        mutant = copy.deepcopy(record)
+        change(mutant)
+        try:
+            check_service_record(root, mutant)
+        except (ValueError, KeyError, TypeError, IndexError):
+            continue
+        raise ValueError('incomplete, filtered, stale or false Redis service receipt accepted')
+    return len(changes)
+
+
+def check_service(root, path, mutations=False):
+    records = []
+    for line in path.read_text().splitlines():
+        if line.startswith('{'):
+            record = json.loads(line)
+            request = record.get('request', {})
+            if request.get('arguments', {}).get('file_path') == 'verification/aeneas/storage/SandproofStorage/Audit.lean':
+                records.append(record)
+    if len(records) != 1:
+        raise ValueError('one actual physical Redis Audit service result is required')
+    count = check_service_record(root, records[0])
+    if mutations:
+        rejected = check_service_mutations(root, records[0])
+        print(f'Redis service admission rejected {rejected} invalid receipt mutations.')
+    return count
 
 
 def check(root, llbc, inventory):
@@ -298,7 +363,7 @@ def main():
         if args.check_mutations:
             check_mutations(args.root, llbc, inventory)
         if args.service_log is not None:
-            check_service(args.root, args.service_log)
+            check_service(args.root, args.service_log, args.check_mutations)
     except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError) as error:
         print('Redis extraction admission failed: ' + str(error), file=sys.stderr)
         return 1

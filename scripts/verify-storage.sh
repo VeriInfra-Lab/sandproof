@@ -43,16 +43,17 @@ for name, expected in profile['candidate_files'].items():
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
         raise ValueError('correct candidate source changed during proof/test checks: ' + name)
 name = 'verification/aeneas/storage/SandproofStorage/Audit.lean'
-requests = [dict(tool='lean_run_code', code_file=name,
+requests = [dict(tool='lean_diagnostic_messages', arguments={'file_path': name},
                  expected_sha256=hashlib.sha256((root / name).read_bytes()).hexdigest()), dict(tool='exit')]
 (batch / 'service-requests.jsonl').write_text(''.join(json.dumps(x) + '\n' for x in requests))
 PY
-# The same real lean-lsp-mcp client required by the project workflow.
+# Check the actual formal file through the same real lean-lsp-mcp client.
+# Virtual scratch workers are for experiments, not the formal file admission.
 .tools/lean-mcp/bin/python tools/lean_session.py \
   < "$BATCH/service-requests.jsonl" > "$BATCH/service.log" 2>&1
 bash scripts/python-entry.sh tools/check_storage_extraction.py \
   --llbc "$BATCH/correct/source/verification/aeneas/llbc/sandproof_storage.llbc" \
-  --service-log "$BATCH/service.log"
+  --service-log "$BATCH/service.log" --check-mutations
 if rg -n --glob '*.lean' '\b(sorry|admit|axiom)\b' \
     verification/aeneas/storage verification/experiments/redis-result/Counterexample.lean; then
   echo 'Forbidden placeholder or custom assumption in Redis proofs.' >&2

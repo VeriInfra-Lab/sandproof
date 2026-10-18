@@ -60,7 +60,7 @@ bash scripts/verify-storage.sh
 
 随后 `negative.py` 另建私有副本，只把真实 Rust `fence_unknown` 的 `write_fenced = true` 改为 false。错误版先编译、用原 Charon/Aeneas 抽取，其生成文件保留原样；相对正确生成物只允许目标赋值和工具生成的模块 import 差异。原 Results 文件只改模块 import，就必须在 `fence_unknown_exact` 和 `eval_error_returns_unknown` 失败；编译失败、缺模块或其它诊断不算拒绝成功。三个独立反例/允许输入定理还须通过内核和标准依赖审计。
 
-最后原真实 Lean 服务检查正式 Audit，并核对成功、非陈旧、无错误/警告和全部定理的审计回执。`verify-controller.sh` 保留原有阶段并增加本入口。该入口通过也只支持此冻结候选；原 Linux 基础检查与全项目证明验收仍须单独完成，不能据此关闭整个 V0。
+最后用原真实 Lean 服务的 lean_diagnostic_messages 直接检查正式 Audit 文件；不设严重性、行号或声明筛选，不把正式验收交给虚拟 scratch 文件。核对完整、未超时、非陈旧、无错误/警告/未解目标、全部定理回执，以及 Audit 和全部证明源码的指纹；缺失/重复审计、陈旧、筛选、部分结果或服务错误等 18 类回执变体必须被拒绝。`verify-controller.sh` 保留原有阶段并增加本入口。该入口通过也只支持此冻结候选；原 Linux 基础检查与全项目证明验收仍须单独完成，不能据此关闭整个 V0。
 
 原 LLBC 保留的析构没有因为 Lean 生成物未显示就被忽略：原函数/位置/类型/异常路径完整摘要纳入准入。普通值域、原连接关闭与异常退出分别按[依赖明细](../../../docs/formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)解释；不把资源析构当纯值，也不从逻辑连接消失推导物理关闭或回滚。
 
