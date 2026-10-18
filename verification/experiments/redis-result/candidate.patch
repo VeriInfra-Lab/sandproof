@@ -1,5 +1,5 @@
 diff --git a/sandbox-center-store/src/store.rs b/sandbox-center-store/src/store.rs
-index 31100dd7..5a68d52d 100644
+index 31100dd7..4f170b85 100644
 --- a/sandbox-center-store/src/store.rs
 +++ b/sandbox-center-store/src/store.rs
 @@ -1,3 +1,6 @@
@@ -9,38 +9,62 @@ index 31100dd7..5a68d52d 100644
  use crate::{ControlState, REDIS_VERSION, Revision, StoreError, WriterLease, codec, scripts};
  use redis::{Connection, ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo};
  use sandproof_protocol::DeploymentId;
-@@ -332,20 +335,118 @@ impl<T: ControlState> RedisLedger<T> {
+@@ -287,14 +290,12 @@ impl<T: ControlState> RedisLedger<T> {
+     /// Refuses while write-fenced; CAS conflicts do not mutate the record.
+     /// Any write transport/error/late health failure is `OutcomeUnknown`.
+     pub fn commit(&mut self, expected: &Observed<T>, next: &T) -> Result<Committed<T>, StoreError> {
+-        if self.write_fenced {
+-            return Err(StoreError::WriteFenced);
+-        }
+-        let deadline = self.deadline();
+-        self.replace(
++        self.commit_using(
+             expected,
+-            codec::encode(next, self.config.max_block_bytes)?,
+-            deadline,
++            next,
++            T::FORMAT_VERSION,
++            &mut JsonCodec,
++            &mut SystemClock,
+         )
+     }
+
+@@ -304,48 +305,131 @@ impl<T: ControlState> RedisLedger<T> {
+     /// # Errors
+     /// CAS/health/capacity/identity/exhaustion or an unknown recommit outcome.
+     pub fn reaffirm(&mut self, expected: &Observed<T>) -> Result<Committed<T>, StoreError> {
+-        self.replace(expected, expected.encoded.clone(), self.deadline())
++        self.reaffirm_using(
++            expected,
++            T::FORMAT_VERSION,
++            &mut JsonCodec,
++            &mut SystemClock,
++        )
+     }
+
+-    fn replace(
++    fn write(
+         &mut self,
+-        expected: &Observed<T>,
++        expected: Option<&Observed<T>>,
+         encoded: Vec<u8>,
++        revision: Revision,
          deadline: Instant,
      ) -> Result<Committed<T>, StoreError> {
-         let state = codec::decode(&encoded, self.config.max_block_bytes)?;
--        let prior = expected.map_or_else(String::new, |value| value.revision.get().to_string());
--        let mut command = redis::cmd("EVAL");
--        command
--            .arg(scripts::CAS)
--            .arg(1)
--            .arg(self.config.key())
--            .arg(self.config.deployment.as_str())
--            .arg(T::FORMAT_VERSION)
--            .arg(prior)
--            .arg(revision.get())
--            .arg(&encoded)
--            .arg(self.config.max_block_bytes)
--            .arg(expected.map_or(&[][..], |value| value.encoded.as_slice()));
--        let result: i64 = match self.query(&mut command, deadline) {
-+        self.write_decoded(
+-        if expected.deployment != self.config.deployment {
+-            return Err(StoreError::InvalidRecord);
++        self.write_using(
 +            expected,
-+            DecodedWrite {
-+                encoded,
-+                revision,
-+                deadline,
-+                format: T::FORMAT_VERSION,
-+                state,
-+            },
++            encoded,
++            revision,
++            deadline,
++            T::FORMAT_VERSION,
++            &mut JsonCodec,
 +        )
 +    }
 +
 +    fn deadline(&self) -> Instant {
-+        Instant::now() + self.config.operation_timeout
++        SystemClock.deadline(self.config.operation_timeout)
 +    }
 +
 +    fn query<R: redis::FromRedisValue>(
@@ -65,11 +89,18 @@ index 31100dd7..5a68d52d 100644
 +            && name == key
 +        {
 +            return true;
-+        }
-+    }
+         }
+-        let next = expected
+-            .revision
+-            .checked_next()
+-            .map_err(|_| StoreError::RevisionExhausted)?;
+-        self.check_health(deadline)?;
+-        self.write(Some(expected), encoded, next, deadline)
+     }
 +    false
 +}
-+
+
+-    fn write(
 +fn info_field<'a>(info: &'a str, key: &str) -> Option<&'a str> {
 +    let mut lines = info.lines();
 +    while let Some(line) = lines.next() {
@@ -99,10 +130,28 @@ index 31100dd7..5a68d52d 100644
 +// The result/fence stage does not use the Serde engine trait hierarchy.
 +impl<T> RedisLedger<T> {
 +    pub(crate) fn write_decoded(
-+        &mut self,
-+        expected: Option<&Observed<T>>,
+         &mut self,
+         expected: Option<&Observed<T>>,
+-        encoded: Vec<u8>,
+-        revision: Revision,
+-        deadline: Instant,
 +        input: DecodedWrite<T>,
-+    ) -> Result<Committed<T>, StoreError> {
+     ) -> Result<Committed<T>, StoreError> {
+-        let state = codec::decode(&encoded, self.config.max_block_bytes)?;
+-        let prior = expected.map_or_else(String::new, |value| value.revision.get().to_string());
+-        let mut command = redis::cmd("EVAL");
+-        command
+-            .arg(scripts::CAS)
+-            .arg(1)
+-            .arg(self.config.key())
+-            .arg(self.config.deployment.as_str())
+-            .arg(T::FORMAT_VERSION)
+-            .arg(prior)
+-            .arg(revision.get())
+-            .arg(&encoded)
+-            .arg(self.config.max_block_bytes)
+-            .arg(expected.map_or(&[][..], |value| value.encoded.as_slice()));
+-        let result: i64 = match self.query(&mut command, deadline) {
 +        match expected {
 +            Some(value) => self.write_normalized(
 +                value.revision.get().to_string(),
@@ -142,10 +191,10 @@ index 31100dd7..5a68d52d 100644
              Ok(value) => value,
              Err(_) => return self.fence_unknown(),
          };
-@@ -375,92 +476,103 @@ impl<T: ControlState> RedisLedger<T> {
+@@ -375,92 +459,308 @@ impl<T: ControlState> RedisLedger<T> {
          Err(StoreError::OutcomeUnknown)
      }
- 
+
 -    fn deadline(&self) -> Instant {
 -        Instant::now() + self.config.operation_timeout
 -    }
@@ -261,7 +310,7 @@ index 31100dd7..5a68d52d 100644
          Ok(())
      }
  }
- 
+
 -fn info_field<'a>(info: &'a str, key: &str) -> Option<&'a str> {
 -    let mut matching = info
 -        .lines()
@@ -273,6 +322,105 @@ index 31100dd7..5a68d52d 100644
 -        None
 -    } else {
 -        Some(value)
++// Codec callbacks remain OWN obligations. This small trait has no Serde
++// supertraits; the concrete adapter below delegates the unchanged own codec.
++pub(crate) trait ValueCodec<T> {
++    fn encode(&mut self, value: &T, limit: usize) -> Result<Vec<u8>, StoreError>;
++    fn decode(&mut self, value: &[u8], limit: usize) -> Result<T, StoreError>;
++}
++
++struct JsonCodec;
++impl<T: ControlState> ValueCodec<T> for JsonCodec {
++    fn encode(&mut self, value: &T, limit: usize) -> Result<Vec<u8>, StoreError> {
++        codec::encode(value, limit)
++    }
++    fn decode(&mut self, value: &[u8], limit: usize) -> Result<T, StoreError> {
++        codec::decode(value, limit)
++    }
++}
++
++pub(crate) trait OperationClock {
++    fn deadline(&mut self, timeout: Duration) -> Instant;
++}
++struct SystemClock;
++impl OperationClock for SystemClock {
++    fn deadline(&mut self, timeout: Duration) -> Instant {
++        Instant::now() + timeout
++    }
++}
++
++impl<T> RedisLedger<T> {
++    pub(crate) fn commit_using<C: ValueCodec<T>, D: OperationClock>(
++        &mut self,
++        expected: &Observed<T>,
++        next: &T,
++        format: u32,
++        codec: &mut C,
++        clock: &mut D,
++    ) -> Result<Committed<T>, StoreError> {
++        if self.write_fenced {
++            return Err(StoreError::WriteFenced);
++        }
++        let deadline = clock.deadline(self.config.operation_timeout);
++        let encoded = codec.encode(next, self.config.max_block_bytes)?;
++        self.replace_using(expected, encoded, deadline, format, codec)
++    }
++
++    pub(crate) fn reaffirm_using<C: ValueCodec<T>, D: OperationClock>(
++        &mut self,
++        expected: &Observed<T>,
++        format: u32,
++        codec: &mut C,
++        clock: &mut D,
++    ) -> Result<Committed<T>, StoreError> {
++        // Rust evaluates the original payload clone before the deadline call.
++        let encoded = expected.encoded.clone();
++        let deadline = clock.deadline(self.config.operation_timeout);
++        self.replace_using(expected, encoded, deadline, format, codec)
++    }
++
++    fn replace_using<C: ValueCodec<T>>(
++        &mut self,
++        expected: &Observed<T>,
++        encoded: Vec<u8>,
++        deadline: Instant,
++        format: u32,
++        codec: &mut C,
++    ) -> Result<Committed<T>, StoreError> {
++        if expected.deployment != self.config.deployment {
++            return Err(StoreError::InvalidRecord);
++        }
++        let next = expected
++            .revision
++            .checked_next()
++            .map_err(|_| StoreError::RevisionExhausted)?;
++        self.check_health(deadline)?;
++        self.write_using(Some(expected), encoded, next, deadline, format, codec)
++    }
++
++    fn write_using<C: ValueCodec<T>>(
++        &mut self,
++        expected: Option<&Observed<T>>,
++        encoded: Vec<u8>,
++        revision: Revision,
++        deadline: Instant,
++        format: u32,
++        codec: &mut C,
++    ) -> Result<Committed<T>, StoreError> {
++        let state = codec.decode(&encoded, self.config.max_block_bytes)?;
++        self.write_decoded(
++            expected,
++            DecodedWrite {
++                encoded,
++                revision,
++                deadline,
++                format,
++                state,
++            },
++        )
++    }
++}
++
 +#[cfg(test)]
 +mod boundary_contract_tests {
 +    use super::{info_field, setting_matches};
@@ -318,6 +466,112 @@ index 31100dd7..5a68d52d 100644
 +        assert!(!setting_matches(&settings, "absent", ""));
 +        assert!(setting_matches(&settings, "unicode", "值🦀"));
 +        assert!(!setting_matches(&settings, "unicode", "值"));
++    }
++    #[derive(Clone)]
++    struct Trace(std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>);
++
++    impl super::ValueCodec<u64> for Trace {
++        fn encode(&mut self, _: &u64, _: usize) -> Result<Vec<u8>, super::StoreError> {
++            self.0.borrow_mut().push("encode");
++            Ok(b"42".to_vec())
++        }
++        fn decode(&mut self, _: &[u8], _: usize) -> Result<u64, super::StoreError> {
++            self.0.borrow_mut().push("decode");
++            Ok(42)
++        }
++    }
++    impl super::OperationClock for Trace {
++        fn deadline(&mut self, timeout: std::time::Duration) -> std::time::Instant {
++            self.0.borrow_mut().push("clock");
++            std::time::Instant::now() + timeout
++        }
++    }
++
++    fn caller_fixture() -> (
++        tempfile::TempDir,
++        super::RedisLedger<u64>,
++        super::Observed<u64>,
++        Trace,
++    ) {
++        use std::os::unix::fs::PermissionsExt;
++        let root = tempfile::tempdir().unwrap();
++        std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
++        let deployment: sandproof_protocol::DeploymentId = "caller-order".try_into().unwrap();
++        let lease = super::WriterLease::acquire(root.path(), deployment.clone()).unwrap();
++        let ledger = super::RedisLedger {
++            endpoint: super::RedisEndpoint::new(
++                "127.0.0.1:6379".parse().unwrap(),
++                "fixture".into(),
++                "fixture".into(),
++            )
++            .unwrap(),
++            config: super::StoreConfig::new(
++                deployment.clone(),
++                1024,
++                64 * 1024 * 1024,
++                std::time::Duration::from_millis(50),
++            )
++            .unwrap(),
++            _lease: lease,
++            connection: None,
++            write_fenced: false,
++            _state: std::marker::PhantomData,
++        };
++        let observed = super::Observed {
++            deployment,
++            revision: super::Revision::try_from(1).unwrap(),
++            state: 42,
++            encoded: b"42".to_vec(),
++        };
++        (
++            root,
++            ledger,
++            observed,
++            Trace(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))),
++        )
++    }
++
++    #[test]
++    fn fenced_commit_calls_neither_clock_nor_codec() {
++        let (_root, mut ledger, observed, trace) = caller_fixture();
++        ledger.write_fenced = true;
++        let result = ledger.commit_using(&observed, &42, 1, &mut trace.clone(), &mut trace.clone());
++        assert!(matches!(result, Err(super::StoreError::WriteFenced)));
++        assert!(trace.0.borrow().is_empty());
++        assert!(ledger.write_fenced);
++        assert!(ledger.connection.is_none());
++    }
++
++    #[test]
++    fn foreign_identity_precedes_revision_failure_and_keeps_callback_order() {
++        let (_root, mut ledger, mut observed, trace) = caller_fixture();
++        observed.deployment = "foreign".try_into().unwrap();
++        observed.revision = super::Revision::try_from(u64::MAX).unwrap();
++        let result = ledger.commit_using(&observed, &42, 1, &mut trace.clone(), &mut trace.clone());
++        assert!(matches!(result, Err(super::StoreError::InvalidRecord)));
++        assert_eq!(*trace.0.borrow(), ["clock", "encode"]);
++        trace.0.borrow_mut().clear();
++        ledger.write_fenced = true;
++        let result = ledger.reaffirm_using(&observed, 1, &mut trace.clone(), &mut trace.clone());
++        assert!(matches!(result, Err(super::StoreError::InvalidRecord)));
++        assert_eq!(*trace.0.borrow(), ["clock"]);
++        assert!(ledger.write_fenced);
++    }
++
++    #[test]
++    fn revision_and_prewrite_health_fail_before_decode() {
++        let (_root, mut ledger, mut observed, trace) = caller_fixture();
++        observed.revision = super::Revision::try_from(u64::MAX).unwrap();
++        let result = ledger.commit_using(&observed, &42, 1, &mut trace.clone(), &mut trace.clone());
++        assert!(matches!(result, Err(super::StoreError::RevisionExhausted)));
++        assert_eq!(*trace.0.borrow(), ["clock", "encode"]);
++        trace.0.borrow_mut().clear();
++        observed.revision = super::Revision::try_from(1).unwrap();
++        let result = ledger.commit_using(&observed, &42, 1, &mut trace.clone(), &mut trace.clone());
++        assert!(matches!(result, Err(super::StoreError::Unavailable)));
++        assert_eq!(*trace.0.borrow(), ["clock", "encode"]);
++        assert!(!ledger.write_fenced);
++        assert!(ledger.connection.is_none());
      }
  }
 diff --git a/sandbox-center-store/src/store/storage_io.rs b/sandbox-center-store/src/store/storage_io.rs

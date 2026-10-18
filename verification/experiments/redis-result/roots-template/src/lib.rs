@@ -20,3 +20,24 @@ pub fn finish<T>(
 ) -> Result<store::Committed<T>, StoreError> {
     ledger.write_decoded(expected, input)
 }
+
+pub(crate) fn commit<T, C: store::ValueCodec<T>, D: store::OperationClock>(
+    ledger: &mut store::RedisLedger<T>,
+    expected: &store::Observed<T>,
+    next: &T,
+    format: u32,
+    codec: &mut C,
+    clock: &mut D,
+) -> Result<store::Committed<T>, StoreError> {
+    ledger.commit_using(expected, next, format, codec, clock)
+}
+
+pub(crate) fn reaffirm<T, C: store::ValueCodec<T>, D: store::OperationClock>(
+    ledger: &mut store::RedisLedger<T>,
+    expected: &store::Observed<T>,
+    format: u32,
+    codec: &mut C,
+    clock: &mut D,
+) -> Result<store::Committed<T>, StoreError> {
+    ledger.reaffirm_using(expected, format, codec, clock)
+}

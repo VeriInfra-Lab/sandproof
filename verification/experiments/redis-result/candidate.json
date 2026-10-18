@@ -3,16 +3,15 @@
   "kind": "isolated-source-candidate",
   "base_anchor": "824abe2b6285774ef8983fbe02db3a6509c9b5fb",
   "original_store_sha256": "9670c4873d2c92a702ec0df52489d7d7c9878201c56d58ae9fecb267afeb048d",
-  "candidate_patch_sha256": "d1c727603fc3504945bf5ddb81d95c734e8bf5083c4c4d92e41ab0d24eedb01b",
+  "candidate_patch_sha256": "0fdbf40d775d4d50903e72389b135711451130d8045278c046860f76ac16559f",
   "candidate_files": {
-    "sandbox-center-store/src/store.rs": "9b256e9f4958967b1606c38055182bbb2e6079ef66cdb8ae6f99096f8c132fcc",
+    "sandbox-center-store/src/store.rs": "a347adcb4fa33156afbfe57d87f2f61c69af7bae86a32bef785a9daa135956d1",
     "sandbox-center-store/src/store/storage_io.rs": "841101ef708e45f6132f6d10ecc6a0594972e9239556b08c9d51b3eadefc1ae9",
     "verification/extract-storage/Cargo.toml": "0746afcdfa8ff6c46e4ec7d8e794f29d1cf132bf82e1e83cee136bd1d7b03643",
-    "verification/extract-storage/src/lib.rs": "688572b6f6ebc3358c39323b4b56fdb0caf38c816aa02427d319efe45b48cc08",
-    "verification/extract-storage/Cargo.lock": "56630ab6c9cbc758152dd60523ad2fdabd704e9f3b605525d6ec2347ba7f2cf9"
+    "verification/extract-storage/Cargo.lock": "56630ab6c9cbc758152dd60523ad2fdabd704e9f3b605525d6ec2347ba7f2cf9",
+    "verification/extract-storage/src/lib.rs": "d47e6d7de990a76d97e7b92ab814853d4f550cdd66e6877b67848ff49a368f5b"
   },
   "roots_template_destination": "verification/extract-storage",
-  "extraction_root": "sandproof_storage_extract::finish",
   "target": "x86_64-unknown-linux-gnu",
   "charon_revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
   "aeneas_revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
@@ -25,10 +24,10 @@
     "store::storage_io::trim_cr",
     "store::storage_io::split_colon"
   ],
-  "scope": "Actual isolated Rust post-decode result, health and fence core, with plain payload value semantics. Production source is unchanged; this descriptor does not assert a proof.",
+  "scope": "Actual isolated generic commit/reaffirm and post-decode result/health/fence bodies. Public facades delegate to them with the unchanged own codec and clock; concrete callback obligations remain separate. Plain payload value semantics only; production unchanged.",
   "not_claimed": [
     "current production implementation proof",
-    "own codec and complete public caller correctness",
+    "concrete own codec correctness and complete public caller proof closure",
     "Lua semantics or physical durability",
     "read/reconnect proof",
     "resource-bearing or custom Drop payloads",
@@ -45,5 +44,15 @@
     "sandbox-center-store/src/writer.rs": "b1fda10ba15c52ce349222d88e1e5b51e9632ef20dce8aa73fa78ced30f121e9",
     "sandbox-protocol/src/lib.rs": "eac6d277cd77b680f554f318ad5a2cb5e9ba40f09172486c8ba62d656fdabb0d",
     "sandbox-protocol/src/internal.rs": "bdbfd2c89b17d0f16758359d9fd0ad7e129c09e5c024f20bff119fa2449c93ed"
-  }
+  },
+  "extraction_roots": [
+    "sandproof_storage_extract::finish",
+    "sandproof_storage_extract::commit",
+    "sandproof_storage_extract::reaffirm"
+  ],
+  "own_callback_symbols": [
+    "store::ValueCodec::encode",
+    "store::ValueCodec::decode"
+  ],
+  "clock_callback_symbol": "store::OperationClock::deadline"
 }
