@@ -21,6 +21,7 @@ bash scripts/verify-json-counter.sh
 bash scripts/verify-task-contract.sh
 bash scripts/verify-revocation-contract.sh
 bash scripts/verify-data-drain.sh
+bash scripts/verify-sqlite.sh
 bash scripts/verify-foundations.sh
 bash scripts/verify-network.sh
 bash scripts/verify-first-chain-linux.sh
