@@ -29,6 +29,7 @@ bash scripts/verify-foundations.sh
 bash scripts/verify-network.sh
 bash scripts/verify-first-chain-linux.sh
 bash scripts/verify-first-chain.sh
+bash scripts/verify-storage.sh
 
 # Check every retained project proof, including files omitted by an import
 # aggregator. The additive Linux Lake view also declares the first-chain

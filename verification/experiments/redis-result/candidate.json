@@ -44,7 +44,8 @@
     "sandbox-center-store/src/scripts.rs": "65cacadea99e436e6fb6cce1cda5c503f8bb407eaf8f3c0dcd09e7afa12a4cf3",
     "sandbox-center-store/src/writer.rs": "b1fda10ba15c52ce349222d88e1e5b51e9632ef20dce8aa73fa78ced30f121e9",
     "sandbox-protocol/src/lib.rs": "eac6d277cd77b680f554f318ad5a2cb5e9ba40f09172486c8ba62d656fdabb0d",
-    "sandbox-protocol/src/internal.rs": "bdbfd2c89b17d0f16758359d9fd0ad7e129c09e5c024f20bff119fa2449c93ed"
+    "sandbox-protocol/src/internal.rs": "bdbfd2c89b17d0f16758359d9fd0ad7e129c09e5c024f20bff119fa2449c93ed",
+    "sandbox-center-store/Cargo.toml": "6e23336c2a6db57347bf4da1a56ed3c287e3bb4d02ed6f1ada407cafe5d8c4d1"
   },
   "extraction_roots": [
     "sandproof_storage_extract::finish",

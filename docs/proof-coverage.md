@@ -8,7 +8,7 @@
 
 局部已检查：[结果与写围栏](../verification/aeneas/storage/SandproofStorage/Results.lean)、[健康检查回写范围](../verification/aeneas/storage/SandproofStorage/Health.lean)、[泛型调用链的未知围栏](../verification/aeneas/storage/SandproofStorage/Caller.lean)、[原完整载荷及新修订来源](../verification/aeneas/storage/SandproofStorage/Success.lean)。成功状态仍显式依赖同一 codec 状态链的往返，正常错误范围仍由自有 codec 提供。[具体见证](../verification/aeneas/storage/SandproofStorage/Examples.lean)在实际生成循环/调用链上接受完整成功输入，并允许容量/字节拒绝及送达未知；它不实例化生产 schema、物理租约和部署条件。
 
-指定 Linux 证明环境中，新私有副本的 Rust 编译、根格式、三条核心根和两条公开根的原抽取通过；两次不同目录的完整 LLBC 摘要一致，三个生成文件逐字一致。公开机械准入另拒绝七类 AST 错误。真实 Rust 提前解除围栏错误版已有原工具抽取和同一性质拒绝证据，自动复现及正式整套入口接线仍待完成；不能用 AST 变体检查替代真实错误版。
+指定 Linux 证明环境中，新私有副本的 Rust 编译、根格式、三条核心根和两条公开根的原抽取通过；两次不同目录的完整 LLBC 摘要一致，三个生成文件逐字一致。公开机械准入另拒绝七类 AST 错误。真实 Rust 提前解除围栏错误版的自动复现已局部通过：原工具产物只有目标赋值与模块 import 的预期差异，同一份 Results 仅改 import 后在原围栏性质拒绝，三个内核反例/允许输入定理完成标准依赖审计。正式入口已加入该流程，整套组合复验仍待完成；不能用 AST 变体检查替代真实错误版。
 
 本批仍未完成原完整 verify-controller.sh/Linux check-function.sh 组合验收，不关闭 #564、T7 或 V0。读取/reconnect、完整 codec/Lua、业务缓存/outbox/派发及崩溃恢复仍由 V2 提供；物理持久化、外部效果、异常后恢复和原版本/候选的一般等价没有因这些局部定理而获得证明。失败允许已发生效果，正常未知保持围栏不意味着异常/abort 一定执行了围栏或资源收尾。
 

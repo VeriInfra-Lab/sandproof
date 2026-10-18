@@ -50,6 +50,20 @@ bash scripts/python-entry.sh verification/experiments/redis-result/replay.py \
 
 `evidence/replay.json` 保存阶段、命令、退出码、完整 LLBC 和生成文件摘要以及源码前后一致性。此入口不执行原组件测试、Lean 定理或两个完整验收入口；任何阶段失败都保留私有副本，不覆盖失败证据或重用旧生成物。
 
+## 完整候选验收
+
+```sh
+bash scripts/verify-storage.sh
+```
+
+入口要求原固定真实 Redis 二进制及工具环境，并保存新的私有证据目录。它核对 `storage-inputs.sha256`，重新抽取，逐符号检查外部模型和原生产源，校验两版标准库/固定 Redis 库源与全部析构位置，执行候选的严格 Clippy/真实 Redis 组件检查，再编译并审计完整定理集。
+
+随后 `negative.py` 另建私有副本，只把真实 Rust `fence_unknown` 的 `write_fenced = true` 改为 false。错误版先编译、用原 Charon/Aeneas 抽取，其生成文件保留原样；相对正确生成物只允许目标赋值和工具生成的模块 import 差异。原 Results 文件只改模块 import，就必须在 `fence_unknown_exact` 和 `eval_error_returns_unknown` 失败；编译失败、缺模块或其它诊断不算拒绝成功。三个独立反例/允许输入定理还须通过内核和标准依赖审计。
+
+最后原真实 Lean 服务检查正式 Audit，并核对成功、非陈旧、无错误/警告和全部定理的审计回执。`verify-controller.sh` 保留原有阶段并增加本入口。该入口通过也只支持此冻结候选；原 Linux 基础检查与全项目证明验收仍须单独完成，不能据此关闭整个 V0。
+
+原 LLBC 保留的析构没有因为 Lean 生成物未显示就被忽略：原函数/位置/类型/异常路径完整摘要纳入准入。普通值域、原连接关闭与异常退出分别按[依赖明细](../../../docs/formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)解释；不把资源析构当纯值，也不从逻辑连接消失推导物理关闭或回滚。
+
 ## 如何理解接口与定理
 
 [Results](../../aeneas/storage/SandproofStorage/Results.lean) 直接使用未修改的生成函数：未知结果必须保持写围栏并弃用连接；已围栏的普通提交保持账本和回调状态；成功结果需要完整 CAS 调用及后置检查证据，并保留修订、状态和完整载荷。四个已知拒绝码的定理只解释返回值及本地状态，不从 `Err` 推出 Redis 没有写入或已经回滚。[Key](../../aeneas/storage/SandproofStorage/Key.lean) 复用既有字符串往返证明，保持完整部署字符串。

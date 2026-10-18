@@ -141,6 +141,8 @@ Redis 脚本原子执行指不被其他请求插入，不保证任意多写脚�
 | A8/B4：候选 `OperationClock/SystemClock` | 本次原超时配置传给原时钟，产生的 deadline 原样交给后续调用；回调状态在抽取结果中保留 | 不假设跨机时钟一致，也不从一个 deadline 推出调用一定结束；单位、溢出和更高层寿命仍由调用者负责 |
 | B4：公开 `commit/reaffirm` 到泛型核心 | 实际薄转调传递原账本、原观察、原 next、`T::FORMAT_VERSION`、原 `JsonCodec` 和 `SystemClock`；完整返回与异常路径保留 | 完整公开 Charon AST 的源码/参数准入是审查和检查证据，不是具体 Serde 回调图的 Lean 精化；改变回调、参数、分支或字典必须重查 |
 
+原 LLBC 的析构逐位置登记在候选 `environment.json`：普通 String/Vec、已登记字典和自有载荷容器，仅在普通值域中忽略其内存释放；泛型 T 不得含可观察自定义 Drop 或共享资源。`fence_unknown` 对原 Option<Connection> 的替换另按外部 A6/B4 处理，**不把 TCP 连接析构说成纯内存操作**：实际关闭可能让对端继续处理已发请求或产生其它网络结果，物理效果仍未知。此域只允许原受控非 PubSub TCP 连接，不安装用户 push sender，不据模型中的 None 证明物理关闭、退出或回滚。写者文件租约及 codec/clock 原所有者均为借用，不在这组调用中释放。异常清理位置同样冻结，但正常后态定理不覆盖 panic/unwind/abort；若将来引入资源载荷、PubSub、用户析构或新关闭行为，须重审该域。
+
 正常值模型允许数字、文本、配置表、调用前拒绝、送达未知、panic 与不返回。正常拒绝或错误返回不携带物理“未生效”保证；panic/不返回没有正常后态，不能引用正常返回的围栏定理来断言异常被捕获后仍安全。自有 V2 调用方须连接异常后的停用、责任保留和恢复；进程崩溃/abort 不依赖 Drop 收尾。
 
 正常成功要经过实际 CAS 返回 0 及原后置健康检查；抽取定理保留部署、修订、完整载荷和解码后的状态。1/2/3/4 仅分别映射 Missing/AlreadyInitialized/InvalidRecord/Conflict，物理无写入仍依赖自有脚本证明；未知数字、EVAL 错误和后置健康错误进入 OutcomeUnknown、保留围栏并清空本地连接。读取观察不能自行解除该围栏，reaffirm 的成功必须保留原完整 payload 并使用新修订。
