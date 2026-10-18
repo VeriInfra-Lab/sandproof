@@ -25,6 +25,7 @@ settings = json.loads(sys.stdin.read())
 original_sync = _client_sync._streaming_request_content
 original_async = _client_async._streaming_request_content
 events = []
+upload_settled = asyncio.Event()
 control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 control.settimeout(5)
 control.connect(settings['control'])
@@ -33,7 +34,8 @@ control.connect(settings['control'])
 _client_sync._streaming_request_content = partial(
     gated_sync, original_sync, control, events, settings.get('partial', False))
 _client_async._streaming_request_content = partial(
-    gated_async, original_async, control, events, settings.get('partial', False))
+    gated_async, original_async, control, events, settings.get('partial', False),
+    settled=upload_settled)
 
 
 async def main():
@@ -61,13 +63,17 @@ async def main():
     finally:
         if asynchronous:
             await stream.aclose()
+            await asyncio.wait_for(upload_settled.wait(), 5)
         else:
             stream.close()
         expected = ['message', 'waiting', 'released']
         if settings.get('partial'):
             expected.append('tail')
         # 'tail' records bytes offered by the encoder, not delivery to a peer.
-        assert events == expected, events
+        # Response completion and upload cancellation/resumption are distinct
+        # observations. Neither the SDK error nor response aclose orders them.
+        cancelled = ['message', 'waiting', 'cancelled']
+        assert events == expected or (asynchronous and events == cancelled), events
 
 
 with isolated_sdk_environment():
