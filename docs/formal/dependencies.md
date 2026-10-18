@@ -105,6 +105,12 @@ B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2
 
 自有 `TryFrom`/`is_valid`、长度/预算、完整身份和参数绑定、接受/拒绝规则仍需实际抽取及证明；真实类型/属性到模型字段的接线由审查、合同样例和差分测试登记证据，未机器证明时显式保留该符合性前提。不能为绕过输入业务而直接假设“解码结果已获授权且合法”，也不要求先证明第三方 JSON 内部扫描/UTF-8/转义算法。其他容器/整数库模型仍按下文实际使用点单独冻结。
 
+生命周期请求的具体 schema 还需保留固定派生的一个差别：NodeIdentity、ControlIdentity、Resources、CreateBinding、LifecycleRequest 的对象拒绝未知字段；内部标记的 Intent 中，Create/Destroy 使用的固定 unit visitor 会消耗并忽略可成功解析的额外字段，Renew 的结构体分支才拒绝未知字段。`deny_unknown_fields` 属性本身不能替代这个逐分支登记。输出仍按声明字段生成对象；标准结构体的序列输入按固定字段顺序处理。上述差异由原解码器回归核对，不改变生产策略，也不将忽略的字段解释为命令或授权。
+
+[字段回调连接](../../SandboxModel/Boundaries/JsonRequest/Callbacks.lean)要求每个自有字段有原 Deserialize、原字典和输入的调用证据，再由已有真实叶子证明推出完整输入域；有限 value reader 仅证明条件可实现，不能提供实际 parser 绑定。[完整投影](../../SandboxModel/Boundaries/JsonRequest/Representation.lean)保留全部身份、创建字段和 intent，投影相等可推出原值相等。[编码字段规约](../../SandboxModel/Boundaries/JsonRequest/Encoding.lean)调用原 String/u64 转换；JSON 渲染、标准派生的字段接线及 Clone 仍按实际 A6 使用点落实。
+
+[文档结束顺序](../../SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean)按固定 `serde_json::de::from_trait` 先 Deserialize 再 end 的顺序组合；前面的叶子错误不执行后面的尾随检查，已有错误、失败、发散和效果保持。[字节组合定理](../../SandboxModel/Boundaries/JsonRequest/Codec.lean)显式接收字段字节关系及派生合同参数。它们尚未为具体 from_slice/to_vec 的输入、parser、错误字典和位置观察实例化，不单独构成完整字节入口已验证的结论；具体绑定仍按本页 A6/B4 范围登记。
+
 ## Redis 与 SQLite 的落地合同
 
 | 引擎/代码 | 外部合同与部署核对 | 自有待证连接 |
