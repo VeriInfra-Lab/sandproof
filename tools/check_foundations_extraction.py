@@ -62,10 +62,14 @@ ROOTS = {
     "client_request_from_string", "client_request_from_str", "client_request_value", "client_request_into_string",
     "deployment_from_string", "deployment_from_str", "deployment_value", "deployment_into_string",
     "node_from_string", "node_from_str", "node_value", "node_into_string",
+    "json_request::validate",
     "numeric::seconds_to_milliseconds", "numeric::bytes_to_mebibytes",
     "numeric::available_resource", "receipts::action_version", "receipts::receipt_validate",
 }
-ROOT_MODULES = {'numeric', 'receipts', 'json', 'json_ids'}
+ROOT_MODULES = {'numeric', 'receipts', 'json', 'json_ids', 'json_request'}
+# These two direct library call-throughs have explicit B4 source/AST admission,
+# not generated Lean bodies. They must remain present and separately checked.
+B4_ROOTS = {'json_request::decode', 'json_request::encode'}
 LIBRARY_ROOTS = {
     'serde_core::de::Visitor::visit_u64', 'serde_core::de::Visitor::visit_str',
     'serde_core::de::Visitor::visit_string', 'serde_core::de::Visitor::visit_borrowed_str',
@@ -75,6 +79,7 @@ REQUIRED_IDENTITY_CALLS = {
     "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt",
     "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from",
     "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values",
+    "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::LifecycleRequest}::validate",
     "sandproof_protocol::valid_identifier",
     "sandproof_protocol::identifiers::parse_allocated_number",
     "sandproof_center_core::validation::number",
@@ -145,9 +150,15 @@ def check(root, llbc, inventory):
     all_roots = re.findall(r'--start-from ([A-Za-z0-9_:]+)', script)
     expected_roots = {'crate::' + name for name in ROOTS} | LIBRARY_ROOTS
     if (len(roots) != len(set(roots)) or len(public) != len(set(public))
-            or set(roots) != ROOTS or set(public) != ROOTS
+            or set(roots) != ROOTS or set(public) != ROOTS | B4_ROOTS
             or len(all_roots) != len(set(all_roots)) or set(all_roots) != expected_roots):
         raise ValueError('free production-call roots and script disagree')
+    # Adding a classification cannot silently discard a public Rust entry.
+    try:
+        from tools.check_json_request_binding import check_registry
+    except ModuleNotFoundError:
+        from check_json_request_binding import check_registry
+    check_registry(root)
     functions = inventory['functions']
     # Aeneas emits the parent, loop wrapper and loop body under ONE Rust name.
     # Keep parent names unique, validate the alias binding and paired loop roles;

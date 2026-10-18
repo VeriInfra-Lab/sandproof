@@ -4,3 +4,4 @@ import SandboxModel.Boundaries.JsonRequest.Representation
 import SandboxModel.Boundaries.JsonRequest.Codec
 import SandboxModel.Boundaries.JsonRequest.Encoding
 import SandboxModel.Boundaries.JsonRequest.DocumentEnd
+import SandboxModel.Boundaries.JsonRequest.ContainerEnd

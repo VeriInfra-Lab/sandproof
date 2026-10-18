@@ -111,6 +111,12 @@ B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2
 
 [文档结束顺序](../../SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean)按固定 `serde_json::de::from_trait` 先 Deserialize 再 end 的顺序组合；前面的叶子错误不执行后面的尾随检查，已有错误、失败、发散和效果保持。[字节组合定理](../../SandboxModel/Boundaries/JsonRequest/Codec.lean)显式接收字段字节关系及派生合同参数。它们尚未为具体 from_slice/to_vec 的输入、parser、错误字典和位置观察实例化，不单独构成完整字节入口已验证的结论；具体绑定仍按本页 A6/B4 范围登记。
 
+[容器结束与错误位置](../../SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean)另区分内部收尾与最外层文档结束：固定 `deserialize_struct` 即使收到 visitor 的普通错误，仍执行 `end_map/end_seq`，可能继续消费空白；普通收尾错误不能覆盖更早的字段错误。原 `fix_position` 只在错误行号为零时补齐当时位置，外层不能再次覆盖已有位置。直接对自有编号/计数器调用 `from_slice` 时可能仍是 `(0,0)`；嵌入结构体后才由最近容器补齐。模型接收固定 SliceRead 提供的实际字节、偏移和位置，不另实现 JSON 扫描器，也不声称错误后解析状态回滚。
+
+具体 `A6-json-lifecycle-derive` / `B4-json-lifecycle-call` 范围见[调用登记](../../verification/json-request-binding.json)。它逐项列完整字段/声明顺序、三个 intent 的固定行为、六个原编号和三个计数器字典、private SliceRead/Vec 的状态与错误、实际生产调用及独立预算来源。两个包装根由原 Charon 生成的完整 LLBC 和单次调用 AST 核对参数、结果、类型字典及 unwind 路径；[绑定检查器](../../tools/check_json_request_binding.py)同时固定生产源和十份库源，并拒绝隐藏守卫、替换类型/参数、增加调用或业务析构。它不翻译完整 Serde trait 图，也不是编译器、库或异步外壳的机器精化证明。完整 `StandardDeriveRecipe` 的条件采用、负向自动入口和整套验收仍须随本接口收尾，不能由登记文件存在推定通过。
+
+本项纯值析构仅限普通 String、Vec<u8> 和 SliceRead/Vec 路径产生且不含自定义 IO 错误来源的库错误；原输入/请求为借用，parser 的可变游标与 scratch 由这次固定库调用私有持有。FD、许可、锁、任意自定义 Drop、panic/unwind 收尾、OOM/abort 和 async 取消均不在此域。真实服务器中 receiver、连接和任务所有权仍需其原模块提供条件，不能因 JSON 编解码采用 A6 而一并排除。
+
 ## Redis 与 SQLite 的落地合同
 
 | 引擎/代码 | 外部合同与部署核对 | 自有待证连接 |

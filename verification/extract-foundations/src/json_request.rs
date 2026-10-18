@@ -356,6 +356,57 @@ mod tests {
     }
 
     #[test]
+    fn own_errors_keep_nearest_container_position_after_whitespace() {
+        let counter_message = "invalid or exhausted internal counter";
+        let id_message = "invalid opaque identifier";
+        // Direct custom leaves have no container to attach a position. The
+        // fixed library does not add one in from_trait before returning Err.
+        let counter =
+            serde_json::from_slice::<sandproof_protocol::internal::PositiveCounter>(b"0\n  ,")
+                .unwrap_err();
+        assert_eq!((counter.line(), counter.column()), (0, 0));
+        assert_eq!(counter.to_string(), counter_message);
+        let identifier =
+            serde_json::from_slice::<sandproof_protocol::TenantId>(br#""""#).unwrap_err();
+        assert_eq!((identifier.line(), identifier.column()), (0, 0));
+        assert_eq!(identifier.to_string(), id_message);
+
+        for (prefix, message) in [
+            (r#"{"identity":{"node":{"deployment_id":"""#, id_message),
+            (r#"{"identity":{"node":{"node_id":"""#, id_message),
+            (
+                r#"{"identity":{"node":{"node_generation":0"#,
+                counter_message,
+            ),
+            (r#"{"identity":{"tenant_id":"""#, id_message),
+            (r#"{"identity":{"sandbox_id":"""#, id_message),
+            (r#"{"identity":{"operation_id":"""#, id_message),
+            (r#"{"identity":{"intent_version":0"#, counter_message),
+            (r#"{"identity":{"request_window":0"#, counter_message),
+            (r#"{"create":{"template_revision":"""#, id_message),
+        ] {
+            for whitespace in ["", "   ", "\r\n\t  "] {
+                let consumed = format!("{prefix}{whitespace}");
+                // end_map still runs after the visitor's own error. It
+                // consumes whitespace, sees this comma, and its new syntax
+                // error loses to the original custom data error. Outer
+                // containers must retain the first attached position.
+                let input = format!("{consumed},\"later\":[}}");
+                let error = decode(input.as_bytes()).unwrap_err();
+                let line = consumed.bytes().filter(|byte| *byte == b'\n').count() + 1;
+                let column = consumed.rsplit('\n').next().unwrap().len();
+                assert_eq!(error.classify(), Category::Data, "{input}");
+                assert_eq!((error.line(), error.column()), (line, column), "{input}");
+                assert_eq!(
+                    error.to_string(),
+                    format!("{message} at line {line} column {column}"),
+                    "{input}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn internally_tagged_unit_variants_follow_frozen_serde_policy() {
         for intent in [Intent::Create, Intent::Destroy] {
             let mut expected = request();

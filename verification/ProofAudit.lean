@@ -3,6 +3,7 @@ import SandboxModel.ProofAuditCommand
 import SandboxModel.Foundations.Audit
 import SandboxModel.Boundaries.JsonCounter.Audit
 import SandboxModel.Boundaries.JsonIdentifiers.Audit
+import SandboxModel.Boundaries.JsonRequest.Audit
 import SandboxModel.Boundaries.DataDrain.Audit
 import SandboxModel.Boundaries.Task.Audit
 import SandboxModel.Boundaries.Revocation.Audit
