@@ -15,6 +15,20 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 **当前保留证明集合的组合验收已通过；V0 的全部使用点、完整异步 Rust、业务生命周期与部署系统仍未完成证明。** #333 的未勾验收点和 #101 的业务/组合义务继续保留，T9 仍排除。
 
 
+## T7 边界：SQLite 提交回执与缓存发布（隔离候选）
+
+[#570](https://github.com/VeriInfra-Lab/sandproof/issues/570) 的 Rust 输入固定为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；本批验证代码冻结于 `c47c42329560cd226ae1ca48674d206f5d509fc3`，依赖固定 PR #556（398b114d）的最新 B1 接线复核。候选仅在私有副本应用[固定补丁](../verification/experiments/sqlite-commit/candidate.patch)，原 WorldTransaction::commit_with/Drop 实际调用新增同步核心。生产 Rust、锁文件和 Charon/Aeneas 没有因此改动。正式源、生成物和条件分别见[候选清单](../verification/experiments/sqlite-commit/candidate.json)、[环境与完整析构登记](../verification/experiments/sqlite-commit/environment.json)及[接口保证](formal/dependencies.md#a4b2b4-sqlite-提交回执与缓存发布接口隔离候选)。
+
+[Results](../verification/aeneas/sqlite/SandproofSqlite/Results.lean) 的 13 条核心/通用状态性质连接原清空、回调结果分类、事务槽消耗、原候选发布和 rollback 分支；正常返回须取得原 live 事务，正常成功必须由原回调确认。[Examples](../verification/aeneas/sqlite/SandproofSqlite/Examples.lean) 的 5 条允许输入/结果见证分别保留提交未知的写前、写后结局，两者都不能保留旧缓存。18 项声明由原标准依赖命令与真实物理 Audit 文件检查，不增加自定义假设。这些是隔离候选真实核心的条件性质，不是整个生产事务外壳已证。
+
+A4 提供固定 SQLite/rusqlite 的原事务结果；B2/B4 连接原事务句柄、两个原缓存单元及给定值/结果传递，要求不同单元、正常借用、回调及捕获值析构不额外改写缓存。逻辑状态表示两单元的值，不声称机器证明 RefCell 的堆实现。核心后态早于外层 WorldTransaction 候选字段销毁；普通 World 值域及原事务内部结束按登记限制，不提供物理关闭/回滚/释放、终止、panic/unwind、abort 或崩溃后保证，也没有证明原版/候选任意行为等价。
+
+实际保留旧缓存错误版只删除首次清空，先编译并通过原 Charon/Aeneas，再由未改动的 cache_tests.rs:102 拒绝。正式 Results.lean 逐字复制，在四个对应性质处拒绝；三个错误见证/辅助声明经独立内核和标准依赖审计。核心 35 项前端声明/81 个析构位置，包装 49 项声明/117 个析构位置均完整登记；这些包含预声明，不代表每项均在运行。两版标准库各 26 份源及固定 SQLite 源核对通过，实际使用 bundled SQLite 3.53.2（3053002）。完整中间表示只按原规则规范化无序 short_names；生成 Types/Funs/translation.json 逐字再生核对。
+
+指定 Linux x86_64 验证环境的原完整 verify-controller.sh 在 c47c4232 退出 0（1797.588 秒）：全部保留模块、实际重新提取一致性、占位检查及 786 个唯一声明依赖审计通过。专用 verify-sqlite.sh 独立退出 0（182.247 秒），正确候选的原 16 项缓存测试、真实错误版和 18 项物理 Audit 服务检查均通过。原完整 Linux check-function.sh 退出 0（1747.478 秒、13 阶段），1199 项工具测试无跳过，包含工作区与 contention-diagnostics 的 Rust 测试、文档测试和严格 Clippy。最后对 SandboxModel.lean、verification/ProofAudit.lean 和本库 Audit.lean 的真实服务检查退出 0（18.922 秒）；主审计 15 项和本库 18 项均完整、非陈旧、无错误/警告。1683 个跟踪输入按原规则核对一致；两份新 LLBC 的原始输出已保留，仅完整摘要确认无序 short_names 排列等价后恢复原序列化。预置工具链接另行核对。原 opt-in/特权忽略项不计为已执行，产品 VM、TLS、外部云端 SDK 及部署验收没有运行；这不是整个 V0 的验收结论。
+
+完整 commit() 的自有验证器图在原 64 GiB 地址空间限制下仍出现分配失败，没有完整 LLBC；没有证明实际峰值为 64 GiB，也没有把验证器设为可信。具体 SQL/参数/列、完整投影/额度/寿命/outbox、候选正确性、data_version/autocommit、恢复与派发仍归 V5 #338。当前接口不关闭整个代表性 SQL 写入链、T7/V0 或全系统，T9 继续排除。
+
 ## 适用版本与边界
 
 ### 当前声明边界：固定工具、同步核心与逐符号可信适配
