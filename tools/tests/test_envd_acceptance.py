@@ -72,6 +72,7 @@ class SupervisorStageTests(unittest.TestCase):
             'service_staging_parent','center_uid','center_gid','redis_uid','redis_gid','uid_base','scratch_parent',
             'cgroup_parent','build_cgroup_parent','service_cgroup_parent','window_helper','budget_profile')
         self.stage.config={name:str(self.root/name) for name in fields}
+        self.stage.checks=None
         self.stage.config.update(host_assets={},rust_envd_acceptance={'reviewed':True},
                                  client_id='must-not-enter-stage')
         self.stage.save=Mock()
@@ -129,6 +130,7 @@ class SupervisorStageTests(unittest.TestCase):
     def test_harbor_cannot_start_while_rust_stage_is_pending(self):
         self.stage.checks=None
         self.stage.config['ci_state_root']=str(self.root)
+        self.stage.state.update(expected=[],all_tasks=[],batches=[])
         self.stage.state.update(phase='running',batches=[{'phase':'new'}])
         with patch.object(self.stage,'observe_dk',return_value=True), \
                 patch.object(self.stage,'observe_envd',return_value=False), \
@@ -191,7 +193,9 @@ class SupervisorStageTests(unittest.TestCase):
                     lease.assert_called_once_with(self.root,'b'*64)
                     lease.return_value.release.assert_called_once()
                     self.assertEqual(self.stage.state['envd']['phase'],'failed')
-                    self.stage.block.assert_called_with('rust_envd_checks_failed_cleanup_confirmed')
+                    self.assertEqual(self.stage.state['phase'],'done')
+                    self.assertIs(self.stage.state['result']['passed'],False)
+                    self.assertEqual(self.stage.state['reason'],'rust_envd_checks_failed_cleanup_confirmed')
                 else:
                     stop.assert_not_called(); lease.assert_not_called()
                     self.stage.block.assert_called_with('rust_envd_failed_or_cleanup_unknown')
@@ -199,6 +203,9 @@ class SupervisorStageTests(unittest.TestCase):
         with patch.object(ci,'launch') as launch,patch.object(ci,'HostLease') as lease:
             self.assertFalse(self.stage.observe_envd())  # Resume durable failed result, never rerun.
         launch.assert_not_called(); lease.return_value.release.assert_called_once()
+        with patch.object(self.stage,'observe_dk') as dk,patch.object(ci,'launch') as launch:
+            self.stage.tick()  # Terminal failure must never continue into Harbor.
+        dk.assert_not_called();launch.assert_not_called()
 
 
 class PreparationTests(unittest.TestCase):
