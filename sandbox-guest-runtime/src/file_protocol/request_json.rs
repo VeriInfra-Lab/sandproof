@@ -6,6 +6,8 @@ use serde_json::value::RawValue;
 use std::borrow::Cow;
 
 mod exponent;
+mod string_key;
+pub(crate) use string_key::StringKey;
 
 /// Serde's iterative ignored-value parser checks JSON syntax, but deliberately
 /// skips UTF-8/surrogate validation and does not enforce a nesting limit. Check

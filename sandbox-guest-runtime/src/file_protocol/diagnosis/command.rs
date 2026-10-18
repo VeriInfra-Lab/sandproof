@@ -3,6 +3,7 @@
 use super::{
     Decoder, Failure, JsonError, JsonField as F, JsonOneof, JsonReason as R, Kind, Token, finish,
 };
+use crate::file_protocol::request_json::StringKey;
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy)]
@@ -208,7 +209,9 @@ fn map(decoder: &mut Decoder<'_>, body: &[u8]) -> Result<(), Failure> {
         if key.kind != Kind::Name {
             return Err(Failure::token(R::UnexpectedToken, &key));
         }
-        if !keys.insert(string(&key, body)?) {
+        let value: StringKey<'_> = serde_json::from_slice(&body[key.range.clone()])
+            .map_err(|_| Failure::token(R::InvalidValue, &key))?;
+        if !keys.insert(value) {
             return Err(Failure::token(R::DuplicateMap, &key));
         }
         scalar(decoder, F::MapValue, body)?;

@@ -503,6 +503,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [Start 紧凑环境验证](../sandbox-guest-runtime/src/protocol/start_budget.rs)及原 schema 的键/值类型参数尚未抽取或证明。待证义务包括借用键对正文寿命的依赖、转义键的拥有与精确重复对应、忽略值分配时仍验证字符串、请求唯一键数量到合并后数量的下界、完整协议错误先行及不可执行标记到原账户/时限/cwd/变量名拒绝顺序的连接。原拥有数据的解码、键集合和错误诊断成本仍须独立计入；内存回归不证明全输入或整服务上界。已证明 Rust 纯核心、LLBC/Lean 未改，旧定理不覆盖该解码与服务接线。
 
+[共用 JSON 键表示](../sandbox-guest-runtime/src/file_protocol/request_json/string_key.rs)在紧凑验证和命令错误诊断中使用借用、短键内联及长键拥有三种存储；完整 UTF-8 的复制/长度不变式、跨表示的精确相等和全序、surrogate 解码对应，以及原诊断字段/位置/全文保持均待证明。布局检查和有限内存采样不构成分配器或整服务内存上界证明。
+
 [环境合成的借用预检](../sandbox-guest-service/src/execution.rs)尚未抽取或证明。待证义务包括覆盖后唯一项与原 BTreeMap 合并结果对应、只对生效项计费、检查溢出、错误优先级及检查通过后才复制的对应；最终字节预算不等于结构分配或整服务内存预算。原已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该优化，独立内存回归也不是分配上界证明。
 
 [Start 参数计数](../sandbox-guest-runtime/src/protocol/argument_count.rs)与正式解码接线尚未抽取或证明。完整 schema 下的计数与原参数数组长度对应、合法消息保持、超额标记不可执行、JSON/尾帧错误优先及原账户/执行期限检查顺序均属新增义务。独立进程的硬内存限制回归不构成通用分配上界；其他字段、运行库及整服务内存仍须另验。原已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该优化。
