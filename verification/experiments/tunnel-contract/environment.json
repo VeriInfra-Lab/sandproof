@@ -1,0 +1,6688 @@
+{
+  "tokio": {
+    "version": "1.49.0",
+    "checksum": "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86",
+    "reviewed_sources": {
+      "src/io/async_read.rs": "a0f2aa6b2382dd2d7e01b4ef666e56c754a80b11b993561b1e69f19e0230c975",
+      "src/io/async_write.rs": "59c3afe81bdde369d234f7d22a1673465e549ab07e2e795b0f7b963bef4e5fd4",
+      "src/io/async_buf_read.rs": "b4c19705fcb2640f537bced8b4d8709d8653e836ef2c99416c1415084141ffe0",
+      "src/io/util/copy_buf.rs": "06841f612b878526da7ebc7168e35a23cff6bebf420fa8979b6feee6ccc93ef7",
+      "src/io/util/buf_reader.rs": "a4a2bd04b325f720f9380d78a4e58644b3c1db2b56acb06de7a6867acbb96210",
+      "src/io/util/flush.rs": "e3384731406fbbfd5745631b9c60bee706802fb1d0c94bfbb79c53fbf41e7a75",
+      "src/io/util/shutdown.rs": "dbf7e47a06b8cc436b9210ea185b92efd5e5359eb4469f678b75e888664a064b",
+      "src/net/tcp/stream.rs": "9400db984a9b93904ae5a30edca579f85b0a59184dcb5bc5daad96555afab2b7",
+      "src/net/tcp/split_owned.rs": "70bbd9fb62c68b966c5d107dd85eda4ce2f9488c2884854169de9add326b8720",
+      "src/net/unix/pipe.rs": "59492aa01fc56c290bf4c6c02ac38d164f3a4bd6891ed86312c11455a09ca032",
+      "src/macros/select.rs": "c5bbacdc5ecd483131231cca5b5839a1fc6fee0df84ffb452dd0483cefad17f6"
+    },
+    "integrity_checker": "tools/check_task_contract.py validates the complete locked archive and extracted source tree"
+  },
+  "production": {
+    "sources": {
+      "core/src/result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d",
+      "core/src/ops/try_trait.rs": "a95413c27d2b69669ab1acc7de296f9f3bb11c835f542015109bc74128bf1afd",
+      "core/src/convert/mod.rs": "45a0dd7cb34dcd592018f5b463493bf83254aaf3a2c909152060be8a4ea9b873",
+      "std/src/io/error.rs": "6b6127919e98b35a41610e750edc601de89f8f8475a399d37d49b50365e3b730"
+    }
+  },
+  "extraction": {
+    "sources": {
+      "core/src/result.rs": "b7a1da21e96c0fbb74af31dfcf4904c8f74a974733aa62a69b0ae41c2107a196",
+      "core/src/ops/try_trait.rs": "61bc75cb647e8fae3812dfda5bbc2a88f4dc54372dc64108a713d87191202ee7",
+      "core/src/convert/mod.rs": "e3e2314f58cede71077d46befcab3a381f2082130e0672b1bf01f79b5199347c",
+      "std/src/io/error.rs": "78710ae8be5b0d60e00bc265e13e99ce3bbe7e43b597d4e415f84f8be827ee75"
+    }
+  },
+  "core": {
+    "llbc_digest": "a5edb2b120ae02a445702cd96dbf4c729bfc17f997658d8c69c4e0474b5ef70a",
+    "charon_options": {
+      "ullbc": false,
+      "precise_drops": false,
+      "mir": null,
+      "rustc_args": [],
+      "targets": [],
+      "sysroot": "default",
+      "monomorphize": false,
+      "monomorphize_mut": null,
+      "start_from": [
+        "crate::tunnel::control::decide",
+        "crate::tunnel::control::finish_upload"
+      ],
+      "start_from_if_exists": [],
+      "start_from_attribute": [],
+      "start_from_pub": false,
+      "include": [
+        "sandproof_data_transport"
+      ],
+      "opaque": [
+        "tokio",
+        "hyper",
+        "axum"
+      ],
+      "exclude": [],
+      "extract_opaque_bodies": false,
+      "translate_all_methods": false,
+      "duplicate_defaulted_methods": false,
+      "lift_associated_types": [
+        "*"
+      ],
+      "hide_marker_traits": true,
+      "hide_allocator": true,
+      "remove_unused_clauses": false,
+      "remove_unused_self_clauses": true,
+      "remove_adt_clauses": true,
+      "desugar_drops": false,
+      "ops_to_function_calls": true,
+      "index_to_function_calls": true,
+      "treat_box_as_builtin": true,
+      "no_gen_tuple_structs": true,
+      "raw_consts": false,
+      "consts": null,
+      "unsized_strings": false,
+      "reconstruct_fallible_operations": true,
+      "reconstruct_asserts": true,
+      "reconstruct_matches": true,
+      "deallocate_all_locals": true,
+      "unbind_item_vars": true,
+      "print_original_ullbc": false,
+      "print_ullbc": false,
+      "print_built_llbc": false,
+      "print_llbc": false,
+      "dest_dir": null,
+      "dest_file": "sandproof_tunnel_policy.llbc",
+      "no_dedup_serialized_ast": false,
+      "format": null,
+      "no_serialize": false,
+      "skip_borrowck": false,
+      "no_typecheck": false,
+      "no_normalize": false,
+      "no_reorder_decls": false,
+      "abort_on_error": false,
+      "error_on_warnings": true,
+      "preset": "Aeneas"
+    },
+    "nonnull_declarations": 28,
+    "declarations": [
+      {
+        "def_id": 0,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "array",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Ty": {
+                "params": {
+                  "regions": [],
+                  "types": [
+                    {
+                      "index": 0,
+                      "name": "T",
+                      "variance": "Unknown"
+                    }
+                  ],
+                  "const_generics": [
+                    {
+                      "index": 0,
+                      "name": "N",
+                      "ty": {
+                        "Deduplicated": 0
+                      }
+                    }
+                  ],
+                  "trait_clauses": [],
+                  "regions_outlive": [],
+                  "types_outlive": [],
+                  "trait_type_constraints": []
+                },
+                "skip_binder": {
+                  "Deduplicated": 1
+                },
+                "kind": "InherentImplBlock"
+              }
+            }
+          },
+          {
+            "Ident": [
+              "as_slice",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": "Normal",
+        "sha256": "e04ffd91e7617075c2fd1f33e27162370b790fc6ab87076e9fab148cfb302b0d"
+      },
+      {
+        "def_id": 1,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "array",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Ty": {
+                "params": {
+                  "regions": [],
+                  "types": [
+                    {
+                      "index": 0,
+                      "name": "T",
+                      "variance": "Unknown"
+                    }
+                  ],
+                  "const_generics": [
+                    {
+                      "index": 0,
+                      "name": "N",
+                      "ty": {
+                        "Deduplicated": 0
+                      }
+                    }
+                  ],
+                  "trait_clauses": [],
+                  "regions_outlive": [],
+                  "types_outlive": [],
+                  "trait_type_constraints": []
+                },
+                "skip_binder": {
+                  "Deduplicated": 1
+                },
+                "kind": "InherentImplBlock"
+              }
+            }
+          },
+          {
+            "Ident": [
+              "as_mut_slice",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": "Normal",
+        "sha256": "2a5271637992ca71546fa883525463fd8f3c0f7ad57e8046f5184700706ee6cc"
+      },
+      {
+        "def_id": 2,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "array",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "repeat",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": "Normal",
+        "sha256": "cf385cf8944d27631e9184e770edcf1ff46d558efd275f8c32153cd9ab687455"
+      },
+      {
+        "def_id": 3,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "array",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 0
+            }
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 0,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [
+                  {
+                    "Deduplicated": 1
+                  }
+                ],
+                "trait_refs": [
+                  {
+                    "Value": [
+                      0,
+                      {
+                        "kind": {
+                          "Clause": {
+                            "Free": 0
+                          }
+                        },
+                        "trait_decl_ref": {
+                          "regions": [],
+                          "skip_binder": {
+                            "id": 1,
+                            "generics": {
+                              "regions": [],
+                              "types": [
+                                {
+                                  "Deduplicated": 10
+                                },
+                                {
+                                  "Deduplicated": 6
+                                },
+                                {
+                                  "Deduplicated": 13
+                                }
+                              ],
+                              "const_generics": [],
+                              "trait_refs": []
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "trait_ref": {
+              "id": 1,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 8
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "da40824df9949e5db1c137ace02c31b1b48fbeb6e7c4b9e8185fc99e79ec83e8"
+      },
+      {
+        "def_id": 4,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 1
+            }
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 1,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": [
+                  {
+                    "Value": [
+                      1,
+                      {
+                        "kind": {
+                          "Clause": {
+                            "Free": 0
+                          }
+                        },
+                        "trait_decl_ref": {
+                          "regions": [],
+                          "skip_binder": {
+                            "id": 2,
+                            "generics": {
+                              "regions": [],
+                              "types": [
+                                {
+                                  "Deduplicated": 6
+                                },
+                                {
+                                  "Deduplicated": 10
+                                },
+                                {
+                                  "Deduplicated": 13
+                                }
+                              ],
+                              "const_generics": [],
+                              "trait_refs": []
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "trait_ref": {
+              "id": 1,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "a9800c94b0de42eb4854f2c316ca52b84d435cccc222c6dbe13b9da53209d635"
+      },
+      {
+        "def_id": 5,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "array",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 2
+            }
+          },
+          {
+            "Ident": [
+              "index_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [
+                  {
+                    "Deduplicated": 1
+                  }
+                ],
+                "trait_refs": [
+                  {
+                    "Value": [
+                      2,
+                      {
+                        "kind": {
+                          "Clause": {
+                            "Free": 0
+                          }
+                        },
+                        "trait_decl_ref": {
+                          "regions": [],
+                          "skip_binder": {
+                            "id": 3,
+                            "generics": {
+                              "regions": [],
+                              "types": [
+                                {
+                                  "Deduplicated": 10
+                                },
+                                {
+                                  "Deduplicated": 6
+                                },
+                                {
+                                  "Deduplicated": 13
+                                }
+                              ],
+                              "const_generics": [],
+                              "trait_refs": []
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "trait_ref": {
+              "id": 3,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 8
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "e3d88216b134a4c903c1714c833bb249b9e428b8805f9bacad1d60cd33bbdb75"
+      },
+      {
+        "def_id": 6,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 3
+            }
+          },
+          {
+            "Ident": [
+              "index_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 3,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": [
+                  {
+                    "Deduplicated": 1
+                  }
+                ]
+              }
+            },
+            "trait_ref": {
+              "id": 3,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "183ae45dd10d37ec2a8f29a546c5c70b6480d1db67e53550ab805537e60d1990"
+      },
+      {
+        "def_id": 7,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 4
+            }
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 0
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 4,
+            "reuses_default": true
+          }
+        },
+        "sha256": "6471cd9740968ac50dccbbd2b44c63054716d40d3b7f37cc96961d413faf3837"
+      },
+      {
+        "def_id": 8,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 4
+            }
+          },
+          {
+            "Ident": [
+              "index_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 0
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 5,
+            "reuses_default": true
+          }
+        },
+        "sha256": "115652fe89c61ba9dc4831f152cf323abd18188e085a5be165d350c802cd6550"
+      },
+      {
+        "def_id": 9,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 5
+            }
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 5,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 18
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 10
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 4,
+            "reuses_default": true
+          }
+        },
+        "sha256": "e80c7276568cc86d2bfc47b5f4885e7128e9adebf2bc554057948c9191d5d3d1"
+      },
+      {
+        "def_id": 10,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 5
+            }
+          },
+          {
+            "Ident": [
+              "index_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 5,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 18
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 10
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 5,
+            "reuses_default": true
+          }
+        },
+        "sha256": "ea3e69b537cda4d6a5127b4ad2aa2e0b378f5ca7143c902aa2529c0ae70eebde"
+      },
+      {
+        "def_id": 11,
+        "name": [
+          {
+            "Ident": [
+              "sandproof_data_transport",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "tunnel",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "control",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "decide",
+              0
+            ]
+          }
+        ],
+        "opacity": "Transparent",
+        "body": "Structured",
+        "source": "Normal",
+        "sha256": "4c136bede6ea81b4fcc49ddcf50a6e5dc2c42a606d433f618d2b049797600532"
+      },
+      {
+        "def_id": 12,
+        "name": [
+          {
+            "Ident": [
+              "sandproof_data_transport",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "tunnel",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "control",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "finish_upload",
+              0
+            ]
+          }
+        ],
+        "opacity": "Transparent",
+        "body": "Structured",
+        "source": "Normal",
+        "sha256": "8c54185fbde55100bacd28f63df678087106c00cf3aa485f607a4fad20420f53"
+      },
+      {
+        "def_id": 13,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 4
+            }
+          },
+          {
+            "Ident": [
+              "get",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 0
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "0b90f25d5ee32d7c1f4a5ced500214f4d2f85c6bfc7d8bf89f823d50d3c28894"
+      },
+      {
+        "def_id": 14,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 4
+            }
+          },
+          {
+            "Ident": [
+              "get_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 0
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 1,
+            "reuses_default": true
+          }
+        },
+        "sha256": "55babe4a13d12cba079fdfc273850148372cd303007cf1b1ac3b14844251720e"
+      },
+      {
+        "def_id": 15,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 4
+            }
+          },
+          {
+            "Ident": [
+              "get_unchecked",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 0
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 2,
+            "reuses_default": true
+          }
+        },
+        "sha256": "156b17630e1a3edb2c4d5048851e6eb34f559abbcb26f4046909796911de265f"
+      },
+      {
+        "def_id": 16,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 4
+            }
+          },
+          {
+            "Ident": [
+              "get_unchecked_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 0
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 3,
+            "reuses_default": true
+          }
+        },
+        "sha256": "4fa461bb3f4651473a79e66bc1a52cf1b642cc250a286219d79b7e446383a43b"
+      },
+      {
+        "def_id": 17,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 5
+            }
+          },
+          {
+            "Ident": [
+              "get",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 5,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 18
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 10
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "05413e1ca6dea6fd83cd1d13b472e33b6d8f7862d602d8962346c2a58a629310"
+      },
+      {
+        "def_id": 18,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 5
+            }
+          },
+          {
+            "Ident": [
+              "get_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 5,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 18
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 10
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 1,
+            "reuses_default": true
+          }
+        },
+        "sha256": "8a7684225e3e3c4b1b14206e6522a05ae07c0f41774c13bc4e5bb860535a5a58"
+      },
+      {
+        "def_id": 19,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 5
+            }
+          },
+          {
+            "Ident": [
+              "get_unchecked",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 5,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 18
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 10
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 2,
+            "reuses_default": true
+          }
+        },
+        "sha256": "e8bf398985fd3fa31e3e62ae20dfe3de5561f6c0ba127af7939cab11d2102ce2"
+      },
+      {
+        "def_id": 20,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "slice",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "index",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 5
+            }
+          },
+          {
+            "Ident": [
+              "get_unchecked_mut",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 5,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 2,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 18
+                  },
+                  {
+                    "Deduplicated": 10
+                  },
+                  {
+                    "Deduplicated": 10
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 3,
+            "reuses_default": true
+          }
+        },
+        "sha256": "831f5344e32a464963169166ad2f814e5ed30888ca415e6067c67b3643fdd1de"
+      },
+      {
+        "def_id": 21,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "result",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 8
+            }
+          },
+          {
+            "Ident": [
+              "branch",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 8,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 6,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 33
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 1,
+            "reuses_default": true
+          }
+        },
+        "sha256": "0c18f44d17031f104a8486d84c4c5b6c878bbbaf8397a3b5e2085dbd4c5b9b0b"
+      },
+      {
+        "def_id": 22,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "result",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 10
+            }
+          },
+          {
+            "Ident": [
+              "from_residual",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 10,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  },
+                  {
+                    "Deduplicated": 13
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": [
+                  {
+                    "Value": [
+                      4,
+                      {
+                        "kind": {
+                          "Clause": {
+                            "Free": 0
+                          }
+                        },
+                        "trait_decl_ref": {
+                          "regions": [],
+                          "skip_binder": {
+                            "id": 5,
+                            "generics": {
+                              "regions": [],
+                              "types": [
+                                {
+                                  "Deduplicated": 13
+                                },
+                                {
+                                  "Deduplicated": 6
+                                }
+                              ],
+                              "const_generics": [],
+                              "trait_refs": []
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "trait_ref": {
+              "id": 7,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 36
+                  },
+                  {
+                    "Deduplicated": 35
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "62d5d328355d27c38964aa660301e3ecfc4719cbffdf4c2ef55c0bf2ed1d6128"
+      },
+      {
+        "def_id": 24,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "result",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "Result",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 6
+            }
+          },
+          {
+            "Builtin": [
+              "DropGlue",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 6,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 33
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": false
+          }
+        },
+        "sha256": "63db36e26378cc2b16250d9e124f2c047e1921d1a2ae5b38dc60bc58f1dda915"
+      },
+      {
+        "def_id": 25,
+        "name": [
+          {
+            "Ident": [
+              "sandproof_data_transport",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "tunnel",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "control",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "First",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 7
+            }
+          },
+          {
+            "Builtin": [
+              "DropGlue",
+              0
+            ]
+          }
+        ],
+        "opacity": "Transparent",
+        "body": "Structured",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 7,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 19
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": false
+          }
+        },
+        "sha256": "7b4e15bc08dfd4e2d68b044792a1ad370cb8d27fe0995794e51320990b168635"
+      },
+      {
+        "def_id": 26,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "result",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 8
+            }
+          },
+          {
+            "Ident": [
+              "from_output",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 8,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 6,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 33
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "2948d26fbcc59cba36183bb43b897bb735b198354ae6f1f7b6a0436fca7f10d9"
+      },
+      {
+        "def_id": 27,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "ops",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "control_flow",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "ControlFlow",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 9
+            }
+          },
+          {
+            "Builtin": [
+              "DropGlue",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 9,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 6
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 4,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 41
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": false
+          }
+        },
+        "sha256": "36537e0eb856c6f9b9e9e7d72be7431e6d55cb7ac7d2c1de1a8ae163f3680b39"
+      },
+      {
+        "def_id": 28,
+        "name": [
+          {
+            "Ident": [
+              "core",
+              0
+            ]
+          },
+          {
+            "Ident": [
+              "convert",
+              0
+            ]
+          },
+          {
+            "Impl": {
+              "Trait": 11
+            }
+          },
+          {
+            "Ident": [
+              "from",
+              0
+            ]
+          }
+        ],
+        "opacity": "Foreign",
+        "body": "Opaque",
+        "source": {
+          "TraitImpl": {
+            "impl_ref": {
+              "id": 11,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "trait_ref": {
+              "id": 5,
+              "generics": {
+                "regions": [],
+                "types": [
+                  {
+                    "Deduplicated": 3
+                  },
+                  {
+                    "Deduplicated": 3
+                  }
+                ],
+                "const_generics": [],
+                "trait_refs": []
+              }
+            },
+            "item_id": 0,
+            "reuses_default": true
+          }
+        },
+        "sha256": "2dc40db56188f62d53df76571d5f645e539b3d07666756d09d55ad61a74f68b5"
+      }
+    ],
+    "drop_sites": [
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          0,
+          "statements",
+          5,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 3
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 1
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 5
+            },
+            "id": 5,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 17
+                },
+                "id": 11,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 2
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 5
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 17
+                      },
+                      "id": 1,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 17
+                          },
+                          "id": 9,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 17
+                          },
+                          "id": 10,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Value": [
+                    18,
+                    {
+                      "data": {
+                        "file_id": 5,
+                        "beg": {
+                          "line": 18,
+                          "col": 0
+                        },
+                        "end": {
+                          "line": 18,
+                          "col": 1
+                        }
+                      },
+                      "generated_from_span": null
+                    }
+                  ]
+                },
+                "id": 15,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 19
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 25
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 6
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 18
+                      },
+                      "id": 3,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 13,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 14,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 17,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 18,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          0,
+          "statements",
+          5,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 5
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 17
+            },
+            "id": 1,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 17
+                },
+                "id": 9,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 17
+                },
+                "id": 10,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          0,
+          "statements",
+          5,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          1,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 19
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 25
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 6
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 18
+            },
+            "id": 3,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 13,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 14,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          0,
+          "statements",
+          7,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 4
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 5
+            },
+            "id": 9,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 24,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 19
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 25
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 6
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 18
+                      },
+                      "id": 7,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 22,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 23,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 26,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 27,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          0,
+          "statements",
+          7,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 19
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 25
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 6
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 18
+            },
+            "id": 7,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 22,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 23,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          5,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 5
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 0
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 5
+            },
+            "id": 19,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 21
+                },
+                "id": 39,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 4
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 3
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 21
+                      },
+                      "id": 15,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 21
+                          },
+                          "id": 37,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 21
+                          },
+                          "id": 38,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 43,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 19
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 25
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 6
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 18
+                      },
+                      "id": 17,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 41,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 42,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 45,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 46,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          5,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 4
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 21
+            },
+            "id": 15,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 21
+                },
+                "id": 37,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 21
+                },
+                "id": 38,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          5,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          1,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 19
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 25
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 6
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 18
+            },
+            "id": 17,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 41,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 42,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          7,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 4
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 2
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 5
+            },
+            "id": 23,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 52,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 19
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 25
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 6
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 18
+                      },
+                      "id": 21,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 50,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 18
+                          },
+                          "id": 51,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 54,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 55,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          1,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          7,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 19
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 25
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 6
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 18
+            },
+            "id": 21,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 50,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 18
+                },
+                "id": 51,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 11,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          2,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 19
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 25
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 7
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 5
+            },
+            "id": 33,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 63,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 5
+                },
+                "id": 64,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 4
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 0
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 29
+            },
+            "id": 37,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 76,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 77,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 78,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          1,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 1
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 39,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 81,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 82,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 83,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          2,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 41,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 86,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 87,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 88,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 6
+            },
+            "ty": {
+              "Deduplicated": 23
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 6
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 24
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 29
+            },
+            "id": 46,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 103,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 104,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 105,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          1,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 5
+            },
+            "ty": {
+              "Deduplicated": 23
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 8
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 24
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 29
+            },
+            "id": 48,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 108,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 109,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 29
+                },
+                "id": 110,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          2,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 3
+            },
+            "ty": {
+              "Deduplicated": 22
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 27
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 10
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 23
+                },
+                {
+                  "Deduplicated": 5
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 33
+            },
+            "id": 50,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 33
+                },
+                "id": 113,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 33
+                },
+                "id": 114,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 33
+                },
+                "id": 115,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          3,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 1
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 52,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 118,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 119,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 120,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          4,
+          "kind",
+          "Call",
+          "on_unwind",
+          "statements",
+          4,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 54,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 123,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 124,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 125,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          6,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 5
+            },
+            "ty": {
+              "Deduplicated": 23
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 7
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 24
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 23
+            },
+            "id": 64,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 33
+                },
+                "id": 137,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 3
+                      },
+                      "ty": {
+                        "Deduplicated": 22
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 27
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 10
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 23
+                          },
+                          {
+                            "Deduplicated": 5
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 33
+                      },
+                      "id": 58,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 33
+                          },
+                          "id": 134,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 33
+                          },
+                          "id": 135,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 33
+                          },
+                          "id": 136,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 142,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 2
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 1
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 60,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 139,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 140,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 141,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 147,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 3
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 62,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 144,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 145,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 146,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 149,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 150,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 151,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          6,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 3
+            },
+            "ty": {
+              "Deduplicated": 22
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 27
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 10
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 23
+                },
+                {
+                  "Deduplicated": 5
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 33
+            },
+            "id": 58,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 33
+                },
+                "id": 134,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 33
+                },
+                "id": 135,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 33
+                },
+                "id": 136,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          6,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          1,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 1
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 60,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 139,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 140,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 141,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          6,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          2,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 62,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 144,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 145,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 146,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          8,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 3
+            },
+            "ty": {
+              "Deduplicated": 22
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 27
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 9
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 23
+                },
+                {
+                  "Deduplicated": 5
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 23
+            },
+            "id": 70,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 158,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 2
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 1
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 66,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 155,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 156,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 157,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 163,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 3
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 68,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 160,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 161,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 162,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 165,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 166,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 167,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          8,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 1
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 66,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 155,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 156,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 157,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          8,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          1,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 68,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 160,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 161,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 162,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          10,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 11
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 23
+            },
+            "id": 74,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 175,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 3
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 72,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 172,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 173,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 174,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 177,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 178,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 179,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          10,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 72,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 172,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 173,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 174,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          6,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          11,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 12
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 23
+            },
+            "id": 76,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 182,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 183,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 184,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          10,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 3
+            },
+            "ty": {
+              "Deduplicated": 22
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 27
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 2
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 23
+                },
+                {
+                  "Deduplicated": 5
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 23
+            },
+            "id": 92,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 201,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 2
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 1
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 88,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 198,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 199,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 200,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 206,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 3
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 90,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 203,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 204,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 205,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 208,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 209,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 210,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          10,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 1
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 88,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 198,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 199,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 200,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          10,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          1,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 90,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 203,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 204,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 205,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          13,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 2
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 4
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 23
+            },
+            "id": 96,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 219,
+                "kind": {
+                  "Drop": {
+                    "place": {
+                      "kind": {
+                        "Local": 1
+                      },
+                      "ty": {
+                        "Deduplicated": 4
+                      }
+                    },
+                    "fn_ptr": {
+                      "kind": {
+                        "Fun": 24
+                      },
+                      "generics": {
+                        "regions": [
+                          {
+                            "Body": 3
+                          }
+                        ],
+                        "types": [
+                          {
+                            "Deduplicated": 5
+                          },
+                          {
+                            "Deduplicated": 3
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    },
+                    "kind": "Conditional",
+                    "on_unwind": {
+                      "span": {
+                        "Deduplicated": 31
+                      },
+                      "id": 94,
+                      "statements": [
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 216,
+                          "kind": {
+                            "StorageDead": 2
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 217,
+                          "kind": {
+                            "StorageDead": 1
+                          },
+                          "comments_before": []
+                        },
+                        {
+                          "span": {
+                            "Deduplicated": 31
+                          },
+                          "id": 218,
+                          "kind": {
+                            "Abort": "UnwindTerminate"
+                          },
+                          "comments_before": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 221,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 222,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 223,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          13,
+          "kind",
+          "Drop",
+          "on_unwind",
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": true,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 31
+            },
+            "id": 94,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 216,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 217,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 31
+                },
+                "id": 218,
+                "kind": {
+                  "Abort": "UnwindTerminate"
+                },
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 12,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          14,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Local": 1
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 5
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Conditional",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 23
+            },
+            "id": 98,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 226,
+                "kind": {
+                  "StorageDead": 2
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 227,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 23
+                },
+                "id": 228,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 25,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          2,
+          "kind",
+          "Switch",
+          "branches",
+          1,
+          "statements",
+          0,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Projection": [
+                {
+                  "kind": {
+                    "Projection": [
+                      {
+                        "kind": {
+                          "Local": 1
+                        },
+                        "ty": {
+                          "Deduplicated": 39
+                        }
+                      },
+                      "Deref"
+                    ]
+                  },
+                  "ty": {
+                    "Deduplicated": 19
+                  }
+                },
+                {
+                  "Field": [
+                    1,
+                    0
+                  ]
+                }
+              ]
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 3
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Precise",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 37
+            },
+            "id": 106,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 37
+                },
+                "id": 240,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 37
+                },
+                "id": 241,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "function": 25,
+        "path": [
+          "Structured",
+          "body",
+          "statements",
+          3,
+          "kind"
+        ],
+        "unwind": false,
+        "drop": {
+          "place": {
+            "kind": {
+              "Projection": [
+                {
+                  "kind": {
+                    "Projection": [
+                      {
+                        "kind": {
+                          "Local": 1
+                        },
+                        "ty": {
+                          "Deduplicated": 39
+                        }
+                      },
+                      "Deref"
+                    ]
+                  },
+                  "ty": {
+                    "Deduplicated": 19
+                  }
+                },
+                {
+                  "Field": [
+                    0,
+                    0
+                  ]
+                }
+              ]
+            },
+            "ty": {
+              "Deduplicated": 4
+            }
+          },
+          "fn_ptr": {
+            "kind": {
+              "Fun": 24
+            },
+            "generics": {
+              "regions": [
+                {
+                  "Body": 2
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 5
+                },
+                {
+                  "Deduplicated": 3
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "kind": "Precise",
+          "on_unwind": {
+            "span": {
+              "Deduplicated": 37
+            },
+            "id": 112,
+            "statements": [
+              {
+                "span": {
+                  "Deduplicated": 37
+                },
+                "id": 248,
+                "kind": {
+                  "StorageDead": 1
+                },
+                "comments_before": []
+              },
+              {
+                "span": {
+                  "Deduplicated": 37
+                },
+                "id": 249,
+                "kind": "UnwindResume",
+                "comments_before": []
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "translation": {
+    "aeneas_version": "nightly-2026.09.09-505b6ca",
+    "charon_version": "0.1.254",
+    "crate": "sandproof_data_transport",
+    "functions": [
+      {
+        "def_id": 11,
+        "lean_name": "SandproofTunnelRust.tunnel.control.decide",
+        "lean_file": "SandproofTunnel/Funs.lean",
+        "rust_name": "sandproof_data_transport::tunnel::control::decide",
+        "is_local": true,
+        "source": {
+          "file": "sandbox-data-transport/src/tunnel/control.rs",
+          "begin_line": 13,
+          "end_line": 18
+        },
+        "is_opaque": false,
+        "can_fail": true,
+        "can_diverge": false,
+        "is_rec": false,
+        "reducible": false
+      },
+      {
+        "def_id": 12,
+        "lean_name": "SandproofTunnelRust.tunnel.control.finish_upload",
+        "lean_file": "SandproofTunnel/Funs.lean",
+        "rust_name": "sandproof_data_transport::tunnel::control::finish_upload",
+        "is_local": true,
+        "source": {
+          "file": "sandbox-data-transport/src/tunnel/control.rs",
+          "begin_line": 20,
+          "end_line": 23
+        },
+        "is_opaque": false,
+        "can_fail": true,
+        "can_diverge": false,
+        "is_rec": false,
+        "reducible": false
+      }
+    ],
+    "types": [
+      {
+        "def_id": 2,
+        "lean_name": "SandproofTunnelRust.tunnel.control.First",
+        "lean_file": "SandproofTunnel/Types.lean",
+        "rust_name": "sandproof_data_transport::tunnel::control::First",
+        "is_local": true,
+        "source": {
+          "file": "sandbox-data-transport/src/tunnel/control.rs",
+          "begin_line": 3,
+          "end_line": 6
+        }
+      },
+      {
+        "def_id": 3,
+        "lean_name": "SandproofTunnelRust.tunnel.control.Action",
+        "lean_file": "SandproofTunnel/Types.lean",
+        "rust_name": "sandproof_data_transport::tunnel::control::Action",
+        "is_local": true,
+        "source": {
+          "file": "sandbox-data-transport/src/tunnel/control.rs",
+          "begin_line": 8,
+          "end_line": 11
+        }
+      }
+    ],
+    "globals": [],
+    "trait_decls": [],
+    "trait_impls": []
+  },
+  "preflight": {
+    "original_exit": 101,
+    "reason": "Coroutine types are not supported yet; Coroutines are not supported",
+    "has_errors": true,
+    "partial_llbc_sha256": "0c4002d16ad1cbace7a44b49b26e0cbc295e8a01adf439a9165447b47e4479e9"
+  },
+  "schema": 1,
+  "issue": 575,
+  "proof_kind": "extracted-sync-policy-plus-conditional-io-contract",
+  "service_versions": {
+    "toolchain": "leanprover/lean4:v4.31.0",
+    "server_version": "0.30.0",
+    "client_version": "0.13.2",
+    "mcp_version": "2.0.0"
+  },
+  "theorems": [
+    "SandproofTunnelRust.Contract.decide_upload",
+    "SandproofTunnelRust.Contract.decide_download",
+    "SandproofTunnelRust.Contract.finish_download_ok",
+    "SandproofTunnelRust.Contract.finish_download_error",
+    "SandproofTunnelRust.Contract.upload_error_kept",
+    "SandproofTunnelRust.Contract.download_error_priority",
+    "SandproofTunnelRust.Contract.finish_upload_refines",
+    "SandproofTunnelRust.Contract.success_after_upload_requires_both",
+    "SandproofTunnelRust.Contract.initial_safe",
+    "SandproofTunnelRust.Contract.step_preserves",
+    "SandproofTunnelRust.Contract.step_binding",
+    "SandproofTunnelRust.Contract.trace_preserves",
+    "SandproofTunnelRust.Contract.trace_binding",
+    "SandproofTunnelRust.Contract.step_starts_active",
+    "SandproofTunnelRust.Contract.terminal_trace_unchanged",
+    "SandproofTunnelRust.Contract.actual_upload_action",
+    "SandproofTunnelRust.Contract.actual_download_action",
+    "SandproofTunnelRust.Contract.actual_after_upload",
+    "SandproofTunnelRust.Contract.trace_prefixes",
+    "SandproofTunnelRust.Contract.trace_pending_bounds",
+    "SandproofTunnelRust.Contract.step_return_ok_requires_download",
+    "SandproofTunnelRust.Contract.trace_return_ok_requires_download",
+    "SandproofTunnelRust.Contract.successful_download_exact",
+    "SandproofTunnelRust.Contract.permitted_selection_results",
+    "SandproofTunnelRust.Contract.raw_success_with_unread_upload",
+    "SandproofTunnelRust.Contract.lift_upload_trace",
+    "SandproofTunnelRust.Contract.lift_download_trace",
+    "SandproofTunnelRust.Contract.single_step_trace",
+    "SandproofTunnelRust.Contract.full_transfer_realizable"
+  ],
+  "tool_profile": "verification/first-chain-linux-environment.json",
+  "tools": {
+    "target": "x86_64-unknown-linux-gnu",
+    "cfg": [
+      "debug_assertions",
+      "fmt_debug=\"full\"",
+      "overflow_checks",
+      "panic=\"unwind\"",
+      "relocation_model=\"pic\"",
+      "target_abi=\"\"",
+      "target_arch=\"x86_64\"",
+      "target_endian=\"little\"",
+      "target_env=\"gnu\"",
+      "target_family=\"unix\"",
+      "target_feature=\"fxsr\"",
+      "target_feature=\"sse\"",
+      "target_feature=\"sse2\"",
+      "target_feature=\"x87\"",
+      "target_has_atomic",
+      "target_has_atomic=\"16\"",
+      "target_has_atomic=\"32\"",
+      "target_has_atomic=\"64\"",
+      "target_has_atomic=\"8\"",
+      "target_has_atomic=\"ptr\"",
+      "target_has_atomic_load_store",
+      "target_has_atomic_load_store=\"16\"",
+      "target_has_atomic_load_store=\"32\"",
+      "target_has_atomic_load_store=\"64\"",
+      "target_has_atomic_load_store=\"8\"",
+      "target_has_atomic_load_store=\"ptr\"",
+      "target_has_atomic_primitive_alignment=\"16\"",
+      "target_has_atomic_primitive_alignment=\"32\"",
+      "target_has_atomic_primitive_alignment=\"64\"",
+      "target_has_atomic_primitive_alignment=\"8\"",
+      "target_has_atomic_primitive_alignment=\"ptr\"",
+      "target_has_reliable_f128",
+      "target_has_reliable_f16",
+      "target_has_reliable_f16_math",
+      "target_has_threads",
+      "target_object_format=\"elf\"",
+      "target_os=\"linux\"",
+      "target_pointer_width=\"64\"",
+      "target_thread_local",
+      "target_vendor=\"unknown\"",
+      "ub_checks",
+      "unix"
+    ],
+    "rustflags": [
+      "--remap-path-prefix=<checkout>=.",
+      "--remap-path-prefix=<extraction-sysroot>=<extraction-sysroot>",
+      "--remap-path-prefix=<cargo-cache>=<cargo-cache>"
+    ],
+    "production_compiler": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+    "extraction_frontend": "nightly-2026-08-18",
+    "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)",
+    "charon": {
+      "revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+      "binary_sha256": "2603f720f0d26a4c77ae215485e2457029d69504dbd9d318a497ed866f21d4fd",
+      "driver_sha256": "428e5331f3a436daef97fb859056cd77453f00eaef1b526d432e42e7b46234cf"
+    },
+    "aeneas": {
+      "revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+      "binary_sha256": "22b326476f854e19b52ca5a2acfd953fd186da7694cd10d8d008ed5502f7c46a"
+    },
+    "lean": "4.31.0"
+  },
+  "tool_admission": "reuse tools.check_first_chain_extraction.check_tools; exact source/driver/binary/compiler/cfg/backend checks"
+}

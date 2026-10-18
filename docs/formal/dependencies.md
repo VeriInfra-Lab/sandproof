@@ -399,3 +399,26 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 使用者仍须证明：permit 属于正确请求/对象/代际及授权；信号对应同一权限且需要单调撤销时不重新置 false；撤销后的新准入拒绝；工作内业务、字节预算和可能已发生的效果；原 body/lease/relay 生命周期、未知保持及真实退出/排空证据。不能仅凭 Some、None、watch 当前值或局部 Drop 释放 VM 或宣告持久事务成功。网关其它循环、流操作和 B3 大类未由本登记自动覆盖。
 
 工程核对运行原 Rust 的两个已有测试及八个新增确定性测试，覆盖预先撤销/权限方关闭、捕获值析构、两个分支间竞态、最新值覆盖、外层取消、工作产生效果后 panic 和后台许可仍被持有。隔离错误版只交换两个 biased 分支，先确认独立编译成功，再由原 `prior_revocation_or_lost_authority_never_polls_work` 同一断言拒绝。组件证据与 Lean 定理分别报告，不把一组测试提升为一般等价证明。
+
+## A6/B3/B4 双向字节中继与结果处理（隔离候选）
+
+本条只适用于 [#575](https://github.com/VeriInfra-Lab/sandproof/issues/575) 的[固定候选](../../verification/experiments/tunnel-contract/candidate.json)，不表示完整数据网关已证。来源为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；[隔离补丁](../../verification/experiments/tunnel-contract/candidate.patch)让原 `tunnel::relay` 调用 `control::decide/finish_upload`，生产源码未改。工具、实际库源码、完整中间表示、声明和析构位置见[环境登记](../../verification/experiments/tunnel-contract/environment.json)；完成状态仍见覆盖记录与任务。
+
+实际生产调用为 Linux 的 `sandbox_host_service::data_gateway::relay`：将原匿名管道的 Receiver/Sender 和同一原 TcpStream 的 OwnedReadHalf/OwnedWriteHalf 交给中继。命名空间、目标实例、原进程和许可是否正确仍由 V6/V8 提供。父 HTTP 网关的 WriteIdle、TLS、正文限额和撤销不是这一原调用的 I/O 参数，不随本条自动完成证明。
+
+| 提供方与接口 | 可以依赖的具体行为 | 不能据此推出 |
+| --- | --- | --- |
+| A6：Tokio 1.49.0 的 BufReader::with_capacity、AsyncBufRead 与 copy_buf | 两方向分别使用原 64 KiB 读缓冲；每次确认写入只消费对应缓冲的前 n 字节，短写继续处理剩余部分，零写按 WriteZero 失败；原读端 EOF 后还要完成该操作的 flush 才正常返回 | 不能把 64 KiB 当成 HTTP frame、全部库/内核队列或整个系统驻留上限；返回计数未被本中继用于预算或释放，也不表示远端应用已接收 |
+| A6：原 read/write、flush、shutdown 的结果 | Pending 可继续等待；正常结果与原对象上的操作对应；错误前可以已传输一段前缀，flush/shutdown 本身也可以失败 | 错误不回滚已发送字节；写入端半关闭不等于另一方向结束，socket EOF 不等于 HTTP/Connect 或文件业务完整 |
+| B3：原两个复制 future、pin/select 和正常局部结束 | 保持原四个流对象及所选结果来源；select 未设置 biased，同时可就绪时允许任一分支先被选中；返回或停止等待后，本函数不再 poll 被丢弃的复制 future | 不承诺取消前没有字节，不消除已进入缓冲的后续交付；局部 Drop、flush、原函数返回都不是子进程退出、通道排空或 VM 释放证据 |
+| B4：原 First/Action 和给定结果的机械接线 | 将所选原结果交给同一真实 control 核心；依照核心给出的 AwaitDownload 动作等待原下行，再把原两个结果交给 finish_upload；Finish 动作返回给定原值 | 不能把“选择等哪一侧、是否保留错误”整个假设正确；这两项决定保留实际生成体。新增或替换流/结果、提前返回、错误来源串线须重新核对 |
+
+本项目同步核心负责的决定是：先取得上传结果时继续等待下行；下行成功时保留原上传结果，下行错误时返回原下行错误。先取得下行结果时直接结束这次单请求中继，允许上传尚未完成，防止客户端等 stdout EOF、中继又等 stdin EOF 的循环。因而本函数的 `Ok(())` 是本层的结果，**不能命名为整个请求已成功**。两支都可就绪时，不推定上传分支必先选中，也不把未选中分支的潜在结果当作已观察回执。
+
+[Contract](../../verification/aeneas/tunnel/SandproofTunnel/Contract.lean) 连接原生成决定与选择/继续等待/返回/中断，并复用现有 StreamHistory。字节历史只记录本次原流的读取、确认写入及待写内容；原始字节 EOF 与协议/业务结束使用不同的责任。[Results](../../verification/aeneas/tunnel/SandproofTunnel/Results.lean) 对任意允许的有限交错保持两个方向的前缀、缓冲界和原绑定；Raw 返回成功时只能推出在上述原 I/O 合同下，完整原始下行字节已由写端确认接收；不能推出客户端已经读到、上传已完整或业务协议已成功。合法轨迹包括任意满足预算的有限源完整通过，以及下行结束时仍有未读上传；存在可行轨迹不保证实际调度最终完成。原命令输出不新增累计字节上限。
+
+正常同步值方程使用原 Aeneas 的 Result/Try/FromSame 模型；错误载荷按完整原值传递。当前实例限于上述固定管道/TCP 类型，以及没有可观察资源或共享状态析构效果的错误载荷。任意自定义 AsyncRead/AsyncWrite、有副作用的错误 Drop、额外许可/FD 捕获不能直接套用。原流句柄自身的关闭与其它析构效果仍在 A6/B3 条件和 V6/V8 责任中，不因同步核心的值证明而成为已机器验证的资源释放。
+
+实际异步历史到这些 I/O/选择步骤的对应仍是明确的 B3/B4 符合性条件，依据是原符号/参数审查、源码摘要及确定性组件回归，不是完整 async Rust 的机器精化。源库、实际类型、四个对象、调用者、分支接线或捕获/析构变化都须重查，不能只刷新摘要。
+
+本条不提供一般原版/候选等价、panic/unwind/abort/崩溃后态或无条件进展。完整 HTTP/Connect framing、授权/路由、其余缓冲与额度、子进程真实退出、DataLease/Unknown 和释放准入继续由 V3/V5/V6/V8 提供；不以 EOF、中继返回或一次错误码替代这些义务。

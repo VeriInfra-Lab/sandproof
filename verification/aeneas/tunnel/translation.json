@@ -1,0 +1,70 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_data_transport",
+  "functions": [
+    {
+      "def_id": 11,
+      "lean_name": "SandproofTunnelRust.tunnel.control.decide",
+      "lean_file": "SandproofTunnel/Funs.lean",
+      "rust_name": "sandproof_data_transport::tunnel::control::decide",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-data-transport/src/tunnel/control.rs",
+        "begin_line": 13,
+        "end_line": 18
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofTunnelRust.tunnel.control.finish_upload",
+      "lean_file": "SandproofTunnel/Funs.lean",
+      "rust_name": "sandproof_data_transport::tunnel::control::finish_upload",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-data-transport/src/tunnel/control.rs",
+        "begin_line": 20,
+        "end_line": 23
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 2,
+      "lean_name": "SandproofTunnelRust.tunnel.control.First",
+      "lean_file": "SandproofTunnel/Types.lean",
+      "rust_name": "sandproof_data_transport::tunnel::control::First",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-data-transport/src/tunnel/control.rs",
+        "begin_line": 3,
+        "end_line": 6
+      }
+    },
+    {
+      "def_id": 3,
+      "lean_name": "SandproofTunnelRust.tunnel.control.Action",
+      "lean_file": "SandproofTunnel/Types.lean",
+      "rust_name": "sandproof_data_transport::tunnel::control::Action",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-data-transport/src/tunnel/control.rs",
+        "begin_line": 8,
+        "end_line": 11
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}
