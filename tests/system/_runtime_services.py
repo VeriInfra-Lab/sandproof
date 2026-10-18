@@ -446,6 +446,10 @@ class RuntimeServices:
         """Original finite service roots, including AOF/temp/logs; not a quota."""
         return self.service_storage.report()
 
+    def storage_diagnostics(self):
+        """Original sampler history only; cannot authorize staging removal."""
+        return self.service_storage.diagnostics()
+
     def cleanup_staging(self):
         """Remove only this generated staging AFTER independent VM cleanup.
 

@@ -260,6 +260,156 @@ async fn cache_cancel_retains_actual_work_budget_then_replay_and_restart_reuse_o
 
 #[tokio::test]
 #[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cache_replay_checks_identity_without_reopening_artifacts_but_restart_reads_them() {
+    use rustix::fs::inotify::{self, CreateFlags, WatchFlags};
+
+    let f = fixture(false).await;
+    Arc::clone(&f.cache)
+        .receive(f.request.clone())
+        .await
+        .unwrap();
+    let rootfs = f
+        .cache
+        .config
+        .root
+        .join("artifacts")
+        .join(key(&f.request))
+        .join("rootfs.ext4");
+    let watch = inotify::init(CreateFlags::NONBLOCK | CreateFlags::CLOEXEC).unwrap();
+    inotify::add_watch(&watch, &rootfs, WatchFlags::OPEN | WatchFlags::ACCESS).unwrap();
+    let mut events = [0u8; 512];
+    for _ in 0..3 {
+        Arc::clone(&f.cache)
+            .receive(f.request.clone())
+            .await
+            .unwrap()
+            .validate_for(&f.request)
+            .unwrap();
+    }
+    // Kernel observations, not elapsed time or a replacement hash function:
+    // replay must not reopen/read a potentially multi-GiB sealed artifact.
+    assert_eq!(
+        rustix::io::read(&watch, &mut events),
+        Err(rustix::io::Errno::WOULDBLOCK)
+    );
+    assert_eq!(f.requests.load(Ordering::SeqCst), 2);
+    fs::read(&rootfs).unwrap();
+    assert!(rustix::io::read(&watch, &mut events).unwrap() > 0);
+
+    let config = f.cache.config.clone();
+    let client = f.cache.client.clone();
+    let lifecycle = f.cache.lifecycle.clone();
+    drop(f.cache);
+    let reopened = TemplateCache::open(config, f.request.node.clone(), client, lifecycle).unwrap();
+    // A disk manifest cannot restore the process-local verification evidence.
+    assert!(rustix::io::read(&watch, &mut events).unwrap() > 0);
+    assert!(reopened.known(&f.request).unwrap().is_some());
+    assert_eq!(
+        rustix::io::read(&watch, &mut events),
+        Err(rustix::io::Errno::WOULDBLOCK)
+    );
+    f.shutdown.send(()).unwrap();
+    f.server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cache_replay_refuses_changed_artifact_identity_or_untrusted_parent_without_redownload() {
+    for failure in [
+        "replacement",
+        "symlink",
+        "hardlink",
+        "permissions",
+        "owner",
+        "parent",
+        "truncated",
+        "contents",
+    ] {
+        let f = fixture(false).await;
+        Arc::clone(&f.cache)
+            .receive(f.request.clone())
+            .await
+            .unwrap();
+        let directory = f.cache.config.root.join("artifacts").join(key(&f.request));
+        let rootfs = directory.join("rootfs.ext4");
+        match failure {
+            "replacement" => {
+                let replacement = f.directory.path().join("replacement");
+                fs::copy(&rootfs, &replacement).unwrap();
+                fs::rename(replacement, &rootfs).unwrap();
+            }
+            "symlink" => {
+                let original = f.directory.path().join("original-rootfs");
+                fs::rename(&rootfs, &original).unwrap();
+                std::os::unix::fs::symlink(original, &rootfs).unwrap();
+            }
+            "hardlink" => fs::hard_link(&rootfs, f.directory.path().join("extra-link")).unwrap(),
+            "permissions" => {
+                fs::set_permissions(&rootfs, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            "owner" => std::os::unix::fs::chown(&rootfs, Some(64_001), None).unwrap(),
+            "parent" => fs::set_permissions(&directory, fs::Permissions::from_mode(0o777)).unwrap(),
+            "truncated" => OpenOptions::new()
+                .write(true)
+                .open(&rootfs)
+                .unwrap()
+                .set_len(1024)
+                .unwrap(),
+            "contents" => {
+                let mut bytes = fs::read(&rootfs).unwrap();
+                bytes[0] ^= 1;
+                fs::write(&rootfs, bytes).unwrap();
+                // Guarantee an observable same-inode change without a sleep
+                // or assuming the filesystem's ctime resolution.
+                File::open(&rootfs)
+                    .unwrap()
+                    .set_times(
+                        std::fs::FileTimes::new()
+                            .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(123)),
+                    )
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            f.cache.known(&f.request),
+            Err(ReceiveError::Unavailable),
+            "{failure}"
+        );
+        assert_eq!(
+            Arc::clone(&f.cache).receive(f.request.clone()).await,
+            Err(ReceiveError::Unavailable),
+            "{failure}"
+        );
+        assert_eq!(f.requests.load(Ordering::SeqCst), 2, "{failure}");
+        let mut binding = local::request().create;
+        binding.template_revision = f.request.revision.clone();
+        binding.template_digest = f.request.digest;
+        assert!(f.cache.verification(&binding).is_none(), "{failure}");
+        assert!(directory.join("manifest.json").exists());
+        if matches!(failure, "replacement" | "contents") {
+            let config = f.cache.config.clone();
+            let client = f.cache.client.clone();
+            let lifecycle = f.cache.lifecycle.clone();
+            drop(f.cache);
+            let reopened =
+                TemplateCache::open(config, f.request.node.clone(), client, lifecycle).unwrap();
+            if failure == "contents" {
+                assert_eq!(reopened.known(&f.request), Err(ReceiveError::Unavailable));
+                assert!(rootfs.exists());
+            } else {
+                // Same correct bytes under a replacement inode are accepted
+                // only by the new process's complete original hash check.
+                assert!(reopened.known(&f.request).unwrap().is_some());
+            }
+        }
+        f.shutdown.send(()).unwrap();
+        f.server.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
 async fn cache_profile_reserve_is_checked_before_any_download_or_managed_directory() {
     let f = fixture(false).await;
     f.host.lock().unwrap().disk_available = Some(0);
@@ -563,6 +713,58 @@ fn driver_config() -> DriverConfig {
         compute: local::compute(),
         interval: Duration::from_millis(100),
     }
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cached_verification_reaches_original_admission_without_bypassing_node_validation() {
+    let f = fixture(false).await;
+    Arc::clone(&f.cache)
+        .receive(f.request.clone())
+        .await
+        .unwrap();
+    let lifecycle = f.cache.lifecycle.clone();
+    let mut create = local::request();
+    create.create.template_revision = f.request.revision.clone();
+    create.create.template_digest = f.request.digest;
+    assert!(f.cache.verification(&create.create).is_some());
+    let mut wrong = create.create.clone();
+    wrong.template_digest[0] ^= 1;
+    assert!(f.cache.verification(&wrong).is_none());
+    wrong = create.create.clone();
+    wrong.template_revision = "other-revision".try_into().unwrap();
+    assert!(f.cache.verification(&wrong).is_none());
+
+    lifecycle.receive(create.clone()).await.unwrap();
+    f.host.lock().unwrap().template_error = Some(ApplicationError::Invalid);
+    let report = lifecycle
+        .drive_once(driver_config(), Arc::clone(&f.cache))
+        .await
+        .unwrap();
+    assert_eq!(report.unavailable, 1);
+    {
+        let state = f.host.lock().unwrap();
+        assert_eq!(state.cached_verifications, 1);
+        assert_eq!(state.template_checks, 1);
+        assert!(state.actions.is_empty());
+        assert!(state.configurations.is_empty());
+    }
+    // The same original responsibility can proceed only after the original
+    // host's validation succeeds. Evidence itself never grants execution.
+    f.host.lock().unwrap().template_error = None;
+    lifecycle
+        .drive_once(driver_config(), Arc::clone(&f.cache))
+        .await
+        .unwrap();
+    assert!(matches!(
+        lifecycle.receive(create.clone()).await.unwrap().fact,
+        LifecycleFact::Ready { .. }
+    ));
+    assert_eq!(f.host.lock().unwrap().template_checks, 2);
+    assert_eq!(f.host.lock().unwrap().cached_verifications, 2);
+    finish_original_destroy(&lifecycle, Arc::clone(&f.cache), create).await;
+    f.shutdown.send(()).unwrap();
+    f.server.await.unwrap().unwrap();
 }
 
 async fn finish_original_destroy(

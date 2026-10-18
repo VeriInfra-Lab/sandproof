@@ -4,7 +4,10 @@ use super::{
     ApplicationError, ControllerApplication, ControllerHost, Inner, JournalError, NeverCrash,
     map_admission, map_journal, recover_locked, release_reclaimed_slots,
 };
-use crate::{CreateOptions, InternalAdmission, InternalTemplate, templates::ComputeLimits};
+use crate::{
+    CreateOptions, InternalAdmission, InternalTemplate, template_registry::CandidateVerification,
+    templates::ComputeLimits,
+};
 use sandproof_protocol::internal::{
     NodeIdentity,
     lifecycle::{Intent, LifecycleFact, LifecycleRequest, LifecycleResponse},
@@ -107,6 +110,22 @@ impl<H: ControllerHost> ControllerApplication<H> {
         template: Option<InternalTemplate>,
         compute: ComputeLimits,
     ) -> Result<LifecycleResponse, ApplicationError> {
+        self.advance_internal_lifecycle_with_verification(request, template, compute, None)
+    }
+
+    /// Same original workflow, optionally reusing a protected cache's completed
+    /// artifact reads. The node checks the evidence against the local files;
+    /// normal template validation and admission remain mandatory. This hint is
+    /// process-local, never a remote authorization or a persisted Ready fact.
+    /// # Errors
+    /// Same authority, material, admission and recovery errors as normal advance.
+    pub fn advance_internal_lifecycle_with_verification(
+        &self,
+        request: &LifecycleRequest,
+        template: Option<InternalTemplate>,
+        compute: ComputeLimits,
+        verification: Option<&CandidateVerification>,
+    ) -> Result<LifecycleResponse, ApplicationError> {
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let state = inner
             .journal
@@ -150,6 +169,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 request,
                 template.ok_or(ApplicationError::Busy)?,
                 compute,
+                verification,
             )?;
             if matches!(decision, InternalAdmissionDecision::CapacityVeto) {
                 // Only the original definitive pre-admission capacity veto is
@@ -190,6 +210,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         request: &LifecycleRequest,
         template: InternalTemplate,
         compute: ComputeLimits,
+        verification: Option<&CandidateVerification>,
     ) -> Result<InternalAdmissionDecision, ApplicationError> {
         let mut options: CreateOptions = serde_json::from_slice(&request.create.options)
             .map_err(|_| ApplicationError::Invalid)?;
@@ -212,6 +233,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
             if !inner.host.public_ipv4_ready()? {
                 return Err(ApplicationError::Busy);
             }
+        }
+        if let Some(verification) = verification {
+            inner
+                .host
+                .cache_candidate_verification(&template.local, verification);
         }
         inner.host.validate_template(&template.local)?;
         release_reclaimed_slots(inner)?;

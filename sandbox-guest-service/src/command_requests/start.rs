@@ -1,5 +1,5 @@
 //! Authenticated Start -> reserved PID/tag record -> original gated worker.
-//! Public duplicate-tag failures retain the original reservation observation.
+//! Public reservation failures retain the original pre-execution observation.
 use std::{path::Path, sync::Arc};
 
 use sandproof_guest_runtime::{
@@ -53,12 +53,15 @@ fn reserve_start(
     registry
         .reserve_optional(request.process.as_ref(), request.tag.as_deref())
         .map_err(|error| {
-            if error == crate::command::RegistryError::AlreadyExists {
-                *observed = request
+            use crate::command::RegistryError;
+            *observed = match error {
+                RegistryError::AlreadyExists => request
                     .tag
                     .as_ref()
-                    .map(|tag| Rejection::TagAlreadyExists(tag.clone()));
-            }
+                    .map(|tag| Rejection::TagAlreadyExists(tag.clone())),
+                RegistryError::ResourceExhausted => Some(Rejection::RegistryCapacity),
+                _ => None,
+            };
             Error::Registry(error)
         })
 }

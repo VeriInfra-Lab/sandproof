@@ -233,14 +233,15 @@ def compare(left, right, label):
 async def paired(cls, owner, inputs, go, rust, templates, item, *, observe_resources=False):
     from tools import guest_probe
     live, failure = [], None
+    early_cleanup_failed = False
     try:
-        for kind, selected in templates:
+        for index, (kind, selected) in enumerate(templates):
             attempt = {'kind': kind, 'template': selected, 'outcome': 'unknown'}
             item['create_attempts'].append(attempt)
             sandbox = await call(cls.create, template=selected, timeout=300,
                                   allow_internet_access=False, **owner)
             attempt.update(outcome='returned', sandbox_id=sandbox.sandbox_id)
-            assert all(sandbox.sandbox_id != known.sandbox_id for known in live), 'repeated VM identity'
+            assert all(sandbox.sandbox_id != known['sandbox_id'] for known in item['pair']), 'repeated VM identity'
             live.append(sandbox)
             entry = {'kind': kind, 'template': selected, 'sandbox_id': sandbox.sandbox_id}
             item['pair'].append(entry)
@@ -276,13 +277,26 @@ async def paired(cls, owner, inputs, go, rust, templates, item, *, observe_resou
             assert after == receipt, kind + ' work environment changed during paired cases'
             entry['after'] = await observe()
             assert entry['after'] == entry['before'], kind + ' daemon changed during paired cases'
+            if index + 1 < len(templates):
+                # The immutable observations suffice for later comparison.
+                # Do not spend this VM's original lifetime waiting for another
+                # side. Remove only the pending cleanup attempt: its identity
+                # and any unconfirmed result remain in the original report.
+                finished = live.pop()
+                entry['early_destroy_acknowledged'] = False
+                try:
+                    await destroy_probes([finished])
+                except BaseException:
+                    early_cleanup_failed = True
+                    raise
+                entry['early_destroy_acknowledged'] = True
         compare(item['pair'][0]['calls'], item['pair'][1]['calls'], 'Go/Rust')
         compare(item['pair'][0]['sdk_files'], item['pair'][1]['sdk_files'], 'Go/Rust SDK-specific octet batches')
     except BaseException as error:
         failure = error
     try:
         await destroy_probes(live)
-        item['known_destroy_acknowledged'] = True
+        item['known_destroy_acknowledged'] = not early_cleanup_failed
     except BaseException as cleanup:
         item['known_destroy_acknowledged'] = False
         if failure is not None:
