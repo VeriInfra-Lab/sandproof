@@ -39,6 +39,8 @@ mod native;
 mod nul;
 #[path = "pipe_http.rs"]
 mod pipes;
+#[path = "registration_capacity_http.rs"]
+mod registration_capacity;
 #[path = "signal_native_http.rs"]
 mod signal_native;
 #[path = "tag_http.rs"]

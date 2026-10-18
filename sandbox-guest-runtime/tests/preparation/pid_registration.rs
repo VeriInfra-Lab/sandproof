@@ -200,7 +200,7 @@ fn queued_claim_keeps_storage_capacity_after_cancellation_and_process_deadline()
                 other_pending
                     .register_pid(registrar.clone(), binding())
                     .await,
-                Err(RegistrationError::Storage(ClaimError::Busy))
+                Err(RegistrationError::Capacity)
             ));
             assert_eq!(stopped(&mut rejected).await, CommandError::Cancelled);
             other.assert_no_effect();

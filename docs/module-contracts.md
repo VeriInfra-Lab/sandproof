@@ -512,6 +512,8 @@ List、PID/tag Connect/SendInput/CloseStdin/SendSignal/Update 可经该组件调
 
 Start 在同次登记预约中遇到条数满额或单条 List 元数据超限时，保存该次 ResourceExhausted 事实，沿已选格式返回 200 和唯一 resource_exhausted EOS，固定文本为 command registry capacity exceeded。该拒绝发生在 worker 准备、PID claim 和命令执行之前；已有记录、保留期与预算不变。原绝对期限、原始/压缩帧界及最后字节副本继续持有请求责任。只有原预约事实与同次 RegistryError::ResourceExhausted 一致才使用此映射；后续发布、准备、未知登记、超时或缺失观察不借此变成可重试容量拒绝。它是 Rust 显式有限容量的拒绝语义，不宣称固定 Go 在相同负载下也拒绝。
 
+持久 PID 登记的单写名额另有独立容量拒绝：`register_pid` 在检查准备结果、访问 PID 状态或放行用户命令前，若未取得原单写许可，返回 `RegistrationError::Capacity`。同次 Start 保存这个事实，按已选格式返回 200 和唯一 `resource_exhausted` EOS，文本为 `command registration capacity exceeded`。原名额、期限与不排队策略不变；此前已提交的 gated worker 准备仍由原 owner 取消和回收，拒绝响应不表示 worker 已退出。已取消的登记等待者也须等真实排队/运行闭包退出才释放写入名额。存储 `Busy`、`WriteUnknown`、任务丢失或期限错误不使用此映射；不能从粗错误或事后观察推断“未执行”。这是 Rust 自有有限容量的明确拒绝，不要求固定 Go 在相同负载下拒绝，也不授权自动重放未知 Start。
+
 [PID/tag 操作拒绝回复](../sandbox-guest-service/src/command_requests/http/operation.rs)只消费原 execute_pid 已保存的有限事实：缺失/空选择器、实际 NotFound 的 u32 PID 或原字面 tag、成功取得存活句柄后缺失输入或不支持信号。Connect 先使用原可连接记录（包括有效保留终局），控制操作只查存活记录；未知/未准备好/锁失败不伪装成 PID/tag 不存在。缺失 PID 仍先于输入/信号参数拒绝，失败不重新查表或影响原进程；超时不把先前事实升级为另一个公开错误。
 
 原 Failure::into_operation_response 使用同一回复格式、绝对期限和请求责任：PID/tag 缺失为 not_found，一元 404；缺少选择器/输入或不支持信号为 unimplemented，一元 501；一元错误始终 identity application/json。Connect 错误为 200、原 charset/协商编码的唯一 EOS，无进程事件。文本保持固定 getProcess/handleInput/SendSignal 的类型名、无符号 PID 和枚举名称/有符号数字，按 Go JSON 转义；数值临时字符串大小固定有界。tag 缺失文本为 process with tag {tag} not found，保存原请求字节界内的 tag；空字符串有效，数字字符串也不转换成 PID。原 JSON、编码副本和传输块各计入有界工作区，编码失败/最后副本继续持有同一责任。未明确观察的 Start/工作进程、I/O 细节和缺失格式/观察仍未分类，不能由这些错误推断旧进程不存在或已清理。

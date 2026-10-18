@@ -146,9 +146,15 @@ impl Ready {
                 .register_pid(preparation.registrar.clone(), preparation.binding)
                 .await
                 .map_err(|error| {
-                    if matches!(error, crate::command::RegistrationError::Preparation(_)) {
-                        start_rejection =
-                            preparation_rejection(observer.rejection(), &mut request, &mut cwd);
+                    match error {
+                        crate::command::RegistrationError::Capacity => {
+                            start_rejection = Some(Rejection::RegistrationCapacity);
+                        }
+                        crate::command::RegistrationError::Preparation(_) => {
+                            start_rejection =
+                                preparation_rejection(observer.rejection(), &mut request, &mut cwd);
+                        }
+                        _ => {}
                     }
                     Error::Registration(error)
                 })?;

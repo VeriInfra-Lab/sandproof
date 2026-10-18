@@ -3,6 +3,7 @@
 This is protocol input validation, not a running Rust/upstream guest service.
 The same data is intended for the Rust protocol adapter's subsequent tests.
 """
+import asyncio
 import base64
 from io import BytesIO
 import json
@@ -13,8 +14,15 @@ from urllib.parse import parse_qs, urlsplit
 from wsgiref.simple_server import make_server
 
 from e2b import Sandbox
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
+from e2b.connection_config import ConnectionConfig
+from e2b.envd.client_async import create_rpc_client as async_client
+from e2b.envd.client_sync import create_rpc_client as sync_client
 from e2b.envd.filesystem import filesystem_pb
-from e2b.envd.process import process_pb
+from e2b.envd.process import process_connect, process_pb
+from e2b.envd.rpc import handle_rpc_exception
+from e2b.exceptions import RateLimitException
 
 from sdk_support import isolated_sdk_environment
 from test_sdk_envd_wire import QuietHandler, SyntheticEnvd
@@ -25,6 +33,55 @@ CONTRACT = json.loads((ROOT / 'guest-service-contract.json').read_text())
 
 
 class GuestServiceProtocolContract(unittest.TestCase):
+    def test_start_capacity_eos_reaches_original_sync_and_async_sdk_error_parser(self):
+        sample = next(case for case in CONTRACT['start_refusals']
+                      if case['id'] == 'pid-writer-capacity')
+        payload = json.dumps(sample['end_stream'], separators=(',', ':')).encode()
+        wire = b'\x02' + len(payload).to_bytes(4, 'big') + payload
+        requests = []
+
+        def app(environ, start_response):
+            self.assertEqual(environ['PATH_INFO'], '/process.Process/Start')
+            requests.append(environ['wsgi.input'].read(int(environ['CONTENT_LENGTH'])))
+            start_response(f"{sample['status']} OK", [
+                ('Content-Type', sample['content_type']), ('Content-Length', str(len(wire)))])
+            return [wire]
+
+        async def exercise(url):
+            for asynchronous in (False, True):
+                factory, kind = ((async_client, process_connect.ProcessClient) if asynchronous
+                                 else (sync_client, process_connect.ProcessClientSync))
+                client = factory(kind, url, ConnectionConfig())
+                stream = client.start(process_pb.StartRequest.from_json(
+                    '{"process":{"cmd":"/bin/true"}}'), timeout_ms=5000)
+                try:
+                    with self.assertRaises(ConnectError) as raised:
+                        if asynchronous:
+                            await anext(stream)
+                        else:
+                            next(stream)
+                    expected = sample['end_stream']['error']
+                    self.assertEqual(raised.exception.code, Code.RESOURCE_EXHAUSTED)
+                    self.assertEqual(raised.exception.message, expected['message'])
+                    self.assertIsInstance(handle_rpc_exception(raised.exception), RateLimitException)
+                finally:
+                    if asynchronous:
+                        await stream.aclose()
+                    else:
+                        stream.close()
+
+        with isolated_sdk_environment(), make_server(
+                '127.0.0.1', 0, app, handler_class=QuietHandler) as server:
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                asyncio.run(exercise(f'http://127.0.0.1:{server.server_port}'))
+                self.assertEqual(len(requests), 2, 'capacity rejection must not replay Start')
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+
     def test_sources_match_the_existing_sdk_contract(self):
         sdk = json.loads((ROOT / 'contract.json').read_text())
         self.assertEqual(CONTRACT['sdk']['version'], sdk['version'])

@@ -621,6 +621,21 @@
       "effects": "no account lookup, body polling, command dispatch or filesystem effect"
     }
   ],
+  "start_refusals": [
+    {
+      "id": "pid-writer-capacity",
+      "stage": "single writer slot refused before PID claim and user command dispatch",
+      "status": 200,
+      "content_type": "application/connect+json",
+      "end_stream": {
+        "error": {
+          "code": "resource_exhausted",
+          "message": "command registration capacity exceeded"
+        }
+      },
+      "scope": "Rust's explicit finite writer capacity; not an assertion that fixed Go refuses under the same load. Gated worker cleanup remains owned."
+    }
+  ],
   "accepted_contract_decisions": [
     "Public PID claims are durable and never reused within one VM; restart opens the original state and rejects missing, corrupt or foreign state. Restart does not restore the active command registry.",
     "Tags use deterministic lookup, reject active duplicates before execution and retain terminal records for 30 seconds.",

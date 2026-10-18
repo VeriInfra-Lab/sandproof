@@ -15,6 +15,7 @@ pub(crate) use native::{LaunchFailure, LaunchFailureKind, PipeStream, PtyStage};
 pub(crate) enum Rejection {
     TagAlreadyExists(String),
     RegistryCapacity,
+    RegistrationCapacity,
     MissingCwd(String),
     Launch(LaunchFailure),
     Expansion(crate::upload_response::PathExpansion),
@@ -29,6 +30,9 @@ impl Rejection {
             }
             Self::RegistryCapacity => {
                 *error == RequestError::Registry(crate::command::RegistryError::ResourceExhausted)
+            }
+            Self::RegistrationCapacity => {
+                *error == RequestError::Registration(RegistrationError::Capacity)
             }
             Self::MissingCwd(_) => {
                 *error
@@ -83,6 +87,11 @@ impl Rejection {
             Self::RegistryCapacity => message_with_code(
                 b"resource_exhausted",
                 &[b"command registry capacity exceeded"],
+                limit,
+            ),
+            Self::RegistrationCapacity => message_with_code(
+                b"resource_exhausted",
+                &[b"command registration capacity exceeded"],
                 limit,
             ),
             Self::MissingCwd(path) => {
