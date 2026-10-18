@@ -75,32 +75,7 @@ fn queued_pid_writer_refuses_start_without_effect_and_recovers_after_actual_exit
         // On the original implementation this is an unmapped Storage(Busy)
         // failure, so the real listener closes and the gateway emits 502.
         let response = result.expect("PID writer capacity must be an explicit Start refusal");
-        let contract: Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../tests/compat/guest-service-contract.json"
-        )))
-        .unwrap();
-        let sample = contract["start_refusals"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|sample| sample["id"] == "pid-writer-capacity")
-            .unwrap();
-        assert_eq!(
-            u64::from(response.status().as_u16()),
-            sample["status"].as_u64().unwrap()
-        );
-        assert_eq!(
-            response.headers()["content-type"],
-            sample["content_type"].as_str().unwrap()
-        );
-        let body = bytes(response).await;
-        assert_eq!(json_frame(&body, 2), sample["end_stream"]);
-        let last = body.clone();
-        drop(body);
-        full(&ordinary);
-        drop(last);
-        assert!(ordinary.admit().is_ok());
+        check_refusal(response, &ordinary).await;
         first.assert_no_effect();
         second.assert_no_effect();
         let mut body = http
@@ -120,4 +95,33 @@ fn queued_pid_writer_refuses_start_without_effect_and_recovers_after_actual_exit
             b"once"
         );
     });
+}
+
+async fn check_refusal(response: axum::response::Response, ordinary: &CommandRequests) {
+    let contract: Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/compat/guest-service-contract.json"
+    )))
+    .unwrap();
+    let sample = contract["start_refusals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|sample| sample["id"] == "pid-writer-capacity")
+        .unwrap();
+    assert_eq!(
+        u64::from(response.status().as_u16()),
+        sample["status"].as_u64().unwrap()
+    );
+    assert_eq!(
+        response.headers()["content-type"],
+        sample["content_type"].as_str().unwrap()
+    );
+    let body = bytes(response).await;
+    assert_eq!(json_frame(&body, 2), sample["end_stream"]);
+    let last = body.clone();
+    drop(body);
+    full(ordinary);
+    drop(last);
+    assert!(ordinary.admit().is_ok());
 }

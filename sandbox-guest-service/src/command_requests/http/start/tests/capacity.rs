@@ -58,6 +58,7 @@ async fn check_capacity_reply(registration: bool) {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn registration_capacity_requires_exact_pre_claim_fact_and_original_deadline() {
     use crate::command::RegistrationError;
