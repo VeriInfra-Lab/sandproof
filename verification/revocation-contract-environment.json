@@ -30,6 +30,7 @@
     "scripts/verify-revocation-contract.sh",
     "tools/check_revocation_components.py",
     "tools/check_revocation_contract.py",
+    "tools/tests/test_proof_input_preflight.py",
     "tools/tests/test_revocation_contract.py",
     "verification/ProofAudit.lean",
     "verification/README.zh-CN.md",
