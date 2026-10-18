@@ -16,7 +16,7 @@ class ReceiptTests(unittest.TestCase):
         self.report = dict(candidate='a'*40,run_id='c'*64,guest=self.guest,status='pass',
             checks=[dict(name=name,returncode=0,seconds=1) for name in envd.SUITE],
             faults=[dict(name=name,status='pass') for name in envd.FAULTS],
-            resource_cleanup_confirmed=True,service_cleanup_confirmed=True)
+            resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,service_cleanup_confirmed=True)
 
     def reduce(self, report):
         return envd.require_result(report,candidate='a'*40,run_id='c'*64,expected_guest=self.guest)
@@ -24,7 +24,8 @@ class ReceiptTests(unittest.TestCase):
     def test_complete_same_candidate_original_suite_is_required(self):
         self.assertEqual(self.reduce(self.report),self.report)
         for field,value in (('candidate','d'*40),('run_id','e'*64),('guest',{}),('status','fail'),
-                            ('resource_cleanup_confirmed',1),('service_cleanup_confirmed',False)):
+                            ('resource_cleanup_confirmed',1),('staging_cleanup_confirmed',False),
+                            ('service_cleanup_confirmed',False)):
             changed=copy.deepcopy(self.report); changed[field]=value
             with self.subTest(field=field), self.assertRaises(ValueError): self.reduce(changed)
 
@@ -51,6 +52,12 @@ class ReceiptTests(unittest.TestCase):
         self.report['faults'][0]['token']='private'
         self.report['private_log']='private'
         self.assertNotIn('private',json.dumps(self.reduce(self.report)))
+
+    def test_clean_failure_is_recoverable_but_never_a_success(self):
+        self.report.update(status='failed',checks=[],faults=[])
+        result=envd.require_cleanup(self.report,candidate='a'*40,run_id='c'*64,expected_guest=self.guest)
+        self.assertIs(result['service_cleanup_confirmed'],True)
+        with self.assertRaises(ValueError): self.reduce(self.report)
 
 
 class SupervisorStageTests(unittest.TestCase):
@@ -105,7 +112,7 @@ class SupervisorStageTests(unittest.TestCase):
     def test_failed_missing_or_unknown_unit_blocks_without_new_work(self):
         for fields in (dict(ActiveState='inactive',ExecMainCode='0'),
                        dict(ActiveState='failed',ExecMainCode='1',ExecMainStatus='1')):
-            self.stage.state['envd']=dict(phase='running',unit='owned-envd.service')
+            self.stage.state['envd']=dict(phase='running',unit='owned-envd.service',root=str(self.root/'missing'))
             with patch.object(ci,'unit_state',return_value=fields),patch.object(ci,'launch') as started:
                 self.assertFalse(self.stage.observe_envd())
             started.assert_not_called()
@@ -139,7 +146,7 @@ class SupervisorStageTests(unittest.TestCase):
         report=dict(candidate='a'*40,run_id='b'*64,guest={'source_commit':'a'*40},status='pass',
             checks=[dict(name=name,returncode=0,seconds=1) for name in envd.SUITE],
             faults=[dict(name=name,status='pass') for name in envd.FAULTS],
-            resource_cleanup_confirmed=True,service_cleanup_confirmed=True,
+            resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,service_cleanup_confirmed=True,
             execution_manifest={},service_processes={})
         for filename,value in (('report.json',report),('execution-manifest.json',{}),
                                ('service-cleanup.json',{'removed':True})):
@@ -156,6 +163,42 @@ class SupervisorStageTests(unittest.TestCase):
         self.assertEqual(self.stage.state['envd']['result']['guest'],report['guest'])
         stop.assert_called_once()
         self.assertTrue(self.stage.observe_envd())  # Original checked durable result, no rerun.
+
+    def test_failed_unit_releases_only_after_exact_cleanup_and_keeps_failure_evidence(self):
+        from tools.system_acceptance import digest
+        run=self.root/'failed'; run.mkdir(mode=0o700)
+        candidate=Path(self.stage.state['candidate_manifest']); candidate.write_text('{}'); candidate.chmod(0o600)
+        self.stage.config['ci_state_root']=str(self.root)
+        report=dict(candidate='a'*40,run_id='b'*64,guest={'source_commit':'a'*40},status='failed',
+            checks=[],faults=[],resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,
+            service_cleanup_confirmed=True,execution_manifest={},service_processes={})
+        for filename,value in (('report.json',report),('execution-manifest.json',{}),
+                               ('service-cleanup.json',{'removed':True})):
+            (run/filename).write_text(json.dumps(value)); (run/filename).chmod(0o600)
+        execution=dict(run_id='b'*64,candidate_manifest_sha256=digest(candidate))
+        for confirmed in (False, True):
+            report['resource_cleanup_confirmed']=confirmed
+            (run/'report.json').write_text(json.dumps(report))
+            self.stage.state['envd']=dict(phase='running',unit='owned.service',root=str(run))
+            with patch.object(ci,'unit_state',return_value=dict(ExecMainCode='1',ExecMainStatus='1')), \
+                    patch.object(ci.service_artifacts,'require_service_boundary'), \
+                    patch.object(ci.service_artifacts,'require_execution_manifest',return_value=execution), \
+                    patch.object(ci.service_artifacts,'require_process_evidence'), \
+                    patch.object(ci.subprocess,'run') as stop, patch.object(ci,'HostLease') as lease:
+                self.assertFalse(self.stage.observe_envd())
+                if confirmed:
+                    stop.assert_called_once()
+                    lease.assert_called_once_with(self.root,'b'*64)
+                    lease.return_value.release.assert_called_once()
+                    self.assertEqual(self.stage.state['envd']['phase'],'failed')
+                    self.stage.block.assert_called_with('rust_envd_checks_failed_cleanup_confirmed')
+                else:
+                    stop.assert_not_called(); lease.assert_not_called()
+                    self.stage.block.assert_called_with('rust_envd_failed_or_cleanup_unknown')
+            self.assertTrue((run/'report.json').is_file())
+        with patch.object(ci,'launch') as launch,patch.object(ci,'HostLease') as lease:
+            self.assertFalse(self.stage.observe_envd())  # Resume durable failed result, never rerun.
+        launch.assert_not_called(); lease.return_value.release.assert_called_once()
 
 
 class PreparationTests(unittest.TestCase):

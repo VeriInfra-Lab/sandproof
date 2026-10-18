@@ -77,14 +77,25 @@ def identity(config):
     return expected
 
 
-def require_result(report, *, candidate, run_id, expected_guest):
-    """A zero child exit or a Go/partial suite can never satisfy this gate."""
+def require_cleanup(report, *, candidate, run_id, expected_guest):
+    """Physical recovery is independent of whether the checks passed."""
     if (type(report) is not dict or report.get('candidate') != candidate
-            or report.get('run_id') != run_id or report.get('status') != 'pass'
+            or report.get('run_id') != run_id
             or report.get('guest') != expected_guest
             or report.get('resource_cleanup_confirmed') is not True
+            or report.get('staging_cleanup_confirmed') is not True
             or report.get('service_cleanup_confirmed') is not True):
         raise ValueError('Rust envd candidate or exact cleanup unconfirmed')
+    return dict(candidate=candidate, run_id=run_id, guest=expected_guest,
+                resource_cleanup_confirmed=True, staging_cleanup_confirmed=True,
+                service_cleanup_confirmed=True)
+
+
+def require_result(report, *, candidate, run_id, expected_guest):
+    """A zero child exit or a Go/partial suite can never satisfy this gate."""
+    require_cleanup(report,candidate=candidate,run_id=run_id,expected_guest=expected_guest)
+    if report.get('status') != 'pass':
+        raise ValueError('Rust envd checks did not pass')
     checks = report.get('checks')
     if (type(checks) is not list or any(type(row) is not dict for row in checks)
             or [row.get('name') for row in checks] != list(SUITE)
@@ -103,4 +114,5 @@ def require_result(report, *, candidate, run_id, expected_guest):
         clean_checks.append(dict(name=row['name'],returncode=0,seconds=seconds))
     return dict(candidate=candidate, run_id=run_id, status='pass', guest=expected_guest,
                 checks=clean_checks, faults=[dict(name=row['name'],status='pass') for row in faults], resource_cleanup_confirmed=True,
+                staging_cleanup_confirmed=True,
                 service_cleanup_confirmed=True)

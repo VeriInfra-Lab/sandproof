@@ -21,6 +21,40 @@ SPEC.loader.exec_module(runner)
 
 class AcceptanceHarnessTests(unittest.TestCase):
     """The real harness imports the fixed SDK; keep these in its locked lane."""
+    def test_failed_worker_persists_real_cleanup_but_still_raises(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve(); root.chmod(0o700)
+            config=dict(candidate='a'*40,run_id='b'*64)
+            guest={'source_commit':'a'*40}
+            report=dict(**config,guest=guest,status='failed',checks=[],faults=[],
+                resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,
+                service_cleanup_confirmed=False)
+            path=root/'report.json'; path.write_text(json.dumps(report)); path.chmod(0o600)
+            with patch.object(runner.service_cgroup,'remove',return_value={'removed':True}) as remove:
+                with self.assertRaisesRegex(RuntimeError,'does not make it pass'):
+                    runner.finish_worker(config,guest,root,root/'service-cgroup.json',1)
+            remove.assert_called_once_with(root/'service-cgroup.json')
+            actual=json.loads(path.read_text())
+            self.assertIs(actual['service_cleanup_confirmed'],True)
+            self.assertEqual(actual['status'],'failed')
+            self.assertEqual(actual['checks'],[])
+            self.assertIs(json.loads((root/'service-cleanup.json').read_text())['removed'],True)
+
+    def test_unknown_vm_or_role_cleanup_never_removes_the_cgroup(self):
+        for field in ('candidate','resource_cleanup_confirmed','staging_cleanup_confirmed'):
+            with tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary).resolve(); root.chmod(0o700)
+                config=dict(candidate='a'*40,run_id='b'*64); guest={'source_commit':'a'*40}
+                report=dict(**config,guest=guest,status='failed',resource_cleanup_confirmed=True,
+                    staging_cleanup_confirmed=True,service_cleanup_confirmed=False)
+                report[field]='wrong' if field=='candidate' else False
+                path=root/'report.json'; path.write_text(json.dumps(report)); path.chmod(0o600)
+                with patch.object(runner.service_cgroup,'remove') as remove:
+                    with self.subTest(field=field),self.assertRaises(ValueError):
+                        runner.finish_worker(config,guest,root,root/'service-cgroup.json',1)
+                remove.assert_not_called()
+                self.assertFalse((root/'service-cleanup.json').exists())
+
     def test_partial_initialization_does_not_reinitialize_or_wait_for_an_absent_center(self):
         deployment=Mock()
         report=dict(resource_cleanup_confirmed=False)

@@ -605,6 +605,14 @@ class Supervisor:
             envd.require_result(group['result'], candidate=self.state['candidate'],
                                 run_id=self.state['id'], expected_guest=expected)
             return True
+        if group['phase'] == 'failed':
+            # This durable phase exists only AFTER the exact failed unit was
+            # stopped and its physical/service cleanup independently validated.
+            envd.require_cleanup(group['cleanup'],candidate=self.state['candidate'],
+                run_id=self.state['id'],expected_guest=expected)
+            self.block('rust_envd_checks_failed_cleanup_confirmed')
+            HostLease(Path(self.config['ci_state_root']),self.state['id']).release()
+            return False
         if group['phase'] == 'new':
             self.verified_candidate()
             root = Path(self.config['scratch_parent']) / uuid.uuid4().hex[:8]
@@ -633,7 +641,7 @@ class Supervisor:
                 fields.get('ActiveState')=='active' and fields.get('ExecMainCode')=='0'):
             return False
         try:
-            if fields.get('ExecMainCode')!='1' or fields.get('ExecMainStatus')!='0':
+            if fields.get('ExecMainCode')!='1' or fields.get('ExecMainStatus') is None:
                 raise ValueError('envd stage failed or termination unknown')
             root = Path(group['root'])
             if group['phase'] != 'reclaiming':
@@ -648,6 +656,17 @@ class Supervisor:
                         or execution['candidate_manifest_sha256']!=file_digest(Path(self.state['candidate_manifest']))
                         or json_file(private_path(root/'service-cleanup.json')).get('removed') is not True):
                     raise ValueError('envd original execution or service cleanup unconfirmed')
+                cleanup=envd.require_cleanup(report,candidate=self.state['candidate'],
+                    run_id=self.state['id'],expected_guest=expected)
+                if fields['ExecMainStatus']!='0':
+                    if report.get('status')!='failed':
+                        raise ValueError('failed unit has no original failed report')
+                    subprocess.run(['systemctl','stop',group['unit']],check=True,capture_output=True,timeout=20)
+                    group.update(phase='failed',cleanup=cleanup)
+                    self.save()  # Failure and safe recovery, NEVER a success.
+                    self.block('rust_envd_checks_failed_cleanup_confirmed')
+                    HostLease(Path(self.config['ci_state_root']),self.state['id']).release()
+                    return False  # Preserve raw failed evidence; do not run Harbor.
                 result=envd.require_result(report,candidate=self.state['candidate'],
                     run_id=self.state['id'],expected_guest=expected)
                 group.update(result=result,root_identity=[root.stat().st_dev,root.stat().st_ino],phase='reclaiming')
