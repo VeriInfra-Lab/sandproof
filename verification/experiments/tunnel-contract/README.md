@@ -44,7 +44,7 @@ cargo test -p sandproof-host-service --locked --offline --lib data_gateway::rela
 
 GENERATED 使用新的私有目录。只接收本次新生成且 has_errors=false 的完整 LLBC；与 environment.json 核对整个中间表示、外部/内建声明和析构，只使用原检查器允许的无序 short_names 规范化。Types/Funs/translation.json 必须逐字对应正式候选，不能手改或复制旧文件伪造再生。原 async 入口会产生 coroutine 不支持诊断；带错误输出是失败证据，不能作为有效抽取物。
 
-在包含本库的证明根执行 `lake -f lake-tunnel.toml --no-cache build SandproofTunnel.Audit`，再以文档指定的真实 Lean 服务检查物理 Audit 文件，要求完整、非陈旧、全部目标审计消息及无错误/警告。单独新库构建不替代原 verify-controller.sh、Linux check-function.sh 或尚未接通的来源/重放门槛。
+在包含本库的证明根执行 `lake -f lake-tunnel.toml --no-cache build SandproofTunnel.Audit`，再以文档指定的真实 Lean 服务检查物理 Audit 文件，要求完整、非陈旧、全部目标审计消息及无错误/警告。正式复验使用 `bash scripts/verify-tunnel.sh`；它创建新私有副本并接通完整来源/析构/生成体、原生正确/错误版及真实服务回执准入。该阶段已附加到原 verify-controller.sh，原检查全部保留；单独新库构建仍不能代替原完整证明和 Linux check-function.sh。
 
 ## 正反版本与责任
 

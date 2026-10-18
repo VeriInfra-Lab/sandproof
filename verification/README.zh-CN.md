@@ -134,3 +134,5 @@ python3 tools/coverage.py --write
 固定源码出处与版本见[证据索引](../references/code-evidence.md)及 `references/source-manifest.json`。取得对应 research-sources 后可用 `scripts/check_references.py` 复核版本、哈希和本地链接；没有本地源码时不要把检查未运行说成已通过。
 
 `tools/issues/` 的旧语料处理和 `tools/mapping/` 的校准仍是辅助研究工具，不是另一份产品规格。它们的输出与一次性实验记录放 artifacts 或任务附件，不在 docs 中持续追加报告。
+
+双向字节中继的隔离候选使用 [verify-tunnel.sh](../scripts/verify-tunnel.sh)：原工具抽取真实同步决定，复用 StreamHistory 并核对完整源码/AST/析构及原错误断言。其 [A6/B3/B4 条件](../docs/formal/dependencies.md)和原对象、正常值域见[候选说明](experiments/tunnel-contract/README.md)；Raw 中继返回不表示 HTTP/Connect 成功或真实排空，正式状态见覆盖记录与 #575。该专用阶段不替代原完整证明和 Linux 基础入口。
