@@ -202,7 +202,7 @@ impl Meter {
             work: Some(work),
             _guard: self.begin(Kind::Blocking(role)),
         };
-        tokio::task::spawn_blocking(move || job.run())
+        crate::blocking_executor::spawn(move || job.run())
     }
 }
 

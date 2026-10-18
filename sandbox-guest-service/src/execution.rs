@@ -95,6 +95,41 @@ impl AccountPool<SystemAccounts> {
 }
 
 impl<S: AccountSource> AccountPool<S> {
+    /// Partition a newly constructed, unshared pool without adding capacity.
+    /// A total of one retains the original shared admission semantics.
+    pub(crate) fn reserve_control(self) -> Result<(Self, Self), ContextError> {
+        let Self {
+            source,
+            slots,
+            timeout,
+        } = self;
+        let slots = Arc::try_unwrap(slots).map_err(|_| ContextError::InvalidArgument)?;
+        let total = slots.available_permits();
+        if total == 1 {
+            let pool = Self {
+                source,
+                slots: Arc::new(slots),
+                timeout,
+            };
+            return Ok((pool.clone(), pool));
+        }
+        if total == 0 {
+            return Err(ContextError::InvalidArgument);
+        }
+        Ok((
+            Self {
+                source: source.clone(),
+                slots: Arc::new(Semaphore::new(total - 1)),
+                timeout,
+            },
+            Self {
+                source,
+                slots: Arc::new(Semaphore::new(1)),
+                timeout,
+            },
+        ))
+    }
+
     /// # Errors
     /// Rejects zero/unrepresentable concurrency or timeout configuration.
     pub fn new(source: S, in_flight: usize, timeout: Duration) -> Result<Self, ContextError> {

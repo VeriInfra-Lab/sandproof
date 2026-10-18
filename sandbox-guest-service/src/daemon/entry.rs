@@ -113,13 +113,35 @@ fn run() -> Result<(), Error> {
         println!("configuration valid; no daemon started");
         return Ok(());
     }
+    // Partition the configured aggregate, never add a worker or thread stack.
+    // The current-thread runtime is used only for its independent blocking
+    // pool; no extra async scheduler thread or block_on loop is started.
+    let reserved = action == Action::Serve && blocking > 1;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(workers)
-        .max_blocking_threads(blocking)
+        .max_blocking_threads(blocking - usize::from(reserved))
         .thread_stack_size(stack)
         .enable_all()
         .build()
         .map_err(|_| Error::Runtime)?;
+    let control = if reserved {
+        Some(
+            tokio::runtime::Builder::new_current_thread()
+                .max_blocking_threads(1)
+                .thread_name("guest-control")
+                .thread_stack_size(stack)
+                .build()
+                .map_err(|_| Error::Runtime)?,
+        )
+    } else {
+        None
+    };
+    let prepared = match &control {
+        Some(runtime) => prepared
+            .with_control_executor(runtime.handle().clone())
+            .map_err(Error::Service)?,
+        None => prepared,
+    };
     let result = runtime.block_on(async move {
         if action == Action::Initialize {
             prepared.initialize().await.map_err(Error::Service)?;
@@ -138,7 +160,11 @@ fn run() -> Result<(), Error> {
     });
     // Waiting is bounded, but a timeout does not certify command/file cleanup.
     // VM lifetime and destruction remain the host's independent responsibility.
+    let shutdown_started = std::time::Instant::now();
     runtime.shutdown_timeout(shutdown);
+    if let Some(control) = control {
+        control.shutdown_timeout(shutdown.saturating_sub(shutdown_started.elapsed()));
+    }
     // Snapshot after shutdown: timed-out blocking closures remain charged.
     // This observation does not certify process/VM cleanup or memory usage.
     let report = report_tasks().map_err(|_| Error::Report);

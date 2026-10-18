@@ -2,7 +2,7 @@ use super::{Error, config::Configuration};
 use crate::{
     AccountPool, MmdsClient, SystemAccounts,
     command::{CommandOwners, PidRegistrar, PidRegistry},
-    command_http::{CommandHttp, Processes, RequestPools},
+    command_http::{CommandHttp, ControlExecution, Processes, RequestPools},
     command_requests::CommandRequests,
     file_http::{FileHttp, Settings},
     file_io::FilePool,
@@ -31,6 +31,7 @@ pub struct Prepared {
     pub(super) listener: Listener,
     pub(super) worker: sandproof_guest_runtime::artifact::Expected,
     accounts: AccountPool<SystemAccounts>,
+    control_execution: Option<ControlExecution<SystemAccounts>>,
     owners: CommandOwners,
     commands: RequestPools,
     files: FileRequests,
@@ -143,6 +144,7 @@ impl Prepared {
             listener,
             worker,
             accounts,
+            control_execution: None,
             owners,
             commands,
             files,
@@ -150,6 +152,19 @@ impl Prepared {
             operations,
             streams,
         })
+    }
+
+    pub(super) fn with_control_executor(
+        mut self,
+        blocking: tokio::runtime::Handle,
+    ) -> Result<Self, Error> {
+        let (accounts, control) = checked(self.accounts.reserve_control())?;
+        self.accounts = accounts;
+        self.control_execution = Some(ControlExecution {
+            blocking,
+            accounts: control,
+        });
+        Ok(self)
     }
 
     pub(super) fn assemble<M: crate::MetadataSource>(
@@ -185,6 +200,10 @@ impl Prepared {
             },
             config.commands.response,
         ))?;
+        let commands = match self.control_execution {
+            Some(control) => checked(commands.with_control_execution(control))?,
+            None => commands,
+        };
         let filesystem = checked(FileRpcHttp::new(
             session.clone(),
             self.rpc,

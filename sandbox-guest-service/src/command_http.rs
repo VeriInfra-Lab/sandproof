@@ -31,6 +31,15 @@ pub struct RequestPools {
     pub control: CommandRequests,
 }
 
+/// Caller-owned execution capacity for the three reserved control routes.
+/// The caller keeps this runtime alive and includes it in its aggregate thread
+/// and shutdown budgets. Account capacity may remain shared when its total is
+/// one; reserving a blocking executor alone does not reserve account admission.
+pub struct ControlExecution<S> {
+    pub blocking: tokio::runtime::Handle,
+    pub accounts: AccountPool<S>,
+}
+
 /// Trusted resources for one VM/service lifetime. Use one `CommandHttp` assembly
 /// (and its clones) as the sole Start dispatcher for this registry/session.
 /// Its internal command IDs must not be mixed with IDs from direct preparation.
@@ -76,6 +85,7 @@ struct Inner<M, S> {
     session: Session<M>,
     requests: RequestPools,
     accounts: AccountPool<S>,
+    control_execution: Option<ControlExecution<S>>,
     settings: ExecutionSettings,
     processes: Processes,
     response: ResponseLimits,
@@ -98,6 +108,7 @@ pub enum Prepared<M, S> {
 pub struct Ready<M, S> {
     inner: Arc<Inner<M, S>>,
     operation: command_requests::Ready,
+    blocking: Option<tokio::runtime::Handle>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,12 +164,29 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
                 session,
                 requests,
                 accounts,
+                control_execution: None,
                 settings,
                 processes,
                 response,
                 sequence: AtomicU64::new(0),
             }),
         })
+    }
+
+    /// Bind caller-provisioned control execution before sharing the assembly.
+    /// This changes neither the request pools nor the original request deadlines.
+    /// # Errors
+    /// The assembly was already cloned or already has a control executor.
+    pub fn with_control_execution(
+        mut self,
+        control: ControlExecution<S>,
+    ) -> Result<Self, InvalidConfiguration> {
+        let inner = Arc::get_mut(&mut self.inner).ok_or(InvalidConfiguration)?;
+        if inner.control_execution.is_some() {
+            return Err(InvalidConfiguration);
+        }
+        inner.control_execution = Some(control);
+        Ok(self)
     }
 
     /// Admit before token/Basic/body work and execute exactly once. Errors from
@@ -179,13 +207,39 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
     /// # Errors
     /// Same admission/preparation failures as handle, with original ownership.
     pub async fn prepare(&self, request: Request<Body>) -> Result<Prepared<M, S>, Failure> {
-        let inner = &self.inner;
         let rpc = route(request.uri().path());
-        let pool = if matches!(rpc, Some(Rpc::CloseStdin | Rpc::SendSignal | Rpc::Update)) {
+        let control = matches!(rpc, Some(Rpc::CloseStdin | Rpc::SendSignal | Rpc::Update));
+        let blocking = self
+            .inner
+            .control_execution
+            .as_ref()
+            .filter(|_| control)
+            .map(|execution| execution.blocking.clone());
+        crate::blocking_executor::scope(
+            blocking.clone(),
+            self.prepare_selected(request, rpc, control, blocking),
+        )
+        .await
+    }
+
+    async fn prepare_selected(
+        &self,
+        request: Request<Body>,
+        rpc: Option<Rpc>,
+        control: bool,
+        blocking: Option<tokio::runtime::Handle>,
+    ) -> Result<Prepared<M, S>, Failure> {
+        let inner = &self.inner;
+        let pool = if control {
             &inner.requests.control
         } else {
             &inner.requests.ordinary
         };
+        let accounts = inner
+            .control_execution
+            .as_ref()
+            .filter(|_| control)
+            .map_or(&inner.accounts, |execution| &execution.accounts);
         let admitted = match pool.admit() {
             Ok(admitted) => admitted,
             Err(command_requests::AdmissionError::ResourceExhausted) => {
@@ -216,7 +270,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
             }
         };
         let prepared = match authenticated
-            .prepare_http(&parts.method, &inner.accounts, inner.settings.limits)
+            .prepare_http(&parts.method, accounts, inner.settings.limits)
             .await
         {
             Ok(prepared) => prepared,
@@ -254,6 +308,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
         Ok(Prepared::Ready(Box::new(Ready {
             inner: self.inner.clone(),
             operation,
+            blocking,
         })))
     }
 }
@@ -287,7 +342,13 @@ impl<M: MetadataSource, S: AccountSource> Ready<M, S> {
     /// Original execution/response failure or exhausted ID sequence. Unknown
     /// faults remain owned typed failures; this component invents no public text.
     pub async fn execute(self) -> Result<Response, Failure> {
-        let Self { inner, operation } = self;
+        crate::blocking_executor::scope(self.blocking.clone(), self.execute_selected()).await
+    }
+
+    async fn execute_selected(self) -> Result<Response, Failure> {
+        let Self {
+            inner, operation, ..
+        } = self;
         let reply = if matches!(
             operation.request(),
             protocol::Request::Start(_)

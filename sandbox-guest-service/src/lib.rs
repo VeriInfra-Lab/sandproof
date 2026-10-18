@@ -8,6 +8,7 @@
 
 #[cfg(target_os = "linux")]
 mod admission_response;
+mod blocking_executor;
 pub mod build_info;
 #[cfg(any(target_os = "linux", test))]
 mod command_clock;
