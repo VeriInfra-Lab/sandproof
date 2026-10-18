@@ -359,7 +359,7 @@
   ],
   "open_contract_decisions": [
     "File watcher routes are rejected by the current gateway; exposing them requires an explicit scope decision.",
-    "Whole-service task and memory accounting and acceptance budgets remain open; component limits alone do not close E05."
+    "Whole-service E05 peak acceptance remains open; use the declared deployment/task budgets and exact-workload evidence in docs/module-contracts.md and docs/testing-plan.md. Component limits alone do not close E05."
   ],
   "error_code_catalog": [
     {
