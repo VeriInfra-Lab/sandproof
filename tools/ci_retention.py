@@ -100,15 +100,24 @@ class Store:
         value.update(state='retired', finished=now, receipt=receipt)
         atomic_json(record, value)
 
+    def record_paths(self):
+        for path in sorted((self.root / 'records').iterdir()):
+            if re.fullmatch('[0-9a-f]{32}\\.tmp', path.name):
+                # atomic_json's uncommitted scratch after a crash has NO
+                # authority. Never replay it over the durable JSON record.
+                private_path(path)
+                continue
+            if not re.fullmatch('[0-9a-f]{32}\\.json', path.name):
+                raise ValueError('unknown retention record; inspect without deletion')
+            yield path
+
     def collect(self, *, now, apply=False, keep_days=7, max_count=20, max_bytes=100 * 1024**3):
         if (type(now) is not int or now <= 0 or type(keep_days) is not int or not 1 <= keep_days <= 365
                 or type(max_count) is not int or not 0 <= max_count <= 1000
                 or type(max_bytes) is not int or not 0 <= max_bytes <= 1024**5):
             raise ValueError('finite retention policy required; minimum age is one day')
         rows = []
-        for path in sorted((self.root / 'records').iterdir()):
-            if not re.fullmatch('[0-9a-f]{32}\\.json', path.name):
-                raise ValueError('unknown retention record; inspect without deletion')
+        for path in self.record_paths():
             payload, record, value = self.read(path.stem)
             if value['state'] == 'removed' and (payload.exists() or payload.is_symlink()):
                 raise ValueError('removed artifact unexpectedly present')
@@ -154,7 +163,7 @@ class Store:
         # Only tiny, fully removed tombstones; unresolved/active evidence is never
         # counted away. Original independent reports are not part of this store.
         records = []
-        for path in (self.root / 'records').iterdir():
+        for path in self.record_paths():
             payload, record, value = self.read(path.stem)
             if value['state'] == 'removed':
                 if payload.exists() or payload.is_symlink():
@@ -169,6 +178,7 @@ def allocated_bytes(root):
     """Read-only size estimate, not authorization; deletion rechecks every inode."""
     info = root.stat()
     total = info.st_blocks * 512
+    seen = {(info.st_dev, info.st_ino)}
     for directory, dirs, files in os.walk(root, followlinks=False):
         for name in dirs + files:
             child = (Path(directory) / name).lstat()
@@ -176,7 +186,10 @@ def allocated_bytes(root):
                 raise ValueError('unknown owner or mount in disposable artifact')
             if not (stat.S_ISREG(child.st_mode) or stat.S_ISDIR(child.st_mode)):
                 raise ValueError('unknown artifact type; preserve for inspection')
-            total += child.st_blocks * 512
+            identity = (child.st_dev, child.st_ino)
+            if identity not in seen:
+                total += child.st_blocks * 512
+                seen.add(identity)
     return total
 
 

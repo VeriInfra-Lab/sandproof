@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -132,6 +133,25 @@ class RetentionTests(unittest.TestCase):
         self.store.collect(now=self.now, apply=True, max_bytes=0)
         self.assertFalse(fresh.exists())
         self.assertFalse(old.exists())
+
+    def test_hardlinks_in_one_artifact_are_not_counted_twice(self):
+        path = self.allocate()
+        size = gc.allocated_bytes(path)
+        os.link(path / 'generated-disk', path / 'another-name')
+        self.assertEqual(gc.allocated_bytes(path), size)
+        self.store.collect(now=self.now, apply=True)
+        self.assertFalse(path.exists())
+
+    def test_uncommitted_atomic_scratch_never_retires_active_record(self):
+        path = self.allocate(retire=False)
+        _, record, value = self.store.read(path.name)
+        value.update(state='retired', finished=1, receipt=json.loads(self.receipt.read_text()))
+        scratch = record.with_suffix('.tmp')
+        scratch.write_text(json.dumps(value))
+        scratch.chmod(0o600)
+        self.assertEqual(self.store.collect(now=self.now, apply=True), [])
+        self.assertTrue(path.exists())
+        self.assertEqual(self.store.read(path.name)[2]['state'], 'active')
 
     def test_replacement_or_symlink_retains_every_payload(self):
         path = self.allocate()
