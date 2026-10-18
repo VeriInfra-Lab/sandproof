@@ -35,6 +35,13 @@ import time
 
 TOKEN = 'isolated-daemon-restart-credential'
 ADDRESS = '127.0.0.1:49983'
+TASK_ROLES = {
+    'asynchronous': ('connection', 'command_preparation', 'command_driver', 'command_registry'),
+    'blocking': ('body_stream', 'body_encode', 'command_decode', 'file_decode',
+                 'file_operation', 'file_upload', 'file_download', 'account_lookup',
+                 'startup_open', 'daemon_initialize', 'daemon_load', 'pid_registration',
+                 'command_preparation'),
+}
 HOLD = '''import os, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 with (root / 'once').open('xb') as marker:
@@ -80,6 +87,47 @@ def fingerprint(path):
             size += len(block)
             digest.update(block)
     return dict(bytes=size, sha256=digest.hexdigest())
+
+
+def task_report(output, prefix=b''):
+    """Validate a bounded, exact, settled observation; never infer VM cleanup."""
+    assert len(output) <= 4096 and output.startswith(prefix + b'task accounting: ')
+    payload = output[len(prefix + b'task accounting: '):]
+    assert payload.endswith(b'\n') and payload.count(b'\n') == 1
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            assert key not in result
+            result[key] = value
+        return result
+
+    report = json.loads(payload, object_pairs_hook=unique)
+    assert set(report) == {'schema_version', 'scope', 'exact', 'total', 'asynchronous', 'blocking'}
+    assert type(report['schema_version']) is int and report['schema_version'] == 1
+    assert report['scope'] == 'process_service_owned_tasks' and report['exact'] is True
+
+    def count(value):
+        assert set(value) == {'live', 'peak'}
+        assert all(type(n) is int and 0 <= n <= (1 << 64) - 1 for n in value.values())
+        assert value['live'] == 0 and value['peak'] >= value['live']
+        return value['peak']
+
+    total_peak = count(report['total'])
+    peaks = []
+    for name, expected in TASK_ROLES.items():
+        group = report[name]
+        assert set(group) == {'count', 'roles'}
+        peak = count(group['count'])
+        assert type(group['roles']) is list and len(group['roles']) == len(expected)
+        role_peaks = []
+        for role, expected_name in zip(group['roles'], expected):
+            assert set(role) == {'name', 'count'} and role['name'] == expected_name
+            role_peaks.append(count(role['count']))
+        assert max(role_peaks) <= peak <= sum(role_peaks)
+        peaks.append(peak)
+    assert max(peaks) <= total_peak <= sum(peaks)
+    return report
 
 
 class Metadata(http.server.BaseHTTPRequestHandler):
@@ -169,6 +217,15 @@ class Daemon:
         assert self.child.returncode == -signal.SIGKILL
         assert output == (b'', b''), 'unexpected formal daemon output'
 
+    def finish(self):
+        pidfd_call(424, ctypes.c_int(self.process.fd), ctypes.c_int(signal.SIGTERM),
+                   ctypes.c_void_p(), ctypes.c_uint(0))
+        stdout, stderr = self.child.communicate(timeout=40)
+        assert self.child.returncode == 0 and not stderr
+        lines = stdout.splitlines(keepends=True)
+        assert len(lines) == 2 and lines[0].startswith(b'transport stopped: Report {')
+        return task_report(lines[1])
+
     def close(self):
         try:
             if self.child.poll() is None:
@@ -255,7 +312,12 @@ async def case(binary, worker, template, metadata, asynchronous):
         receipt = dict(asynchronous=asynchronous, configuration=fingerprint(path), checks=[])
         provision = subprocess.run([str(binary), 'initialize', '--config', str(path)],
                                    capture_output=True, timeout=40, check=True)
-        assert provision.stdout == b'new VM state initialized\n' and not provision.stderr
+        assert not provision.stderr
+        receipt['tasks_initialize'] = task_report(provision.stdout, b'new VM state initialized\n')
+        initial = receipt['tasks_initialize']
+        assert initial['asynchronous']['count']['peak'] == 0
+        assert all(role['count']['peak'] == int(role['name'] in {'daemon_load', 'daemon_initialize'})
+                   for role in initial['blocking']['roles'])
         claims = root / 'state/pid-claims.bin'
         claim_inode = claims.stat().st_ino
         daemons, original, stream = [], None, None
@@ -364,12 +426,24 @@ async def case(binary, worker, template, metadata, asynchronous):
             result = original.wait()
             assert result.si_code == os.CLD_EXITED and result.si_status == 0
             receipt['checks'].append('original-command-exited-once-without-adoption-or-replay')
-            second.stop()
+            receipt['tasks_serve'] = second.finish()
+            observed = receipt['tasks_serve']
+            assert all(role['count']['peak'] > 0 for role in observed['asynchronous']['roles'])
+            required = {'command_decode', 'account_lookup', 'startup_open', 'daemon_load',
+                        'pid_registration', 'command_preparation'}
+            assert all(role['count']['peak'] > 0 for role in observed['blocking']['roles']
+                       if role['name'] in required)
+            receipt['checks'].append('graceful-shutdown-reports-settled-owned-task-peaks')
             frozen = claims.read_bytes()
             metadata.metadata['instanceID'] = 'different-vm'
             rejected = subprocess.run([str(binary), 'serve', '--config', str(path)],
                                       capture_output=True, timeout=40)
-            assert rejected.returncode == 1 and not rejected.stdout
+            assert rejected.returncode == 1
+            receipt['tasks_refused_startup'] = task_report(rejected.stdout)
+            refused = receipt['tasks_refused_startup']
+            assert refused['asynchronous']['count']['peak'] == 0
+            assert all(role['count']['peak'] == int(role['name'] in {'daemon_load', 'startup_open'})
+                       for role in refused['blocking']['roles'])
             assert rejected.stderr == b'guest service failed: Service(Startup(Storage(BindingMismatch)))\n'
             assert claims.read_bytes() == frozen and claims.stat().st_ino == claim_inode
             receipt['checks'].append('different-vm-refused-with-original-state-unchanged')
