@@ -257,6 +257,8 @@ fn environment_histories() -> Vec<Vec<u8>> {
         r#"{"process":{"envs":{"\ud83d\ude00":"","a":"","\ud83d\ude00":null}}}"#,
         r#"{"process":{"envs":{"a123456789012345":"","\u0061123456789012345":"","b":false}}}"#,
         r#"{"process":{"envs":{"a":"","b":""},"envs":null}}"#,
+        r#"{"future":1e+,"process":{"envs":{"a":"","b":""},"cwd":"~other"}}"#,
+        r#"{"future":1e+,"process":{"envs":{"a":"","b":"","\u0061":""},"cwd":"~other"}}"#,
     ]
     .into_iter()
     .map(|value| value.as_bytes().to_vec())

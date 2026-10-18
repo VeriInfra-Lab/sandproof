@@ -181,22 +181,30 @@ fn escaped_key_pool_boundaries_do_not_change_acceptance_or_duplicate_identity() 
 #[cfg(target_os = "linux")]
 #[test]
 fn oversized_environment_decodes_in_an_independent_memory_limited_process() {
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--ignored",
-            "--exact",
-            "environment_decode_memory_child",
-            "--nocapture",
-        ])
-        .env("SANDPROOF_ENVIRONMENT_DECODE_CHILD", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+    for normalized in [false, true] {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+        child
+            .args([
+                "--ignored",
+                "--exact",
+                "environment_decode_memory_child",
+                "--nocapture",
+            ])
+            .env("SANDPROOF_ENVIRONMENT_DECODE_CHILD", "1")
+            .env("SANDPROOF_ENVIRONMENT_NORMALIZED", normalized.to_string());
+        if normalized {
+            // Prevent an unused secondary glibc arena from hiding simultaneous
+            // allocations in the additional normalization regression.
+            child.env("MALLOC_ARENA_MAX", "1");
+        }
+        let output = child.output().unwrap();
+        assert!(
+            output.status.success(),
+            "normalized={normalized}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -220,9 +228,13 @@ fn environment_decode_memory_child() {
         .parse::<u64>()
         .unwrap()
         * 1024;
-    // Existing harness mappings plus 32 MiB is a regression condition, not a
-    // daemon budget. Wire input remains below the original 16 MiB body limit.
-    let ceiling = baseline.checked_add(32 * 1024 * 1024).unwrap();
+    let normalized = std::env::var("SANDPROOF_ENVIRONMENT_NORMALIZED").as_deref() == Ok("true");
+    // Preserve the original baseline + 32 MiB case. With a single glibc arena,
+    // the normalized case allows 64 MiB for wire storage and the ordered check,
+    // but not a simultaneously retained normalization copy. These are test
+    // conditions, not a daemon budget; both inputs remain below 16 MiB.
+    let extra_mib = if normalized { 64 } else { 32 };
+    let ceiling = baseline.checked_add(extra_mib * 1024 * 1024).unwrap();
     setrlimit(
         Resource::As,
         Rlimit {
@@ -233,7 +245,13 @@ fn environment_decode_memory_child() {
     .unwrap();
     let mut wire = Vec::with_capacity(16 * 1024 * 1024);
     wire.extend([0; 5]);
-    wire.extend(br#"{"process":{"envs":{"#);
+    if normalized {
+        // Fixed Go accepts this unknown bare exponent. Its normalized copy
+        // must be released before allocating the ordered environment check.
+        wire.extend(br#"{"future":1e+,"process":{"envs":{"#);
+    } else {
+        wire.extend(br#"{"process":{"envs":{"#);
+    }
     for index in 0..1_200_000 {
         if index != 0 {
             wire.push(b',');

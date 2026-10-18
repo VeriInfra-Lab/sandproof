@@ -541,6 +541,9 @@ fn decode_message_limited(
         && let Some(limits) = limits
         && let Some(candidate) = start_budget::refusal_candidate(payload, limits)?
     {
+        // The candidate owns its remaining context. Release a compatibility
+        // normalization copy before allocating keys against the original body.
+        drop(prepared);
         // Field counting alone does not establish map uniqueness. Validate the
         // original ordered schema before any non-executable marker escapes.
         // Carry an actual failure out so observed callers never run a second
