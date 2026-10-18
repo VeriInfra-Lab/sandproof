@@ -98,7 +98,7 @@ async fn check_early_rejection(asynchronous: bool, partial: bool, via_gateway: b
     assert_eq!(report.expired, 0);
     assert!(
         status.success(),
-        "original SDK must decode the original invalid_argument rejection"
+        "original SDK must decode the original invalid_argument rejection; child status: {status}"
     );
 }
 
@@ -144,6 +144,7 @@ async fn run_sdk(
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let mut sdk = Command::new("uv")
         .current_dir(root)
+        .env("PYTHONFAULTHANDLER", "1")
         .args([
             "run",
             "--locked",
