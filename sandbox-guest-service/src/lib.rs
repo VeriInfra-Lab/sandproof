@@ -30,6 +30,7 @@ mod owned_body;
 mod request_gzip;
 #[cfg(unix)]
 pub mod startup;
+pub mod task_accounting;
 pub mod upload_body;
 pub mod upload_response;
 

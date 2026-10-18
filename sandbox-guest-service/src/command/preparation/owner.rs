@@ -2,6 +2,7 @@ use super::{
     AdmissionLimits, AdmissionStatus, CommandError, CommandPreparation, CommandReservation,
     Context, Decision, Instant, PreparationSpec, Reply, Worker, oneshot, prepare_error, watch,
 };
+use crate::task_accounting::{self, AsyncTask, BlockingTask};
 use sandproof_guest_runtime::PreparationRejection;
 use std::sync::{Arc, Mutex};
 
@@ -68,13 +69,10 @@ pub(super) fn spawn(
     decision: oneshot::Receiver<Decision>,
     owner: AdmissionOwner,
 ) {
-    tokio::spawn(prepare_and_run(
-        spec,
-        context,
-        decision,
-        owner,
-        spawn_worker,
-    ));
+    task_accounting::spawn(
+        AsyncTask::CommandPreparation,
+        prepare_and_run(spec, context, decision, owner, spawn_worker),
+    );
 }
 
 struct Prepared {
@@ -100,7 +98,7 @@ async fn prepare_and_run(
     // owner into the closure: dropping this await cannot credit work that is
     // still queued, in a syscall, or returning a possibly live gated worker.
     let (waiting, alive) = oneshot::channel::<()>();
-    let prepared = tokio::task::spawn_blocking(move || {
+    let prepared = task_accounting::spawn_blocking(BlockingTask::CommandPreparation, move || {
         prepare_blocking(spec, context, decision, owner, &waiting, prepare)
     })
     .await;

@@ -1,3 +1,4 @@
+use crate::task_accounting::{self, AsyncTask};
 use std::future::pending;
 use std::sync::PoisonError;
 
@@ -91,14 +92,10 @@ pub(super) fn spawn(
         shared: Arc::clone(&shared),
         settled: false,
     };
-    tokio::spawn(run(
-        process,
-        authorization,
-        deadline,
-        request,
-        shared,
-        guard,
-    ));
+    task_accounting::spawn(
+        AsyncTask::CommandDriver,
+        run(process, authorization, deadline, request, shared, guard),
+    );
 }
 
 async fn run(

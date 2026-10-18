@@ -1,6 +1,7 @@
 //! Admitted blocking unary file operations. Cancellation stops waiting, not a
 //! dispatched syscall. The worker retains authorization until I/O settles;
 //! returned records retain their slot until dropped. No production route yet.
+use crate::task_accounting::{self, BlockingTask};
 use crate::{AuthPermit, files::FileContext, owned_body::Owner};
 use sandproof_guest_runtime::filesystem::{
     self, FileError, FileFailure, FileLimits, FileResponse, Ownership,
@@ -208,7 +209,7 @@ impl FilePool {
         F: FnOnce() -> Result<FileResponse, FileFailure> + Send + 'static,
     {
         check_deadline(deadline)?;
-        let task = tokio::task::spawn_blocking(move || {
+        let task = task_accounting::spawn_blocking(BlockingTask::FileOperation, move || {
             // A queued blocking job may start after its request has expired.
             check_deadline(deadline)?;
             let result = operation();

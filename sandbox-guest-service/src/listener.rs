@@ -4,6 +4,7 @@
 //! caller supplies an already-bound listener, all limits and a handler. Kernel
 //! backlog/socket buffers, handler allocations and blocking work have separate
 //! owners and budgets; Hyper's buffer limit is not a process memory bound.
+use crate::task_accounting::{self, AsyncTask};
 use axum::{body::Body, http::Request, response::Response};
 use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
@@ -139,7 +140,10 @@ impl Listener {
                     report.admitted = report.admitted.saturating_add(1);
                     let handler = handler.clone();
                     let limits = self.limits;
-                    tasks.spawn(connection(socket, handler, limits, deadline, stopped.clone()));
+                    tasks.spawn(task_accounting::track(
+                        AsyncTask::Connection,
+                        connection(socket, handler, limits, deadline, stopped.clone()),
+                    ));
                     report.peak_connections = report.peak_connections.max(tasks.len());
                 }
             }

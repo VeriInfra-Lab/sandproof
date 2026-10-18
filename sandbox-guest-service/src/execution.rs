@@ -1,6 +1,7 @@
 //! Authenticated default/context composition. This does not register a public
 //! command or release a process. The caller retains `AuthPermit` through actual
 //! admission/dispatch and separately owns process/public-selector capacity.
+use crate::task_accounting::{self, BlockingTask};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -136,7 +137,7 @@ impl<S: AccountSource> AccountPool<S> {
             .try_acquire_owned()
             .map_err(|_| ContextError::ResourceExhausted)?;
         let source = Arc::clone(&self.source);
-        let task = tokio::task::spawn_blocking(move || {
+        let task = task_accounting::spawn_blocking(BlockingTask::AccountLookup, move || {
             let _owner = owner;
             let _permit = permit;
             if tokio::time::Instant::now() >= deadline {

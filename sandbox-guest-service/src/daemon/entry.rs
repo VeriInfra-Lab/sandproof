@@ -7,7 +7,7 @@ use sandproof_guest_runtime::startup_files;
 use std::{
     ffi::OsString,
     fs::File,
-    io::{self, Read},
+    io::{self, Read, Write},
     path::PathBuf,
     process::ExitCode,
 };
@@ -28,6 +28,7 @@ enum Error {
     Configuration,
     Runtime,
     Signal,
+    Report,
     Service(crate::daemon::Error),
 }
 
@@ -138,5 +139,16 @@ fn run() -> Result<(), Error> {
     // Waiting is bounded, but a timeout does not certify command/file cleanup.
     // VM lifetime and destruction remain the host's independent responsibility.
     runtime.shutdown_timeout(shutdown);
-    result
+    // Snapshot after shutdown: timed-out blocking closures remain charged.
+    // This observation does not certify process/VM cleanup or memory usage.
+    let report = report_tasks().map_err(|_| Error::Report);
+    result.and(report)
+}
+
+fn report_tasks() -> io::Result<()> {
+    let snapshot = crate::task_accounting::snapshot();
+    let mut output = io::stdout().lock();
+    output.write_all(b"task accounting: ")?;
+    serde_json::to_writer(&mut output, &snapshot).map_err(io::Error::other)?;
+    output.write_all(b"\n")
 }

@@ -1,5 +1,6 @@
 //! One admitted blocking source, demand-driven output and retained byte ownership.
 //! No authentication/admission occurs here; callers provide the original guard.
+use crate::task_accounting::{self, BlockingTask};
 use axum::body::{Body, Bytes};
 use futures_util::stream;
 use std::{fmt, sync::Arc};
@@ -79,7 +80,7 @@ impl<E: Failure> OwnedBody<E> {
             usable: true,
             ended: false,
         };
-        tokio::task::spawn_blocking(move || {
+        task_accounting::spawn_blocking(BlockingTask::BodyStream, move || {
             let result = match check_active::<E>(deadline, &cancelled) {
                 Ok(()) => prepare(runtime.clone(), cancelled.clone()),
                 Err(error) => {

@@ -1,6 +1,7 @@
 //! Bounded command admission and selected identity-JSON decoding. The caller
 //! still owns HTTP route/codec/compression/header negotiation. This component
 //! is not a public router and never interprets a tag as a control capability.
+use crate::task_accounting::{self, BlockingTask};
 #[cfg(any(target_os = "linux", test))]
 use crate::upload_body::Input;
 use crate::{
@@ -237,7 +238,7 @@ impl Authenticated {
             drop(input);
             check_deadline(deadline)?;
             let (cancel, cancelled) = tokio::sync::watch::channel(false);
-            let task = tokio::task::spawn_blocking(move || {
+            let task = task_accounting::spawn_blocking(BlockingTask::CommandDecode, move || {
                 crate::owned_body::check_active::<Error>(deadline, &cancelled)?;
                 let request = decode(&payload, limit, deadline, &cancelled)?;
                 drop(payload);
