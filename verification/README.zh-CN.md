@@ -15,6 +15,8 @@ Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两�
 
 目录含义：
 
+- [数据许可隔离试点](experiments/data-permit/README.md)：冻结真实基线的许可登记与重新派发同步守卫、正负例证明和复现入口；生产未接入，不属于默认全项目验收的已证覆盖；
+- [重新派发授权隔离试点](experiments/data-authority/README.md)：实际凭据、寿命原始行和 Access 核心、条件组合与同性质错误版；依赖前一冻结试点，生产未接入；
 - `aeneas/llbc/`：从实际 Rust 编译器中间表示抽出的输入；
 - `aeneas/generated/SandboxControllerCore/`：Aeneas 生成的 Lean 类型和函数；
 - `extract-foundations/`：仅调用生产函数的公共基础抽取根，不复制业务算法；
