@@ -46,7 +46,7 @@ class RejectionScheduleTests(unittest.IsolatedAsyncioTestCase):
         first, tail = next(stream), next(stream)
         self.assertEqual(first + tail, PAYLOAD)
         self.assertEqual(self.control.sent, [b'm'])
-        self.assertEqual(self.events, ['message', 'waiting', 'released', 'tail_offered'])
+        self.assertEqual(self.events, ['message', 'waiting', 'released', 'tail'])
         stream.close()
 
     async def test_async_tail_handoff_does_not_require_an_eof_poll(self):
@@ -54,7 +54,7 @@ class RejectionScheduleTests(unittest.IsolatedAsyncioTestCase):
         first, tail = await anext(stream), await anext(stream)
         self.assertEqual(first + tail, PAYLOAD)
         self.assertEqual(self.control.sent, [b'm'])
-        self.assertEqual(self.events, ['message', 'waiting', 'released', 'tail_offered'])
+        self.assertEqual(self.events, ['message', 'waiting', 'released', 'tail'])
         await stream.aclose()
 
     def test_sync_stopping_before_tail_does_not_invent_handoff(self):

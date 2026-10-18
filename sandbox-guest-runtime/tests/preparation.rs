@@ -407,27 +407,12 @@ async fn registration_deadline_is_absolute_and_expired_acknowledgement_is_refuse
 fn stub_worker(fixture: &Fixture) -> (PreparationSpec, UnixListener) {
     let notify = fixture.directory.path().join("notify");
     let listener = UnixListener::bind(&notify).unwrap();
-    let stub = fixture.directory.path().join("stub-worker");
-    std::fs::write(
-        &stub,
-        format!(
-            r"#!/usr/bin/python3
-import socket,sys
-gate=socket.socket(socket.AF_UNIX)
-gate.connect(sys.argv[sys.argv.index('--gate')+1])
-notify=socket.socket(socket.AF_UNIX)
-notify.connect({:?})
-notify.sendall(b'R')
-if notify.recv(1)==b'B': gate.sendall(b'BAD!')
-notify.recv(1)
-",
-            notify.to_str().unwrap()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
     let mut spec = fixture.spec();
-    spec.worker = stub;
+    // An executable written while other tests spawn can retain an inherited
+    // writer in a child and fail exec with ETXTBSY. Use an immutable fixture;
+    // its notification socket remains local to this preparation's gate path.
+    spec.worker = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/preparation/handshake-worker.py");
     (spec, listener)
 }
 

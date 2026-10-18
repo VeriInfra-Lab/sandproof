@@ -455,6 +455,47 @@ class PairedOrchestrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(entry['environment_before'], entry['environment_after'])
         self.assertNotIn('resource_sampling', result)
 
+    async def test_completed_side_does_not_spend_its_lifetime_waiting_for_the_other_side(self):
+        now, deadlines, retired = [0], {}, []
+        def create(index, **kwargs):
+            self.assertEqual(kwargs['timeout'], 300)
+            self.assertEqual(kwargs['retries'], 0)
+            guest = self.guests[index]
+            deadlines[guest.sandbox_id] = now[0] + kwargs['timeout']
+            return guest
+        sync_indices, async_indices = iter((0, 1)), iter((2, 3))
+        self.sync_create.side_effect = lambda **kwargs: create(next(sync_indices), **kwargs)
+        self.async_create.side_effect = lambda **kwargs: create(next(async_indices), **kwargs)
+        async def cases(sandbox, *_args):
+            # Each side fits its original lifetime, but keeping the first VM
+            # alive through both sequential sides exceeds that same lifetime.
+            now[0] += 180
+            self.assertLess(now[0], deadlines[sandbox.sandbox_id])
+            return rows()
+        self.run_cases.side_effect = cases
+        for guest in self.guests:
+            def kill(*, original=guest):
+                retired.append((original.sandbox_id, now[0]))
+                return now[0] < deadlines[original.sandbox_id]
+            guest.kill.side_effect = kill
+        result = await self.run_probe()
+        self.assertEqual(result['status'], 'pass')
+        self.assertEqual(retired, [(f'sandbox-{i+1}', (i+1)*180) for i in range(4)])
+        for guest in self.guests:
+            guest.kill.assert_called_once_with()
+        self.assertEqual(self.run_cases.await_count, 4)
+
+    async def test_first_side_cleanup_refusal_stops_before_next_create_without_retry(self):
+        self.guests[0].kill.return_value = False
+        result = await self.run_probe(BaseExceptionGroup)
+        self.assertEqual(result['status'], 'failed')
+        self.assertFalse(result['results'][0]['known_destroy_acknowledged'])
+        self.sync_create.assert_called_once()
+        self.async_create.assert_not_called()
+        self.guests[0].kill.assert_called_once_with()
+        self.guests[1].kill.assert_not_called()
+        self.assertEqual(len(result['results'][0]['pair']), 1)
+
     async def assert_environment_fault(self, *, after_change):
         async def environment(sandbox, evidence, *, initialize):
             receipt = environment_receipt()

@@ -63,6 +63,16 @@ class ServiceStorageTests(unittest.TestCase):
         sampler.stop()
         with self.assertRaises(storage.ObservationUnknown):
             sampler.report()
+        with patch.object(storage, 'inventory', side_effect=AssertionError('no new scan')):
+            diagnostic = sampler.diagnostics()
+        self.assertEqual(diagnostic['failure'], dict(kind='inventory_rejected', root_index=0,
+                                                    reason='bytes_exceeded'))
+        self.assertTrue(diagnostic['sampler_exited'])
+        self.assertNotIn(str(self.root), json.dumps(diagnostic))
+        with self.assertRaises(ValueError):
+            storage.require_storage_observation(diagnostic, expected=sampler.declaration())
+        diagnostic['failure']['reason'] = 'changed'
+        self.assertEqual(sampler.diagnostics()['failure']['reason'], 'bytes_exceeded')
 
     def test_directory_change_is_unknown_not_empty_and_a_later_stable_sample_recovers(self):
         self.write('original', b'old')
@@ -102,6 +112,33 @@ class ServiceStorageTests(unittest.TestCase):
         sampler.closed = True
         with self.assertRaises(storage.ObservationUnknown):
             sampler.report()
+
+    def test_unlinked_open_file_during_replacement_is_unknown_not_a_permanent_alias_fault(self):
+        self.write('pending', b'old')
+        sampler = storage.ServiceStoragePeaks([self.record])
+        sampler.sample()
+        original = storage.os.open
+        replaced = False
+
+        def open_then_replace(path, flags, *args, **kwargs):
+            nonlocal replaced
+            fd = original(path, flags, *args, **kwargs)
+            if path == 'pending' and not replaced:
+                replaced = True
+                (self.root/'pending').unlink()
+                self.write('pending', b'new-content')
+                self.assertEqual(os.fstat(fd).st_nlink, 0)
+            return fd
+
+        with patch.object(storage.os, 'open', side_effect=open_then_replace):
+            self.assertFalse(sampler.sample())
+        self.assertTrue(replaced)
+        self.assertEqual(sampler.unknown_samples, 1)
+        self.assertEqual(sampler.peaks[0]['logical_file_bytes'], 3)
+        self.assertIsNone(sampler.failure)
+        self.assertIsNone(sampler.latest)
+        sampler.stop()
+        self.assertEqual(sampler.report()['roots'][0]['last_stable']['logical_file_bytes'], 11)
 
     def test_unknown_peer_does_not_erase_an_independently_observed_original_root_peak(self):
         peer = tempfile.TemporaryDirectory()
@@ -242,6 +279,17 @@ class ServiceStorageTests(unittest.TestCase):
             sampler.stop()
         with self.assertRaises(storage.ObservationUnknown):
             sampler.report()
+        self.assertEqual(sampler.diagnostics()['failure'],
+            dict(kind='background_observation_failed', error_type='RuntimeError'))
+        self.assertNotIn('unavailable', json.dumps(sampler.diagnostics()))
+
+    def test_unexpected_inventory_error_text_is_not_exported_as_a_diagnostic(self):
+        sampler = storage.ServiceStoragePeaks([self.record])
+        with patch.object(storage, 'inventory', side_effect=ValueError('private path and credential')):
+            with self.assertRaises(ValueError): sampler.sample()
+        self.assertEqual(sampler.diagnostics()['failure'],
+            dict(kind='inventory_rejected', root_index=0, reason='unexpected_value_error'))
+        self.assertNotIn('credential', json.dumps(sampler.diagnostics()))
 
     def test_symlink_hardlink_fifo_and_foreign_owner_are_never_counted_as_safe_files(self):
         path = self.write('regular', b'x')

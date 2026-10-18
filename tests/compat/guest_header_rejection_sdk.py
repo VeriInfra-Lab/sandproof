@@ -19,6 +19,7 @@ from e2b.envd.client_async import create_rpc_client as async_client
 from e2b.envd.client_sync import create_rpc_client as sync_client
 from e2b.envd.process import process_connect, process_pb
 
+from sdk_rejection_body import gated_async as body_gated_async, gated_sync as body_gated_sync
 from sdk_support import isolated_sdk_environment
 
 settings = {}
@@ -29,29 +30,11 @@ control = None
 
 
 def gated_sync(*args):
-    for chunk in original_sync(*args):
-        events.append('message')
-        yield chunk[:1] if settings.get('partial') else chunk
-        events.append('waiting')
-        control.sendall(b'm')
-        assert control.recv(1) == b'x', 'response completion gate missing'
-        events.append('released')
-        if settings.get('partial'):
-            events.append('tail_offered')
-            yield chunk[1:]
+    return body_gated_sync(original_sync, control, events, settings.get('partial', False), *args)
 
 
-async def gated_async(*args):
-    async for chunk in original_async(*args):
-        events.append('message')
-        yield chunk[:1] if settings.get('partial') else chunk
-        events.append('waiting')
-        control.sendall(b'm')
-        assert await asyncio.to_thread(control.recv, 1) == b'x', 'response completion gate missing'
-        events.append('released')
-        if settings.get('partial'):
-            events.append('tail_offered')
-            yield chunk[1:]
+def gated_async(*args):
+    return body_gated_async(original_async, control, events, settings.get('partial', False), *args)
 
 
 async def main():
@@ -85,7 +68,7 @@ async def main():
     # finally would overwrite the error that this acceptance test must expose.
     expected = ['message', 'waiting', 'released']
     if settings.get('partial'):
-        expected.append('tail_offered')
+        expected.append('tail')
     assert events == expected, events
 
 

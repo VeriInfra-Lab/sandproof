@@ -8,6 +8,7 @@ use sandproof_guest_runtime::{
 };
 use std::time::Duration;
 use tokio::sync::Semaphore;
+mod capacity;
 mod expansion;
 mod native;
 mod nul;

@@ -13,6 +13,7 @@ from functools import partial
 import json
 import shlex
 import struct
+import time
 
 from e2b.sandbox.commands.command_handle import CommandExitException, PtySize
 from sdk_command_input import call
@@ -23,31 +24,38 @@ from sdk_pty import (GUEST_PROGRAM, HEADER, READY_HEADER, OUTPUT_LIMIT, PAYLOAD,
 
 
 class Capture:
-    def __init__(self, expect_ready=False):
+    def __init__(self, expect_ready=False, prompt=None):
         self.data, self.chunks = bytearray(), []
         self.expect_ready, self.ready_seen = expect_ready, False
         self.ready = asyncio.Event()
+        self.prompt, self.prompt_seen = prompt, False
+        self.shell_ready = asyncio.Event()
         self.loop = asyncio.get_running_loop()
 
     def __call__(self, chunk):
         assert type(chunk) is bytes and chunk and len(self.data) + len(chunk) <= OUTPUT_LIMIT, 'PTY observation budget'
         self.data.extend(chunk)
         self.chunks.append(value(chunk))
+        if self.prompt is not None and not self.prompt_seen and self.data.endswith(self.prompt):
+            self.prompt_seen = True
+            self.loop.call_soon_threadsafe(self.shell_ready.set)
         if self.expect_ready and not self.ready_seen and READY_HEADER in self.data:
+            assert self.prompt is None or self.prompt_seen, 'program ready preceded shell prompt'
             assert self.data.endswith(READY_HEADER), 'output followed ready before test input'
             self.ready_seen = True
             self.loop.call_soon_threadsafe(self.ready.set)
 
 
-def read_ready(handle, capture):
+def read_ready(handle, capture, *, shell=False, deadline):
     # The original sync SDK supports incremental iteration. Stop at the explicit
     # byte marker; wait() later continues the same underlying event stream.
     for stdout, stderr, data in handle:
         assert stdout is None and stderr is None, 'PTY data used a separate text channel'
+        assert time.monotonic() < deadline, 'original PTY readiness deadline exceeded'
         capture(data)
-        if capture.ready_seen:
+        if (capture.prompt_seen if shell else capture.ready_seen):
             return
-    raise AssertionError('PTY stream ended before ready')
+    raise AssertionError('PTY stream ended before shell prompt' if shell else 'PTY stream ended before ready')
 
 
 def ready_text(ready):
@@ -83,7 +91,8 @@ async def pty_case(observed, user, uid, parent, mode):
         (17, 'exit status 17') if wide else (0, None))
 
     async def subscribe(name, target, *args, **kwargs):
-        capture = Capture(expect_ready=name == 'start')
+        capture = Capture(expect_ready=name == 'start',
+                          prompt=(b'# ' if uid == 0 else b'$ ') if name == 'start' else None)
         evidence = dict(name=name, chunks=capture.chunks)
         row['subscriptions'].append(evidence)
         bound = partial(target, on_data=capture) if observed.asynchronous else target
@@ -127,12 +136,24 @@ async def pty_case(observed, user, uid, parent, mode):
             size=PtySize(rows=wide + 24, cols=wide + 80), user=user, cwd=directory,
             envs={'SANDPROOF_PTY_VALUE': VALUE}, timeout=60, request_timeout=15)
         pid = row['pid'] = handle.pid
+        # The fixed guest's interactive Bash must publish its prompt before
+        # input: otherwise the terminal line discipline can echo the bootstrap
+        # before Bash starts and Readline echoes it again. Keep every byte;
+        # this barrier changes when input is sent, never what is compared.
+        deadline = time.monotonic() + 20
+        async def barrier(*, shell):
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, 'original PTY readiness deadline exceeded'
+            if observed.asynchronous:
+                event = capture.shell_ready if shell else capture.ready
+                await asyncio.wait_for(event.wait(), remaining)
+            else:
+                await call(read_ready, handle, capture, shell=shell, deadline=deadline)
+            assert time.monotonic() < deadline, 'original PTY readiness deadline exceeded'
+        await barrier(shell=True)
         config = dict(configuration(directory, 17 if wide else 0), report_ready=True)
         await calls.operation('pty.send_stdin', pty.send_stdin, pid, bootstrap(config), request_timeout=15)
-        if observed.asynchronous:
-            await asyncio.wait_for(capture.ready.wait(), 20)
-        else:
-            await call(read_ready, handle, capture)
+        await barrier(shell=False)
         ready = dict(pid=pid, uid=uid, cwd=directory, value=VALUE, size=[24, 80], tty=[True]*3)
         row['ready'] = ready
         result = await calls.operation('commands.run', observed.sandbox.commands.run,

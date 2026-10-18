@@ -28,6 +28,27 @@ SPEC.loader.exec_module(FIXTURE)
 
 class CompleteRegistryFixtureTests(unittest.TestCase):
     def test_explicit_two_pool_policy_reaches_real_static_service_preflight(self):
+        self.check_service_preflight()
+
+    def test_explicit_paired_capacity_keeps_global_and_builder_limits(self):
+        self.check_service_preflight(runtime_transfers_per_vm=6)
+
+    def test_invalid_runtime_capacity_fails_before_policy_or_filesystem_access(self):
+        for value in (True, 0, 1, 9, 5.0, '5', None):
+            with self.subTest(value=value), patch.object(FIXTURE, 'acceptance_build_policy') as policy:
+                with self.assertRaisesRegex(ValueError, 'original global bound'):
+                    FIXTURE.prepare_registry_runtime(None, tool_hashes={}, registry_limits={},
+                        build_limits={}, ports=[1, 2, 3], runtime_transfers_per_vm=value)
+                policy.assert_not_called()
+
+    def test_two_overlapping_transfer_profiles_fail_before_assembly(self):
+        with patch.object(FIXTURE, 'acceptance_build_policy') as policy:
+            with self.assertRaisesRegex(ValueError, 'overlapping profiles'):
+                FIXTURE.prepare_registry_runtime(None, tool_hashes={}, registry_limits={},
+                    build_limits={}, ports=[1, 2, 3], runtime_transfers_per_vm=5, data_transfer={})
+            policy.assert_not_called()
+
+    def check_service_preflight(self, **options):
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
             parent = Path(temporary).resolve()
             source = parent / "source"
@@ -68,10 +89,19 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                 # this static test does not claim TLS/Redis or KVM startup.
                 credentials = test_credentials(key, kwargs['extra_credentials'])
                 self.assertEqual([entry['tenant'] for entry in credentials], [1, 2])
+                self.assertEqual(catalogs[0]['aliases'], {'base':'runtime-base'})
+                # The common renderer prefixes builder aliases. Advertising
+                # base here becomes builder-base, colliding with its real ID
+                # and correctly rejected by the original Rust catalog.
+                self.assertEqual(catalogs[1]['aliases'], {})
                 for suffix in ('registry','registry/inbox','registry/artifacts'):
                     (root / suffix).mkdir(mode=0o700)
                 for index, native in enumerate(settings):
                     self.assertFalse({'bind','credentials','internal_build_vms','build_retry_windows'} & native.keys())
+                    transfers = native['data_transfer']
+                    expected = 4 if index else options.get('runtime_transfers_per_vm', 4)
+                    self.assertEqual((transfers['max_transfers'], transfers['max_transfers_per_vm'],
+                                      transfers['control_reserve']), (8, expected, 1))
                     path=root / str(index) / 'host.json'
                     path.write_text(json.dumps(dict(native=native,inbox={},internal={},
                                                     template_cache={},artifact_source={})))
@@ -93,7 +123,7 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                     patch.object(FIXTURE.RuntimeServices, 'prepare', side_effect=assembled):
                 deployment = FIXTURE.prepare_registry_runtime(args,
                     tool_hashes={name: digest for name in prior["tools"]}, registry_limits=registry,
-                    build_limits=limits, ports=[3100, 3101, 3102])
+                    build_limits=limits, ports=[3100, 3101, 3102], **options)
             checked = configuration(deployment.build_config, require_physical_lease=False)
             self.assertEqual(checked["physical_storage_profile"], policy["runtime"]["bounded_host"]["physical_storage"])
             self.assertNotIn("internal_build_vms", checked["builder"])
@@ -238,6 +268,40 @@ class PrivateBuilderProtocolTests(unittest.TestCase):
         self.assertFalse(any(method == "DELETE" for method, _path, _body in self.calls))
         intent = json.loads(next(self.root.glob("builder-intent-*.json")).read_text())
         self.assertEqual(intent["builder_settled"], {"requestWindow": "original-window", "sandboxID": None})
+
+    def test_failed_create_retains_only_safe_code_and_original_read_only_projection(self):
+        observed = {"nodes": [{"free": {"cpu": 2}}], "catalogs": {}}
+        self.deployment.services.processes.center_readiness.return_value = observed
+        self.unknown_post = True
+        with self.assertRaises(BuildError) as failure:
+            self.deployment.open_builder()
+        self.assertEqual(failure.exception.code, 502)
+        saved = json.loads(next(self.root.glob("builder-failure-*.json")).read_text())
+        self.assertEqual(saved["http_status"], 502)
+        self.assertEqual(saved["readiness"], observed)
+        self.assertEqual(saved["failure_type"], "BuildError")
+        self.assertEqual(set(saved), {"http_status", "readiness", "failure_type", "observed_at_ms"})
+        self.assertNotIn("LaunchUnknown", json.dumps(saved))
+        self.deployment.services.processes.center_readiness.assert_called_once_with(timeout=5)
+        self.assertEqual([method for method, _path, _body in self.calls], ["POST", "POST"])
+        self.deployment.close_builders()
+        self.assertTrue(json.loads(next(self.root.glob("builder-intent-*.json")).read_text())["settled"])
+
+    def test_diagnostic_failure_preserves_original_exception_intent_and_cleanup(self):
+        self.unknown_post = True
+        self.deployment.services.processes.center_readiness.side_effect = OSError("private-observation-text")
+        original_save = FIXTURE._save
+        def save(path, *args, **kwargs):
+            if Path(path).name.startswith("builder-failure-"):
+                raise OSError("private-write-text")
+            return original_save(path, *args, **kwargs)
+        with patch.object(FIXTURE, "_save", side_effect=save):
+            with self.assertRaisesRegex(BuildError, "LaunchUnknown") as failure:
+                self.deployment.open_builder()
+        self.assertEqual(failure.exception.code, 502)
+        self.assertEqual([method for method, _path, _body in self.calls], ["POST", "POST"])
+        self.deployment.close_builders()
+        self.assertTrue(json.loads(next(self.root.glob("builder-intent-*.json")).read_text())["settled"])
 
     def test_lost_settlement_reply_reuses_durable_certificate_without_requery_or_refence(self):
         _sandbox, identity = self.deployment.open_builder()

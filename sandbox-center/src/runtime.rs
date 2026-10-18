@@ -216,7 +216,7 @@ async fn coordinate(
     while !*shutdown.borrow() {
         let app = Arc::clone(&application);
         let observation = observation.clone();
-        blocking_round(&admission, RequestClass::Background, move || {
+        let keep_running = observation_round(&admission, interval, shutdown, move || {
             if observation::refresh(
                 &observation.authority,
                 &observation.hosts,
@@ -237,12 +237,30 @@ async fn coordinate(
             let _ = app.retire_terminal_history_once();
         })
         .await?;
-        tokio::select! {
-            () = wait_shutdown(shutdown) => break,
-            () = tokio::time::sleep(interval) => {},
+        if !keep_running {
+            break;
         }
     }
     Ok(())
+}
+
+async fn observation_round(
+    admission: &RequestAdmission,
+    interval: Duration,
+    shutdown: &mut watch::Receiver<bool>,
+    work: impl FnOnce() + Send + 'static,
+) -> Result<bool, &'static str> {
+    // The configured scan interval starts with the round, not after its I/O.
+    // A slow original status call must not consume most of its health window
+    // and then wait another full interval. There is only one actual worker:
+    // an overdue round proceeds once, without queuing missed intervals.
+    let next = tokio::time::Instant::now() + interval;
+    blocking_round(admission, RequestClass::Background, work).await?;
+    tokio::select! {
+        biased;
+        () = wait_shutdown(shutdown) => Ok(false),
+        () = tokio::time::sleep_until(next) => Ok(true),
+    }
 }
 
 /// Material I/O is serial and finite within its own reserved slot. Work is
@@ -310,6 +328,80 @@ async fn termination_signal() -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn assert_observation_schedule(work_seconds: u64) {
+        let admission = Arc::new(RequestAdmission::default());
+        let (shutdown, mut receiver) = watch::channel(false);
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let budget = Arc::clone(&admission);
+        let before = tokio::time::Instant::now();
+        let task = tokio::spawn(async move {
+            observation_round(&budget, Duration::from_secs(2), &mut receiver, move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+            })
+            .await
+            .unwrap()
+        });
+        ready.await.unwrap();
+        assert!(admission.try_acquire(RequestClass::Background).is_none());
+        tokio::time::advance(Duration::from_secs(work_seconds)).await;
+        release.send(()).unwrap();
+        assert!(task.await.unwrap());
+        assert_eq!(before.elapsed(), Duration::from_secs(work_seconds.max(2)));
+        assert!(admission.try_acquire(RequestClass::Background).is_some());
+        // A subsequent short round waits one original interval. Missed time
+        // cannot create a catch-up queue, parallel round, or burst of replays.
+        let before = tokio::time::Instant::now();
+        assert!(
+            observation_round(
+                &admission,
+                Duration::from_secs(2),
+                &mut shutdown.subscribe(),
+                || {}
+            )
+            .await
+            .unwrap()
+        );
+        assert_eq!(before.elapsed(), Duration::from_secs(2));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn short_observation_work_counts_toward_the_original_scan_interval() {
+        assert_observation_schedule(1).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn slow_observation_round_does_not_add_another_interval_or_replay_missed_rounds() {
+        assert_observation_schedule(6).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn shutdown_waits_for_original_observation_work_without_releasing_its_slot() {
+        let admission = Arc::new(RequestAdmission::default());
+        let (shutdown, mut receiver) = watch::channel(false);
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let budget = Arc::clone(&admission);
+        let task = tokio::spawn(async move {
+            observation_round(&budget, Duration::from_secs(2), &mut receiver, move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+            })
+            .await
+            .unwrap()
+        });
+        ready.await.unwrap();
+        tokio::time::advance(Duration::from_secs(6)).await;
+        shutdown.send(true).unwrap();
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
+        assert!(admission.try_acquire(RequestClass::Background).is_none());
+        release.send(()).unwrap();
+        assert!(!task.await.unwrap());
+        assert!(admission.try_acquire(RequestClass::Background).is_some());
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn blocked_material_does_not_block_lifecycle_and_cancel_does_not_release_its_slot() {

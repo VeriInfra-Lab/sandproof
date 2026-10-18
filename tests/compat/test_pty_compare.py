@@ -29,11 +29,15 @@ class PairedRpc(ControlledRpc):
     def __init__(self, asynchronous, pid):
         super().__init__(asynchronous)
         self.pid, self.bootstrapped = pid, asyncio.Event()
-        self.startup = b'controlled shell prompt\r\n'
+        self.startup = b'controlled shell prompt$ '
+        self.prompt_emitted = False
+        self.end_before_bootstrap = False
         self.bad_ready = False
 
     def input(self, request, **kwargs):
         first = self.config is None
+        if first:
+            assert self.prompt_emitted, 'bootstrap sent before shell prompt'
         result = super().input(request, **kwargs)
         if first:
             assert self.config['report_ready'] is True
@@ -62,16 +66,22 @@ class PairedRpc(ControlledRpc):
     def stream(self, response, late, wrong):
         first = self.event(response, 'start', process_pb.ProcessEvent.StartEvent(pid=self.pid + int(wrong)))
         start = response is process_pb.StartResponse
-        def prefix():
-            data = self.startup + probe.READY_HEADER
-            for chunk in (data[:5], data[5:-3], data[-3:]):
+        def prefix(data, *, prompt=False):
+            chunks = (data[:5], data[5:-1], data[-1:])
+            for index, chunk in enumerate(chunks):
+                if prompt and index == len(chunks)-1:
+                    self.prompt_emitted = True
                 yield self.event(response, 'data', process_pb.ProcessEvent.DataEvent(output=Oneof('pty', chunk)))
         async def asynchronous():
             try:
                 yield first
                 if start:
+                    for item in prefix(self.startup, prompt=True):
+                        yield item
+                    if self.end_before_bootstrap:
+                        return
                     await asyncio.wait_for(self.bootstrapped.wait(), 5)
-                    for item in prefix():
+                    for item in prefix(probe.READY_HEADER):
                         yield item
                 await asyncio.wait_for(self.ready_event.wait(), 5)
                 for item in self.output(response, late):
@@ -82,8 +92,11 @@ class PairedRpc(ControlledRpc):
             try:
                 yield first
                 if start:
+                    yield from prefix(self.startup, prompt=True)
+                    if self.end_before_bootstrap:
+                        return
                     assert self.config is not None
-                    yield from prefix()
+                    yield from prefix(probe.READY_HEADER)
                 assert self.done, 'terminal read must follow input or kill'
                 yield from self.output(response, late)
             finally:
@@ -126,6 +139,27 @@ class PairedPtyTests(unittest.IsolatedAsyncioTestCase):
         calls, backend = self.fixture(asynchronous, pid)
         await probe.pty_case(calls, 'ubuntu', 1000, '/tmp/shared/ubuntu', mode)
         return calls.rows[0], backend
+
+    async def test_bootstrap_waits_for_split_shell_prompt_before_original_input(self):
+        for asynchronous in (False, True):
+            with self.subTest(asynchronous=asynchronous):
+                row, backend = await self.run_case(asynchronous)
+                self.assertTrue(backend.prompt_emitted)
+                data = b''.join(probe.base64.b64decode(c['base64'])
+                                for c in row['subscriptions'][0]['chunks'])
+                self.assertTrue(data.startswith(backend.startup + probe.READY_HEADER))
+                self.assertEqual(len([call for call in backend.calls if call[0] == 'start']), 1)
+
+    async def test_stream_ending_before_prompt_never_sends_bootstrap(self):
+        calls, backend = self.fixture(False)
+        backend.startup = b'incomplete shell banner'
+        backend.end_before_bootstrap = True
+        with self.assertRaisesRegex(AssertionError, 'before shell prompt'):
+            await probe.pty_case(calls, 'ubuntu', 1000, '/tmp/shared/ubuntu', 'direct')
+        self.assertIsNone(backend.config)
+        self.assertFalse(any(row['method'] == 'pty.send_stdin' for row in calls.rows[0]['calls']))
+        self.assertEqual(len([row for row in backend.calls if row[0] == 'kill']), 1)
+        self.assertEqual(len(backend.closed), 1)
 
     async def test_all_modes_both_sdks_keep_startup_bytes_binary_sizes_terminal_and_original_pid(self):
         for mode in ('direct', 'reconnect-exit', 'kill'):
@@ -286,6 +320,27 @@ class PairedPtyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([type(e) for e in raised.exception.exceptions], [AssertionError, RuntimeError, OSError])
         self.assertEqual(len(backend.closed), 2)
         self.assertEqual(len([r for r in backend.calls if r[0] == 'kill']), 1)
+
+    async def test_prompt_suffix_can_split_without_losing_banner_or_ready_bytes(self):
+        for prompt in (b'# ', b'$ '):
+            capture = probe.Capture(True, prompt=prompt)
+            capture(b'original banner and hostname' + prompt[:1])
+            self.assertFalse(capture.prompt_seen)
+            capture(prompt[1:])
+            self.assertTrue(capture.prompt_seen)
+            capture(probe.READY_HEADER)
+            self.assertTrue(capture.ready_seen)
+            self.assertEqual(bytes(capture.data), b'original banner and hostname' + prompt + probe.READY_HEADER)
+        with self.assertRaisesRegex(AssertionError, 'preceded shell prompt'):
+            probe.Capture(True, prompt=b'$ ')(probe.READY_HEADER)
+
+    async def test_expired_prompt_deadline_is_not_reset_by_an_output_chunk(self):
+        capture = probe.Capture(True, prompt=b'$ ')
+        with patch.object(probe.time, 'monotonic', return_value=10):
+            with self.assertRaisesRegex(AssertionError, 'readiness deadline'):
+                probe.read_ready(iter([(None, None, b'prompt$ ')]), capture, shell=True, deadline=10)
+        self.assertFalse(capture.prompt_seen)
+        self.assertEqual(capture.data, b'')
 
     async def test_callback_bound_and_early_extra_data_fail_instead_of_truncating(self):
         capture = probe.Capture(True)
