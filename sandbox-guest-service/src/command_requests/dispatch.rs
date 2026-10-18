@@ -101,7 +101,9 @@ impl Ready {
                 Request::List => registry
                     .list_json(limits.message_bytes)
                     .map_err(Error::Registry)?,
-                Request::Start(_) | Request::StartArgumentsExceeded { .. } => {
+                Request::Start(_)
+                | Request::StartArgumentsExceeded { .. }
+                | Request::StartEnvironmentExceeded { .. } => {
                     return Err(Error::UnsupportedOperation);
                 }
                 _ => {

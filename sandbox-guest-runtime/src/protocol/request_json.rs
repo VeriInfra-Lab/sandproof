@@ -79,31 +79,37 @@ pub(super) fn signal<'de, D: Deserializer<'de>>(
     }))
 }
 
-pub(super) fn envs<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<BTreeMap<String, String>, D::Error> {
-    struct Map(BTreeMap<String, String>);
-    impl<'de> Deserialize<'de> for Map {
+pub(super) fn envs<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    K: Deserialize<'de> + Ord,
+    V: Deserialize<'de>,
+{
+    struct Map<K, V>(BTreeMap<K, V>);
+    impl<'de, K: Deserialize<'de> + Ord, V: Deserialize<'de>> Deserialize<'de> for Map<K, V> {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = Map;
+            struct Visitor<K, V>(std::marker::PhantomData<(K, V)>);
+            impl<'de, K: Deserialize<'de> + Ord, V: Deserialize<'de>> de::Visitor<'de> for Visitor<K, V> {
+                type Value = Map<K, V>;
                 fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     f.write_str("a string map")
                 }
-                fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<Map, M::Error> {
+                fn visit_map<M: de::MapAccess<'de>>(
+                    self,
+                    mut map: M,
+                ) -> Result<Self::Value, M::Error> {
                     let mut values = BTreeMap::new();
-                    while let Some(key) = map.next_key::<String>()? {
+                    while let Some(key) = map.next_key::<K>()? {
                         let Entry::Vacant(entry) = values.entry(key) else {
                             return Err(de::Error::custom("duplicate environment key"));
                         };
-                        entry.insert(map.next_value::<String>()?);
+                        entry.insert(map.next_value::<V>()?);
                     }
                     Ok(Map(values))
                 }
             }
-            deserializer.deserialize_map(Visitor)
+            deserializer.deserialize_map(Visitor(std::marker::PhantomData))
         }
     }
-    Ok(Option::<Map>::deserialize(deserializer)?.map_or_else(BTreeMap::new, |map| map.0))
+    Ok(Option::<Map<K, V>>::deserialize(deserializer)?.map_or_else(BTreeMap::new, |map| map.0))
 }

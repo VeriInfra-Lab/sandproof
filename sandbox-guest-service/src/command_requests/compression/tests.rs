@@ -25,6 +25,47 @@ fn decode_now(method: &str, bytes: &[u8], limit: usize) -> Result<Request, Error
 }
 
 #[test]
+fn environment_refusal_keeps_original_gzip_json_and_tail_observations() {
+    let payload = br#"{"process":{"envs":{"a":"","b":""}}}"#;
+    let valid = frame(1, &compressed(payload));
+    let mut corrupt = compressed(payload);
+    *corrupt.last_mut().unwrap() ^= 1;
+    let (_cancel, cancelled) = watch::channel(false);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    for wire in [
+        frame(
+            1,
+            &compressed(br#"{"process":{"envs":{"a":"","b":"","\u0061":""}}}"#),
+        ),
+        frame(1, &corrupt),
+        [valid.clone(), frame(2, b"!")].concat(),
+        [valid.clone(), frame(3, b"bad")].concat(),
+        [valid, frame(0, b"{}")].concat(),
+    ] {
+        let original = decode_selected("Start", &wire, 4096, 7, deadline, &cancelled, true);
+        assert!(original.is_err());
+        assert_eq!(
+            decode_limited(
+                "Start",
+                &wire,
+                4096,
+                7,
+                deadline,
+                &cancelled,
+                (
+                    true,
+                    Some(protocol::StartLimits {
+                        arguments: 2,
+                        env_entries: 1
+                    })
+                ),
+            ),
+            original,
+        );
+    }
+}
+
+#[test]
 fn compressed_command_data_and_eos_keep_empty_wire_and_first_failure_semantics() {
     for method in ["Start", "Connect"] {
         let expected = protocol::decode_request(method, &frame(0, b"{}"), 1024).unwrap();

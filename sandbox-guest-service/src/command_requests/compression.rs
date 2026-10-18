@@ -46,9 +46,9 @@ pub(super) fn decode_limited(
     chunk: usize,
     deadline: Instant,
     cancelled: &watch::Receiver<bool>,
-    selection: (bool, Option<usize>),
+    selection: (bool, Option<protocol::StartLimits>),
 ) -> Result<Request, Error> {
-    protocol::decode_request_observed_limited(
+    protocol::decode_request_observed_with_start_limits(
         method,
         payload,
         limit,

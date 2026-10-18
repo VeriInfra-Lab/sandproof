@@ -4,25 +4,6 @@
 //! the execution limit so malformed late elements retain JSON precedence.
 use serde::{Deserialize, Deserializer, de};
 
-/// Inspect only the allocation-sensitive path. This is not schema acceptance:
-/// the caller must still run the original full schema with either Vec or Count.
-/// In particular, do not allocate all environment values merely to decide
-/// whether the argument vector can be built.
-pub(super) fn exceeds(payload: &[u8], limit: usize) -> Result<bool, super::ProtocolError> {
-    #[derive(Deserialize)]
-    struct Probe {
-        #[serde(default, deserialize_with = "super::optional_object")]
-        process: Option<Arguments>,
-    }
-    #[derive(Deserialize)]
-    struct Arguments {
-        #[serde(default, deserialize_with = "super::null_default")]
-        args: Count,
-    }
-    let probe: Probe = super::parse(payload)?;
-    Ok(probe.process.is_some_and(|process| process.args.0 > limit))
-}
-
 #[derive(Default)]
 pub(super) struct Count(pub usize);
 
@@ -48,7 +29,7 @@ impl<'de> Deserialize<'de> for Count {
     }
 }
 
-struct StringOnly;
+pub(super) struct StringOnly;
 impl<'de> Deserialize<'de> for StringOnly {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Visitor;

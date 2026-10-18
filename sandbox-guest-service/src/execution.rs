@@ -228,16 +228,7 @@ impl AuthPermit {
     ) -> Result<LaunchSpec, CommandContextError> {
         let limit = settings.limits;
         let process = command_process(request, settings)?;
-        let cwd = resolve_path(
-            process
-                .cwd
-                .as_deref()
-                .filter(|path| !path.is_empty())
-                .or(self.defaults().workdir.as_deref())
-                .unwrap_or(""),
-            &account,
-            &settings.daemon_workdir,
-        )?;
+        let cwd = self.command_cwd(process.cwd.as_deref(), &account, settings)?;
         let environment = merged_environment(
             [
                 ("PATH", settings.daemon_path.as_str()),
@@ -257,7 +248,7 @@ impl AuthPermit {
             // Invalid keys still precede count/byte refusal, including when a
             // previous entry has already exceeded either budget. No full copy
             // of the request/default map exists during these checks.
-            if key.is_empty() || key.contains('=') {
+            if invalid_environment_name(key) {
                 return Err(ContextError::InvalidArgument.into());
             }
             entries = entries.and_then(|count| count.checked_add(1));
@@ -288,6 +279,52 @@ impl AuthPermit {
             credentials: Some(account.credentials),
         })
     }
+
+    fn command_cwd(
+        &self,
+        cwd: Option<&str>,
+        account: &Account,
+        settings: &ExecutionSettings,
+    ) -> Result<String, CommandContextError> {
+        resolve_path(
+            cwd.filter(|path| !path.is_empty())
+                .or(self.defaults().workdir.as_deref())
+                .unwrap_or(""),
+            account,
+            &settings.daemon_workdir,
+        )
+    }
+
+    // The caller already checked matching original limits, account and clock.
+    // All unique request keys remain in the effective environment after merge,
+    // so a request map alone exceeding env_entries cannot become a legal launch.
+    // Keep cwd and invalid-name precedence without owning that oversized map.
+    pub(crate) fn environment_refusal_observed(
+        &self,
+        cwd: Option<&str>,
+        invalid_request_name: bool,
+        account: &Account,
+        settings: &ExecutionSettings,
+    ) -> CommandContextError {
+        if let Err(error) = self.command_cwd(cwd, account, settings) {
+            return error;
+        }
+        if invalid_request_name
+            || self
+                .defaults()
+                .env
+                .keys()
+                .any(|key| invalid_environment_name(key))
+        {
+            ContextError::InvalidArgument.into()
+        } else {
+            ContextError::ResourceExhausted.into()
+        }
+    }
+}
+
+fn invalid_environment_name(key: &str) -> bool {
+    key.is_empty() || key.contains('=')
 }
 
 // Borrow only the effective entries in the original override order. The four

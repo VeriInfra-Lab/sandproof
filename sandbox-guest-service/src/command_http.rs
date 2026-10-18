@@ -290,7 +290,9 @@ impl<M: MetadataSource, S: AccountSource> Ready<M, S> {
         let Self { inner, operation } = self;
         let reply = if matches!(
             operation.request(),
-            protocol::Request::Start(_) | protocol::Request::StartArgumentsExceeded { .. }
+            protocol::Request::Start(_)
+                | protocol::Request::StartArgumentsExceeded { .. }
+                | protocol::Request::StartEnvironmentExceeded { .. }
         ) {
             let command = next_command(&inner.sequence).ok_or_else(|| {
                 Failure::SequenceExhausted(Retained {

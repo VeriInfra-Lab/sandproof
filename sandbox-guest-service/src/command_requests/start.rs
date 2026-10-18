@@ -198,11 +198,14 @@ impl Ready {
             authenticated,
             ..
         } = self.decoded;
-        let request = match request {
-            Request::Start(request) => Some(request),
-            Request::StartArgumentsExceeded { limit } if limit == settings.limits.arguments => None,
+        match &request {
+            Request::Start(_) => {}
+            Request::StartArgumentsExceeded { limit } if *limit == settings.limits.arguments => {}
+            Request::StartEnvironmentExceeded { limits, .. }
+                if limits.arguments == settings.limits.arguments
+                    && limits.env_entries == settings.limits.env_entries => {}
             _ => return Err(Error::UnsupportedOperation),
-        };
+        }
         validate_command_settings(settings).map_err(Error::Context)?;
         let authenticated = Arc::new(authenticated);
         let fallback = &authenticated.authorization().defaults().user;
@@ -251,20 +254,32 @@ impl Ready {
         // HTTP/response expiry was captured earlier and remains independent.
         let execution = ExecutionDeadline::from_headers(authenticated.headers(), Instant::now())
             .map_err(Error::Command)?;
-        // The bounded decoder validated the whole message without constructing
-        // excess argv. Preserve default-account and execution-clock precedence;
-        // this refusal cannot reach context composition, registry or spawn.
-        let request = request.ok_or(Error::Context(ContextError::ResourceExhausted))?;
-        let launch = authenticated
-            .authorization()
-            .compose_command_observed(&request, account, settings)
-            .map_err(|error| {
-                let context = error.context();
-                if let CommandContextError::Expansion(expansion) = error {
-                    *start_rejection = Some(Rejection::Expansion(expansion));
-                }
-                Error::Context(context)
-            })?;
+        // The original schema was fully checked before any deferred refusal.
+        // Account and clock remain first; environment overflow additionally
+        // retains cwd/invalid-name precedence and never supplies a partial Start.
+        let composed = match request {
+            Request::Start(request) => authenticated
+                .authorization()
+                .compose_command_observed(&request, account, settings)
+                .map(|launch| (request, launch)),
+            Request::StartArgumentsExceeded { .. } => Err(ContextError::ResourceExhausted.into()),
+            Request::StartEnvironmentExceeded {
+                cwd, invalid_name, ..
+            } => Err(authenticated.authorization().environment_refusal_observed(
+                cwd.as_deref(),
+                invalid_name,
+                &account,
+                settings,
+            )),
+            _ => return Err(Error::UnsupportedOperation),
+        };
+        let (request, launch) = composed.map_err(|error| {
+            let context = error.context();
+            if let CommandContextError::Expansion(expansion) = error {
+                *start_rejection = Some(Rejection::Expansion(expansion));
+            }
+            Error::Context(context)
+        })?;
         check_deadline(deadline)?;
         Ok(Resolved {
             authenticated,
