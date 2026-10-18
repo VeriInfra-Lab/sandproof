@@ -217,6 +217,40 @@ fn cases(rpc: Rpc) -> Vec<Vec<u8>> {
             format!("{{\"future\":{}0{}}}", "[".repeat(depth), "]".repeat(depth)).into_bytes(),
         );
     }
+    if matches!(rpc, Rpc::Start) {
+        cases.extend(environment_histories());
+    }
+    cases
+}
+
+fn environment_histories() -> Vec<Vec<u8>> {
+    use std::fmt::Write;
+
+    let mut cases: Vec<Vec<u8>> = [
+        r#"{"process":{"envs":{"z":"","z":"","a":null}}}"#,
+        r#"{"process":{"envs":{"z":"","z":"","a":!}}}"#,
+        r#"{"process":{"envs":{"z":"","z":""},"cwd":[]}}"#,
+        r#"{"process":{"envs":{"z":"","a":"","\u007a":"","a":""}}}"#,
+        r#"{"process":{"envs":{"z":"","a":null,"z":""}}}"#,
+        r#"{"process":{"envs":{"\ud83d\ude00":"","a":"","\ud83d\ude00":null}}}"#,
+        r#"{"process":{"envs":{"a123456789012345":"","\u0061123456789012345":"","b":false}}}"#,
+        r#"{"process":{"envs":{"a":"","b":""},"envs":null}}"#,
+    ]
+    .into_iter()
+    .map(|value| value.as_bytes().to_vec())
+    .collect();
+    for early in [false, true] {
+        let mut body = String::from(r#"{"process":{"envs":{"z":"""#);
+        if early {
+            body.push_str(r#", "\u007a":"""#);
+        }
+        for index in 0..4097 {
+            write!(body, ",\"k{index}\":\"\"").unwrap();
+        }
+        body.push_str(r#", "z":"", "k0":null}}}"#);
+        assert!(body.len() < 65536);
+        cases.push(body.into_bytes());
+    }
     cases
 }
 
@@ -259,10 +293,17 @@ async fn fixed_go_json_failures_match_ordered_diagnostics_and_complete_http_byte
         Rpc::SendSignal,
         Rpc::Update,
     ] {
-        for (index, body) in cases(rpc).into_iter().enumerate() {
+        let bodies = cases(rpc);
+        let original_end = bodies.len()
+            - if matches!(rpc, Rpc::Start) {
+                environment_histories().len()
+            } else {
+                0
+            };
+        for (index, body) in bodies.into_iter().enumerate() {
             // All schemas get both encodings/charsets. Compact schema cases also
             // run the cross product; lexer mutations share the common tokenizer.
-            let combinations = if index < 380 {
+            let combinations = if index < 380 || index >= original_end {
                 vec![(false, false), (false, true), (true, false), (true, true)]
             } else {
                 vec![(index % 2 == 0, index % 3 == 0)]

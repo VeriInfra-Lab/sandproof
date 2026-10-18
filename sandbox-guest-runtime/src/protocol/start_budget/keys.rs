@@ -2,29 +2,31 @@
 //! key vector whose geometric growth can temporarily double all key storage.
 use std::{cmp::Reverse, collections::BinaryHeap};
 
-mod arena;
-pub(super) use arena::Arena;
-use arena::Key;
+pub(super) use crate::file_protocol::request_json::key_arena::Arena;
+use crate::file_protocol::request_json::key_arena::Key;
 
 // Allocation granularity only, never an input count/length acceptance limit.
 const CHUNK_ENTRIES: usize = 4096;
 
 #[derive(Default)]
 pub(super) struct Chunks<'a> {
-    chunks: Vec<Vec<Key<'a>>>,
+    blocks: Vec<Vec<Key<'a>>>,
     count: usize,
+    sorted: usize,
+    checked_count: usize,
 }
 
 impl<'a> Chunks<'a> {
     pub(super) fn push(&mut self, key: Key<'a>) {
         if self
-            .chunks
+            .blocks
             .last()
             .is_none_or(|chunk| chunk.len() == CHUNK_ENTRIES)
         {
-            self.chunks.push(Vec::new());
+            self.blocks.push(Vec::new());
         }
-        self.chunks.last_mut().expect("chunk exists").push(key);
+        self.sorted = self.sorted.min(self.blocks.len() - 1);
+        self.blocks.last_mut().expect("chunk exists").push(key);
         self.count += 1;
     }
 
@@ -32,14 +34,22 @@ impl<'a> Chunks<'a> {
         self.count
     }
 
+    pub(super) fn checkpoint(&self) -> bool {
+        self.count.is_multiple_of(CHUNK_ENTRIES) && self.blocks.len().is_power_of_two()
+    }
+
     pub(super) fn unique(&mut self, arena: &Arena) -> bool {
-        for chunk in &mut self.chunks {
+        if self.checked_count == self.count {
+            return true;
+        }
+        for chunk in self.blocks.iter_mut().skip(self.sorted) {
             chunk.sort_unstable_by(|left, right| left.as_str(arena).cmp(right.as_str(arena)));
         }
+        self.sorted = self.blocks.len();
         // Merge sorted chunks using only one borrowed cursor per chunk.
         // Equality is decoded content, including between storage variants.
         let mut heads: BinaryHeap<_> = self
-            .chunks
+            .blocks
             .iter()
             .enumerate()
             .filter_map(|(index, chunk)| {
@@ -54,10 +64,11 @@ impl<'a> Chunks<'a> {
                 return false;
             }
             previous = Some(key);
-            if let Some(next) = self.chunks[chunk].get(offset + 1) {
+            if let Some(next) = self.blocks[chunk].get(offset + 1) {
                 heads.push(Reverse((next.as_str(arena), chunk, offset + 1)));
             }
         }
+        self.checked_count = self.count;
         true
     }
 }

@@ -5,11 +5,11 @@ use serde::{Deserializer, de};
 const CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Default)]
-pub(in super::super) struct Arena {
+pub(crate) struct Arena {
     chunks: Vec<String>,
 }
 
-pub(in super::super) enum Key<'a> {
+pub(crate) enum Key<'a> {
     Borrowed(&'a str),
     Inline { bytes: [u8; 15], length: u8 },
     Pooled { chunk: usize, start: u32, end: u32 },
@@ -19,7 +19,7 @@ pub(in super::super) enum Key<'a> {
 }
 
 impl Key<'_> {
-    pub(in super::super) fn as_str<'a>(&'a self, arena: &'a Arena) -> &'a str {
+    pub(crate) fn as_str<'a>(&'a self, arena: &'a Arena) -> &'a str {
         match self {
             Self::Borrowed(value) => value,
             Self::Inline { bytes, length } => std::str::from_utf8(&bytes[..usize::from(*length)])
@@ -33,7 +33,7 @@ impl Key<'_> {
 }
 
 impl Arena {
-    pub(in super::super) fn seed(&mut self) -> Seed<'_> {
+    pub(crate) fn seed(&mut self) -> Seed<'_> {
         Seed(self)
     }
 
@@ -73,7 +73,7 @@ impl Arena {
     }
 }
 
-pub(in super::super) struct Seed<'a>(&'a mut Arena);
+pub(crate) struct Seed<'a>(&'a mut Arena);
 
 impl<'de> de::DeserializeSeed<'de> for Seed<'_> {
     type Value = Key<'de>;
@@ -98,6 +98,59 @@ impl<'de> de::DeserializeSeed<'de> for Seed<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::de::DeserializeSeed;
+    use std::collections::BTreeSet;
+    use std::fmt::Write;
+
+    #[test]
+    fn key_storage_boundaries_keep_exact_equality_order_and_dense_key_size() {
+        let values = [
+            "",
+            "a",
+            "a\0b",
+            "a=b",
+            "中文",
+            "123456789012345",
+            "1234567890123456",
+            "123456789012中",
+            "1234567890123中",
+            "12345678901🙂",
+            "123456789012🙂",
+        ];
+        let spellings: Vec<_> = values
+            .iter()
+            .flat_map(|value| {
+                let mut escaped = String::from("\"");
+                for unit in value.encode_utf16() {
+                    write!(&mut escaped, "\\u{unit:04x}").unwrap();
+                }
+                escaped.push('"');
+                [serde_json::to_string(value).unwrap(), escaped]
+            })
+            .collect();
+        let mut arena = Arena::default();
+        let keys: Vec<_> = spellings
+            .iter()
+            .map(|text| {
+                arena
+                    .seed()
+                    .deserialize(&mut serde_json::Deserializer::from_str(text))
+                    .unwrap()
+            })
+            .collect();
+        for (pair, expected) in keys.chunks_exact(2).zip(values) {
+            assert_eq!(pair[0].as_str(&arena), expected);
+            assert_eq!(pair[1].as_str(&arena), expected);
+            assert_eq!(pair[0].as_str(&arena), pair[1].as_str(&arena));
+        }
+        let unique: BTreeSet<_> = keys.iter().map(|key| key.as_str(&arena)).collect();
+        assert_eq!(unique.len(), values.len());
+        let mut expected = values.to_vec();
+        expected.sort_unstable();
+        assert_eq!(unique.into_iter().collect::<Vec<_>>(), expected);
+        // Keep the inline optimization from increasing every dense key node.
+        assert!(std::mem::size_of::<Key<'_>>() <= 3 * std::mem::size_of::<usize>());
+    }
 
     #[test]
     fn pooled_offsets_survive_growth_rollover_and_large_complete_keys() {

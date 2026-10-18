@@ -53,6 +53,12 @@ impl<'de> super::request_json::Environment<'de> for CheckedEnvironment {
                     let value = key.as_str(&arena);
                     invalid_name |= value.is_empty() || value.contains('=');
                     keys.push(key);
+                    // Check geometrically growing prefixes as well as the final
+                    // map. Repeated keys must not fill scratch for the entire
+                    // body when an earlier duplicate already makes it invalid.
+                    if keys.checkpoint() && !keys.unique(&arena) {
+                        return Err(de::Error::custom("duplicate environment key"));
+                    }
                 }
                 if !keys.unique(&arena) {
                     return Err(de::Error::custom("duplicate environment key"));
