@@ -1,13 +1,14 @@
 """Original SDK error decoding with a controlled late HTTP request EOF.
 
-Only the locked encoder iterator's scheduling is changed. Its bytes, real
-pyqwest transport and original ConnectError parser are unchanged. The server
-releases EOF after the original response is consumed; no polling sleeps.
+Control encoder scheduling and fixture teardown while preserving its bytes,
+real pyqwest transport and original ConnectError parser. The server releases
+the encoder gate after its original response body reaches EOF; no polling sleeps.
 """
 import asyncio
 import json
 import socket
 import sys
+import threading
 from functools import partial
 
 from connectrpc import _client_async, _client_sync
@@ -18,7 +19,8 @@ from e2b.envd.client_async import create_rpc_client as async_client
 from e2b.envd.client_sync import create_rpc_client as sync_client
 from e2b.envd.process import process_connect, process_pb
 
-from sdk_rejection_body import gated_async, gated_sync
+from sdk_rejection_body import finish_gate, gated_async, gated_sync
+from sdk_event_loop import JoinedCallbackLoop
 from sdk_support import isolated_sdk_environment
 
 settings = json.loads(sys.stdin.read())
@@ -26,13 +28,15 @@ original_sync = _client_sync._streaming_request_content
 original_async = _client_async._streaming_request_content
 events = []
 upload_settled = asyncio.Event()
+sync_upload_settled = threading.Event()
 control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 control.settimeout(5)
 control.connect(settings['control'])
 
 
 _client_sync._streaming_request_content = partial(
-    gated_sync, original_sync, control, events, settings.get('partial', False))
+    gated_sync, original_sync, control, events, settings.get('partial', False),
+    settled=sync_upload_settled)
 _client_async._streaming_request_content = partial(
     gated_async, original_async, control, events, settings.get('partial', False),
     settled=upload_settled)
@@ -66,6 +70,7 @@ async def main():
             await asyncio.wait_for(upload_settled.wait(), 5)
         else:
             stream.close()
+            assert sync_upload_settled.wait(5), 'request iterator did not settle'
         expected = ['message', 'waiting', 'released']
         if settings.get('partial'):
             expected.append('tail')
@@ -74,10 +79,11 @@ async def main():
         # observations. Neither the SDK error nor response aclose orders them.
         cancelled = ['message', 'waiting', 'cancelled']
         assert events == expected or (asynchronous and events == cancelled), events
+        await asyncio.wait_for(finish_gate(control, cancelled=events == cancelled), 5)
 
 
 with isolated_sdk_environment():
     try:
-        asyncio.run(main())
+        asyncio.run(main(), loop_factory=JoinedCallbackLoop)
     finally:
         control.close()
