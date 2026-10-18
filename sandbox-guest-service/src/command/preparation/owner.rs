@@ -82,6 +82,18 @@ struct Prepared {
     owner: AdmissionOwner,
 }
 
+// A result can outlive the blocking closure and an unpolled parent can retain
+// its JoinHandle indefinitely. The original reservation bounds that lifetime.
+struct FailedPreparation {
+    owner: AdmissionOwner,
+    error: CommandError,
+}
+impl Drop for FailedPreparation {
+    fn drop(&mut self) {
+        self.owner.stopped(self.error);
+    }
+}
+
 async fn prepare_and_run(
     spec: PreparationSpec,
     context: Context,
@@ -103,7 +115,7 @@ async fn prepare_and_run(
     })
     .await;
     drop(alive);
-    if let Ok(Some(prepared)) = prepared {
+    if let Ok(Ok(prepared)) = prepared {
         run(prepared).await;
     }
 }
@@ -135,7 +147,10 @@ fn prepare_blocking(
         PreparationSpec,
         &mut Option<PreparationRejection>,
     ) -> std::io::Result<CommandPreparation>,
-) -> Option<Prepared> {
+) -> Result<Prepared, FailedPreparation> {
+    // Keep failure settlement with the result until its async parent consumes
+    // or drops it. Otherwise records could be recycled while unpolled parent
+    // tasks accumulate. FailedPreparation preserves credit-before-notification.
     // Check after queueing, before any filesystem or process operation. No
     // fresh deadline, retry, or replacement worker is created by this hop.
     // A valid Commit cannot precede Ready. Any early decision or a dropped
@@ -147,12 +162,16 @@ fn prepare_blocking(
             Err(oneshot::error::TryRecvError::Empty)
         )
     {
-        owner.stopped(CommandError::Cancelled);
-        return None;
+        return Err(FailedPreparation {
+            owner,
+            error: CommandError::Cancelled,
+        });
     }
     if Instant::now() >= context.until {
-        owner.stopped(CommandError::DeadlineExceeded);
-        return None;
+        return Err(FailedPreparation {
+            owner,
+            error: CommandError::DeadlineExceeded,
+        });
     }
     // Mark before entering spawn: panic between a successful kernel spawn and
     // normal return may have created a child. Error return itself owns none.
@@ -164,11 +183,13 @@ fn prepare_blocking(
             if let Ok(mut fact) = owner.rejection.lock() {
                 *fact = rejection;
             }
-            owner.stopped(prepare_error(&error));
-            return None;
+            return Err(FailedPreparation {
+                owner,
+                error: prepare_error(&error),
+            });
         }
     };
-    Some(Prepared {
+    Ok(Prepared {
         preparation,
         context,
         decision,

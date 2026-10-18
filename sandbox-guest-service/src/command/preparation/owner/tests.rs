@@ -275,3 +275,93 @@ fn running_preparation_outlives_its_waiter_and_settles_or_quarantines_only_on_ex
         });
     }
 }
+
+async fn hold_only_worker() -> (std::sync::mpsc::Sender<()>, tokio::task::JoinHandle<()>) {
+    let (entered, started) = oneshot::channel();
+    let (release, resume) = std::sync::mpsc::channel();
+    let worker = tokio::task::spawn_blocking(move || {
+        entered.send(()).unwrap();
+        let _ = resume.recv_timeout(Duration::from_secs(10));
+    });
+    started.await.unwrap();
+    (release, worker)
+}
+
+#[test]
+fn failed_worker_keeps_record_until_preparation_waiter_finishes_or_is_dropped() {
+    for failure in 0..3 {
+        for cancelled in [false, true] {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .max_blocking_threads(1)
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let fixture = Fixture::new().await;
+                let (mut context, owner, observer, mut reply) = fixture.admission().await;
+                let (sender, decision) = oneshot::channel();
+                let mut sender = Some(sender);
+                let expected = match failure {
+                    0 => CommandError::InvalidArgument,
+                    1 => {
+                        drop(sender.take());
+                        CommandError::Cancelled
+                    }
+                    2 => {
+                        context.until = Instant::now();
+                        CommandError::DeadlineExceeded
+                    }
+                    _ => unreachable!(),
+                };
+                let (release, worker) = hold_only_worker().await;
+                let mut job = Box::pin(prepare_and_run(
+                    spec(),
+                    context,
+                    decision,
+                    owner,
+                    move |_, _| {
+                        assert_eq!(failure, 0, "withdrawn preparation reached spawn");
+                        Err(std::io::Error::from(std::io::ErrorKind::InvalidInput))
+                    },
+                ));
+                assert!(
+                    poll_fn(|cx| Poll::Ready(job.as_mut().poll(cx)))
+                        .await
+                        .is_pending()
+                );
+                release.send(()).unwrap();
+                worker.await.unwrap();
+                // The sole worker's fence proves the closure returned. Deliberately
+                // leave its async parent unpolled while checking original capacity.
+                tokio::task::spawn_blocking(|| ()).await.unwrap();
+                assert_eq!(*observer.borrow(), AdmissionStatus::Preparing);
+                assert!(matches!(
+                    reply.try_recv(),
+                    Err(oneshot::error::TryRecvError::Empty)
+                ));
+                fixture.request_returned().await;
+                assert!(
+                    matches!(
+                        fixture.commands.reserve(),
+                        Err(CommandError::ResourceExhausted)
+                    ),
+                    "record reused while its asynchronous preparation task is still pending"
+                );
+                if cancelled {
+                    drop(job);
+                } else {
+                    tokio::time::timeout(Duration::from_secs(5), job)
+                        .await
+                        .unwrap();
+                }
+                let stopped = tokio::time::timeout(Duration::from_secs(5), reply)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(matches!(stopped, Reply::Stopped(error) if error == expected));
+                assert_eq!(*observer.borrow(), AdmissionStatus::Stopped(expected));
+                assert!(fixture.commands.reserve().is_ok());
+            });
+        }
+    }
+}
