@@ -2,8 +2,7 @@
 
 [文档目录](../docs/README.md) · [验证设计](../docs/formal-verification-design.md) · [证明操作流程](../docs/proof-workflow.md) · [覆盖与剩余义务](../docs/proof-coverage.md)
 
-这里保存的不是另一份手写规范，而是实际 Rust 控制核心经过 Charon 和
-Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两边的可执行处理函数；系统服务还需建立真实提交、I/O、异步与恢复的事件/微步骤对应，不能由核心结论自动推出。
+这里保存按模块登记的真实 Rust 经固定 Charon/Aeneas 抽取的 Lean 语义、有限库模型及审计入口。当前公共/共享状态/首链的指定实现对应与数学模型定理分开验收；系统服务仍需建立真实提交、I/O、异步及恢复的事件/微步骤连接。旧整控制器生成物与专属对应证明已退役，可从 [删除前基线](https://github.com/VeriInfra-Lab/sandproof/tree/110918e) 恢复，不属于当前已证清单。
 
 固定工具链如下：
 
@@ -16,7 +15,6 @@ Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两�
 目录含义：
 
 - `aeneas/llbc/`：从实际 Rust 编译器中间表示抽出的输入；
-- `aeneas/generated/SandboxControllerCore/`：Aeneas 生成的 Lean 类型和函数；
 - `extract-foundations/`：仅调用生产函数的公共基础抽取根，不复制业务算法；
 - `aeneas/foundations/`：公共基础的生成语义和独立命名空间的最小库模型；
 - `extract-first-chain/`、`aeneas/first-chain/`：Linux 实际身份、生命周期回执检查及生产中心分类根；不代表完整中心状态更新已抽取或已证明；
@@ -24,7 +22,7 @@ Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两�
 - `SandboxModel/Access/`：当前查询/相等/克隆、按序网络准入、完整状态保持及历史两模式策略嵌入；
 - `SandboxModel/Foundations/`：公共身份/数值、有限表查询与写入对应，以及可复用的有限扫描、值保持克隆和参数化修改范围引理；
 - `SandboxModel/Local/`：当前本地组件的纯模型、表示关系、实现对应和性质；`State/` 维护自然数/有序列表的完整当前值模型、全部输入及无丢字段表示，运行/位置等组件按各自目录连接，不等于所有更新流程已迁移；
-- `SandboxModel/RustRefinement/`：生成语义与协议规范之间的表示关系和一致性证明。
+- `SandboxModel/FirstChain/`、`SandboxModel/FirstChainLinux/`：条件系统模型，以及真实身份/回执检查的局部对应；不能推广为全链实现闭合。
 
 `FunsExternal.lean` 是少量 Rust 标准库函数的可计算模型。Aeneas 同时会
 产生一个以公理占位的模板；重新生成脚本会删除模板，项目只编译这里的
@@ -41,25 +39,24 @@ scripts/bootstrap-aeneas.sh
 scripts/verify-controller.sh
 ```
 
-第二条命令依次检查 Rust 格式、单元测试、静态检查、重新抽取 Rust 语义、
-编译全部 Lean 定理，并拒绝 `sorry`、`admit` 或项目自定义 `axiom`。
+第二条命令检查 Rust 格式、单元测试、静态检查，分别执行公共基础、共享状态、Linux 首链和首链模型的完整门槛，再编译全部保留 Lean 源并审计依赖；全部保留模型及抽取目录拒绝 `sorry`、`admit` 或项目自定义 `axiom`。通过表示当前保留证明集合一致，不表示统一控制器或部署系统已完成验证。
 
 完整入口包含真实 Redis 用例，须按[开发指南](../CONTRIBUTING.md#3-测试规则)设置经固定版本校验的 `SANDPROOF_REDIS_SERVER`，不能缺失后跳过。内存受限环境可用 `OCAMLRUNPARAM=o=20 scripts/verify-controller.sh` 降低固定 OCaml 运行时的堆空间冗余；这是运行资源调优，不改变工具版本、抽取根或检查内容，也不保证任意源码都能在该内存中完成。完整验收的实际结果仍以覆盖记录和关联 PR 为准。
 
-公共基础可独立执行 `bash scripts/verify-foundations.sh`：检查输入指纹、固定工具与平台、重新抽取一致性、真实入口/全部自有函数体、库模型范围、定理编译和实际依赖。冻结环境见 [foundations-environment.json](foundations-environment.json)，源码/模型/脚本/生成输入摘要见 [foundations-inputs.sha256](foundations-inputs.sha256)。独立模块检查不替代完整验收；完整入口仍执行原本地控制核心检查，不跳过其失败。独立工作区可用 `SANDPROOF_PROOF_TOOL_ROOT` 指向已有固定工具，修订和二进制摘要仍需匹配，不改变工具版本。
+公共基础可独立执行 `bash scripts/verify-foundations.sh`：检查输入指纹、固定工具与平台、重新抽取一致性、真实入口/全部自有函数体、库模型范围、定理编译和实际依赖。冻结环境见 [foundations-environment.json](foundations-environment.json)，源码/模型/脚本/生成输入摘要见 [foundations-inputs.sha256](foundations-inputs.sha256)。独立模块检查不替代完整验收；完整入口保留全部当前模块检查；旧全量控制器生成链已删除，不再作为这些模块的前置。独立工作区可用 `SANDPROOF_PROOF_TOOL_ROOT` 指向已有固定工具，修订和二进制摘要仍需匹配，不改变工具版本。
 
 公共基础及共享状态的 Charon 输出参数使用抽取 crate 内的固定相对路径 `../aeneas/llbc/...`，因为 Cargo 的编译进程在 crate 目录执行；脚本随后从项目根读取同一输出。每次保留旧产物并要求本次实际生成，规则见[证明工作流](../docs/proof-workflow.md#翻译障碍的识别与处理)。该参数仍在完整 LLBC 摘要中检查，源码位置仍由原 `--remap-path-prefix` 绑定。换工作目录不应只因输出路径而产生差异，错误或绝对输出参数仍拒绝。摘要仅规范化无序 `short_names` 表，不删除路径或其它有序输入字段。
 
-模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；完整入口被历史控制器迁移阻断也不使历史业务证明成为 V0 的完成条件。完整入口始终保留，局部/整套结果分别登记。
+模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；退役旧生成链不消除当前生命周期等业务的实现证明义务，也不使其成为 V0 的关单前置。完整入口按保留集合执行，局部/当前集合验收/全系统完成分别登记。
 
-共享当前状态的局部集合可独立执行 `bash scripts/verify-network.sh`：检查真实查询/名单循环、平台常量及初始化体、固定两版 Rust 标准库源码、最小外部接口，以及 Network、Access、Local 三个证明审计。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，但不会因此跳过历史本地控制核心的一致性和全部证明检查；局部准入/位置证明不等于统一控制器分派、可达状态围栏、物理清理或宿主防火墙已验证。冻结的 V0/共享状态验收目标为 x86_64 Linux；目标、工具二进制或 cfg 不匹配即拒绝，不静默按本机平台重写清单。
+共享当前状态的局部集合可独立执行 `bash scripts/verify-network.sh`：检查真实查询/名单循环、平台常量及初始化体、固定两版 Rust 标准库源码、最小外部接口，以及 Network、Access、Local 三个证明审计。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，并继续编译全部保留证明；局部准入/位置证明不等于统一控制器分派、可达状态围栏、物理清理或宿主防火墙已验证。冻结的 V0/共享状态验收目标为 x86_64 Linux；目标、工具二进制或 cfg 不匹配即拒绝，不静默按本机平台重写清单。
 
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
 见证明覆盖记录。已有纯核心定理不自动覆盖新增服务或真实持久化与执行。
 
 Linux 回执批次执行 `bash scripts/verify-first-chain-linux.sh`，冻结环境与输入分别见 [first-chain-linux-environment.json](first-chain-linux-environment.json) 和 [first-chain-linux-inputs.sha256](first-chain-linux-inputs.sha256)。固定工具修订相同不意味着不同平台的工具二进制、cfg 或抽取物相同；二者分开登记，不覆盖 [V0 环境](foundations-environment.json)。[Linux Lake 视图](../lake-first-chain.toml) 必须逐字保留原 Lake 配置，只追加新抽取库；检查器拒绝其它差异，避免修改 V0 冻结配置或维护另一套依赖版本。生成的全局枚举实例名称在两个类型集合中可能重名，故通过同一数学 Binding 合同连接、分别编译审计，不把两套名义类型同时导入一个环境或修改生成文件绕过冲突。标准证明客户端的源码指纹包括所有抽取目录。服务器连接、代理、私有工具路径和运行配置放仓库之外，公共清单不保存这些信息。
 
-新增中心/存储/通信/网关等入口的任务按[V0–V9详细计划](../docs/formal-verification-design.md#2-按真实模块划分证明责任)推进。重新抽取已登记历史本地控制核心和公共基础的明确子集，不覆盖整个中心、存储或通信；各模块首次证明批次须增加实际抽取根、外部模型/异步或脚本桥接、版本清单与定理依赖审计，再纳入完整验收。旧生成文件编译成功不是新模块抽取或证明通过。
+新增中心/存储/通信/网关等入口的任务按[V0–V9详细计划](../docs/formal-verification-design.md#2-按真实模块划分证明责任)推进。重新抽取各已登记模块的明确子集，不覆盖统一控制器、整个中心、存储或通信；各模块首次证明批次须增加实际抽取根、外部模型/异步或脚本桥接、版本清单与定理依赖审计，再纳入完整验收。旧生成文件编译成功不是新模块抽取或证明通过。
 
 ## 离线轨迹辅助工具
 

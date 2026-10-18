@@ -27,7 +27,8 @@ class LeanSessionRevisionTests(unittest.TestCase):
         self.files = {
             'SandboxModel/Selected.lean': 'namespace Selected\nend Selected\n',
             'SandboxModel/Network/Policy.lean': 'namespace Policy\nend Policy\n',
-            'verification/aeneas/generated/Controller/Funs.lean': 'namespace Legacy\nend Legacy\n',
+            'verification/aeneas/first-chain/SandproofFirstChain/Funs.lean':
+                'namespace FirstChain\nend FirstChain\n',
             'verification/aeneas/foundations/SandproofFoundations/Funs.lean':
                 'namespace Foundations\nend Foundations\n',
             'verification/aeneas/network/SandproofNetwork/Funs.lean': 'namespace Network\nend Network\n',
@@ -95,7 +96,7 @@ class LeanSessionRevisionTests(unittest.TestCase):
                 (self.root / name).write_text(original)
 
     def test_new_lean_file_under_each_library_is_not_omitted(self):
-        for directory in ('SandboxModel/Network', 'verification/aeneas/generated',
+        for directory in ('SandboxModel/Network', 'verification/aeneas/first-chain',
                           'verification/aeneas/foundations', 'verification/aeneas/network'):
             with self.subTest(directory=directory):
                 before = self.revision()
