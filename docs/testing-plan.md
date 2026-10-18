@@ -331,6 +331,10 @@ Remove 新增五组可移植阶段格式向量及上下文角色拒绝；Linux �
 
 构造容量回归只调用 Listener::new：拒绝两组头解析记录合计超出 isize::MAX、乘法溢出及字节缓冲超过 isize::MAX；同时检查算术边界，不为这些极值创建连接、启动 Hyper 或分配数组。该回归在修复前明确失败、修复后通过；真实回环仍使用原小额度，不能把构造接受最大值当成内存可用或巨型请求实测。Linux 当前提交实跑与部署 RSS 验收仍待补齐。
 
+[#552 提前拒绝收尾检查](../sandbox-guest-service/src/listener/tests/early_rejection.rs)通过原连接函数和内存双工流固定“收到拒绝响应及发送结束后才继续上传”的顺序，旧实现明确出现 BrokenPipe；补丁须让同一测试通过。另覆盖部分 Content-Length/chunked 正文、延迟结束标记、Expect 不发送 100 Continue、清理字节上限、清理期限及原连接截止点、完整请求不清理、后续字节不派发和收尾期间原连接名额不归还。定向入口仍为 `cargo test -p sandproof-guest-service --locked --lib listener::`；不靠随机等待重试。
+
+[固定 SDK 回归](../sandbox-guest-runtime/tests/sdk_registered/transport.rs)保留原错误码、完整消息、无 PID/gate/命令效果和容量归还断言，增加同步/异步发送首字节后暂停余下消息的时序。Linux `scripts/check-compat.sh` 先构建[回环辅助入口](../sandbox-host-service/examples/guest_rejection_gateway.rs)，再通过 `SANDPROOF_GUEST_GATEWAY_HELPER` 连接原 `data_gateway::handle`、请求/传输名额、真实 stdio relay 和原来宾 Listener/CommandHttp。辅助入口仅替换持久授权来源与命名空间放置，不复制网关业务；退出时核对一次授权/派发、原 relay 排空和全部请求名额恢复。它不代表中心 mTLS、真实 namespace/VM、完整 GuestHttp/daemon 或外部代理已验收。SDK 迭代器屏障及服务端响应体结束也不等于网络数据已抵达对端；确定性失败机制、选定 SDK 时序及完整部署验收分开报告。
+
 
 [一元头拒绝检查](../sandbox-guest-service/src/file_rpc_requests/tests/headers.rs)核对可选版本的第一字段、重复头、不修剪原值、版本与超时格式错误顺序、正文未读取、有效期限先收紧及拒绝后的原容量。实际初始化、响应字节副本和编码失败验证授权与名额分别释放；未映射错误不能补造 400。固定 Go 参考 H 操作使用原 Connect handler，229 组真实回环 HTTP 对照比较状态/头/正文，含 Unicode、非法 UTF-8、特殊转义、重复字段和大字段，已本地执行；不代表其他媒体类型或压缩协议。Linux 前置连接新增版本/超时拒绝的显式/缺省查询次数、无目录副作用和双槽位保留检查；SDK 同步/异步各新增一次超长 timeout 拒绝，显式缺失账户同时携带超长 timeout 仍先返回 401。新增头拒绝和 SDK 52 场景已在 [#409 的 Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38504921791) 通过（源 0cbcb4d42f3dd076df7edfacfdbd5acf318144b5，合并测试 970f72de981f9077f55c6aa0d56f45b627299af2）。
 

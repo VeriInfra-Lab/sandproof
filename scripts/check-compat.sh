@@ -11,6 +11,10 @@ uv run --locked --project tests/compat \
 echo "SDK wire checks passed against synthetic loopback responses."
 
 if [[ "$(uname -s)" == Linux ]]; then
+  cargo build -p sandproof-host-service --example guest_rejection_gateway --locked
+  sdk_target="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}"
+  if [[ "$sdk_target" != /* ]]; then sdk_target="$PROJECT_ROOT/$sdk_target"; fi
+  export SANDPROOF_GUEST_GATEWAY_HELPER="$sdk_target/debug/examples/guest_rejection_gateway"
   cargo clippy -p sandproof-host-service --all-targets --features sdk-contract-tests --locked -- -D warnings
   cargo test -p sandproof-host-service --features sdk-contract-tests --locked \
     data_gateway::sdk_tests:: -- --test-threads=1 --nocapture

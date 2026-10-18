@@ -31,21 +31,27 @@ control.connect(settings['control'])
 def gated_sync(*args):
     for chunk in original_sync(*args):
         events.append('message')
-        yield chunk
+        yield chunk[:1] if settings.get('partial') else chunk
         events.append('waiting')
         control.sendall(b'm')
         assert control.recv(1) == b'x', 'response completion gate missing'
         events.append('released')
+        if settings.get('partial'):
+            yield chunk[1:]
+            events.append('tail')
 
 
 async def gated_async(*args):
     async for chunk in original_async(*args):
         events.append('message')
-        yield chunk
+        yield chunk[:1] if settings.get('partial') else chunk
         events.append('waiting')
         control.sendall(b'm')
         assert await asyncio.to_thread(control.recv, 1) == b'x', 'response completion gate missing'
         events.append('released')
+        if settings.get('partial'):
+            yield chunk[1:]
+            events.append('tail')
 
 
 _client_sync._streaming_request_content = gated_sync
@@ -79,7 +85,10 @@ async def main():
             await stream.aclose()
         else:
             stream.close()
-        assert events == ['message', 'waiting', 'released'], events
+        expected = ['message', 'waiting', 'released']
+        if settings.get('partial'):
+            expected.append('tail')
+        assert events == expected, events
 
 
 with isolated_sdk_environment():
