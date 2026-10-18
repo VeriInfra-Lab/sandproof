@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 REGISTRY = 'verification/json-request-binding.json'
@@ -186,11 +187,33 @@ def check_actual(root, directory, registry=None):
     return 2
 
 
+def check_features(root, registry):
+    for role, manifest in (
+        ('production_workspace', 'Cargo.toml'),
+        ('extraction', 'verification/extract-foundations/Cargo.toml'),
+    ):
+        metadata = json.loads(subprocess.check_output([
+            'cargo', 'metadata', '--format-version', '1', '--locked', '--offline',
+            '--manifest-path', str(root / manifest),
+        ], text=True))
+        packages = {item['name']: item for item in metadata['packages']}
+        nodes = {item['id']: item['features'] for item in metadata['resolve']['nodes']}
+        expected = registry['compiled_library_features'][role]
+        if set(expected) != {'serde', 'serde_core', 'serde_derive', 'serde_json'}:
+            raise ValueError('incomplete library feature inventory')
+        for name, frozen in expected.items():
+            package = packages[name]
+            if (package['version'] != frozen['version']
+                    or sorted(nodes[package['id']]) != frozen['features']):
+                raise ValueError('JSON library compiled features changed: ' + role + '/' + name)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--llbc-dir', type=Path)
     parser.add_argument('--library-root', type=Path)
+    parser.add_argument('--check-features', action='store_true')
     args = parser.parse_args()
     try:
         registry = check_registry(args.root)
@@ -200,7 +223,9 @@ def main():
             for relative, expected in registry['library_sources'].items():
                 if hashlib.sha256((args.library_root / relative).read_bytes()).hexdigest() != expected:
                     raise ValueError('fixed JSON library source changed: ' + relative)
-    except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
+        if args.check_features:
+            check_features(args.root, registry)
+    except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError) as error:
         print('JSON request binding failed: ' + str(error), file=sys.stderr)
         return 1
     print('Two JSON direct-call bindings admitted under explicit A6/B4 conditions; not a Rust or library proof.')

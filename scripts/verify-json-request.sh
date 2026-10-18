@@ -30,7 +30,7 @@ bash scripts/python-entry.sh tools/check_foundations_extraction.py
 bash scripts/regenerate-json-request-binding.sh
 bash scripts/python-entry.sh tools/check_json_request_binding.py \
   --llbc-dir artifacts/json-request-binding \
-  --library-root "${CARGO_HOME:-$HOME/.cargo}/registry/src/index.crates.io-1949cf8c6b5b557f"
+  --library-root "${CARGO_HOME:-$HOME/.cargo}/registry/src/index.crates.io-1949cf8c6b5b557f" --check-features
 while IFS= read -r theorem; do
   if ! rg -q '^#audit_controller_proof SandboxModel\.Boundaries\.JsonRequest\.'"$theorem"'$' \
       SandboxModel/Boundaries/JsonRequest/Audit.lean; then

@@ -2005,5 +2005,73 @@
       "every_valid_request_has_bounded_roundtrip",
       "initial_request_byte_acceptance_realizable"
     ]
+  },
+  "compiled_library_features": {
+    "production_workspace": {
+      "serde": {
+        "version": "1.0.228",
+        "features": [
+          "alloc",
+          "default",
+          "derive",
+          "serde_derive",
+          "std"
+        ]
+      },
+      "serde_core": {
+        "version": "1.0.228",
+        "features": [
+          "alloc",
+          "default",
+          "result",
+          "std"
+        ]
+      },
+      "serde_derive": {
+        "version": "1.0.228",
+        "features": [
+          "default"
+        ]
+      },
+      "serde_json": {
+        "version": "1.0.142",
+        "features": [
+          "default",
+          "raw_value",
+          "std"
+        ]
+      }
+    },
+    "extraction": {
+      "serde": {
+        "version": "1.0.228",
+        "features": [
+          "default",
+          "derive",
+          "serde_derive",
+          "std"
+        ]
+      },
+      "serde_core": {
+        "version": "1.0.228",
+        "features": [
+          "result",
+          "std"
+        ]
+      },
+      "serde_derive": {
+        "version": "1.0.228",
+        "features": [
+          "default"
+        ]
+      },
+      "serde_json": {
+        "version": "1.0.142",
+        "features": [
+          "default",
+          "std"
+        ]
+      }
+    }
   }
 }
