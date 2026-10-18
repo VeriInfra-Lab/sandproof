@@ -333,6 +333,93 @@ async fn context_limits_and_invalid_inputs_never_become_partial_launches() {
 }
 
 #[tokio::test]
+async fn effective_environment_alone_consumes_count_and_byte_budgets() {
+    let session = session().await;
+    let permit = session.authorize(Some("token")).await.unwrap();
+    let mut req = request();
+    req.process.as_mut().unwrap().envs = BTreeMap::from([
+        ("PATH".into(), String::new()),
+        ("HOME".into(), "/new".into()),
+        ("VALUE".into(), "值".into()),
+        ("E2B_SANDBOX_ID".into(), "command".into()),
+        ("EXTRA".into(), String::new()),
+    ]);
+    let expected = BTreeMap::from([
+        ("PATH".into(), String::new()),
+        ("HOME".into(), "/new".into()),
+        ("USER".into(), "alice".into()),
+        ("LOGNAME".into(), "alice".into()),
+        ("VALUE".into(), "值".into()),
+        ("E2B_SANDBOX_ID".into(), "command".into()),
+        ("E2B_TEMPLATE_ID".into(), "tpl".into()),
+        ("EXTRA".into(), String::new()),
+    ]);
+    // Original bytes include the expanded cwd and UTF-8 bytes, not characters
+    // or overridden values. The daemon wrapper path is not charged here.
+    let bytes = "/bin/sh".len()
+        + "/home/alice/work".len()
+        + "-ctrue".len()
+        + expected
+            .iter()
+            .map(|(key, value): (&String, &String)| key.len() + value.len())
+            .sum::<usize>();
+    let mut settings = settings();
+    settings.daemon_path = "x".repeat(8192);
+    settings.limits.env_entries = expected.len();
+    settings.limits.bytes = bytes;
+    let spec = permit
+        .compose_command(&req, account("alice"), &settings)
+        .unwrap();
+    assert_eq!(spec.env, expected);
+    assert_eq!(spec.credentials, Some(account("alice").credentials));
+    settings.limits.bytes -= 1;
+    assert!(matches!(
+        permit.compose_command(&req, account("alice"), &settings),
+        Err(ContextError::ResourceExhausted)
+    ));
+    settings.limits.bytes = bytes;
+    settings.limits.env_entries -= 1;
+    assert!(matches!(
+        permit.compose_command(&req, account("alice"), &settings),
+        Err(ContextError::ResourceExhausted)
+    ));
+    assert_eq!(permit.defaults().env["VALUE"], "default");
+}
+
+#[tokio::test]
+async fn environment_budgets_preserve_account_path_and_invalid_key_precedence() {
+    let session = session().await;
+    let permit = session.authorize(Some("token")).await.unwrap();
+    let pool = AccountPool::new(Source, 1, Duration::from_secs(5)).unwrap();
+    let mut settings = settings();
+    settings.limits.bytes = 1;
+    settings.limits.env_entries = 1;
+    for key in ["", "z=invalid"] {
+        let mut req = request();
+        let process = req.process.as_mut().unwrap();
+        process.envs.insert("a".into(), "x".repeat(8192));
+        process.envs.insert(key.into(), String::new());
+        assert!(matches!(
+            permit.compose_command_observed(&req, account("alice"), &settings),
+            Err(CommandContextError::Context(ContextError::InvalidArgument))
+        ));
+        req.process.as_mut().unwrap().cwd = Some("~other/path".into());
+        assert!(matches!(
+            permit.compose_command_observed(&req, account("alice"), &settings),
+            Err(CommandContextError::Expansion(_))
+        ));
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Basic bWlzc2luZzo=".parse().unwrap());
+        assert!(matches!(
+            permit
+                .resolve_command(&req, &headers, &pool, &settings)
+                .await,
+            Err(ContextError::Unauthenticated)
+        ));
+    }
+}
+
+#[tokio::test]
 async fn terminal_dimensions_preserve_pinned_uint16_conversion_and_absent_size() {
     let session = session().await;
     let permit = session.authorize(Some("token")).await.unwrap();
