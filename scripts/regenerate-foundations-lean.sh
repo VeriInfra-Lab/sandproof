@@ -110,7 +110,8 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::receipts::action_version \
   --start-from crate::receipts::receipt_validate \
   --include sandproof_protocol --include sandproof_center_core \
-  --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_foundations.llbc \
+  --include sandbox_controller_core \
+  --start-from crate::json_request::validate --dest-file ../aeneas/llbc/sandproof_foundations.llbc \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline
 test -s "$LLBC"
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \

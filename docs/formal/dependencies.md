@@ -204,6 +204,12 @@ V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议
 
 独立 [IdentifierSafe](../../SandboxModel/Boundaries/JsonIdentifiers/Model.lean) 复用[公共编号词汇](../../SandboxModel/Foundations/IdentifierModel.lean)，不导入自有构造正确性证明，允许在真实校验缺失版重新抽取后用同一性质给出反例。源码/依赖/模型/工具/配置改变后重查整个共享 V0 和计数器闭包；实际证明状态和版本只见覆盖记录，不以刷新冻结摘要替代复验。
 
+### 完整生命周期请求的自有形状校验
+
+[请求守卫合同](../../SandboxModel/Boundaries/JsonRequest/Model.lean)区分三个来源：JSON 引擎/标准派生解释字段；原编号和计数器 Deserialize 检查叶子；原 `LifecycleRequest::validate` 检查版本、完整节点、非零槽位、创建参数和 Renew 非零结束时间。最后一层仍保留真实函数体，[对应证明](../../SandboxModel/Boundaries/JsonRequest/Guard.lean)复用原身份及创建参数结论，不属于可信 JSON 适配。
+
+该守卫先返回原身份拒绝；身份通过后才检查创建绑定与 intent 形状。成功只表示这组检查成立，不表示请求已获授权、续租没有超过原寿命、存储已提交或宿主已执行。`retention_slot=0` 属于可解析的 u16 输入，由守卫拒绝；输入总字节数由调用路由的 Limited 提供，不能归给 `from_slice`。调用者仍须建立实际字节/schema/原叶子和错误字典的连接，以及后续授权和生命周期条件；GuardContract 不提供这些结论。
+
 ### A6 网络地址库模型使用登记
 
 `A6-network-stdlib` 是独立于上述六函数的最小 IPv4 标准库合同，覆盖真实调用的 `String` 精确相等、`String` 到 `str` 借用、`str::parse` 的字典调用、`Ipv4Addr::from_str` 及 `u32::from(Ipv4Addr)`，以及所需的 `Ipv4Addr`、`AddrParseError` 表示；下方克隆与析构登记限定新增的两个接口及内置模型使用条件。生产编译器为 Rust 1.97.0，抽取前端为 `nightly-2026-08-18`；两版标准库解析器的实现和文件摘要不同，不将抽取版源码等同于生产版源码。精确编译器提交、两版库源码摘要、目标及配置冻结在[网络模型环境清单](../../verification/network-environment.json)，源码/模型/检查脚本摘要见[网络输入清单](../../verification/network-inputs.sha256)，生成物由重新抽取逐字节核对；变更后重新核对依赖闭包。[生产版解析器源码](https://github.com/rust-lang/rust/blob/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/net/parser.rs)、[抽取版解析器源码](https://github.com/rust-lang/rust/blob/8fa1c96cfd489e4c27654c144ae871ce2c4db6c6/library/core/src/net/parser.rs)
