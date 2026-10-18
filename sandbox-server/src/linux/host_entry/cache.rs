@@ -3,7 +3,7 @@ use sandproof_controller_service::{
     InternalTemplate,
     application::{ApplicationError, ControllerHost},
     physical_storage::PhysicalTemplateCache,
-    template_registry::{CandidateStore, RegistryConfig},
+    template_registry::{CandidateStore, CandidateVerification, RegistryConfig},
     templates::TemplateBinding,
 };
 use sandproof_host_service::{HostLifecycle, TemplateSource};
@@ -40,10 +40,27 @@ struct Manifest {
 }
 #[derive(Default)]
 struct State {
-    ready: BTreeMap<String, InternalTemplate>,
+    ready: BTreeMap<String, Arc<VerifiedTemplate>>,
     /// Full maximum remains charged until exact owned temporary cleanup.
     pending: BTreeMap<String, Pending>,
     ready_bytes: u64,
+}
+/// Evidence is created by this process's complete artifact reads. It is never
+/// serialized into a manifest or recovered from a claimed digest. The same
+/// bounded entry owns both the exact descriptor and its verification.
+struct VerifiedTemplate {
+    template: InternalTemplate,
+    verification: Arc<CandidateVerification>,
+}
+impl VerifiedTemplate {
+    fn still_matches(&self) -> bool {
+        [&self.template.local.kernel, &self.template.local.rootfs]
+            .into_iter()
+            .all(|artifact| {
+                sandbox_runtime::check_trusted_path(&artifact.path).is_ok()
+                    && self.verification.matches(artifact)
+            })
+    }
 }
 struct Pending {
     manifest: Manifest,
@@ -248,7 +265,7 @@ impl State {
                         return Err("ambiguous cache staging identity".into());
                     }
                 } else {
-                    store.verify_binding(&manifest.local)?;
+                    let (verification, _) = store.verify_binding(&manifest.local)?;
                     state.ready_bytes = state
                         .ready_bytes
                         .checked_add(bytes(&manifest.local).map_err(|_| "cache length overflow")?)
@@ -258,12 +275,15 @@ impl State {
                         .ready
                         .insert(
                             revision,
-                            InternalTemplate {
-                                revision: manifest.request.revision,
-                                digest: manifest.request.digest,
-                                registered: manifest.request.descriptor,
-                                local: manifest.local,
-                            },
+                            Arc::new(VerifiedTemplate {
+                                template: InternalTemplate {
+                                    revision: manifest.request.revision,
+                                    digest: manifest.request.digest,
+                                    registered: manifest.request.descriptor,
+                                    local: manifest.local,
+                                },
+                                verification: Arc::new(verification),
+                            }),
                         )
                         .is_some()
                     {
@@ -406,22 +426,24 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         let Some(value) = value else {
             return Ok(None);
         };
-        if value.digest != request.digest || value.registered != request.descriptor {
+        if value.template.digest != request.digest
+            || value.template.registered != request.descriptor
+        {
             return Err(ReceiveError::Conflict);
         }
-        self.store
-            .verify_binding(&value.local)
-            .map_err(|_| ReceiveError::Unavailable)?;
+        // A large immutable copy may take longer to hash than one RPC. Reuse
+        // only this process's completed verification, after checking its exact
+        // descriptor, all observed file identity fields and trusted paths.
+        // An observable change fails closed; a restart must hash again.
+        if !value.still_matches() {
+            return Err(ReceiveError::Unavailable);
+        }
         let cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
         let state = cache.ready()?;
         if !state
             .ready
             .get(request.revision.as_str())
-            .is_some_and(|same| {
-                same.digest == value.digest
-                    && same.registered == value.registered
-                    && same.local == value.local
-            })
+            .is_some_and(|same| Arc::ptr_eq(same, &value))
         {
             return Err(ReceiveError::Unavailable);
         }
@@ -583,7 +605,8 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
                 .and_then(|file| file.sync_all())
                 .map_err(|_| ReceiveError::Unavailable)?;
         }
-        self.store
+        let (verification, _) = self
+            .store
             .verify_binding(&manifest.local)
             .map_err(|_| ReceiveError::Unavailable)?;
         let mut cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
@@ -595,12 +618,15 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         state.pending.remove(&key(&manifest.request));
         state.ready.insert(
             manifest.request.revision.as_str().into(),
-            InternalTemplate {
-                revision: manifest.request.revision,
-                digest: manifest.request.digest,
-                registered: manifest.request.descriptor,
-                local: manifest.local,
-            },
+            Arc::new(VerifiedTemplate {
+                template: InternalTemplate {
+                    revision: manifest.request.revision,
+                    digest: manifest.request.digest,
+                    registered: manifest.request.descriptor,
+                    local: manifest.local,
+                },
+                verification: Arc::new(verification),
+            }),
         );
         Ok(())
     }
@@ -639,14 +665,25 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> TemplateSource for TemplateCache<H> {
+    fn verification(&self, binding: &CreateBinding) -> Option<Arc<CandidateVerification>> {
+        let cache = self.state.lock().ok()?;
+        let value = cache
+            .ready()
+            .ok()?
+            .ready
+            .get(binding.template_revision.as_str())?;
+        (value.template.digest == binding.template_digest && value.still_matches())
+            .then(|| Arc::clone(&value.verification))
+    }
+
     fn bound(&self, binding: &CreateBinding) -> Result<InternalTemplate, ApplicationError> {
         let cache = self.state.lock().map_err(|_| ApplicationError::Busy)?;
         let state = cache.ready().map_err(|_| ApplicationError::Busy)?;
         state
             .ready
             .get(binding.template_revision.as_str())
-            .filter(|value| value.digest == binding.template_digest)
-            .cloned()
+            .filter(|value| value.template.digest == binding.template_digest)
+            .map(|value| value.template.clone())
             .ok_or(ApplicationError::NotFound)
     }
 }

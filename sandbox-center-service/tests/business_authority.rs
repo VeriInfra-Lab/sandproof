@@ -13,6 +13,8 @@ mod engine;
 )]
 #[path = "../../controller-service/tests/support/mod.rs"]
 mod local;
+#[path = "business_authority/owner_retirement.rs"]
+mod owner_retirement;
 #[path = "business_authority/private_builds.rs"]
 mod private_builds;
 #[path = "business_authority/registration.rs"]

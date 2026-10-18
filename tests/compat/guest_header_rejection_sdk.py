@@ -8,6 +8,7 @@ import asyncio
 import json
 import socket
 import sys
+from functools import partial
 
 from connectrpc import _client_async, _client_sync
 from connectrpc.code import Code
@@ -17,6 +18,7 @@ from e2b.envd.client_async import create_rpc_client as async_client
 from e2b.envd.client_sync import create_rpc_client as sync_client
 from e2b.envd.process import process_connect, process_pb
 
+from sdk_rejection_body import gated_async, gated_sync
 from sdk_support import isolated_sdk_environment
 
 settings = json.loads(sys.stdin.read())
@@ -28,28 +30,10 @@ control.settimeout(5)
 control.connect(settings['control'])
 
 
-def gated_sync(*args):
-    for chunk in original_sync(*args):
-        events.append('message')
-        yield chunk
-        events.append('waiting')
-        control.sendall(b'm')
-        assert control.recv(1) == b'x', 'response completion gate missing'
-        events.append('released')
-
-
-async def gated_async(*args):
-    async for chunk in original_async(*args):
-        events.append('message')
-        yield chunk
-        events.append('waiting')
-        control.sendall(b'm')
-        assert await asyncio.to_thread(control.recv, 1) == b'x', 'response completion gate missing'
-        events.append('released')
-
-
-_client_sync._streaming_request_content = gated_sync
-_client_async._streaming_request_content = gated_async
+_client_sync._streaming_request_content = partial(
+    gated_sync, original_sync, control, events, settings.get('partial', False))
+_client_async._streaming_request_content = partial(
+    gated_async, original_async, control, events, settings.get('partial', False))
 
 
 async def main():
@@ -79,7 +63,11 @@ async def main():
             await stream.aclose()
         else:
             stream.close()
-        assert events == ['message', 'waiting', 'released'], events
+        expected = ['message', 'waiting', 'released']
+        if settings.get('partial'):
+            expected.append('tail')
+        # 'tail' records bytes offered by the encoder, not delivery to a peer.
+        assert events == expected, events
 
 
 with isolated_sdk_environment():

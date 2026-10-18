@@ -5,6 +5,7 @@ installed bytes and the process holding the configured listening socket; it
 does not start a daemon, initialize state, repair, signal or install anything.
 Guest root and the kernel are trusted for this engineering observation.
 """
+import base64
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ import shlex
 import stat
 import sys
 import time
+import zlib
 
 PLATFORM = '/opt/sandproof'
 NAMES = {'service': 'sandproof-guest-service', 'worker': 'sandproof-guest-worker',
@@ -21,7 +23,7 @@ NAMES = {'service': 'sandproof-guest-service', 'worker': 'sandproof-guest-worker
 LIMITS = {'service': 256 * 1024**2, 'worker': 256 * 1024**2,
           'configuration': 1024**2, 'manifest': 16 * 1024}
 PROGRAM_LIMIT = 24 * 1024
-COMMAND_LIMIT = 32 * 1024
+COMMAND_LIMIT = 8 * 1024
 REPORT_LIMIT = 4096
 PROCESS_LIMIT = 4096
 FD_LIMIT = 4096
@@ -251,8 +253,12 @@ def program_command(expected):
     require(len(source) <= PROGRAM_LIMIT)
     # -I ignores guest PYTHON* overrides and user site modules. Assertions are
     # not used anywhere in this observer; failure checks survive optimization.
+    # Carry the exact bounded program in memory, without a guest upload or a
+    # larger Start/context budget. Keep room for the SDK envelope and defaults.
+    encoded = base64.b64encode(zlib.compress(source)).decode('ascii')
+    bootstrap = 'import base64,zlib;exec(zlib.decompress(base64.b64decode(' + repr(encoded) + ')))'
     result = ' '.join(shlex.quote(arg) for arg in
-                     ('/usr/bin/python3', '-I', '-c', source.decode(), json.dumps(expected, sort_keys=True)))
+                     ('/usr/bin/python3', '-I', '-c', bootstrap, json.dumps(expected, sort_keys=True)))
     require(len(result.encode()) <= COMMAND_LIMIT)
     return result
 

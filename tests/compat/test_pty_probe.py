@@ -60,6 +60,63 @@ def read_ready(fd, master, capture):
 
 
 class PrivatePtyProgramTests(unittest.TestCase):
+    def test_input_before_interactive_prompt_is_echoed_twice_but_prompt_barrier_is_once(self):
+        line = b"printf 'payload\\n'; exit\n"
+        transcripts = []
+        for early in (True, False):
+            master, slave = pty.openpty()
+            child, data = None, bytearray()
+            def until(predicate):
+                deadline = time.monotonic() + 5
+                while not predicate(bytes(data)):
+                    self.assertTrue(select.select([master], [], [],
+                        max(0, deadline-time.monotonic()))[0])
+                    chunk = os.read(master, 4096)
+                    self.assertTrue(chunk)
+                    data.extend(chunk)
+                    self.assertLessEqual(len(data), 4096)
+            try:
+                if early:
+                    # This real line-discipline echo is the barrier: Bash has
+                    # not even been launched, so no scheduling luck is needed.
+                    self.assertEqual(os.write(master, line), len(line))
+                    until(lambda value: value.endswith(b'\r\n'))
+                    self.assertEqual(bytes(data), line.replace(b'\n', b'\r\n'))
+                child = subprocess.Popen(['/bin/bash', '--noprofile', '--norc', '-i'],
+                    stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
+                    env={'PATH': '/usr/bin:/bin', 'PS1': 'fixture$ ', 'TERM': 'xterm-256color'})
+                os.close(slave)
+                slave = None
+                if not early:
+                    until(lambda value: value.endswith(b'fixture$ '))
+                    self.assertEqual(os.write(master, line), len(line))
+                deadline = time.monotonic() + 5
+                while True:
+                    self.assertTrue(select.select([master], [], [],
+                        max(0, deadline-time.monotonic()))[0])
+                    try:
+                        chunk = os.read(master, 4096)
+                    except OSError as error:
+                        self.assertEqual(error.errno, errno.EIO)
+                        break
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+                    self.assertLessEqual(len(data), 4096)
+                self.assertEqual(child.wait(timeout=5), 0)
+                transcripts.append(bytes(data))
+            finally:
+                if child is not None:
+                    if child.poll() is None:
+                        child.kill()
+                    child.wait(timeout=5)
+                for fd in (master, slave):
+                    if fd is not None:
+                        os.close(fd)
+        self.assertEqual(transcripts[0].count(line.rstrip(b'\n')), 2)
+        self.assertEqual(transcripts[1].count(line.rstrip(b'\n')), 1)
+        self.assertEqual(transcripts[0], line.replace(b'\n', b'\r\n') + transcripts[1])
+
     def test_exact_bootstrap_raw_all_bytes_merged_output_resize_exit_and_kill(self):
         for exit_code, report_ready in ((code, flag) for code in (0, 17, -9) for flag in (False, True)):
             with self.subTest(exit_code=exit_code, report_ready=report_ready), tempfile.TemporaryDirectory() as temp:

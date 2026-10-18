@@ -545,6 +545,29 @@ class GuestObservationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.resource_command(self.expected, dict(daemon, pid=True))
 
+    def test_observation_commands_fit_original_guest_context_and_frame_budgets(self):
+        root = Path(__file__).resolve().parents[2]
+        config = json.loads((root / 'sandbox-guest-service/src/daemon/tests/configuration.json').read_text())
+        commands = (probe.command(self.expected),
+                    probe.go_command(probe.load_go_expected()['file']),
+                    probe.resource_command(self.expected, self.observe()))
+        for command in commands:
+            with self.subTest(command_bytes=len(command.encode())):
+                self.assertLess(len(command.encode()), config['commands']['context']['limits']['bytes'])
+                # The pinned Start RPC contains the shell command as a JSON
+                # string; escaping must also fit its original frame budget.
+                self.assertLess(len(json.dumps(command).encode()),
+                                config['commands']['ordinary']['body']['frame_bytes'])
+
+    def test_packed_observer_executes_the_exact_bounded_source_without_installation(self):
+        args = shlex.split(probe.command(self.expected))
+        unpacked = []
+        # Execute the real launcher while capturing its exec input. Existing
+        # subprocess tests also exercise real rejection with and without -O.
+        exec(args[3], {'exec': unpacked.append})
+        self.assertEqual(unpacked, [Path(probe.__file__).read_bytes()])
+        self.assertLessEqual(len(unpacked[0]), probe.PROGRAM_LIMIT)
+
 
 class LinuxResourceSnapshotTests(unittest.TestCase):
     """Real procfs parsing, selected only by the required Linux tool suite."""

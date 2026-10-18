@@ -99,6 +99,8 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
     credentials=test_credentials(key,extra_credentials)
     center_root = Path(center_root)
     catalog = {'templates': [], 'aliases': {}, 'compute_limits': {}}
+    template_ids = {binding['template_id'] for registered in registered_catalogs
+                    for binding in registered['templates']}
     hosts, nodes, registrations = [], [], []
     platform = dict(instances=0, cpu=0, memory_bytes=0, disk_bytes=0)
     tenant = dict(platform)
@@ -128,6 +130,13 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         catalog['templates'].extend(copy.deepcopy(registered['templates']))
         for alias, target in registered['aliases'].items():
             name = alias if index == 0 else 'builder-' + alias
+            # The merged name may already resolve directly to this descriptor
+            # (builder + base -> builder-base). Rust rejects aliases that shadow
+            # any template ID, including a redundant alias to itself.
+            if name in template_ids:
+                if name != target:
+                    raise ValueError('static template alias shadows another template identity')
+                continue
             if name in catalog['aliases']:
                 raise ValueError('static template aliases collide')
             catalog['aliases'][name] = target

@@ -122,6 +122,8 @@ def prepare(config):
     if (git('rev-parse', 'HEAD', cwd=checkout) != config['candidate']
             or git('status', '--porcelain', cwd=checkout)):
         raise ValueError('candidate modified during preparation')
+    from tools.envd_acceptance import prepare as prepare_envd
+    prepare_envd(config)
     return artifacts.publish(manifest_path, candidate=config['candidate'], paths=paths,
                              versions=versions)
 

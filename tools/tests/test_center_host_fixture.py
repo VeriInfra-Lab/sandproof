@@ -148,8 +148,8 @@ class FixtureTests(unittest.TestCase):
                 host_template_caches=[dict(namespace='a'*16, root='/approved/host/cache',
                 max_entries=2, max_downloads=1, max_entry_bytes=1000, artifact_bytes=2000,
                 temporary_bytes=1000, metadata_bytes=282624, inode_budget=19)])),
-            templates=dict(templates=[dict(template_id='base', revision='r1', owner=1)],
-                aliases=dict(base='base'), compute_limits=dict(max_vcpus_global=4,
+            templates=dict(templates=[dict(template_id='runtime-base', revision='r1', owner=1)],
+                aliases=dict(base='runtime-base'), compute_limits=dict(max_vcpus_global=4,
                     max_vcpus_per_tenant=2, max_memory_bytes_global=4000,
                     max_memory_bytes_per_tenant=2000)))
 
@@ -263,6 +263,19 @@ class FixtureTests(unittest.TestCase):
             ['/approved/runtime/tls/host-key.der','/approved/builder/tls/host-key.der'])
         self.assertNotIn('/approved/builder/tls/host-key.der', str(hosts[0]))
         self.assertNotIn('/approved/runtime/tls/host-key.der', str(hosts[1]))
+        # Each source catalog is valid, but prefixing the builder's "base"
+        # alias must not shadow its canonical ID in the merged center catalog.
+        self.assertEqual(center['templates']['aliases'], {'base': 'runtime-base'})
+        self.assertEqual([binding['template_id'] for binding in center['templates']['templates']],
+                         ['runtime-base', 'builder-base'])
+        self.assertEqual(builder['templates']['aliases'], {'base': 'builder-base'})
+
+    def test_alias_cannot_redirect_a_canonical_template_identity(self):
+        native = self.native()
+        native['templates']['templates'].append(dict(template_id='other', revision='r1', owner=1))
+        native['templates']['aliases']['other'] = 'runtime-base'
+        with self.assertRaisesRegex(ValueError, 'shadows another template identity'):
+            self.render([native])
 
     def test_numeric_role_refusals_are_before_filesystem_or_launch(self):
         self.assertEqual(fixture.identities(65532, 65532, 65533, 65533, uid_base=3100000),

@@ -2,7 +2,7 @@
 use super::*;
 use tokio::io::AsyncReadExt;
 
-async fn check_early_rejection(asynchronous: bool) {
+async fn check_early_rejection(asynchronous: bool, partial: bool, via_gateway: bool) {
     use futures_util::StreamExt;
     let fixture = Arc::new(Fixture::new(&json!({"process":{"cmd":"/bin/true"}})).await);
     let claims = fixture.directory.path().join("pid-claims.bin");
@@ -72,7 +72,14 @@ async fn check_early_rejection(asynchronous: bool) {
         )
         .await
     });
-    let status = run_sdk(address, &control_path, asynchronous).await;
+    let gateway = if via_gateway {
+        Some(start_gateway(address).await)
+    } else {
+        None
+    };
+    let destination = gateway.as_ref().map_or(address, |(_, address)| *address);
+    let status = run_sdk(destination, &control_path, asynchronous, partial).await;
+    finish_gateway(gateway).await;
     stop.send(()).unwrap();
     let report = timeout(Duration::from_secs(5), server)
         .await
@@ -84,6 +91,7 @@ async fn check_early_rejection(asynchronous: bool) {
         .unwrap()
         .unwrap();
     assert_no_effects(&fixture, &before);
+    assert_eq!(fixture.lookups.load(Ordering::SeqCst), 0);
     assert_eq!(report.admitted, 1);
     assert_eq!(report.completed, 1);
     assert_eq!(report.failed, 0);
@@ -92,6 +100,19 @@ async fn check_early_rejection(asynchronous: bool) {
         status.success(),
         "original SDK must decode the original invalid_argument rejection"
     );
+}
+
+async fn finish_gateway(gateway: Option<(tokio::process::Child, std::net::SocketAddr)>) {
+    if let Some((mut child, _)) = gateway {
+        drop(child.stdin.take());
+        assert!(
+            timeout(Duration::from_secs(10), child.wait())
+                .await
+                .unwrap()
+                .unwrap()
+                .success()
+        );
+    }
 }
 
 fn assert_no_effects(fixture: &Fixture, before: &[u8]) {
@@ -118,6 +139,7 @@ async fn run_sdk(
     address: std::net::SocketAddr,
     control_path: &Path,
     asynchronous: bool,
+    partial: bool,
 ) -> std::process::ExitStatus {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let mut sdk = Command::new("uv")
@@ -137,7 +159,7 @@ async fn run_sdk(
         .spawn()
         .unwrap();
     let settings = json!({"url":format!("http://{address}"),
-        "asynchronous":asynchronous,"control":control_path});
+        "asynchronous":asynchronous,"control":control_path,"partial":partial});
     sdk.stdin
         .take()
         .unwrap()
@@ -152,9 +174,51 @@ async fn run_sdk(
 
 #[tokio::test]
 async fn original_listener_preserves_early_rejection_for_sync_sdk() {
-    check_early_rejection(false).await;
+    check_early_rejection(false, false, false).await;
 }
 #[tokio::test]
 async fn original_listener_preserves_early_rejection_for_async_sdk() {
-    check_early_rejection(true).await;
+    check_early_rejection(true, false, false).await;
+}
+
+async fn start_gateway(
+    upstream: std::net::SocketAddr,
+) -> (tokio::process::Child, std::net::SocketAddr) {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let helper = std::env::var_os("SANDPROOF_GUEST_GATEWAY_HELPER")
+        .expect("build the original gateway helper using scripts/check-compat.sh");
+    let mut child = Command::new(helper)
+        .arg(upstream.to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut address = String::new();
+    timeout(Duration::from_secs(10), output.read_line(&mut address))
+        .await
+        .unwrap()
+        .unwrap();
+    let address: std::net::SocketAddr = address.trim().parse().unwrap();
+    assert!(address.ip().is_loopback());
+    (child, address)
+}
+
+#[tokio::test]
+async fn partial_upload_rejection_reaches_sync_sdk() {
+    check_early_rejection(false, true, false).await;
+}
+#[tokio::test]
+async fn partial_upload_rejection_reaches_async_sdk() {
+    check_early_rejection(true, true, false).await;
+}
+#[tokio::test]
+async fn original_gateway_and_relay_preserve_rejection_for_sync_sdk() {
+    check_early_rejection(false, true, true).await;
+}
+#[tokio::test]
+async fn original_gateway_and_relay_preserve_rejection_for_async_sdk() {
+    check_early_rejection(true, true, true).await;
 }

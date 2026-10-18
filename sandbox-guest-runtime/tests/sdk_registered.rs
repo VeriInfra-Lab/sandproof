@@ -372,12 +372,15 @@ async fn duplicate_start(
     let Request::Start(expected) = &fixture.expected else {
         panic!("fixture must hold a Start request");
     };
-    let tag = expected
-        .tag
-        .as_deref()
-        .expect("only tagged fixtures may repeat Start");
     assert_eq!(fixture.duplicate_starts.fetch_add(1, Ordering::SeqCst), 0);
-    let command = fixture.registry.live_tag(tag).unwrap().identity();
+    let command = fixture
+        .command
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .0
+        .identity();
     let claims = fixture.directory.path().join("pid-claims.bin");
     let before = std::fs::read(&claims).unwrap();
     let gates = || {
@@ -390,7 +393,13 @@ async fn duplicate_start(
     assert_eq!(response.status(), 200);
     assert_eq!(std::fs::read(claims).unwrap(), before);
     assert_eq!(gates(), gate_count);
-    assert_eq!(fixture.registry.live_tag(tag).unwrap().identity(), command);
+    assert_eq!(
+        fixture.registry.live(command.pid).unwrap().identity(),
+        command
+    );
+    if let Some(tag) = &expected.tag {
+        assert_eq!(fixture.registry.live_tag(tag).unwrap().identity(), command);
+    }
     assert!(fixture.owners.reserve().is_err());
     assert_eq!(
         std::fs::read(fixture.directory.path().join("effect")).unwrap(),
@@ -423,11 +432,7 @@ fn selected_json(headers: &HeaderMap, stream: bool) {
 }
 
 async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
-    let tagged = matches!(&fixture.expected, Request::Start(request) if request.tag.is_some());
-    assert_eq!(
-        fixture.duplicate_starts.load(Ordering::SeqCst),
-        usize::from(tagged)
-    );
+    assert_eq!(fixture.duplicate_starts.load(Ordering::SeqCst), 1);
     assert_eq!(
         fixture.keepalive_rejections.load(Ordering::SeqCst),
         2 * INVALID_KEEPALIVE.len()
@@ -504,7 +509,7 @@ async fn settled(fixture: &Fixture, basic: bool, mode: &str) {
         if basic {
             fixture.calls.load(Ordering::SeqCst)
         } else {
-            1 + usize::from(tagged)
+            2
         }
     );
 }

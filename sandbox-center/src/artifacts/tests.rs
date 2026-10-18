@@ -79,6 +79,7 @@ fn store(fixture: &engine::Engine) -> (Arc<CandidateStore>, TemplateBinding) {
     image[1028..1032].copy_from_slice(&1024_u32.to_le_bytes());
     image[1036..1040].copy_from_slice(&1000_u32.to_le_bytes());
     image[1080..1082].copy_from_slice(&[0x53, 0xef]);
+    image[512 * 1024 + 7] = 42;
     fs::write(&rootfs, &image).unwrap();
     fs::set_permissions(&rootfs, fs::Permissions::from_mode(0o400)).unwrap();
     let binding = TemplateBinding {
@@ -268,6 +269,7 @@ async fn actual_artifact_https_binds_registered_node_revision_hash_and_immutable
         .await
         .unwrap();
     assert_eq!(output.metadata().unwrap().len(), binding.kernel.size_bytes);
+    assert_sparse_artifact_download(&client, &request, &binding).await;
     let mut wrong_hash = binding.kernel.clone();
     wrong_hash.sha256 = "0".repeat(64);
     assert_eq!(
@@ -306,6 +308,65 @@ async fn actual_artifact_https_binds_registered_node_revision_hash_and_immutable
     );
     let _ = stop.send(true);
     serving.await.unwrap().unwrap();
+}
+
+async fn assert_sparse_artifact_download(
+    client: &ArtifactClient,
+    kernel_request: &ArtifactRequest,
+    binding: &TemplateBinding,
+) {
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    let mut request = kernel_request.clone();
+    request.part = ArtifactPart::Rootfs;
+    let mut output = tempfile::tempfile().unwrap();
+    client
+        .download_to(&request, &binding.rootfs, &mut output)
+        .await
+        .unwrap();
+    output.sync_all().unwrap();
+    let metadata = output.metadata().unwrap();
+    assert_eq!(metadata.len(), binding.rootfs.size_bytes);
+    assert!(metadata.blocks() * 512 < metadata.len() / 2);
+    output.rewind().unwrap();
+    let mut actual = Vec::new();
+    output.read_to_end(&mut actual).unwrap();
+    assert_eq!(actual, fs::read(&binding.rootfs.path).unwrap());
+
+    // All streamed bytes, including sparse zero ranges, still contribute to
+    // the expected hash. Allocation is never a substitute for verification.
+    actual[256 * 1024] ^= 1;
+    let mut wrong = binding.rootfs.clone();
+    wrong.sha256 = format!("{:x}", Sha256::digest(&actual));
+    assert_eq!(
+        client
+            .download_to(&request, &wrong, &mut tempfile::tempfile().unwrap())
+            .await,
+        Err(TransportError::InvalidResponse)
+    );
+
+    // Skipping zeroes cannot expose previous contents or inherit an offset.
+    let mut reused = tempfile::tempfile().unwrap();
+    reused.write_all(b"previous bytes").unwrap();
+    reused.rewind().unwrap();
+    assert_eq!(
+        client
+            .download_to(&request, &binding.rootfs, &mut reused)
+            .await,
+        Err(TransportError::Rejected)
+    );
+    let mut bytes = Vec::new();
+    reused.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"previous bytes");
+    let mut offset = tempfile::tempfile().unwrap();
+    offset.seek(SeekFrom::Start(1)).unwrap();
+    assert_eq!(
+        client
+            .download_to(&request, &binding.rootfs, &mut offset)
+            .await,
+        Err(TransportError::Rejected)
+    );
+    assert_eq!(offset.metadata().unwrap().len(), 0);
 }
 
 async fn assert_online_readiness(client: &ArtifactClient, binding: &TemplateBinding) {
