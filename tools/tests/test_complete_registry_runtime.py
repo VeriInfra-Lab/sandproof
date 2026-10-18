@@ -244,6 +244,40 @@ class PrivateBuilderProtocolTests(unittest.TestCase):
         intent = json.loads(next(self.root.glob("builder-intent-*.json")).read_text())
         self.assertEqual(intent["builder_settled"], {"requestWindow": "original-window", "sandboxID": None})
 
+    def test_failed_create_retains_only_safe_code_and_original_read_only_projection(self):
+        observed = {"nodes": [{"free": {"cpu": 2}}], "catalogs": {}}
+        self.deployment.services.processes.center_readiness.return_value = observed
+        self.unknown_post = True
+        with self.assertRaises(BuildError) as failure:
+            self.deployment.open_builder()
+        self.assertEqual(failure.exception.code, 502)
+        saved = json.loads(next(self.root.glob("builder-failure-*.json")).read_text())
+        self.assertEqual(saved["http_status"], 502)
+        self.assertEqual(saved["readiness"], observed)
+        self.assertEqual(saved["failure_type"], "BuildError")
+        self.assertEqual(set(saved), {"http_status", "readiness", "failure_type", "observed_at_ms"})
+        self.assertNotIn("LaunchUnknown", json.dumps(saved))
+        self.deployment.services.processes.center_readiness.assert_called_once_with(timeout=5)
+        self.assertEqual([method for method, _path, _body in self.calls], ["POST", "POST"])
+        self.deployment.close_builders()
+        self.assertTrue(json.loads(next(self.root.glob("builder-intent-*.json")).read_text())["settled"])
+
+    def test_diagnostic_failure_preserves_original_exception_intent_and_cleanup(self):
+        self.unknown_post = True
+        self.deployment.services.processes.center_readiness.side_effect = OSError("private-observation-text")
+        original_save = FIXTURE._save
+        def save(path, *args, **kwargs):
+            if Path(path).name.startswith("builder-failure-"):
+                raise OSError("private-write-text")
+            return original_save(path, *args, **kwargs)
+        with patch.object(FIXTURE, "_save", side_effect=save):
+            with self.assertRaisesRegex(BuildError, "LaunchUnknown") as failure:
+                self.deployment.open_builder()
+        self.assertEqual(failure.exception.code, 502)
+        self.assertEqual([method for method, _path, _body in self.calls], ["POST", "POST"])
+        self.deployment.close_builders()
+        self.assertTrue(json.loads(next(self.root.glob("builder-intent-*.json")).read_text())["settled"])
+
     def test_lost_settlement_reply_reuses_durable_certificate_without_requery_or_refence(self):
         _sandbox, identity = self.deployment.open_builder()
         self.unknown_settlement = True

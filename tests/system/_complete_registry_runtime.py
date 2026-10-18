@@ -159,8 +159,29 @@ class RegistryDeployment:
         identity = secrets.token_hex(16)
         intent = {"id": identity, "requestWindow": window, "sandboxID": None, "settled": False}
         _save(self.root / ("builder-intent-" + identity + ".json"), intent, fresh=True)
-        vm = backend.request("builder", "POST", "/sandproof/internal-build-vms/" + identity,
-            {"timeout": timeout, "allowInternetAccess": internet, "requestWindow": window}, owner=1, timeout=timeout)
+        try:
+            vm = backend.request("builder", "POST", "/sandproof/internal-build-vms/" + identity,
+                {"timeout": timeout, "allowInternetAccess": internet, "requestWindow": window}, owner=1, timeout=timeout)
+        except Exception as error:
+            # Opaque HTTP/SDK exception text can contain private credentials.
+            # Retain only the numeric response code and the ORIGINAL read-only
+            # host projection before finally removes its role directories.
+            # Diagnostics never retry POST or establish admission/cleanup.
+            from tools.template_build_store import BuildError
+            diagnostic = {"failure_type": type(error).__name__, "observed_at_ms": int(time.time() * 1000)}
+            if isinstance(error, BuildError) and type(error.code) is int and 100 <= error.code <= 599:
+                diagnostic["http_status"] = error.code
+            try:
+                diagnostic["readiness"] = self.services.processes.center_readiness(timeout=5)
+            except Exception as observation_error:
+                diagnostic["readiness_failure_type"] = type(observation_error).__name__
+            try:
+                _save(self.root / ("builder-failure-" + identity + ".json"), diagnostic, fresh=True)
+            except Exception:
+                # A failed diagnostic write must preserve the ORIGINAL error
+                # and original durable intent for fencing in close_builders.
+                pass
+            raise
         session = vm.get("session")
         if session is None:
             raise RuntimeError("original private builder session is unavailable")
