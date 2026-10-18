@@ -1,6 +1,7 @@
 //! Ordered failure observations from the fixed protobuf JSON decoder. This
-//! runs only after the bounded request decoder rejects a payload. A successful
-//! diagnostic parse is a disagreement, never permission to fabricate a failure.
+//! runs after typed rejection, or before returning a non-executable Start
+//! budget refusal after compact field validation. Success never authorizes
+//! execution or permits fabrication of a failure.
 // Behavior derived from google.golang.org/protobuf v1.36.12 encoding/protojson
 // and internal/encoding/json. Copyright 2018 The Go Authors. All rights reserved.
 // BSD license: diagnosis/PROTOBUF-LICENSE.

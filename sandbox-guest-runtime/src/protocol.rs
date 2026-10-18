@@ -365,9 +365,9 @@ pub fn decode_request_with_argument_limit(
 
 /// Decode using the original argument/environment quotas. Entire JSON and
 /// framing still precede a deferred execution refusal; no partial command can
-/// be returned. Compact validation borrows unescaped keys and discards values,
-/// but still retains exact decoded keys to reject duplicates. This is not a
-/// whole-service allocation bound.
+/// be returned. Compact field counting retains no environment strings; an
+/// ordered JSON check must still reject duplicate keys before any refusal
+/// marker can be returned. This is not a whole-service allocation bound.
 /// # Errors
 /// Same framing/JSON/body errors as `decode_request`.
 pub fn decode_request_with_start_limits(
@@ -384,7 +384,10 @@ pub fn decode_request_with_start_limits(
         |_| Err(ProtocolError::InvalidArgument),
         |_| ProtocolError::InvalidArgument,
         &(
-            |method: &str, payload: &[u8]| decode_message_limited(method, payload, Some(limits)),
+            |method: &str, payload: &[u8]| {
+                decode_message_limited(method, payload, Some(limits))
+                    .map_err(MessageError::protocol)
+            },
             end_stream::validate,
         ),
     )
@@ -486,6 +489,10 @@ pub fn decode_request_observed_with_start_limits<
         &(
             |method: &str, payload: &[u8]| {
                 decode_message_limited(method, payload, limits).map_err(|error| {
+                    let error = match error {
+                        MessageError::Json(observed) => return E::from(observed),
+                        MessageError::Protocol(error) => error,
+                    };
                     if error == ProtocolError::InvalidArgument
                         && let Some(observed) =
                             crate::file_protocol::diagnosis::observe_command(method, payload)
@@ -501,21 +508,47 @@ pub fn decode_request_observed_with_start_limits<
 }
 
 fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError> {
-    decode_message_limited(method, payload, None)
+    decode_message_limited(method, payload, None).map_err(MessageError::protocol)
+}
+
+enum MessageError {
+    Protocol(ProtocolError),
+    Json(JsonError),
+}
+impl From<ProtocolError> for MessageError {
+    fn from(error: ProtocolError) -> Self {
+        Self::Protocol(error)
+    }
+}
+impl MessageError {
+    fn protocol(self) -> ProtocolError {
+        match self {
+            Self::Protocol(error) => error,
+            Self::Json(_) => ProtocolError::InvalidArgument,
+        }
+    }
 }
 
 fn decode_message_limited(
     method: &str,
     payload: &[u8],
     limits: Option<StartLimits>,
-) -> Result<Request, ProtocolError> {
+) -> Result<Request, MessageError> {
+    let original = payload;
     let prepared = prepare_command(payload)?;
     let payload = prepared.as_ref();
     if method == "Start"
         && let Some(limits) = limits
-        && let Some(refusal) = start_budget::refusal(payload, limits)?
+        && let Some(candidate) = start_budget::refusal_candidate(payload, limits)?
     {
-        return Ok(refusal);
+        // Field counting alone does not establish map uniqueness. Validate the
+        // original ordered schema before any non-executable marker escapes.
+        // Carry an actual failure out so observed callers never run a second
+        // allocation-heavy diagnostic just to recover the same error.
+        if let Some(error) = crate::file_protocol::diagnosis::observe_command(method, original) {
+            return Err(MessageError::Json(error));
+        }
+        return Ok(candidate);
     }
     match method {
         "Start" => Ok(Request::Start(parse(payload)?)),
@@ -548,7 +581,7 @@ fn decode_message_limited(
                 pty: request.pty,
             })
         }
-        _ => Err(ProtocolError::Unimplemented),
+        _ => Err(ProtocolError::Unimplemented.into()),
     }
 }
 

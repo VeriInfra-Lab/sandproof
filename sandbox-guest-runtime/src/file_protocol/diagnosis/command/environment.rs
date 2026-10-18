@@ -7,7 +7,7 @@ use crate::file_protocol::request_json::key_arena::{Arena, Key};
 use serde::de::DeserializeSeed;
 use std::{cmp::Reverse, collections::BinaryHeap};
 
-const CHUNK_ENTRIES: usize = 4096;
+const CHUNK_ENTRIES: usize = 2048;
 
 struct Entry<'a> {
     key: Key<'a>,

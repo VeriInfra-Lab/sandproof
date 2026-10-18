@@ -1,13 +1,11 @@
-//! Validate the canonical Start schema without retaining argument strings or
-//! environment values. Exact decoded keys still enforce duplicate rejection;
-//! unescaped keys borrow the admitted payload; short escaped keys stay inline.
-use serde::{Deserializer, de};
+//! Check the canonical Start fields without retaining arguments or environment
+//! strings. A candidate refusal must still pass the ordered JSON validator;
+//! otherwise duplicate keys could be mistaken for execution-budget overflow.
+use serde::{Deserialize, Deserializer, de};
 
 use super::{ProtocolError, Request, StartLimits, StartRequest, argument_count, parse};
 
-mod keys;
-
-pub(super) fn refusal(
+pub(super) fn refusal_candidate(
     payload: &[u8],
     limits: StartLimits,
 ) -> Result<Option<Request>, ProtocolError> {
@@ -45,33 +43,38 @@ impl<'de> super::request_json::Environment<'de> for CheckedEnvironment {
                 f.write_str("a string map")
             }
             fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
-                let mut keys = keys::Chunks::default();
-                let mut arena = keys::Arena::default();
+                let mut count = 0_usize;
                 let mut invalid_name = false;
-                while let Some(key) = map.next_key_seed(arena.seed())? {
+                while let Some(key) = map.next_key::<Name>()? {
                     map.next_value::<argument_count::StringOnly>()?;
-                    let value = key.as_str(&arena);
-                    invalid_name |= value.is_empty() || value.contains('=');
-                    keys.push(key);
-                    // Check geometrically growing prefixes as well as the final
-                    // map. Repeated keys must not fill scratch for the entire
-                    // body when an earlier duplicate already makes it invalid.
-                    if keys.checkpoint() && !keys.unique(&arena) {
-                        return Err(de::Error::custom("duplicate environment key"));
-                    }
+                    invalid_name |= key.0;
+                    count = count
+                        .checked_add(1)
+                        .ok_or_else(|| de::Error::custom("environment count overflow"))?;
                 }
-                if !keys.unique(&arena) {
-                    return Err(de::Error::custom("duplicate environment key"));
-                }
-                // No executable prefix escapes. Any malformed map fails before
-                // a marker; the original ordered diagnostic parser determines
-                // the public first failure, including an earlier duplicate.
                 Ok(CheckedEnvironment {
-                    count: keys.len(),
+                    count,
                     invalid_name,
                 })
             }
         }
         deserializer.deserialize_map(Visitor)
+    }
+}
+
+struct Name(bool);
+impl<'de> Deserialize<'de> for Name {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl de::Visitor<'_> for Visitor {
+            type Value = Name;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a string key")
+            }
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Name, E> {
+                Ok(Name(value.is_empty() || value.contains('=')))
+            }
+        }
+        deserializer.deserialize_str(Visitor)
     }
 }

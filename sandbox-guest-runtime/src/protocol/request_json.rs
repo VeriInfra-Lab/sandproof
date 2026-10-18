@@ -79,8 +79,9 @@ pub(super) fn signal<'de, D: Deserializer<'de>>(
     }))
 }
 
-/// Both representations validate complete maps and exact decoded duplicates.
-/// Only the owned representation can become an executable request.
+/// The owned map validates decoded duplicates. Field-only counting must still
+/// pass ordered JSON validation before any refusal marker is returned; it can
+/// never become an executable request.
 pub(crate) trait Environment<'de>: Default {
     fn entries<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>;
 }

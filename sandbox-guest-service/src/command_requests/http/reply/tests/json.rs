@@ -27,7 +27,29 @@ fn observe(
     gzip: bool,
 ) -> Result<sandproof_guest_runtime::protocol::Request, RequestError> {
     let (_cancel, cancelled) = tokio::sync::watch::channel(false);
-    compression::decode_selected(rpc.method(), body, 65536, 13, deadline(), &cancelled, gzip)
+    let result =
+        compression::decode_selected(rpc.method(), body, 65536, 13, deadline(), &cancelled, gzip);
+    let limited = compression::decode_limited(
+        rpc.method(),
+        body,
+        65536,
+        13,
+        deadline(),
+        &cancelled,
+        (
+            gzip,
+            Some(sandproof_guest_runtime::protocol::StartLimits {
+                arguments: 0,
+                env_entries: 0,
+            }),
+        ),
+    );
+    if result.is_err() {
+        assert_eq!(limited, result);
+    } else {
+        assert!(limited.is_ok());
+    }
+    result
 }
 
 #[test]
