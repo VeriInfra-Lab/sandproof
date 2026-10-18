@@ -577,6 +577,20 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 各组均检查原 SQLite 终局和进程/网络/磁盘精确残留，服务名额及 cgroup 也须实际收尾。容量显式拒绝可在确认无效果并等待原保留期后发起新尝试，未知 Start/写入不重放。资源采样记录实际 RSS/峰值/线程及固定 PID 文件长度，并核对原 VM 和控制服务预算；有限观察不推出无限历史或整进程内存证明。强制 PID 数字回绕、任意故障交错和外部内核正确性不因该组变成已验证；原单元/故障点证据仍单独保留。
 
+### 正式来宾服务的隔离重启组件
+
+[正式 daemon 重启检查](../tests/system/guest_daemon_restart.py)在新的 Linux x86_64 PID、网络和挂载命名空间中执行实际 `initialize/serve` 二进制与 worker，固定 MMDS 地址由隔离的受控服务提供；不改生产地址、监听器或处理器。固定 SDK 的同步/异步原 RPC 客户端分别保持一个真实命令，强杀原 daemon 后核对原 pidfd 仍存活且订阅没有伪造 End；重开原持久文件后，未初始化及错误令牌拒绝，重新初始化后旧 PID/tag 的 Connect、输入、关闭输入、信号和 resize 全部明确拒绝。新命令可复用 tag 正常结束而不接管旧进程；原进程只由测试的原 FIFO 释放并按 pidfd 等待。错误 VM 身份启动拒绝且原文件内容/inode 保持。测试进程本身必须为隔离空间的 root/PID 1，网络只含 lo，普通直接执行及 `-O` 均拒绝。失败收尾仅操作本轮捕获的 pidfd，PID 命名空间退出是未知后代的额外收尾边界。
+
+这是正式入口的特权组件检查，**不代替真实 Firecracker MMDS、模板启动、中心/宿主网关、VM 寿命/销毁或 E04/E07 整体验收**。先构建同提交的 `sandproof-guest-service` 和 `sandproof-guest-worker`；在批准的隔离 Linux 测试机，使用 `tests/compat` 锁定 SDK 解释器运行下列入口，超时监督必须在命名空间外。配置样例只提供显式测试预算；脚本仅在自己的私有目录改路径、owner 及实际 worker 指纹，禁止把测试值作为生产默认值。输出包含实际二进制、脚本及配置摘要，结果必须与源码提交一同封存。
+
+```sh
+sudo timeout --signal=KILL 150 unshare --mount --net --pid --fork --kill-child --mount-proc \
+  "$PWD/tests/compat/.venv/bin/python" "$PWD/tests/system/guest_daemon_restart.py" \
+  --service "$PWD/target/debug/sandproof-guest-service" \
+  --worker "$PWD/target/debug/sandproof-guest-worker" \
+  --configuration "$PWD/sandbox-guest-service/src/daemon/tests/configuration.json"
+```
+
 来宾监听器的[合并正文回归](../sandbox-guest-service/src/listener/tests/read_budget.rs)使用真实固定 HTTP 解析器和保持连接的确定性输入，不依赖 TCP 时序；核对原 16 KiB 读取边界及原上传帧检查。原版本可能交付 24 KiB 帧并触发断流/上游 502；必须保留失败断言，修复不能增大正文/块/期限。另核对等待和 I/O 错误不能变成成功 EOF。组件通过后仍须用同提交来宾产物在真实沙箱执行原 SDK 文件矩阵，不能用带诊断日志的一轮未复现代替原失败归因。
 
 #311 的[固定 SDK 输入回归](../tests/system/sdk_guest_input_limits.py)读取实际安装的版本 3 配置及摘要，保持原内部写块数值，覆盖同步/异步、root/ubuntu：恰好写块、写块加一和 65,792 字节均以单次 SDK 调用成功，再保留多次调用传输同一二进制的检查，最终核对全部长度/摘要和原 PID/服务身份。它不替换或修改既有 `sdk_command_input.py`。原 HTTP 正文超限的写前拒绝、后续合法调用、一次性效果及容量归还继续由[真实 worker HTTP 回归](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)验收；不能把取消/超时算成精确预算拒绝。
@@ -749,6 +763,10 @@ wait 记录 initial_wait_outcome，再通过同一原 PID 的恢复订阅验证�
 | [磁盘预留与耗尽](../tests/system/server_disk_reserve.py)、[物理文件系统组件](../sandbox-server/src/storage.rs)、[固定物理配置](../sandbox-node/src/physical_profile.rs)、[有界轮转](../tests/system/server_bounded_churn.py) | 空间不足仍能收尾、同文件系统要求与跨文件系统拒绝、部署 profile 与真实字节、位置复用及旧动作拒绝；组件通过不代替新入口的实机压力验收 |
 
 网络测试须按当前合同报告 IPv6 与 DNS 边界，不把来宾配置或仅拦 TCP/53 当作完整 DNS 防绕过。静态规则使用合同中的部署配置，不虚构固定 SDK 没有的创建字段。DNS 域名过滤/严格转发控制等未交付能力不能计入通过。
+
+C02 在交给中心/宿主装配前显式声明原启动期限 300 秒和禁用公网，保持原 NativeSettings 缺省行为；装配发生在 Rust 反序列化之前，不能依赖它补字段。执行时必须提供 `--cgroup-parent` 指向批准的空且已委派 VM cgroup 父组，宿主内存上限沿用实际模板的 `host_memory_bytes`；服务进程仍使用独立的 `--service-cgroup-record`。[准备回归](../tests/compat/test_c02_preparation.py)把原 C02 池配置交给实际共享渲染器，核对两端收到同一配置及模板对应的宿主资源声明；只构造私有文件，不启动服务或 VM。
+
+C02 的公开租户与宿主本地 owner 分别核对：公开身份来自原中心审计，本地 sandbox/owner 来自同一完整创建身份的原宿主 inbox。保存这份映射后，SQL 状态、退休证书和物理资源回执必须匹配各自的本地 owner；不能将公开租户编号当成本地 owner，也不能从公开 sandbox 编号推导本地编号。[监督回归](../tools/tests/test_system_acceptance.py)覆盖不同本地 owner 的活动/退休记录及错租户、错 owner 拒绝；原 SDK 调用集和 5 秒到期场景保持不变。
 
 C02 原始目录含凭据、配置及完整日志，只在私有目录保存；`--export-run` 输出有限脱敏摘要。安全导出须确认原执行结束/锁状态，不因丢失结果补造通过。监督器无法确认收尾时保留未知占用和现场；禁止全局杀 Firecracker、宽泛删除 jail/网络/目录。清理后核对原 PID/启动时间、目录身份、namespace、cgroup、磁盘及源镜像摘要。
 
