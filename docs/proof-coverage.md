@@ -56,7 +56,9 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 
 ## T6 边界：Host 公共任务与双池合同
 
-状态：本接口局部交付已完成，[PR #547](https://github.com/VeriInfra-Lab/sandproof/pull/547) 待审查／合入，整套证明未通过。生产基线为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`，分支承接 #545，不修改生产 Rust 或 Charon/Aeneas。合同、源码和库版本以[环境清单](../verification/task-contract-environment.json)、[输入摘要](../verification/task-contract-inputs.sha256)及[B1 登记](formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)为准。
+以下保留 [PR #547](https://github.com/VeriInfra-Lab/sandproof/pull/547) 的原冻结记录；该成果已随 #551 进入 integration，后面的历史局部退出码不代表当前组合仍被旧阻断拦截。原生产基线为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`，分支承接 #545。当前合同、源码和库版本以[环境清单](../verification/task-contract-environment.json)、[输入摘要](../verification/task-contract-inputs.sha256)及[B1 登记](formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)为准，不修改生产 Rust 或 Charon/Aeneas。
+
+当前候选纳入 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`：原 `lib.rs/status_admission.rs/facade.rs` 机械接线逐字未变，驱动新增的可选模板校验凭据仍在同一 blocking 回调内传递，测试夹具增加对应计数。环境清单补全五处实际调用及边界；模板凭据与缓存正确性没有移入 B1。这个新组合的组件及完整入口尚待复验，不以旧通过结果或更新摘要代替验收。
 
 [Task](../SandboxModel/Boundaries/Task.lean) 提供单次调用的持额／取消／结果来源、任意有限调用集合的双池预算守恒与容量界限。原池绑定、合法执行、逐个析构许可和反例合计 29 条定理纳入模块及总审计。a6000 正式模块编译／29 条实际依赖审计通过，三个正式文件的真实 Lean 服务诊断均 `success=true`、`partial=false`、`stale=false`。这些是接口模型定理，**本模块没有把实际 async Rust 交给 Aeneas 翻译**。
 

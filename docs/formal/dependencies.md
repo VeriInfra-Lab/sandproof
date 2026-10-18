@@ -342,7 +342,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 ## B1 Host 任务与原许可池的逐符号可信适配
 
-本登记落实 V0 #333 的 T6 验收范围（原 #510 已迁移）。适用生产实现定位为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
+本登记落实 V0 #333 的 T6 验收范围（原 #510 已迁移）。当前候选的生产实现定位为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。许可取得、转移和归还的三个实现文件与此前组合基线逐字一致；驱动回调及测试夹具的变化单列在环境清单，须完成新组合的组件和完整入口复验后认领其适用性。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
 
 ### A6-task-pools 外部原语条件
 
@@ -360,7 +360,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 | `HostLifecycle::blocking`、`receive/confirm/close/validation_evidence` | 领取原 work 许可后提交原 FnOnce，将命名许可绑定移入闭包并跨越实际回调；Join 错误保持原映射 | 每个真实回调的业务不变量及每个可观察前缀；请求、模板、compute、回执、发布等参数正确；来源不同的错误不被用于补造“未执行”或释放事实 |
 | `status_admission::acquire`、`HostLifecycle::free_resources` | 先非等待领取 status，再等待同一 work；队列取消归还已得预留；获额后两许可跟随原只读回调，调用方取消不提前归还 | 节点／compute 绑定、健康观察本身正确、时间和结果解释；不由有界等待推出健康时效、宿主工作终止或公平进展 |
 
-`blocking` 的当前真实调用者为 `advance/pending/cache_storage_ready/recover`，分别调用原 `advance_internal_lifecycle/internal_pending/validate_internal_cache_storage` 及顺序的 `recover_on_startup/expire_due_report`。直接入口保持原 `record_internal_intent/confirm_internal_result/close_internal_window/internal_validation_evidence`，健康路径保持原 `internal_free_resources`。这些回调体没有整体列入 B1；本批也未新增它们的 Aeneas 对应证明。可信的是登记的任务／许可机械接线，其符合性依据为逐符号源码审查、冻结摘要和确定性组件回归，不是完整异步 Rust 的机器证明。
+`blocking` 的真实调用者共五处：`advance/pending/cache_storage_ready/recover` 分别调用原 `advance_internal_lifecycle/internal_pending/validate_internal_cache_storage` 及顺序的 `recover_on_startup/expire_due_report`；`drive_once` 在同一阻塞回调内执行维护、恢复、过期处理及有限扫描。驱动只在原模板已取得时，按原请求的 create 绑定查询可选 `CandidateVerification`，再将原 request、template、compute 和该凭据交给 `advance_internal_lifecycle_with_verification`。它没有另建许可池或提前归还原 work 许可；模板凭据来源、缓存有效性、允许省略哪些重复校验及完整生命周期行为仍由相应业务模块证明。直接入口保持原 `record_internal_intent/confirm_internal_result/close_internal_window/internal_validation_evidence`，健康路径保持原 `internal_free_resources`。这些回调体没有整体列入 B1；本批也未新增它们的 Aeneas 对应证明。可信的是登记的任务／许可机械接线，其符合性依据为逐符号源码审查、冻结摘要和确定性组件回归，不是完整异步 Rust 的机器证明。
 
 ### 可复用合同及组合方式
 
