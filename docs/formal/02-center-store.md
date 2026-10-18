@@ -44,7 +44,7 @@
 | `unknown_commit_preserves_liability` | 可恢复“写前/写后未知”集合；健康读取不伪造耐久；reaffirm 后责任仍同一，不改绑 |
 | `center_recovery_refines` | 独立中心/Redis重启重建某合法提交，原窗口/高水位/未确认结果与预留不丢 |
 | `center_fact_ack_order` | 原节点事实耐久进入权威后才确认；确认/退休不丢未决责任 |
-| `authority_microsteps_refine` | 真实锁、store 调用、网络调用、回调、错误/取消的事件历史对应上述转换 |
+| `authority_microsteps_refine` | 在登记的 A/B 合同下，实际 store/网络调用、同步回调业务、锁保护范围和错误/取消解释的事件历史对应上述转换；薄机械接线不称为已机器证明 |
 
 Lua 不能由 Aeneas 对 Rust 字符串的抽取代替证明。首批先固定 READ/CAS 的受限语法与 AST 对应检查、所用 Redis 命令合同，然后证明逐语句语义到 CAS 模型。解析器/转录/语义连接的可靠性须登记；若无法建立，就报告工具/对应缺口，不能手写一个正确 CAS 函数后把它当实际脚本已证。Redis 引擎原子执行与耐久合同可作 A11，**自有 Lua 仍是待证对象**。
 
@@ -56,4 +56,4 @@ Lua 不能由 Aeneas 对 Rust 字符串的抽取代替证明。首批先固定 R
 
 扩展：续期后查询新鲜视图；逐位置确认/关闭/恢复；有界编排及错误故障域。复用 [Redis组件测试](../../sandbox-center-store/tests/unit_contract.rs) 与 [双服务故障入口](../../tests/system/center_host_faults.py)，测试不充当 Lua/异步精化证明。
 
-入口依赖 V0/V1，消息端点依赖 V3，授权/查询调用接 V7，跨层责任交 V9。中心决定锁不能跨远程 I/O 持有；实际 wait/reconcile 的出队、重投和释放锁必须证明，不把“内部最终正确运行”列为外部假设。开工/验收沿用 [V0](00-foundations.md#5-开工与完成条件)。
+入口依赖 V0/V1，消息端点依赖 V3，授权/查询调用接 V7，跨层责任交 V9。中心决定锁不能跨远程 I/O 持有；实际 wait/reconcile 的出队、重投、锁保护范围和释放时点的业务顺序必须证明，不把“内部最终正确运行”列为外部假设。原锁互斥与获取/释放、任务/回调机械交付仅按[依赖登记](dependencies.md#逐符号可信适配登记)的 B1–B4 范围可信，采用源码审查及合同测试核对，不以完整异步翻译为前置。开工/验收沿用 [V0](00-foundations.md#5-开工与完成条件)。
