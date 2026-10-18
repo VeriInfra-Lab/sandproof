@@ -1,8 +1,10 @@
-"""Original SDK error decoding with a controlled late HTTP request EOF.
+"""Original SDK error decoding with a controlled late request-body handoff.
 
 Only the locked encoder iterator's scheduling is changed. Its bytes, real
 pyqwest transport and original ConnectError parser are unchanged. The server
-releases EOF after the original response is consumed; no polling sleeps.
+releases the producer after the original response body is consumed; no polling
+sleeps. Offering a chunk is distinct from another iterator poll, HTTP EOF or
+confirmed socket delivery.
 """
 import asyncio
 import json
@@ -19,13 +21,11 @@ from e2b.envd.process import process_connect, process_pb
 
 from sdk_support import isolated_sdk_environment
 
-settings = json.loads(sys.stdin.read())
+settings = {}
 original_sync = _client_sync._streaming_request_content
 original_async = _client_async._streaming_request_content
 events = []
-control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-control.settimeout(5)
-control.connect(settings['control'])
+control = None
 
 
 def gated_sync(*args):
@@ -37,8 +37,8 @@ def gated_sync(*args):
         assert control.recv(1) == b'x', 'response completion gate missing'
         events.append('released')
         if settings.get('partial'):
+            events.append('tail_offered')
             yield chunk[1:]
-            events.append('tail')
 
 
 async def gated_async(*args):
@@ -50,12 +50,8 @@ async def gated_async(*args):
         assert await asyncio.to_thread(control.recv, 1) == b'x', 'response completion gate missing'
         events.append('released')
         if settings.get('partial'):
+            events.append('tail_offered')
             yield chunk[1:]
-            events.append('tail')
-
-
-_client_sync._streaming_request_content = gated_sync
-_client_async._streaming_request_content = gated_async
 
 
 async def main():
@@ -85,14 +81,30 @@ async def main():
             await stream.aclose()
         else:
             stream.close()
-        expected = ['message', 'waiting', 'released']
-        if settings.get('partial'):
-            expected.append('tail')
-        assert events == expected, events
+    # Keep original transport/protocol failures intact. An observer failure in
+    # finally would overwrite the error that this acceptance test must expose.
+    expected = ['message', 'waiting', 'released']
+    if settings.get('partial'):
+        expected.append('tail_offered')
+    assert events == expected, events
 
 
-with isolated_sdk_environment():
+def run():
+    global settings, control
+    settings = json.loads(sys.stdin.read())
+    control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    control.settimeout(5)
+    control.connect(settings['control'])
+    _client_sync._streaming_request_content = gated_sync
+    _client_async._streaming_request_content = gated_async
     try:
-        asyncio.run(main())
+        with isolated_sdk_environment():
+            asyncio.run(main())
     finally:
+        _client_sync._streaming_request_content = original_sync
+        _client_async._streaming_request_content = original_async
         control.close()
+
+
+if __name__ == '__main__':
+    run()
