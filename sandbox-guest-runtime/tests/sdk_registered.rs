@@ -52,6 +52,9 @@ use tokio::{
     time::{Instant, timeout},
 };
 
+#[path = "sdk_registered/transport.rs"]
+mod transport;
+
 const WORKER: &str = env!("CARGO_BIN_EXE_sandproof-guest-worker");
 const LIMIT: usize = 16384;
 const REQUESTS: usize = 4;
@@ -294,7 +297,8 @@ async fn dispatch(
         );
         std::fs::read(fixture.directory.path().join("pid-claims.bin")).unwrap()
     });
-    // This restricted Axum transport is not the production listener. Dropping
+    // Separate original-listener regressions in transport.rs bypass this
+    // prebuffer: it cannot certify production early-response delivery. Dropping
     // an unread HTTP/1 request after an early header rejection can reset the
     // socket while the original SDK is still sending its body, hiding the
     // intended Connect error behind BrokenPipe. Receive only this fixture's
