@@ -157,6 +157,17 @@ def check_registry(root, registry=None):
         'excluded': ['custom Drop', 'FD/permit/lock ownership', 'panic/unwind cleanup', 'OOM/abort', 'async cancellation'],
     }:
         raise ValueError('unreviewed Drop scope')
+    contract = registry['formal_contract']
+    if (contract['operations'] != 'SandboxModel.Boundaries.JsonRequest.LifecycleJsonLibrary'
+            or contract['condition'] != 'SandboxModel.Boundaries.JsonRequest.SliceDeriveContract'
+            or contract['encoding_bound'] != {
+                'fixed_schema_allowance': 2048, 'escape_per_utf8_byte': 6,
+                'options_per_byte': 4, 'body_bytes': 270336,
+            }):
+        raise ValueError('unreviewed concrete byte contract or size bound')
+    model = (root / 'SandboxModel/Boundaries/JsonRequest/SliceBinding.lean').read_text()
+    if contract['own_theorems'] != re.findall(r'^theorem ([A-Za-z0-9_]+)', model, re.M):
+        raise ValueError('concrete byte theorem inventory changed')
     return registry
 
 

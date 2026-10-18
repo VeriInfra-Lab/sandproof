@@ -861,4 +861,4 @@ V0/共享状态及首链抽取的输出路径按实际驱动工作目录冻结�
 
 `SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean` 增加固定库容器结束、首错、游标保持和错误位置的十条条件定理，连接实际生成的无效编号/零计数器分支。真实 `from_slice` 回归覆盖六类字段位置、三个计数器位置及多行空白：保留原错误全文/类别，最近容器补齐位置，外层不改写；直接叶子的 `(0,0)` 与复合请求区分。它不计算任意输入的 parser 位置。此前 42 条局部结论及具体 mTLS 字段回归的范围保持。
 
-`verification/json-request-binding.json` 将原 `from_slice<LifecycleRequest>` / `to_vec<LifecycleRequest>` 的两个验证包装归入逐符号 A6/B4 可信连接；自有守卫继续保留真实公共生成体。登记和 AST/源码准入、有限对照是该条件的工程依据，不是完整 async Rust/库语义已证明。完整字节组合、原固定输入更新、负向自动入口和两项完整验收仍在 #558 内推进；本段不宣布 #558、T1/T2 或 V0 完成。
+`verification/json-request-binding.json` 将原 `from_slice<LifecycleRequest>` / `to_vec<LifecycleRequest>` 的两个验证包装归入逐符号 A6/B4 可信连接；自有守卫继续保留真实公共生成体。登记和 AST/源码准入、有限对照是该条件的工程依据，不是完整 async Rust/库语义已证明。[具体字节组合](../SandboxModel/Boundaries/JsonRequest/SliceBinding.lean)已按本固定请求的原切片、错误字典、字段现场和正常分配域接通，新增十五条条件定理：原错误文本/类别、输入来源、公共 recipe 实例化、完整形状、逐值往返、守卫保持、自有长度约束和所有合法有界输入/初始输入的接受见证。合计 67 条局部审计；固定库/派生与实际机械绑定仍以依赖登记的 A6/B4 符合性为条件，没有机器证明 JSON 扫描器、标准派生或 async 外壳。39 项真实 extraction crate 回归含各字段最大长度、u64/u16/u8 极值及三个 intent，均保留原正文限额和自有守卫。原固定输入更新、永久负向入口和两项完整验收仍在 #558 收尾；本段不宣布 #558、T1/T2 或 V0 完成。

@@ -83,6 +83,47 @@ mod tests {
     }
 
     #[test]
+    fn maximum_declared_fields_fit_original_body_budget() {
+        let mut expected = request();
+        expected.identity.node.deployment_id = "d".repeat(128).try_into().unwrap();
+        expected.identity.node.node_id = "n".repeat(128).try_into().unwrap();
+        expected.identity.tenant_id = "t".repeat(128).try_into().unwrap();
+        expected.identity.sandbox_id = "s".repeat(128).try_into().unwrap();
+        expected.identity.operation_id = "o".repeat(128).try_into().unwrap();
+        expected.create.template_revision = "r".repeat(128).try_into().unwrap();
+        expected.identity.node.node_generation = u64::MAX.try_into().unwrap();
+        expected.identity.intent_version = u64::MAX.try_into().unwrap();
+        expected.identity.request_window = u64::MAX.try_into().unwrap();
+        expected.identity.retention_slot = u16::MAX;
+        expected.create.template_digest = [u8::MAX; 32];
+        expected.create.resources.cpu = u64::MAX;
+        expected.create.resources.memory_bytes = u64::MAX;
+        expected.create.resources.disk_bytes = u64::MAX;
+        expected.create.options = vec![u8::MAX; MAX_OPTIONS_BYTES];
+        expected.create.startup_deadline_ms = 1;
+        expected.create.timeout_ms = u64::MAX - 1;
+        expected.create.max_lifetime_ms = u64::MAX - 1;
+        for intent in [
+            Intent::Create,
+            Intent::Renew {
+                end_at_ms: u64::MAX,
+            },
+            Intent::Destroy,
+        ] {
+            expected.intent = intent;
+            let encoded = encode(&expected).unwrap();
+            // The fixed schema's conservative bound is reviewed separately
+            // from the application's own identifier/options guard proofs.
+            let bound = 2048 + 6 * (6 * 128) + 4 * MAX_OPTIONS_BYTES;
+            assert!(encoded.len() <= bound);
+            assert!(bound <= LIFECYCLE_BODY_BYTES);
+            let actual = decode(&encoded).unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(validate(&actual, &expected.identity.node), Ok(()));
+        }
+    }
+
+    #[test]
     fn derived_struct_sequences_preserve_complete_values() {
         let expected = request();
         let object = serde_json::to_value(&expected).unwrap();

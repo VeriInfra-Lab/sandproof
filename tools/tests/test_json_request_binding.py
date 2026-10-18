@@ -53,6 +53,16 @@ class JsonRequestBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'real API directly'):
             check_registry(ROOT, registry)
 
+    def test_encoding_bound_and_concrete_proof_inventory_are_not_silent_assumptions(self):
+        registry = copy.deepcopy(self.registry)
+        registry['formal_contract']['encoding_bound']['fixed_schema_allowance'] = 8192
+        with self.assertRaisesRegex(ValueError, 'concrete byte contract or size bound'):
+            check_registry(ROOT, registry)
+        registry = copy.deepcopy(self.registry)
+        registry['formal_contract']['own_theorems'].pop()
+        with self.assertRaisesRegex(ValueError, 'theorem inventory changed'):
+            check_registry(ROOT, registry)
+
     def fixture(self, kind):
         registered = self.registry['entries']['json_request::' + kind]['snapshot']
         # Complete original wrapper/callee ASTs, not copied business algorithms.

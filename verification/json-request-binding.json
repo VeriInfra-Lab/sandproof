@@ -1974,5 +1974,36 @@
         }
       }
     }
+  },
+  "formal_contract": {
+    "operations": "SandboxModel.Boundaries.JsonRequest.LifecycleJsonLibrary",
+    "condition": "SandboxModel.Boundaries.JsonRequest.SliceDeriveContract",
+    "dictionary": "serde_json::Error, original Display/ToString for InvalidIdentifier and InvalidCounter only",
+    "source_context": "actual original input, provider and private parser context at each standard-derived call; cursor observations belong to the same input slice; not arbitrary value-reader witnesses",
+    "allocation_domain": "valid finite Rust values, normal successful allocation and standard library completion; OOM/abort not claimed recoverable",
+    "encoding_bound": {
+      "fixed_schema_allowance": 2048,
+      "escape_per_utf8_byte": 6,
+      "options_per_byte": 4,
+      "body_bytes": 270336
+    },
+    "provided_by": "reviewed A6 fixed library/standard derives and B4 direct-call binding; source and AST admission plus native regressions; no machine refinement claim for this trusted condition",
+    "own_theorems": [
+      "original_counter_error_dictionary",
+      "original_identifier_error_dictionary",
+      "bound_readers_keep_original_input",
+      "bound_zero_uses_original_json_error",
+      "bound_invalid_id_uses_original_json_error",
+      "own_input_and_create_bound_encoding",
+      "slice_binding_instantiates_standard_recipe",
+      "lifecycle_slice_decode_has_valid_own_fields",
+      "lifecycle_slice_and_original_guard_shape",
+      "lifecycle_original_conversions_roundtrip",
+      "roundtrip_preserves_original_guard",
+      "full_initial_request_domain",
+      "initial_request_survives_byte_roundtrip",
+      "every_valid_request_has_bounded_roundtrip",
+      "initial_request_byte_acceptance_realizable"
+    ]
   }
 }
