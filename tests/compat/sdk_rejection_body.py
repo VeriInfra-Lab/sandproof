@@ -30,4 +30,3 @@ async def gated_async(original_async, control, events, partial, *args):
             # the transport close the iterator without polling it again.
             events.append('tail')
             yield chunk[1:]
-
