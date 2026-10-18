@@ -606,6 +606,8 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 [服务任务计数回归](../sandbox-guest-service/src/task_accounting/tests.rs)用明确屏障检查未轮询取消、排队阻塞取消、实际返回与 panic、等待者丢失、runtime 退出超时、不同时间峰值、多 runtime 共同计数，以及算术/毒化异常不可恢复成精确观察。返回值另有存活责任，不能因任务归零视为内存释放。[真实监听器组合](../sandbox-guest-service/tests/task_accounting.rs)在独立进程用原 Listener 和有限响应编码器检查排队期间的异步/阻塞同时计数、连接满额不新增任务及实际退出归零；[正式 CLI 拒绝](../sandbox-guest-service/tests/daemon.rs)同时核对退出报告、原阶段诊断及 PID 状态不变。它们纳入完整 Linux 基础检查，不执行 KVM 或满额业务压力；整服务预算、依赖库开销、命令/文件组合峰值和 E05 仍须独立实测，不能把这些计数回归记作全服务资源验收。
 
+正式装配的任务压力验收按[模块合同](module-contracts.md)的原容量和同步析构重叠计算各类别及合计上界，保存精确源码、配置与二进制摘要。使用退出报告的同一 `total.peak`，逐类核对 `peak`，并要求 `exact=true`；不能相加不同时间的分项峰值。正常收尾另要求 live 归零及独立进程/文件清理；强杀、未知或仍存活任务保留原失败，不补造退出报告。工作负载应同时覆盖保留记录满额、普通/控制请求、文件 RPC/慢传输和取消后的排队工作，保持原期限与配额。环境解码还须覆盖压缩、数字规范化和接近正文限额才发现的重复键，原完整错误与后续合法请求均应保留。有限压力通过只支持已执行的组合，任务上界不代替整服务内存声明；daemon RSS 样本、worker/用户进程及整 VM 的观察范围分别报告。
+
 [正式 daemon 重启检查](../tests/system/guest_daemon_restart.py)在新的 Linux x86_64 PID、网络和挂载命名空间中执行实际 `initialize/serve` 二进制与 worker，固定 MMDS 地址由隔离的受控服务提供；不改生产地址、监听器或处理器。固定 SDK 的同步/异步原 RPC 客户端分别保持一个真实命令，强杀原 daemon 后核对原 pidfd 仍存活且订阅没有伪造 End；重开原持久文件后，未初始化及错误令牌拒绝，重新初始化后旧 PID/tag 的 Connect、输入、关闭输入、信号和 resize 全部明确拒绝。新命令可复用 tag 正常结束而不接管旧进程；原进程只由测试的原 FIFO 释放并按 pidfd 等待。错误 VM 身份启动拒绝且原文件内容/inode 保持。测试进程本身必须为隔离空间的 root/PID 1，网络只含 lo，普通直接执行及 `-O` 均拒绝。失败收尾仅操作本轮捕获的 pidfd，PID 命名空间退出是未知后代的额外收尾边界。
 
 原强杀场景要求没有退出报告；恢复后完成的新命令再经 SIGTERM 正常收尾，分别保存 initialize、serve 退出及错 VM 启动拒绝的精确任务报告。读取器拒绝缺失、超长、重复字段、未知类别、非整数、不一致峰值、仍存活或 `exact=false` 的观察；核对实际命令各类任务曾被计数。这只验证上述有限调用集的观察与任务退出，实际进程仍由原 pidfd 独立确认，不能用计数归零代替它。
