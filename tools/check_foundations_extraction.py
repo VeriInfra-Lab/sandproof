@@ -9,6 +9,12 @@ import sys
 import subprocess
 
 EXTERNALS = {
+    "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
+    "serde_core::de::Error::invalid_type",
+    "serde_core::de::Visitor::visit_borrowed_str",
+    "serde_core::de::Visitor::visit_str",
+    "serde_core::de::Visitor::visit_string",
+    "serde_core::de::Visitor::visit_u64",
     "core::option::{core::option::Option<T>}::as_ref",
     "core::option::{impl core::ops::try_trait::Try for core::option::Option<T>}::branch",
     "core::option::{impl core::ops::try_trait::FromResidual<core::option::Option<core::convert::Infallible>> for core::option::Option<T>}::from_residual",
@@ -17,16 +23,75 @@ EXTERNALS = {
     "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
     "alloc::vec::{alloc::vec::Vec<T>}::retain",
     "core::option::{core::option::Option<T>}::is_none_or",
+    "core::option::{core::option::Option<T>}::is_some_and",
+    "core::bool::{bool}::then_some",
+    "core::num::{u8}::is_ascii_alphanumeric",
+    "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}::from_str",
+    "core::str::iter::{impl core::iter::traits::iterator::Iterator<u8> for core::str::iter::Bytes<'_0>}::all",
+    "core::str::{str}::len",
+    "core::str::{str}::is_empty",
+    "core::str::{str}::split_at_checked",
+    "core::str::{str}::bytes",
+    "core::str::{str}::parse",
+    "core::str::traits::{impl core::cmp::PartialEq<str> for str}::eq",
+    "alloc::str::{impl alloc::borrow::ToOwned<alloc::string::String> for str}::to_owned",
+    "alloc::string::{impl core::cmp::PartialEq<&'_0 str> for alloc::string::String}::eq",
+    "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+    "alloc::string::{impl alloc::string::ToString for T}::to_string",
 }
 
 # A public root cannot disappear by removing it from both the Rust adapter and
 # extraction script. Each expansion is an explicit, reviewed coverage change.
 ROOTS = {
-    "counter_from_u64", "counter_next", "counter_value", "lane_current",
+    "json_ids::tenant_decode", "json_ids::sandbox_decode",
+    "json_ids::operation_decode", "json_ids::logical_action_decode",
+    "json_ids::resource_decode", "json_ids::client_request_decode",
+    "json_ids::deployment_decode", "json_ids::node_decode", "json_ids::string_primitive",
+    "json::counter_decode", "json::counter_primitive", "json::json_error_passthrough",
+    "counter_from_u64", "counter_next", "counter_value", "counter_into_u64", "internal_error_text", "lane_current",
     "store_get_copy", "store_put", "store_retain_above", "option_is_none_or",
     "resource_add", "resource_positive",
-    "resource_fits", "create_binding_valid", "identity_response",
+    "resource_fits", "resource_values", "create_binding_valid", "identity_response",
     "retry_hint", "outcome_observation",
+    "allocated_number", "center_allocated_number",
+    "tenant_from_string", "tenant_from_str", "tenant_value", "tenant_into_string",
+    "sandbox_from_string", "sandbox_from_str", "sandbox_value", "sandbox_into_string",
+    "operation_from_string", "operation_from_str", "operation_value", "operation_into_string",
+    "logical_action_from_string", "logical_action_from_str", "logical_action_value", "logical_action_into_string",
+    "resource_from_string", "resource_from_str", "resource_value", "resource_into_string",
+    "client_request_from_string", "client_request_from_str", "client_request_value", "client_request_into_string",
+    "deployment_from_string", "deployment_from_str", "deployment_value", "deployment_into_string",
+    "node_from_string", "node_from_str", "node_value", "node_into_string",
+    "numeric::seconds_to_milliseconds", "numeric::bytes_to_mebibytes",
+    "numeric::available_resource", "receipts::action_version", "receipts::receipt_validate",
+}
+ROOT_MODULES = {'numeric', 'receipts', 'json', 'json_ids'}
+LIBRARY_ROOTS = {
+    'serde_core::de::Visitor::visit_u64', 'serde_core::de::Visitor::visit_str',
+    'serde_core::de::Visitor::visit_string', 'serde_core::de::Visitor::visit_borrowed_str',
+    'serde_core::de::Error::invalid_type',
+}
+REQUIRED_IDENTITY_CALLS = {
+    "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt",
+    "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from",
+    "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values",
+    "sandproof_protocol::valid_identifier",
+    "sandproof_protocol::identifiers::parse_allocated_number",
+    "sandproof_center_core::validation::number",
+    "sandproof_protocol::numeric::seconds_to_milliseconds",
+    "sandproof_protocol::numeric::bytes_to_mebibytes",
+    "sandproof_protocol::numeric::available_resource",
+    "sandproof_protocol::{sandproof_protocol::ActionIdentity}::validate_version",
+    "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for",
+    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}::eq",
+}
+LIBRARY_SOURCES = {
+    'alloc/src/vec/mod.rs', 'core/src/option.rs', 'alloc/src/string.rs',
+    'alloc/src/str.rs', 'core/src/str/mod.rs', 'core/src/str/iter.rs',
+    'core/src/str/traits.rs', 'core/src/num/mod.rs', 'core/src/num/error.rs',
+    'core/src/fmt/num.rs', 'core/src/fmt/rt.rs',
+    'core/src/bool.rs', 'core/src/fmt/mod.rs', 'core/src/num/uint_macros.rs',
+    'core/src/result.rs',
 }
 
 
@@ -51,7 +116,7 @@ def check(root, llbc, inventory):
         raise ValueError('unexpected extraction crate')
     environment = json.loads((root / 'verification/foundations-environment.json').read_text())
     libraries = environment.get('library_sources', {})
-    source_paths = {'alloc/src/vec/mod.rs', 'core/src/option.rs'}
+    source_paths = LIBRARY_SOURCES
     if (set(libraries) != {'production', 'extraction'}
             or any(set(sources) != source_paths for sources in libraries.values())
             or any(not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
@@ -66,11 +131,22 @@ def check(root, llbc, inventory):
             or llbc['translated']['options']['dest_file'] != environment.get('driver_destination')):
         raise ValueError('extraction artifact destination must be the frozen project-relative path')
     script = (root / 'scripts/regenerate-foundations-lean.sh').read_text()
-    roots = re.findall(r'--start-from crate::([a-z0-9_]+)', script)
+    roots = re.findall(r'--start-from crate::([a-z0-9_:]+)', script)
     source = (root / 'verification/extract-foundations/src/lib.rs').read_text()
     public = re.findall(r'pub fn ([a-z0-9_]+)\(', source)
+    modules = re.findall(r'pub mod ([a-z0-9_]+);', source)
+    if len(modules) != len(set(modules)) or set(modules) != ROOT_MODULES:
+        raise ValueError('unreviewed or missing public root module')
+    for module in sorted(ROOT_MODULES):
+        module_source = (root / f'verification/extract-foundations/src/{module}.rs').read_text()
+        # Include generic roots without treating their type parameters as names.
+        names = re.findall(r'pub fn ([a-z0-9_]+)(?:<[^\n{]*>)?\s*\(', module_source)
+        public.extend(f'{module}::{name}' for name in names)
+    all_roots = re.findall(r'--start-from ([A-Za-z0-9_:]+)', script)
+    expected_roots = {'crate::' + name for name in ROOTS} | LIBRARY_ROOTS
     if (len(roots) != len(set(roots)) or len(public) != len(set(public))
-            or set(roots) != ROOTS or set(public) != ROOTS):
+            or set(roots) != ROOTS or set(public) != ROOTS
+            or len(all_roots) != len(set(all_roots)) or set(all_roots) != expected_roots):
         raise ValueError('free production-call roots and script disagree')
     functions = inventory['functions']
     # Aeneas emits the parent, loop wrapper and loop body under ONE Rust name.
@@ -132,8 +208,8 @@ def check(root, llbc, inventory):
             lean_name = function['lean_name'].removeprefix('SandproofFoundationsRust.')
             if not re.search(r'\bdef\s+' + re.escape(lean_name) + r'\b', generated.read_text()):
                 raise ValueError(f'owned loop/function has no generated definition: {name}')
-    for name in roots:
-        function = by_name.get(f'{crate}::{name}')
+    for name in [f'{crate}::{name}' for name in roots] + sorted(REQUIRED_IDENTITY_CALLS):
+        function = by_name.get(name)
         if function is None or function['lean_file'] != 'SandproofFoundations/Funs.lean':
             raise ValueError(f'root was not generated as a real function: {name}')
         generated = root / 'verification/aeneas/foundations' / function['lean_file']
@@ -143,7 +219,7 @@ def check(root, llbc, inventory):
     actual = {f['rust_name'] for f in functions if f['is_opaque']}
     if actual != EXTERNALS:
         raise ValueError(f'unreviewed external surface: added={actual-EXTERNALS}, removed={EXTERNALS-actual}')
-    return len(roots)
+    return len(all_roots)
 
 
 def main():

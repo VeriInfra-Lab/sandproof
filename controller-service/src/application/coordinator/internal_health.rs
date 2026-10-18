@@ -6,6 +6,7 @@ use super::{
 use crate::{physical_storage::PhysicalTemplateCache, templates::ComputeLimits};
 use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::internal::lifecycle::Resources;
+use sandproof_protocol::numeric::available_resource;
 
 impl<H: ControllerHost> ControllerApplication<H> {
     /// Original profile/lease and complete peak check before managed cache I/O.
@@ -79,21 +80,18 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .saturating_sub(profile.peak_bytes().map_err(map_journal)?);
         let (cpu, memory) = inner.host.available_compute()?;
         let free = Resources {
-            instances: self
-                .config
-                .limits
-                .max_active_global
-                .saturating_sub(usage.instances)
-                .min(slots),
-            cpu: compute.max_vcpus_global.saturating_sub(usage.cpu).min(cpu),
-            memory_bytes: compute
-                .max_memory_bytes_global
-                .saturating_sub(usage.memory_bytes)
-                .min(memory),
-            disk_bytes: pool
-                .rootfs_budget_bytes
-                .saturating_sub(usage.disk_bytes)
-                .min(disk),
+            instances: available_resource(
+                self.config.limits.max_active_global,
+                usage.instances,
+                slots,
+            ),
+            cpu: available_resource(compute.max_vcpus_global, usage.cpu, cpu),
+            memory_bytes: available_resource(
+                compute.max_memory_bytes_global,
+                usage.memory_bytes,
+                memory,
+            ),
+            disk_bytes: available_resource(pool.rootfs_budget_bytes, usage.disk_bytes, disk),
         };
         Ok((
             u64::try_from(self.clock.now_ms()?).map_err(|_| ApplicationError::Invalid)?,

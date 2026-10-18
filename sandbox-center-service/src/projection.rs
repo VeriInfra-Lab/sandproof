@@ -9,6 +9,7 @@ use sandproof_controller_service::{
     application::{InstanceDetail, InstanceInfo, InstancePage, ListSelection, Session},
 };
 use sandproof_protocol::internal::lifecycle::LifecycleRequest;
+use sandproof_protocol::numeric::bytes_to_mebibytes;
 use sandproof_protocol::{SandboxId, TenantId};
 
 /// Fresh routing proof data, derived from the same confirmed authority view.
@@ -69,8 +70,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             envd_version: template.envd_version.clone(),
             cpu_count: u32::from(template.resources.cpu_count),
             memory_mb: template.resources.memory_mib,
-            disk_size_mb: u32::try_from(template.resources.disk_bytes.div_ceil(1024 * 1024))
-                .map_err(|_| PortError::Busy)?,
+            disk_size_mb: bytes_to_mebibytes(template.resources.disk_bytes)
+                .ok_or(PortError::Busy)?,
         })
     }
     /// None means ONLY an expired original node observation. It is not a

@@ -7,6 +7,11 @@ abbrev RustResources := sandproof_protocol.internal.lifecycle.Resources
 abbrev RustIdentity := sandproof_protocol.internal.ControlIdentity
 abbrev RustNode := sandproof_protocol.internal.NodeIdentity
 abbrev RustError := sandproof_protocol.internal.InternalError
+
+def internalFailureView : RustError → InternalFailure
+  | .InvalidCounter => .invalidCounter
+  | .UnsupportedVersion => .unsupportedVersion
+  | .BindingMismatch => .bindingMismatch
 abbrev RustCreate := sandproof_protocol.internal.lifecycle.CreateBinding
 
 def resourceView (r : RustResources) : ResourceVector :=
