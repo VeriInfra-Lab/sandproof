@@ -68,6 +68,12 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 
 本批不声称回调业务、完整异步实现或 Tokio 已获机器证明。调用者仍须提供具体业务核心定理、真实输入／池／部署绑定，以及 B1 所登记机械接线符合合同；有限并发测试不替代该符合性的形式化证明。容量结论是同一家族 work/status 门的任务额度，不是 VM／物理资源总额度。#510 的 R2 业务分支、R3 网关撤销／退出和 V9 组合仍保留；T9 排除，#337 仅记录历史阻断。
 
+## T6 边界：撤销等待
+
+[Revocation](../SandboxModel/Boundaries/Revocation.lean) 是 [B3-until_revoked](formal/dependencies.md#b3-撤销等待的逐符号可信适配) 的独立条件模型，来源为 integration `a2b8a4b6ce5c170c953130b57abc8c2d6c468d0b`，当前精确输入见 [清单](../verification/revocation-contract-inputs.sha256)。21 条定理覆盖原信号/工作标签、选择后无新 poll、局部正常析构观察、返回分类、两个允许竞态、错误分支顺序及 B1 组合。**真实 async Rust 未被 Aeneas 抽取；其接线符合性属于登记的可信适配条件。** 这不证明完整网关授权、撤销后再无任何 I/O、relay 退出、持久提交、物理释放或无条件进展，也不关闭整个 T6/V0。
+
+候选已在 a6000 原 Lean 服务完整检查，无错误且非陈旧；九项原 Rust 撤销组件测试通过。正式冻结、错误副本和完整入口的最终验收仍须以本批 PR 同提交收据确认，不能将候选结果当作整套验收。
+
 ## T5/T6 边界：DataLease 只读判定
 
 归 #515/#510，V0 只复用该接口登记和验证接线，不将网关业务加入 #333 完成前置。生产源码定位为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`，本批承接 #544 的依赖复验和 #540 测试修复；实际源码、生成物、模型和验收输入以 [DataLease 输入清单](../verification/data-drain-inputs.sha256)为准。原文件 `controller-service/src/application/data_drain.rs` SHA256 为 `12833632ecaeb1d37088119d6b9ea7e03c40f550dc484e5d2b0003f6629b02a5`，未修改生产 Rust、Charon/Aeneas 或证明工具版本。

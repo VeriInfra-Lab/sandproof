@@ -65,6 +65,8 @@ Host 公共任务／许可合同执行 `bash scripts/verify-task-contract.sh`：
 
 环境和调用登记见 [task-contract-environment.json](task-contract-environment.json)、[task-contract-inputs.sha256](task-contract-inputs.sha256)和[B1 条款](../docs/formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)。这些是条件接口模型及适配工程核对，**不是实际 async Rust 的自动抽取证明**。模型不承诺任务终止、物理退出或回调的业务不变量；错误副本被组件断言拒绝与 Lean 模型反例分别报告。所有这些入口按当前批次约定在 a6000 运行。
 
+撤销等待执行 `bash scripts/verify-revocation-contract.sh`：核对 [B3 环境](revocation-contract-environment.json)、输入、实际调用范围、固定 Tokio 源码、21 条条件模型定理及依赖审计，再在独立副本运行正确版和交换分支的错误版。每版须新编译；错误版必须被原同一断言拒绝。单独复现入口为 `bash scripts/python-entry.sh tools/check_revocation_components.py --output artifacts/revocation-check`，输出目录必须不存在。原固定 Charon 不支持该 async 入口，实际接线以[逐符号 B3 条款](../docs/formal/dependencies.md#b3-撤销等待的逐符号可信适配)为条件，不声明自动抽取、回滚或外部任务退出。完整证明入口追加此门槛，保留其余全部模块检查。
+
 缺失 unknown 检查的错误版可在同一固定 Linux 环境用 `bash scripts/python-entry.sh tools/check_data_drain_negative.py --output artifacts/data-drain-negative-check` 复现，输出目录必须不存在。入口在私有副本修改真实表达式、编译／抽取错误版，运行原 Rust 回归，并通过同一真实 Lean 服务和内核证明错误版不满足正确版相同的 `RustReadSafe` 性质；失败日志保留，只有全部步骤通过才生成成功收据。服务使用项目 `.tools/lean-mcp` 和原标准客户端；不修改生产文件或正式生成体。
 
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
