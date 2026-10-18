@@ -11,6 +11,7 @@ Nice=19
 IOSchedulingClass=idle
 CPUQuota=10%
 MemoryMax=256M
+MemorySwapMax=0
 TasksMax=8
 RuntimeMaxSec=300
 NoNewPrivileges=yes
