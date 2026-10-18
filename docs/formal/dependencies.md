@@ -4,7 +4,7 @@
 
 状态：详细证明计划；拟定定理尚待建立。适用代码定位基线与实际证明状态分别见总览和[覆盖记录](../proof-coverage.md)，不因本页完成而新增已证明结论。
 
-本页是外部前提的唯一明细；模块计划引用 A1–A12，不再各自列一套“依赖不会出错”。外部合同限定可观察语义及故障可能，自有配置、检查、封装和恢复继续由对应模块证明。
+本页是外部前提的唯一明细；模块计划引用 A1–A12，不再各自列一套“依赖不会出错”。外部合同限定可观察语义及故障可能，自有配置、检查、封装和恢复继续由对应模块证明。owner 已批准的逐符号机械适配按下方 B1 登记保留可信符合性条件；这不把适配内部的业务决定变为外部保证。
 
 ## 依赖登记与使用规则
 
@@ -152,6 +152,22 @@ Linux 前端还产生固定类型的自动 `DropGlue`，纯后端不输出这些
 
 `fresh_identity` 的三个真实闭包分别捕获两个、一个、一个不可变 u64 编号引用。固定后端将它们表示为标量对或标量；审计逐项核对捕获数量、顺序、共享引用及原 u64 类型，不允许任意闭包都使用类型别名。闭包调用体与编译器胶水仍逐项检查；这不是遗漏业务函数或自定义析构的豁免，也不加入物理分配失败的保证。
 
+### A6 DataLease 只读观察接口
+
+`A6-data-drain-read` 只用于真实 [DataLease](../../controller-service/src/application/data_drain.rs) 的 `routes_dropped/drained` 两个共享借用读方法。抽取入口通过 `#[path]` 引用原生产文件；实际自有判断保留生成体，由 [独立策略](../../SandboxModel/Boundaries/DataDrain/Model.lean)、[表示关系](../../SandboxModel/Boundaries/DataDrain/Representation.lean)及[对应证明](../../SandboxModel/Boundaries/DataDrain/Refinement.lean)连接。源码、三项库模型、抽取参数、两版标准库、工具与审计根由[输入清单](../../verification/data-drain-inputs.sha256)及[环境清单](../../verification/data-drain-environment.json)固定。工具检查复用已有 Linux 环境，不引入新工具版本。
+
+| 实际依赖接口 | 本批使用的保证 | 不能推出 |
+|---|---|---|
+| `Arc::strong_count(&arc)` | 有效共享借用下返回此分配的一次强引用计数观察，模型保留原 `usize` 值；固定两版实现使用内部 Relaxed load | 计数在返回后保持不变、观察与随后原子布尔读取构成同一快照、以后不能新增 pin、所有物理进程已经退出 |
+| `Arc::deref` | 共享借用指向原 Arc 分配中的同一 AtomicBool 对象，不选择另一个对象 | 解引用本身读取布尔值，或建立管理锁、租户身份和退出证据 |
+| `AtomicBool::load(Acquire)` | 对原布尔对象执行一次 Acquire 读取，返回该次观察值；实际调用的排序由 LLBC 审计限定 | 一定观察到所有并发或未来写入、`false` 自身等于真实退出、对另一对象或整个系统建立同步 |
+
+外部模型的 `Arc` 记录是**单次调用的观察载体**：计数与条件性布尔读取可以发生在不同时间；布尔字段不是在 deref 时取得的快照。同一记录不能作为跨调用不变的共享堆使用。计数不是 1 时原程序短路，不需要发生布尔读取。模型只为实际三个读接口提供定义；其他内存排序以外层失败拒绝为范围外，不是断言真实标准库的 Relaxed/SeqCst load 会失败。没有 Arc 创建、clone、Weak、store、Drop、任务取消或任意 unsafe 的模型。
+
+实际 `drained` 的已证接口是：相对于本次提供的观察，返回真当且仅当计数为 1 且 unknown 为假；同时证明 unknown 为真或计数不为 1 时返回假及正常可表示输入被接受。`routes_dropped` 只判断计数，不判断 unknown。三项原语模型与真实标准库的一致性仍为显式 A6 条件，源码审查、原生回归和摘要不是标准库的形式化证明。
+
+调用者继续负责：绑定原 lease/AtomicBool 与协调方保留的句柄、管理锁和所有 pin 来源；在释放决策期间阻止新持有者，包括可能的旧持有者克隆或 Weak 升级路径；建立并保持持久授权失效；哪些失败必须 `mark_unknown`；依据精确宿主观察处理未知；保持检查至实际释放间的条件。本批没有把这些自有业务义务假定为已证，也不提供真实排空、释放、存储恢复或完成性定理。生产源码的“known exit”注释不能替代上述使用条件。变更原方法、库接口、调用排序、对象绑定或模型后重查本批及未来调用者的证明闭包。
+
 ## A 底层依赖的详细约定
 
 本附录把正文中的“依赖外部软件”细化为证明前提。总目标写成：
@@ -235,3 +251,35 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 部署预检可以检查二进制版本、配置格式、权限、路径、控制组、转发设置和资源预算；运行期间还需保持受保护目录、排他控制和规则不被外部写者破坏。
 
 预检不能证明内核没有漏洞、未来磁盘永远可写或外部命令永远及时返回。因此“预检通过”不是 `A1–A12` 全部成立的证明。凡是可失败的观察，都保留 `未知/错误` 分支，不用一个布尔值把“没看到”当作“不存在”。
+
+## B1 Host 任务与原许可池的逐符号可信适配
+
+本登记落实 #510 中 owner 已批准的机械任务适配范围。适用生产实现定位为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
+
+### A6-task-pools 外部原语条件
+
+固定 Tokio 1.49.0：同一池中每次领取一个独占许可，容量不足时非等待领取拒绝；等待领取允许排队，取消撤销排队责任并归还已经分配给该 future 的许可；正常 Drop 归还原池且不复制许可。许可可以在唤醒 future 之前分配，因此 `.await` 尚未返回不等于尚未获额。固定源码的队列/关闭/Drop 路径在环境清单登记；Cargo.lock 的 `.crate` 校验和及全部解包文件由检查器核对。此完整性检查不是 Tokio 已形式化证明。
+
+`spawn_blocking` 接管给定 FnOnce 及捕获值，至多调用该 FnOnce 一次；丢弃 JoinHandle 不主动丢弃仍在排队／运行的闭包。**许可是否一直跨越业务回调，由下方 B1 的命名绑定与作用域负责**；Tokio 不阻止闭包主动提前 `drop` 捕获值。已开始的阻塞任务不能靠 abort 证明退出。尚未开始的任务可能被运行时丢弃，捕获值按实际 Rust 析构路径处理。回调错误和 unwind 前都可能已有业务效果；JoinError 只表示结果不可按正常成功使用，不提供回滚事实。[固定版 JoinHandle](https://docs.rs/tokio/1.49.0/tokio/task/struct.JoinHandle.html)、[固定版 Semaphore](https://docs.rs/tokio/1.49.0/tokio/sync/struct.Semaphore.html)。
+
+这些是有限接口的外部条件，允许排队、执行延迟、关闭和失败，不假定公平调度或后台工作必然结束。进程 abort、崩溃、OOM、泄漏／forget 许可及未登记的增额、合并／拆分操作不由正常 Drop 合同担保。宿主进程崩溃后的持久责任、VM 与外部进程清理由原恢复模块处理，本合同不把内存许可当作物理资源释放证据。
+
+### 自有适配与使用者义务
+
+| 逐符号范围 | 作为 B1 保留的机械符合性条件 | 仍须由使用者提供 |
+| --- | --- | --- |
+| `HostLifecycle::new/clone`；`HostFacade::new/clone/lifecycle`；宿主 `assemble/serve` 和 `RegisteredHost::status` 接线 | 两个不同的原 work/status 池，各容量 1；克隆保持原 application 和原池；注册接收器、driver、模板缓存复用原 facade | 实际部署只组装一个该门控家族；另建 wrapper 会产生另一个池，不能套用全 application 的单任务结论；请求／节点及完整回调输入绑定 |
+| `HostLifecycle::blocking`、`receive/confirm/close/validation_evidence` | 领取原 work 许可后提交原 FnOnce，将命名许可绑定移入闭包并跨越实际回调；Join 错误保持原映射 | 每个真实回调的业务不变量及每个可观察前缀；请求、模板、compute、回执、发布等参数正确；来源不同的错误不被用于补造“未执行”或释放事实 |
+| `status_admission::acquire`、`HostLifecycle::free_resources` | 先非等待领取 status，再等待同一 work；队列取消归还已得预留；获额后两许可跟随原只读回调，调用方取消不提前归还 | 节点／compute 绑定、健康观察本身正确、时间和结果解释；不由有界等待推出健康时效、宿主工作终止或公平进展 |
+
+`blocking` 的当前真实调用者为 `advance/pending/cache_storage_ready/recover`，分别调用原 `advance_internal_lifecycle/internal_pending/validate_internal_cache_storage` 及顺序的 `recover_on_startup/expire_due_report`。直接入口保持原 `record_internal_intent/confirm_internal_result/close_internal_window/internal_validation_evidence`，健康路径保持原 `internal_free_resources`。这些回调体没有整体列入 B1；本批也未新增它们的 Aeneas 对应证明。可信的是登记的任务／许可机械接线，其符合性依据为逐符号源码审查、冻结摘要和确定性组件回归，不是完整异步 Rust 的机器证明。
+
+### 可复用合同及组合方式
+
+[Task.Model](../../SandboxModel/Boundaries/Task/Model.lean) 描述每次调用的取得、提交、开始、调用方停止等待、业务效果、结果来源和退出；[Task.Capacity](../../SandboxModel/Boundaries/Task/Capacity.lean) 将任意有限任务表接到同一对池。预算规则仅做逐次领取／归还，容量界限由初态与逐步守恒证明。所有活跃／已提交／已获额任务都计入 work；等 work 的健康任务持有 status；回调已停止但尚未析构的许可仍计入各自账本。
+
+`acquired` 包含队列已获许可、尚未再次 poll 的状态；取消须归还两项实际已得责任。`settled` 表示回调不会继续执行，允许 work/status 一个一个归还，并保留其间其它任务的交错。它不是持久提交或外部进程退出。模型中的 job 标签仅区分调用实例，不是业务请求去重或 exactly-once 证明。账本的 free 是抽象未分配额度，不承诺 `available_permits()` 等多个观测组成原子快照。
+
+使用者将实际调用历史投影到合同步骤，并提供同池、封闭许可使用范围和回调绑定后，可复用每调用次数至多一次、取消不提前放行仍在执行的工作、原池身份保持、有限任务集合不超 work/status 容量，以及 Busy 不能推出无业务效果。模型有合法非空执行和提前释放／错误池的同性质反例。**实际异步历史符合该投影仍属于上述 B1 条件**；模型定理不自动证明这层符合性，更不证明回调业务、全系统 CPU/内存/VM 额度、网关撤销或无条件进展。
+
+不同模块只可实例化同一合同，不复制一套许可语义。新增池、公开增额、许可逃逸、其它提交入口、自定义 Drop 或生产源码变化，须更新符号登记、调用范围、摘要与组件证据后再使用当前结论。
