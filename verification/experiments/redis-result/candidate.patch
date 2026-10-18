@@ -1,0 +1,421 @@
+diff --git a/sandbox-center-store/src/store.rs b/sandbox-center-store/src/store.rs
+index 31100dd7..5a68d52d 100644
+--- a/sandbox-center-store/src/store.rs
++++ b/sandbox-center-store/src/store.rs
+@@ -1,3 +1,6 @@
++#[path = "store/storage_io.rs"]
++mod storage_io;
++
+ use crate::{ControlState, REDIS_VERSION, Revision, StoreError, WriterLease, codec, scripts};
+ use redis::{Connection, ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo};
+ use sandproof_protocol::DeploymentId;
+@@ -332,20 +335,118 @@ impl<T: ControlState> RedisLedger<T> {
+         deadline: Instant,
+     ) -> Result<Committed<T>, StoreError> {
+         let state = codec::decode(&encoded, self.config.max_block_bytes)?;
+-        let prior = expected.map_or_else(String::new, |value| value.revision.get().to_string());
+-        let mut command = redis::cmd("EVAL");
+-        command
+-            .arg(scripts::CAS)
+-            .arg(1)
+-            .arg(self.config.key())
+-            .arg(self.config.deployment.as_str())
+-            .arg(T::FORMAT_VERSION)
+-            .arg(prior)
+-            .arg(revision.get())
+-            .arg(&encoded)
+-            .arg(self.config.max_block_bytes)
+-            .arg(expected.map_or(&[][..], |value| value.encoded.as_slice()));
+-        let result: i64 = match self.query(&mut command, deadline) {
++        self.write_decoded(
++            expected,
++            DecodedWrite {
++                encoded,
++                revision,
++                deadline,
++                format: T::FORMAT_VERSION,
++                state,
++            },
++        )
++    }
++
++    fn deadline(&self) -> Instant {
++        Instant::now() + self.config.operation_timeout
++    }
++
++    fn query<R: redis::FromRedisValue>(
++        &mut self,
++        command: &mut redis::Cmd,
++        deadline: Instant,
++    ) -> Result<R, StoreError> {
++        storage_io::query(&mut self.connection, command, deadline)
++    }
++}
++
++fn setting_matches(settings: &BTreeMap<String, String>, key: &str, expected: &str) -> bool {
++    match settings.get(key) {
++        Some(value) => value.as_str() == expected,
++        None => false,
++    }
++}
++
++fn remaining_info_key(lines: std::str::Lines<'_>, key: &str) -> bool {
++    for line in lines {
++        if let Some((name, _)) = storage_io::split_colon(line)
++            && name == key
++        {
++            return true;
++        }
++    }
++    false
++}
++
++fn info_field<'a>(info: &'a str, key: &str) -> Option<&'a str> {
++    let mut lines = info.lines();
++    while let Some(line) = lines.next() {
++        if let Some((name, value)) = storage_io::split_colon(line)
++            && name == key
++        {
++            let value = storage_io::trim_cr(value);
++            return if remaining_info_key(lines, key) {
++                None
++            } else {
++                Some(value)
++            };
++        }
++    }
++    None
++}
++
++// The real write path constructs this from its own decoded value and fields.
++pub struct DecodedWrite<T> {
++    pub(crate) encoded: Vec<u8>,
++    pub(crate) revision: Revision,
++    pub(crate) deadline: Instant,
++    pub(crate) format: u32,
++    pub(crate) state: T,
++}
++
++// The result/fence stage does not use the Serde engine trait hierarchy.
++impl<T> RedisLedger<T> {
++    pub(crate) fn write_decoded(
++        &mut self,
++        expected: Option<&Observed<T>>,
++        input: DecodedWrite<T>,
++    ) -> Result<Committed<T>, StoreError> {
++        match expected {
++            Some(value) => self.write_normalized(
++                value.revision.get().to_string(),
++                value.encoded.as_slice(),
++                input,
++            ),
++            None => self.write_normalized(String::new(), &[], input),
++        }
++    }
++
++    fn write_normalized(
++        &mut self,
++        prior: String,
++        expected_payload: &[u8],
++        input: DecodedWrite<T>,
++    ) -> Result<Committed<T>, StoreError> {
++        let DecodedWrite {
++            encoded,
++            revision,
++            deadline,
++            format,
++            state,
++        } = input;
++
++        let command = storage_io::Cas {
++            script: scripts::CAS,
++            key: self.config.key(),
++            deployment: self.config.deployment.as_str(),
++            format,
++            prior,
++            revision: revision.get(),
++            payload: &encoded,
++            limit: self.config.max_block_bytes,
++            expected: expected_payload,
++        };
++        let result: i64 = match storage_io::eval(&mut self.connection, command, deadline) {
+             Ok(value) => value,
+             Err(_) => return self.fence_unknown(),
+         };
+@@ -375,92 +476,103 @@ impl<T: ControlState> RedisLedger<T> {
+         Err(StoreError::OutcomeUnknown)
+     }
+ 
+-    fn deadline(&self) -> Instant {
+-        Instant::now() + self.config.operation_timeout
+-    }
+-
+-    fn query<R: redis::FromRedisValue>(
+-        &mut self,
+-        command: &mut redis::Cmd,
+-        deadline: Instant,
+-    ) -> Result<R, StoreError> {
+-        let remaining = deadline
+-            .checked_duration_since(Instant::now())
+-            .filter(|value| !value.is_zero())
+-            .ok_or(StoreError::Unavailable)?;
+-        let result = (|| {
+-            let connection = self.connection.as_mut().ok_or(StoreError::Unavailable)?;
+-            connection
+-                .set_read_timeout(Some(remaining))
+-                .map_err(|_| StoreError::Unavailable)?;
+-            connection
+-                .set_write_timeout(Some(remaining))
+-                .map_err(|_| StoreError::Unavailable)?;
+-            command
+-                .query(connection)
+-                .map_err(|_| StoreError::Unavailable)
+-        })();
+-        // Never reuse a timed-out protocol stream with a possibly pending reply.
+-        if result.is_err() {
+-            self.connection = None;
+-        }
+-        result
+-    }
+-
+     fn check_health(&mut self, deadline: Instant) -> Result<(), StoreError> {
+-        let info: String = self.query(redis::cmd("INFO").arg("server"), deadline)?;
++        let info: String = storage_io::info(&mut self.connection, "server", deadline)?;
+         if info_field(&info, "redis_version") != Some(REDIS_VERSION) {
+             return Err(StoreError::Configuration);
+         }
+-        let settings: BTreeMap<String, String> = self.query(
+-            redis::cmd("CONFIG")
+-                .arg("GET")
+-                .arg("appendonly")
+-                .arg("appendfsync")
+-                .arg("maxmemory-policy")
+-                .arg("no-appendfsync-on-rewrite")
+-                .arg("aof-load-truncated")
+-                .arg("maxmemory"),
++        let settings: BTreeMap<String, String> = storage_io::settings(
++            &mut self.connection,
++            &[
++                "appendonly",
++                "appendfsync",
++                "maxmemory-policy",
++                "no-appendfsync-on-rewrite",
++                "aof-load-truncated",
++                "maxmemory",
++            ],
+             deadline,
+         )?;
+         let memory = self.config.redis_memory_bytes.to_string();
+-        for (key, required) in [
+-            ("appendonly", "yes"),
+-            ("appendfsync", "always"),
+-            ("maxmemory-policy", "noeviction"),
+-            ("no-appendfsync-on-rewrite", "no"),
+-            ("aof-load-truncated", "no"),
+-            ("maxmemory", memory.as_str()),
+-        ] {
+-            if settings.get(key).map(String::as_str) != Some(required) {
+-                return Err(StoreError::Configuration);
+-            }
++        if !setting_matches(&settings, "appendonly", "yes") {
++            return Err(StoreError::Configuration);
+         }
+-        let persistence: String = self.query(redis::cmd("INFO").arg("persistence"), deadline)?;
+-        for (key, required) in [
+-            ("loading", "0"),
+-            ("aof_enabled", "1"),
+-            ("aof_last_write_status", "ok"),
+-            ("aof_last_bgrewrite_status", "ok"),
+-        ] {
+-            if info_field(&persistence, key) != Some(required) {
+-                return Err(StoreError::Unavailable);
+-            }
++        if !setting_matches(&settings, "appendfsync", "always") {
++            return Err(StoreError::Configuration);
++        }
++        if !setting_matches(&settings, "maxmemory-policy", "noeviction") {
++            return Err(StoreError::Configuration);
++        }
++        if !setting_matches(&settings, "no-appendfsync-on-rewrite", "no") {
++            return Err(StoreError::Configuration);
++        }
++        if !setting_matches(&settings, "aof-load-truncated", "no") {
++            return Err(StoreError::Configuration);
++        }
++        if !setting_matches(&settings, "maxmemory", memory.as_str()) {
++            return Err(StoreError::Configuration);
++        }
++        let persistence: String = storage_io::info(&mut self.connection, "persistence", deadline)?;
++        if info_field(&persistence, "loading") != Some("0") {
++            return Err(StoreError::Unavailable);
++        }
++        if info_field(&persistence, "aof_enabled") != Some("1") {
++            return Err(StoreError::Unavailable);
++        }
++        if info_field(&persistence, "aof_last_write_status") != Some("ok") {
++            return Err(StoreError::Unavailable);
++        }
++        if info_field(&persistence, "aof_last_bgrewrite_status") != Some("ok") {
++            return Err(StoreError::Unavailable);
+         }
+         Ok(())
+     }
+ }
+ 
+-fn info_field<'a>(info: &'a str, key: &str) -> Option<&'a str> {
+-    let mut matching = info
+-        .lines()
+-        .filter_map(|line| line.split_once(':'))
+-        .filter(|(name, _)| *name == key)
+-        .map(|(_, value)| value.trim_end_matches('\r'));
+-    let value = matching.next()?;
+-    if matching.next().is_some() {
+-        None
+-    } else {
+-        Some(value)
++#[cfg(test)]
++mod boundary_contract_tests {
++    use super::{info_field, setting_matches};
++    use std::collections::BTreeMap;
++
++    #[test]
++    fn info_parser_keeps_full_values_and_rejects_all_duplicate_keys() {
++        for (input, key, expected) in [
++            ("", "key", None),
++            ("key:value", "key", Some("value")),
++            ("key:", "key", Some("")),
++            ("# header\r\nkey:value\r\n", "key", Some("value")),
++            ("key:value:tail", "key", Some("value:tail")),
++            ("xkey:first\nkey:second", "key", Some("second")),
++            ("key:first\nkey:first", "key", None),
++            ("key:first\nother:middle\nkey:last", "key", None),
++            ("key:value\r\r\n", "key", Some("value")),
++            ("key:value\r\r", "key", Some("value")),
++            ("\nkey:\n", "key", Some("")),
++            ("租户:值🦀\r\n", "租户", Some("值🦀")),
++            ("Key:value", "key", None),
++            ("key:value\r\nkey:value\r\n", "key", None),
++        ] {
++            assert_eq!(info_field(input, key), expected, "{input:?}/{key:?}");
++        }
++    }
++
++    #[test]
++    fn config_comparison_requires_the_exact_key_and_full_value() {
++        let settings = BTreeMap::from([
++            ("appendonly".to_owned(), "yes".to_owned()),
++            ("maxmemory-policy-extra".to_owned(), "noeviction".to_owned()),
++            ("unicode".to_owned(), "值🦀".to_owned()),
++        ]);
++        assert!(setting_matches(&settings, "appendonly", "yes"));
++        assert!(!setting_matches(&settings, "appendonly", "YES"));
++        assert!(!setting_matches(&settings, "appendonly", "ye"));
++        assert!(!setting_matches(
++            &settings,
++            "maxmemory-policy",
++            "noeviction"
++        ));
++        assert!(!setting_matches(&settings, "absent", ""));
++        assert!(setting_matches(&settings, "unicode", "值🦀"));
++        assert!(!setting_matches(&settings, "unicode", "值"));
+     }
+ }
+diff --git a/sandbox-center-store/src/store/storage_io.rs b/sandbox-center-store/src/store/storage_io.rs
+new file mode 100644
+--- /dev/null
++++ b/sandbox-center-store/src/store/storage_io.rs
+@@ -0,0 +1,94 @@
++//! Concrete library calls only; no health/result/fence policy lives here.
++use crate::StoreError;
++use redis::Connection;
++use std::{collections::BTreeMap, time::Instant};
++
++pub(super) struct Cas<'a> {
++    pub script: &'a str,
++    pub key: String,
++    pub deployment: &'a str,
++    pub format: u32,
++    pub prior: String,
++    pub revision: u64,
++    pub payload: &'a [u8],
++    pub limit: usize,
++    pub expected: &'a [u8],
++}
++
++pub(super) fn eval(
++    connection: &mut Option<Connection>,
++    input: Cas<'_>,
++    deadline: Instant,
++) -> Result<i64, StoreError> {
++    query(
++        connection,
++        redis::cmd("EVAL")
++            .arg(input.script)
++            .arg(1)
++            .arg(input.key)
++            .arg(input.deployment)
++            .arg(input.format)
++            .arg(input.prior)
++            .arg(input.revision)
++            .arg(input.payload)
++            .arg(input.limit)
++            .arg(input.expected),
++        deadline,
++    )
++}
++
++pub(super) fn info(
++    connection: &mut Option<Connection>,
++    section: &str,
++    deadline: Instant,
++) -> Result<String, StoreError> {
++    query(connection, redis::cmd("INFO").arg(section), deadline)
++}
++
++pub(super) fn settings(
++    connection: &mut Option<Connection>,
++    keys: &[&str],
++    deadline: Instant,
++) -> Result<BTreeMap<String, String>, StoreError> {
++    query(
++        connection,
++        redis::cmd("CONFIG").arg("GET").arg(keys),
++        deadline,
++    )
++}
++
++pub(super) fn trim_cr(value: &str) -> &str {
++    value.trim_end_matches('\r')
++}
++
++pub(super) fn query<R: redis::FromRedisValue>(
++    connection: &mut Option<Connection>,
++    command: &mut redis::Cmd,
++    deadline: Instant,
++) -> Result<R, StoreError> {
++    let remaining = deadline
++        .checked_duration_since(Instant::now())
++        .filter(|value| !value.is_zero())
++        .ok_or(StoreError::Unavailable)?;
++    let result = (|| {
++        let connection = connection.as_mut().ok_or(StoreError::Unavailable)?;
++        connection
++            .set_read_timeout(Some(remaining))
++            .map_err(|_| StoreError::Unavailable)?;
++        connection
++            .set_write_timeout(Some(remaining))
++            .map_err(|_| StoreError::Unavailable)?;
++        command
++            .query(connection)
++            .map_err(|_| StoreError::Unavailable)
++    })();
++    // Never reuse a timed-out protocol stream with a possibly pending reply.
++    if result.is_err() {
++        *connection = None;
++    }
++    result
++}
++
++pub(super) fn split_colon(value: &str) -> Option<(&str, &str)> {
++    value.split_once(':')
++}
