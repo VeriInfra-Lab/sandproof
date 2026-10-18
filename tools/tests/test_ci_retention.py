@@ -100,6 +100,25 @@ class RetentionTests(unittest.TestCase):
             self.store.collect(now=self.now, apply=True)
         self.assertTrue((path / 'generated-disk').exists())
 
+    def test_same_device_bind_mount_is_refused_before_any_deletion(self):
+        path = self.allocate()
+        row = f'123 1 0:1 / {path}/mounted rw - ext4 /dev/example rw\n'
+        with self.assertRaises(ValueError):
+            gc.reject_mounts(path, row)
+        with patch.object(gc, 'reject_mounts', side_effect=ValueError('mount remains')):
+            with self.assertRaises(ValueError):
+                self.store.collect(now=self.now, apply=True)
+        self.assertTrue((path / 'generated-disk').exists())
+        self.assertEqual(self.store.read(path.name)[2]['state'], 'retired')
+
+    def test_mount_view_decodes_spaces_and_refuses_unknown_observation(self):
+        path = Path('/private/path with space')
+        with self.assertRaises(ValueError):
+            gc.reject_mounts(path, r'123 1 0:1 / /private/path\040with\040space/sub rw - ext4 /dev/x rw')
+        gc.reject_mounts(path, '123 1 0:1 / /private rw - ext4 /dev/x rw')
+        with self.assertRaises(ValueError):
+            gc.reject_mounts(path, 'truncated')
+
     def test_evidence_must_be_preserved_independently_and_match_hash(self):
         path = self.allocate(retire=False)
         self.evidence.write_text('changed')

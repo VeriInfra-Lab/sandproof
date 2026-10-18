@@ -151,6 +151,7 @@ class Store:
                 value['state'] = 'deleting'
                 atomic_json(record, value)
                 if payload.exists():
+                    reject_mounts(payload)
                     remove_private_tree(payload, value['identity'])
                 fsync_directory(payload.parent)
                 value['state'] = 'removed'
@@ -176,6 +177,7 @@ class Store:
 
 def allocated_bytes(root):
     """Read-only size estimate, not authorization; deletion rechecks every inode."""
+    reject_mounts(root)
     info = root.stat()
     total = info.st_blocks * 512
     seen = {(info.st_dev, info.st_ino)}
@@ -191,6 +193,25 @@ def allocated_bytes(root):
                 total += child.st_blocks * 512
                 seen.add(identity)
     return total
+
+
+def reject_mounts(root, mountinfo=None):
+    # st_dev alone cannot detect a same-filesystem bind mount. A retired
+    # payload must have NO remaining mounts, even when their device matches.
+    if mountinfo is None:
+        mountinfo = Path('/proc/self/mountinfo').read_text()
+    if not mountinfo.strip():
+        raise ValueError('mount observation is empty')
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        if len(fields) < 10 or '-' not in fields[6:]:
+            raise ValueError('mount observation is incomplete')
+        name = re.sub(r'\\([0-7]{3})', lambda match: chr(int(match[1], 8)), fields[4])
+        mount = Path(name)
+        if not mount.is_absolute():
+            raise ValueError('mount observation is invalid')
+        if mount == root or mount.is_relative_to(root):
+            raise ValueError('mount remains inside retired artifact')
 
 
 def fsync_directory(path):
