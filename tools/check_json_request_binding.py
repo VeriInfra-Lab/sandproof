@@ -143,7 +143,10 @@ def check_registry(root, registry=None):
         'identity.node.node_generation', 'identity.intent_version', 'identity.request_window',
     ]:
         raise ValueError('custom field path or original type missing')
-    entry = (root / 'verification/extract-foundations/src/json_request.rs').read_text().split('#[cfg(test)]', 1)[0]
+    wrapper = root / 'verification/extract-foundations/src/json_request.rs'
+    if hashlib.sha256(wrapper.read_bytes()).hexdigest() != registry['wrapper_source_sha256']:
+        raise ValueError('full wrapper source changed; regenerate complete byte LLBC before freezing')
+    entry = wrapper.read_text().split('#[cfg(test)]', 1)[0]
     if not re.search(r'^use sandproof_protocol::internal::lifecycle::LifecycleRequest;$', entry, re.M):
         raise ValueError('original concrete lifecycle type import changed')
     for kind in ('decode', 'encode'):
@@ -182,6 +185,11 @@ def check_actual(root, directory, registry=None):
         llbc = json.loads((directory / (kind + '.llbc')).read_text())
         actual = snapshot(llbc, kind)
         registered = registry['entries']['json_request::' + kind]
+        source_file = actual['root']['item_meta']['span']['Untagged']['data']['file_id']
+        contents = llbc['translated']['files'][source_file]['contents']
+        if (not isinstance(contents, str)
+                or hashlib.sha256(contents.encode()).hexdigest() != registry['wrapper_source_sha256']):
+            raise ValueError('embedded full wrapper source changed: ' + kind)
         if actual != registered['snapshot'] or llbc_digest(llbc) != registered['full_llbc_sha256']:
             raise ValueError('binding AST/type/dictionary/cleanup changed: ' + kind)
     return 2

@@ -26,6 +26,12 @@ class JsonRequestBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'source inventory'):
             check_registry(ROOT, registry)
 
+    def test_test_only_wrapper_drift_requires_fresh_complete_artifact(self):
+        registry = copy.deepcopy(self.registry)
+        registry['wrapper_source_sha256'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'full wrapper source changed'):
+            check_registry(ROOT, registry)
+
     def test_complete_field_and_original_leaf_cannot_be_omitted(self):
         registry = copy.deepcopy(self.registry)
         registry['structs']['CreateBinding']['fields_in_declaration_order'].pop()

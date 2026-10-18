@@ -10,6 +10,9 @@ for proof_inputs in verification/*inputs.sha256; do
   shasum -a 256 -c "$proof_inputs"
 done
 
+# Reject stale byte-wrapper source before the expensive workspace checks.
+bash scripts/python-entry.sh tools/check_json_request_binding.py
+
 # The obsolete whole-controller extraction and its RustRefinement dependants
 # were retired by the project owner. Each retained source-bound module still
 # regenerates and compares its complete artifacts in its own mandatory gate.

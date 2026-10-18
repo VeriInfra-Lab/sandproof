@@ -273,7 +273,7 @@
   "entries": {
     "json_request::decode": {
       "trust": "B4: direct call binding only; not machine refinement",
-      "full_llbc_sha256": "03fae7b72704936a0245d04b4c2e690a480383cb4cf349bb5a0a8660be1e09cf",
+      "full_llbc_sha256": "5d1a6848735d99120e82569d327b1236e101511226aea40850149355f9d96f53",
       "snapshot": {
         "root": {
           "def_id": 11,
@@ -1158,7 +1158,7 @@
     },
     "json_request::encode": {
       "trust": "B4: direct call binding only; not machine refinement",
-      "full_llbc_sha256": "ce7becb31032828a5803caf4601d42fd74fec36f8c5056487d43782c25c2e564",
+      "full_llbc_sha256": "e17eb760cac3ea366ac5d1066757f187204a7daf5cc44c377b9878cf460f9b23",
       "snapshot": {
         "root": {
           "def_id": 11,
@@ -2073,5 +2073,6 @@
         ]
       }
     }
-  }
+  },
+  "wrapper_source_sha256": "2d95459f3b4aeaebc9b041d93e07d6555609278dece62315b075278b3a5ed326"
 }
