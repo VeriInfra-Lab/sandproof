@@ -48,6 +48,50 @@ async fn response_bytes(response: axum::response::Response) -> (StatusCode, Vec<
     (response.status(), bytes(response).await.to_vec())
 }
 
+async fn occupy_ordinary_workers() -> (Release, Vec<tokio::task::JoinHandle<()>>) {
+    let mut release = Release(Vec::new());
+    let mut occupied = Vec::new();
+    for _ in 0..3 {
+        let (entered, began) = tokio::sync::oneshot::channel();
+        let (sender, gate) = mpsc::channel();
+        release.0.push(sender);
+        occupied.push(tokio::task::spawn_blocking(move || {
+            entered.send(()).unwrap();
+            gate.recv_timeout(Duration::from_secs(15)).unwrap();
+        }));
+        timeout(Duration::from_secs(5), began)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    (release, occupied)
+}
+
+async fn close_after_inspection(http: &Http, pid: u32) {
+    let prepared = timeout(
+        Duration::from_secs(1),
+        http.prepare(basic(request(
+            "CloseStdin",
+            &json!({"process":{"pid":pid}}),
+        ))),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let Prepared::Ready(ready) = prepared else {
+        panic!("control was rejected")
+    };
+    // A separate task does not inherit the original prepare scope. Ready
+    // itself must preserve the selected executor for unary response work.
+    let response = timeout(Duration::from_secs(1), tokio::spawn(ready.execute()))
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(bytes(response).await, "{}");
+}
+
 #[test]
 fn reserved_control_prepare_and_later_execution_survive_full_ordinary_blocking_capacity() {
     let ordinary = tokio::runtime::Builder::new_current_thread()
@@ -95,21 +139,7 @@ fn reserved_control_prepare_and_later_execution_survive_full_ordinary_blocking_c
         let pid = command.0.identity().pid;
         data(&mut output, "stdout", b"ready").await;
 
-        let mut release = Release(Vec::new());
-        let mut occupied = Vec::new();
-        for _ in 0..3 {
-            let (entered, began) = tokio::sync::oneshot::channel();
-            let (sender, gate) = mpsc::channel();
-            release.0.push(sender);
-            occupied.push(tokio::task::spawn_blocking(move || {
-                entered.send(()).unwrap();
-                gate.recv_timeout(Duration::from_secs(15)).unwrap();
-            }));
-            timeout(Duration::from_secs(5), began)
-                .await
-                .unwrap()
-                .unwrap();
-        }
+        let (release, occupied) = occupy_ordinary_workers().await;
         let mut waiting = Box::pin(http.prepare(request("List", &json!({}))));
         assert!(
             std::future::poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx)))
@@ -124,28 +154,7 @@ fn reserved_control_prepare_and_later_execution_survive_full_ordinary_blocking_c
                 .unwrap();
             assert_eq!(response_bytes(response).await, expected, "case {case}");
         }
-        let prepared = timeout(
-            Duration::from_secs(1),
-            http.prepare(basic(request(
-                "CloseStdin",
-                &json!({"process":{"pid":pid}}),
-            ))),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        let Prepared::Ready(ready) = prepared else {
-            panic!("control was rejected")
-        };
-        // A separate task does not inherit the original prepare scope. Ready
-        // itself must preserve the selected executor for unary response work.
-        let response = timeout(Duration::from_secs(1), tokio::spawn(ready.execute()))
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(bytes(response).await, "{}");
+        close_after_inspection(&http, pid).await;
         assert!(
             std::future::poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx)))
                 .await
