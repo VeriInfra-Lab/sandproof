@@ -587,6 +587,22 @@ class Supervisor:
             unit=UNIT_PREFIX + uuid.uuid4().hex + '.service', phase='launching')
         self.save()  # Intent before launching; original identity survives crash.
 
+    def finish_envd_failure(self, group, expected):
+        from tools import envd_acceptance as envd
+        envd.require_cleanup(group['cleanup'],candidate=self.state['candidate'],
+            run_id=self.state['id'],expected_guest=expected)
+        # The durable failed phase already forbids a replay. Reporting/API
+        # failures must not keep ordinary CI paused after physical recovery.
+        HostLease(Path(self.config['ci_state_root']),self.state['id']).release()
+        result=aggregate(self.state['candidate'],[],self.state['expected'],
+            all_tasks=self.state.get('all_tasks'),dataset=self.state.get('dataset','terminal-bench@2.1'),
+            **self.result_policy())
+        result['passed']=False
+        # "done" means terminal, not passed, as for original preparation
+        # failure. The same identity never reruns; a NEW candidate may start.
+        self.terminal(result,phase='done',reason='rust_envd_checks_failed_cleanup_confirmed')
+        return False
+
     def observe_envd(self):
         """Use the same host lease and candidate, never a privileged PR job."""
         from tools import envd_acceptance as envd
@@ -605,6 +621,10 @@ class Supervisor:
             envd.require_result(group['result'], candidate=self.state['candidate'],
                                 run_id=self.state['id'], expected_guest=expected)
             return True
+        if group['phase'] == 'failed':
+            # This durable phase exists only AFTER the exact failed unit was
+            # stopped and its physical/service cleanup independently validated.
+            return self.finish_envd_failure(group,expected)
         if group['phase'] == 'new':
             self.verified_candidate()
             root = Path(self.config['scratch_parent']) / uuid.uuid4().hex[:8]
@@ -633,7 +653,7 @@ class Supervisor:
                 fields.get('ActiveState')=='active' and fields.get('ExecMainCode')=='0'):
             return False
         try:
-            if fields.get('ExecMainCode')!='1' or fields.get('ExecMainStatus')!='0':
+            if fields.get('ExecMainCode')!='1' or fields.get('ExecMainStatus') is None:
                 raise ValueError('envd stage failed or termination unknown')
             root = Path(group['root'])
             if group['phase'] != 'reclaiming':
@@ -648,6 +668,15 @@ class Supervisor:
                         or execution['candidate_manifest_sha256']!=file_digest(Path(self.state['candidate_manifest']))
                         or json_file(private_path(root/'service-cleanup.json')).get('removed') is not True):
                     raise ValueError('envd original execution or service cleanup unconfirmed')
+                cleanup=envd.require_cleanup(report,candidate=self.state['candidate'],
+                    run_id=self.state['id'],expected_guest=expected)
+                if fields['ExecMainStatus']!='0':
+                    if report.get('status')!='failed':
+                        raise ValueError('failed unit has no original failed report')
+                    subprocess.run(['systemctl','stop',group['unit']],check=True,capture_output=True,timeout=20)
+                    group.update(phase='failed',cleanup=cleanup)
+                    self.save()  # Failure and safe recovery, NEVER a success.
+                    return self.finish_envd_failure(group,expected)
                 result=envd.require_result(report,candidate=self.state['candidate'],
                     run_id=self.state['id'],expected_guest=expected)
                 group.update(result=result,root_identity=[root.stat().st_dev,root.stat().st_ino],phase='reclaiming')

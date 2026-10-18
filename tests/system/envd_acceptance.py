@@ -87,10 +87,11 @@ def prepare_deployment(config, root, record):
     from types import SimpleNamespace
     value = config['rust_envd_acceptance']
     args = SimpleNamespace(**{name:Path(config[name]) for name in (
-        'center', 'host', 'candidate_manifest', 'redis_material', 'tls_material', 'service_staging_parent',
+        'center', 'host', 'candidate_manifest', 'redis_material', 'service_staging_parent',
         'kernel', 'firecracker', 'jailer', 'tools', 'cgroup_parent', 'build_cgroup_parent')})
     for name in ('center_uid', 'center_gid', 'redis_uid', 'redis_gid', 'uid_base'):
         setattr(args, name, config[name])
+    args.tls_material=Path(value['tls_material'])
     args.rootfs, args.builder_rootfs = Path(value['go_rootfs']), Path(value['builder_rootfs'])
     args.run_root, args.scratch_parent = root / 'runtime', root
     args.namespace, args.build_namespace = [secrets.token_hex(8) for _ in range(2)]
@@ -297,6 +298,27 @@ def worker(config, expected):
     return report
 
 
+def finish_run(config, expected, root, record, code):
+    """Finish the exited worker's original cgroup, separately from its cleanup."""
+    report=json_file(private_path(root/'report.json'),limit=4*1024**2)
+    if (report.get('candidate') != config['candidate'] or report.get('run_id') != config['run_id']
+            or report.get('guest') != expected or report.get('resource_cleanup_confirmed') is not True
+            or report.get('staging_cleanup_confirmed') is not True):
+        raise ValueError('exact candidate, VM or role-directory cleanup remains unknown')
+    # A failed/cancelled probe can still have genuinely completed its finally.
+    # Remove only the original checked EMPTY cgroup, persist the receipt, then
+    # propagate the original failure. Never turn partial checks into a PASS.
+    cleanup=service_cgroup.remove(record)
+    write_once(root/'service-cleanup.json',cleanup)
+    report['service_cleanup_confirmed']=cleanup.get('removed') is True
+    _save(root/'report.json',report)
+    envd_acceptance.require_cleanup(report,candidate=config['candidate'],run_id=config['run_id'],expected_guest=expected)
+    if code!=0:
+        raise RuntimeError('Rust envd stage failed; checked cleanup does not make it pass')
+    envd_acceptance.require_result(report,candidate=config['candidate'],run_id=config['run_id'],expected_guest=expected)
+    return report
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',type=Path,required=True)
@@ -315,26 +337,24 @@ def main(argv=None):
         cpu_quota_us=profile['control_cpu_allowance']*100000,
         memory_bytes=profile['control_memory_allowance_bytes'])
     command=[*service_cgroup.prefix(record),sys.executable,str(Path(__file__)), '--config',str(args.config),'--worker']
+    interrupted=None
     with (root/'worker.log').open('xb') as output:
         process=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=output,stderr=output,
                                  env={'PATH':'/usr/local/bin:/usr/bin:/bin','LANG':'C.UTF-8'},start_new_session=True)
         try:
             code=process.wait(timeout=GROUP_SECONDS)
-        except (subprocess.TimeoutExpired,KeyboardInterrupt):
+        except (subprocess.TimeoutExpired,KeyboardInterrupt) as error:
+            interrupted=error
             process.terminate()
-            process.wait(timeout=30)
-            raise
-    if code!=0:
-        raise RuntimeError('Rust envd stage failed; retain exact recovery identity')
-    report=json_file(private_path(root/'report.json'),limit=4*1024**2)
-    if (report['resource_cleanup_confirmed'] is not True
-            or report.get('staging_cleanup_confirmed') is not True):
-        raise ValueError('real VM or original role-directory cleanup remains unknown')
-    cleanup=service_cgroup.remove(record)
-    write_once(root/'service-cleanup.json',cleanup)
-    report['service_cleanup_confirmed']=cleanup.get('removed') is True
-    envd_acceptance.require_result(report,candidate=config['candidate'],run_id=config['run_id'],expected_guest=expected)
-    _save(root/'report.json',report)
+            code=process.wait(timeout=30)
+    try:
+        report=finish_run(config,expected,root,record,code)
+    except BaseException as error:
+        if interrupted is not None:
+            raise interrupted from error
+        raise
+    if interrupted is not None:
+        raise interrupted
     return report
 
 
