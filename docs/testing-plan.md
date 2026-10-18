@@ -592,6 +592,8 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 
 ### 正式来宾服务的隔离重启组件
 
+[Start 参数分配回归](../sandbox-guest-runtime/tests/protocol_argument_budget.rs)检查完整字段、参数边界、超额后的非法元素/重复字段/尾帧错误，以及独立 Linux 子进程中的五百万空参数。子进程将地址空间硬限设置为其原有映射加 64 MiB，输入仍低于原 16 MiB 正文限额；该限制是回归测试条件，不是产品内存预算。父测试实际调用并回收标为 ignored 的子入口。[服务组合](../sandbox-guest-service/src/command_requests/tests/start/argument_budget.rs)同时检查 identity/gzip、显式/默认账户的原拒绝顺序、不进入登记/准备，以及失败的最后所有者退出前请求额度不归还。以上不替代正式 daemon 压力、全服务内存峰值或 KVM 验收。
+
 [服务任务计数回归](../sandbox-guest-service/src/task_accounting/tests.rs)用明确屏障检查未轮询取消、排队阻塞取消、实际返回与 panic、等待者丢失、runtime 退出超时、不同时间峰值、多 runtime 共同计数，以及算术/毒化异常不可恢复成精确观察。返回值另有存活责任，不能因任务归零视为内存释放。[真实监听器组合](../sandbox-guest-service/tests/task_accounting.rs)在独立进程用原 Listener 和有限响应编码器检查排队期间的异步/阻塞同时计数、连接满额不新增任务及实际退出归零；[正式 CLI 拒绝](../sandbox-guest-service/tests/daemon.rs)同时核对退出报告、原阶段诊断及 PID 状态不变。它们纳入完整 Linux 基础检查，不执行 KVM 或满额业务压力；整服务预算、依赖库开销、命令/文件组合峰值和 E05 仍须独立实测，不能把这些计数回归记作全服务资源验收。
 
 [正式 daemon 重启检查](../tests/system/guest_daemon_restart.py)在新的 Linux x86_64 PID、网络和挂载命名空间中执行实际 `initialize/serve` 二进制与 worker，固定 MMDS 地址由隔离的受控服务提供；不改生产地址、监听器或处理器。固定 SDK 的同步/异步原 RPC 客户端分别保持一个真实命令，强杀原 daemon 后核对原 pidfd 仍存活且订阅没有伪造 End；重开原持久文件后，未初始化及错误令牌拒绝，重新初始化后旧 PID/tag 的 Connect、输入、关闭输入、信号和 resize 全部明确拒绝。新命令可复用 tag 正常结束而不接管旧进程；原进程只由测试的原 FIFO 释放并按 pidfd 等待。错误 VM 身份启动拒绝且原文件内容/inode 保持。测试进程本身必须为隔离空间的 root/PID 1，网络只含 lo，普通直接执行及 `-O` 均拒绝。失败收尾仅操作本轮捕获的 pidfd，PID 命名空间退出是未知后代的额外收尾边界。

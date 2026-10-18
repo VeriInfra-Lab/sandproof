@@ -13,9 +13,11 @@ use crate::{
 #[cfg(any(target_os = "linux", test))]
 use axum::body::Body;
 use axum::http::HeaderMap;
+#[cfg(test)]
+use sandproof_guest_runtime::protocol;
 use sandproof_guest_runtime::protocol::ProtocolError;
 #[cfg(any(target_os = "linux", test))]
-use sandproof_guest_runtime::protocol::{self, Request};
+use sandproof_guest_runtime::protocol::Request;
 use std::{fmt, sync::Arc, time::Duration};
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
@@ -180,7 +182,7 @@ impl Authenticated {
     }
 
     // Only the Linux Basic preflight can produce a public Ready request.
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(test)]
     async fn decode(
         self,
         method: &'static str,

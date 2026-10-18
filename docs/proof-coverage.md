@@ -501,6 +501,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 ### Rust 来宾服务的新增局部核心（#311，抽取试验通过，未证明）
 
+[Start 参数计数](../sandbox-guest-runtime/src/protocol/argument_count.rs)与正式解码接线尚未抽取或证明。完整 schema 下的计数与原参数数组长度对应、合法消息保持、超额标记不可执行、JSON/尾帧错误优先及原账户/执行期限检查顺序均属新增义务。独立进程的硬内存限制回归不构成通用分配上界；其他字段、运行库及整服务内存仍须另验。原已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该优化。
+
 [服务任务观察](../sandbox-guest-service/src/task_accounting.rs)及显式 spawn 接线尚未抽取或证明。新增义务包括提交先计数、future/闭包及捕获对象析构后扣除、取消/排队/运行时退出中的守卫对应、同锁合计峰值，以及异常观察不可伪装精确计数。任务存活与最后响应字节、未知进程、调度器/库保留及实际内存之间仍需独立对应；本实现不是整体任务上界、内存界或清理证明。原已证明 Rust、LLBC/Lean 未改，旧定理不覆盖观察器及其生产接线。
 
 [请求池饱和响应](../sandbox-guest-service/src/admission_response.rs)及三个 HTTP 调用点增加固定 429、HEAD 抑制正文和原连接预算交付，已有共享样例及固定 SDK 定向测试，尚未抽取或证明。待证义务是饱和观察到无鉴权/正文/业务效果、静态回复到有界传输和原连接期限的对应；原已证明控制核心 Rust、LLBC/Lean 未改，旧定理不覆盖此改动。

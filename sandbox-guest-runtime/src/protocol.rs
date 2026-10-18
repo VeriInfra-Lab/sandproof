@@ -12,6 +12,7 @@ use base64::engine::general_purpose::STANDARD;
 use sandproof_guest_core::Channel;
 use serde::{Deserialize, Serialize};
 
+mod argument_count;
 mod content_type;
 mod end_stream;
 mod request_body;
@@ -93,19 +94,27 @@ impl<'de> Deserialize<'de> for Selector {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ProcessConfig {
+#[serde(bound(
+    deserialize = "A: Deserialize<'de> + Default",
+    serialize = "A: Serialize + Default + PartialEq"
+))]
+pub struct ProcessConfig<A = Vec<String>> {
     #[serde(default, deserialize_with = "null_default")]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub cmd: String,
     #[serde(default, deserialize_with = "null_default")]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "is_default")]
+    pub args: A,
     #[serde(default, deserialize_with = "envs")]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub envs: BTreeMap<String, String>,
     #[serde(default, deserialize_with = "null_default")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+}
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 /// Borrowed list metadata, already selected by the active command registry.
@@ -166,9 +175,10 @@ pub struct PtySize {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub struct StartRequest {
+#[serde(bound(deserialize = "A: Deserialize<'de> + Default"))]
+pub struct StartRequest<A = Vec<String>> {
     #[serde(default, deserialize_with = "optional_object")]
-    pub process: Option<ProcessConfig>,
+    pub process: Option<ProcessConfig<A>>,
     #[serde(default, deserialize_with = "optional_object")]
     pub pty: Option<Pty>,
     #[serde(default, deserialize_with = "null_default")]
@@ -225,6 +235,12 @@ pub enum Signal {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Request {
     Start(StartRequest),
+    /// Fully validated Start JSON exceeded the trusted argument count. No
+    /// truncated launch is provided. The executor must preserve account/clock
+    /// checks before rejecting under this same limit; it must never execute it.
+    StartArgumentsExceeded {
+        limit: usize,
+    },
     Connect(Option<Selector>),
     List,
     SendInput {
@@ -302,6 +318,32 @@ pub fn decode_request(
     )
 }
 
+/// Decode with the executor's existing Start argument limit, without allocating
+/// a String vector for an oversized array. Other fields, JSON and complete
+/// framing are still checked. Excess arguments produce an opaque refusal, not
+/// a shortened command or an early public error. This is not a total RAM bound.
+/// # Errors
+/// Same framing/JSON/body errors as `decode_request`.
+pub fn decode_request_with_argument_limit(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    arguments: usize,
+) -> Result<Request, ProtocolError> {
+    request_body::decode(
+        method,
+        body,
+        max_message_bytes,
+        false,
+        |_| Err(ProtocolError::InvalidArgument),
+        |_| ProtocolError::InvalidArgument,
+        &(
+            |method: &str, payload: &[u8]| decode_message_limited(method, payload, Some(arguments)),
+            end_stream::validate,
+        ),
+    )
+}
+
 /// Decode a request whose HTTP layer selected gzip. Streaming envelopes may
 /// still carry identity messages; only compressed nonempty payloads invoke
 /// `expand`. Unary nonempty payloads always invoke it. The trusted expander must
@@ -345,6 +387,25 @@ pub fn decode_request_observed<
     gzip: bool,
     expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
 ) -> Result<Request, E> {
+    decode_request_observed_limited(method, body, max_message_bytes, gzip, None, expand)
+}
+
+/// Observed decoding with an optional trusted Start argument limit. An exceeded
+/// limit retains the original account/execution rejection order through
+/// `Request::StartArgumentsExceeded`; no prefix can be executed. The original
+/// framing, gzip and JSON observations take precedence over this refusal.
+/// # Errors
+/// Same errors as `decode_request_observed`, including malformed late fields.
+pub fn decode_request_observed_limited<
+    E: From<ProtocolError> + From<FramingError> + From<JsonError> + From<EndStreamError>,
+>(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    gzip: bool,
+    arguments: Option<usize>,
+    expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
+) -> Result<Request, E> {
     request_body::decode(
         method,
         body,
@@ -354,7 +415,7 @@ pub fn decode_request_observed<
         E::from,
         &(
             |method: &str, payload: &[u8]| {
-                decode_message(method, payload).map_err(|error| {
+                decode_message_limited(method, payload, arguments).map_err(|error| {
                     if error == ProtocolError::InvalidArgument
                         && let Some(observed) =
                             crate::file_protocol::diagnosis::observe_command(method, payload)
@@ -370,8 +431,29 @@ pub fn decode_request_observed<
 }
 
 fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError> {
+    decode_message_limited(method, payload, None)
+}
+
+fn decode_message_limited(
+    method: &str,
+    payload: &[u8],
+    arguments: Option<usize>,
+) -> Result<Request, ProtocolError> {
     let prepared = prepare_command(payload)?;
     let payload = prepared.as_ref();
+    if method == "Start"
+        && let Some(limit) = arguments
+    {
+        let checked: StartRequest<argument_count::Count> = parse(payload)?;
+        if checked
+            .process
+            .as_ref()
+            .is_some_and(|process| process.args.0 > limit)
+        {
+            return Ok(Request::StartArgumentsExceeded { limit });
+        }
+        drop(checked);
+    }
     match method {
         "Start" => Ok(Request::Start(parse(payload)?)),
         "Connect" => Ok(Request::Connect(parse::<SelectRequest>(payload)?.process)),

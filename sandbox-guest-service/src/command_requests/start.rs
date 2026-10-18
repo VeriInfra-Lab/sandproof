@@ -198,8 +198,10 @@ impl Ready {
             authenticated,
             ..
         } = self.decoded;
-        let Request::Start(request) = request else {
-            return Err(Error::UnsupportedOperation);
+        let request = match request {
+            Request::Start(request) => Some(request),
+            Request::StartArgumentsExceeded { limit } if limit == settings.limits.arguments => None,
+            _ => return Err(Error::UnsupportedOperation),
         };
         validate_command_settings(settings).map_err(Error::Context)?;
         let authenticated = Arc::new(authenticated);
@@ -249,6 +251,10 @@ impl Ready {
         // HTTP/response expiry was captured earlier and remains independent.
         let execution = ExecutionDeadline::from_headers(authenticated.headers(), Instant::now())
             .map_err(Error::Command)?;
+        // The bounded decoder validated the whole message without constructing
+        // excess argv. Preserve default-account and execution-clock precedence;
+        // this refusal cannot reach context composition, registry or spawn.
+        let request = request.ok_or(Error::Context(ContextError::ResourceExhausted))?;
         let launch = authenticated
             .authorization()
             .compose_command_observed(&request, account, settings)

@@ -9,6 +9,7 @@ pub struct Prepared {
     // Preserve the exact explicit account for Start context composition.
     // PID operations don't switch credentials or refresh this lookup.
     account: Option<Account>,
+    arguments: usize,
 }
 pub struct Ready {
     pub(super) decoded: Decoded,
@@ -77,6 +78,7 @@ impl Authenticated {
             Ok(Prepared {
                 authenticated,
                 account,
+                arguments: limits.arguments,
             })
         }
         .await;
@@ -109,10 +111,16 @@ impl Prepared {
         body: Body,
         protocol_deadline: Instant,
     ) -> Result<Ready, Failure> {
+        let arguments = self.arguments;
         Ok(Ready {
             decoded: self
                 .authenticated
-                .decode(method, body, protocol_deadline)
+                .decode_with(body, protocol_deadline, move |bytes, limit, _, _| {
+                    sandproof_guest_runtime::protocol::decode_request_with_argument_limit(
+                        method, bytes, limit, arguments,
+                    )
+                    .map_err(Error::Protocol)
+                })
                 .await?,
             account: self.account,
             response: None,
@@ -128,6 +136,7 @@ impl Prepared {
         gzip: bool,
     ) -> Result<Ready, Failure> {
         let chunk = self.authenticated.admitted.limits.body.frame_bytes;
+        let arguments = self.arguments;
         Ok(Ready {
             decoded: self
                 .authenticated
@@ -135,8 +144,14 @@ impl Prepared {
                     body,
                     protocol_deadline,
                     move |bytes, limit, deadline, cancelled| {
-                        super::compression::decode_selected(
-                            method, bytes, limit, chunk, deadline, cancelled, gzip,
+                        super::compression::decode_limited(
+                            method,
+                            bytes,
+                            limit,
+                            chunk,
+                            deadline,
+                            cancelled,
+                            (gzip, Some(arguments)),
                         )
                     },
                 )

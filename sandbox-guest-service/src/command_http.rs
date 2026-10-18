@@ -288,7 +288,10 @@ impl<M: MetadataSource, S: AccountSource> Ready<M, S> {
     /// faults remain owned typed failures; this component invents no public text.
     pub async fn execute(self) -> Result<Response, Failure> {
         let Self { inner, operation } = self;
-        let reply = if matches!(operation.request(), protocol::Request::Start(_)) {
+        let reply = if matches!(
+            operation.request(),
+            protocol::Request::Start(_) | protocol::Request::StartArgumentsExceeded { .. }
+        ) {
             let command = next_command(&inner.sequence).ok_or_else(|| {
                 Failure::SequenceExhausted(Retained {
                     deadline: operation.deadline(),
