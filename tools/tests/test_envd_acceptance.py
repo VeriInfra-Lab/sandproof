@@ -171,6 +171,7 @@ class SupervisorStageTests(unittest.TestCase):
         run=self.root/'failed'; run.mkdir(mode=0o700)
         candidate=Path(self.stage.state['candidate_manifest']); candidate.write_text('{}'); candidate.chmod(0o600)
         self.stage.config['ci_state_root']=str(self.root)
+        self.stage.state.update(expected=[],all_tasks=[],batches=[])
         report=dict(candidate='a'*40,run_id='b'*64,guest={'source_commit':'a'*40},status='failed',
             checks=[],faults=[],resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,
             service_cleanup_confirmed=True,execution_manifest={},service_processes={})
