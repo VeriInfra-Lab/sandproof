@@ -1,0 +1,138 @@
+{
+  "contract_id": "B1-host-task-pools",
+  "proof_kind": "conditional-interface-model-not-extracted-async-rust",
+  "source_integration": "4a5dfdafd4465fef8ec2832f89798f1f16dd09b2",
+  "stack_base": "7ef2f47c8dfaf914f9f60e9def4e4f6d7c0f4467",
+  "tokio": {
+    "version": "1.49.0",
+    "checksum": "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86",
+    "reviewed_sources": {
+      "src/sync/semaphore.rs": "890da65eb3135613d4d0fe6cd38661822f93ce54ee9bdd12abba4e0e37e35e61",
+      "src/sync/batch_semaphore.rs": "714cbd7f724101891200c0c588b384aad92d3815bc1ee94973088d1bc5c36a60",
+      "src/runtime/task/join.rs": "54777ae133745e7f472802d9fd67cd14a2946f2661cabd27ffbc352f2685b0f7",
+      "src/runtime/task/abort.rs": "1bc8f5ba6aaff4d831519edc519172c8c58c567473e26b0d71a4b0b730afb99f",
+      "src/runtime/task/harness.rs": "008c697f432197c6537472e2cea55fa973aec45df946b85abfbea966f2db8d51",
+      "src/runtime/task/core.rs": "10096d09d598ac6a0f1e8472ab883a47ef2833bc525d3f927a6a863bf8b6d2e4",
+      "src/runtime/blocking/task.rs": "ade233c22540105bb4060af0f2bb9673751e867a822a1f953f776a69e72faf24",
+      "src/runtime/blocking/pool.rs": "aa390fb16aaaf7e0388eefc2e2e1af178bba7d6cb5a609c51120f28de5ce7081"
+    }
+  },
+  "theorems": [
+    "SandboxModel.Boundaries.Task.initial_safe",
+    "SandboxModel.Boundaries.Task.step_safe",
+    "SandboxModel.Boundaries.Task.run_safe",
+    "SandboxModel.Boundaries.Task.pool_binding_preserved",
+    "SandboxModel.Boundaries.Task.status_wait_cancel_releases_only_reservation",
+    "SandboxModel.Boundaries.Task.running_wait_cancel_keeps_both",
+    "SandboxModel.Boundaries.Task.admission_busy_has_no_callback",
+    "SandboxModel.Boundaries.Task.callback_busy_after_effect_is_allowed",
+    "SandboxModel.Boundaries.Task.join_unknown_after_effect_is_allowed",
+    "SandboxModel.Boundaries.Task.busy_does_not_imply_no_effect",
+    "SandboxModel.Boundaries.Task.early_release_breaks_same_resource_property",
+    "SandboxModel.Boundaries.Task.budget_conserves",
+    "SandboxModel.Boundaries.Task.initial_world_safe",
+    "SandboxModel.Boundaries.Task.world_step_safe",
+    "SandboxModel.Boundaries.Task.world_run_safe",
+    "SandboxModel.Boundaries.Task.active_implies_work",
+    "SandboxModel.Boundaries.Task.active_count_le_work",
+    "SandboxModel.Boundaries.Task.world_capacity_bound",
+    "SandboxModel.Boundaries.Task.reachable_capacity_bound",
+    "SandboxModel.Boundaries.Task.from_initial_capacity_bound",
+    "SandboxModel.Boundaries.Task.reachable_pool_binding",
+    "SandboxModel.Boundaries.Task.no_acquire_without_free",
+    "SandboxModel.Boundaries.Task.early_release_allows_two_and_breaks_same_capacity",
+    "SandboxModel.Boundaries.Task.foreign_pool_breaks_same_world_property",
+    "SandboxModel.Boundaries.Task.Examples.cancelled_wait_and_granted_queue_trace",
+    "SandboxModel.Boundaries.Task.Examples.trace_has_no_remaining_reservations",
+    "SandboxModel.Boundaries.Task.Examples.trace_satisfies_same_capacity",
+    "SandboxModel.Boundaries.Task.Examples.non_atomic_pair_drop_prefix",
+    "SandboxModel.Boundaries.Task.Examples.partial_drop_safe_and_remaining_status_counted"
+  ],
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel/Boundaries/Task.lean",
+    "SandboxModel/Boundaries/Task/Audit.lean",
+    "SandboxModel/Boundaries/Task/Capacity.lean",
+    "SandboxModel/Boundaries/Task/Examples.lean",
+    "SandboxModel/Boundaries/Task/Model.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "controller-service/tests/support/internal_application.rs",
+    "docs/formal/dependencies.md",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "sandbox-host-service/Cargo.toml",
+    "sandbox-host-service/src/driver.rs",
+    "sandbox-host-service/src/facade.rs",
+    "sandbox-host-service/src/lib.rs",
+    "sandbox-host-service/src/status_admission.rs",
+    "sandbox-host-service/tests/durable_https.rs",
+    "sandbox-host-service/tests/durable_https/execution.rs",
+    "sandbox-host-service/tests/facade.rs",
+    "sandbox-server/src/linux/host_entry.rs",
+    "sandbox-server/src/linux/host_entry/receiver.rs",
+    "scripts/verify-controller.sh",
+    "scripts/verify-task-contract.sh",
+    "tools/check_task_contract.py",
+    "tools/check_task_contract_components.py",
+    "tools/tests/test_task_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/fixtures/task-contract-tests.rs",
+    "verification/task-contract-environment.json"
+  ],
+  "reviewed_assembly": {
+    "work_capacity": 1,
+    "status_capacity": 1,
+    "pools_distinct": true,
+    "one_facade_family_per_application": true
+  },
+  "trusted_symbols": {
+    "sandbox-host-service/src/lib.rs": [
+      "HostLifecycle::new",
+      "HostLifecycle::clone",
+      "HostLifecycle::blocking",
+      "HostLifecycle::free_resources",
+      "LifecycleReceiver::receive",
+      "LifecycleReceiver::confirm",
+      "LifecycleReceiver::close",
+      "ValidationReceiver::validation_evidence"
+    ],
+    "sandbox-host-service/src/status_admission.rs": [
+      "acquire"
+    ],
+    "sandbox-host-service/src/facade.rs": [
+      "HostFacade::new",
+      "HostFacade::clone",
+      "HostFacade::lifecycle"
+    ],
+    "sandbox-server/src/linux/host_entry.rs": [
+      "assemble",
+      "serve"
+    ],
+    "sandbox-server/src/linux/host_entry/receiver.rs": [
+      "StatusReceiver::status"
+    ]
+  },
+  "obligations": [
+    "actual history projects to the same finite-roster contract under B1",
+    "one original facade/gate family, no independent pool or untracked holder",
+    "same application, original work/status pool identities and original callback inputs",
+    "callback business invariants including any panic-visible prefix",
+    "no permit forget/add/merge/split or unregistered escape",
+    "no physical exit, commit, authorization or progress inference from a join result",
+    "process abort/crash/oom and persistent recovery are outside normal Drop contract"
+  ],
+  "component_evidence_kind": "source review and deterministic actual Rust tests; not general equivalence or async extraction",
+  "component_tests": {
+    "correct_hook_tests": 7,
+    "original_status_tests": 2,
+    "mutants": [
+      "ordinary-early",
+      "status-early",
+      "wrong-pool"
+    ],
+    "independent_targets_and_fresh_binary": true
+  }
+}

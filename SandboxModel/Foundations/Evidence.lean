@@ -59,6 +59,9 @@ theorem retry_hint_complete {E : Type} (out : sandproof_protocol.WorkOutcome E) 
     cases retry <;> cases residue <;>
       simp [sandproof_protocol.WorkOutcome.permits_new_attempt]
 
+-- This separates assertion tags only. Observation soundness for the original
+-- object, observation point and protected scope is a V6 obligation; V4/V5/V9
+-- must connect it to publication. No constructor here certifies physical facts.
 theorem evidence_kind_separated {B : Type} (e : Evidence B)
     (h : e.kind = .unknown) :
     e.kind ≠ .accepted ∧ e.kind ≠ .ready ∧ e.kind ≠ .stopped ∧

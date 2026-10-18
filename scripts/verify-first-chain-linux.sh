@@ -39,4 +39,4 @@ if rg -n --glob '*.lean' '\b(sorry|admit|axiom)\b' \
   exit 1
 fi
 echo 'Linux first-chain source-bound extraction and local proofs passed.'
-echo 'This is not full controller/system verification; frozen V0 and historic core checks remain mandatory.'
+echo 'This is not full controller/system verification; the retained complete proof gate remains mandatory.'

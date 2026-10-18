@@ -46,7 +46,7 @@ inductive sandproof_center_core.decision.ResponseDisposition where
 | Advance : sandproof_center_core.decision.ResponseDisposition
 
 /-- [sandproof_protocol::internal::InternalError]
-    Source: './sandbox-protocol/src/internal.rs', lines 211:0-211:22
+    Source: './sandbox-protocol/src/internal.rs', lines 225:0-225:22
     Name pattern: [sandproof_protocol::internal::InternalError]
     Visibility: public -/
 @[discriminant isize, rust_type "sandproof_protocol::internal::InternalError"]
@@ -63,21 +63,21 @@ inductive sandproof_protocol.internal.InternalError where
 def sandproof_protocol.internal.PositiveCounter := Std.U64
 
 /-- [sandproof_protocol::NodeId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::NodeId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::NodeId"]
 def sandproof_protocol.NodeId := String
 
 /-- [sandproof_protocol::DeploymentId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::DeploymentId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::DeploymentId"]
 def sandproof_protocol.DeploymentId := String
 
 /-- [sandproof_protocol::internal::NodeIdentity]
-    Source: './sandbox-protocol/src/internal.rs', lines 89:0-89:23
+    Source: './sandbox-protocol/src/internal.rs', lines 103:0-103:23
     Name pattern: [sandproof_protocol::internal::NodeIdentity]
     Visibility: public -/
 @[rust_type "sandproof_protocol::internal::NodeIdentity"]
@@ -87,28 +87,28 @@ structure sandproof_protocol.internal.NodeIdentity where
   node_generation : sandproof_protocol.internal.PositiveCounter
 
 /-- [sandproof_protocol::OperationId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::OperationId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::OperationId"]
 def sandproof_protocol.OperationId := String
 
 /-- [sandproof_protocol::SandboxId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::SandboxId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::SandboxId"]
 def sandproof_protocol.SandboxId := String
 
 /-- [sandproof_protocol::TenantId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::TenantId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::TenantId"]
 def sandproof_protocol.TenantId := String
 
 /-- [sandproof_protocol::internal::ControlIdentity]
-    Source: './sandbox-protocol/src/internal.rs', lines 100:0-100:26
+    Source: './sandbox-protocol/src/internal.rs', lines 114:0-114:26
     Name pattern: [sandproof_protocol::internal::ControlIdentity]
     Visibility: public -/
 @[rust_type "sandproof_protocol::internal::ControlIdentity"]
@@ -144,7 +144,7 @@ inductive sandproof_protocol.internal.lifecycle.Intent where
 | Destroy : sandproof_protocol.internal.lifecycle.Intent
 
 /-- [sandproof_protocol::ResourceId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Source: './sandbox-protocol/src/lib.rs', lines 69:8-69:33
     Name pattern: [sandproof_protocol::ResourceId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::ResourceId"]

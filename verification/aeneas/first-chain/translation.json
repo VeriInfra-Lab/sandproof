@@ -79,8 +79,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 53,
-        "end_line": 53
+        "begin_line": 67,
+        "end_line": 67
       },
       "is_opaque": false,
       "can_fail": true,
@@ -96,8 +96,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 67,
+        "end_line": 67
       },
       "is_opaque": false,
       "can_fail": true,
@@ -113,8 +113,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 67,
+        "end_line": 67
       },
       "is_opaque": false,
       "can_fail": true,
@@ -147,8 +147,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 87,
-        "end_line": 87
+        "begin_line": 101,
+        "end_line": 101
       },
       "is_opaque": false,
       "can_fail": true,
@@ -164,8 +164,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 201,
-        "end_line": 201
+        "begin_line": 215,
+        "end_line": 215
       },
       "is_opaque": false,
       "can_fail": true,
@@ -181,8 +181,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 193,
-        "end_line": 193
+        "begin_line": 207,
+        "end_line": 207
       },
       "is_opaque": false,
       "can_fail": true,
@@ -198,8 +198,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 116,
-        "end_line": 116
+        "begin_line": 130,
+        "end_line": 130
       },
       "is_opaque": false,
       "can_fail": true,
@@ -215,8 +215,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 67,
+        "end_line": 67
       },
       "is_opaque": false,
       "can_fail": true,
@@ -232,8 +232,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 67,
+        "end_line": 67
       },
       "is_opaque": false,
       "can_fail": true,
@@ -249,8 +249,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 64,
-        "end_line": 64
+        "begin_line": 67,
+        "end_line": 67
       },
       "is_opaque": false,
       "can_fail": true,
@@ -266,8 +266,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 98,
-        "end_line": 98
+        "begin_line": 112,
+        "end_line": 112
       },
       "is_opaque": false,
       "can_fail": true,
@@ -283,8 +283,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 127,
-        "end_line": 127
+        "begin_line": 141,
+        "end_line": 141
       },
       "is_opaque": false,
       "can_fail": true,
@@ -433,8 +433,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 211,
-        "end_line": 211
+        "begin_line": 225,
+        "end_line": 225
       }
     },
     {
@@ -457,8 +457,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 69,
+        "end_line": 69
       }
     },
     {
@@ -469,8 +469,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 69,
+        "end_line": 69
       }
     },
     {
@@ -481,8 +481,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 89,
-        "end_line": 89
+        "begin_line": 103,
+        "end_line": 103
       }
     },
     {
@@ -493,8 +493,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 69,
+        "end_line": 69
       }
     },
     {
@@ -505,8 +505,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 69,
+        "end_line": 69
       }
     },
     {
@@ -517,8 +517,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 69,
+        "end_line": 69
       }
     },
     {
@@ -529,8 +529,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 100,
-        "end_line": 100
+        "begin_line": 114,
+        "end_line": 114
       }
     },
     {
@@ -565,8 +565,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
+        "begin_line": 69,
+        "end_line": 69
       }
     },
     {
@@ -655,8 +655,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 87,
-        "end_line": 87
+        "begin_line": 101,
+        "end_line": 101
       },
       "impl_trait_def_id": 6,
       "impl_trait_rust_name": "core::cmp::PartialEq",
@@ -670,8 +670,8 @@
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 98,
-        "end_line": 98
+        "begin_line": 112,
+        "end_line": 112
       },
       "impl_trait_def_id": 6,
       "impl_trait_rust_name": "core::cmp::PartialEq",

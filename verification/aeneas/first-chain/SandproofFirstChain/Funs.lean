@@ -58,7 +58,7 @@ def sandproof_center_core.decision.fact_rank
   | sandproof_protocol.internal.lifecycle.LifecycleFact.NotAccepted => ok 2#u8
 
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get]:
-    Source: './sandbox-protocol/src/internal.rs', lines 53:4-53:33
+    Source: './sandbox-protocol/src/internal.rs', lines 67:4-67:33
     Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get]
     Visibility: public -/
 @[rust_fun
@@ -68,7 +68,7 @@ def sandproof_protocol.internal.PositiveCounter.get
   ok self
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::NodeId, sandproof_protocol::NodeId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -80,7 +80,7 @@ def sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -107,7 +107,7 @@ def
   ok (self = other)
 
 /-- [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq]:
-    Source: './sandbox-protocol/src/internal.rs', lines 87:23-87:32
+    Source: './sandbox-protocol/src/internal.rs', lines 101:23-101:32
     Name pattern: [sandproof_protocol::internal::{core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity, sandproof_protocol::internal::NodeIdentity>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -134,7 +134,7 @@ def
   else ok false
 
 /-- Trait implementation: [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}]
-    Source: './sandbox-protocol/src/internal.rs', lines 87:23-87:32
+    Source: './sandbox-protocol/src/internal.rs', lines 101:23-101:32
     Name pattern: [core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity, sandproof_protocol::internal::NodeIdentity>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity, sandproof_protocol::internal::NodeIdentity>"]
@@ -146,7 +146,7 @@ def sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity
 }
 
 /-- [sandproof_protocol::internal::validate_node]:
-    Source: './sandbox-protocol/src/internal.rs', lines 201:0-201:93
+    Source: './sandbox-protocol/src/internal.rs', lines 215:0-215:93
     Name pattern: [sandproof_protocol::internal::validate_node] -/
 @[rust_fun "sandproof_protocol::internal::validate_node"]
 def sandproof_protocol.internal.validate_node
@@ -172,7 +172,7 @@ def sandproof_protocol.internal.validate_node
 def sandproof_protocol.internal.INTERNAL_PROTOCOL_VERSION : Std.U16 := 2#u16
 
 /-- [sandproof_protocol::internal::validate_version]:
-    Source: './sandbox-protocol/src/internal.rs', lines 193:0-193:62
+    Source: './sandbox-protocol/src/internal.rs', lines 207:0-207:62
     Name pattern: [sandproof_protocol::internal::validate_version] -/
 @[rust_fun "sandproof_protocol::internal::validate_version"]
 def sandproof_protocol.internal.validate_version
@@ -186,7 +186,7 @@ def sandproof_protocol.internal.validate_version
       sandproof_protocol.internal.InternalError.UnsupportedVersion)
 
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_node]:
-    Source: './sandbox-protocol/src/internal.rs', lines 116:4-116:85
+    Source: './sandbox-protocol/src/internal.rs', lines 130:4-130:85
     Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_node]
     Visibility: public -/
 @[rust_fun
@@ -219,7 +219,7 @@ def sandproof_protocol.internal.ControlIdentity.validate_node
       residual
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::OperationId> for sandproof_protocol::OperationId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::OperationId, sandproof_protocol::OperationId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -232,7 +232,7 @@ def sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::SandboxId, sandproof_protocol::SandboxId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -245,7 +245,7 @@ def sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::TenantId, sandproof_protocol::TenantId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -257,7 +257,7 @@ def sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}::eq]:
-    Source: './sandbox-protocol/src/internal.rs', lines 98:23-98:32
+    Source: './sandbox-protocol/src/internal.rs', lines 112:23-112:32
     Name pattern: [sandproof_protocol::internal::{core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity, sandproof_protocol::internal::ControlIdentity>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -308,7 +308,7 @@ def
   else ok false
 
 /-- Trait implementation: [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}]
-    Source: './sandbox-protocol/src/internal.rs', lines 98:23-98:32
+    Source: './sandbox-protocol/src/internal.rs', lines 112:23-112:32
     Name pattern: [core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity, sandproof_protocol::internal::ControlIdentity>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity, sandproof_protocol::internal::ControlIdentity>"]
@@ -321,7 +321,7 @@ def
 }
 
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_response]:
-    Source: './sandbox-protocol/src/internal.rs', lines 127:4-127:81
+    Source: './sandbox-protocol/src/internal.rs', lines 141:4-141:81
     Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_response]
     Visibility: public -/
 @[rust_fun

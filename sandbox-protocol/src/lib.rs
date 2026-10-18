@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display};
 
+mod identifiers;
 pub mod internal;
+pub mod numeric;
+pub use identifiers::parse_allocated_number;
 
 pub const PROTOCOL_VERSION: u16 = 1;
 
@@ -61,9 +64,21 @@ fn valid_identifier(value: &str) -> bool {
 
 macro_rules! opaque_id {
     ($name:ident) => {
-        #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
-        #[serde(try_from = "String", into = "String")]
+        #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize)]
+        #[serde(into = "String")]
         pub struct $name(String);
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let value = <String as Deserialize>::deserialize(deserializer)?;
+                // Same primitive decode, conversion and error as serde's
+                // try_from derive; the explicit closure is extractable.
+                Self::try_from(value).map_err(|error| serde::de::Error::custom(error))
+            }
+        }
 
         impl $name {
             #[must_use]

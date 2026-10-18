@@ -22,6 +22,50 @@ noncomputable section
 
 namespace SandproofFoundationsRust
 
+/-- Trait implementation: [core::fmt::{impl core::fmt::Display for &'_0 T}]
+    Source: '/rustc/library/core/src/fmt/mod.rs', lines 2886:8-2886:46
+    Name pattern: [core::fmt::Display<&'0 @T>] -/
+@[reducible, rust_trait_impl "core::fmt::Display<&'0 @T>"]
+def Shared0T.Insts.CoreFmtDisplay {T : Type} (DisplayInst : core.fmt.Display T)
+  : core.fmt.Display T := {
+  fmt := Shared0T.Insts.CoreFmtDisplay.fmt DisplayInst
+}
+
+/-- Trait implementation: [core::fmt::num::imp::{impl core::fmt::Display for u64}]
+    Source: '/rustc/library/core/src/fmt/num.rs', lines 134:8-134:39
+    Name pattern: [core::fmt::Display<u64>] -/
+@[reducible, rust_trait_impl "core::fmt::Display<u64>"]
+def U64.Insts.CoreFmtDisplay : core.fmt.Display Std.U64 := {
+  fmt := core.fmt.num.imp.DisplayU64.fmt
+}
+
+/-- Trait implementation: [core::fmt::num::imp::{impl core::fmt::Display for u16}]
+    Source: '/rustc/library/core/src/fmt/num.rs', lines 134:8-134:39
+    Name pattern: [core::fmt::Display<u16>] -/
+@[reducible, rust_trait_impl "core::fmt::Display<u16>"]
+def U16.Insts.CoreFmtDisplay : core.fmt.Display Std.U16 := {
+  fmt := core.fmt.num.imp.DisplayU16.fmt
+}
+
+/-- Trait implementation: [core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}]
+    Source: '/rustc/library/core/src/num/mod.rs', lines 1593:8-1593:38
+    Name pattern: [core::str::traits::FromStr<u64, core::num::error::ParseIntError>] -/
+@[reducible, rust_trait_impl
+  "core::str::traits::FromStr<u64, core::num::error::ParseIntError>"]
+def U64.Insts.CoreStrTraitsFromStrParseIntError : core.str.traits.FromStr
+  Std.U64 core.num.error.ParseIntError := {
+  from_str := U64.Insts.CoreStrTraitsFromStrParseIntError.from_str
+}
+
+/-- Trait implementation: [core::str::traits::{impl core::cmp::PartialEq<str> for str}]
+    Source: '/rustc/library/core/src/str/traits.rs', lines 27:0-27:28
+    Name pattern: [core::cmp::PartialEq<str, str>] -/
+@[reducible, rust_trait_impl "core::cmp::PartialEq<str, str>"]
+impl_def Str.Insts.CoreCmpPartialEqStr : core.cmp.PartialEq Str Str := {
+  eq := Str.Insts.CoreCmpPartialEqStr.eq
+  ne := core.cmp.PartialEq.ne.trait_default Str.Insts.CoreCmpPartialEqStr
+}
+
 /-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop body 0:
     Source: './controller-core/src/store.rs', lines 38:8-46:5
     Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put]
@@ -239,7 +283,7 @@ def sandbox_controller_core.store.Store.get_copy
     key 0#usize
 
 /-- [sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from]:
-    Source: './sandbox-protocol/src/internal.rs', lines 71:4-71:56
+    Source: './sandbox-protocol/src/internal.rs', lines 85:4-85:56
     Name pattern: [sandproof_protocol::internal::{core::convert::TryFrom<sandproof_protocol::internal::PositiveCounter, u64, sandproof_protocol::internal::InternalError>}::try_from]
     Visibility: public -/
 @[rust_fun
@@ -278,6 +322,65 @@ def sandproof_center_core.model.RetentionLane.current
     core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
       sandproof_protocol.internal.PositiveCounter residual
 
+/-- [sandproof_protocol::identifiers::parse_allocated_number]:
+    Source: './sandbox-protocol/src/identifiers.rs', lines 6:0-6:87
+    Name pattern: [sandproof_protocol::identifiers::parse_allocated_number]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::identifiers::parse_allocated_number"]
+def sandproof_protocol.identifiers.parse_allocated_number
+  (value : Str) («prefix» : Str) (highwater : Std.U64) :
+  Result (Option Std.U64)
+  := do
+  let i ← core.str.Str.len «prefix»
+  let o ← core.str.Str.split_at_checked value i
+  let cf ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue p =>
+    let (actual_prefix, suffix) := p
+    let b ←
+      core.cmp.impls.PartialEqShared.ne Str.Insts.CoreCmpPartialEqStr
+        actual_prefix «prefix»
+    if b
+    then ok none
+    else
+      let r ←
+        core.str.Str.parse U64.Insts.CoreStrTraitsFromStrParseIntError suffix
+      let o1 ← core.result.Result.ok r
+      let cf1 ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        let b1 ←
+          if val > 0#u64
+          then
+            if val <= highwater
+            then
+              do
+              let s ←
+                alloc.string.ToString.Blanket.to_string
+                  U64.Insts.CoreFmtDisplay val
+              alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq s suffix
+            else ok false
+          else ok false
+        core.bool.Bool.then_some b1 val
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+          Std.U64 residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+      Std.U64 residual
+
+/-- [sandproof_center_core::validation::number]:
+    Source: './sandbox-center-core/src/validation.rs', lines 8:0-8:71
+    Name pattern: [sandproof_center_core::validation::number]
+    Visibility: public -/
+@[rust_fun "sandproof_center_core::validation::number"]
+def sandproof_center_core.validation.number
+  (value : Str) («prefix» : Str) (highwater : Std.U64) :
+  Result (Option Std.U64)
+  := do
+  sandproof_protocol.identifiers.parse_allocated_number value «prefix»
+    highwater
+
 /-- [sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES]
     Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 6:0-6:34
     Name pattern: [sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES]
@@ -286,6 +389,21 @@ def sandproof_center_core.model.RetentionLane.current
   "sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES"]
 def sandproof_protocol.internal.lifecycle.MAX_OPTIONS_BYTES : Std.Usize :=
   65536#usize
+
+/-- [sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values]:
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 26:4-26:41
+    Name pattern: [sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values"]
+def sandproof_protocol.internal.lifecycle.Resources.values
+  (self : sandproof_protocol.internal.lifecycle.Resources) :
+  Result (Array Std.U64 4#usize)
+  := do
+  ok
+    (Array.make 4#usize [
+      self.instances, self.cpu, self.memory_bytes, self.disk_bytes
+      ])
 
 /-- [sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive]:
     Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 30:4-30:33
@@ -435,8 +553,173 @@ def
   := do
   ok (self = other)
 
+/-- [serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}::visit_u64]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 157:8-159:21
+    Name pattern: [serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::{serde_core::de::Visitor<'de, serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor, u64>}::visit_u64]
+    Visibility: public -/
+@[rust_fun
+  "serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::{serde_core::de::Visitor<'de, serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor, u64>}::visit_u64"]
+def
+  serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64.visit_u64
+  {E : Type} (ErrorInst : serde_core.de.Error E)
+  (self : serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor)
+  (v : Std.U64) :
+  Result (core.result.Result Std.U64 E)
+  := do
+  ok (core.result.Result.Ok v)
+
+/-- [serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}::expecting]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 141:20-141:86
+    Name pattern: [serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::{serde_core::de::Visitor<'de, serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor, u64>}::expecting]
+    Visibility: public -/
+@[rust_fun
+  "serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::{serde_core::de::Visitor<'de, serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor, u64>}::expecting"]
+def
+  serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64.expecting
+  (self : serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor)
+  (formatter : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  core.fmt.Formatter.write_str formatter (toStr "u64")
+
+/-- Trait implementation: [serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 138:16-138:59
+    Name pattern: [serde_core::de::Visitor<'de, serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor, u64>] -/
+@[reducible, rust_trait_impl
+  "serde_core::de::Visitor<'de, serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize::PrimitiveVisitor, u64>"]
+impl_def
+  serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64
+  : serde_core.de.Visitor
+  serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor Std.U64
+  := {
+  expecting :=
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64.expecting
+  visit_u64 := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64.visit_u64
+    ErrorInst
+  visit_str := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.Visitor.visit_str.default
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64
+    ErrorInst
+  visit_borrowed_str := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.Visitor.visit_borrowed_str.default
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64
+    ErrorInst
+  visit_string := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.Visitor.visit_string.default
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64
+    ErrorInst
+}
+
+/-- [serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 132:12-134:37
+    Name pattern: [serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "serde_core::de::impls::{serde_core::de::Deserialize<'de, u64>}::deserialize"]
+def U64.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (DeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result Std.U64 Clause0_Error)
+  := do
+  DeserializerInst.deserialize_u64
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64
+    deserializer ()
+
+/-- [sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt]:
+    Source: './sandbox-protocol/src/internal.rs', lines 232:4-232:60
+    Name pattern: [sandproof_protocol::internal::{core::fmt::Display<sandproof_protocol::internal::InternalError>}::fmt]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::{core::fmt::Display<sandproof_protocol::internal::InternalError>}::fmt"]
+def sandproof_protocol.internal.InternalError.Insts.CoreFmtDisplay.fmt
+  (self : sandproof_protocol.internal.InternalError) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  match self with
+  | sandproof_protocol.internal.InternalError.InvalidCounter =>
+    core.fmt.Formatter.write_str f (toStr
+      "invalid or exhausted internal counter")
+  | sandproof_protocol.internal.InternalError.UnsupportedVersion =>
+    core.fmt.Formatter.write_str f (toStr "unsupported internal protocol")
+  | sandproof_protocol.internal.InternalError.BindingMismatch =>
+    core.fmt.Formatter.write_str f (toStr "internal binding mismatch")
+
+/-- Trait implementation: [sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}]
+    Source: './sandbox-protocol/src/internal.rs', lines 231:0-231:35
+    Name pattern: [core::fmt::Display<sandproof_protocol::internal::InternalError>] -/
+@[reducible, rust_trait_impl
+  "core::fmt::Display<sandproof_protocol::internal::InternalError>"]
+def sandproof_protocol.internal.InternalError.Insts.CoreFmtDisplay :
+  core.fmt.Display sandproof_protocol.internal.InternalError := {
+  fmt := sandproof_protocol.internal.InternalError.Insts.CoreFmtDisplay.fmt
+}
+
+/-- [sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/internal.rs', lines 61:38-61:45
+    Name pattern: [sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::internal::InternalError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::internal::InternalError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c :
+  sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure
+  D Clause0_Error) (tupled_args : sandproof_protocol.internal.InternalError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.internal.InternalError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/internal.rs', lines 61:38-61:45
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::internal::InternalError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::internal::InternalError), @Clause0_Error>"]
+def
+  sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure
+  D Clause0_Error) sandproof_protocol.internal.InternalError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize]:
+    Source: './sandbox-protocol/src/internal.rs', lines 56:4-58:36
+    Name pattern: [sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::{serde_core::de::Deserialize<'de, sandproof_protocol::internal::PositiveCounter>}::deserialize"]
+def
+  sandproof_protocol.internal.PositiveCounter.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.internal.PositiveCounter
+    Clause0_Error)
+  := do
+  let r ←
+    U64.Insts.Serde_coreDeDeserialize.deserialize serde_coredeDeserializerInst
+      deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.internal.PositiveCounter (core.convert.FromSame
+      Clause0_Error) residual
+
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get]:
-    Source: './sandbox-protocol/src/internal.rs', lines 53:4-53:33
+    Source: './sandbox-protocol/src/internal.rs', lines 67:4-67:33
     Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get]
     Visibility: public -/
 @[rust_fun
@@ -446,7 +729,7 @@ def sandproof_protocol.internal.PositiveCounter.get
   ok self
 
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::checked_next]:
-    Source: './sandbox-protocol/src/internal.rs', lines 60:4-60:60
+    Source: './sandbox-protocol/src/internal.rs', lines 74:4-74:60
     Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::checked_next]
     Visibility: public -/
 @[rust_fun
@@ -466,8 +749,18 @@ def sandproof_protocol.internal.PositiveCounter.checked_next
     sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from
       value
 
+/-- [sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from]:
+    Source: './sandbox-protocol/src/internal.rs', lines 95:4-95:43
+    Name pattern: [sandproof_protocol::internal::{core::convert::From<u64, sandproof_protocol::internal::PositiveCounter>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::{core::convert::From<u64, sandproof_protocol::internal::PositiveCounter>}::from"]
+def U64.Insts.CoreConvertFromPositiveCounter.from
+  (value : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
+  sandproof_protocol.internal.PositiveCounter.get value
+
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::NodeId, sandproof_protocol::NodeId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -479,7 +772,7 @@ def sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -492,7 +785,7 @@ def sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq]:
-    Source: './sandbox-protocol/src/internal.rs', lines 87:23-87:32
+    Source: './sandbox-protocol/src/internal.rs', lines 101:23-101:32
     Name pattern: [sandproof_protocol::internal::{core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity, sandproof_protocol::internal::NodeIdentity>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -519,19 +812,22 @@ def
   else ok false
 
 /-- Trait implementation: [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}]
-    Source: './sandbox-protocol/src/internal.rs', lines 87:23-87:32
+    Source: './sandbox-protocol/src/internal.rs', lines 101:23-101:32
     Name pattern: [core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity, sandproof_protocol::internal::NodeIdentity>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity, sandproof_protocol::internal::NodeIdentity>"]
-def sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity
-  : core.cmp.PartialEq sandproof_protocol.internal.NodeIdentity
+impl_def
+  sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity :
+  core.cmp.PartialEq sandproof_protocol.internal.NodeIdentity
   sandproof_protocol.internal.NodeIdentity := {
   eq :=
     sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity
 }
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::OperationId> for sandproof_protocol::OperationId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::OperationId, sandproof_protocol::OperationId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -544,7 +840,7 @@ def sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::SandboxId, sandproof_protocol::SandboxId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -557,7 +853,7 @@ def sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq]:
-    Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::TenantId, sandproof_protocol::TenantId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -569,7 +865,7 @@ def sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}::eq]:
-    Source: './sandbox-protocol/src/internal.rs', lines 98:23-98:32
+    Source: './sandbox-protocol/src/internal.rs', lines 112:23-112:32
     Name pattern: [sandproof_protocol::internal::{core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity, sandproof_protocol::internal::ControlIdentity>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -620,20 +916,22 @@ def
   else ok false
 
 /-- Trait implementation: [sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}]
-    Source: './sandbox-protocol/src/internal.rs', lines 98:23-98:32
+    Source: './sandbox-protocol/src/internal.rs', lines 112:23-112:32
     Name pattern: [core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity, sandproof_protocol::internal::ControlIdentity>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity, sandproof_protocol::internal::ControlIdentity>"]
-def
+impl_def
   sandproof_protocol.internal.ControlIdentity.Insts.CoreCmpPartialEqControlIdentity
   : core.cmp.PartialEq sandproof_protocol.internal.ControlIdentity
   sandproof_protocol.internal.ControlIdentity := {
   eq :=
     sandproof_protocol.internal.ControlIdentity.Insts.CoreCmpPartialEqControlIdentity.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandproof_protocol.internal.ControlIdentity.Insts.CoreCmpPartialEqControlIdentity
 }
 
 /-- [sandproof_protocol::internal::validate_node]:
-    Source: './sandbox-protocol/src/internal.rs', lines 201:0-201:93
+    Source: './sandbox-protocol/src/internal.rs', lines 215:0-215:93
     Name pattern: [sandproof_protocol::internal::validate_node] -/
 @[rust_fun "sandproof_protocol::internal::validate_node"]
 def sandproof_protocol.internal.validate_node
@@ -651,7 +949,7 @@ def sandproof_protocol.internal.validate_node
       sandproof_protocol.internal.InternalError.BindingMismatch)
 
 /-- [sandproof_protocol::internal::validate_version]:
-    Source: './sandbox-protocol/src/internal.rs', lines 193:0-193:62
+    Source: './sandbox-protocol/src/internal.rs', lines 207:0-207:62
     Name pattern: [sandproof_protocol::internal::validate_version] -/
 @[rust_fun "sandproof_protocol::internal::validate_version"]
 def sandproof_protocol.internal.validate_version
@@ -665,7 +963,7 @@ def sandproof_protocol.internal.validate_version
       sandproof_protocol.internal.InternalError.UnsupportedVersion)
 
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_node]:
-    Source: './sandbox-protocol/src/internal.rs', lines 116:4-116:85
+    Source: './sandbox-protocol/src/internal.rs', lines 130:4-130:85
     Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_node]
     Visibility: public -/
 @[rust_fun
@@ -698,7 +996,7 @@ def sandproof_protocol.internal.ControlIdentity.validate_node
       residual
 
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_response]:
-    Source: './sandbox-protocol/src/internal.rs', lines 127:4-127:81
+    Source: './sandbox-protocol/src/internal.rs', lines 141:4-141:81
     Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_response]
     Visibility: public -/
 @[rust_fun
@@ -737,8 +1035,1411 @@ def sandproof_protocol.internal.ControlIdentity.validate_response
       Unit (core.convert.FromSame sandproof_protocol.internal.InternalError)
       residual
 
+/-- [sandproof_protocol::PROTOCOL_VERSION]
+    Source: './sandbox-protocol/src/lib.rs', lines 18:0-18:31
+    Name pattern: [sandproof_protocol::PROTOCOL_VERSION]
+    Visibility: public -/
+@[global_simps, irreducible, rust_const "sandproof_protocol::PROTOCOL_VERSION"]
+def sandproof_protocol.PROTOCOL_VERSION : Std.U16 := 1#u16
+
+/-- [sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}::fmt]:
+    Source: './sandbox-protocol/src/lib.rs', lines 39:4-39:68
+    Name pattern: [sandproof_protocol::{core::fmt::Display<sandproof_protocol::ContractError>}::fmt]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::fmt::Display<sandproof_protocol::ContractError>}::fmt"]
+def sandproof_protocol.ContractError.Insts.CoreFmtDisplay.fmt
+  (self : sandproof_protocol.ContractError) (formatter : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  match self with
+  | sandproof_protocol.ContractError.InvalidIdentifier =>
+    core.fmt.Formatter.write_str formatter (toStr "invalid opaque identifier")
+  | sandproof_protocol.ContractError.UnsupportedVersion version =>
+    let a ←
+      core.fmt.rt.Argument.new_display (Shared0T.Insts.CoreFmtDisplay
+        U16.Insts.CoreFmtDisplay) version
+    let a1 ←
+      core.fmt.Arguments.new
+        (Array.make 32#usize [
+          29#u8, 117#u8, 110#u8, 115#u8, 117#u8, 112#u8, 112#u8, 111#u8,
+          114#u8, 116#u8, 101#u8, 100#u8, 32#u8, 112#u8, 114#u8, 111#u8,
+          116#u8, 111#u8, 99#u8, 111#u8, 108#u8, 32#u8, 118#u8, 101#u8, 114#u8,
+          115#u8, 105#u8, 111#u8, 110#u8, 32#u8, 192#u8, 0#u8
+          ]) (Array.make 1#usize [ a ])
+    core.fmt.Formatter.write_fmt formatter a1
+  | sandproof_protocol.ContractError.MismatchedIdentity =>
+    core.fmt.Formatter.write_str formatter (toStr
+      "receipt identity does not match action")
+  | sandproof_protocol.ContractError.MismatchedObservation =>
+    core.fmt.Formatter.write_str formatter (toStr
+      "receipt observation names a different resource")
+
+/-- Trait implementation: [sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}]
+    Source: './sandbox-protocol/src/lib.rs', lines 38:0-38:30
+    Name pattern: [core::fmt::Display<sandproof_protocol::ContractError>] -/
+@[reducible, rust_trait_impl
+  "core::fmt::Display<sandproof_protocol::ContractError>"]
+def sandproof_protocol.ContractError.Insts.CoreFmtDisplay : core.fmt.Display
+  sandproof_protocol.ContractError := {
+  fmt := sandproof_protocol.ContractError.Insts.CoreFmtDisplay.fmt
+}
+
+/-- [sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_mut]:
+    Source: './sandbox-protocol/src/lib.rs', lines 62:17-62:23
+    Name pattern: [sandproof_protocol::valid_identifier::{core::ops::function::FnMut<sandproof_protocol::valid_identifier::closure, (u8), bool>}::call_mut] -/
+@[rust_fun
+  "sandproof_protocol::valid_identifier::{core::ops::function::FnMut<sandproof_protocol::valid_identifier::closure, (u8), bool>}::call_mut"]
+def
+  sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+  (c : sandproof_protocol.valid_identifier.closure) (tupled_args : Std.U8) :
+  Result (Bool × sandproof_protocol.valid_identifier.closure)
+  := do
+  let b ← core.num.U8.is_ascii_alphanumeric tupled_args
+  if b
+  then ok (true, c)
+  else
+    match tupled_args with
+    | 45#uscalar => ok (true, c)
+    | 95#uscalar => ok (true, c)
+    | 46#uscalar => ok (true, c)
+    | _ => ok (false, c)
+
+/-- [sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 62:17-62:23
+    Name pattern: [sandproof_protocol::valid_identifier::{core::ops::function::FnOnce<sandproof_protocol::valid_identifier::closure, (u8), bool>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::valid_identifier::{core::ops::function::FnOnce<sandproof_protocol::valid_identifier::closure, (u8), bool>}::call_once"]
+def
+  sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once
+  (c : sandproof_protocol.valid_identifier.closure) (i : Std.U8) :
+  Result Bool
+  := do
+  let (b, _) ←
+    sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      c i
+  ok b
+
+/-- Trait implementation: [sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}]
+    Source: './sandbox-protocol/src/lib.rs', lines 62:17-62:23
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::valid_identifier::closure, (u8), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::valid_identifier::closure, (u8), bool>"]
+def
+  sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool
+  : core.ops.function.FnOnce sandproof_protocol.valid_identifier.closure Std.U8
+  Bool := {
+  call_once :=
+    sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once
+}
+
+/-- Trait implementation: [sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}]
+    Source: './sandbox-protocol/src/lib.rs', lines 62:17-62:23
+    Name pattern: [core::ops::function::FnMut<sandproof_protocol::valid_identifier::closure, (u8), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnMut<sandproof_protocol::valid_identifier::closure, (u8), bool>"]
+def
+  sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool
+  : core.ops.function.FnMut sandproof_protocol.valid_identifier.closure Std.U8
+  Bool := {
+  FnOnceInst :=
+    sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool
+  call_mut :=
+    sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+}
+
+/-- [sandproof_protocol::valid_identifier]:
+    Source: './sandbox-protocol/src/lib.rs', lines 57:0-57:40
+    Name pattern: [sandproof_protocol::valid_identifier] -/
+@[rust_fun "sandproof_protocol::valid_identifier"]
+def sandproof_protocol.valid_identifier (value : Str) : Result Bool := do
+  let b ← core.str.Str.is_empty value
+  if b
+  then ok false
+  else
+    let i ← core.str.Str.len value
+    if i <= 128#usize
+    then
+      let b1 ← core.str.Str.bytes value
+      let (b2, _) ←
+        core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+          sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool
+          b1 ()
+      ok b2
+    else ok false
+
+/-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::LogicalActionId> for sandproof_protocol::LogicalActionId}::eq]:
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
+    Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::LogicalActionId, sandproof_protocol::LogicalActionId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::LogicalActionId, sandproof_protocol::LogicalActionId>}::eq"]
+def sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq
+  (self : sandproof_protocol.LogicalActionId)
+  (other : sandproof_protocol.LogicalActionId) :
+  Result Bool
+  := do
+  alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
+
+/-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq]:
+    Source: './sandbox-protocol/src/lib.rs', lines 67:37-67:46
+    Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceId, sandproof_protocol::ResourceId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceId, sandproof_protocol::ResourceId>}::eq"]
+def sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq
+  (self : sandproof_protocol.ResourceId)
+  (other : sandproof_protocol.ResourceId) :
+  Result Bool
+  := do
+  alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
+
+/-- [serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}::visit_string]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 599:4-601:17
+    Name pattern: [serde_core::de::impls::{serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>}::visit_string]
+    Visibility: public -/
+@[rust_fun
+  "serde_core::de::impls::{serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>}::visit_string"]
+def
+  serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_string
+  {E : Type} (ErrorInst : serde_core.de.Error E)
+  (self : serde_core.de.impls.StringVisitor) (v : String) :
+  Result (core.result.Result String E)
+  := do
+  ok (core.result.Result.Ok v)
+
+/-- [serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}::visit_str]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 592:4-594:17
+    Name pattern: [serde_core::de::impls::{serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>}::visit_str]
+    Visibility: public -/
+@[rust_fun
+  "serde_core::de::impls::{serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>}::visit_str"]
+def
+  serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_str
+  {E : Type} (ErrorInst : serde_core.de.Error E)
+  (self : serde_core.de.impls.StringVisitor) (v : Str) :
+  Result (core.result.Result String E)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned v
+  ok (core.result.Result.Ok s)
+
+/-- [serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}::expecting]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 588:4-588:70
+    Name pattern: [serde_core::de::impls::{serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>}::expecting]
+    Visibility: public -/
+@[rust_fun
+  "serde_core::de::impls::{serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>}::expecting"]
+def
+  serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.expecting
+  (self : serde_core.de.impls.StringVisitor) (formatter : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  core.fmt.Formatter.write_str formatter (toStr "a string")
+
+/-- Trait implementation: [serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 585:0-585:40
+    Name pattern: [serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>] -/
+@[reducible, rust_trait_impl
+  "serde_core::de::Visitor<'de, serde_core::de::impls::StringVisitor, alloc::string::String>"]
+impl_def serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString :
+  serde_core.de.Visitor serde_core.de.impls.StringVisitor String := {
+  expecting :=
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.expecting
+  visit_u64 := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.Visitor.visit_u64.default
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString
+    ErrorInst
+  visit_str := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_str
+    ErrorInst
+  visit_borrowed_str := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.Visitor.visit_borrowed_str.default
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString
+    ErrorInst
+  visit_string := fun {E : Type} (ErrorInst : serde_core.de.Error E) =>
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_string
+    ErrorInst
+}
+
+/-- [serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for alloc::string::String}::deserialize]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/impls.rs', lines 689:4-691:29
+    Name pattern: [serde_core::de::impls::{serde_core::de::Deserialize<'de, alloc::string::String>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "serde_core::de::impls::{serde_core::de::Deserialize<'de, alloc::string::String>}::deserialize"]
+def alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (DeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result String Clause0_Error)
+  := do
+  DeserializerInst.deserialize_string
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString
+    deserializer ()
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::TenantId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::TenantId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::TenantId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.TenantId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeTenantId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeTenantId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeTenantId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeTenantId.deserialize.closure D
+  Clause0_Error) sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeTenantId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::TenantId>}::deserialize"]
+def sandproof_protocol.TenantId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.TenantId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeTenantId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.TenantId (core.convert.FromSame Clause0_Error)
+      residual
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::SandboxId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::SandboxId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.SandboxId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeSandboxId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeSandboxId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeSandboxId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeSandboxId.deserialize.closure D
+  Clause0_Error) sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeSandboxId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::SandboxId>}::deserialize"]
+def sandproof_protocol.SandboxId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.SandboxId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeSandboxId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.SandboxId (core.convert.FromSame Clause0_Error)
+      residual
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::OperationId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::OperationId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::OperationId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.OperationId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeOperationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeOperationId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeOperationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeOperationId.deserialize.closure D
+  Clause0_Error) sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeOperationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::OperationId>}::deserialize"]
+def sandproof_protocol.OperationId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.OperationId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeOperationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.OperationId (core.convert.FromSame Clause0_Error)
+      residual
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::LogicalActionId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::LogicalActionId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::LogicalActionId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.LogicalActionId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure D
+  Clause0_Error) sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::LogicalActionId>}::deserialize"]
+def
+  sandproof_protocol.LogicalActionId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.LogicalActionId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.LogicalActionId (core.convert.FromSame Clause0_Error)
+      residual
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::ResourceId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ResourceId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ResourceId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.ResourceId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeResourceId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeResourceId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeResourceId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeResourceId.deserialize.closure D
+  Clause0_Error) sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeResourceId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ResourceId>}::deserialize"]
+def sandproof_protocol.ResourceId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.ResourceId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeResourceId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.ResourceId (core.convert.FromSame Clause0_Error)
+      residual
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::ClientRequestId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ClientRequestId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ClientRequestId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.ClientRequestId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure D
+  Clause0_Error) sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::ClientRequestId>}::deserialize"]
+def
+  sandproof_protocol.ClientRequestId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.ClientRequestId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.ClientRequestId (core.convert.FromSame Clause0_Error)
+      residual
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::DeploymentId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::DeploymentId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::DeploymentId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.DeploymentId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure D
+  Clause0_Error) sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::DeploymentId>}::deserialize"]
+def sandproof_protocol.DeploymentId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.DeploymentId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.DeploymentId (core.convert.FromSame Clause0_Error)
+      residual
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::NodeId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 93:12-93:67
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::NodeId, alloc::string::String, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::NodeId, alloc::string::String, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.NodeId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  let b ← sandproof_protocol.valid_identifier s
+  let (r, b1) ←
+    if b
+    then ok (core.result.Result.Ok value, false)
+    else
+      ok (core.result.Result.Err
+        sandproof_protocol.ContractError.InvalidIdentifier, true)
+  if b1
+  then ok r
+  else ok r
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::{core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>}::call_once"]
+def
+  sandproof_protocol.DeserializeDeNodeId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error)
+  (c : sandproof_protocol.DeserializeDeNodeId.deserialize.closure D
+  Clause0_Error) (tupled_args : sandproof_protocol.ContractError) :
+  Result Clause0_Error
+  := do
+  serde_coredeDeserializerInst.ErrorInst.custom
+    sandproof_protocol.ContractError.Insts.CoreFmtDisplay tupled_args
+
+/-- Trait implementation: [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 79:46-79:53
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize::closure<'de, @D, @Clause0_Error>, (sandproof_protocol::ContractError), @Clause0_Error>"]
+def
+  sandproof_protocol.DeserializeDeNodeId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) : core.ops.function.FnOnce
+  (sandproof_protocol.DeserializeDeNodeId.deserialize.closure D Clause0_Error)
+  sandproof_protocol.ContractError Clause0_Error := {
+  call_once :=
+    sandproof_protocol.DeserializeDeNodeId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once
+    serde_coredeDeserializerInst
+}
+
+/-- [sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize]:
+    Source: './sandbox-protocol/src/lib.rs', lines 72:12-74:44
+    Name pattern: [sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{serde_core::de::Deserialize<'de, sandproof_protocol::NodeId>}::deserialize"]
+def sandproof_protocol.NodeId.Insts.Serde_coreDeDeserialize.deserialize
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (deserializer : D) :
+  Result (core.result.Result sandproof_protocol.NodeId Clause0_Error)
+  := do
+  let r ←
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+      serde_coredeDeserializerInst deserializer
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from
+        val
+    core.result.Result.map_err
+      (sandproof_protocol.DeserializeDeNodeId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error
+      serde_coredeDeserializerInst) r1 ()
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      sandproof_protocol.NodeId (core.convert.FromSame Clause0_Error) residual
+
+/-- [sandproof_protocol::{sandproof_protocol::TenantId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::TenantId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::TenantId}::as_str"]
+def sandproof_protocol.TenantId.as_str
+  (self : sandproof_protocol.TenantId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{sandproof_protocol::SandboxId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::SandboxId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::SandboxId}::as_str"]
+def sandproof_protocol.SandboxId.as_str
+  (self : sandproof_protocol.SandboxId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{sandproof_protocol::OperationId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::OperationId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::OperationId}::as_str"]
+def sandproof_protocol.OperationId.as_str
+  (self : sandproof_protocol.OperationId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{sandproof_protocol::LogicalActionId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::LogicalActionId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::LogicalActionId}::as_str"]
+def sandproof_protocol.LogicalActionId.as_str
+  (self : sandproof_protocol.LogicalActionId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{sandproof_protocol::ResourceId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::ResourceId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::ResourceId}::as_str"]
+def sandproof_protocol.ResourceId.as_str
+  (self : sandproof_protocol.ResourceId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{sandproof_protocol::ClientRequestId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::ClientRequestId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::ClientRequestId}::as_str"]
+def sandproof_protocol.ClientRequestId.as_str
+  (self : sandproof_protocol.ClientRequestId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{sandproof_protocol::DeploymentId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::DeploymentId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::DeploymentId}::as_str"]
+def sandproof_protocol.DeploymentId.as_str
+  (self : sandproof_protocol.DeploymentId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{sandproof_protocol::NodeId}::as_str]:
+    Source: './sandbox-protocol/src/lib.rs', lines 85:12-85:40
+    Name pattern: [sandproof_protocol::{sandproof_protocol::NodeId}::as_str]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::{sandproof_protocol::NodeId}::as_str"]
+def sandproof_protocol.NodeId.as_str
+  (self : sandproof_protocol.NodeId) : Result Str := do
+  alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::TenantId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::TenantId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::TenantId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.TenantId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.TenantId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::SandboxId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::SandboxId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.SandboxId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.SandboxId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::OperationId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::OperationId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::OperationId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.OperationId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.OperationId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::LogicalActionId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::LogicalActionId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::LogicalActionId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.LogicalActionId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::ResourceId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ResourceId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ResourceId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.ResourceId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.ResourceId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::ClientRequestId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ClientRequestId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::ClientRequestId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.ClientRequestId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::DeploymentId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::DeploymentId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::DeploymentId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.DeploymentId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::NodeId}::try_from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 105:12-105:65
+    Name pattern: [sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::NodeId, &'0 str, sandproof_protocol::ContractError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::TryFrom<sandproof_protocol::NodeId, &'0 str, sandproof_protocol::ContractError>}::try_from"]
+def
+  sandproof_protocol.NodeId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.NodeId
+    sandproof_protocol.ContractError)
+  := do
+  let s ← Str.Insts.AllocBorrowToOwnedString.to_owned value
+  sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from
+    s
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::TenantId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::TenantId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromTenantId.from
+  (value : sandproof_protocol.TenantId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::TenantId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::TenantId>"]
+def alloc.string.String.Insts.CoreConvertFromTenantId : core.convert.From
+  String sandproof_protocol.TenantId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromTenantId.from
+}
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::SandboxId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::SandboxId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromSandboxId.from
+  (value : sandproof_protocol.SandboxId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::SandboxId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::SandboxId>"]
+def alloc.string.String.Insts.CoreConvertFromSandboxId : core.convert.From
+  String sandproof_protocol.SandboxId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromSandboxId.from
+}
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::OperationId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::OperationId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromOperationId.from
+  (value : sandproof_protocol.OperationId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::OperationId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::OperationId>"]
+def alloc.string.String.Insts.CoreConvertFromOperationId : core.convert.From
+  String sandproof_protocol.OperationId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromOperationId.from
+}
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::LogicalActionId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::LogicalActionId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromLogicalActionId.from
+  (value : sandproof_protocol.LogicalActionId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::LogicalActionId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::LogicalActionId>"]
+def alloc.string.String.Insts.CoreConvertFromLogicalActionId :
+  core.convert.From String sandproof_protocol.LogicalActionId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromLogicalActionId.from
+}
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::ResourceId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::ResourceId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromResourceId.from
+  (value : sandproof_protocol.ResourceId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::ResourceId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::ResourceId>"]
+def alloc.string.String.Insts.CoreConvertFromResourceId : core.convert.From
+  String sandproof_protocol.ResourceId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromResourceId.from
+}
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::ClientRequestId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::ClientRequestId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::ClientRequestId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromClientRequestId.from
+  (value : sandproof_protocol.ClientRequestId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::ClientRequestId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::ClientRequestId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::ClientRequestId>"]
+def alloc.string.String.Insts.CoreConvertFromClientRequestId :
+  core.convert.From String sandproof_protocol.ClientRequestId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromClientRequestId.from
+}
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::DeploymentId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::DeploymentId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::DeploymentId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromDeploymentId.from
+  (value : sandproof_protocol.DeploymentId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::DeploymentId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::DeploymentId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::DeploymentId>"]
+def alloc.string.String.Insts.CoreConvertFromDeploymentId : core.convert.From
+  String sandproof_protocol.DeploymentId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromDeploymentId.from
+}
+
+/-- [sandproof_protocol::{impl core::convert::From<sandproof_protocol::NodeId> for alloc::string::String}::from]:
+    Source: './sandbox-protocol/src/lib.rs', lines 111:12-111:41
+    Name pattern: [sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::NodeId>}::from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::convert::From<alloc::string::String, sandproof_protocol::NodeId>}::from"]
+def alloc.string.String.Insts.CoreConvertFromNodeId.from
+  (value : sandproof_protocol.NodeId) : Result String := do
+  ok value
+
+/-- Trait implementation: [sandproof_protocol::{impl core::convert::From<sandproof_protocol::NodeId> for alloc::string::String}]
+    Source: './sandbox-protocol/src/lib.rs', lines 110:8-110:35
+    Name pattern: [core::convert::From<alloc::string::String, sandproof_protocol::NodeId>] -/
+@[reducible, rust_trait_impl
+  "core::convert::From<alloc::string::String, sandproof_protocol::NodeId>"]
+def alloc.string.String.Insts.CoreConvertFromNodeId : core.convert.From String
+  sandproof_protocol.NodeId := {
+  «from» := alloc.string.String.Insts.CoreConvertFromNodeId.from
+}
+
+/-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceKind> for sandproof_protocol::ResourceKind}::eq]:
+    Source: './sandbox-protocol/src/lib.rs', lines 182:29-182:38
+    Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceKind, sandproof_protocol::ResourceKind>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceKind, sandproof_protocol::ResourceKind>}::eq"]
+def sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq
+  (self : sandproof_protocol.ResourceKind)
+  (other : sandproof_protocol.ResourceKind) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}::eq]:
+    Source: './sandbox-protocol/src/lib.rs', lines 192:23-192:32
+    Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceRef, sandproof_protocol::ResourceRef>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceRef, sandproof_protocol::ResourceRef>}::eq"]
+def sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq
+  (self : sandproof_protocol.ResourceRef)
+  (other : sandproof_protocol.ResourceRef) :
+  Result Bool
+  := do
+  let b ←
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq
+      self.kind other.kind
+  if b
+  then
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq 
+      self.id other.id
+  else ok false
+
+/-- Trait implementation: [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}]
+    Source: './sandbox-protocol/src/lib.rs', lines 192:23-192:32
+    Name pattern: [core::cmp::PartialEq<sandproof_protocol::ResourceRef, sandproof_protocol::ResourceRef>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandproof_protocol::ResourceRef, sandproof_protocol::ResourceRef>"]
+impl_def sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef :
+  core.cmp.PartialEq sandproof_protocol.ResourceRef
+  sandproof_protocol.ResourceRef := {
+  eq := sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef
+}
+
+/-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ActionIdentity> for sandproof_protocol::ActionIdentity}::eq]:
+    Source: './sandbox-protocol/src/lib.rs', lines 200:23-200:32
+    Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ActionIdentity, sandproof_protocol::ActionIdentity>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ActionIdentity, sandproof_protocol::ActionIdentity>}::eq"]
+def sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq
+  (self : sandproof_protocol.ActionIdentity)
+  (other : sandproof_protocol.ActionIdentity) :
+  Result Bool
+  := do
+  if self.protocol_version = other.protocol_version
+  then
+    if self.epoch = other.epoch
+    then
+      if self.generation = other.generation
+      then
+        if self.attempt = other.attempt
+        then
+          let b ←
+            sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+              self.owner other.owner
+          if b
+          then
+            let b1 ←
+              sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+                self.sandbox other.sandbox
+            if b1
+            then
+              let b2 ←
+                sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq
+                  self.operation other.operation
+              if b2
+              then
+                let b3 ←
+                  sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq
+                    self.logical_action other.logical_action
+                if b3
+                then
+                  sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq
+                    self.resource other.resource
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ActionIdentity> for sandproof_protocol::ActionIdentity}]
+    Source: './sandbox-protocol/src/lib.rs', lines 200:23-200:32
+    Name pattern: [core::cmp::PartialEq<sandproof_protocol::ActionIdentity, sandproof_protocol::ActionIdentity>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandproof_protocol::ActionIdentity, sandproof_protocol::ActionIdentity>"]
+impl_def sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity
+  : core.cmp.PartialEq sandproof_protocol.ActionIdentity
+  sandproof_protocol.ActionIdentity := {
+  eq :=
+    sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity
+}
+
+/-- [sandproof_protocol::{sandproof_protocol::ActionIdentity}::validate_version]:
+    Source: './sandbox-protocol/src/lib.rs', lines 220:4-220:69
+    Name pattern: [sandproof_protocol::{sandproof_protocol::ActionIdentity}::validate_version]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{sandproof_protocol::ActionIdentity}::validate_version"]
+def sandproof_protocol.ActionIdentity.validate_version
+  (self : sandproof_protocol.ActionIdentity) :
+  Result (core.result.Result Unit sandproof_protocol.ContractError)
+  := do
+  if self.protocol_version = sandproof_protocol.PROTOCOL_VERSION
+  then ok (core.result.Result.Ok ())
+  else
+    ok (core.result.Result.Err
+      (sandproof_protocol.ContractError.UnsupportedVersion
+      self.protocol_version))
+
 /-- [sandproof_protocol::{sandproof_protocol::WorkOutcome<E>}::permits_new_attempt]:
-    Source: './sandbox-protocol/src/lib.rs', lines 268:4-268:51
+    Source: './sandbox-protocol/src/lib.rs', lines 283:4-283:51
     Name pattern: [sandproof_protocol::{sandproof_protocol::WorkOutcome<@E>}::permits_new_attempt]
     Visibility: public -/
 @[rust_fun
@@ -756,7 +2457,7 @@ def sandproof_protocol.WorkOutcome.permits_new_attempt
   | sandproof_protocol.WorkOutcome.Unknown _ _ => ok false
 
 /-- [sandproof_protocol::{sandproof_protocol::WorkOutcome<E>}::observation]:
-    Source: './sandbox-protocol/src/lib.rs', lines 280:4-280:49
+    Source: './sandbox-protocol/src/lib.rs', lines 295:4-295:49
     Name pattern: [sandproof_protocol::{sandproof_protocol::WorkOutcome<@E>}::observation]
     Visibility: public -/
 @[rust_fun
@@ -773,8 +2474,260 @@ def sandproof_protocol.WorkOutcome.observation
   | sandproof_protocol.WorkOutcome.Unknown _ last_observation =>
     core.option.Option.as_ref last_observation
 
+/-- [sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{impl core::ops::function::FnOnce<(&'_ E,), bool> for sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}<'_0, E, C>}::call_once]:
+    Source: './sandbox-protocol/src/lib.rs', lines 333:25-333:38
+    Name pattern: [sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::{core::ops::function::FnOnce<sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::closure<'0, @E, @C>, (&'_ @E), bool>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::{core::ops::function::FnOnce<sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::closure<'0, @E, @C>, (&'_ @E), bool>}::call_once"]
+def
+  sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once
+  {E : Type} {C : Type} (ResourceEvidenceInst :
+  sandproof_protocol.ResourceEvidence E)
+  (c : sandproof_protocol.WorkReceipt.validate_for.closure E C)
+  (tupled_args : E) :
+  Result Bool
+  := do
+  let rr ← ResourceEvidenceInst.resource tupled_args
+  core.cmp.impls.PartialEqShared.ne
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef rr
+    c.identity.resource
+
+/-- Trait implementation: [sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{impl core::ops::function::FnOnce<(&'_ E,), bool> for sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}<'_0, E, C>}]
+    Source: './sandbox-protocol/src/lib.rs', lines 333:25-333:38
+    Name pattern: [core::ops::function::FnOnce<sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::closure<'0, @E, @C>, (&'_ @E), bool>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for::closure<'0, @E, @C>, (&'_ @E), bool>"]
+def
+  sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool
+  {E : Type} (C : Type) (ResourceEvidenceInst :
+  sandproof_protocol.ResourceEvidence E) : core.ops.function.FnOnce
+  (sandproof_protocol.WorkReceipt.validate_for.closure E C) E Bool := {
+  call_once :=
+    sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once
+    ResourceEvidenceInst
+}
+
+/-- [sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for]:
+    Source: './sandbox-protocol/src/lib.rs', lines 324:4-324:86
+    Name pattern: [sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::{sandproof_protocol::WorkReceipt<@E>}::validate_for"]
+def sandproof_protocol.WorkReceipt.validate_for
+  {E : Type} {C : Type} (ResourceEvidenceInst :
+  sandproof_protocol.ResourceEvidence E)
+  (self : sandproof_protocol.WorkReceipt E)
+  (action : sandproof_protocol.WorkAction C) :
+  Result (core.result.Result Unit sandproof_protocol.ContractError)
+  := do
+  let r ← sandproof_protocol.ActionIdentity.validate_version action.identity
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue _ =>
+    let r1 ← sandproof_protocol.ActionIdentity.validate_version self.identity
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue _ =>
+      let b ←
+        core.cmp.PartialEq.ne.trait_default
+          sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity
+          self.identity action.identity
+      if b
+      then
+        ok (core.result.Result.Err
+          sandproof_protocol.ContractError.MismatchedIdentity)
+      else
+        let o ← sandproof_protocol.WorkOutcome.observation self.outcome
+        let b1 ←
+          core.option.Option.is_some_and
+            (sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool
+            C ResourceEvidenceInst) o action
+        if b1
+        then
+          ok (core.result.Result.Err
+            sandproof_protocol.ContractError.MismatchedObservation)
+        else ok (core.result.Result.Ok ())
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit (core.convert.FromSame sandproof_protocol.ContractError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Unit (core.convert.FromSame sandproof_protocol.ContractError) residual
+
+/-- [sandproof_protocol::numeric::seconds_to_milliseconds]:
+    Source: './sandbox-protocol/src/numeric.rs', lines 8:0-8:59
+    Name pattern: [sandproof_protocol::numeric::seconds_to_milliseconds]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::numeric::seconds_to_milliseconds"]
+def sandproof_protocol.numeric.seconds_to_milliseconds
+  (seconds : Std.U64) : Result (Option Std.U64) := do
+  ok (U64.checked_mul seconds 1000#u64)
+
+/-- [sandproof_protocol::numeric::bytes_to_mebibytes]:
+    Source: './sandbox-protocol/src/numeric.rs', lines 19:0-19:52
+    Name pattern: [sandproof_protocol::numeric::bytes_to_mebibytes]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::numeric::bytes_to_mebibytes"]
+def sandproof_protocol.numeric.bytes_to_mebibytes
+  (bytes : Std.U64) : Result (Option Std.U32) := do
+  let i ← 1024#u64 * 1024#u64
+  let whole ← bytes / i
+  let i1 ← bytes % i
+  let extra ← match i1 with
+                | 0#uscalar => ok 0#u64
+                | _ => ok 1#u64
+  let units ← whole + extra
+  let i2 ← lift (core.convert.num.FromU64U32.from core.num.U32.MAX)
+  if units > i2
+  then ok none
+  else let i3 ← lift (UScalar.cast .U32 units)
+       ok (some i3)
+
+/-- [sandproof_protocol::numeric::available_resource]:
+    Source: './sandbox-protocol/src/numeric.rs', lines 38:0-38:70
+    Name pattern: [sandproof_protocol::numeric::available_resource]
+    Visibility: public -/
+@[rust_fun "sandproof_protocol::numeric::available_resource"]
+def sandproof_protocol.numeric.available_resource
+  (limit : Std.U64) (used : Std.U64) (observed : Std.U64) :
+  Result Std.U64
+  := do
+  let remaining ← lift (core.num.U64.saturating_sub limit used)
+  if remaining < observed
+  then ok remaining
+  else ok observed
+
+/-- [sandproof_foundations_extract::json::counter_decode]:
+    Source: 'src/json.rs', lines 7:0-9:1
+    Visibility: public -/
+def json.counter_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.internal.PositiveCounter
+    Clause0_Error)
+  := do
+  sandproof_protocol.internal.PositiveCounter.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json::counter_primitive]:
+    Source: 'src/json.rs', lines 11:0-13:1
+    Visibility: public -/
+def json.counter_primitive
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result Std.U64 Clause0_Error)
+  := do
+  U64.Insts.Serde_coreDeDeserialize.deserialize serde_coredeDeserializerInst
+    input
+
+/-- [sandproof_foundations_extract::json::json_error_passthrough]:
+    Source: 'src/json.rs', lines 16:0-18:1
+    Visibility: public -/
+def json.json_error_passthrough
+  (error : serde_json.error.Error) : Result serde_json.error.Error := do
+  ok error
+
+/-- [sandproof_foundations_extract::json_ids::tenant_decode]:
+    Source: 'src/json_ids.rs', lines 6:0-10:1
+    Visibility: public -/
+def json_ids.tenant_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.TenantId Clause0_Error)
+  := do
+  sandproof_protocol.TenantId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::sandbox_decode]:
+    Source: 'src/json_ids.rs', lines 12:0-16:1
+    Visibility: public -/
+def json_ids.sandbox_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.SandboxId Clause0_Error)
+  := do
+  sandproof_protocol.SandboxId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::operation_decode]:
+    Source: 'src/json_ids.rs', lines 18:0-22:1
+    Visibility: public -/
+def json_ids.operation_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.OperationId Clause0_Error)
+  := do
+  sandproof_protocol.OperationId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::logical_action_decode]:
+    Source: 'src/json_ids.rs', lines 24:0-28:1
+    Visibility: public -/
+def json_ids.logical_action_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.LogicalActionId Clause0_Error)
+  := do
+  sandproof_protocol.LogicalActionId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::resource_decode]:
+    Source: 'src/json_ids.rs', lines 30:0-34:1
+    Visibility: public -/
+def json_ids.resource_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.ResourceId Clause0_Error)
+  := do
+  sandproof_protocol.ResourceId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::client_request_decode]:
+    Source: 'src/json_ids.rs', lines 36:0-40:1
+    Visibility: public -/
+def json_ids.client_request_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.ClientRequestId Clause0_Error)
+  := do
+  sandproof_protocol.ClientRequestId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::deployment_decode]:
+    Source: 'src/json_ids.rs', lines 42:0-46:1
+    Visibility: public -/
+def json_ids.deployment_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.DeploymentId Clause0_Error)
+  := do
+  sandproof_protocol.DeploymentId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::node_decode]:
+    Source: 'src/json_ids.rs', lines 48:0-52:1
+    Visibility: public -/
+def json_ids.node_decode
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result sandproof_protocol.NodeId Clause0_Error)
+  := do
+  sandproof_protocol.NodeId.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
+/-- [sandproof_foundations_extract::json_ids::string_primitive]:
+    Source: 'src/json_ids.rs', lines 54:0-56:1
+    Visibility: public -/
+def json_ids.string_primitive
+  {D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer D Clause0_Error) (input : D) :
+  Result (core.result.Result String Clause0_Error)
+  := do
+  alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize
+    serde_coredeDeserializerInst input
+
 /-- [sandproof_foundations_extract::counter_from_u64]:
-    Source: 'src/lib.rs', lines 9:0-11:1
+    Source: 'src/lib.rs', lines 17:0-19:1
     Visibility: public -/
 def counter_from_u64
   (value : Std.U64) :
@@ -785,7 +2738,7 @@ def counter_from_u64
     value
 
 /-- [sandproof_foundations_extract::counter_next]:
-    Source: 'src/lib.rs', lines 13:0-15:1
+    Source: 'src/lib.rs', lines 21:0-23:1
     Visibility: public -/
 def counter_next
   (value : sandproof_protocol.internal.PositiveCounter) :
@@ -795,14 +2748,29 @@ def counter_next
   sandproof_protocol.internal.PositiveCounter.checked_next value
 
 /-- [sandproof_foundations_extract::counter_value]:
-    Source: 'src/lib.rs', lines 17:0-19:1
+    Source: 'src/lib.rs', lines 25:0-27:1
     Visibility: public -/
 def counter_value
   (value : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
   sandproof_protocol.internal.PositiveCounter.get value
 
+/-- [sandproof_foundations_extract::counter_into_u64]:
+    Source: 'src/lib.rs', lines 29:0-31:1
+    Visibility: public -/
+def counter_into_u64
+  (value : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
+  U64.Insts.CoreConvertFromPositiveCounter.from value
+
+/-- [sandproof_foundations_extract::internal_error_text]:
+    Source: 'src/lib.rs', lines 33:0-35:1
+    Visibility: public -/
+def internal_error_text
+  (value : sandproof_protocol.internal.InternalError) : Result String := do
+  alloc.string.ToString.Blanket.to_string
+    sandproof_protocol.internal.InternalError.Insts.CoreFmtDisplay value
+
 /-- [sandproof_foundations_extract::lane_current]:
-    Source: 'src/lib.rs', lines 21:0-23:1
+    Source: 'src/lib.rs', lines 37:0-39:1
     Visibility: public -/
 def lane_current
   (lane : sandproof_center_core.model.RetentionLane) :
@@ -811,7 +2779,7 @@ def lane_current
   sandproof_center_core.model.RetentionLane.current lane
 
 /-- [sandproof_foundations_extract::store_get_copy]:
-    Source: 'src/lib.rs', lines 25:0-27:1
+    Source: 'src/lib.rs', lines 41:0-43:1
     Visibility: public -/
 def store_get_copy
   (store : sandbox_controller_core.store.Store Std.U64 Std.U64) (key : Std.U64)
@@ -822,7 +2790,7 @@ def store_get_copy
     core.marker.CopyU64 store key
 
 /-- [sandproof_foundations_extract::store_put]:
-    Source: 'src/lib.rs', lines 29:0-31:1
+    Source: 'src/lib.rs', lines 45:0-47:1
     Visibility: public -/
 def store_put
   (store : sandbox_controller_core.store.Store Std.U64 Std.U64) (key : Std.U64)
@@ -832,7 +2800,7 @@ def store_put
   sandbox_controller_core.store.Store.put core.cmp.PartialEqU64 store key value
 
 /-- [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_mut]:
-    Source: 'src/lib.rs', lines 34:17-34:42 -/
+    Source: 'src/lib.rs', lines 50:17-50:42 -/
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool.call_mut
   (c : store_retain_above.closure) (tupled_args : (Std.U64 × Std.U64)) :
@@ -842,7 +2810,7 @@ def
   ok (value > c, c)
 
 /-- [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}::call_once]:
-    Source: 'src/lib.rs', lines 34:17-34:42 -/
+    Source: 'src/lib.rs', lines 50:17-50:42 -/
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool.call_once
   (c : store_retain_above.closure) (p : (Std.U64 × Std.U64)) :
@@ -854,7 +2822,7 @@ def
   ok b
 
 /-- Trait implementation: [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}]
-    Source: 'src/lib.rs', lines 34:17-34:42 -/
+    Source: 'src/lib.rs', lines 50:17-50:42 -/
 @[reducible]
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnOncePairSharedU64SharedU64Bool
@@ -865,7 +2833,7 @@ def
 }
 
 /-- Trait implementation: [sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}]
-    Source: 'src/lib.rs', lines 34:17-34:42 -/
+    Source: 'src/lib.rs', lines 50:17-50:42 -/
 @[reducible]
 def
   store_retain_above.closure.Insts.CoreOpsFunctionFnMutPairSharedU64SharedU64Bool
@@ -878,7 +2846,7 @@ def
 }
 
 /-- [sandproof_foundations_extract::store_retain_above]:
-    Source: 'src/lib.rs', lines 33:0-35:1
+    Source: 'src/lib.rs', lines 49:0-51:1
     Visibility: public -/
 def store_retain_above
   (store : sandbox_controller_core.store.Store Std.U64 Std.U64)
@@ -890,13 +2858,13 @@ def store_retain_above
     store floor
 
 /-- [sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}::call_once]:
-    Source: 'src/lib.rs', lines 38:21-38:42 -/
+    Source: 'src/lib.rs', lines 54:21-54:42 -/
 def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
   (c : option_is_none_or.closure) (tupled_args : Std.U64) : Result Bool := do
   ok (tupled_args > c)
 
 /-- Trait implementation: [sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}]
-    Source: 'src/lib.rs', lines 38:21-38:42 -/
+    Source: 'src/lib.rs', lines 54:21-54:42 -/
 @[reducible]
 def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool :
   core.ops.function.FnOnce option_is_none_or.closure Std.U64 Bool := {
@@ -905,7 +2873,7 @@ def option_is_none_or.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool :
 }
 
 /-- [sandproof_foundations_extract::option_is_none_or]:
-    Source: 'src/lib.rs', lines 37:0-39:1
+    Source: 'src/lib.rs', lines 53:0-55:1
     Visibility: public -/
 def option_is_none_or
   (value : Option Std.U64) (floor : Std.U64) : Result Bool := do
@@ -914,7 +2882,7 @@ def option_is_none_or
     floor
 
 /-- [sandproof_foundations_extract::resource_add]:
-    Source: 'src/lib.rs', lines 41:0-43:1
+    Source: 'src/lib.rs', lines 57:0-59:1
     Visibility: public -/
 def resource_add
   (left : sandproof_protocol.internal.lifecycle.Resources)
@@ -924,14 +2892,14 @@ def resource_add
   sandproof_protocol.internal.lifecycle.Resources.checked_add left right
 
 /-- [sandproof_foundations_extract::resource_positive]:
-    Source: 'src/lib.rs', lines 45:0-47:1
+    Source: 'src/lib.rs', lines 61:0-63:1
     Visibility: public -/
 def resource_positive
   (value : sandproof_protocol.internal.lifecycle.Resources) : Result Bool := do
   sandproof_protocol.internal.lifecycle.Resources.positive value
 
 /-- [sandproof_foundations_extract::resource_fits]:
-    Source: 'src/lib.rs', lines 49:0-51:1
+    Source: 'src/lib.rs', lines 65:0-67:1
     Visibility: public -/
 def resource_fits
   (value : sandproof_protocol.internal.lifecycle.Resources)
@@ -940,8 +2908,17 @@ def resource_fits
   := do
   sandproof_protocol.internal.lifecycle.Resources.fits value limit
 
+/-- [sandproof_foundations_extract::resource_values]:
+    Source: 'src/lib.rs', lines 69:0-71:1
+    Visibility: public -/
+def resource_values
+  (value : sandproof_protocol.internal.lifecycle.Resources) :
+  Result (Array Std.U64 4#usize)
+  := do
+  sandproof_protocol.internal.lifecycle.Resources.values value
+
 /-- [sandproof_foundations_extract::create_binding_valid]:
-    Source: 'src/lib.rs', lines 53:0-55:1
+    Source: 'src/lib.rs', lines 73:0-75:1
     Visibility: public -/
 def create_binding_valid
   (value : sandproof_protocol.internal.lifecycle.CreateBinding) :
@@ -950,7 +2927,7 @@ def create_binding_valid
   sandproof_protocol.internal.lifecycle.CreateBinding.is_valid value
 
 /-- [sandproof_foundations_extract::identity_response]:
-    Source: 'src/lib.rs', lines 57:0-62:1
+    Source: 'src/lib.rs', lines 77:0-82:1
     Visibility: public -/
 def identity_response
   (actual : sandproof_protocol.internal.ControlIdentity)
@@ -960,19 +2937,373 @@ def identity_response
   sandproof_protocol.internal.ControlIdentity.validate_response actual expected
 
 /-- [sandproof_foundations_extract::retry_hint]:
-    Source: 'src/lib.rs', lines 64:0-66:1
+    Source: 'src/lib.rs', lines 84:0-86:1
     Visibility: public -/
 def retry_hint
   (outcome : sandproof_protocol.WorkOutcome Std.U64) : Result Bool := do
   sandproof_protocol.WorkOutcome.permits_new_attempt outcome
 
 /-- [sandproof_foundations_extract::outcome_observation]:
-    Source: 'src/lib.rs', lines 68:0-70:1
+    Source: 'src/lib.rs', lines 88:0-90:1
     Visibility: public -/
 def outcome_observation
   (outcome : sandproof_protocol.WorkOutcome Std.U64) :
   Result (Option Std.U64)
   := do
   sandproof_protocol.WorkOutcome.observation outcome
+
+/-- [sandproof_foundations_extract::allocated_number]:
+    Source: 'src/lib.rs', lines 92:0-94:1
+    Visibility: public -/
+def allocated_number
+  (value : Str) («prefix» : Str) (highwater : Std.U64) :
+  Result (Option Std.U64)
+  := do
+  sandproof_protocol.identifiers.parse_allocated_number value «prefix»
+    highwater
+
+/-- [sandproof_foundations_extract::center_allocated_number]:
+    Source: 'src/lib.rs', lines 95:0-97:1
+    Visibility: public -/
+def center_allocated_number
+  (value : Str) («prefix» : Str) (highwater : Std.U64) :
+  Result (Option Std.U64)
+  := do
+  sandproof_center_core.validation.number value «prefix» highwater
+
+/-- [sandproof_foundations_extract::tenant_from_string]:
+    Source: 'src/lib.rs', lines 99:0-101:1
+    Visibility: public -/
+def tenant_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.TenantId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::tenant_from_str]:
+    Source: 'src/lib.rs', lines 102:0-104:1
+    Visibility: public -/
+def tenant_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.TenantId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.TenantId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::tenant_value]:
+    Source: 'src/lib.rs', lines 105:0-107:1
+    Visibility: public -/
+def tenant_value (value : sandproof_protocol.TenantId) : Result Str := do
+  sandproof_protocol.TenantId.as_str value
+
+/-- [sandproof_foundations_extract::tenant_into_string]:
+    Source: 'src/lib.rs', lines 108:0-110:1
+    Visibility: public -/
+def tenant_into_string
+  (value : sandproof_protocol.TenantId) : Result String := do
+  core.convert.IntoFrom.into alloc.string.String.Insts.CoreConvertFromTenantId
+    value
+
+/-- [sandproof_foundations_extract::sandbox_from_string]:
+    Source: 'src/lib.rs', lines 111:0-113:1
+    Visibility: public -/
+def sandbox_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.SandboxId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::sandbox_from_str]:
+    Source: 'src/lib.rs', lines 114:0-116:1
+    Visibility: public -/
+def sandbox_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.SandboxId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.SandboxId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::sandbox_value]:
+    Source: 'src/lib.rs', lines 117:0-119:1
+    Visibility: public -/
+def sandbox_value (value : sandproof_protocol.SandboxId) : Result Str := do
+  sandproof_protocol.SandboxId.as_str value
+
+/-- [sandproof_foundations_extract::sandbox_into_string]:
+    Source: 'src/lib.rs', lines 120:0-122:1
+    Visibility: public -/
+def sandbox_into_string
+  (value : sandproof_protocol.SandboxId) : Result String := do
+  core.convert.IntoFrom.into alloc.string.String.Insts.CoreConvertFromSandboxId
+    value
+
+/-- [sandproof_foundations_extract::operation_from_string]:
+    Source: 'src/lib.rs', lines 123:0-125:1
+    Visibility: public -/
+def operation_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.OperationId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::operation_from_str]:
+    Source: 'src/lib.rs', lines 126:0-128:1
+    Visibility: public -/
+def operation_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.OperationId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.OperationId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::operation_value]:
+    Source: 'src/lib.rs', lines 129:0-131:1
+    Visibility: public -/
+def operation_value (value : sandproof_protocol.OperationId) : Result Str := do
+  sandproof_protocol.OperationId.as_str value
+
+/-- [sandproof_foundations_extract::operation_into_string]:
+    Source: 'src/lib.rs', lines 132:0-134:1
+    Visibility: public -/
+def operation_into_string
+  (value : sandproof_protocol.OperationId) : Result String := do
+  core.convert.IntoFrom.into
+    alloc.string.String.Insts.CoreConvertFromOperationId value
+
+/-- [sandproof_foundations_extract::logical_action_from_string]:
+    Source: 'src/lib.rs', lines 135:0-137:1
+    Visibility: public -/
+def logical_action_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.LogicalActionId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::logical_action_from_str]:
+    Source: 'src/lib.rs', lines 138:0-140:1
+    Visibility: public -/
+def logical_action_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.LogicalActionId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::logical_action_value]:
+    Source: 'src/lib.rs', lines 141:0-143:1
+    Visibility: public -/
+def logical_action_value
+  (value : sandproof_protocol.LogicalActionId) : Result Str := do
+  sandproof_protocol.LogicalActionId.as_str value
+
+/-- [sandproof_foundations_extract::logical_action_into_string]:
+    Source: 'src/lib.rs', lines 144:0-146:1
+    Visibility: public -/
+def logical_action_into_string
+  (value : sandproof_protocol.LogicalActionId) : Result String := do
+  core.convert.IntoFrom.into
+    alloc.string.String.Insts.CoreConvertFromLogicalActionId value
+
+/-- [sandproof_foundations_extract::resource_from_string]:
+    Source: 'src/lib.rs', lines 147:0-149:1
+    Visibility: public -/
+def resource_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.ResourceId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::resource_from_str]:
+    Source: 'src/lib.rs', lines 150:0-152:1
+    Visibility: public -/
+def resource_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.ResourceId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.ResourceId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::resource_value]:
+    Source: 'src/lib.rs', lines 153:0-155:1
+    Visibility: public -/
+def resource_value (value : sandproof_protocol.ResourceId) : Result Str := do
+  sandproof_protocol.ResourceId.as_str value
+
+/-- [sandproof_foundations_extract::resource_into_string]:
+    Source: 'src/lib.rs', lines 156:0-158:1
+    Visibility: public -/
+def resource_into_string
+  (value : sandproof_protocol.ResourceId) : Result String := do
+  core.convert.IntoFrom.into
+    alloc.string.String.Insts.CoreConvertFromResourceId value
+
+/-- [sandproof_foundations_extract::client_request_from_string]:
+    Source: 'src/lib.rs', lines 159:0-161:1
+    Visibility: public -/
+def client_request_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.ClientRequestId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::client_request_from_str]:
+    Source: 'src/lib.rs', lines 162:0-164:1
+    Visibility: public -/
+def client_request_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.ClientRequestId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::client_request_value]:
+    Source: 'src/lib.rs', lines 165:0-167:1
+    Visibility: public -/
+def client_request_value
+  (value : sandproof_protocol.ClientRequestId) : Result Str := do
+  sandproof_protocol.ClientRequestId.as_str value
+
+/-- [sandproof_foundations_extract::client_request_into_string]:
+    Source: 'src/lib.rs', lines 168:0-170:1
+    Visibility: public -/
+def client_request_into_string
+  (value : sandproof_protocol.ClientRequestId) : Result String := do
+  core.convert.IntoFrom.into
+    alloc.string.String.Insts.CoreConvertFromClientRequestId value
+
+/-- [sandproof_foundations_extract::deployment_from_string]:
+    Source: 'src/lib.rs', lines 171:0-173:1
+    Visibility: public -/
+def deployment_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.DeploymentId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::deployment_from_str]:
+    Source: 'src/lib.rs', lines 174:0-176:1
+    Visibility: public -/
+def deployment_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.DeploymentId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::deployment_value]:
+    Source: 'src/lib.rs', lines 177:0-179:1
+    Visibility: public -/
+def deployment_value
+  (value : sandproof_protocol.DeploymentId) : Result Str := do
+  sandproof_protocol.DeploymentId.as_str value
+
+/-- [sandproof_foundations_extract::deployment_into_string]:
+    Source: 'src/lib.rs', lines 180:0-182:1
+    Visibility: public -/
+def deployment_into_string
+  (value : sandproof_protocol.DeploymentId) : Result String := do
+  core.convert.IntoFrom.into
+    alloc.string.String.Insts.CoreConvertFromDeploymentId value
+
+/-- [sandproof_foundations_extract::node_from_string]:
+    Source: 'src/lib.rs', lines 183:0-185:1
+    Visibility: public -/
+def node_from_string
+  (value : String) :
+  Result (core.result.Result sandproof_protocol.NodeId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::node_from_str]:
+    Source: 'src/lib.rs', lines 186:0-188:1
+    Visibility: public -/
+def node_from_str
+  (value : Str) :
+  Result (core.result.Result sandproof_protocol.NodeId
+    sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.NodeId.Insts.CoreConvertTryFromShared0StrContractError.try_from
+    value
+
+/-- [sandproof_foundations_extract::node_value]:
+    Source: 'src/lib.rs', lines 189:0-191:1
+    Visibility: public -/
+def node_value (value : sandproof_protocol.NodeId) : Result Str := do
+  sandproof_protocol.NodeId.as_str value
+
+/-- [sandproof_foundations_extract::node_into_string]:
+    Source: 'src/lib.rs', lines 192:0-194:1
+    Visibility: public -/
+def node_into_string (value : sandproof_protocol.NodeId) : Result String := do
+  core.convert.IntoFrom.into alloc.string.String.Insts.CoreConvertFromNodeId
+    value
+
+/-- [sandproof_foundations_extract::numeric::seconds_to_milliseconds]:
+    Source: 'src/numeric.rs', lines 3:0-5:1
+    Visibility: public -/
+def numeric.seconds_to_milliseconds
+  (seconds : Std.U64) : Result (Option Std.U64) := do
+  sandproof_protocol.numeric.seconds_to_milliseconds seconds
+
+/-- [sandproof_foundations_extract::numeric::bytes_to_mebibytes]:
+    Source: 'src/numeric.rs', lines 7:0-9:1
+    Visibility: public -/
+def numeric.bytes_to_mebibytes
+  (bytes : Std.U64) : Result (Option Std.U32) := do
+  sandproof_protocol.numeric.bytes_to_mebibytes bytes
+
+/-- [sandproof_foundations_extract::numeric::available_resource]:
+    Source: 'src/numeric.rs', lines 11:0-13:1
+    Visibility: public -/
+def numeric.available_resource
+  (limit : Std.U64) (used : Std.U64) (observed : Std.U64) :
+  Result Std.U64
+  := do
+  sandproof_protocol.numeric.available_resource limit used observed
+
+/-- [sandproof_foundations_extract::receipts::action_version]:
+    Source: 'src/receipts.rs', lines 7:0-9:1
+    Visibility: public -/
+def receipts.action_version
+  (value : sandproof_protocol.ActionIdentity) :
+  Result (core.result.Result Unit sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.ActionIdentity.validate_version value
+
+/-- [sandproof_foundations_extract::receipts::receipt_validate]:
+    Source: 'src/receipts.rs', lines 11:0-16:1
+    Visibility: public -/
+def receipts.receipt_validate
+  {C : Type} {E : Type} (sandproof_protocolResourceEvidenceInst :
+  sandproof_protocol.ResourceEvidence E)
+  (receipt : sandproof_protocol.WorkReceipt E)
+  (action : sandproof_protocol.WorkAction C) :
+  Result (core.result.Result Unit sandproof_protocol.ContractError)
+  := do
+  sandproof_protocol.WorkReceipt.validate_for
+    sandproof_protocolResourceEvidenceInst receipt action
 
 end SandproofFoundationsRust

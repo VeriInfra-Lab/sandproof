@@ -110,6 +110,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [固定 SDK 登记组合](../sandbox-guest-runtime/tests/sdk_registered.rs)在原同步/异步、管道/PTY/两种信号的八轮调用前，分别通过[原生成 RPC 客户端](../tests/compat/guest_registered_sdk.py)发送六种 keepalive 非法整数的 Start/Connect，共增加 96 次请求。核对原 ConnectError 的 invalid_argument 与固定文本；每个拒绝之后检查 PID 持久文件、登记容量、gate、执行标记及启动状态未改，后续原合法 Start/输入/重连/退出及额度回收仍必须成功。显式 Basic 仍每请求查询，默认账户仅在实际 Start 查询；全部拒绝计数核对无额外 RPC。异常值由受控客户端显式设头，不是高层 commands/PTY API 默认的 50 秒，也不包含新策略对原 Go 的等价断言。该扩展已在 [#521 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38849548611) 通过：源 975bc0512511d6cc860d20b36379916eb044672e，checkout f0060dffb6df9203bfea0affc497c13165e41b8e；日志逐轮确认 12 次保活拒绝及后续原合法操作，共八轮 96 次拒绝。固定 SDK 231 项、preparation 63 passed / 3 个 helper ignored、service lib 452 passed / 74 ignored、封存 Redis与四项普通检查成功。这两份回执分别绑定各自目标基线，后续共享基线同步仍须复验，不代替实际 Go/Rust VM、完整 E03/E05 或形式化验收。
 
+该登记组合的受限 Axum 夹具只在已知非法 keepalive 调用中，先以原 16 KiB 上限和独立 5 秒期限接收有限正文，再交原 CommandHttp；不解码、不重放、不改错误断言或产品限额。它固定组件组合测试的输入交付时序，不能据此声称生产监听器的提前拒绝已验收。[独立传输回归](../sandbox-guest-runtime/tests/sdk_registered/transport.rs)直接连接原 Listener 和 CommandHttp，绕开该预读：固定 SDK 已发送完整消息、尚未发送 HTTP 结束标记时，原处理器须先交付相同 invalid_argument，PID 文件、gate、进程效果与原容量保持。同步/异步用明确屏障控制，并核对屏障确实执行；原“头拒绝不读取正文”的准备检查继续保留。该回归只覆盖上述可复现时序，不是任意网络交错、完整 GuestHttp/VM 或 Go 对照的证明。
+
 [共用命令 HTTP 检查](../sandbox-guest-runtime/tests/preparation/http_dispatch.rs)增加四项 Linux 场景：持有 Start 流使普通请求满额时控制请求仍可进入、控制回复最后副本继续占额；同一装配克隆的后续 Start 使用新内部编号；token/Basic/方法/压缩拒绝顺序且不轮询正文；原 Ready 到期仍持原期限/容量；缺失默认账户及坏 gzip 沿原回复，tag/未知路径保持未分类；别名池、错 VM/会话和无效回复配置在工作前拒绝。原 worker、PID 表、账户与有限回复均为实际组件，检查真实退出、私有 socket、命令只执行一次及容量归还；service lib 另用并发检查编号耗尽不回绕。[SDK/PID 夹具](../sandbox-guest-runtime/tests/sdk_registered.rs)改为调用同一 CommandHttp::prepare/Ready::execute，继续只准入预选命令及原 JSON/identity 头，并检查普通/控制两池归还；八轮原调用集和 56 个错误调用不变。新增四项共享入口场景、编号耗尽检查及迁移后的八轮 SDK/56 个错误调用已在 [#454 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38598746529) 实跑通过：源 19dfb9b66b012ffa4eef7ad663e03cea9b9e16da，checkout f886b44146079dd641e20f07cb17f2f770a0f3c8；preparation 34 passed，service lib 386 passed / 60 ignored，固定 SDK 77 项、封存 Redis 与四项检查均通过。
 
 [正式入口配置检查](../sandbox-guest-service/src/daemon/tests.rs)增加完整显式配置、每层未知/缺字段、重复字段、错版本/类型、超限文档、各原组件预算拒绝及跨接口工作目录一致性；Prepared 构造使用不存在安装路径仍能完成，证明静态阶段未以路径存在或 MMDS 可用作为隐含前提。[CLI 检查](../sandbox-guest-service/src/daemon/entry/tests.rs)核对唯一动作/绝对配置参数和同一 FD 的有界读取；[装配检查](../sandbox-guest-service/src/daemon/tests/composition.rs)以受控元数据及原真实 PID 状态连接同一 Prepared::assemble，验证健康独立、三类接口初始化前拒绝、初始化后空 List 和错误令牌拒绝、关闭后编号递增及旧 PID 不复用。六项在下述 #487 Linux CI 实跑通过，执行入口为 `cargo test -p sandproof-guest-service --locked --lib daemon::`；不冒充实际 Firecracker MMDS、正式子进程启动/重启或 KVM。
@@ -118,7 +120,18 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #495 的三项正式 CLI 拒绝测试已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38788690795) 执行成功：源 9f71ef6ecd68ef3ae829ae75dd81aec42453355e、checkout e334e7904a132e0eca37ffea87c4813c0240ea6b；固定 SDK 84 项、封存 Redis 与四项 CI 全部成功。该回执只推进上述启动拒绝覆盖，不包含成功启动或下述运行身份观察工具。
 
-[受信任启动文件检查](../sandbox-guest-runtime/src/startup_files/tests.rs)四项在 macOS 使用真实私有目录/文件通过：原 FD 在路径替换后仍读取原内容，组/其他可写祖先、非私有状态/配置、不可执行或可写 worker、硬链接/软链接/错类型/错 UID 拒绝，FIFO 无写者时非阻塞打开后拒绝，以及路径/预算先行。目录遍历主体使用私有锚点，避免把公共临时目录祖先当成可信安装路径；另只读打开实际 `/usr/bin/false` 检查从 OS 根开始的入口，不执行它。定向入口为 `cargo test -p sandproof-guest-runtime --locked --lib startup_files::`。不覆盖并发挂载替换、root/同 owner 对抗、worker 摘要或整套安装验收。
+[受信任启动文件检查](../sandbox-guest-runtime/src/startup_files/tests.rs)的四项普通单元测试使用当前账号拥有的私有目录和文件：原 FD 在路径替换后仍读取原内容，组/其他可写祖先、非私有状态/配置、不可执行或可写 worker、硬链接/软链接/错类型/错 UID 拒绝，FIFO 无写者时非阻塞打开后拒绝，以及路径/预算先行。目录遍历主体使用私有锚点，不依赖系统二进制属主，也不把公共临时目录祖先当成可信安装路径。普通定向入口为 `cargo test -p sandproof-guest-runtime --locked --lib startup_files::`。
+
+从真实 OS 根开始的 root 安装场景单独保留为显式测试，`SANDPROOF_GUEST_ROOT_WORKER` 必须指定已存在、属主 UID 0、祖先受保护且满足原 worker 检查的可执行文件。测试原样调用生产 opener，核对返回 FD 的 root 属主及错误 owner 拒绝；不执行该程序、不修改系统文件或模拟 UID。缺少参数、权限或属主不符均失败，不自动跳过。Linux Rust CI 在完整基础检查后独立执行此项；普通账号拥有的自建 rootfs 不满足该前提时，需要另在满足条件的文件树实测，不能将普通单元测试通过计为 root 安装验收通过：
+
+```sh
+SANDPROOF_GUEST_ROOT_WORKER=/usr/bin/false \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  startup_files::tests::root_owned_installation_is_opened_from_os_root \
+  -- --exact --ignored --nocapture
+```
+
+这些检查不覆盖并发挂载替换、root/同 owner 对抗、worker 摘要或整套安装验收。
 
 #486 的精确组合已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38756082071) 通过：源 e75966a0bf0d9917c436ca538fb91753ec698fd8，checkout 99b8d56a547810cfe95f9930dbdef01e9e5f7b20；离线 tz-rs 0.7.3 已可用，runtime PID 11 项、preparation 56 passed / 2 helper ignored、process 24 passed、service lib 429 passed / 71 ignored、固定 SDK 77 项、Harbor 262 项、封存 Redis 与四项 CI 均成功。该提交包括下述启动状态/持久会话和先前时区组合；当前正式 daemon 入口是后续改动，不借用该回执声称新入口通过。
 

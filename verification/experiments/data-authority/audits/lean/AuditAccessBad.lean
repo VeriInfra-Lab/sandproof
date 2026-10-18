@@ -1,0 +1,19 @@
+import AccessWitness
+import NegativeProofs
+
+#print axioms AccessWitness.record
+#print axioms AccessWitness.world
+#print axioms AccessWitness.lookup_record
+#print axioms NegativeProofs.bypass_accepts_closed
+#print axioms NegativeProofs.same_safety_claim_false
+#print axioms SandproofNetworkRust.sandbox_controller_core.auxiliary.allows_exec
+#print axioms SandproofNetworkRust.sandbox_controller_core.auxiliary.allows_file
+#print axioms SandproofNetworkRust.sandbox_controller_core.auxiliary.handle_exec
+#print axioms SandproofNetworkRust.sandbox_controller_core.auxiliary.handle_file_read
+#print axioms SandproofNetworkRust.sandbox_controller_core.auxiliary.handle_file_write
+#print axioms SandproofNetworkRust.sandbox_controller_core.auxiliary.handle_access
+#print axioms SandproofNetworkRust.sandbox_controller_core.transition.authorized
+#print axioms SandproofNetworkRust.access_exec
+#print axioms SandproofNetworkRust.access_file_read
+#print axioms SandproofNetworkRust.access_file_write
+#print axioms SandproofNetworkRust.access
