@@ -18,7 +18,7 @@
 | [公共数值](../../sandbox-protocol/src/numeric.rs) | 秒到毫秒的溢出拒绝、字节向上取整为 MiB 的 U32 边界、逻辑剩余与现场报告的交集；时钟、期限、准入及观察真实性由调用模块提供 |
 | [有限表](../../controller-core/src/store.rs)的 `Store::get_copy/put/retain` | 首次匹配查询、首次替换或缺失追加、有限遍历终止；删除、唯一性和修改范围分别证明，自有键比较由调用模块实例化 |
 | [协议样例](../../sandbox-protocol/tests/contract_examples.rs)、[依赖锁](../../Cargo.lock) | 编解码/数值边界的固定输入，库模型版本登记 |
-| [抽取入口](../../scripts/regenerate-rust-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前本地入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
+| [公共抽取入口](../../scripts/regenerate-foundations-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前公共/共享状态/首链入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
 
 代码定位基线为总览指定提交；证明开始时重新冻结真实候选。文中的定理名是接口义务，不自动表示已经证明；实际名称、版本、条件及剩余项见[覆盖记录](../proof-coverage.md)。公共规范及表示关系分别位于 [Model](../../SandboxModel/Foundations/Model.lean) 与 [Representation](../../SandboxModel/Foundations/Representation.lean)，具体定理从[公共证明入口](../../SandboxModel/Foundations.lean)导入；生成文件只由工具生成。
 
@@ -69,7 +69,7 @@ V0–V9 是证明责任模块，不是顺序版本。V0 完成条件只包含本
 | 有限事件/流历史、拒绝/未知分类和参数化组合接口 | V8 的业务读写/撤销/结束核心、A/B 使用点与调用绑定；V9 的具体初态、故障、邻接与系统组合 |
 | 固定依赖合同、抽取/审计接线、失效影响和最小桥接可行性 | V2 的实际 Lua/CAS/耐久协调，V3 的真实协议路径；不得将它们假定已正确 |
 
-完整 `verify-controller.sh` 每批仍执行并如实报告，不删根或绕过失败。另用 `verify-foundations.sh` 验收列明的 V0 集合。V0 自有缺口未闭合时不能宣称模块完成；若整套入口仅被 V4 历史产物/业务迁移阻断，阻断归 #337，分别记录“V0 本批通过”和“整套未通过”，不因此扩张 V0。局部集合通过也不自动证明上表所有 V0 义务完成。
+完整 `verify-controller.sh` 每批仍执行并如实报告，不删根或绕过失败。另用 `verify-foundations.sh` 验收列明的 V0 集合。V0 自有缺口未闭合时不能宣称模块完成。旧整控制器抽取链已退役，当前完整入口验收保留集合；V4 当前业务实现义务继续归 #337，不加入 V0 的前置。保留集合通过不等于 V0 全部义务或全系统证明完成。
 
 ### 公共查询投影接口
 
@@ -99,7 +99,7 @@ V0–V9 是证明责任模块，不是顺序版本。V0 完成条件只包含本
 
 每批分别交付模型定义及可实现初态、性质证明、指定 Rust 核心对应、A/B 与实际调用绑定清单、成功与首个拒绝/未知分支、邻接义务、最小正常/禁止轨迹及完整检查。禁止把“拒绝所有输入”当安全实现；完备性须证明满足全部前提的可表示输入确实被接受。不可抽取的机械适配按已批准 B 核对，不要求本批先实现通用异步翻译；其业务逻辑不得随适配整体变可信。
 
-证明源码组织按模块责任：新增独立系统规范/局部性质/表示关系/邻接组合分别放在 `SandboxModel` 下清晰命名的模块；历史本地模型与 `RustRefinement` 保留其适用版本，不强行混入中心类型。公共基础使用 `SandboxModel/Foundations/`，抽取根使用 `verification/extract-foundations/`，生成物使用 `verification/aeneas/foundations/`，审计根为 `SandboxModel/Foundations/Audit.lean`；一个公共定义只有一个来源。未解义务保持在issue/覆盖记录中，不提前创建占位定理库，也不手改生成目录。
+证明源码组织按模块责任：新增独立系统规范/局部性质/表示关系/邻接组合分别放在 `SandboxModel` 下清晰命名的模块；旧整控制器生成物及其专属对应证明已退役，仅可从 Git 历史恢复；保留的数学模型不冒充当前 Rust 精化，不强行混入中心类型。公共基础使用 `SandboxModel/Foundations/`，抽取根使用 `verification/extract-foundations/`，生成物使用 `verification/aeneas/foundations/`，审计根为 `SandboxModel/Foundations/Audit.lean`；一个公共定义只有一个来源。未解义务保持在issue/覆盖记录中，不提前创建占位定理库，也不手改生成目录。
 
 每批issue至少填写以下表；前提提供方填具体模块/定理或 A/B 合同编号，不能只填“系统保证”。未冻结源码可以开展可行性试验，但不能报告指定实现证明完成。
 

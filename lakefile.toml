@@ -1,13 +1,9 @@
 name = "sandbox-model"
 version = "0.1.0"
-defaultTargets = ["SandboxModel", "SandboxControllerCore"]
+defaultTargets = ["SandboxModel"]
 
 [[lean_lib]]
 name = "SandboxModel"
-
-[[lean_lib]]
-name = "SandboxControllerCore"
-srcDir = "verification/aeneas/generated"
 
 [[lean_lib]]
 name = "SandproofFoundations"
