@@ -1,6 +1,40 @@
 import SandboxModel.Local
 import SandboxModel.ProofAuditCommand
 
+#audit_controller_proof SandboxModel.Local.Containers.copy_body_exact
+#audit_controller_proof SandboxModel.Local.Containers.copy_loop_exact
+#audit_controller_proof SandboxModel.Local.Containers.insert_body_exact
+#audit_controller_proof SandboxModel.Local.Containers.insert_root_exact
+#audit_controller_proof SandboxModel.Local.Containers.insert_refines
+#audit_controller_proof SandboxModel.Local.Containers.insert_present
+#audit_controller_proof SandboxModel.Local.Containers.insert_absent
+#audit_controller_proof SandboxModel.Local.Containers.insert_unique_preserved
+#audit_controller_proof SandboxModel.Local.Containers.insert_view
+#audit_controller_proof SandboxModel.Local.Containers.insert_nonempty
+#audit_controller_proof SandboxModel.Local.Containers.insert_body_compare_failure
+#audit_controller_proof SandboxModel.Local.Containers.copy_body_clone_failure
+#audit_controller_proof SandboxModel.Local.Containers.put_body_exact
+#audit_controller_proof SandboxModel.Local.Containers.put_loop_exact
+#audit_controller_proof SandboxModel.Local.Containers.put_refines
+#audit_controller_proof SandboxModel.Local.Containers.put_existing
+#audit_controller_proof SandboxModel.Local.Containers.put_fresh
+#audit_controller_proof SandboxModel.Local.Containers.put_query_frame
+#audit_controller_proof SandboxModel.Local.Containers.put_unique_preserved
+#audit_controller_proof SandboxModel.Local.Creation.effect_equality_exact
+#audit_controller_proof SandboxModel.Local.Creation.effect_insert_model
+#audit_controller_proof SandboxModel.Local.Creation.initial_effect_insert_realizable
+
+#audit_controller_proof SandboxModel.Local.Creation.record_identity_exact
+#audit_controller_proof SandboxModel.Local.Creation.record_identity_view
+#audit_controller_proof SandboxModel.Local.Creation.record_identity_refines
+#audit_controller_proof SandboxModel.Local.Creation.resource_index_exact
+#audit_controller_proof SandboxModel.Local.Creation.resource_index_view
+#audit_controller_proof SandboxModel.Local.Creation.initial_plan_exact
+#audit_controller_proof SandboxModel.Local.Creation.initial_plan_view
+#audit_controller_proof SandboxModel.Local.Creation.ledger_view
+#audit_controller_proof SandboxModel.Local.Creation.store_new_operation_refines
+#audit_controller_proof SandboxModel.Local.Creation.initial_operation_store_realizable
+
 #audit_controller_proof SandboxModel.Local.Runtime.crash_exact
 #audit_controller_proof SandboxModel.Local.Runtime.recover_exact
 #audit_controller_proof SandboxModel.Local.Runtime.update_view

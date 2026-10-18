@@ -1,0 +1,4266 @@
+{
+  "schema": 1,
+  "source_anchor": "208fb4e1bdba78be269a14626b3185d275249b1a",
+  "base_delivery": "ea977fdbe514b63f888d47f54f492bdb7cab7533",
+  "functions": [
+    "alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize",
+    "json_ids.client_request_decode",
+    "json_ids.deployment_decode",
+    "json_ids.logical_action_decode",
+    "json_ids.node_decode",
+    "json_ids.operation_decode",
+    "json_ids.resource_decode",
+    "json_ids.sandbox_decode",
+    "json_ids.string_primitive",
+    "json_ids.tenant_decode",
+    "sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.ClientRequestId.Insts.Serde_coreDeDeserialize.deserialize",
+    "sandproof_protocol.ContractError.Insts.CoreFmtDisplay.fmt",
+    "sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.DeploymentId.Insts.Serde_coreDeDeserialize.deserialize",
+    "sandproof_protocol.DeserializeDeClientRequestId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.DeserializeDeDeploymentId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.DeserializeDeLogicalActionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.DeserializeDeNodeId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.DeserializeDeOperationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.DeserializeDeResourceId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.DeserializeDeSandboxId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.DeserializeDeTenantId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleContractErrorClause0_Error.call_once",
+    "sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.LogicalActionId.Insts.Serde_coreDeDeserialize.deserialize",
+    "sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.NodeId.Insts.Serde_coreDeDeserialize.deserialize",
+    "sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.OperationId.Insts.Serde_coreDeDeserialize.deserialize",
+    "sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.ResourceId.Insts.Serde_coreDeDeserialize.deserialize",
+    "sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.SandboxId.Insts.Serde_coreDeDeserialize.deserialize",
+    "sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from",
+    "sandproof_protocol.TenantId.Insts.Serde_coreDeDeserialize.deserialize",
+    "serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.expecting",
+    "serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_str",
+    "serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_string"
+  ],
+  "llbc_sha256": "bceb4c965524112a92059067b1380ef577afc01b3e18b65042f781e0ce0d0c93",
+  "contract_error_format_body_sha256": "e6b2766972eea965ec53fffad1a38db1ad154b2e0ca5553dfc988f88c9e0e0bf",
+  "format_domain": {
+    "literal": "unsupported protocol version ",
+    "prefix_length": 29,
+    "suffix_bytes": [
+      192,
+      0
+    ],
+    "arguments": [
+      "u16:Display:default"
+    ]
+  },
+  "default_method_models": [
+    "visit_u64",
+    "visit_str",
+    "visit_borrowed_str",
+    "visit_string"
+  ],
+  "float_payload": "inert IEEE-754 binary64 bits; no operations",
+  "drop_scope": "27 conditional generic wrapper cleanups and 40 precise standard String DropGlue sites; normal-return scope only, no custom destructor or unwind guarantee",
+  "cleanup": {
+    "json_ids.client_request_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 71
+          },
+          "id": 61,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 71
+              },
+              "id": 93,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 71
+              },
+              "id": 94,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 72
+          },
+          "id": 63,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 72
+              },
+              "id": 96,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 72
+              },
+              "id": 97,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 65
+          },
+          "id": 67,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 65
+              },
+              "id": 103,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 65
+              },
+              "id": 104,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.deployment_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 81
+          },
+          "id": 73,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 81
+              },
+              "id": 111,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 81
+              },
+              "id": 112,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 82
+          },
+          "id": 75,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 82
+              },
+              "id": 114,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 82
+              },
+              "id": 115,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 75
+          },
+          "id": 79,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 75
+              },
+              "id": 121,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 75
+              },
+              "id": 122,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.logical_action_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 51
+          },
+          "id": 37,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 51
+              },
+              "id": 57,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 51
+              },
+              "id": 58,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 52
+          },
+          "id": 39,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 52
+              },
+              "id": 60,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 52
+              },
+              "id": 61,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 45
+          },
+          "id": 43,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 45
+              },
+              "id": 67,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 45
+              },
+              "id": 68,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.node_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 91
+          },
+          "id": 85,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 91
+              },
+              "id": 129,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 91
+              },
+              "id": 130,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 92
+          },
+          "id": 87,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 92
+              },
+              "id": 132,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 92
+              },
+              "id": 133,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 85
+          },
+          "id": 91,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 85
+              },
+              "id": 139,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 85
+              },
+              "id": 140,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.operation_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 41
+          },
+          "id": 25,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 41
+              },
+              "id": 39,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 41
+              },
+              "id": 40,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 42
+          },
+          "id": 27,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 42
+              },
+              "id": 42,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 42
+              },
+              "id": 43,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 35
+          },
+          "id": 31,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 35
+              },
+              "id": 49,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 35
+              },
+              "id": 50,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.resource_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 61
+          },
+          "id": 49,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 61
+              },
+              "id": 75,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 61
+              },
+              "id": 76,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 62
+          },
+          "id": 51,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 62
+              },
+              "id": 78,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 62
+              },
+              "id": 79,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 55
+          },
+          "id": 55,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 55
+              },
+              "id": 85,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 55
+              },
+              "id": 86,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.sandbox_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 31
+          },
+          "id": 13,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 31
+              },
+              "id": 21,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 31
+              },
+              "id": 22,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 32
+          },
+          "id": 15,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 32
+              },
+              "id": 24,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 32
+              },
+              "id": 25,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 25
+          },
+          "id": 19,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 25
+              },
+              "id": 31,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 25
+              },
+              "id": 32,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.string_primitive": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 101
+          },
+          "id": 97,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 101
+              },
+              "id": 147,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 101
+              },
+              "id": 148,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 102
+          },
+          "id": 99,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 102
+              },
+              "id": 150,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 102
+              },
+              "id": 151,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 95
+          },
+          "id": 103,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 95
+              },
+              "id": 157,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 95
+              },
+              "id": 158,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "json_ids.tenant_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Value": [
+                  13,
+                  {
+                    "kind": {
+                      "BuiltinOrAuto": {
+                        "builtin_data": "UntrackedDestruct",
+                        "parent_trait_refs": [],
+                        "types": [],
+                        "vtable": null
+                      }
+                    },
+                    "trait_decl_ref": {
+                      "regions": [],
+                      "skip_binder": {
+                        "id": 8,
+                        "generics": {
+                          "regions": [],
+                          "types": [
+                            {
+                              "Deduplicated": 34
+                            }
+                          ],
+                          "const_generics": [],
+                          "trait_refs": []
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 21
+          },
+          "id": 1,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 21
+              },
+              "id": 3,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 21
+              },
+              "id": 4,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 22
+          },
+          "id": 3,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 22
+              },
+              "id": 6,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 22
+              },
+              "id": 7,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 15
+          },
+          "id": 7,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 15
+              },
+              "id": 13,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 15
+              },
+              "id": 14,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1489,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3816,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3817,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3818,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1493,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3826,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3827,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3828,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1507,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3861,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3862,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3863,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.ClientRequestId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 713,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1481,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1483,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1484,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 720,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1497,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1499,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1500,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1526,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3908,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3909,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3910,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1530,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3918,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3919,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3920,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1544,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3953,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3954,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3955,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.DeploymentId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 746,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1571,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1573,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1574,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 753,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1587,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1589,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1590,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1415,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3632,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3633,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3634,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1419,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3642,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3643,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3644,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1433,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3677,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3678,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3679,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.LogicalActionId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 647,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1301,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1303,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1304,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 654,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1317,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1319,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1320,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1563,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 4000,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 4001,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 4002,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1567,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 4010,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 4011,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 4012,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1581,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 4045,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 4046,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 4047,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.NodeId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 779,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1661,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1663,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1664,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 786,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1677,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1679,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1680,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1378,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3540,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3541,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3542,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1382,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3550,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3551,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3552,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1396,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3585,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3586,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3587,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.OperationId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 614,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1211,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1213,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1214,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 621,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1227,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1229,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1230,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1452,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3724,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3725,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3726,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1456,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3734,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3735,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3736,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1470,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3769,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3770,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3771,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.ResourceId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 680,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1391,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1393,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1394,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 687,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1407,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1409,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1410,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1341,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3448,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3449,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3450,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1345,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3458,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3459,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3460,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1359,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3493,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3494,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3495,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.SandboxId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 581,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1121,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1123,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1124,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 588,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1137,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1139,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1140,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1304,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3356,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3357,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3358,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 8
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1149
+          },
+          "id": 1308,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3366,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3367,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1149
+              },
+              "id": 3368,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 11
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 1141
+          },
+          "id": 1322,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3401,
+              "kind": {
+                "StorageDead": 10
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3402,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 1141
+              },
+              "id": 3403,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_protocol.TenantId.Insts.Serde_coreDeDeserialize.deserialize": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 548,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1031,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1033,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1034,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 42
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 226
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 49
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Precise",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 654
+          },
+          "id": 555,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1047,
+              "kind": {
+                "StorageDead": 12
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1049,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 654
+              },
+              "id": 1050,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "string_drop_glue": 226
+}

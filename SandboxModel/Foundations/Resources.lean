@@ -69,4 +69,32 @@ theorem resource_fits_refines (v limit : RustResources) :
     by_cases hm : v.memory_bytes.val ≤ limit.memory_bytes.val <;>
     by_cases hd : v.disk_bytes.val ≤ limit.disk_bytes.val <;> simp [hi, hc, hm, hd]
 
+-- Positional consumers must retain every component and its original order.
+def resourceValues (value : ResourceVector) : List Nat :=
+  [value.instances, value.cpu, value.memoryBytes, value.diskBytes]
+
+theorem resource_values_refines (value : RustResources) :
+    resource_values value =
+      .ok (Array.make 4#usize
+        [value.instances, value.cpu, value.memory_bytes, value.disk_bytes]) := by rfl
+
+theorem resource_values_view (value : RustResources) :
+    ∃ out, resource_values value = .ok out ∧
+      out.val.map (fun component => component.val) = resourceValues (resourceView value) := by
+  refine ⟨Array.make 4#usize
+    [value.instances, value.cpu, value.memory_bytes, value.disk_bytes],
+    resource_values_refines value, ?_⟩
+  simp [resourceValues, resourceView]
+
+theorem resource_values_represented (value : RustResources) (model : ResourceVector)
+    (represented : ResourceRep value model) :
+    ∃ out, resource_values value = .ok out ∧
+      out.val.map (fun component => component.val) = resourceValues model ∧
+      out.val.length = 4 := by
+  obtain ⟨out, result, projected⟩ := resource_values_view value
+  change resourceView value = model at represented
+  refine ⟨out, result, ?_, ?_⟩
+  · simpa only [represented] using projected
+  · exact out.property
+
 end SandboxModel.Foundations

@@ -9,6 +9,7 @@ use sandproof_protocol::internal::{
     NodeIdentity,
     window::{WindowCloseAck, WindowCloseRequest},
 };
+use sandproof_protocol::numeric::seconds_to_milliseconds;
 use sandproof_protocol::{ResourceId, SandboxId, TenantId};
 use serde::Deserialize;
 use std::time::Duration;
@@ -74,8 +75,8 @@ impl CenterConfig {
             || self.max_timeout_secs < sandproof_controller_service::DEFAULT_TIMEOUT_SECS
             || self.max_timeout_secs > self.max_lifetime_secs
             || self.startup_timeout_secs == 0
-            || self.max_lifetime_secs.checked_mul(1000).is_none()
-            || self.startup_timeout_secs.checked_mul(1000).is_none()
+            || seconds_to_milliseconds(self.max_lifetime_secs).is_none()
+            || seconds_to_milliseconds(self.startup_timeout_secs).is_none()
             || self.reply_timeout.is_zero()
             || self.reply_timeout > Duration::from_hours(24)
             || self.poll_interval.is_zero()

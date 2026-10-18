@@ -19,9 +19,44 @@ test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
 # --dest-file below reaches the same LLBC and is portable across checkouts.
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for alloc::string::String}::deserialize' \
+  --opaque 'serde_core::de::impls::StringVisitor::_' \
+  --include 'serde_core::de::impls::StringVisitor' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::expecting' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_str' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_string' \
+  --start-from serde_core::de::Error::invalid_type \
+  --opaque serde_core::de::Error::invalid_type \
+  --start-from serde_core::de::Visitor::visit_str \
+  --opaque serde_core::de::Visitor::visit_str \
+  --start-from serde_core::de::Visitor::visit_string \
+  --opaque serde_core::de::Visitor::visit_string \
+  --start-from serde_core::de::Visitor::visit_borrowed_str \
+  --opaque serde_core::de::Visitor::visit_borrowed_str \
+  --start-from crate::json_ids::tenant_decode \
+  --start-from crate::json_ids::sandbox_decode \
+  --start-from crate::json_ids::operation_decode \
+  --start-from crate::json_ids::logical_action_decode \
+  --start-from crate::json_ids::resource_decode \
+  --start-from crate::json_ids::client_request_decode \
+  --start-from crate::json_ids::deployment_decode \
+  --start-from crate::json_ids::node_decode \
+  --start-from crate::json_ids::string_primitive \
+  --start-from crate::json::counter_decode \
+  --start-from crate::json::counter_primitive \
+  --start-from crate::json::json_error_passthrough \
+  --start-from serde_core::de::Visitor::visit_u64 \
+  --opaque serde_core::de::Visitor::visit_u64 \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize' \
+  --opaque 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::PrimitiveVisitor' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_::expecting' \
+  --include 'serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_::visit_u64' \
   --start-from crate::counter_from_u64 \
   --start-from crate::counter_next \
   --start-from crate::counter_value \
+  --start-from crate::counter_into_u64 \
+  --start-from crate::internal_error_text \
   --start-from crate::lane_current \
   --start-from crate::store_get_copy \
   --start-from crate::store_put \
@@ -30,10 +65,50 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::resource_add \
   --start-from crate::resource_positive \
   --start-from crate::resource_fits \
+  --start-from crate::resource_values \
   --start-from crate::create_binding_valid \
   --start-from crate::identity_response \
   --start-from crate::retry_hint \
   --start-from crate::outcome_observation \
+  --start-from crate::allocated_number \
+  --start-from crate::tenant_from_string \
+  --start-from crate::tenant_from_str \
+  --start-from crate::tenant_value \
+  --start-from crate::tenant_into_string \
+  --start-from crate::sandbox_from_string \
+  --start-from crate::sandbox_from_str \
+  --start-from crate::sandbox_value \
+  --start-from crate::sandbox_into_string \
+  --start-from crate::operation_from_string \
+  --start-from crate::operation_from_str \
+  --start-from crate::operation_value \
+  --start-from crate::operation_into_string \
+  --start-from crate::logical_action_from_string \
+  --start-from crate::logical_action_from_str \
+  --start-from crate::logical_action_value \
+  --start-from crate::logical_action_into_string \
+  --start-from crate::resource_from_string \
+  --start-from crate::resource_from_str \
+  --start-from crate::resource_value \
+  --start-from crate::resource_into_string \
+  --start-from crate::client_request_from_string \
+  --start-from crate::client_request_from_str \
+  --start-from crate::client_request_value \
+  --start-from crate::client_request_into_string \
+  --start-from crate::deployment_from_string \
+  --start-from crate::deployment_from_str \
+  --start-from crate::deployment_value \
+  --start-from crate::deployment_into_string \
+  --start-from crate::node_from_string \
+  --start-from crate::node_from_str \
+  --start-from crate::node_value \
+  --start-from crate::node_into_string \
+  --start-from crate::center_allocated_number \
+  --start-from crate::numeric::seconds_to_milliseconds \
+  --start-from crate::numeric::bytes_to_mebibytes \
+  --start-from crate::numeric::available_resource \
+  --start-from crate::receipts::action_version \
+  --start-from crate::receipts::receipt_validate \
   --include sandproof_protocol --include sandproof_center_core \
   --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_foundations.llbc \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline

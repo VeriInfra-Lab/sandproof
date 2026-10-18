@@ -1,0 +1,66 @@
+import SandboxModel.Boundaries.JsonCounter.Model
+import SandproofFoundations.Funs
+import SandboxModel.ProofAuditCommand
+namespace JsonCounterNegative
+open Aeneas Aeneas.Std SandproofFoundationsRust
+open SandproofFoundationsRust.json
+def unitError : serde_core.de.Error Unit := {
+  coreerrorErrorInst := {
+    fmtDebugInst := { fmt := fun _ formatter => .ok (.Ok (), formatter) }
+    fmtDisplayInst := { fmt := fun _ formatter => .ok (.Ok (), formatter) }
+  }
+  custom := fun {_} _ _ => .ok ()
+}
+
+def valueReader : serde_core.de.Deserializer U64 Unit := {
+  ErrorInst := unitError
+  deserialize_any := fun {_ _} _ _ _ => .fail .panic
+  deserialize_bool := fun {_ _} _ _ _ => .fail .panic
+  deserialize_i8 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_i16 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_i32 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_i64 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_u8 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_u16 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_u32 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_u64 := fun {_ _} visitor value state => visitor.visit_u64 unitError state value
+  deserialize_f32 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_f64 := fun {_ _} _ _ _ => .fail .panic
+  deserialize_char := fun {_ _} _ _ _ => .fail .panic
+  deserialize_str := fun {_ _} _ _ _ => .fail .panic
+  deserialize_string := fun {_ _} _ _ _ => .fail .panic
+  deserialize_bytes := fun {_ _} _ _ _ => .fail .panic
+  deserialize_byte_buf := fun {_ _} _ _ _ => .fail .panic
+  deserialize_option := fun {_ _} _ _ _ => .fail .panic
+  deserialize_unit := fun {_ _} _ _ _ => .fail .panic
+  deserialize_unit_struct := fun {_ _} _ _ _ _ => .fail .panic
+  deserialize_newtype_struct := fun {_ _} _ _ _ _ => .fail .panic
+  deserialize_seq := fun {_ _} _ _ _ => .fail .panic
+  deserialize_tuple := fun {_ _} _ _ _ _ => .fail .panic
+  deserialize_tuple_struct := fun {_ _} _ _ _ _ _ => .fail .panic
+  deserialize_map := fun {_ _} _ _ _ => .fail .panic
+  deserialize_struct := fun {_ _} _ _ _ _ _ => .fail .panic
+  deserialize_enum := fun {_ _} _ _ _ _ _ => .fail .panic
+  deserialize_identifier := fun {_ _} _ _ _ => .fail .panic
+  deserialize_ignored_any := fun {_ _} _ _ _ => .fail .panic
+}
+
+theorem mutant_accepts_zero : counter_decode valueReader 0#u64 = .ok (.Ok 0#u64) := by
+  simp [counter_decode,
+    sandproof_protocol.internal.PositiveCounter.Insts.Serde_coreDeDeserialize.deserialize,
+    U64.Insts.Serde_coreDeDeserialize.deserialize,
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64,
+    serde_core.de.impls.DeserializeDeU64.deserialize.PrimitiveVisitor.Insts.Serde_coreDeVisitorDeU64.visit_u64,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.map_err,
+    sandproof_protocol.internal.DeserializeDePositiveCounter.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorClause0_Error.call_once,
+    valueReader, unitError]
+
+theorem mutant_not_safe : ¬ SandboxModel.Boundaries.JsonCounter.CounterSafe (counter_decode valueReader 0#u64) := by
+  intro safe
+  exact safe 0#u64 mutant_accepts_zero rfl
+
+#audit_controller_proof JsonCounterNegative.mutant_accepts_zero
+#audit_controller_proof JsonCounterNegative.mutant_not_safe
+end JsonCounterNegative

@@ -449,6 +449,31 @@ class RuntimeTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_repository_binding_uses_current_owner(self):
+        self.assertEqual(auth.REPOSITORY, 'VeriInfra-Lab/sandproof')
+        self.assertEqual(ci.PREFIX, '/repos/VeriInfra-Lab/sandproof/actions/')
+
+    def test_previous_owner_installation_refused_before_token_issue(self):
+        calls = []
+        def transport(method, path, token, body=None):
+            calls.append(path)
+            if path == '/app':
+                return {'id': 123}
+            if '/app/installations?' in path:
+                return [{'id': 5, 'account': {'login': 'ningZhang-cs'},
+                         'repository_selection': 'selected', 'permissions': auth.PERMISSIONS}]
+            self.fail('wrong-owner installation must not issue a token')
+        with self.assertRaisesRegex(ValueError, 'repository owner'):
+            self.app(transport).verify_installation()
+        self.assertEqual(calls, ['/app', '/app/installations?per_page=100'])
+
+    def test_previous_repository_api_refused_before_token_issue(self):
+        app = self.app(lambda *args: self.fail('old repository must not be contacted'))
+        app.access_token = Mock()
+        with self.assertRaisesRegex(ValueError, 'outside CI scope'):
+            app.request('GET', '/repos/ningZhang-cs/sandproof/actions/runners')
+        app.access_token.assert_not_called()
+
     def test_optional_checks_permission_does_not_expand_ordinary_tokens(self):
         calls = []
         def transport(method, path, token, body=None):
@@ -456,7 +481,7 @@ class AppTests(unittest.TestCase):
             if path == '/app':
                 return {'id': 123}
             if '/app/installations?' in path:
-                return [{'id': 5, 'account': {'login': 'ningZhang-cs'}, 'repository_selection': 'selected',
+                return [{'id': 5, 'account': {'login': auth.REPOSITORY.split('/')[0]}, 'repository_selection': 'selected',
                          'permissions': dict(auth.PERMISSIONS, checks='write', contents='read')}]
             if 'access_tokens' in path:
                 return {'token': 'fake-token', 'permissions': body['permissions'], 'expires_at': '1970-01-01T01:00:00Z'}
@@ -496,7 +521,7 @@ class AppTests(unittest.TestCase):
             if path == '/app':
                 return {'id': 123}
             if '/app/installations?' in path:
-                return [{'id': 5, 'account': {'login': 'ningZhang-cs'}, 'repository_selection': 'selected',
+                return [{'id': 5, 'account': {'login': auth.REPOSITORY.split('/')[0]}, 'repository_selection': 'selected',
                          'permissions': auth.PERMISSIONS}]
             if 'access_tokens' in path:
                 return {'token': 'fake-token', 'permissions': auth.PERMISSIONS, 'expires_at': '1970-01-01T01:00:00Z'}
@@ -516,14 +541,14 @@ class AppTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             app.access_token()
         with self.assertRaises(ValueError):
-            app.request('POST', '/repos/ningZhang-cs/sandproof/pulls')
+            app.request('POST', '/repos/' + auth.REPOSITORY + '/pulls')
 
     def test_permission_expansion_and_all_repositories_refused(self):
         for change in ({'permissions': dict(auth.PERMISSIONS, contents='write')}, {'repository_selection': 'all'}):
             def transport(method, path, token, body=None):
                 if path == '/app':
                     return {'id': 123}
-                return [dict({'id': 5, 'account': {'login': 'ningZhang-cs'},
+                return [dict({'id': 5, 'account': {'login': auth.REPOSITORY.split('/')[0]},
                               'repository_selection': 'selected', 'permissions': auth.PERMISSIONS}, **change)]
             with self.assertRaises(ValueError):
                 self.app(transport).verify_installation()
@@ -533,7 +558,7 @@ class AppTests(unittest.TestCase):
             if path == '/app':
                 return {'id': 123}
             if '/app/installations?' in path:
-                return [{'id': 5, 'account': {'login': 'ningZhang-cs'}, 'repository_selection': 'selected',
+                return [{'id': 5, 'account': {'login': auth.REPOSITORY.split('/')[0]}, 'repository_selection': 'selected',
                          'permissions': auth.PERMISSIONS}]
             if 'access_tokens' in path:
                 return {'token': 'fake'}
