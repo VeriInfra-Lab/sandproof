@@ -1,7 +1,6 @@
 //! Validate the canonical Start schema without retaining argument strings or
 //! environment values. Exact decoded keys still enforce duplicate rejection;
 //! unescaped keys borrow the admitted payload; short escaped keys stay inline.
-use crate::file_protocol::request_json::StringKey;
 use serde::{Deserializer, de};
 
 use super::{ProtocolError, Request, StartLimits, StartRequest, argument_count, parse};
@@ -47,13 +46,15 @@ impl<'de> super::request_json::Environment<'de> for CheckedEnvironment {
             }
             fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
                 let mut keys = keys::Chunks::default();
+                let mut arena = keys::Arena::default();
                 let mut invalid_name = false;
-                while let Some(key) = map.next_key::<StringKey<'de>>()? {
+                while let Some(key) = map.next_key_seed(arena.seed())? {
                     map.next_value::<argument_count::StringOnly>()?;
-                    invalid_name |= key.as_str().is_empty() || key.as_str().contains('=');
+                    let value = key.as_str(&arena);
+                    invalid_name |= value.is_empty() || value.contains('=');
                     keys.push(key);
                 }
-                if !keys.unique() {
+                if !keys.unique(&arena) {
                     return Err(de::Error::custom("duplicate environment key"));
                 }
                 // No executable prefix escapes. Any malformed map fails before

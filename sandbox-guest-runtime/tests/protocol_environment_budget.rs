@@ -152,6 +152,32 @@ fn exact_environment_duplicates_across_scratch_chunks_keep_original_results() {
     }
 }
 
+#[test]
+fn escaped_key_pool_boundaries_do_not_change_acceptance_or_duplicate_identity() {
+    for suffix in [
+        "x".repeat(14),
+        "🙂".repeat(4),
+        "中".repeat(21_845),
+        "x".repeat(65_536),
+    ] {
+        let key = format!("k{suffix}");
+        let plain = serde_json::to_string(&key).unwrap();
+        let escaped = plain.replacen('k', r"\u006b", 1);
+        let single = format!(r#"{{"process":{{"envs":{{{escaped}:""}}}}}}"#);
+        let wire = frame(single.as_bytes());
+        assert_eq!(
+            decode_request_with_start_limits("Start", &wire, wire.len(), limits(1)),
+            decode_request("Start", &wire, wire.len()),
+        );
+        let duplicate = format!(r#"{{"process":{{"envs":{{{plain}:"",{escaped}:""}}}}}}"#);
+        let wire = frame(duplicate.as_bytes());
+        assert_eq!(
+            decode_request_with_start_limits("Start", &wire, wire.len(), limits(0)),
+            Err(ProtocolError::InvalidArgument),
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn oversized_environment_decodes_in_an_independent_memory_limited_process() {

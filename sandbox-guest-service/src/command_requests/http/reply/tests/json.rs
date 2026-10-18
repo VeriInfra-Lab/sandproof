@@ -29,6 +29,35 @@ fn observe(
     let (_cancel, cancelled) = tokio::sync::watch::channel(false);
     compression::decode_selected(rpc.method(), body, 65536, 13, deadline(), &cancelled, gzip)
 }
+
+#[test]
+fn compact_start_validation_matches_original_json_corpus() {
+    let (_cancel, cancelled) = tokio::sync::watch::channel(false);
+    for payload in cases(Rpc::Start) {
+        for gzip in [false, true] {
+            let body = wire(Rpc::Start, &payload, gzip);
+            assert_eq!(
+                compression::decode_limited(
+                    "Start",
+                    &body,
+                    65536,
+                    13,
+                    deadline(),
+                    &cancelled,
+                    (
+                        gzip,
+                        Some(sandproof_guest_runtime::protocol::StartLimits {
+                            arguments: usize::MAX,
+                            env_entries: usize::MAX,
+                        }),
+                    ),
+                ),
+                observe(Rpc::Start, &body, gzip),
+            );
+        }
+    }
+}
+
 fn format(rpc: Rpc, gzip: bool, utf8: bool) -> ResponseFormat {
     let mut headers = HeaderMap::new();
     headers.insert(
