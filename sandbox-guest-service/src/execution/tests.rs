@@ -82,56 +82,6 @@ fn request() -> StartRequest {
 }
 
 #[tokio::test]
-async fn partition_reserves_one_lookup_without_increasing_aggregate_admission() {
-    let (ordinary, control) = AccountPool::new(Source, 4, Duration::from_secs(5))
-        .unwrap()
-        .reserve_control()
-        .unwrap();
-    assert!(Arc::ptr_eq(&ordinary.source, &control.source));
-    let held: Vec<_> = (0..3)
-        .map(|_| ordinary.slots.clone().try_acquire_owned().unwrap())
-        .collect();
-    assert_eq!(
-        ordinary.lookup("alice".into()).await,
-        Err(ContextError::ResourceExhausted)
-    );
-    assert_eq!(
-        control.lookup("alice".into()).await.unwrap(),
-        account("alice")
-    );
-    let reserved = control.slots.clone().try_acquire_owned().unwrap();
-    assert_eq!(
-        control.lookup("alice".into()).await,
-        Err(ContextError::ResourceExhausted)
-    );
-    drop((held, reserved));
-    assert_eq!(ordinary.lookup("bob".into()).await.unwrap(), account("bob"));
-}
-
-#[tokio::test]
-async fn single_lookup_capacity_stays_shared_and_used_pools_cannot_be_partitioned() {
-    let (ordinary, control) = AccountPool::new(Source, 1, Duration::from_secs(5))
-        .unwrap()
-        .reserve_control()
-        .unwrap();
-    let held = ordinary.slots.clone().try_acquire_owned().unwrap();
-    assert_eq!(
-        control.lookup("alice".into()).await,
-        Err(ContextError::ResourceExhausted)
-    );
-    drop(held);
-    assert_eq!(
-        control.lookup("alice".into()).await.unwrap(),
-        account("alice")
-    );
-    assert!(matches!(
-        ordinary.reserve_control(),
-        Err(ContextError::InvalidArgument)
-    ));
-    assert_eq!(control.lookup("bob".into()).await.unwrap(), account("bob"));
-}
-
-#[tokio::test]
 async fn missing_or_empty_process_keeps_execution_defaults_and_trusted_wrapper_path() {
     let session = session().await;
     let auth = session.authorize(Some("token")).await.unwrap();

@@ -2,7 +2,7 @@ use super::{Error, config::Configuration};
 use crate::{
     AccountPool, MmdsClient, SystemAccounts,
     command::{CommandOwners, PidRegistrar, PidRegistry},
-    command_http::{CommandHttp, ControlExecution, Processes, RequestPools},
+    command_http::{CommandHttp, Processes, RequestPools},
     command_requests::CommandRequests,
     file_http::{FileHttp, Settings},
     file_io::FilePool,
@@ -20,6 +20,9 @@ use sandproof_guest_runtime::{
 use std::{os::unix::ffi::OsStrExt, path::Path, sync::Arc};
 use tokio::time::Instant;
 
+#[cfg(test)]
+mod tests;
+
 pub type Http<M = MmdsClient> = GuestHttp<PinnedMetadata<M>, SystemAccounts, Snapshot>;
 
 /// Validated settings and original bounded pools. Construction creates no
@@ -31,7 +34,7 @@ pub struct Prepared {
     pub(super) listener: Listener,
     pub(super) worker: sandproof_guest_runtime::artifact::Expected,
     accounts: AccountPool<SystemAccounts>,
-    control_execution: Option<ControlExecution<SystemAccounts>>,
+    control_executor: Option<tokio::runtime::Handle>,
     owners: CommandOwners,
     commands: RequestPools,
     files: FileRequests,
@@ -144,7 +147,7 @@ impl Prepared {
             listener,
             worker,
             accounts,
-            control_execution: None,
+            control_executor: None,
             owners,
             commands,
             files,
@@ -158,12 +161,10 @@ impl Prepared {
         mut self,
         blocking: tokio::runtime::Handle,
     ) -> Result<Self, Error> {
-        let (accounts, control) = checked(self.accounts.reserve_control())?;
-        self.accounts = accounts;
-        self.control_execution = Some(ControlExecution {
-            blocking,
-            accounts: control,
-        });
+        if self.control_executor.is_some() {
+            return Err(Error::Configuration);
+        }
+        self.control_executor = Some(blocking);
         Ok(self)
     }
 
@@ -200,8 +201,8 @@ impl Prepared {
             },
             config.commands.response,
         ))?;
-        let commands = match self.control_execution {
-            Some(control) => checked(commands.with_control_execution(control))?,
+        let commands = match self.control_executor {
+            Some(control) => checked(commands.with_control_executor(control))?,
             None => commands,
         };
         let filesystem = checked(FileRpcHttp::new(

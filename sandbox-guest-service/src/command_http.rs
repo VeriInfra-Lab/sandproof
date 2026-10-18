@@ -31,15 +31,6 @@ pub struct RequestPools {
     pub control: CommandRequests,
 }
 
-/// Caller-owned execution capacity for the three reserved control routes.
-/// The caller keeps this runtime alive and includes it in its aggregate thread
-/// and shutdown budgets. Account capacity may remain shared when its total is
-/// one; reserving a blocking executor alone does not reserve account admission.
-pub struct ControlExecution<S> {
-    pub blocking: tokio::runtime::Handle,
-    pub accounts: AccountPool<S>,
-}
-
 /// Trusted resources for one VM/service lifetime. Use one `CommandHttp` assembly
 /// (and its clones) as the sole Start dispatcher for this registry/session.
 /// Its internal command IDs must not be mixed with IDs from direct preparation.
@@ -85,7 +76,7 @@ struct Inner<M, S> {
     session: Session<M>,
     requests: RequestPools,
     accounts: AccountPool<S>,
-    control_execution: Option<ControlExecution<S>>,
+    control_executor: Option<tokio::runtime::Handle>,
     settings: ExecutionSettings,
     processes: Processes,
     response: ResponseLimits,
@@ -164,7 +155,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
                 session,
                 requests,
                 accounts,
-                control_execution: None,
+                control_executor: None,
                 settings,
                 processes,
                 response,
@@ -174,18 +165,20 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
     }
 
     /// Bind caller-provisioned control execution before sharing the assembly.
+    /// The caller keeps the runtime alive within its aggregate thread/shutdown
+    /// budgets. Account admission remains shared, with its original capacity.
     /// This changes neither the request pools nor the original request deadlines.
     /// # Errors
     /// The assembly was already cloned or already has a control executor.
-    pub fn with_control_execution(
+    pub fn with_control_executor(
         mut self,
-        control: ControlExecution<S>,
+        control: tokio::runtime::Handle,
     ) -> Result<Self, InvalidConfiguration> {
         let inner = Arc::get_mut(&mut self.inner).ok_or(InvalidConfiguration)?;
-        if inner.control_execution.is_some() {
+        if inner.control_executor.is_some() {
             return Err(InvalidConfiguration);
         }
-        inner.control_execution = Some(control);
+        inner.control_executor = Some(control);
         Ok(self)
     }
 
@@ -211,10 +204,10 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
         let control = matches!(rpc, Some(Rpc::CloseStdin | Rpc::SendSignal | Rpc::Update));
         let blocking = self
             .inner
-            .control_execution
+            .control_executor
             .as_ref()
             .filter(|_| control)
-            .map(|execution| execution.blocking.clone());
+            .cloned();
         crate::blocking_executor::scope(
             blocking.clone(),
             self.prepare_selected(request, rpc, control, blocking),
@@ -235,11 +228,6 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
         } else {
             &inner.requests.ordinary
         };
-        let accounts = inner
-            .control_execution
-            .as_ref()
-            .filter(|_| control)
-            .map_or(&inner.accounts, |execution| &execution.accounts);
         let admitted = match pool.admit() {
             Ok(admitted) => admitted,
             Err(command_requests::AdmissionError::ResourceExhausted) => {
@@ -270,7 +258,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
             }
         };
         let prepared = match authenticated
-            .prepare_http(&parts.method, accounts, inner.settings.limits)
+            .prepare_http(&parts.method, &inner.accounts, inner.settings.limits)
             .await
         {
             Ok(prepared) => prepared,

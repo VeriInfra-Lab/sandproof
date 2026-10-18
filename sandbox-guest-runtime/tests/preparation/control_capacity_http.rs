@@ -1,6 +1,5 @@
 //! A blocked ordinary executor must not consume the reserved control executor.
 use super::*;
-use sandproof_guest_service::command_http::ControlExecution;
 use std::sync::mpsc;
 
 struct Release(Vec<mpsc::Sender<()>>);
@@ -109,10 +108,7 @@ fn reserved_control_prepare_and_later_execution_survive_full_ordinary_blocking_c
         let requests = requests(2);
         let controls = super::requests(1);
         let http = http(&fixture, &registry, &requests, &controls)
-            .with_control_execution(ControlExecution {
-                blocking: reserved.handle().clone(),
-                accounts: accounts(&fixture),
-            })
+            .with_control_executor(reserved.handle().clone())
             .unwrap();
         // Compare against these same handlers before blocking, including the
         // original error bytes. The missing selectors cannot affect a command.
