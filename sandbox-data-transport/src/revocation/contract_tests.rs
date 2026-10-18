@@ -104,6 +104,26 @@ async fn cancelling_outer_wait_keeps_prior_effects_and_drops_local_work() {
     assert!(dropped.load(Ordering::SeqCst));
 }
 
+#[tokio::test]
+async fn work_panic_keeps_effect_prefix_without_returning_a_revocation() {
+    let (_sender, mut receiver) = watch::channel(false);
+    let effects = Arc::new(AtomicUsize::new(0));
+    let changed = Arc::clone(&effects);
+    let dropped = Arc::new(AtomicBool::new(false));
+    let guard = Dropped(Arc::clone(&dropped));
+    let task: tokio::task::JoinHandle<Option<()>> = tokio::spawn(async move {
+        until_revoked(&mut receiver, async move {
+            let _guard = guard;
+            changed.fetch_add(1, Ordering::SeqCst);
+            panic!("work failed after its visible effect");
+        })
+        .await
+    });
+    assert!(task.await.unwrap_err().is_panic());
+    assert_eq!(effects.load(Ordering::SeqCst), 1);
+    assert!(dropped.load(Ordering::SeqCst));
+}
+
 struct Exited(Option<oneshot::Sender<()>>);
 impl Drop for Exited {
     fn drop(&mut self) {

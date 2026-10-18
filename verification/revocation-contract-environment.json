@@ -58,11 +58,14 @@
     "SandboxModel.Boundaries.Revocation.latest_value_does_not_remember_unobserved_true",
     "SandboxModel.Boundaries.Revocation.cancelled_wait_does_not_release_running_task",
     "SandboxModel.Boundaries.Revocation.correct_revocation_observation_has_same_priority",
-    "SandboxModel.Boundaries.Revocation.work_first_version_breaks_same_priority"
+    "SandboxModel.Boundaries.Revocation.work_first_version_breaks_same_priority",
+    "SandboxModel.Boundaries.Revocation.nonreturning_work_can_have_visible_prefix",
+    "SandboxModel.Boundaries.Revocation.poll_effect_before_panic_is_retained",
+    "SandboxModel.Boundaries.Revocation.revocation_during_pending_poll_prevents_repoll"
   ],
   "call_inventory": {
     "sandbox-data-transport/src/lib.rs": 1,
-    "sandbox-data-transport/src/revocation/contract_tests.rs": 7,
+    "sandbox-data-transport/src/revocation/contract_tests.rs": 8,
     "sandbox-data-transport/src/revocation.rs": 3,
     "sandbox-host-service/src/data_gateway.rs": 5
   },
@@ -96,10 +99,11 @@
     "effects before cancellation persist; destructors may perform additional cleanup",
     "JoinHandle destruction does not stop running task or release its permit",
     "body/relay lifetime, unknown, real exit and physical release remain own proofs",
-    "no unconditional progress or successful cleanup on panic, abort, crash or OOM"
+    "no unconditional progress or successful cleanup on panic, abort, crash or OOM",
+    "a synchronous work poll is not preempted by revocation; visible work prefixes before panic/nonreturn remain possible; interrupted zero teardown certificates do not assert no destructor ran"
   ],
   "component_tests": {
-    "correct_tests": 9,
+    "correct_tests": 10,
     "mutants": [
       "work-first"
     ],

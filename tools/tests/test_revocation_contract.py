@@ -40,7 +40,7 @@ class RevocationContractAdmissionTests(unittest.TestCase):
         (self.root / "verification/revocation-contract-inputs.sha256").write_text("".join(lines))
 
     def test_bound_contract_is_admitted(self):
-        self.assertEqual(len(check(self.root, self.cargo)["theorems"]), 21)
+        self.assertEqual(len(check(self.root, self.cargo)["theorems"]), 24)
 
     def test_actual_adapter_drift_is_rejected(self):
         path = self.root / "sandbox-data-transport/src/revocation.rs"

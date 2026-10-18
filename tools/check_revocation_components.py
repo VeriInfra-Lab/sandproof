@@ -72,8 +72,8 @@ def main():
         code = run(command, directory, log, env)
         text = log.read_text()
         if name == "correct":
-            if code != 0 or re.findall(r"test result: ok\. (\d+) passed; 0 failed; 0 ignored;", text) != ["9"]:
-                raise ValueError("All nine actual B3 tests must execute and pass")
+            if code != 0 or re.findall(r"test result: ok\. (\d+) passed; 0 failed; 0 ignored;", text) != ["10"]:
+                raise ValueError("All ten actual B3 tests must execute and pass")
         elif code != 101 or "test result: FAILED. 0 passed; 1 failed; 0 ignored;" not in text or "assertion" not in text:
             raise ValueError("Work-first mutant did not fail the same original priority assertion")
         receipt["variants"][name] = {"build_exit": 0, "fresh_binary": True,

@@ -3,8 +3,11 @@ import SandboxModel.Boundaries.Task.Model
 
 /-! Conditional B3 trace contract, not an extraction of async Rust. Signal
 updates are latest-value observations; they may interleave between the biased
-revocation branch and a work poll. workEffects records work-poll effects, not global mutable state or destructor
-effects. Drop may perform arbitrary cleanup; only its normal observation is counted. Dropping the selected future never certifies a physical process exit.
+revocation branch and a work poll. workEffects records work-poll effects,
+not global mutable state or destructor effects. A poll has an explicit
+in-progress state, including visible prefixes before it returns, panics or
+never returns. Drop may perform arbitrary cleanup. A normal-path teardown
+certificate never certifies physical process exit.
 Only normal destructor observations are counted; interruption retains unknown
 cleanup rather than manufacturing a Drop event. -/
 namespace SandboxModel.Boundaries.Revocation
@@ -14,7 +17,7 @@ variable {α σ : Type}
 inductive Signal | pending | revoked | closed deriving DecidableEq, Repr
 inductive End (α : Type) | revoked | closed | returned (value : α) | cancelled | interrupted
   deriving DecidableEq, Repr
-inductive Phase (α : Type) | checking | workAllowed | selected (reason : End α) | done (reason : End α)
+inductive Phase (α : Type) | checking | workAllowed | polling | selected (reason : End α) | done (reason : End α)
   deriving DecidableEq, Repr
 
 structure Key where
@@ -28,6 +31,8 @@ structure State (α σ : Type) where
   phase : Phase α
   workEffects : σ
   polls : Nat
+  -- Normal-path teardown certificates, not a census of all runtime Drop.
+  -- Zero on interruption means no certificate, not that no destructor ran.
   drops : Nat
   deriving DecidableEq, Repr
 
@@ -39,6 +44,12 @@ inductive Step : State α σ → State α σ → Prop
       ⟨k, a, .checking, q, n, d⟩ ⟨k, b, .checking, q, n, d⟩
   | changeAllowed (k a b q n d) : Step
       ⟨k, a, .workAllowed, q, n, d⟩ ⟨k, b, .workAllowed, q, n, d⟩
+  | changePolling (k a b q n d) : Step
+      ⟨k, a, .polling, q, n, d⟩ ⟨k, b, .polling, q, n, d⟩
+  | startPoll (k a q n d) : Step
+      ⟨k, a, .workAllowed, q, n, d⟩ ⟨k, a, .polling, q, n + 1, d⟩
+  | effect (k a q q' n d) : Step
+      ⟨k, a, .polling, q, n, d⟩ ⟨k, a, .polling, q', n, d⟩
   | allow (k q n d) : Step
       ⟨k, .pending, .checking, q, n, d⟩ ⟨k, .pending, .workAllowed, q, n, d⟩
   | stopRevoked (k q n d) : Step
@@ -46,9 +57,9 @@ inductive Step : State α σ → State α σ → Prop
   | stopClosed (k q n d) : Step
       ⟨k, .closed, .checking, q, n, d⟩ ⟨k, .closed, .selected .closed, q, n, d⟩
   | pending (k a q q' n d) : Step
-      ⟨k, a, .workAllowed, q, n, d⟩ ⟨k, a, .checking, q', n + 1, d⟩
+      ⟨k, a, .polling, q, n, d⟩ ⟨k, a, .checking, q', n, d⟩
   | ready (k a q q' n d value) : Step
-      ⟨k, a, .workAllowed, q, n, d⟩ ⟨k, a, .selected (.returned value), q', n + 1, d⟩
+      ⟨k, a, .polling, q, n, d⟩ ⟨k, a, .selected (.returned value), q', n, d⟩
   | cancel (k a q n d) : Step
       ⟨k, a, .checking, q, n, d⟩ ⟨k, a, .selected .cancelled, q, n, d⟩
   | drop (k a q n d reason) : Step
@@ -57,6 +68,8 @@ inductive Step : State α σ → State α σ → Prop
       ⟨k, a, .checking, q, n, d⟩ ⟨k, a, .done .interrupted, q, n, d⟩
   | interruptAllowed (k a q n d) : Step
       ⟨k, a, .workAllowed, q, n, d⟩ ⟨k, a, .done .interrupted, q, n, d⟩
+  | interruptPolling (k a q n d) : Step
+      ⟨k, a, .polling, q, n, d⟩ ⟨k, a, .done .interrupted, q, n, d⟩
   | interruptSelected (k a q n d reason) : Step
       ⟨k, a, .selected reason, q, n, d⟩ ⟨k, a, .done .interrupted, q, n, d⟩
 
@@ -66,7 +79,7 @@ inductive Run : State α σ → State α σ → Prop
 
 def LifecycleSafe (s : State α σ) : Prop :=
   s.drops ≤ 1 ∧ match s.phase with
-    | .checking | .workAllowed => s.drops = 0
+    | .checking | .workAllowed | .polling => s.drops = 0
     | .selected r => s.drops = 0 ∧ r ≠ .interrupted
     | .done .interrupted => s.drops = 0
     | .done _ => s.drops = 1
@@ -158,7 +171,8 @@ theorem revocation_between_branches_may_allow_work (k) (q q' : σ) (value : α) 
   have allowed : Run (initial (α := α) k .pending q) ⟨k, .pending, .workAllowed, q, 0, 0⟩ :=
     .next (.refl _) (.allow k q 0 0)
   have revoked := Run.next allowed (Step.changeAllowed k .pending .revoked q 0 0)
-  have ready := Run.next revoked (Step.ready k .revoked q q' 0 0 value)
+  have entered := Run.next revoked (Step.startPoll k .revoked q 0 0)
+  have ready := Run.next entered (Step.ready k .revoked q q' 1 0 value)
   exact .next ready (.drop k .revoked q' 1 0 (.returned value))
 
 theorem latest_value_does_not_remember_unobserved_true (k) (q : σ) (value : α) :
@@ -168,7 +182,8 @@ theorem latest_value_does_not_remember_unobserved_true (k) (q : σ) (value : α)
     .next (.refl _) (.changeChecking k .pending .revoked q 0 0)
   have lowered := Run.next raised (Step.changeChecking k .revoked .pending q 0 0)
   have allowed := Run.next lowered (Step.allow k q 0 0)
-  have ready := Run.next allowed (Step.ready k .pending q q 0 0 value)
+  have entered := Run.next allowed (Step.startPoll k .pending q 0 0)
+  have ready := Run.next entered (Step.ready k .pending q q 1 0 value)
   exact .next ready (.drop k .pending q 1 0 (.returned value))
 
 -- Direct composition with the existing B1 interface, without redefining pools.
@@ -188,5 +203,29 @@ theorem work_first_version_breaks_same_priority (k) (q : σ) (n d) (value : α) 
     ¬ StopsBeforeWork ⟨k, .revoked, .checking, q, n, d⟩
       ⟨k, .revoked, .selected (.returned value), q, n + 1, d⟩ := by
   simp [StopsBeforeWork]
+
+-- A visible prefix needs no fabricated Pending or successful poll return.
+theorem nonreturning_work_can_have_visible_prefix (k) (q q' : σ) :
+    Run (initial (α := α) k .pending q)
+      ⟨k, .pending, .polling, q', 1, 0⟩ := by
+  have allowed : Run (initial (α := α) k .pending q)
+      ⟨k, .pending, .workAllowed, q, 0, 0⟩ := .next (.refl _) (.allow k q 0 0)
+  have entered := Run.next allowed (Step.startPoll k .pending q 0 0)
+  exact .next entered (.effect k .pending q q' 1 0)
+
+theorem poll_effect_before_panic_is_retained (k) (q q' : σ) :
+    Run (initial (α := α) k .pending q)
+      ⟨k, .pending, .done .interrupted, q', 1, 0⟩ :=
+  .next (nonreturning_work_can_have_visible_prefix k q q')
+    (.interruptPolling k .pending q' 1 0)
+
+theorem revocation_during_pending_poll_prevents_repoll (k) (q q' : σ) :
+    Run (initial (α := α) k .pending q)
+      ⟨k, .revoked, .done .revoked, q', 1, 1⟩ := by
+  have workPrefix := nonreturning_work_can_have_visible_prefix (α := α) k q q'
+  have changed := Run.next workPrefix (Step.changePolling k .pending .revoked q' 1 0)
+  have pending := Run.next changed (Step.pending k .revoked q' q' 1 0)
+  have selected := Run.next pending (Step.stopRevoked k q' 1 0)
+  exact .next selected (.drop k .revoked q' 1 0 .revoked)
 
 end SandboxModel.Boundaries.Revocation

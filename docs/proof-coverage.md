@@ -70,9 +70,9 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 
 ## T6 边界：撤销等待
 
-[Revocation](../SandboxModel/Boundaries/Revocation.lean) 是 [B3-until_revoked](formal/dependencies.md#b3-撤销等待的逐符号可信适配) 的独立条件模型，来源为 integration `a2b8a4b6ce5c170c953130b57abc8c2d6c468d0b`，当前精确输入见 [清单](../verification/revocation-contract-inputs.sha256)。21 条定理覆盖原信号/工作标签、选择后无新 poll、局部正常析构观察、返回分类、两个允许竞态、错误分支顺序及 B1 组合。**真实 async Rust 未被 Aeneas 抽取；其接线符合性属于登记的可信适配条件。** 这不证明完整网关授权、撤销后再无任何 I/O、relay 退出、持久提交、物理释放或无条件进展，也不关闭整个 T6/V0。
+[Revocation](../SandboxModel/Boundaries/Revocation.lean) 是 [B3-until_revoked](formal/dependencies.md#b3-撤销等待的逐符号可信适配) 的独立条件模型，来源为 integration `a2b8a4b6ce5c170c953130b57abc8c2d6c468d0b`，当前精确输入见 [清单](../verification/revocation-contract-inputs.sha256)。24 条定理覆盖原信号/工作标签、选择后无新 poll、正常析构凭证、返回分类、允许竞态、错误分支顺序及 B1 组合；正在 poll 的可见前缀可在 panic 或不返回前保留。中断时不补造清理凭证，也不据此认定没有发生析构。**真实 async Rust 未被 Aeneas 抽取；其接线符合性属于登记的可信适配条件。** 这不证明完整网关授权、撤销后再无任何 I/O、relay 退出、持久提交、物理释放或无条件进展，也不关闭整个 T6/V0。
 
-候选已在 a6000 原 Lean 服务完整检查，无错误且非陈旧；九项原 Rust 撤销组件测试通过。正式冻结、错误副本和完整入口的最终验收仍须以本批 PR 同提交收据确认，不能将候选结果当作整套验收。
+修订候选已在 a6000 原 Lean 服务完整检查，无错误且非陈旧。首版的 21 条定理/九项组件通过及完整入口的在途记录保留；审查后补齐 poll 期间的效果/panic/不返回表示，旧结果不为新版本背书。正式冻结、十项组件及错误副本和完整入口的最终验收以本批 PR 同提交收据确认，不能将候选结果当作整套验收。
 
 ## T5/T6 边界：DataLease 只读判定
 
