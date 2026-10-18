@@ -9,7 +9,8 @@
     "sandbox-center-store/src/store/storage_io.rs": "841101ef708e45f6132f6d10ecc6a0594972e9239556b08c9d51b3eadefc1ae9",
     "verification/extract-storage/Cargo.toml": "0746afcdfa8ff6c46e4ec7d8e794f29d1cf132bf82e1e83cee136bd1d7b03643",
     "verification/extract-storage/Cargo.lock": "56630ab6c9cbc758152dd60523ad2fdabd704e9f3b605525d6ec2347ba7f2cf9",
-    "verification/extract-storage/src/lib.rs": "d47e6d7de990a76d97e7b92ab814853d4f550cdd66e6877b67848ff49a368f5b"
+    "verification/extract-storage/src/lib.rs": "9cdb1d05202af209a89cacfba9601e3e125642f38132736b929ad6b7800e0656",
+    "verification/extract-storage/src/bindings.rs": "1ebf8b08f2b047bc20e564e094fe9416d39507e1cb11bd985897675ed11ade46"
   },
   "roots_template_destination": "verification/extract-storage",
   "target": "x86_64-unknown-linux-gnu",
@@ -54,5 +55,12 @@
     "store::ValueCodec::encode",
     "store::ValueCodec::decode"
   ],
-  "clock_callback_symbol": "store::OperationClock::deadline"
+  "clock_callback_symbol": "store::OperationClock::deadline",
+  "binding_roots": [
+    "sandproof_storage_extract::bindings::commit",
+    "sandproof_storage_extract::bindings::reaffirm"
+  ],
+  "public_binding_llbc_digest": "f2181fa4bf9b716f0d540c49a8c75fa3d9e1ba452a7a5e37b346667c4ef4df4e",
+  "public_binding_scope": "Complete Charon AST and single-call mechanical admission; no Lean translation of concrete Serde callbacks or proof of own codec contracts.",
+  "core_llbc_digest": "3397f3db3be0f0b7353351d24109899bb808060d081741fbe9528a74a42dd6bf"
 }

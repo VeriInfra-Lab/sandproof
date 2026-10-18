@@ -2,6 +2,16 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## Redis 提交结果隔离候选（#564，局部）
+
+[冻结候选](../verification/experiments/redis-result/candidate.json)以生产基线 `824abe2b6285774ef8983fbe02db3a6509c9b5fb` 加固定补丁构建，生产文件未改。[生成核心](../verification/aeneas/storage/SandproofStorage/Funs.lean)来自原 Charon/Aeneas；公开 commit/reaffirm 另有完整 Charon AST 的参数及回调准入，未宣称具体 Serde 回调图已由 Lean 闭合。[依赖明细](formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)区分 A6/A8/A11、B4 与自有条件。
+
+局部已检查：[结果与写围栏](../verification/aeneas/storage/SandproofStorage/Results.lean)、[健康检查回写范围](../verification/aeneas/storage/SandproofStorage/Health.lean)、[泛型调用链的未知围栏](../verification/aeneas/storage/SandproofStorage/Caller.lean)、[原完整载荷及新修订来源](../verification/aeneas/storage/SandproofStorage/Success.lean)。成功状态仍显式依赖同一 codec 状态链的往返，正常错误范围仍由自有 codec 提供。[具体见证](../verification/aeneas/storage/SandproofStorage/Examples.lean)在实际生成循环/调用链上接受完整成功输入，并允许容量/字节拒绝及送达未知；它不实例化生产 schema、物理租约和部署条件。
+
+指定 Linux 证明环境中，新私有副本的 Rust 编译、根格式、三条核心根和两条公开根的原抽取通过；两次不同目录的完整 LLBC 摘要一致，三个生成文件逐字一致。公开机械准入另拒绝七类 AST 错误。真实 Rust 提前解除围栏错误版已有原工具抽取和同一性质拒绝证据，自动复现及正式整套入口接线仍待完成；不能用 AST 变体检查替代真实错误版。
+
+本批仍未完成原完整 verify-controller.sh/Linux check-function.sh 组合验收，不关闭 #564、T7 或 V0。读取/reconnect、完整 codec/Lua、业务缓存/outbox/派发及崩溃恢复仍由 V2 提供；物理持久化、外部效果、异常后恢复和原版本/候选的一般等价没有因这些局部定理而获得证明。失败允许已发生效果，正常未知保持围栏不意味着异常/abort 一定执行了围栏或资源收尾。
+
 ## V0 底座统一与组合验收
 
 #515/#510 的公共任务统一归 V0 #333，按 T0–T8 验收；具体依赖保证见[依赖登记](formal/dependencies.md)。[汇总 PR #551](https://github.com/VeriInfra-Lab/sandproof/pull/551)组合已有 V0、任务/排空、隔离业务试点和旧生成链退役成果，不新增业务证明。下文历史记录继续绑定各自冻结提交；当前组合证据以本节和该 PR 的最终验收记录为准。

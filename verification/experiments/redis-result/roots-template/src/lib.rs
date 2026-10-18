@@ -41,3 +41,5 @@ pub(crate) fn reaffirm<T, C: store::ValueCodec<T>, D: store::OperationClock>(
 ) -> Result<store::Committed<T>, StoreError> {
     ledger.reaffirm_using(expected, format, codec, clock)
 }
+
+mod bindings;

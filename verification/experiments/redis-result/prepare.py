@@ -53,7 +53,7 @@ def prepare(source, destination):
     subprocess.run(["git", "apply", str(patch)], cwd=checkout, check=True)
     template = assets / "roots-template"
     files = {str(path.relative_to(template)) for path in template.rglob("*") if path.is_file()}
-    if files != {"Cargo.toml", "Cargo.lock", "src/lib.rs"} or any(path.is_symlink() for path in template.rglob("*")):
+    if files != {"Cargo.toml", "Cargo.lock", "src/lib.rs", "src/bindings.rs"} or any(path.is_symlink() for path in template.rglob("*")):
         raise ValueError("unexpected root template inputs")
     install = relative(profile["roots_template_destination"])
     if install != Path("verification/extract-storage"):
