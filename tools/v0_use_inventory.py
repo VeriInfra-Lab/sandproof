@@ -61,6 +61,23 @@ def sources(root):
             and (name.endswith(".rs") or name.endswith("/Cargo.toml"))))}
 
 
+def function_allocation(line):
+    # Function symbols can contain tuple/signature parentheses. Keep the whole
+    # raw line; balancing only checks this one-line declaration is complete.
+    match = re.fullmatch(r"alloc\d+ \(fn: (.+)\)", line)
+    if match is None:
+        return False
+    depth = 0
+    for char in match[1]:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
 def index_mir(path):
     """Index literal lines without rewriting or interpreting their operands."""
     lines = path.read_text().splitlines()
@@ -80,7 +97,7 @@ def index_mir(path):
             current = dict(kind=kind, line=number, header=line, locals=[], terminators=[])
             if ((kind in {"const", "static"} and line.endswith(";") and " = const " in line)
                     or (kind == "alloc" and (line.endswith(" {}")
-                        or re.fullmatch(r"alloc\d+ \(fn: [^()]+\)", line)))):
+                        or function_allocation(line)))):
                 current["end"] = number
                 current["sha256"] = hashlib.sha256((line + "\n").encode()).hexdigest()
                 bodies.append(current)

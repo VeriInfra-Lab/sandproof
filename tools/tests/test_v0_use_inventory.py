@@ -75,6 +75,29 @@ alloc1 (size: 1, align: 1) {
         self.assertEqual(indexed["bodies"][-1]["kind"], "alloc")
         self.assertIn("sha256_block_data_order", indexed["bodies"][-1]["header"])
 
+    def test_nested_function_symbol_allocation_is_retained_in_full(self):
+        declaration = ('alloc102 (fn: <{closure@/fixed/std/native/mod.rs:63:21: 63:24} '
+                       'as FnOnce<(Option<&mut Option<RefCell<Option<Option<Handle>>>>>,)>>'
+                       '::call_once - shim)')
+        self.path.write_text(self.text + declaration + "\n")
+        indexed = inventory.index_mir(self.path)
+        body = indexed["bodies"][-1]
+        self.assertEqual(body["kind"], "alloc")
+        self.assertEqual(body["header"], declaration)
+        self.assertEqual(body["line"], body["end"])
+        self.assertEqual(indexed["sha256"], inventory.sha(self.path))
+
+    def test_incomplete_function_symbol_allocation_is_rejected(self):
+        for declaration in ('alloc9 (fn: call((T))',
+                            'alloc9 (fn: call(T)))',
+                            'alloc9 (fn: call)(T)',
+                            'alloc9 (fn: call()) extra',
+                            'alloc9 (fn: )'):
+            with self.subTest(declaration=declaration):
+                self.path.write_text(self.text + declaration + "\n")
+                with self.assertRaisesRegex(ValueError, "unreviewed top-level"):
+                    inventory.index_mir(self.path)
+
     def test_typed_anonymous_constant_body_is_retained(self):
         text = self.text.replace("const policy::promoted[0]: &[u8; 1] = {",
                                  "policy::{closure#0}::{constant#0}: &[u8; 1] = {")

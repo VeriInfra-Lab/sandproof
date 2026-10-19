@@ -29,7 +29,7 @@
     "sandbox-internal/src/tls.rs": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
     "sandbox-internal/tests/secure_data.rs": "64b052b99e2fd161eebc8d076a4bba3e50a82d1eabe71c0ea792169bf92f9a4e",
     "sandbox-internal/tests/secure_probe.rs": "636da58c58929fc58a3fdcf3e5e89f3381851e2db3148f3888aaf86b97423bad",
-    "sandbox-internal/tests/support/lifecycle_cases.rs": "462b956cba543d4723a5bd35b910963f3f974ce2f984c183f7f8c90d30394cf3",
+    "sandbox-internal/tests/support/lifecycle_cases.rs": "3f2c608683cb69e9dc5289fa87e0d056c9dcac7e1b7ee6e005cefc5ced101f32",
     "sandbox-internal/tests/support/python_relay.rs": "1929bf5f3ae0bbbed26f7afd2f15dd29c233650abf194fd4b3880ad8e1f23847",
     "sandbox-internal/tests/support/status_cases.rs": "a16305785317c190cd73885c8c4ea3bd06efd503a457460f11f0ec9786bb9646",
     "sandbox-internal/tests/support/tls.rs": "9d2eeced4593eeeeca9d704a1dc0ef768b1d300e07a95aec99ad0d65c6c8b072"
