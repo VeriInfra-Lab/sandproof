@@ -42,7 +42,7 @@
     "serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_str",
     "serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_string"
   ],
-  "llbc_sha256": "bceb4c965524112a92059067b1380ef577afc01b3e18b65042f781e0ce0d0c93",
+  "llbc_sha256": "29fc36758c9d872b10ea561d8c24aac3d311a02cb904fc513af36f3fd5217759",
   "contract_error_format_body_sha256": "e6b2766972eea965ec53fffad1a38db1ad154b2e0ca5553dfc988f88c9e0e0bf",
   "format_domain": {
     "literal": "unsupported protocol version ",

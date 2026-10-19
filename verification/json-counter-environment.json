@@ -155,7 +155,7 @@
     "error_on_warnings": true,
     "preset": "Aeneas"
   },
-  "llbc_sha256": "bceb4c965524112a92059067b1380ef577afc01b3e18b65042f781e0ce0d0c93",
+  "llbc_sha256": "29fc36758c9d872b10ea561d8c24aac3d311a02cb904fc513af36f3fd5217759",
   "functions": [
     "sandproof_foundations_extract::json::counter_decode",
     "sandproof_foundations_extract::json::counter_primitive",
