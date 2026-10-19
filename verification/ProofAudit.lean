@@ -5,6 +5,7 @@ import SandboxModel.Boundaries.JsonCounter.Audit
 import SandboxModel.Boundaries.JsonIdentifiers.Audit
 import SandboxModel.Boundaries.DataDrain.Audit
 import SandboxModel.Boundaries.Task.Audit
+import SandboxModel.Boundaries.Revocation.Audit
 
 /-! Audit actual theorem dependencies, including imported libraries.  Source
 text scanning alone cannot detect an unproved assumption hidden in an import.

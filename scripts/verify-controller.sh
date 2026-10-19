@@ -4,6 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Reject stale child or parent manifests before starting expensive checks.
+# Each module still repeats its own admission and regeneration checks below.
+for proof_inputs in verification/*inputs.sha256; do
+  shasum -a 256 -c "$proof_inputs"
+done
+
 # The obsolete whole-controller extraction and its RustRefinement dependants
 # were retired by the project owner. Each retained source-bound module still
 # regenerates and compares its complete artifacts in its own mandatory gate.
@@ -13,6 +19,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 bash scripts/verify-json-identifiers.sh
 bash scripts/verify-json-counter.sh
 bash scripts/verify-task-contract.sh
+bash scripts/verify-revocation-contract.sh
 bash scripts/verify-data-drain.sh
 bash scripts/verify-foundations.sh
 bash scripts/verify-network.sh

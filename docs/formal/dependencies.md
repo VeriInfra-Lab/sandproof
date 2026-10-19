@@ -95,7 +95,7 @@ A_safe允许恶意来宾/坏请求/断网/资源不足，但依赖宿主隔离�
 | B3 网关任务、撤销信号与流驱动：[until_revoked](../../sandbox-data-transport/src/revocation.rs)、[drain](../../sandbox-host-service/src/data_gateway/drain.rs) | 原信号/连接/租约身份不串线；已撤销或权限方已关闭时优先结束本次等待，不 poll 工作；后续撤销按实际 select/poll 观察中止该 future；字节、结束、错误和句柄按库合同传递；body 与 relay 的独立持有、Drop 通知按登记接线发生 | 撤销权限和生效点、已授权完整绑定、已写字节及预算、终局分类、真实退出/排空证据、Unknown 保持及释放许可。撤销到被观察前可能已有 I/O；Drop 通知不提供 relay 退出或全部排空证明，未确认退出时保留未知 |
 | B4 外部调用的薄参数/结果接线 | 固定 API/调用目标接收给定的原完整参数与稳定句柄；给定码的封装、成功值与错误如实传递，部分效果和未知不被抹去，修改范围及借用/所有权按合同传递 | 选择哪个对象、命令、SQL/Lua 文本和参数；错误/未知的业务解释及是否重试、提交、发布、确认或释放。动态外壳不包含自有鉴权、恢复或结果判断；有状态回调的次数/顺序/状态必须显式保留 |
 
-B1 已有下面的逐符号范围和正式条件模型；B2/B3/B4 是获准登记的类别，只有补齐实际符号、合同和依据的使用点才能引用，不能把整类直接当作已验证适配。以上不是整文件/整个服务的可信白名单。每批列出实际函数及不可抽取语句，固定摘要，删去与本批无关的保证；有业务判断的同一函数先拆出真实同步核心。B1–B4 的源码审查、确定性测试和错误对照核对真实接线；若未形成机器精化，最终结论明确以该绑定符合合同为条件，不能声称所有 Rust 已获证明。接口签名仍含不支持类型时改用具体值/句柄/结果边界并重新预检；无法以窄接口和合理重构接通则报告阻断，不自动扩大工具开发。
+B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2、B3 的其它操作及 B4 是获准登记的类别，只有补齐实际符号、合同和依据的使用点才能引用，不能把整类直接当作已验证适配。以上不是整文件/整个服务的可信白名单。每批列出实际函数及不可抽取语句，固定摘要，删去与本批无关的保证；有业务判断的同一函数先拆出真实同步核心。B1–B4 的源码审查、确定性测试和错误对照核对真实接线；若未形成机器精化，最终结论明确以该绑定符合合同为条件，不能声称所有 Rust 已获证明。接口签名仍含不支持类型时改用具体值/句柄/结果边界并重新预检；无法以窄接口和合理重构接通则报告阻断，不自动扩大工具开发。
 
 进展另区分外部调用最终返回、运行时调度/队列公平和业务自身的启用/出队/预算/无环等待。前两项可按精确条件依赖 A/B，后一项仍由模块/V9 证明；公平不能使一个从未启用的业务步骤发生。
 
@@ -342,7 +342,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 ## B1 Host 任务与原许可池的逐符号可信适配
 
-本登记落实 V0 #333 的 T6 验收范围（原 #510 已迁移）。适用生产实现定位为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
+本登记落实 V0 #333 的 T6 验收范围（原 #510 已迁移）。当前候选的生产实现定位为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。许可取得、转移和归还的三个实现文件与此前组合基线逐字一致；驱动回调及测试夹具的变化单列在环境清单，须完成新组合的组件和完整入口复验后认领其适用性。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
 
 ### A6-task-pools 外部原语条件
 
@@ -360,7 +360,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 | `HostLifecycle::blocking`、`receive/confirm/close/validation_evidence` | 领取原 work 许可后提交原 FnOnce，将命名许可绑定移入闭包并跨越实际回调；Join 错误保持原映射 | 每个真实回调的业务不变量及每个可观察前缀；请求、模板、compute、回执、发布等参数正确；来源不同的错误不被用于补造“未执行”或释放事实 |
 | `status_admission::acquire`、`HostLifecycle::free_resources` | 先非等待领取 status，再等待同一 work；队列取消归还已得预留；获额后两许可跟随原只读回调，调用方取消不提前归还 | 节点／compute 绑定、健康观察本身正确、时间和结果解释；不由有界等待推出健康时效、宿主工作终止或公平进展 |
 
-`blocking` 的当前真实调用者为 `advance/pending/cache_storage_ready/recover`，分别调用原 `advance_internal_lifecycle/internal_pending/validate_internal_cache_storage` 及顺序的 `recover_on_startup/expire_due_report`。直接入口保持原 `record_internal_intent/confirm_internal_result/close_internal_window/internal_validation_evidence`，健康路径保持原 `internal_free_resources`。这些回调体没有整体列入 B1；本批也未新增它们的 Aeneas 对应证明。可信的是登记的任务／许可机械接线，其符合性依据为逐符号源码审查、冻结摘要和确定性组件回归，不是完整异步 Rust 的机器证明。
+`blocking` 的真实调用者共五处：`advance/pending/cache_storage_ready/recover` 分别调用原 `advance_internal_lifecycle/internal_pending/validate_internal_cache_storage` 及顺序的 `recover_on_startup/expire_due_report`；`drive_once` 在同一阻塞回调内执行维护、恢复、过期处理及有限扫描。驱动只在原模板已取得时，按原请求的 create 绑定查询可选 `CandidateVerification`，再将原 request、template、compute 和该凭据交给 `advance_internal_lifecycle_with_verification`。它没有另建许可池或提前归还原 work 许可；模板凭据来源、缓存有效性、允许省略哪些重复校验及完整生命周期行为仍由相应业务模块证明。直接入口保持原 `record_internal_intent/confirm_internal_result/close_internal_window/internal_validation_evidence`，健康路径保持原 `internal_free_resources`。这些回调体没有整体列入 B1；本批也未新增它们的 Aeneas 对应证明。可信的是登记的任务／许可机械接线，其符合性依据为逐符号源码审查、冻结摘要和确定性组件回归，不是完整异步 Rust 的机器证明。
 
 ### 可复用合同及组合方式
 
@@ -371,3 +371,31 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 使用者将实际调用历史投影到合同步骤，并提供同池、封闭许可使用范围和回调绑定后，可复用每调用次数至多一次、取消不提前放行仍在执行的工作、原池身份保持、有限任务集合不超 work/status 容量，以及 Busy 不能推出无业务效果。模型有合法非空执行和提前释放／错误池的同性质反例。**实际异步历史符合该投影仍属于上述 B1 条件**；模型定理不自动证明这层符合性，更不证明回调业务、全系统 CPU/内存/VM 额度、网关撤销或无条件进展。
 
 不同模块只可实例化同一合同，不复制一套许可语义。新增池、公开增额、许可逃逸、其它提交入口、自定义 Drop 或生产源码变化，须更新符号登记、调用范围、摘要与组件证据后再使用当前结论。
+
+
+## B3 撤销等待的逐符号可信适配
+
+登记对象仅为 [until_revoked](../../sandbox-data-transport/src/revocation.rs)；以 integration `a2b8a4b6ce5c170c953130b57abc8c2d6c468d0b` 为来源，当前输入由[清单](../../verification/revocation-contract-environment.json)和[摘要](../../verification/revocation-contract-inputs.sha256)绑定。生产函数体保持原样，只增加确定性测试入口。原固定 Charon 直接预检真实入口返回 `Coroutines are not supported`，因此这里采用获准的条件接口模型，不将 async Rust 标记为已抽取。
+
+### A6-watch-select 原语提供什么
+
+固定 Tokio 1.49.0 的 `watch::Receiver<bool>::wait_for` 读取最新值；值为 true 时就绪，最后一个 sender 关闭后也结束等待。`watch` 不是事件日志：在观察前 true 已被 false 覆盖时，不能从历史上曾有 true 推出本次等待应结束。`tokio::select! { biased; ... }` 按源码分支顺序 poll；本轮撤销分支就绪后不再 poll 工作分支。两个分支之间仍允许其它线程更新信号；不能把这一轮当作原子事务。固定 `.crate`、完整解包源码和 watch/select 审查位置均检查摘要。该完整性检查不是 Tokio 的形式化证明。
+
+### B3 适配自身提供什么
+
+| 原函数/语句 | 有条件保证 | 不包含的承诺 |
+| --- | --- | --- |
+| `until_revoked(signal, work)` 的参数与固定 biased 分支 | 使用传入的原 receiver 和原 work，不重新授权、不替换对象；撤销分支先观察到 true 或关闭时返回 None，不 poll work | future 的构造表达式可能已执行，捕获值即使从未 poll 也可能有 Drop 效果；None 不能推出从未产生效果 |
+| 撤销分支 Pending 后 poll work | 工作 Ready 时原样返回 Some(value)，包括 value 本身是 Err；工作 Pending 后，下一轮仍先检查撤销；一次 poll 内可先产生效果再 panic 或不返回 | 信号在两分支之间才变为 true、work 随后 Ready 时，允许 Some(value)；不承诺撤销发送之后全局再无 I/O，也不能抢占一个尚未返回的同步 poll |
+| 分支选择后的正常局部析构；调用方取消 | 被丢弃的局部 future 不再被该等待 poll，正常析构其剩余捕获值；外层取消不伪造一次 None 返回 | 不回滚已发出的操作；Drop 内部可能有新的清理效果；丢弃 JoinHandle 不等于其后台任务停止、许可已归还或 relay 退出 |
+| panic/unwind/abort 或未获再次调度 | 保留中断/未知分支；不凭函数未返回补造完成或 Drop 证据 | 不保证析构完成、无泄漏、公平进展、外部工作必定退出 |
+
+[Revocation.Model](../../SandboxModel/Boundaries/Revocation/Model.lean) 单独记录原 signal/work 标签、分支检查、进入/正在执行/返回的工作 poll、观察到的工作效果历史、选择结果与正常析构观察。效果历史不代表可回滚的全局内存快照；析构的内部效果不在这个变量里。`drops` 仅记录正常结束路径提供的析构完成凭证；中断时为零不表示没有运行析构，也不排除部分或全部清理已经发生。正在 poll 时可观察到工作效果前缀，随后允许 panic 或永不返回，不虚构一次 Pending 来代表它。模型证明标签保持、选择之后无后续 work poll、正常析构观察至多一次、返回分类、上述两个允许竞态和错误分支顺序反例，并直接复用 B1 的“取消运行中任务的等待仍持额”定理。实际 Rust 历史符合这些步骤，仍是本段 B3 可信条件；模型不是该符合性的机器证明。
+
+### 当前四处生产接线及使用者要证明什么
+
+四处调用均在 [data_gateway.rs](../../sandbox-host-service/src/data_gateway.rs)：正文准备、HTTP 握手、上游连接驱动、请求转发。三个直接等待点（正文准备、握手、请求转发）使用本次 permit 的 receiver；连接驱动使用从同一 receiver 克隆出的 `connection_revocation`，同时持有原 child/relay_exit/connection_lease，结束等待后仍执行原 relay stop。检查器记录全部 `*/src` 调用数量，包括测试，新增调用必须重新审查；文件摘要绑定原接线。这是源码审查范围，不是四个完整业务函数都已证明。
+
+使用者仍须证明：permit 属于正确请求/对象/代际及授权；信号对应同一权限且需要单调撤销时不重新置 false；撤销后的新准入拒绝；工作内业务、字节预算和可能已发生的效果；原 body/lease/relay 生命周期、未知保持及真实退出/排空证据。不能仅凭 Some、None、watch 当前值或局部 Drop 释放 VM 或宣告持久事务成功。网关其它循环、流操作和 B3 大类未由本登记自动覆盖。
+
+工程核对运行原 Rust 的两个已有测试及八个新增确定性测试，覆盖预先撤销/权限方关闭、捕获值析构、两个分支间竞态、最新值覆盖、外层取消、工作产生效果后 panic 和后台许可仍被持有。隔离错误版只交换两个 biased 分支，先确认独立编译成功，再由原 `prior_revocation_or_lost_authority_never_polls_work` 同一断言拒绝。组件证据与 Lean 定理分别报告，不把一组测试提升为一般等价证明。

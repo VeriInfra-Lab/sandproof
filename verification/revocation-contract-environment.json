@@ -1,0 +1,122 @@
+{
+  "contract_id": "B3-until-revoked",
+  "proof_kind": "conditional-interface-model-not-extracted-async-rust",
+  "source_integration": "a2b8a4b6ce5c170c953130b57abc8c2d6c468d0b",
+  "tokio": {
+    "version": "1.49.0",
+    "reviewed_sources": {
+      "src/sync/watch.rs": "3ba877b19b87b0d1393c7925735193fe82cbe8c465991880e55a079475440ca2",
+      "src/macros/select.rs": "c5bbacdc5ecd483131231cca5b5839a1fc6fee0df84ffb452dd0483cefad17f6"
+    }
+  },
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel/Boundaries/Revocation.lean",
+    "SandboxModel/Boundaries/Revocation/Audit.lean",
+    "SandboxModel/Boundaries/Revocation/Model.lean",
+    "SandboxModel/Boundaries/Task/Model.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "docs/formal/dependencies.md",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "sandbox-data-transport/Cargo.toml",
+    "sandbox-data-transport/src/lib.rs",
+    "sandbox-data-transport/src/revocation.rs",
+    "sandbox-data-transport/src/revocation/contract_tests.rs",
+    "sandbox-host-service/src/data_gateway.rs",
+    "scripts/verify-controller.sh",
+    "scripts/verify-revocation-contract.sh",
+    "tools/check_revocation_components.py",
+    "tools/check_revocation_contract.py",
+    "tools/tests/test_proof_input_preflight.py",
+    "tools/tests/test_revocation_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/revocation-contract-environment.json",
+    "verification/task-contract-environment.json",
+    "verification/task-contract-inputs.sha256"
+  ],
+  "theorems": [
+    "SandboxModel.Boundaries.Revocation.initial_safe",
+    "SandboxModel.Boundaries.Revocation.step_safe",
+    "SandboxModel.Boundaries.Revocation.run_safe",
+    "SandboxModel.Boundaries.Revocation.reachable_drop_at_most_once",
+    "SandboxModel.Boundaries.Revocation.key_preserved",
+    "SandboxModel.Boundaries.Revocation.history_key_preserved",
+    "SandboxModel.Boundaries.Revocation.settled_step_keeps_work",
+    "SandboxModel.Boundaries.Revocation.settled_run_keeps_work",
+    "SandboxModel.Boundaries.Revocation.terminal_has_no_more_steps",
+    "SandboxModel.Boundaries.Revocation.selected_revocation_preserves_all_prior_effects",
+    "SandboxModel.Boundaries.Revocation.already_revoked_normal_return",
+    "SandboxModel.Boundaries.Revocation.closed_authority_normal_return",
+    "SandboxModel.Boundaries.Revocation.revoked_and_closed_have_same_public_return",
+    "SandboxModel.Boundaries.Revocation.work_result_is_returned_exactly",
+    "SandboxModel.Boundaries.Revocation.caller_cancellation_does_not_return_none",
+    "SandboxModel.Boundaries.Revocation.interruption_does_not_invent_drop",
+    "SandboxModel.Boundaries.Revocation.revocation_between_branches_may_allow_work",
+    "SandboxModel.Boundaries.Revocation.latest_value_does_not_remember_unobserved_true",
+    "SandboxModel.Boundaries.Revocation.cancelled_wait_does_not_release_running_task",
+    "SandboxModel.Boundaries.Revocation.correct_revocation_observation_has_same_priority",
+    "SandboxModel.Boundaries.Revocation.work_first_version_breaks_same_priority",
+    "SandboxModel.Boundaries.Revocation.nonreturning_work_can_have_visible_prefix",
+    "SandboxModel.Boundaries.Revocation.poll_effect_before_panic_is_retained",
+    "SandboxModel.Boundaries.Revocation.revocation_during_pending_poll_prevents_repoll"
+  ],
+  "call_inventory": {
+    "sandbox-data-transport/src/lib.rs": 1,
+    "sandbox-data-transport/src/revocation/contract_tests.rs": 8,
+    "sandbox-data-transport/src/revocation.rs": 3,
+    "sandbox-host-service/src/data_gateway.rs": 5
+  },
+  "production_calls": [
+    {
+      "file": "sandbox-host-service/src/data_gateway.rs",
+      "work": "prepare_body",
+      "signal": "permit.revocation()"
+    },
+    {
+      "file": "sandbox-host-service/src/data_gateway.rs",
+      "work": "builder.handshake",
+      "signal": "permit.revocation()"
+    },
+    {
+      "file": "sandbox-host-service/src/data_gateway.rs",
+      "work": "connection",
+      "signal": "connection_revocation cloned from permit"
+    },
+    {
+      "file": "sandbox-host-service/src/data_gateway.rs",
+      "work": "forward_request",
+      "signal": "permit.revocation()"
+    }
+  ],
+  "obligations": [
+    "actual async history projects to B3 steps, not machine-proved equivalence",
+    "same original signal, work future, permit and complete business input",
+    "watch latest value; monotone authority revocation is a caller obligation",
+    "signal update between branch polls may permit the ready work result",
+    "effects before cancellation persist; destructors may perform additional cleanup",
+    "JoinHandle destruction does not stop running task or release its permit",
+    "body/relay lifetime, unknown, real exit and physical release remain own proofs",
+    "no unconditional progress or successful cleanup on panic, abort, crash or OOM",
+    "a synchronous work poll is not preempted by revocation; visible work prefixes before panic/nonreturn remain possible; interrupted zero teardown certificates do not assert no destructor ran"
+  ],
+  "component_tests": {
+    "correct_tests": 10,
+    "mutants": [
+      "work-first"
+    ],
+    "same_original_priority_assertion": true,
+    "independent_targets_and_fresh_binary": true
+  },
+  "extraction_preflight": {
+    "aeneas_revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+    "charon_revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+    "root": "crate::revocation::until_revoked",
+    "package": "sandproof-data-transport",
+    "result": "Coroutines are not supported",
+    "exit": 101
+  }
+}

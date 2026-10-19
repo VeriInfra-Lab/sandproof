@@ -1,8 +1,8 @@
 {
   "contract_id": "B1-host-task-pools",
   "proof_kind": "conditional-interface-model-not-extracted-async-rust",
-  "source_integration": "4a5dfdafd4465fef8ec2832f89798f1f16dd09b2",
-  "stack_base": "7ef2f47c8dfaf914f9f60e9def4e4f6d7c0f4467",
+  "source_integration": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
+  "stack_base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
   "tokio": {
     "version": "1.49.0",
     "checksum": "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86",
@@ -134,5 +134,33 @@
       "wrong-pool"
     ],
     "independent_targets_and_fresh_binary": true
+  },
+  "reviewed_call_sites": {
+    "sandbox-host-service/src/lib.rs": [
+      "HostLifecycle::advance",
+      "HostLifecycle::pending",
+      "HostLifecycle::cache_storage_ready",
+      "HostLifecycle::recover"
+    ],
+    "sandbox-host-service/src/driver.rs": [
+      "HostLifecycle::drive_once"
+    ]
+  },
+  "source_binding_review": {
+    "upstream_pr": 555,
+    "reviewed_integration": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
+    "unchanged_mechanics": [
+      "sandbox-host-service/src/lib.rs",
+      "sandbox-host-service/src/status_admission.rs",
+      "sandbox-host-service/src/facade.rs"
+    ],
+    "changed_inputs": [
+      "sandbox-host-service/src/driver.rs",
+      "controller-service/tests/support/internal_application.rs"
+    ],
+    "callback_delta": "drive_once requests optional CandidateVerification for the original create binding only when template material exists, then calls advance_internal_lifecycle_with_verification inside the same blocking callback.",
+    "trust_scope": "Only the same original callback submission and permit scope. Template verification provenance/cache validity and lifecycle business behavior remain caller proof obligations.",
+    "fixture_delta": "Counts template validation/cache verification; the existing available_disk_bytes blocking hook remains unchanged.",
+    "evidence_kind": "Exact source comparison and review; fresh existing B1 positive/mutant component gates and complete validation required for this candidate."
   }
 }
