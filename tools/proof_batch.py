@@ -70,7 +70,7 @@ def module_key(name, command, root=ROOT):
         seeds += [str(p.relative_to(root)) for p in (root/'verification').glob('*inputs.sha256')]
     else:
         manifest = 'foundations' if name == 'foundations-generation' else name
-        seeds = [f'verification/{manifest}-inputs.sha256']
+        seeds = [f'verification/{manifest}-inputs.sha256','verification/acceptance-inputs.sha256']
     # Full Rust closure is deliberately conservative. A Rust change can
     # invalidate extra modules, but can never silently miss an indirect use.
     return dict(schema=1, module=name, command=command, rust=rust_inputs(root),
