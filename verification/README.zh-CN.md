@@ -57,6 +57,10 @@ JSON 非零计数器叶子另执行 `bash scripts/verify-json-counter.sh`，检�
 
 模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；退役旧生成链不消除当前生命周期等业务的实现证明义务，也不使其成为 V0 的关单前置。完整入口按保留集合执行，局部/当前集合验收/全系统完成分别登记。
 
+完整生命周期请求执行 `bash scripts/verify-json-request.sh`。入口冻结[实际调用与字段/字典登记](json-request-binding.json)、原生产协议与服务器/客户端调用、完整公共生成物以及 `verification/json-request-inputs.sha256`；先按原工具重抽取并比对，再检查两个直接库调用的完整 LLBC 和 AST、全部请求定理及其真实依赖。原 `LifecycleRequest::validate`、编号/计数器校验和转换保留生成体；固定 Serde/serde_json 引擎、标准派生及单次参数/结果接线采用明确 A6/B4 条件，不能称整个 async 服务已自动证明。具体输入/错误/解析位置/正常分配和有界合法接受条件见[唯一依赖合同](../docs/formal/dependencies.md#a6-json-与标准派生的最小合同)。
+
+本入口还在新私有副本中运行 `tools/check_json_request_negative.py`，先编译移除原身份守卫的错误 Rust，再实际重抽取；原 Rust 错误顺序断言须失败，Lean 须证明同一 `GuardContract` 的否定。可独立用 `bash scripts/python-entry.sh tools/check_json_request_negative.py --output artifacts/json-request-negative-run` 复现，输出目录必须不存在，必须使用已提交源码和原固定工具/服务；构建失败不算性质反例。完整验收仍执行 `bash scripts/verify-controller.sh` 和 `bash scripts/check-function.sh`；局部接口通过不关闭 V0/T0–T8。
+
 共享当前状态的局部集合可独立执行 `bash scripts/verify-network.sh`：检查真实查询/名单循环、平台常量及初始化体、固定两版 Rust 标准库源码、最小外部接口，以及 Network、Access、Local 三个证明审计。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，并继续编译全部保留证明；局部准入/位置证明不等于统一控制器分派、可达状态围栏、物理清理或宿主防火墙已验证。冻结的 V0/共享状态验收目标为 x86_64 Linux；目标、工具二进制或 cfg 不匹配即拒绝，不静默按本机平台重写清单。
 
 DataLease 的只读接口执行 `bash scripts/verify-data-drain.sh`：直接引用原生产文件抽取两个读方法与两个转调入口，核对三项读原语、Acquire 排序、两版标准库、输入摘要和全 LLBC 再生一致性，再编译独立策略／表示关系／对应定理并审计依赖。正式库为 `SandboxModel.Boundaries.DataDrain`；接口条件见[依赖登记](../docs/formal/dependencies.md#a6-datalease-只读观察接口)。这是单次观察下的判定证明，不提供真实退出或释放许可。

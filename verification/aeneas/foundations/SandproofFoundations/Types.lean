@@ -202,6 +202,27 @@ structure sandproof_protocol.internal.lifecycle.CreateBinding where
   timeout_ms : Std.U64
   max_lifetime_ms : Std.U64
 
+/-- [sandproof_protocol::internal::lifecycle::Intent]
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 91:0-91:15
+    Name pattern: [sandproof_protocol::internal::lifecycle::Intent]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandproof_protocol::internal::lifecycle::Intent"]
+inductive sandproof_protocol.internal.lifecycle.Intent where
+| Create : sandproof_protocol.internal.lifecycle.Intent
+| Renew : Std.U64 → sandproof_protocol.internal.lifecycle.Intent
+| Destroy : sandproof_protocol.internal.lifecycle.Intent
+
+/-- [sandproof_protocol::internal::lifecycle::LifecycleRequest]
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 102:0-102:27
+    Name pattern: [sandproof_protocol::internal::lifecycle::LifecycleRequest]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::internal::lifecycle::LifecycleRequest"]
+structure sandproof_protocol.internal.lifecycle.LifecycleRequest where
+  identity : sandproof_protocol.internal.ControlIdentity
+  create : sandproof_protocol.internal.lifecycle.CreateBinding
+  intent : sandproof_protocol.internal.lifecycle.Intent
+
 /-- Trait declaration: [serde_core::de::Expected]
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/src/de/mod.rs', lines 484:0-484:18
     Name pattern: [serde_core::de::Expected]
@@ -597,12 +618,12 @@ def sandproof_protocol.WorkReceipt.validate_for.closure (E : Type) (C : Type)
   sandproof_protocol.WorkAction C
 
 /-- [sandproof_foundations_extract::store_retain_above::{closure}]
-    Source: 'src/lib.rs', lines 50:17-50:42 -/
+    Source: 'src/lib.rs', lines 51:17-51:42 -/
 @[reducible]
 def store_retain_above.closure := Std.U64
 
 /-- [sandproof_foundations_extract::option_is_none_or::{closure}]
-    Source: 'src/lib.rs', lines 54:21-54:42 -/
+    Source: 'src/lib.rs', lines 55:21-55:42 -/
 @[reducible]
 def option_is_none_or.closure := Std.U64
 

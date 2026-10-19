@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "source_anchor": "208fb4e1bdba78be269a14626b3185d275249b1a",
+  "source_anchor": "501ee66213063ffe99bef2599205b500e3d5f595",
   "target": "x86_64-unknown-linux-gnu",
   "charon_options": {
     "ullbc": false,
@@ -85,7 +85,8 @@
       "crate::numeric::bytes_to_mebibytes",
       "crate::numeric::available_resource",
       "crate::receipts::action_version",
-      "crate::receipts::receipt_validate"
+      "crate::receipts::receipt_validate",
+      "crate::json_request::validate"
     ],
     "start_from_if_exists": [],
     "start_from_attribute": [],
@@ -155,7 +156,7 @@
     "error_on_warnings": true,
     "preset": "Aeneas"
   },
-  "llbc_sha256": "bceb4c965524112a92059067b1380ef577afc01b3e18b65042f781e0ce0d0c93",
+  "llbc_sha256": "0d01908c434116792eb482a5478ea9fc151af35bc2e36fe32ee5217a0b543ffa",
   "functions": [
     "sandproof_foundations_extract::json::counter_decode",
     "sandproof_foundations_extract::json::counter_primitive",
@@ -192,7 +193,7 @@
             "Local": 2
           },
           "ty": {
-            "Deduplicated": 34
+            "Deduplicated": 35
           }
         },
         "fn_ptr": {
@@ -251,7 +252,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 34
+            "Deduplicated": 35
           }
         },
         "fn_ptr": {
@@ -310,7 +311,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 34
+            "Deduplicated": 35
           }
         },
         "fn_ptr": {
@@ -369,7 +370,7 @@
             "Local": 2
           },
           "ty": {
-            "Deduplicated": 34
+            "Deduplicated": 35
           }
         },
         "fn_ptr": {
@@ -428,7 +429,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 34
+            "Deduplicated": 35
           }
         },
         "fn_ptr": {
@@ -487,7 +488,7 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 34
+            "Deduplicated": 35
           }
         },
         "fn_ptr": {
@@ -546,12 +547,12 @@
             "Local": 1
           },
           "ty": {
-            "Deduplicated": 110
+            "Deduplicated": 112
           }
         },
         "fn_ptr": {
           "kind": {
-            "Fun": 194
+            "Fun": 196
           },
           "generics": {
             "regions": [
@@ -598,105 +599,107 @@
   "types": [
     "core::num::error::ParseIntError",
     "core::str::iter::Bytes",
-    "serde_json::error::Error",
     "sandbox_controller_core::store::Store",
     "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}",
     "sandproof_center_core::model::LanePhase",
-    "sandproof_protocol::NodeId",
-    "sandproof_protocol::DeploymentId",
-    "sandproof_protocol::internal::PositiveCounter",
-    "sandproof_protocol::internal::NodeIdentity",
-    "sandproof_protocol::OperationId",
-    "sandproof_protocol::SandboxId",
-    "sandproof_protocol::TenantId",
-    "sandproof_protocol::internal::ControlIdentity",
-    "sandproof_protocol::internal::lifecycle::LifecycleFact",
-    "sandproof_protocol::internal::lifecycle::LifecycleResponse",
     "sandproof_center_core::model::RetentionLane",
-    "sandproof_protocol::internal::InternalError",
-    "sandproof_protocol::internal::lifecycle::Resources",
-    "sandproof_protocol::ResourceId",
-    "sandproof_protocol::internal::lifecycle::CreateBinding",
-    "serde_core::de::Unexpected",
-    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor",
-    "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}",
-    "sandproof_protocol::ContractError",
-    "sandproof_protocol::valid_identifier::{closure}",
-    "sandproof_protocol::LogicalActionId",
+    "sandproof_foundations_extract::option_is_none_or::{closure}",
+    "sandproof_foundations_extract::store_retain_above::{closure}",
+    "sandproof_protocol::ActionIdentity",
     "sandproof_protocol::ClientRequestId",
-    "serde_core::de::impls::StringVisitor",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}",
+    "sandproof_protocol::ContractError",
+    "sandproof_protocol::DeploymentId",
+    "sandproof_protocol::FailureCode",
+    "sandproof_protocol::LogicalActionId",
+    "sandproof_protocol::NodeId",
+    "sandproof_protocol::OperationId",
+    "sandproof_protocol::ResourceId",
     "sandproof_protocol::ResourceKind",
     "sandproof_protocol::ResourceRef",
-    "sandproof_protocol::ActionIdentity",
-    "sandproof_protocol::WorkAction",
-    "sandproof_protocol::FailureCode",
+    "sandproof_protocol::SandboxId",
+    "sandproof_protocol::TenantId",
     "sandproof_protocol::UnknownReason",
+    "sandproof_protocol::WorkAction",
     "sandproof_protocol::WorkOutcome",
     "sandproof_protocol::WorkReceipt",
+    "sandproof_protocol::internal::ControlIdentity",
+    "sandproof_protocol::internal::InternalError",
+    "sandproof_protocol::internal::NodeIdentity",
+    "sandproof_protocol::internal::PositiveCounter",
+    "sandproof_protocol::internal::lifecycle::CreateBinding",
+    "sandproof_protocol::internal::lifecycle::Intent",
+    "sandproof_protocol::internal::lifecycle::LifecycleFact",
+    "sandproof_protocol::internal::lifecycle::LifecycleRequest",
+    "sandproof_protocol::internal::lifecycle::LifecycleResponse",
+    "sandproof_protocol::internal::lifecycle::Resources",
+    "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}",
+    "sandproof_protocol::valid_identifier::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}",
     "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}",
-    "sandproof_foundations_extract::store_retain_above::{closure}",
-    "sandproof_foundations_extract::option_is_none_or::{closure}"
+    "serde_core::de::Unexpected",
+    "serde_core::de::impls::StringVisitor",
+    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor",
+    "serde_json::error::Error"
   ],
   "trait_decls": [
     "core::str::traits::FromStr",
-    "serde_core::de::Expected",
-    "serde_core::de::Error",
-    "serde_core::de::Visitor",
+    "sandproof_protocol::ResourceEvidence",
     "serde_core::de::Deserializer",
-    "sandproof_protocol::ResourceEvidence"
+    "serde_core::de::Error",
+    "serde_core::de::Expected",
+    "serde_core::de::Visitor"
   ],
   "trait_impls": [
-    "core::fmt::{impl core::fmt::Display for &'_0 T}",
-    "core::fmt::num::imp::{impl core::fmt::Display for u64}",
     "core::fmt::num::imp::{impl core::fmt::Display for u16}",
+    "core::fmt::num::imp::{impl core::fmt::Display for u64}",
+    "core::fmt::{impl core::fmt::Display for &'_0 T}",
     "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}",
     "core::str::traits::{impl core::cmp::PartialEq<str> for str}",
-    "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
     "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnMut<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
-    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}",
+    "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
+    "sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}",
+    "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
+    "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
+    "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}",
+    "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}",
     "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}",
     "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}",
-    "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}",
-    "sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}",
-    "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
     "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
-    "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}",
-    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}",
-    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}",
-    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}",
-    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}",
-    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}",
+    "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
+    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ActionIdentity> for sandproof_protocol::ActionIdentity}",
+    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}",
     "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ClientRequestId> for alloc::string::String}",
     "sandproof_protocol::{impl core::convert::From<sandproof_protocol::DeploymentId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}",
     "sandproof_protocol::{impl core::convert::From<sandproof_protocol::NodeId> for alloc::string::String}",
-    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}",
-    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ActionIdentity> for sandproof_protocol::ActionIdentity}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}",
     "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{impl core::ops::function::FnOnce<(&'_ E,), bool> for sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}<'_0, E, C>}",
-    "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
-    "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
-    "sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}"
+    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}",
+    "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}"
   ],
   "globals": [
-    "sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES",
+    "sandproof_protocol::PROTOCOL_VERSION",
     "sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION",
-    "sandproof_protocol::PROTOCOL_VERSION"
+    "sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES"
   ],
   "extraction_features": {
     "serde_core": [

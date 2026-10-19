@@ -1,0 +1,2078 @@
+{
+  "schema": 1,
+  "source_anchor": "642a6ff284c2933c2f36712f84b4c3046595b843",
+  "contracts": [
+    "A6-json-lifecycle-derive",
+    "B4-json-lifecycle-call"
+  ],
+  "status": "reviewed trusted binding, with source/AST admission and engineering evidence; not machine refinement of JSON or async shell",
+  "production_sources": {
+    "sandbox-internal/src/client.rs": "4a6fbc333dbe328e0cbfeb8277e22602081b34c60f30d8807c581be7b6bf7f73",
+    "sandbox-internal/src/server.rs": "4e76dec6c5b6ef06e3eecba819e551b4bef7ce5c369195efc5fa13f7cba9c9cc",
+    "sandbox-protocol/src/internal.rs": "bdbfd2c89b17d0f16758359d9fd0ad7e129c09e5c024f20bff119fa2449c93ed",
+    "sandbox-protocol/src/internal/lifecycle.rs": "6fdb8f860c2288a8d0117ccec0746fed4fba6415f05c494f00722278afd651fb",
+    "sandbox-protocol/src/lib.rs": "eac6d277cd77b680f554f318ad5a2cb5e9ba40f09172486c8ba62d656fdabb0d"
+  },
+  "library_sources": {
+    "serde-1.0.228/src/private/de.rs": "68ee17774d3bbc693d9f19803747fa2c3afdb7046482e6d94ac6cf7db5a4fe20",
+    "serde_core-1.0.228/src/de/impls.rs": "9fb7a0322af51971fe1fa8f5b56c7ca3716622a6e9127b86bddfc0742c11383c",
+    "serde_core-1.0.228/src/ser/impls.rs": "5ee7efc439345e8665da0bd79bc06c02a0506e5fd0f3a4cf11af0c7197eaa643",
+    "serde_derive-1.0.228/src/de/enum_internally.rs": "9d898dbc1c46262f695ef7ba1660b2af70de48e07bbac8f44b740326b7c5b303",
+    "serde_derive-1.0.228/src/de/struct_.rs": "7b26982ce59504a9bb5a18c3ab56eee2d75e70fd465774ff035d15c50452c118",
+    "serde_derive-1.0.228/src/ser.rs": "d43be68a3c1d5d4617c30baebe06aceeaf012097ffa343102328ff94349e35e9",
+    "serde_json-1.0.142/src/de.rs": "db7adf3ef0074e15426d31e1cf4bec78ad92c20e4642c136325f0a78547218c7",
+    "serde_json-1.0.142/src/error.rs": "a9b5de0a82f95608b51b8e8875c7c49f94fb60b9f976fc6277aec0213926dec9",
+    "serde_json-1.0.142/src/read.rs": "17a2efe49e5a6937c8d7d4a5c0b9eac84453de0f86bf8e7ee421387e82341bb3",
+    "serde_json-1.0.142/src/ser.rs": "59dd65e09972907a1ee6a054544fbf80abf380ca866da01a50ca343f88b527b3"
+  },
+  "structs": {
+    "NodeIdentity": {
+      "fields_in_declaration_order": [
+        [
+          "deployment_id",
+          "DeploymentId"
+        ],
+        [
+          "node_id",
+          "NodeId"
+        ],
+        [
+          "node_generation",
+          "PositiveCounter"
+        ]
+      ],
+      "object_unknown_fields": "reject",
+      "duplicates": "reject",
+      "missing": "reject",
+      "input_shapes": [
+        "object",
+        "sequence in declaration order"
+      ],
+      "output_shape": "object in declaration order"
+    },
+    "ControlIdentity": {
+      "fields_in_declaration_order": [
+        [
+          "protocol_version",
+          "u16"
+        ],
+        [
+          "node",
+          "NodeIdentity"
+        ],
+        [
+          "tenant_id",
+          "TenantId"
+        ],
+        [
+          "sandbox_id",
+          "SandboxId"
+        ],
+        [
+          "operation_id",
+          "OperationId"
+        ],
+        [
+          "intent_version",
+          "PositiveCounter"
+        ],
+        [
+          "retention_slot",
+          "u16"
+        ],
+        [
+          "request_window",
+          "PositiveCounter"
+        ]
+      ],
+      "object_unknown_fields": "reject",
+      "duplicates": "reject",
+      "missing": "reject",
+      "input_shapes": [
+        "object",
+        "sequence in declaration order"
+      ],
+      "output_shape": "object in declaration order"
+    },
+    "Resources": {
+      "fields_in_declaration_order": [
+        [
+          "instances",
+          "u64"
+        ],
+        [
+          "cpu",
+          "u64"
+        ],
+        [
+          "memory_bytes",
+          "u64"
+        ],
+        [
+          "disk_bytes",
+          "u64"
+        ]
+      ],
+      "object_unknown_fields": "reject",
+      "duplicates": "reject",
+      "missing": "reject",
+      "input_shapes": [
+        "object",
+        "sequence in declaration order"
+      ],
+      "output_shape": "object in declaration order"
+    },
+    "CreateBinding": {
+      "fields_in_declaration_order": [
+        [
+          "template_revision",
+          "ResourceId"
+        ],
+        [
+          "template_digest",
+          "[u8;32]"
+        ],
+        [
+          "resources",
+          "Resources"
+        ],
+        [
+          "options",
+          "Vec<u8>"
+        ],
+        [
+          "startup_deadline_ms",
+          "u64"
+        ],
+        [
+          "timeout_ms",
+          "u64"
+        ],
+        [
+          "max_lifetime_ms",
+          "u64"
+        ]
+      ],
+      "object_unknown_fields": "reject",
+      "duplicates": "reject",
+      "missing": "reject",
+      "input_shapes": [
+        "object",
+        "sequence in declaration order"
+      ],
+      "output_shape": "object in declaration order"
+    },
+    "LifecycleRequest": {
+      "fields_in_declaration_order": [
+        [
+          "identity",
+          "ControlIdentity"
+        ],
+        [
+          "create",
+          "CreateBinding"
+        ],
+        [
+          "intent",
+          "Intent"
+        ]
+      ],
+      "object_unknown_fields": "reject",
+      "duplicates": "reject",
+      "missing": "reject",
+      "input_shapes": [
+        "object",
+        "sequence in declaration order"
+      ],
+      "output_shape": "object in declaration order"
+    }
+  },
+  "intent": {
+    "tag": "kind",
+    "rename_all": "snake_case",
+    "variants": {
+      "create": {
+        "fields": [],
+        "extra_fields": "consume successfully parseable values and ignore"
+      },
+      "renew": {
+        "fields": [
+          [
+            "end_at_ms",
+            "u64"
+          ]
+        ],
+        "extra_fields": "reject"
+      },
+      "destroy": {
+        "fields": [],
+        "extra_fields": "consume successfully parseable values and ignore"
+      }
+    },
+    "output_shape": "internally tagged object"
+  },
+  "leaf_bindings": {
+    "strings": {
+      "identity.node.deployment_id": "DeploymentId",
+      "identity.node.node_id": "NodeId",
+      "identity.tenant_id": "TenantId",
+      "identity.sandbox_id": "SandboxId",
+      "identity.operation_id": "OperationId",
+      "create.template_revision": "ResourceId"
+    },
+    "counters": [
+      "identity.node.node_generation",
+      "identity.intent_version",
+      "identity.request_window"
+    ],
+    "deserialize": "original generated project Deserialize, TryFrom and custom closure; not trusted validators",
+    "serialize": "standard derived Clone and original From<Id> for String / From<PositiveCounter> for u64"
+  },
+  "cursor_and_errors": {
+    "parser": "serde_json::Deserializer<SliceRead> with original immutable input slice, owned parser scratch and mutable cursor",
+    "dictionary": "serde_json::Error implementing serde::de::Error; custom calls original Display::to_string",
+    "custom_domain": "only original InvalidIdentifier/InvalidCounter messages; no embedded line/column suffix; initial position 0,0 and Data category",
+    "primitive": "original String/u64 read including escapes, Unicode, numeric range and borrowed/copied/owned visitor dispatch; no whole-document preparse",
+    "postprocessing_frame": "project leaf reads no further bytes after primitive read; it validates/converts the returned value and may call original custom error",
+    "container_end": "end_map/end_seq executes after the visitor even on ordinary Err; may consume whitespace; visitor error takes priority; fix_position only replaces line=0 using the then-current cursor",
+    "outer_position": "nonzero line/column from the nearest container remains unchanged in outer containers",
+    "document_end": "from_trait calls de.end only after Deserialize succeeds; trailing whitespace allowed, trailing data rejected",
+    "parser_state": "on error no rollback or assumption that the cursor is still at the primitive boundary; from_slice drops private parser state",
+    "output": "to_vec uses a new Vec and fixed compact Serializer; error discards private output prefix, with no externally exposed writer or user Serialize side effects"
+  },
+  "production_call_binding": {
+    "decode": "server.rs receive_intent: original bytes passed to from_slice<LifecycleRequest>; original request.validate(node) precedes handler.receive(request.clone())",
+    "encode": "client.rs InternalClient::lifecycle: validate original endpoint.node, acquire original calls permit, then to_vec(original request); exchange_bytes original path and both original limits",
+    "budget": {
+      "input_provider": "management_route Limited::new(request.into_body(), limit).collect().to_bytes()",
+      "lifecycle_body_bytes": 270336,
+      "options_bytes": 65536,
+      "separate_check": "from_slice itself has no HTTP byte limit; decoded options length enforced by original guard"
+    },
+    "excluded": "TLS/transport correctness, permit ownership, receiver business, response correlation, authorization, lifetime, storage and host effects retain their own obligations"
+  },
+  "drop_domain": {
+    "owned": [
+      "String",
+      "Vec<u8>",
+      "serde_json::Error from SliceRead/Vec without custom IO error source"
+    ],
+    "borrowed": [
+      "&[u8]",
+      "&LifecycleRequest",
+      "&mut serde_json::Deserializer<SliceRead>"
+    ],
+    "excluded": [
+      "custom Drop",
+      "FD/permit/lock ownership",
+      "panic/unwind cleanup",
+      "OOM/abort",
+      "async cancellation"
+    ]
+  },
+  "entries": {
+    "json_request::decode": {
+      "trust": "B4: direct call binding only; not machine refinement",
+      "full_llbc_sha256": "5d1a6848735d99120e82569d327b1236e101511226aea40850149355f9d96f53",
+      "snapshot": {
+        "root": {
+          "def_id": 11,
+          "item_meta": {
+            "name": [
+              {
+                "Ident": [
+                  "sandproof_foundations_extract",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "json_request",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "decode",
+                  0
+                ]
+              }
+            ],
+            "span": {
+              "Untagged": {
+                "data": {
+                  "file_id": 5,
+                  "beg": {
+                    "line": 6,
+                    "col": 0
+                  },
+                  "end": {
+                    "line": 8,
+                    "col": 1
+                  }
+                },
+                "generated_from_span": null
+              }
+            },
+            "source_text": "pub fn decode(bytes: &[u8]) -> Result<LifecycleRequest, serde_json::Error> {\n    serde_json::from_slice::<LifecycleRequest>(bytes)\n}",
+            "attr_info": {
+              "attributes": [],
+              "inline": null,
+              "rename": null,
+              "public": true
+            },
+            "is_local": true,
+            "opacity": "Transparent",
+            "lang_item": null,
+            "diagnostic_item": null
+          },
+          "generics": {
+            "regions": [
+              {
+                "index": 0,
+                "name": null,
+                "variance": "Covariant",
+                "mutability": "Unknown"
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_clauses": [],
+            "regions_outlive": [],
+            "types_outlive": [],
+            "trait_type_constraints": []
+          },
+          "signature": {
+            "is_unsafe": false,
+            "abi": "Rust",
+            "is_variadic": false,
+            "inputs": [
+              {
+                "Deduplicated": 44
+              }
+            ],
+            "output": {
+              "Value": [
+                75,
+                {
+                  "Adt": {
+                    "id": 2,
+                    "generics": {
+                      "regions": [],
+                      "types": [
+                        {
+                          "Deduplicated": 51
+                        },
+                        {
+                          "Value": [
+                            76,
+                            {
+                              "Adt": {
+                                "id": 4,
+                                "generics": {
+                                  "regions": [],
+                                  "types": [],
+                                  "const_generics": [],
+                                  "trait_refs": []
+                                },
+                                "builtin": null
+                              }
+                            }
+                          ]
+                        }
+                      ],
+                      "const_generics": [],
+                      "trait_refs": []
+                    },
+                    "builtin": null
+                  }
+                }
+              ]
+            }
+          },
+          "src": "Normal",
+          "body": {
+            "Structured": {
+              "span": {
+                "Value": [
+                  6,
+                  {
+                    "data": {
+                      "file_id": 5,
+                      "beg": {
+                        "line": 6,
+                        "col": 0
+                      },
+                      "end": {
+                        "line": 8,
+                        "col": 1
+                      }
+                    },
+                    "generated_from_span": null
+                  }
+                ]
+              },
+              "bound_body_regions": 6,
+              "locals": {
+                "arg_count": 1,
+                "locals": [
+                  {
+                    "index": 0,
+                    "name": null,
+                    "span": {
+                      "Value": [
+                        7,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 6,
+                              "col": 31
+                            },
+                            "end": {
+                              "line": 6,
+                              "col": 74
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "ty": {
+                      "Deduplicated": 75
+                    }
+                  },
+                  {
+                    "index": 1,
+                    "name": "bytes",
+                    "span": {
+                      "Value": [
+                        8,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 6,
+                              "col": 14
+                            },
+                            "end": {
+                              "line": 6,
+                              "col": 19
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "ty": {
+                      "Value": [
+                        77,
+                        {
+                          "Ref": [
+                            {
+                              "Body": 1
+                            },
+                            {
+                              "Deduplicated": 33
+                            },
+                            "Shared"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "index": 2,
+                    "name": null,
+                    "span": {
+                      "Value": [
+                        9,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 7,
+                              "col": 47
+                            },
+                            "end": {
+                              "line": 7,
+                              "col": 52
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "ty": {
+                      "Value": [
+                        78,
+                        {
+                          "Ref": [
+                            {
+                              "Body": 2
+                            },
+                            {
+                              "Deduplicated": 33
+                            },
+                            "Shared"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "body": {
+                "span": {
+                  "Value": [
+                    10,
+                    {
+                      "data": {
+                        "file_id": 5,
+                        "beg": {
+                          "line": 7,
+                          "col": 47
+                        },
+                        "end": {
+                          "line": 8,
+                          "col": 1
+                        }
+                      },
+                      "generated_from_span": null
+                    }
+                  ]
+                },
+                "id": 4,
+                "statements": [
+                  {
+                    "span": {
+                      "Deduplicated": 9
+                    },
+                    "id": 0,
+                    "kind": {
+                      "StorageLive": 0
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Deduplicated": 9
+                    },
+                    "id": 1,
+                    "kind": {
+                      "StorageLive": 2
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Deduplicated": 9
+                    },
+                    "id": 2,
+                    "kind": {
+                      "Assign": [
+                        {
+                          "kind": {
+                            "Local": 2
+                          },
+                          "ty": {
+                            "Deduplicated": 78
+                          }
+                        },
+                        {
+                          "Ref": {
+                            "place": {
+                              "kind": {
+                                "Projection": [
+                                  {
+                                    "kind": {
+                                      "Local": 1
+                                    },
+                                    "ty": {
+                                      "Deduplicated": 77
+                                    }
+                                  },
+                                  "Deref"
+                                ]
+                              },
+                              "ty": {
+                                "Deduplicated": 33
+                              }
+                            },
+                            "kind": "Shared",
+                            "ptr_metadata": {
+                              "Copy": {
+                                "kind": {
+                                  "Projection": [
+                                    {
+                                      "kind": {
+                                        "Local": 1
+                                      },
+                                      "ty": {
+                                        "Deduplicated": 77
+                                      }
+                                    },
+                                    "PtrMetadata"
+                                  ]
+                                },
+                                "ty": {
+                                  "Deduplicated": 0
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Value": [
+                        11,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 7,
+                              "col": 4
+                            },
+                            "end": {
+                              "line": 7,
+                              "col": 53
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "id": 5,
+                    "kind": {
+                      "Call": {
+                        "call": {
+                          "func": {
+                            "Regular": {
+                              "kind": {
+                                "Fun": 20
+                              },
+                              "generics": {
+                                "regions": [
+                                  {
+                                    "Body": 3
+                                  }
+                                ],
+                                "types": [
+                                  {
+                                    "Deduplicated": 51
+                                  }
+                                ],
+                                "const_generics": [],
+                                "trait_refs": [
+                                  {
+                                    "Value": [
+                                      8,
+                                      {
+                                        "kind": {
+                                          "TraitImpl": {
+                                            "id": 6,
+                                            "generics": {
+                                              "regions": [
+                                                {
+                                                  "Body": 3
+                                                }
+                                              ],
+                                              "types": [],
+                                              "const_generics": [],
+                                              "trait_refs": []
+                                            }
+                                          }
+                                        },
+                                        "trait_decl_ref": {
+                                          "regions": [],
+                                          "skip_binder": {
+                                            "id": 4,
+                                            "generics": {
+                                              "regions": [
+                                                {
+                                                  "Body": 3
+                                                }
+                                              ],
+                                              "types": [
+                                                {
+                                                  "Deduplicated": 51
+                                                }
+                                              ],
+                                              "const_generics": [],
+                                              "trait_refs": []
+                                            }
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "args": [
+                            {
+                              "Move": {
+                                "kind": {
+                                  "Local": 2
+                                },
+                                "ty": {
+                                  "Deduplicated": 78
+                                }
+                              }
+                            }
+                          ],
+                          "dest": {
+                            "kind": {
+                              "Local": 0
+                            },
+                            "ty": {
+                              "Deduplicated": 75
+                            }
+                          }
+                        },
+                        "on_unwind": {
+                          "span": {
+                            "Deduplicated": 6
+                          },
+                          "id": 1,
+                          "statements": [
+                            {
+                              "span": {
+                                "Deduplicated": 6
+                              },
+                              "id": 3,
+                              "kind": {
+                                "StorageDead": 1
+                              },
+                              "comments_before": []
+                            },
+                            {
+                              "span": {
+                                "Deduplicated": 6
+                              },
+                              "id": 4,
+                              "kind": "UnwindResume",
+                              "comments_before": []
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Value": [
+                        12,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 7,
+                              "col": 52
+                            },
+                            "end": {
+                              "line": 7,
+                              "col": 53
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "id": 6,
+                    "kind": {
+                      "StorageDead": 2
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Value": [
+                        13,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 8,
+                              "col": 1
+                            },
+                            "end": {
+                              "line": 8,
+                              "col": 1
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "id": 7,
+                    "kind": {
+                      "StorageDead": 1
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Deduplicated": 13
+                    },
+                    "id": 8,
+                    "kind": "Return",
+                    "comments_before": []
+                  }
+                ]
+              },
+              "comments": []
+            }
+          }
+        },
+        "callee": {
+          "def_id": 20,
+          "item_meta": {
+            "name": [
+              {
+                "Ident": [
+                  "serde_json",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "de",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "from_slice",
+                  0
+                ]
+              }
+            ],
+            "span": {
+              "Untagged": {
+                "data": {
+                  "file_id": 16,
+                  "beg": {
+                    "line": 2655,
+                    "col": 0
+                  },
+                  "end": {
+                    "line": 2657,
+                    "col": 27
+                  }
+                },
+                "generated_from_span": null
+              }
+            },
+            "source_text": null,
+            "attr_info": {
+              "attributes": [
+                {
+                  "DocComment": " Deserialize an instance of type `T` from bytes of JSON text."
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " # Example"
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " ```"
+                },
+                {
+                  "DocComment": " use serde::Deserialize;"
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " #[derive(Deserialize, Debug)]"
+                },
+                {
+                  "DocComment": " struct User {"
+                },
+                {
+                  "DocComment": "     fingerprint: String,"
+                },
+                {
+                  "DocComment": "     location: String,"
+                },
+                {
+                  "DocComment": " }"
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " fn main() {"
+                },
+                {
+                  "DocComment": "     // The type of `j` is `&[u8]`"
+                },
+                {
+                  "DocComment": "     let j = b\""
+                },
+                {
+                  "DocComment": "         {"
+                },
+                {
+                  "DocComment": "             \\\"fingerprint\\\": \\\"0xF9BA143B95FF6D82\\\","
+                },
+                {
+                  "DocComment": "             \\\"location\\\": \\\"Menlo Park, CA\\\""
+                },
+                {
+                  "DocComment": "         }\";"
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": "     let u: User = serde_json::from_slice(j).unwrap();"
+                },
+                {
+                  "DocComment": "     println!(\"{:#?}\", u);"
+                },
+                {
+                  "DocComment": " }"
+                },
+                {
+                  "DocComment": " ```"
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " # Errors"
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " This conversion can fail if the structure of the input does not match the"
+                },
+                {
+                  "DocComment": " structure expected by `T`, for example if `T` is a struct type but the input"
+                },
+                {
+                  "DocComment": " contains something other than a JSON map. It can also fail if the structure"
+                },
+                {
+                  "DocComment": " is correct but `T`'s implementation of `Deserialize` decides that something"
+                },
+                {
+                  "DocComment": " is wrong with the data, for example required struct fields are missing from"
+                },
+                {
+                  "DocComment": " the JSON map or some number is too big to fit in the expected primitive"
+                },
+                {
+                  "DocComment": " type."
+                }
+              ],
+              "inline": null,
+              "rename": null,
+              "public": true
+            },
+            "is_local": false,
+            "opacity": "Foreign",
+            "lang_item": null,
+            "diagnostic_item": null
+          },
+          "generics": {
+            "regions": [
+              {
+                "index": 0,
+                "name": "'a",
+                "variance": "Contravariant",
+                "mutability": "Unknown"
+              }
+            ],
+            "types": [
+              {
+                "index": 0,
+                "name": "T",
+                "variance": "Covariant"
+              }
+            ],
+            "const_generics": [],
+            "trait_clauses": [
+              {
+                "clause_id": 0,
+                "span": {
+                  "Value": [
+                    14,
+                    {
+                      "data": {
+                        "file_id": 16,
+                        "beg": {
+                          "line": 2657,
+                          "col": 7
+                        },
+                        "end": {
+                          "line": 2657,
+                          "col": 26
+                        }
+                      },
+                      "generated_from_span": null
+                    }
+                  ]
+                },
+                "origin": "WhereClauseOnFn",
+                "trait_": {
+                  "regions": [],
+                  "skip_binder": {
+                    "id": 4,
+                    "generics": {
+                      "regions": [
+                        {
+                          "Var": {
+                            "Free": 0
+                          }
+                        }
+                      ],
+                      "types": [
+                        {
+                          "Deduplicated": 14
+                        }
+                      ],
+                      "const_generics": [],
+                      "trait_refs": []
+                    }
+                  }
+                }
+              }
+            ],
+            "regions_outlive": [],
+            "types_outlive": [],
+            "trait_type_constraints": []
+          },
+          "signature": {
+            "is_unsafe": false,
+            "abi": "Rust",
+            "is_variadic": false,
+            "inputs": [
+              {
+                "Deduplicated": 44
+              }
+            ],
+            "output": {
+              "Value": [
+                87,
+                {
+                  "Adt": {
+                    "id": 2,
+                    "generics": {
+                      "regions": [],
+                      "types": [
+                        {
+                          "Deduplicated": 14
+                        },
+                        {
+                          "Deduplicated": 76
+                        }
+                      ],
+                      "const_generics": [],
+                      "trait_refs": []
+                    },
+                    "builtin": null
+                  }
+                }
+              ]
+            }
+          },
+          "src": "Normal",
+          "body": "Opaque"
+        },
+        "options": {
+          "ullbc": false,
+          "precise_drops": false,
+          "mir": null,
+          "rustc_args": [],
+          "targets": [],
+          "sysroot": "default",
+          "monomorphize": false,
+          "monomorphize_mut": null,
+          "start_from": [
+            "crate::json_request::decode"
+          ],
+          "start_from_if_exists": [],
+          "start_from_attribute": [],
+          "start_from_pub": false,
+          "include": [
+            "sandproof_protocol"
+          ],
+          "opaque": [],
+          "exclude": [],
+          "extract_opaque_bodies": false,
+          "translate_all_methods": false,
+          "duplicate_defaulted_methods": false,
+          "lift_associated_types": [
+            "*"
+          ],
+          "hide_marker_traits": true,
+          "hide_allocator": true,
+          "remove_unused_clauses": false,
+          "remove_unused_self_clauses": true,
+          "remove_adt_clauses": true,
+          "desugar_drops": false,
+          "ops_to_function_calls": true,
+          "index_to_function_calls": true,
+          "treat_box_as_builtin": true,
+          "no_gen_tuple_structs": true,
+          "raw_consts": false,
+          "consts": null,
+          "unsized_strings": false,
+          "reconstruct_fallible_operations": true,
+          "reconstruct_asserts": true,
+          "reconstruct_matches": true,
+          "deallocate_all_locals": true,
+          "unbind_item_vars": true,
+          "print_original_ullbc": false,
+          "print_ullbc": false,
+          "print_built_llbc": false,
+          "print_llbc": false,
+          "dest_dir": null,
+          "dest_file": "../../artifacts/json-request-binding/decode.llbc",
+          "no_dedup_serialized_ast": false,
+          "format": null,
+          "no_serialize": false,
+          "skip_borrowck": false,
+          "no_typecheck": false,
+          "no_normalize": false,
+          "no_reorder_decls": false,
+          "abort_on_error": false,
+          "error_on_warnings": true,
+          "preset": "Aeneas"
+        }
+      }
+    },
+    "json_request::encode": {
+      "trust": "B4: direct call binding only; not machine refinement",
+      "full_llbc_sha256": "e17eb760cac3ea366ac5d1066757f187204a7daf5cc44c377b9878cf460f9b23",
+      "snapshot": {
+        "root": {
+          "def_id": 11,
+          "item_meta": {
+            "name": [
+              {
+                "Ident": [
+                  "sandproof_foundations_extract",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "json_request",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "encode",
+                  0
+                ]
+              }
+            ],
+            "span": {
+              "Untagged": {
+                "data": {
+                  "file_id": 5,
+                  "beg": {
+                    "line": 10,
+                    "col": 0
+                  },
+                  "end": {
+                    "line": 12,
+                    "col": 1
+                  }
+                },
+                "generated_from_span": null
+              }
+            },
+            "source_text": "pub fn encode(request: &LifecycleRequest) -> Result<Vec<u8>, serde_json::Error> {\n    serde_json::to_vec(request)\n}",
+            "attr_info": {
+              "attributes": [],
+              "inline": null,
+              "rename": null,
+              "public": true
+            },
+            "is_local": true,
+            "opacity": "Transparent",
+            "lang_item": null,
+            "diagnostic_item": null
+          },
+          "generics": {
+            "regions": [
+              {
+                "index": 0,
+                "name": null,
+                "variance": "Covariant",
+                "mutability": "Unknown"
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_clauses": [],
+            "regions_outlive": [],
+            "types_outlive": [],
+            "trait_type_constraints": []
+          },
+          "signature": {
+            "is_unsafe": false,
+            "abi": "Rust",
+            "is_variadic": false,
+            "inputs": [
+              {
+                "Value": [
+                  37,
+                  {
+                    "Ref": [
+                      {
+                        "Var": {
+                          "Free": 0
+                        }
+                      },
+                      {
+                        "Value": [
+                          38,
+                          {
+                            "Adt": {
+                              "id": 2,
+                              "generics": {
+                                "regions": [],
+                                "types": [],
+                                "const_generics": [],
+                                "trait_refs": []
+                              },
+                              "builtin": null
+                            }
+                          }
+                        ]
+                      },
+                      "Shared"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "output": {
+              "Value": [
+                39,
+                {
+                  "Adt": {
+                    "id": 3,
+                    "generics": {
+                      "regions": [],
+                      "types": [
+                        {
+                          "Deduplicated": 18
+                        },
+                        {
+                          "Value": [
+                            40,
+                            {
+                              "Adt": {
+                                "id": 6,
+                                "generics": {
+                                  "regions": [],
+                                  "types": [],
+                                  "const_generics": [],
+                                  "trait_refs": []
+                                },
+                                "builtin": null
+                              }
+                            }
+                          ]
+                        }
+                      ],
+                      "const_generics": [],
+                      "trait_refs": []
+                    },
+                    "builtin": null
+                  }
+                }
+              ]
+            }
+          },
+          "src": "Normal",
+          "body": {
+            "Structured": {
+              "span": {
+                "Value": [
+                  6,
+                  {
+                    "data": {
+                      "file_id": 5,
+                      "beg": {
+                        "line": 10,
+                        "col": 0
+                      },
+                      "end": {
+                        "line": 12,
+                        "col": 1
+                      }
+                    },
+                    "generated_from_span": null
+                  }
+                ]
+              },
+              "bound_body_regions": 5,
+              "locals": {
+                "arg_count": 1,
+                "locals": [
+                  {
+                    "index": 0,
+                    "name": null,
+                    "span": {
+                      "Value": [
+                        7,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 10,
+                              "col": 45
+                            },
+                            "end": {
+                              "line": 10,
+                              "col": 79
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "ty": {
+                      "Deduplicated": 39
+                    }
+                  },
+                  {
+                    "index": 1,
+                    "name": "request",
+                    "span": {
+                      "Value": [
+                        8,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 10,
+                              "col": 14
+                            },
+                            "end": {
+                              "line": 10,
+                              "col": 21
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "ty": {
+                      "Value": [
+                        41,
+                        {
+                          "Ref": [
+                            {
+                              "Body": 1
+                            },
+                            {
+                              "Deduplicated": 38
+                            },
+                            "Shared"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "index": 2,
+                    "name": null,
+                    "span": {
+                      "Value": [
+                        9,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 11,
+                              "col": 23
+                            },
+                            "end": {
+                              "line": 11,
+                              "col": 30
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "ty": {
+                      "Value": [
+                        42,
+                        {
+                          "Ref": [
+                            {
+                              "Body": 2
+                            },
+                            {
+                              "Deduplicated": 38
+                            },
+                            "Shared"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "body": {
+                "span": {
+                  "Value": [
+                    10,
+                    {
+                      "data": {
+                        "file_id": 5,
+                        "beg": {
+                          "line": 11,
+                          "col": 23
+                        },
+                        "end": {
+                          "line": 12,
+                          "col": 1
+                        }
+                      },
+                      "generated_from_span": null
+                    }
+                  ]
+                },
+                "id": 4,
+                "statements": [
+                  {
+                    "span": {
+                      "Deduplicated": 9
+                    },
+                    "id": 0,
+                    "kind": {
+                      "StorageLive": 0
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Deduplicated": 9
+                    },
+                    "id": 1,
+                    "kind": {
+                      "StorageLive": 2
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Deduplicated": 9
+                    },
+                    "id": 2,
+                    "kind": {
+                      "Assign": [
+                        {
+                          "kind": {
+                            "Local": 2
+                          },
+                          "ty": {
+                            "Deduplicated": 42
+                          }
+                        },
+                        {
+                          "Ref": {
+                            "place": {
+                              "kind": {
+                                "Projection": [
+                                  {
+                                    "kind": {
+                                      "Local": 1
+                                    },
+                                    "ty": {
+                                      "Deduplicated": 41
+                                    }
+                                  },
+                                  "Deref"
+                                ]
+                              },
+                              "ty": {
+                                "Deduplicated": 38
+                              }
+                            },
+                            "kind": "Shared",
+                            "ptr_metadata": {
+                              "Const": {
+                                "Value": [
+                                  3,
+                                  [
+                                    {
+                                      "Adt": [
+                                        null,
+                                        []
+                                      ]
+                                    },
+                                    {
+                                      "Value": [
+                                        43,
+                                        {
+                                          "Adt": {
+                                            "id": 0,
+                                            "generics": {
+                                              "regions": [],
+                                              "types": [],
+                                              "const_generics": [],
+                                              "trait_refs": []
+                                            },
+                                            "builtin": "Tuple"
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Value": [
+                        11,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 11,
+                              "col": 4
+                            },
+                            "end": {
+                              "line": 11,
+                              "col": 31
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "id": 5,
+                    "kind": {
+                      "Call": {
+                        "call": {
+                          "func": {
+                            "Regular": {
+                              "kind": {
+                                "Fun": 20
+                              },
+                              "generics": {
+                                "regions": [
+                                  {
+                                    "Body": 4
+                                  }
+                                ],
+                                "types": [
+                                  {
+                                    "Deduplicated": 38
+                                  }
+                                ],
+                                "const_generics": [],
+                                "trait_refs": [
+                                  {
+                                    "Value": [
+                                      3,
+                                      {
+                                        "kind": {
+                                          "TraitImpl": {
+                                            "id": 6,
+                                            "generics": {
+                                              "regions": [],
+                                              "types": [],
+                                              "const_generics": [],
+                                              "trait_refs": []
+                                            }
+                                          }
+                                        },
+                                        "trait_decl_ref": {
+                                          "regions": [],
+                                          "skip_binder": {
+                                            "id": 4,
+                                            "generics": {
+                                              "regions": [],
+                                              "types": [
+                                                {
+                                                  "Deduplicated": 38
+                                                }
+                                              ],
+                                              "const_generics": [],
+                                              "trait_refs": []
+                                            }
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "args": [
+                            {
+                              "Move": {
+                                "kind": {
+                                  "Local": 2
+                                },
+                                "ty": {
+                                  "Deduplicated": 42
+                                }
+                              }
+                            }
+                          ],
+                          "dest": {
+                            "kind": {
+                              "Local": 0
+                            },
+                            "ty": {
+                              "Deduplicated": 39
+                            }
+                          }
+                        },
+                        "on_unwind": {
+                          "span": {
+                            "Deduplicated": 6
+                          },
+                          "id": 1,
+                          "statements": [
+                            {
+                              "span": {
+                                "Deduplicated": 6
+                              },
+                              "id": 3,
+                              "kind": {
+                                "StorageDead": 1
+                              },
+                              "comments_before": []
+                            },
+                            {
+                              "span": {
+                                "Deduplicated": 6
+                              },
+                              "id": 4,
+                              "kind": "UnwindResume",
+                              "comments_before": []
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Value": [
+                        12,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 11,
+                              "col": 30
+                            },
+                            "end": {
+                              "line": 11,
+                              "col": 31
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "id": 6,
+                    "kind": {
+                      "StorageDead": 2
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Value": [
+                        13,
+                        {
+                          "data": {
+                            "file_id": 5,
+                            "beg": {
+                              "line": 12,
+                              "col": 1
+                            },
+                            "end": {
+                              "line": 12,
+                              "col": 1
+                            }
+                          },
+                          "generated_from_span": null
+                        }
+                      ]
+                    },
+                    "id": 7,
+                    "kind": {
+                      "StorageDead": 1
+                    },
+                    "comments_before": []
+                  },
+                  {
+                    "span": {
+                      "Deduplicated": 13
+                    },
+                    "id": 8,
+                    "kind": "Return",
+                    "comments_before": []
+                  }
+                ]
+              },
+              "comments": []
+            }
+          }
+        },
+        "callee": {
+          "def_id": 20,
+          "item_meta": {
+            "name": [
+              {
+                "Ident": [
+                  "serde_json",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "ser",
+                  0
+                ]
+              },
+              {
+                "Ident": [
+                  "to_vec",
+                  0
+                ]
+              }
+            ],
+            "span": {
+              "Untagged": {
+                "data": {
+                  "file_id": 19,
+                  "beg": {
+                    "line": 2213,
+                    "col": 0
+                  },
+                  "end": {
+                    "line": 2215,
+                    "col": 26
+                  }
+                },
+                "generated_from_span": null
+              }
+            },
+            "source_text": null,
+            "attr_info": {
+              "attributes": [
+                {
+                  "DocComment": " Serialize the given data structure as a JSON byte vector."
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " # Errors"
+                },
+                {
+                  "DocComment": ""
+                },
+                {
+                  "DocComment": " Serialization can fail if `T`'s implementation of `Serialize` decides to"
+                },
+                {
+                  "DocComment": " fail, or if `T` contains a map with non-string keys."
+                }
+              ],
+              "inline": "Hint",
+              "rename": null,
+              "public": true
+            },
+            "is_local": false,
+            "opacity": "Foreign",
+            "lang_item": null,
+            "diagnostic_item": null
+          },
+          "generics": {
+            "regions": [
+              {
+                "index": 0,
+                "name": null,
+                "variance": "Covariant",
+                "mutability": "Unknown"
+              }
+            ],
+            "types": [
+              {
+                "index": 0,
+                "name": "T",
+                "variance": "Contravariant"
+              }
+            ],
+            "const_generics": [],
+            "trait_clauses": [
+              {
+                "clause_id": 0,
+                "span": {
+                  "Value": [
+                    14,
+                    {
+                      "data": {
+                        "file_id": 19,
+                        "beg": {
+                          "line": 2215,
+                          "col": 16
+                        },
+                        "end": {
+                          "line": 2215,
+                          "col": 25
+                        }
+                      },
+                      "generated_from_span": null
+                    }
+                  ]
+                },
+                "origin": "WhereClauseOnFn",
+                "trait_": {
+                  "regions": [],
+                  "skip_binder": {
+                    "id": 4,
+                    "generics": {
+                      "regions": [],
+                      "types": [
+                        {
+                          "Deduplicated": 4
+                        }
+                      ],
+                      "const_generics": [],
+                      "trait_refs": []
+                    }
+                  }
+                }
+              }
+            ],
+            "regions_outlive": [],
+            "types_outlive": [
+              {
+                "regions": [],
+                "skip_binder": [
+                  {
+                    "Deduplicated": 4
+                  },
+                  {
+                    "Var": {
+                      "Free": 0
+                    }
+                  }
+                ]
+              }
+            ],
+            "trait_type_constraints": []
+          },
+          "signature": {
+            "is_unsafe": false,
+            "abi": "Rust",
+            "is_variadic": false,
+            "inputs": [
+              {
+                "Deduplicated": 34
+              }
+            ],
+            "output": {
+              "Deduplicated": 39
+            }
+          },
+          "src": "Normal",
+          "body": "Opaque"
+        },
+        "options": {
+          "ullbc": false,
+          "precise_drops": false,
+          "mir": null,
+          "rustc_args": [],
+          "targets": [],
+          "sysroot": "default",
+          "monomorphize": false,
+          "monomorphize_mut": null,
+          "start_from": [
+            "crate::json_request::encode"
+          ],
+          "start_from_if_exists": [],
+          "start_from_attribute": [],
+          "start_from_pub": false,
+          "include": [
+            "sandproof_protocol"
+          ],
+          "opaque": [],
+          "exclude": [],
+          "extract_opaque_bodies": false,
+          "translate_all_methods": false,
+          "duplicate_defaulted_methods": false,
+          "lift_associated_types": [
+            "*"
+          ],
+          "hide_marker_traits": true,
+          "hide_allocator": true,
+          "remove_unused_clauses": false,
+          "remove_unused_self_clauses": true,
+          "remove_adt_clauses": true,
+          "desugar_drops": false,
+          "ops_to_function_calls": true,
+          "index_to_function_calls": true,
+          "treat_box_as_builtin": true,
+          "no_gen_tuple_structs": true,
+          "raw_consts": false,
+          "consts": null,
+          "unsized_strings": false,
+          "reconstruct_fallible_operations": true,
+          "reconstruct_asserts": true,
+          "reconstruct_matches": true,
+          "deallocate_all_locals": true,
+          "unbind_item_vars": true,
+          "print_original_ullbc": false,
+          "print_ullbc": false,
+          "print_built_llbc": false,
+          "print_llbc": false,
+          "dest_dir": null,
+          "dest_file": "../../artifacts/json-request-binding/encode.llbc",
+          "no_dedup_serialized_ast": false,
+          "format": null,
+          "no_serialize": false,
+          "skip_borrowck": false,
+          "no_typecheck": false,
+          "no_normalize": false,
+          "no_reorder_decls": false,
+          "abort_on_error": false,
+          "error_on_warnings": true,
+          "preset": "Aeneas"
+        }
+      }
+    }
+  },
+  "formal_contract": {
+    "operations": "SandboxModel.Boundaries.JsonRequest.LifecycleJsonLibrary",
+    "condition": "SandboxModel.Boundaries.JsonRequest.SliceDeriveContract",
+    "dictionary": "serde_json::Error, original Display/ToString for InvalidIdentifier and InvalidCounter only",
+    "source_context": "actual original input, provider and private parser context at each standard-derived call; cursor observations belong to the same input slice; not arbitrary value-reader witnesses",
+    "allocation_domain": "valid finite Rust values, normal successful allocation and standard library completion; OOM/abort not claimed recoverable",
+    "encoding_bound": {
+      "fixed_schema_allowance": 2048,
+      "escape_per_utf8_byte": 6,
+      "options_per_byte": 4,
+      "body_bytes": 270336
+    },
+    "provided_by": "reviewed A6 fixed library/standard derives and B4 direct-call binding; source and AST admission plus native regressions; no machine refinement claim for this trusted condition",
+    "own_theorems": [
+      "original_counter_error_dictionary",
+      "original_identifier_error_dictionary",
+      "bound_readers_keep_original_input",
+      "bound_zero_uses_original_json_error",
+      "bound_invalid_id_uses_original_json_error",
+      "own_input_and_create_bound_encoding",
+      "slice_binding_instantiates_standard_recipe",
+      "lifecycle_slice_decode_has_valid_own_fields",
+      "lifecycle_slice_and_original_guard_shape",
+      "lifecycle_original_conversions_roundtrip",
+      "roundtrip_preserves_original_guard",
+      "full_initial_request_domain",
+      "initial_request_survives_byte_roundtrip",
+      "every_valid_request_has_bounded_roundtrip",
+      "initial_request_byte_acceptance_realizable"
+    ]
+  },
+  "compiled_library_features": {
+    "production_workspace": {
+      "serde": {
+        "version": "1.0.228",
+        "features": [
+          "alloc",
+          "default",
+          "derive",
+          "serde_derive",
+          "std"
+        ]
+      },
+      "serde_core": {
+        "version": "1.0.228",
+        "features": [
+          "alloc",
+          "default",
+          "result",
+          "std"
+        ]
+      },
+      "serde_derive": {
+        "version": "1.0.228",
+        "features": [
+          "default"
+        ]
+      },
+      "serde_json": {
+        "version": "1.0.142",
+        "features": [
+          "default",
+          "raw_value",
+          "std"
+        ]
+      }
+    },
+    "extraction": {
+      "serde": {
+        "version": "1.0.228",
+        "features": [
+          "default",
+          "derive",
+          "serde_derive",
+          "std"
+        ]
+      },
+      "serde_core": {
+        "version": "1.0.228",
+        "features": [
+          "result",
+          "std"
+        ]
+      },
+      "serde_derive": {
+        "version": "1.0.228",
+        "features": [
+          "default"
+        ]
+      },
+      "serde_json": {
+        "version": "1.0.142",
+        "features": [
+          "default",
+          "std"
+        ]
+      }
+    }
+  },
+  "wrapper_source_sha256": "2d95459f3b4aeaebc9b041d93e07d6555609278dece62315b075278b3a5ed326"
+}

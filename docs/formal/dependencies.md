@@ -105,6 +105,20 @@ B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2
 
 自有 `TryFrom`/`is_valid`、长度/预算、完整身份和参数绑定、接受/拒绝规则仍需实际抽取及证明；真实类型/属性到模型字段的接线由审查、合同样例和差分测试登记证据，未机器证明时显式保留该符合性前提。不能为绕过输入业务而直接假设“解码结果已获授权且合法”，也不要求先证明第三方 JSON 内部扫描/UTF-8/转义算法。其他容器/整数库模型仍按下文实际使用点单独冻结。
 
+生命周期请求的具体 schema 还需保留固定派生的一个差别：NodeIdentity、ControlIdentity、Resources、CreateBinding、LifecycleRequest 的对象拒绝未知字段；内部标记的 Intent 中，Create/Destroy 使用的固定 unit visitor 会消耗并忽略可成功解析的额外字段，Renew 的结构体分支才拒绝未知字段。`deny_unknown_fields` 属性本身不能替代这个逐分支登记。输出仍按声明字段生成对象；标准结构体的序列输入按固定字段顺序处理。上述差异由原解码器回归核对，不改变生产策略，也不将忽略的字段解释为命令或授权。
+
+[字段回调连接](../../SandboxModel/Boundaries/JsonRequest/Callbacks.lean)要求每个自有字段有原 Deserialize、原字典和输入的调用证据，再由已有真实叶子证明推出完整输入域；有限 value reader 仅证明条件可实现，不能提供实际 parser 绑定。[完整投影](../../SandboxModel/Boundaries/JsonRequest/Representation.lean)保留全部身份、创建字段和 intent，投影相等可推出原值相等。[编码字段规约](../../SandboxModel/Boundaries/JsonRequest/Encoding.lean)调用原 String/u64 转换；JSON 渲染、标准派生的字段接线及 Clone 仍按实际 A6 使用点落实。
+
+[文档结束顺序](../../SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean)按固定 `serde_json::de::from_trait` 先 Deserialize 再 end 的顺序组合；前面的叶子错误不执行后面的尾随检查，已有错误、失败、发散和效果保持。[字节组合定理](../../SandboxModel/Boundaries/JsonRequest/Codec.lean)显式接收字段字节关系及派生合同参数；[具体 SliceRead 连接](../../SandboxModel/Boundaries/JsonRequest/SliceBinding.lean)将其限定为本请求的原输入切片、原错误字典、六个编号与三个计数器回调。固定库的现场、标准派生组装及紧凑 Vec 渲染由 `SliceDeriveContract` 作为显式 A6/B4 条件提供；自有转换、校验、完整字段和守卫结论则由实际生成体的定理提供。该条件的采用依据是下述逐符号源/AST 登记与原生回归，不是库或异步外壳已经机器精化。
+
+[容器结束与错误位置](../../SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean)另区分内部收尾与最外层文档结束：固定 `deserialize_struct` 即使收到 visitor 的普通错误，仍执行 `end_map/end_seq`，可能继续消费空白；普通收尾错误不能覆盖更早的字段错误。原 `fix_position` 只在错误行号为零时补齐当时位置，外层不能再次覆盖已有位置。直接对自有编号/计数器调用 `from_slice` 时可能仍是 `(0,0)`；嵌入结构体后才由最近容器补齐。模型接收固定 SliceRead 提供的实际字节、偏移和位置，不另实现 JSON 扫描器，也不声称错误后解析状态回滚。
+
+具体 `A6-json-lifecycle-derive` / `B4-json-lifecycle-call` 范围见[调用登记](../../verification/json-request-binding.json)。它逐项列完整字段/声明顺序、三个 intent 的固定行为、六个原编号和三个计数器字典、private SliceRead/Vec 的状态与错误、实际生产调用及独立预算来源。两个包装根由原 Charon 生成的完整 LLBC 和单次调用 AST 核对参数、结果、类型字典及 unwind 路径；[绑定检查器](../../tools/check_json_request_binding.py)同时固定生产源和十份库源，并拒绝隐藏守卫、替换类型/参数、增加调用或业务析构。它不翻译完整 Serde trait 图，也不是编译器、库或异步外壳的机器精化证明。`SliceDeriveContract` 到公共 `StandardDeriveRecipe` 的组合已由内核检查；这不会消除固定库符合该条件的可信责任。负向自动入口和原完整验收分别检查，不由登记文件存在推定通过。
+
+正常分配域中，固定紧凑 renderer 对本 schema 的安全长度上界为 `2048 + 6 × 六个编号的 UTF-8 字节数之和 + 4 × options 字节数`。2048 覆盖固定键名、标记、标点、有界整数和 32 字节摘要；6 覆盖最坏字符转义，4 覆盖 u8 的三位十进制与分隔符。源/属性改变后必须重查这个界，不能沿用给新 schema。第三方 renderer 的完成及此结构长度保证属于明确 A6 正常分配条件；自有编号每项不超过 128 字节、options 不超过 65536，以及由此得到总长不超过原 270336 字节，则由自有输入域和原创建守卫的已证结论推出。所有合法有界请求有完整往返见证，初始请求有真正接受见证；不只证明拒绝安全，也不假设编码已经成功。物理 OOM/abort 或任意自定义序列化器不在该完成条件内。
+
+本项纯值析构仅限普通 String、Vec<u8> 和 SliceRead/Vec 路径产生且不含自定义 IO 错误来源的库错误；原输入/请求为借用，parser 的可变游标与 scratch 由这次固定库调用私有持有。FD、许可、锁、任意自定义 Drop、panic/unwind 收尾、OOM/abort 和 async 取消均不在此域。真实服务器中 receiver、连接和任务所有权仍需其原模块提供条件，不能因 JSON 编解码采用 A6 而一并排除。
+
 ## Redis 与 SQLite 的落地合同
 
 | 引擎/代码 | 外部合同与部署核对 | 自有待证连接 |
@@ -203,6 +217,12 @@ V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议
 接口继续受固定 preset 擦除 Drop 的限制。泛型调用根的条件清理，以及自有构造/解码路径实际调用的标准 String DropGlue 均逐项登记；后者只按正常返回域中的标准堆释放处理，不证明释放效果或物理内存用量。准入检查核对其确为外部 String 清理，拒绝改为业务析构。实际 D/E/visitor/回调的使用点必须无本接口忽略的可观察自定义析构和资源持有语义。本批不是 Future、取消、许可或 Drop 证明。完整 JSON 扫描、尾随字节处理、复合 schema、编码往返、实际输入/状态/字典绑定以及业务拒绝顺序仍由具体使用点落实。有限值读取器只作合法接受和拒绝的非空见证；真实 JSON 回归覆盖未转义、转义及拥有字符串分支和首错顺序，回归不代替引擎证明。
 
 独立 [IdentifierSafe](../../SandboxModel/Boundaries/JsonIdentifiers/Model.lean) 复用[公共编号词汇](../../SandboxModel/Foundations/IdentifierModel.lean)，不导入自有构造正确性证明，允许在真实校验缺失版重新抽取后用同一性质给出反例。源码/依赖/模型/工具/配置改变后重查整个共享 V0 和计数器闭包；实际证明状态和版本只见覆盖记录，不以刷新冻结摘要替代复验。
+
+### 完整生命周期请求的自有形状校验
+
+[请求守卫合同](../../SandboxModel/Boundaries/JsonRequest/Model.lean)区分三个来源：JSON 引擎/标准派生解释字段；原编号和计数器 Deserialize 检查叶子；原 `LifecycleRequest::validate` 检查版本、完整节点、非零槽位、创建参数和 Renew 非零结束时间。最后一层仍保留真实函数体，[对应证明](../../SandboxModel/Boundaries/JsonRequest/Guard.lean)复用原身份及创建参数结论，不属于可信 JSON 适配。
+
+该守卫先返回原身份拒绝；身份通过后才检查创建绑定与 intent 形状。成功只表示这组检查成立，不表示请求已获授权、续租没有超过原寿命、存储已提交或宿主已执行。`retention_slot=0` 属于可解析的 u16 输入，由守卫拒绝；输入总字节数由调用路由的 Limited 提供，不能归给 `from_slice`。调用者仍须建立实际字节/schema/原叶子和错误字典的连接，以及后续授权和生命周期条件；GuardContract 不提供这些结论。
 
 ### A6 网络地址库模型使用登记
 
