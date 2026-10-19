@@ -149,7 +149,7 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 这份清单是源码与编译来源审计，**没有证明调用图闭合或新的 Rust 语义**。稳定 MIR 文本不能单独补齐动态回调实际实例、结构体全部字段/运行时合法域、future 在每个挂起点被取消时的生成清理、嵌套库析构及外部可执行脚本的完整使用绑定；这些缺口在责任清单继续归 T1–T8 和业务模块，不能因为有 MIR 就勾选整个 T0。正常 Drop、实际发生的 unwind、Drop 自身 panic、abort 和进程崩溃仍分开，后两者不保证执行 Drop。
 
-可复现入口（固定 a6000 环境；完整日志不提交）：
+可复现入口（固定 Linux 证明环境；完整日志不提交）：
 
 ```sh
 bash scripts/python-entry.sh tools/v0_use_inventory.py capture artifacts/use-census
