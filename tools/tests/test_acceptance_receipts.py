@@ -11,6 +11,7 @@ from unittest import mock
 
 from tools import acceptance_receipts as receipts
 from tools import proof_batch
+from tools import proof_native_suite
 
 
 class ReceiptTests(unittest.TestCase):
@@ -139,6 +140,39 @@ class ReceiptTests(unittest.TestCase):
         doc.write_text('[broken](missing.md)\n')
         self.assertNotEqual(receipts.native_key('functional',['component-case'],self.source),before)
         self.assertEqual(receipts.native_key('fixture',self.command,self.source),native_before)
+
+    def test_embedded_resources_and_inherited_configuration_are_inputs(self):
+        asset=self.source/'sandbox-example/query.sql';asset.parent.mkdir();asset.write_text('SELECT 1')
+        deployment=self.source/'deploy/example.json';deployment.parent.mkdir();deployment.write_text('{}')
+        subprocess.run(['git','add','sandbox-example/query.sql','deploy/example.json'],cwd=self.source,check=True)
+        before=receipts.rust_inputs(self.source)
+        asset.write_text('SELECT 2');deployment.write_text('{"different":true}')
+        self.assertNotEqual(before,receipts.rust_inputs(self.source))
+        config=self.base/'.cargo/config.toml';config.parent.mkdir();config.write_text('[build]\ntarget="other"')
+        self.assertTrue(any(n.startswith('@configuration:') for n in receipts.rust_inputs(self.source)))
+
+    def test_undeclared_owned_build_script_fails_closed(self):
+        path=self.source/'sandbox-example/build.rs';path.parent.mkdir();path.write_text('fn main() {}')
+        with self.assertRaisesRegex(ValueError,'generated-input registration'):
+            receipts.rust_inputs(self.source)
+
+    def test_unsealed_command_is_executed_again_in_a_new_batch(self):
+        with mock.patch.object(receipts.subprocess,'run',wraps=subprocess.run) as run:
+            with mock.patch.dict(os.environ,{'SANDPROOF_NATIVE_BATCH':'attempt-one'}):
+                receipts.native_run('fixture',self.command,self.source,self.log)
+            with mock.patch.dict(os.environ,{'SANDPROOF_NATIVE_BATCH':'attempt-two','SANDPROOF_NATIVE_PREVIOUS':''}):
+                receipts.native_run('fixture',self.command,self.source,self.log)
+            self.assertEqual(len([c for c in run.call_args_list if c.args[0]==self.command]),2)
+        key=receipts.native_key('fixture',self.command,self.source)
+        entry=self.cache/'commands'/receipts.digest(key)
+        self.assertEqual(len(list((entry/'history').glob('*/receipt.json'))),1)
+
+    def test_untrusted_checkout_refuses_without_changing_permissions(self):
+        proof_native_suite.trusted_checkout(self.source)
+        self.source.chmod(0o775)
+        with self.assertRaisesRegex(ValueError,'untrusted checkout ancestry'):
+            proof_native_suite.trusted_checkout(self.source)
+        self.assertEqual(self.source.stat().st_mode&0o777,0o775)
 
 
 class ClosureTests(unittest.TestCase):

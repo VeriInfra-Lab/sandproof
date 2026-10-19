@@ -10,10 +10,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import stat
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
-    rules, rust_inputs, sha, write_json, tree_digest)
+    rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success)
 
 
 def load(name, path):
@@ -43,6 +44,8 @@ def runtime():
     result['redis'] = dict(sha256=sha(redis), version=subprocess.check_output([redis, '--version'], text=True))
     result['python'] = sys.version
     result['platform'] = sys.platform
+    result['uid'] = os.getuid()
+    result['gid'] = os.getgid()
     cargo_home=Path(os.environ.get('CARGO_HOME',str(Path.home()/'.cargo')))
     result['registry']=tree_digest(cargo_home/'registry/src')
     result['cargo_config']={str(p):sha(p) for p in
@@ -61,12 +64,36 @@ def command(command, source=ROOT, label='command', expected=0, env=None):
     path.unlink()
 
 
+def trusted_checkout(root):
+    names=subprocess.check_output(['git','ls-files','-z'],cwd=root).decode().split('\0')
+    directories={root,*root.parents}
+    for name in names:
+        if name:
+            directory=(root/name).parent
+            while directory.is_relative_to(root):
+                directories.add(directory)
+                if directory==root:break
+                directory=directory.parent
+    for path in directories:
+        info=path.lstat()
+        writes_ok=not info.st_mode&0o022 or (info.st_uid==0 and info.st_mode&stat.S_ISVTX)
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0,os.getuid()) or not writes_ok):
+            raise ValueError('untrusted checkout ancestry; prepare a private checkout with umask 077: '+str(path))
+
+
 def run_suite(output):
+    output.mkdir(parents=True,exist_ok=True,mode=0o700)
+    with locked(output/'batch-lock'):
+        return run_locked_suite(output)
+
+
+def run_locked_suite(output):
+    trusted_checkout(ROOT)
+    os.umask(0o077)
     output.mkdir(parents=True, exist_ok=True)
     # A permissive caller TMPDIR would cause genuine protected-file rejection.
     # Use a private child of Linux's root-owned sticky /tmp; no shared modes or
     # production checks are changed. Keep its identity in the private evidence.
-    import stat
     system_tmp=Path('/tmp');info=system_tmp.lstat()
     if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0
             or not info.st_mode & stat.S_ISVTX):
@@ -77,11 +104,17 @@ def run_suite(output):
                                                mode=oct(private_tmp.stat().st_mode&0o777)))
     os.environ['SANDPROOF_NATIVE_EVIDENCE'] = str(output)
     os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'native'
-    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime())
+    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT))
     write_json(output / 'runtime.json', initial['runtime'])
-    (output / 'complete.json').unlink(missing_ok=True)
     started = time.monotonic()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=output))
+    previous=work/'previous-complete.json'
+    if (output/'complete.json').exists():
+        previous.write_bytes((output/'complete.json').read_bytes())
+    (output / 'complete.json').unlink(missing_ok=True)
+    os.environ['SANDPROOF_NATIVE_PREVIOUS']=str(previous)
+    os.environ['SANDPROOF_NATIVE_BATCH']=str(time.time_ns())+'-'+str(os.getpid())
+    os.environ['SANDPROOF_NATIVE_USED']=str(work/'commands-used.jsonl')
     def call(args):
         subprocess.run([sys.executable, *map(str, args)], cwd=ROOT, check=True)
     # Full Linux functional gate is still required, including every tool test,
@@ -124,11 +157,23 @@ def run_suite(output):
             source, env=dict(os.environ, RUST_TEST_THREADS='1'))
     from tools.tls_pin_reproduction import reproduce
     reproduce(ROOT, ROOT / '.tools', work / 'tls', native_only=True)
-    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime()) != initial:
+    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT)) != initial:
         raise ValueError('source, rules or native tools changed during the suite')
-    commands = {p.parent.name:sha(p) for p in sorted((output / 'commands').glob('*/receipt.json'))}
+    trusted_checkout(ROOT)
+    commands={};uses=[]
+    for line in (work/'commands-used.jsonl').read_text().splitlines():
+        row=json.loads(line);identity=row['identity'];value=row['sha256']
+        uses.append(row)
+        if identity in commands and commands[identity]!=value:
+            raise ValueError('native evidence changed between uses')
+        entry=output/'commands'/identity
+        receipt=json.loads((entry/'receipt.json').read_text())
+        if sha(entry/'receipt.json')!=value or load_success(entry,receipt['key']) is None:
+            raise ValueError('native evidence lost before complete publication')
+        commands[identity]=value
     result = dict(schema=1, complete=True, exit_code=0, rules=initial['rules'],
-                  rust=initial['rust'], runtime=initial['runtime'], commands=commands)
+                  rust=initial['rust'], runtime=initial['runtime'], commands=commands,uses=uses,
+                  repository_sha256=digest(initial['repository']))
     write_json(output / 'complete.json', result)
     print(json.dumps(dict(native_suite_complete=True, seconds=round(time.monotonic()-started,3),
                          commands=len(commands), evidence=str(output))))

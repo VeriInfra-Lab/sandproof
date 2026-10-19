@@ -16,6 +16,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 
 
 def sha(path):
@@ -74,7 +75,8 @@ def rust_inputs(root):
     names = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
     selected = {name for name in names if name and (
         name.endswith(('.rs', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'))
-        or name.startswith('.cargo/'))}
+        or name.startswith(('.cargo/','deploy/','references/','tests/','verification/extract-'))
+        or name.split('/')[0].startswith(('sandbox-','controller-')))}
     for directory in [root / 'verification/extract-storage', *root.glob('sandbox-*'),
                       *root.glob('controller-*')]:
         if not directory.is_dir():
@@ -82,11 +84,23 @@ def rust_inputs(root):
         for parent, dirs, files in os.walk(directory):
             dirs[:] = [d for d in dirs if d not in ('target', '.git', '.lake', 'node_modules')]
             for name in files:
-                if name.endswith('.rs') or name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
+                if name.endswith(('.rs','.sql','.lua','.proto')) or name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
                     selected.add(str((Path(parent) / name).relative_to(root)))
     if (root / '.cargo').is_dir():
         selected.update(str(p.relative_to(root)) for p in (root / '.cargo').rglob('*') if p.is_file())
-    return {name: sha(root / name) for name in sorted(selected)}
+    if any(Path(name).name=='build.rs' for name in selected):
+        raise ValueError('owned build.rs requires explicit generated-input registration before cache reuse')
+    result={name: sha(root / name) for name in sorted(selected)}
+    for parent in (root,*root.parents):
+        for name in ('.cargo/config','.cargo/config.toml','rustfmt.toml','.rustfmt.toml','clippy.toml','.clippy.toml'):
+            path=parent/name
+            if path.is_file():result['@configuration:'+str(path.resolve())]=sha(path)
+    return result
+
+
+def repository_inputs(root):
+    names=subprocess.check_output(['git','ls-files','-z'],cwd=root).decode().split('\0')
+    return {n:sha(root/n) for n in names if n}
 
 
 def rules(root=ROOT):
@@ -103,13 +117,13 @@ def native_key(label, command, source, root=ROOT, environment=None):
     env = os.environ if environment is None else environment
     options = {k:v for k,v in env.items() if k.startswith(('CARGO_PROFILE_', 'RUSTFLAGS',
         'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_TARGET', 'RUSTC_BOOTSTRAP',
-        'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'))}
+        'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER','CC','CXX','AR','LD','CFLAGS','CPPFLAGS',
+        'PKG_CONFIG','SQLITE3','LIBSQLITE3')) or k in ('RUSTC','RUSTDOC','CARGO_BUILD_RUSTC')}
     result=dict(schema=1, label=label, command=normalized, options=options,
                 rust=rust_inputs(source), rules=rules(root),
                 runtime=json.loads(runtime_path.read_text()))
     if label == 'functional':
-        names=subprocess.check_output(['git','ls-files','-z'],cwd=source).decode().split('\0')
-        result['repository']={n:sha(source/n) for n in names if n}
+        result['repository']=repository_inputs(source)
     return result
 
 
@@ -150,6 +164,29 @@ def validate_native(cache):
     return seal
 
 
+def record_used(entry, reused=False):
+    filename=os.environ.get('SANDPROOF_NATIVE_USED')
+    if not filename:return
+    cache=Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()
+    path=Path(filename).resolve()
+    if not path.is_relative_to(cache):return
+    with path.open('a') as stream:
+        fcntl.flock(stream,fcntl.LOCK_EX)
+        stream.write(json.dumps(dict(identity=entry.name,sha256=sha(entry/'receipt.json'),reused=reused))+'\n')
+
+
+def command_reusable(entry, receipt):
+    if receipt.get('batch')==os.environ.get('SANDPROOF_NATIVE_BATCH',PROCESS_BATCH):return True
+    filename=os.environ.get('SANDPROOF_NATIVE_PREVIOUS') or str(entry.parents[1]/'complete.json')
+    if not Path(filename).resolve().is_relative_to(entry.parents[1].resolve()):
+        filename=str(entry.parents[1]/'complete.json')
+    try:
+        prior=json.loads(Path(filename).read_text())
+        return (prior.get('complete') is True and prior.get('exit_code')==0
+                and prior.get('commands',{}).get(entry.name)==sha(entry/'receipt.json'))
+    except (OSError,ValueError,AttributeError,TypeError):return False
+
+
 def native_run(label, command, source, log, environment=None, expected=0):
     """Run on the test host, or read its exact-input log on the proof host.
 
@@ -177,9 +214,15 @@ def native_run(label, command, source, log, environment=None, expected=0):
         raise ValueError('choose native (ning) or formal (a6000) acceptance role')
     with locked(entry):
         prior = load_success(entry, key)
-        if prior is not None and prior.get('expected') == expected:
+        if prior is not None and prior.get('expected') == expected and command_reusable(entry,prior):
             log.write_bytes((entry / 'command.log').read_bytes())
+            record_used(entry,reused=True)
             return expected
+        if (entry/'receipt.json').exists():
+            history=entry/'history'/sha(entry/'receipt.json');history.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(entry/'receipt.json',history/'receipt.json')
+            if (entry/'command.log').is_file():shutil.copyfile(entry/'command.log',history/'command.log')
+            (entry/'receipt.json').unlink()
         started = time.monotonic()
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open('wb') as stream:
@@ -191,8 +234,10 @@ def native_run(label, command, source, log, environment=None, expected=0):
             raise ValueError('native inputs changed during execution: ' + label)
         (entry / 'command.log').write_bytes(log.read_bytes())
         write_json(entry / 'receipt.json', dict(complete=True, exit_code=0, key=key,
+            batch=os.environ.get('SANDPROOF_NATIVE_BATCH',PROCESS_BATCH),
             expected=expected, actual_exit=code, seconds=time.monotonic()-started,
             files={'command.log': sha(entry / 'command.log')}))
+        record_used(entry)
     return code
 
 
@@ -217,6 +262,7 @@ def native_case(label, source, output, action=None):
     with locked(entry):
         prior = load_success(entry, key)
         if prior:
+            record_used(entry,reused=True)
             return prior
         start = time.monotonic()
         action()
@@ -237,4 +283,5 @@ def native_case(label, source, output, action=None):
         receipt = dict(complete=True, exit_code=0, key=key,
                        seconds=time.monotonic()-start, files=files)
         write_json(entry / 'receipt.json', receipt)
+        record_used(entry)
         return receipt

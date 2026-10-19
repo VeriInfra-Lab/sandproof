@@ -1,6 +1,7 @@
 """Check the actual retained Lean files through the registered service client."""
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -39,9 +40,19 @@ def main():
             if 'success' in result: break
             result=result.get('structuredContent',result.get('result',{}))
         if (result.get('success') is not True or result.get('partial') is not False
-            or result.get('timed_out') or result.get('failed_dependencies')
+            or result.get('timed_out') is not False or result.get('failed_dependencies')
+            or result.get('still_elaborating_lines') not in (None,[])
             or any(i.get('severity') in ('warning','error') for i in result.get('items',[]))):
             raise ValueError('physical proof diagnostics incomplete or rejected')
+        expected=set(re.findall(r'^#audit_controller_proof (\S+)$',
+                                (ROOT/request['arguments']['file_path']).read_text(),re.M))
+        checked=set()
+        for item in result.get('items',[]):
+            message=str(item.get('message',item.get('data','')))
+            match=re.fullmatch(r'Checked ([\w.]+): \d+ standard logical dependencies',message)
+            if match:checked.add(match[1])
+        if expected and checked!=expected:
+            raise ValueError('physical service did not report the actual complete dependency audit')
     print('Eight complete, non-stale physical-file Lean service diagnostics:',out)
 
 

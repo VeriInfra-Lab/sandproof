@@ -115,6 +115,7 @@ def evidence_files(directory):
 
 
 def step(name, command, root=ROOT):
+    step_started=time.monotonic()
     cache = Path(os.environ['SANDPROOF_FORMAL_CACHE']).resolve()
     key = module_key(name, command, root)
     entry = cache / 'modules' / name / digest(key)
@@ -131,7 +132,8 @@ def step(name, command, root=ROOT):
         if prior is not None and (not force or same_batch):
             print(f'REUSE {name} {entry}',flush=True)
             sys.stdout.write((entry/'command.log').read_text())
-            return dict(module=name,reused=True,receipt=str(entry/'receipt.json'),seconds=0)
+            return dict(module=name,reused=True,receipt=str(entry/'receipt.json'),
+                        seconds=round(time.monotonic()-step_started,3),module_run_seconds=0)
         print(f'RUN {name} {entry}',flush=True)
         artifacts = root/'artifacts'; artifacts.mkdir(exist_ok=True)
         before_dirs = {p.resolve() for p in artifacts.iterdir()}
@@ -168,7 +170,8 @@ def step(name, command, root=ROOT):
                      batch=os.environ.get('SANDPROOF_PROOF_BATCH'),
                      seconds=round(time.monotonic()-started,3))
         write_json(entry/'receipt.json',receipt)
-        return dict(module=name,reused=False,receipt=str(entry/'receipt.json'),seconds=receipt['seconds'])
+        return dict(module=name,reused=False,receipt=str(entry/'receipt.json'),
+                    seconds=round(time.monotonic()-step_started,3),module_run_seconds=receipt['seconds'])
 
 
 def fixed_runtime_sha(path, cached, new_hashes, allow_metadata=False):
@@ -222,7 +225,9 @@ def runtime(force=False):
         return fixed_runtime_sha(path,cached,new_hashes,allow_metadata=filesystems[device])
     result={'tools':{},'libraries':{},'environment':{k:v for k,v in os.environ.items()
         if k.startswith(('RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','CARGO_PROFILE_',
-                         'CARGO_BUILD_TARGET','LEAN_','LAKE_','OCAMLRUNPARAM'))}}
+                         'CARGO_BUILD_TARGET','LEAN_','LAKE_','OCAMLRUNPARAM',
+                         'CC','CXX','AR','LD','CFLAGS','CPPFLAGS','PKG_CONFIG','SQLITE3','LIBSQLITE3'))
+        or k in ('RUSTC','RUSTDOC','CARGO_BUILD_RUSTC')}}
     for name,args in [('rustc',['-vV']),('cargo',['-V']),('lean',['--version']),('lake',['--version'])]:
         binary=shutil.which(name)
         if name in ('rustc','cargo'):
