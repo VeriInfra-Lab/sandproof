@@ -73,8 +73,10 @@ def index_mir(path):
                 raise ValueError("unterminated declaration")
             kind = next((k for k in ("fn", "const", "static", "alloc")
                          if line.startswith(k + " ") or (k == "alloc" and line.startswith(k))), None)
+            if kind is None and re.search(r"::\{constant#\d+\}: .+ = ", line):
+                kind = "const"  # Typed anonymous constants have no `const` prefix.
             if kind is None:
-                raise ValueError("unreviewed top-level MIR declaration")
+                raise ValueError(f"unreviewed top-level MIR declaration: {path}:{number}")
             current = dict(kind=kind, line=number, header=line, locals=[], terminators=[])
             if ((kind in {"const", "static"} and line.endswith(";") and " = const " in line)
                     or (kind == "alloc" and (line.endswith(" {}")
@@ -84,7 +86,7 @@ def index_mir(path):
                 bodies.append(current)
                 current = None
             elif not line.endswith("{"):
-                raise ValueError("unreviewed top-level MIR declaration")
+                raise ValueError(f"unreviewed top-level MIR declaration: {path}:{number}")
         elif current is not None:
             if line == "}":
                 current["end"] = number

@@ -74,6 +74,14 @@ alloc1 (size: 1, align: 1) {
         self.assertEqual(indexed["bodies"][-1]["kind"], "alloc")
         self.assertIn("sha256_block_data_order", indexed["bodies"][-1]["header"])
 
+    def test_typed_anonymous_constant_body_is_retained(self):
+        text = self.text.replace("const policy::promoted[0]: &[u8; 1] = {",
+                                 "policy::{closure#0}::{constant#0}: &[u8; 1] = {")
+        self.path.write_text(text)
+        indexed = inventory.index_mir(self.path)
+        self.assertEqual(indexed["bodies"][1]["kind"], "const")
+        self.assertEqual(len(indexed["bodies"][1]["locals"]), 1)
+
     def test_unknown_top_level_format_is_rejected(self):
         self.path.write_text(self.text + "new_kind future_body {\n}\n")
         with self.assertRaisesRegex(ValueError, "unreviewed top-level"):
