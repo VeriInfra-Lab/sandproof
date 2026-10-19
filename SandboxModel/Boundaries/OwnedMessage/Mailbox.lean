@@ -57,6 +57,31 @@ theorem fifo_receive_is_original_head (e r q : List α) (value : α)
 theorem closed_receiver_can_retain_queue (e r q : List α) :
     BufferStep ⟨e, r, q⟩ ⟨e, r, q⟩ := .pendingOrClose _
 
+/-! A6 contract for an actually completed bounded mpsc::recv. The view is
+at that operation's logical observation, NOT independent len/is_closed reads.
+Granted includes acquisitions not yet published/polled; close alone is not EOF.
+Pending or cancelled waits have no completed-result contract and retain the
+existing queue/ownership histories. This does not cover mpsc::try_recv.
+-/
+def MpscReceiveContract (s : Buffer α) (closed : Bool) (granted : Nat) (result : Option α) : Prop :=
+  match result with
+  | none => closed = true ∧ s.queued = [] ∧ granted = 0
+  | some value => ∃ tail, s.queued = value :: tail
+
+theorem mpsc_none_requires_closed_empty_idle {s : Buffer α} {closed granted}
+    (observed : MpscReceiveContract s closed granted none) :
+    closed = true ∧ s.queued = [] ∧ granted = 0 := observed
+
+theorem mpsc_close_with_grant_is_not_end (s : Buffer α) (n : Nat) :
+    ¬ MpscReceiveContract s true (n + 1) none := by
+  simp [MpscReceiveContract]
+
+theorem mpsc_none_has_no_unremoved_enqueued_value {s : Buffer α} {closed granted}
+    (fifo : Fifo s) (observed : MpscReceiveContract s closed granted none) :
+    s.enqueued = s.removed := by
+  have empty := observed.2.1
+  simpa [Fifo, empty] using fifo
+
 inductive Completion (α : Type) | value (payload : α) | transportClosed
   deriving DecidableEq, Repr
 
@@ -81,8 +106,8 @@ inductive OneStep : OneShot α → OneShot α → Prop
       ⟨true, receiver, none, finished, none⟩ ⟨false, receiver, none, finished, none⟩
   | receive (value : α) (receiver returned) : OneStep
       ⟨false, receiver, some value, none, returned⟩ ⟨false, receiver, none, some (.value value), returned⟩
-  | receiveClosed (receiver returned) : OneStep
-      ⟨false, receiver, none, none, returned⟩ ⟨false, receiver, none, some .transportClosed, returned⟩
+  | receiveClosed (sender receiver returned) (ended : sender = false ∨ receiver = false) : OneStep
+      ⟨sender, receiver, none, none, returned⟩ ⟨sender, receiver, none, some .transportClosed, returned⟩
   | close (sender slot returned) : OneStep
       ⟨sender, true, slot, none, returned⟩ ⟨sender, false, slot, none, returned⟩
   | discard (sender receiver slot returned) : OneStep
@@ -107,7 +132,11 @@ theorem oneshot_rejection_returns_original (value : α) :
 
 theorem oneshot_sender_loss_is_transport_error (receiver) :
     OneStep (⟨false, receiver, none, none, none⟩ : OneShot α)
-      ⟨false, receiver, none, some .transportClosed, none⟩ := .receiveClosed receiver none
+      ⟨false, receiver, none, some .transportClosed, none⟩ := .receiveClosed false receiver none (Or.inl rfl)
+
+theorem closed_empty_oneshot_completes_with_sender_alive :
+    OneStep (⟨true, false, none, none, none⟩ : OneShot α)
+      ⟨true, false, none, some .transportClosed, none⟩ := .receiveClosed true false none (Or.inr rfl)
 
 theorem transport_error_is_not_business_value (value : α) :
     Completion.transportClosed ≠ Completion.value value := by simp

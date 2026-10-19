@@ -280,6 +280,23 @@ pub(in crate::command) mod owned_message_contract_tests {
         drop(returned);
         assert_eq!(rig.bytes.available_permits(), 8);
         finish(&rig.command);
+        // Test-only reserve fixes the same internal granted-but-unpublished
+        // window used by try_send. Public reserve APIs remain outside scope.
+        let (sender, mut receiver) = mpsc::channel::<u8>(1);
+        let granted = sender.reserve().await.unwrap();
+        receiver.close();
+        {
+            let waiting = receiver.recv();
+            tokio::pin!(waiting);
+            assert!(
+                poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx)))
+                    .await
+                    .is_pending()
+            );
+        }
+        granted.send(7);
+        assert_eq!(receiver.recv().await, Some(7));
+        assert_eq!(receiver.recv().await, None);
     }
     #[test]
     fn zero_strong_references_does_not_mean_inner_resource_returned() {
@@ -354,6 +371,13 @@ pub(in crate::command) mod owned_message_contract_tests {
             signal: None,
             core_dumped: false,
         });
+        assert_eq!(send.send(original).unwrap_err(), original);
+        let (send, mut receive) = oneshot::channel::<Result<CommandExit, CommandError>>();
+        receive.close();
+        assert!(
+            receive.await.is_err(),
+            "empty close ends this receive while sender still exists"
+        );
         assert_eq!(send.send(original).unwrap_err(), original);
     }
 }
