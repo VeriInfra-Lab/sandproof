@@ -70,11 +70,11 @@ SQLite 提交回执与缓存发布的隔离候选执行 `bash scripts/verify-sql
 
 DataLease 的只读接口执行 `bash scripts/verify-data-drain.sh`：直接引用原生产文件抽取两个读方法与两个转调入口，核对三项读原语、Acquire 排序、两版标准库、输入摘要和全 LLBC 再生一致性，再编译独立策略／表示关系／对应定理并审计依赖。正式库为 `SandboxModel.Boundaries.DataDrain`；接口条件见[依赖登记](../docs/formal/dependencies.md#a6-datalease-只读观察接口)。这是单次观察下的判定证明，不提供真实退出或释放许可。
 
-Host 公共任务／许可合同执行 `bash scripts/verify-task-contract.sh`：核对冻结来源、固定 Tokio 的 `.crate` 和完整解包源码、定理清单与实际依赖，编译 `SandboxModel.Boundaries.Task.Audit`，随后在私有副本重放正确和三个错误版本。也可单独用 `bash scripts/python-entry.sh tools/check_task_contract_components.py --output artifacts/task-contract-check` 重放组件，输出目录必须不存在；每副本独立 Cargo 目标目录，确认编译成功并取得新二进制后才运行同一资源断言。仅在隔离副本追加测试模块和受控宿主夹具屏障，正式生产文件保持不变。入口要求当前输入与 HEAD 冻结一致，不能用旧提交的副本测试当前代码。
+Host 公共任务／许可合同执行 `bash scripts/verify-task-contract.sh`：核对冻结来源、固定 Tokio 的 `.crate` 和完整解包源码、定理清单与实际依赖，编译 `SandboxModel.Boundaries.Task.Audit`，随后核对 ning 私有副本中正确和三个错误版本的成功记录。也可单独用 `bash scripts/python-entry.sh tools/check_task_contract_components.py --output artifacts/task-contract-check` 重放组件，输出目录必须不存在；每副本独立 Cargo 目标目录，确认编译成功并取得新二进制后才运行同一资源断言。仅在隔离副本追加测试模块和受控宿主夹具屏障，正式生产文件保持不变。入口要求当前输入与 HEAD 冻结一致，不能用旧提交的副本测试当前代码。
 
-环境和调用登记见 [task-contract-environment.json](task-contract-environment.json)、[task-contract-inputs.sha256](task-contract-inputs.sha256)和[B1 条款](../docs/formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)。这些是条件接口模型及适配工程核对，**不是实际 async Rust 的自动抽取证明**。模型不承诺任务终止、物理退出或回调的业务不变量；错误副本被组件断言拒绝与 Lean 模型反例分别报告。所有这些入口在固定 Linux 证明环境运行。
+环境和调用登记见 [task-contract-environment.json](task-contract-environment.json)、[task-contract-inputs.sha256](task-contract-inputs.sha256)和[B1 条款](../docs/formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)。这些是条件接口模型及适配工程核对，**不是实际 async Rust 的自动抽取证明**。模型不承诺任务终止、物理退出或回调的业务不变量；错误副本被组件断言拒绝与 Lean 模型反例分别报告。原生组件在 ning 运行；a6000 的模块入口只消费完整成功回执，并检查条件模型及依赖。
 
-撤销等待执行 `bash scripts/verify-revocation-contract.sh`：核对 [B3 环境](revocation-contract-environment.json)、输入、实际调用范围、固定 Tokio 源码、24 条条件模型定理及依赖审计，再在独立副本运行正确版和交换分支的错误版。每版须新编译；错误版必须被原同一断言拒绝。单独复现入口为 `bash scripts/python-entry.sh tools/check_revocation_components.py --output artifacts/revocation-check`，输出目录必须不存在。原固定 Charon 不支持该 async 入口，实际接线以[逐符号 B3 条款](../docs/formal/dependencies.md#b3-撤销等待的逐符号可信适配)为条件，不声明自动抽取、回滚或外部任务退出。完整证明入口追加此门槛，保留其余全部模块检查。
+撤销等待执行 `bash scripts/verify-revocation-contract.sh`：核对 [B3 环境](revocation-contract-environment.json)、输入、实际调用范围、固定 Tokio 源码、24 条条件模型定理及依赖审计，再核对 ning 独立副本中正确版和交换分支错误版的记录。每版须新编译；错误版必须被原同一断言拒绝。单独复现入口为 `bash scripts/python-entry.sh tools/check_revocation_components.py --output artifacts/revocation-check`，输出目录必须不存在。原固定 Charon 不支持该 async 入口，实际接线以[逐符号 B3 条款](../docs/formal/dependencies.md#b3-撤销等待的逐符号可信适配)为条件，不声明自动抽取、回滚或外部任务退出。完整证明入口追加此门槛，保留其余全部模块检查。
 
 缺失 unknown 检查的错误版可在同一固定 Linux 环境用 `bash scripts/python-entry.sh tools/check_data_drain_negative.py --output artifacts/data-drain-negative-check` 复现，输出目录必须不存在。入口在私有副本修改真实表达式、编译／抽取错误版，运行原 Rust 回归，并通过同一真实 Lean 服务和内核证明错误版不满足正确版相同的 `RustReadSafe` 性质；失败日志保留，只有全部步骤通过才生成成功收据。服务使用项目 `.tools/lean-mcp` 和原标准客户端；不修改生产文件或正式生成体。
 
@@ -155,3 +155,8 @@ python3 tools/coverage.py --write
 `tools/issues/` 的旧语料处理和 `tools/mapping/` 的校准仍是辅助研究工具，不是另一份产品规格。它们的输出与一次性实验记录放 artifacts 或任务附件，不在 docs 中持续追加报告。
 
 双向字节中继的隔离候选使用 [verify-tunnel.sh](../scripts/verify-tunnel.sh)：原工具抽取真实同步决定，复用 StreamHistory 并核对完整源码/AST/析构及原错误断言。其 [A6/B3/B4 条件](../docs/formal/dependencies.md)和原对象、正常值域见[候选说明](experiments/tunnel-contract/README.md)；Raw 中继返回不表示 HTTP/Connect 成功或真实排空，正式状态见覆盖记录与 #575。该专用阶段不替代原完整证明和 Linux 基础入口。
+
+
+Guest 持额消息的条件模型执行 `bash scripts/verify-owned-message.sh`，全批入口同样包含它和新增真实文件诊断。先在 ning 的完整原生批次中运行 `check_owned_message_components.py`，再向 a6000 交接成功记录；单独组件命令为 `bash scripts/python-entry.sh tools/check_owned_message_components.py --output artifacts/owned-message-check`，输出目录必须不存在。它只在隔离副本追加测试，正确版使用真实 `CommandOutput`、`Producer::frame`、`Frame`、Tokio 和 Bytes；提前丢弃 output 的错误版先新编译，再被正确版同一持额断言拒绝。共用一个注册 Rust 缓存，各版原始二进制和日志另存。原 helper 在消息测试前已明确 abort/reap，不执行命令业务或假造物理退出证明。
+
+接口、条件与未覆盖项见[依赖登记](../docs/formal/dependencies.md#a6b3b4-guest-持额消息)和[调用表](owned-message-environment.json)。正式模型 `SandboxModel.Boundaries.OwnedMessage` 不是 Aeneas 生成的 async Rust。实际原工具预检在 a6000 执行 `python3 verification/experiments/owned-message/preflight.py --output artifacts/owned-message-preflight`，须使用现有形式编译缓存及固定工具；保留未支持诊断和部分 LLBC，不能算成业务错误版反例。实际局部/完整验收状态只见覆盖记录及 PR 回执。

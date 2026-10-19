@@ -527,3 +527,22 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 实际异步历史到这些 I/O/选择步骤的对应仍是明确的 B3/B4 符合性条件，依据是原符号/参数审查、源码摘要及确定性组件回归，不是完整 async Rust 的机器精化。源库、实际类型、四个对象、调用者、分支接线或捕获/析构变化都须重查，不能只刷新摘要。
 
 本条不提供一般原版/候选等价、panic/unwind/abort/崩溃后态或无条件进展。完整 HTTP/Connect framing、授权/路由、其余缓冲与额度、子进程真实退出、DataLease/Unknown 和释放准入继续由 V3/V5/V6/V8 提供；不以 EOF、中继返回或一次错误码替代这些义务。
+
+
+### A6/B3/B4 Guest 持额消息
+
+范围是 [CommandOutput 的交接](../../sandbox-guest-service/src/command/streams.rs)和 [Frame 的持有/正常析构](../../sandbox-guest-service/src/command/body.rs)中的具体操作，不把 `publish`、`next`、`Producer`、驱动任务或整个 Guest 服务列为可信。来源为 integration `81885df6`；固定 Tokio 1.49.0、bytes 1.12.1。逐操作的源码锚点、公共结论、条件与业务提供方见[调用登记](../../verification/owned-message-environment.json)，输入见[摘要](../../verification/owned-message-inputs.sha256)。模型与工程检查的实际完成状态仅见[覆盖记录](../proof-coverage.md)。
+
+| 实际操作 | 允许依赖的规则 | 使用方必须补的条件 |
+|---|---|---|
+| `mpsc::channel`、`try_send(output)`、借用原 receiver 的 `recv` | 容量来自原通道；发送失败返回原对象，成功交给通道；正常取出转交原对象。取消仍在等待的借用不消费消息。关闭不立刻销毁队列；已有内部预留的发送可在关闭后完成。正常 receiver/通道析构按实际库处理未取走的对象 | 原通道/订阅/消息身份；容量合法；消息选择、Full/Closed/Lagged 的解释及消费者掉线责任（V8）。队列空位在取出时归还，不表示消息所带字节许可已归还 |
+| `oneshot::Sender::send`、借用 receiver 等待/关闭/Drop | sender 消耗一次；拒绝返回原值；已发送值可在 receiver close 后被取走。成功不保证接收或处理；sender 丢失可成为传输错误，receiver 丢失可丢弃未取走的值 | 给定 `Result<CommandExit, CommandError>` 来自哪个业务事实；`Unavailable` 与 End 的解释、Data-before-End、是否允许完成（V8）。不能把传输错误当成功退出 |
+| 构造 `CommandOutput`、转交给通道/Frame；正常字节许可析构 | 原 `_bytes` 与原字节池/数量一同移动；发送失败、接收/Frame Drop 时按实际所有权销毁，不能提前归还后继续持有原输出 | 字节数量转换/领取条件、每个订阅的独立预算与全部持有者（V8）。字节计费不是整个进程物理内存界限，编码副本及额外缓冲另算 |
+| `Arc::clone` 原订阅许可、`Bytes::from_owner(frame)` 与 `Bytes::clone` | 原对象被保留；多个共享引用对应同一张许可，不重复领取；最后一个实际所有者正常析构才执行该所有者的 Drop | 完整的引用账本、真实类型及有副作用的自定义 Drop、无新增持有者的条件（V8）。多次 `strong_count` 读取不构成快照，复制字节值也不保证保留原 Frame |
+| `Producer::frame` 的参数转移和 `Frame::drop` 中三段顺序 | 原 bytes/output/lease 被接入原 Frame；正常 Drop 先销毁编码缓冲，再销毁原 output，再尝试发送释放通知；随后才自动析构 Frame 的租约字段。通知可能早于最后一个订阅/记录/请求引用销毁 | 何时构造/丢弃 Frame、响应授权、协议、期限、消费者掉线处理及释放决定（V8）。通知不是全部许可已归还、relay 退出或物理资源已停止的凭证 |
+
+尤其要区分 `_subscriber: Arc<OwnedSemaphorePermit>` 和 `_record: Arc<Shared>`。前者在这组无 `forget/add_permits/split/merge` 的用法中保留原许可；后者只保留原 `Shared` 对象，不能保证其 `record: Mutex<Option<...>>` 仍有可归还许可。真实 `OwnerGuard::drop` 会对未知运行方丢失调用 `permit.forget()`；这项隔离策略及所有修改者属于 V8/V6 业务，不进入机械适配。正常测试夹具中记录未被修改的归还观察不能背书生产异常路径。
+
+[OwnedMessage](../../SandboxModel/Boundaries/OwnedMessage.lean)提供原载荷/资源身份保持、持额、共享引用与单张分配、FIFO 观察、oneshot 值/传输错误及 Frame 通知顺序的条件模型。公共历史由实际 A6/B3/B4 操作提供，业务仍证明自己何时使用它们；源码摘要和确定性回归不是一般性的 async Rust 精化。`recv` 等待取消、整个 receiver/body 被丢弃、panic/unwind 的可见前缀与已完成析构分别保留；abort/崩溃不承诺执行 Drop，也不提供后续恢复或资源归还。没有无条件调度、公平或最终消费保证。
+
+本批只登记有界 mpsc 的 `try_send/recv/close/Drop` 与上述 oneshot/Bytes 用法；不把异步 `send` 取消、公开 `reserve/Permit`、Notify、JoinSet、broadcast 或 watch 一并纳入。完整命令协议、授权、进程/FD/输入输出归还及系统容量由 V8/V6/V9 提供，其他公共机制仍在 V0 #333 开放。

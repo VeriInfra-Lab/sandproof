@@ -1,0 +1,302 @@
+{
+  "contract_id": "A6-B3-B4-guest-owned-message",
+  "proof_kind": "conditional-interface-model-not-extracted-async-rust",
+  "source_integration": "81885df60d728ce5a3b7f219cb66319a8c08fd4e",
+  "model_modules": [
+    "Ownership",
+    "SharedLease",
+    "Mailbox",
+    "FrameDrop"
+  ],
+  "theorems": [
+    "SandboxModel.Boundaries.OwnedMessage.initial_safe",
+    "SandboxModel.Boundaries.OwnedMessage.move_safe",
+    "SandboxModel.Boundaries.OwnedMessage.history_safe",
+    "SandboxModel.Boundaries.OwnedMessage.move_preserves_original",
+    "SandboxModel.Boundaries.OwnedMessage.history_preserves_original",
+    "SandboxModel.Boundaries.OwnedMessage.held_output_keeps_bytes",
+    "SandboxModel.Boundaries.OwnedMessage.success_requires_original_handoff",
+    "SandboxModel.Boundaries.OwnedMessage.normal_refund_at_most_once",
+    "SandboxModel.Boundaries.OwnedMessage.cancel_wait_keeps_message",
+    "SandboxModel.Boundaries.OwnedMessage.rejected_send_returns_original",
+    "SandboxModel.Boundaries.OwnedMessage.interrupted_owner_has_no_refund",
+    "SandboxModel.Boundaries.OwnedMessage.success_can_be_observed_after_drop",
+    "SandboxModel.Boundaries.OwnedMessage.correct_delivery_reaches_held_frame",
+    "SandboxModel.Boundaries.OwnedMessage.early_refund_breaks_same_property",
+    "SandboxModel.Boundaries.OwnedMessage.initial_lease_safe",
+    "SandboxModel.Boundaries.OwnedMessage.ref_step_safe",
+    "SandboxModel.Boundaries.OwnedMessage.ref_history_safe",
+    "SandboxModel.Boundaries.OwnedMessage.original_lease_key",
+    "SandboxModel.Boundaries.OwnedMessage.live_reference_prevents_return",
+    "SandboxModel.Boundaries.OwnedMessage.live_reference_keeps_charge",
+    "SandboxModel.Boundaries.OwnedMessage.clone_does_not_allocate_again",
+    "SandboxModel.Boundaries.OwnedMessage.nonlast_drop_does_not_refund",
+    "SandboxModel.Boundaries.OwnedMessage.last_normal_drop_refunds_once",
+    "SandboxModel.Boundaries.OwnedMessage.no_refund_then_clone",
+    "SandboxModel.Boundaries.OwnedMessage.early_shared_refund_breaks_same_property",
+    "SandboxModel.Boundaries.OwnedMessage.empty_fifo",
+    "SandboxModel.Boundaries.OwnedMessage.buffer_step_fifo",
+    "SandboxModel.Boundaries.OwnedMessage.buffer_history_fifo",
+    "SandboxModel.Boundaries.OwnedMessage.no_fabricated_removal",
+    "SandboxModel.Boundaries.OwnedMessage.every_removed_value_was_enqueued",
+    "SandboxModel.Boundaries.OwnedMessage.fifo_receive_is_original_head",
+    "SandboxModel.Boundaries.OwnedMessage.closed_receiver_can_retain_queue",
+    "SandboxModel.Boundaries.OwnedMessage.oneshot_cancel_keeps_slot",
+    "SandboxModel.Boundaries.OwnedMessage.oneshot_close_keeps_sent_value",
+    "SandboxModel.Boundaries.OwnedMessage.oneshot_sent_value_survives_close",
+    "SandboxModel.Boundaries.OwnedMessage.oneshot_rejection_returns_original",
+    "SandboxModel.Boundaries.OwnedMessage.oneshot_sender_loss_is_transport_error",
+    "SandboxModel.Boundaries.OwnedMessage.transport_error_is_not_business_value",
+    "SandboxModel.Boundaries.OwnedMessage.settled_oneshot_cannot_deliver_again",
+    "SandboxModel.Boundaries.OwnedMessage.send_success_does_not_imply_delivery",
+    "SandboxModel.Boundaries.OwnedMessage.frame_initial_safe",
+    "SandboxModel.Boundaries.OwnedMessage.frame_drop_step_safe",
+    "SandboxModel.Boundaries.OwnedMessage.frame_notice_requires_original_output_drop",
+    "SandboxModel.Boundaries.OwnedMessage.frame_notice_can_precede_lease_drop",
+    "SandboxModel.Boundaries.OwnedMessage.early_frame_notice_breaks_same_property"
+  ],
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel/Boundaries/OwnedMessage.lean",
+    "SandboxModel/Boundaries/OwnedMessage/Audit.lean",
+    "SandboxModel/Boundaries/OwnedMessage/FrameDrop.lean",
+    "SandboxModel/Boundaries/OwnedMessage/Mailbox.lean",
+    "SandboxModel/Boundaries/OwnedMessage/Ownership.lean",
+    "SandboxModel/Boundaries/OwnedMessage/SharedLease.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "docs/formal/dependencies.md",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "rust-toolchain.toml",
+    "sandbox-guest-runtime/src/process.rs",
+    "sandbox-guest-service/Cargo.toml",
+    "sandbox-guest-service/src/command.rs",
+    "sandbox-guest-service/src/command/body.rs",
+    "sandbox-guest-service/src/command/driver.rs",
+    "sandbox-guest-service/src/command/streams.rs",
+    "scripts/verify-owned-message.sh",
+    "tools/check_owned_message_components.py",
+    "tools/check_owned_message_contract.py",
+    "tools/tests/test_owned_message_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/experiments/owned-message/body-tests.rs",
+    "verification/experiments/owned-message/preflight.py",
+    "verification/experiments/owned-message/streams-tests.rs",
+    "verification/owned-message-environment.json",
+    "verification/task-contract-environment.json",
+    "verification/task-contract-inputs.sha256"
+  ],
+  "use_points": [
+    {
+      "id": "subscription.channels",
+      "file": "sandbox-guest-service/src/command/streams.rs",
+      "anchors": [
+        "let (data_tx, data) = mpsc::channel(self.shared.limits.queued_chunks);",
+        "let (end_tx, end) = oneshot::channel();"
+      ],
+      "mechanical_scope": "A6",
+      "caller_obligations": "V8: validate positive chunk capacity; choose and authorize original command; establish subscriber budget",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.empty_fifo",
+        "SandboxModel.Boundaries.OwnedMessage.oneshot_cancel_keeps_slot"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "output.capture",
+      "file": "sandbox-guest-service/src/command/streams.rs",
+      "anchors": [
+        "let output = CommandOutput {",
+        "_bytes: permit,",
+        "_subscriber: Arc::clone(&subscriber.slot),",
+        "_record: Arc::clone(shared),"
+      ],
+      "mechanical_scope": "B3/B4",
+      "caller_obligations": "V8: prove selection/authorization, byte count conversion, acquisition success and budget accounting; no whole publish function is trusted",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.initial_safe",
+        "SandboxModel.Boundaries.OwnedMessage.history_preserves_original",
+        "SandboxModel.Boundaries.OwnedMessage.live_reference_prevents_return"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "output.try-send",
+      "file": "sandbox-guest-service/src/command/streams.rs",
+      "anchors": [
+        "if subscriber.data.try_send(output).is_err() {"
+      ],
+      "mechanical_scope": "A6/B4",
+      "caller_obligations": "V8: interpret Full/Closed/Lagged, detach and retain unfinished responsibility; send success is not processing",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.rejected_send_returns_original",
+        "SandboxModel.Boundaries.OwnedMessage.success_can_be_observed_after_drop"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "output.receive",
+      "file": "sandbox-guest-service/src/command/streams.rs",
+      "anchors": [
+        "if let Some(data) = self.data.recv().await {",
+        "return Some(Ok(OutputEvent::Data(data)));"
+      ],
+      "mechanical_scope": "A6/B4",
+      "caller_obligations": "V8: Data-before-End and all output protocol/end classification; borrowed wait cancellation differs from dropping subscription",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.buffer_history_fifo",
+        "SandboxModel.Boundaries.OwnedMessage.held_output_keeps_bytes",
+        "SandboxModel.Boundaries.OwnedMessage.cancel_wait_keeps_message"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "terminal.send",
+      "file": "sandbox-guest-service/src/command/streams.rs",
+      "anchors": [
+        "if let Some(end) = self.end.take() {",
+        "let _ = end.send(result);"
+      ],
+      "mechanical_scope": "A6/B4",
+      "caller_obligations": "V8: choose actual terminal result and when it is valid; only take/transfer of original result is mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.transport_error_is_not_business_value",
+        "SandboxModel.Boundaries.OwnedMessage.send_success_does_not_imply_delivery"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "terminal.receive",
+      "file": "sandbox-guest-service/src/command/streams.rs",
+      "anchors": [
+        "let end = self.end.as_mut()?;",
+        "let result = end.await.unwrap_or(Err(CommandError::Unavailable));",
+        "self.end.take();"
+      ],
+      "mechanical_scope": "A6/B4",
+      "caller_obligations": "V8: prove interpretation of transport failure as Unavailable and mapping to End; transport failure is not successful command completion",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.oneshot_cancel_keeps_slot",
+        "SandboxModel.Boundaries.OwnedMessage.oneshot_sent_value_survives_close",
+        "SandboxModel.Boundaries.OwnedMessage.settled_oneshot_cannot_deliver_again"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "frame.capture",
+      "file": "sandbox-guest-service/src/command/body.rs",
+      "anchors": [
+        "_lease: Arc::clone(&self.lease),",
+        "            output,",
+        "released: Some(released),"
+      ],
+      "mechanical_scope": "B3/B4",
+      "caller_obligations": "V8: original encoding/data/response/budgets/deadline and output selection; this binding excludes Producer business branches",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.held_output_keeps_bytes",
+        "SandboxModel.Boundaries.OwnedMessage.early_refund_breaks_same_property"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "frame.bytes-owner",
+      "file": "sandbox-guest-service/src/command/body.rs",
+      "anchors": [
+        "Bytes::from_owner(frame)"
+      ],
+      "mechanical_scope": "A6/B3",
+      "caller_obligations": "V8: every outstanding Bytes/slice owner included in residence/accounting; no guarantee a consumer eventually releases it",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.live_reference_prevents_return",
+        "SandboxModel.Boundaries.OwnedMessage.nonlast_drop_does_not_refund"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "frame.normal-drop",
+      "file": "sandbox-guest-service/src/command/body.rs",
+      "anchors": [
+        "drop(std::mem::take(&mut self.bytes));",
+        "drop(self.output.take());",
+        "let _ = released.send(Instant::now());"
+      ],
+      "mechanical_scope": "B3",
+      "caller_obligations": "V8: determine when release is permitted; notification follows output destruction but precedes automatic lease-field destruction; never infer physical exit",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.frame_notice_requires_original_output_drop",
+        "SandboxModel.Boundaries.OwnedMessage.frame_notice_can_precede_lease_drop"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "frame.shared-lease",
+      "file": "sandbox-guest-service/src/command/body.rs",
+      "anchors": [
+        "_subscriber: Arc::clone(&self.slot),",
+        "_record: Arc::clone(&self.record),"
+      ],
+      "mechanical_scope": "B3/B4",
+      "caller_obligations": "V8: original request guard and subscription/record identity, all other shared holders, and absence of new owners when concluding drain",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.clone_does_not_allocate_again",
+        "SandboxModel.Boundaries.OwnedMessage.last_normal_drop_refunds_once"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    },
+    {
+      "id": "record.retention-not-refund",
+      "file": "sandbox-guest-service/src/command/driver.rs",
+      "anchors": [
+        "permit.forget();"
+      ],
+      "mechanical_scope": "outside-B-business",
+      "caller_obligations": "V8/V6: quarantine unknown owner loss; Arc<Shared> retention does not imply the mutable record still contains a refundable permit",
+      "public_results": [
+        "SandboxModel.Boundaries.OwnedMessage.history_preserves_original"
+      ],
+      "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
+    }
+  ],
+  "libraries": {
+    "tokio": {
+      "version": "1.49.0",
+      "reviewed_sources": {
+        "src/sync/mpsc/bounded.rs": "1d30b10e6656a3339874972a507ccd0c1ac349649611c547c520bff416f92b2e",
+        "src/sync/mpsc/chan.rs": "eb5a138f4e91067f3acdbe0c1cd0fd5de05ded28de169658bafb57e3e7b437b5",
+        "src/sync/mpsc/list.rs": "bbef3a699fd82f68534a3a0c1087488675d4294d383fde1fe3dfaa7c717d8951",
+        "src/sync/oneshot.rs": "416d9d8d9debf336b531a0441103435784925f204d2b102ddc90fb873a782e56",
+        "src/sync/semaphore.rs": "890da65eb3135613d4d0fe6cd38661822f93ce54ee9bdd12abba4e0e37e35e61"
+      }
+    },
+    "bytes": {
+      "version": "1.12.1",
+      "reviewed_sources": {
+        "src/bytes.rs": "eee15c02105022837d6ed01c6863fee58802ce7bd7c300e158521c9ae61257fc"
+      }
+    }
+  },
+  "scope": [
+    "mpsc bounded channel / try_send / borrowed recv / close / receiver Drop",
+    "oneshot Sender.send / borrowed Receiver await / close / sender or receiver Drop",
+    "normal owned permit Drop and complete Arc/Bytes owner ledger; separate single allocation and aliases",
+    "original frame output/lease capture and normal destructor notification order"
+  ],
+  "exclusions": [
+    "blocking/awaited mpsc send cancellation and reserve/OwnedPermit APIs",
+    "Notify, JoinSet, broadcast, watch and other unregistered channel APIs",
+    "full async Rust machine refinement or Tokio/bytes/standard library proof",
+    "command/session authorization, Data-before-End, error policy, all buffers and physical resource completion",
+    "automatic return of Shared.record after quarantine/forget or unseen mutators",
+    "panic/abort/crash executing all destructors, scheduling fairness or eventual consumer progress"
+  ],
+  "accounting": [
+    "byte guard has original per-subscriber pool and units; dequeue frees chunk slot, not the held byte permit",
+    "Arc<OwnedSemaphorePermit> has one allocation; reference clones do not allocate again",
+    "Arc<Shared> retains only original object; its record mutex may already be None or permit forgotten",
+    "Frame notification follows encoded/output normal destruction and can precede final shared lease field drop",
+    "weighted byte charge is not a proof of total physical memory (encoding/copies/overheads belong V8)"
+  ]
+}

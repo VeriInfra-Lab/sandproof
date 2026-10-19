@@ -2,6 +2,14 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## T5/T6 Guest 持额消息（在途，未完成验收）
+
+从 integration `81885df6` 开展，未修改生产 Rust 或 Charon/Aeneas。有限范围为真实 `CommandOutput` 的 mpsc/oneshot 交接、许可/引用随对象持有，以及 `Producer::frame` 到最后一个 Bytes 所有者正常析构的接线；[依赖合同](formal/dependencies.md#a6b3b4-guest-持额消息)、[逐操作登记](../verification/owned-message-environment.json)和复现入口共同约束范围。
+
+模型是显式条件下的消息/许可/FIFO/oneshot/Frame 历史，不是实际 async Rust 机器证明。隔离夹具使用真实生产类型和函数；它在消息检查前先中止并回收私有 helper，不执行命令驱动或会话业务。成功版和提前释放错误版的编译、原断言与严格检查分别报告；未通过整套验收和 CI 前，本节不称本接口已交付，也不关闭 T5/T6/V0。
+
+Data-before-End、授权、消费者掉线策略、全部字节副本/引用的预算，以及真实进程/FD/记录归还仍归 V8/V6/V9。尤其不能从保留 `Arc<Shared>` 或收到 Frame 释放通知推出生产记录许可已归还；未知运行方丢失的 `forget` 分支没有因此证明。其他 channel/任务机制继续在 #333 开放，T9 排除。
+
 ## 七项边界统一候选的组合验收（#585）
 
 本批在同一候选组合 #556、#563、#569、#574、#576、#578、#584。可执行与证明输入冻结于 `029840e4b1c82450c388ecc16d3655b45c5b9dba`。同步 integration 的 `b305b852` 只补历史关系；同步前后候选文件树逐字一致。各单项的历史冻结证据保留，最终组合以本节和 [PR #585](https://github.com/VeriInfra-Lab/sandproof/pull/585) 的精确回执为准。最终报告提交只改覆盖说明和依赖它的冻结摘要，另核对全部程序、证明、生成物和工具输入未变。
