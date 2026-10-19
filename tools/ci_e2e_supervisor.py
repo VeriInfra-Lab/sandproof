@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 import uuid
 
@@ -728,7 +729,7 @@ class Supervisor:
                     '--property=MemoryMax=3G', '--property=CPUQuota=200%',
                     '--property=WorkingDirectory=' + self.config['control_checkout'],
                     '--setenv=PYTHONPATH=' + self.config['control_checkout'],
-                    '/usr/bin/python3', '-m', 'tools.ci_e2e_prepare', '--config', str(prepare_path)],
+                    sys.executable, '-E', '-s', '-m', 'tools.ci_e2e_prepare', '--config', str(prepare_path)],
                     check=True, capture_output=True, timeout=30)
                 return
             fields = unit_state(state['prepare_unit'])
