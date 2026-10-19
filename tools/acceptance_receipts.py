@@ -198,7 +198,7 @@ def native_run(label, command, source, log, environment=None, expected=0):
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()
     key = native_key(label, command, source, environment=environment)
     entry = cache / 'commands' / digest(key)
-    if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') == 'formal':
+    if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
         seal = json.loads((cache / 'complete.json').read_text())
         if (seal.get('complete') is not True or seal.get('exit_code') != 0
                 or seal.get('rules') != rules() or seal.get('runtime') != key['runtime']):
@@ -246,7 +246,7 @@ def native_case(label, source, output, action=None):
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()
     key = native_key(label, ['component-case'], Path(source).resolve())
     entry = cache / 'commands' / digest(key)
-    if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') == 'formal':
+    if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
         seal = json.loads((cache / 'complete.json').read_text())
         receipt = load_success(entry, key)
         if (seal.get('complete') is not True or seal.get('exit_code') != 0

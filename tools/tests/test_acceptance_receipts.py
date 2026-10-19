@@ -61,6 +61,16 @@ class ReceiptTests(unittest.TestCase):
             self.assertEqual(receipts.native_run('fixture',command,self.source,self.log,expected=101),101)
         self.assertIn('semantic fixture',self.log.read_text())
 
+    def test_standalone_defaults_to_reading_evidence_never_native_execution(self):
+        command,_,_=self.publish()
+        os.environ.pop('SANDPROOF_ACCEPTANCE_ROLE')
+        actual_run=subprocess.run
+        def git_only(command,*args,**kwargs):
+            if command[0]!='git':raise AssertionError('standalone executed native: '+repr(command))
+            return actual_run(command,*args,**kwargs)
+        with mock.patch.object(receipts.subprocess,'run',side_effect=git_only):
+            self.assertEqual(receipts.native_run('fixture',command,self.source,self.log),0)
+
     def test_missing_or_incomplete_seal_cannot_replay(self):
         command,_,_=self.publish();os.environ['SANDPROOF_ACCEPTANCE_ROLE']='formal'
         seal=json.loads((self.cache/'complete.json').read_text())
@@ -187,6 +197,10 @@ class ReceiptTests(unittest.TestCase):
 
 
 class ClosureTests(unittest.TestCase):
+    def test_all_published_json_negative_drivers_have_a_native_phase(self):
+        actual={p.name for p in (receipts.ROOT/'tools').glob('check_json_*negative.py')}
+        self.assertEqual(actual,set(proof_native_suite.JSON_NEGATIVE_DRIVERS))
+
     def test_transitive_lean_imports_and_added_inventory_are_not_ignored(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);(root/'SandboxModel').mkdir()

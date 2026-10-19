@@ -16,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
     rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success)
 
+JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
+                         'check_json_identifiers_negative.py',
+                         'check_json_counter_negative.py')
+
 
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -141,7 +145,8 @@ def run_locked_suite(output):
     native_case('sqlite-correct', ROOT, target, lambda:
         call(['verification/experiments/sqlite-commit/native.py', '--source-base', ROOT,
               '--destination', target]))
-    call(['tools/check_json_request_negative.py', '--native-only', '--output', work / 'json-negative'])
+    for driver in JSON_NEGATIVE_DRIVERS:
+        call(['tools/' + driver, '--native-only', '--output', work / driver.removesuffix('.py')])
     call(['verification/experiments/tunnel-contract/replay.py', '--native-only',
           '--source-base', ROOT, '--destination', work / 'tunnel', '--tool-root', ROOT / '.tools'])
     for kind in ('sqlite-commit','redis-result'):

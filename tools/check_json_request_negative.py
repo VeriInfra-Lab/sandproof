@@ -16,6 +16,12 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def index_project(project, tracked):
+    subprocess.run(['git', 'init', '--quiet', str(project)], check=True)
+    subprocess.run(['git', 'add', '--force', '--pathspec-from-file=-',
+                    '--pathspec-file-nul'], cwd=project, input=tracked, check=True)
+
+
 def materialize(source, project):
     tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=source)
     for item in tracked.split(b'\0'):
@@ -26,9 +32,7 @@ def materialize(source, project):
             shutil.copyfile(source / relative, target)
     # Keep the exact source inventory for native evidence on both machines.
     # This is an index only, without a fabricated commit or build artifacts.
-    subprocess.run(['git', 'init', '--quiet', str(project)], check=True)
-    subprocess.run(['git', 'add', '--force', '--pathspec-from-file=-',
-                    '--pathspec-file-nul'], cwd=project, input=tracked, check=True)
+    index_project(project, tracked)
 
 
 def main(argv=None):

@@ -23,6 +23,7 @@ def sha(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--native-only', action='store_true')
     args = parser.parse_args(argv)
     output = args.output.resolve()
     if output.exists() or output == ROOT or ROOT.is_relative_to(output):
@@ -31,12 +32,18 @@ def main(argv=None):
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     archive = subprocess.check_output(['git', 'archive', '--format=tar', commit], cwd=ROOT)
     (output / 'source.tar').write_bytes(archive)
+    tracked = subprocess.check_output(['git', 'ls-tree', '-rz', '--name-only', commit], cwd=ROOT)
+    try:
+        from tools.check_json_request_negative import index_project
+    except ModuleNotFoundError:
+        from check_json_request_negative import index_project
     projects = {}
     for label in ('correct', 'mutant'):
         project = output / label
         project.mkdir()
         with tarfile.open(fileobj=io.BytesIO(archive), mode='r:') as tree:
             tree.extractall(project, filter='data')
+        index_project(project, tracked)
         for relative in ('.lake/packages', '.tools'):
             target = project / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -51,6 +58,14 @@ def main(argv=None):
         # Never share correct/mutant compiler artifacts.
         environment = dict(os.environ)
         environment['CARGO_TARGET_DIR'] = str(output / ('target-' + project.name))
+        if command[0] == 'cargo':
+            try:
+                from tools.acceptance_receipts import native_run
+            except ModuleNotFoundError:
+                from acceptance_receipts import native_run
+            native_run('json-identifiers-' + label, command, project,
+                       output / (label + '.log'), environment, expected)
+            return
         started = time.monotonic()
         with (output / (label + '.log')).open('w') as stream:
             result = subprocess.run(command, cwd=project, env=environment, input=data,
@@ -62,7 +77,8 @@ def main(argv=None):
             raise ValueError(f'{label}: expected {expected}, got {result.returncode}')
 
     correct, mutant = projects['correct'], projects['mutant']
-    run('correct-module', ['bash', 'scripts/verify-json-identifiers.sh'], correct)
+    if not args.native_only:
+        run('correct-module', ['bash', 'scripts/verify-json-identifiers.sh'], correct)
     original = (mutant / SOURCE).read_text()
     needle = 'if valid_identifier(&value) {'
     if original.count(needle) != 1:
@@ -80,6 +96,10 @@ def main(argv=None):
     if ('successful decode violated opaque identifier contract: ""' not in log
             or 'test result: FAILED. 0 passed; 8 failed;' not in log):
         raise ValueError('Rust mutant did not fail the intended safety assertion')
+    if args.native_only:
+        if sha(ROOT / SOURCE) != before:
+            raise ValueError('original production source changed')
+        return 0
     run('mutant-extraction', ['bash', 'scripts/regenerate-foundations-lean.sh'], mutant)
     run('mutant-imports', ['lake', 'build', 'SandproofFoundations.Funs',
                           'SandboxModel.Boundaries.JsonIdentifiers.Calls',
