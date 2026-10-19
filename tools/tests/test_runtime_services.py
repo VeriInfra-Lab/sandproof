@@ -102,13 +102,14 @@ class ReadinessSimulation:
         self.requests.append((method,path,args,kwargs))
         return 200,b'[]'
 
-    def run(self,**kwargs):
+    def run(self,*,audit=None,**kwargs):
         with ExitStack() as stack:
             stack.enter_context(patch.object(services.time,'monotonic',side_effect=lambda:self.now))
             stack.enter_context(patch.object(services.time,'time',side_effect=lambda:1000+self.now))
             stack.enter_context(patch.object(services.time,'sleep',side_effect=self.sleep))
             stack.enter_context(patch.object(services,'fetch',side_effect=self.fetch))
-            return self.instance.wait_ready(**kwargs)
+            return (self.instance.wait_ready(**kwargs) if audit is None else
+                    self.instance.planned_audit(audit,**kwargs))
 
 
 class RuntimeServicesTests(unittest.TestCase):
@@ -344,6 +345,67 @@ class RuntimeServicesTests(unittest.TestCase):
             fixture.run()
         self.assertEqual(fixture.now,3)
         self.assertEqual(fixture.stops,[])
+
+    def test_recovery_audits_leave_each_restarted_worker_time_to_commit(self):
+        interrupted=ReadinessSimulation(self.node(),commit_after=3)
+        interrupted.processes.audit.side_effect=lambda name:dict(committed=interrupted.committed)
+        for _ in range(8):
+            self.assertFalse(interrupted.run(audit='center')['committed'])
+            interrupted.sleep(.5)
+        self.assertEqual(interrupted.canceled,8)
+        fixture=ReadinessSimulation(self.node(),commit_after=3)
+        # Cleanup must progress even when no capacity is available for Create.
+        fixture.node['free']['instances']=0
+        fixture.processes.audit.side_effect=lambda name:dict(committed=fixture.committed)
+        for _ in range(2):
+            fixture.committed=False
+            observed=fixture.run(audit='center',ready_deadline=10)
+            self.assertTrue(observed['committed'])
+        self.assertEqual(fixture.canceled,0)
+        self.assertGreaterEqual(fixture.stops[0],3)
+        self.assertGreaterEqual(fixture.stops[1]-fixture.starts[0],3)
+        self.assertLess(fixture.now,10)
+        fixture.processes.initialize.assert_not_called()
+
+    def test_recovery_wait_preserves_both_original_absolute_and_download_bounds(self):
+        for deadline,download_ms,expected in ((2,900000,2),(20,3000,3)):
+            with self.subTest(deadline=deadline,download_ms=download_ms):
+                fixture=ReadinessSimulation(self.node(),never_ready=True)
+                fixture.instance.host_configs[0]['artifact_source']['download_timeout_ms']=download_ms
+                with self.assertRaisesRegex(RuntimeError,'readiness unobserved'):
+                    fixture.run(audit='center',ready_deadline=deadline)
+                self.assertEqual(fixture.now,expected)
+                self.assertEqual(fixture.stops,[])
+                fixture.processes.audit.assert_not_called()
+                # A later callback cannot reset the absolute recovery deadline.
+                if expected==deadline:
+                    with self.assertRaises(TimeoutError):
+                        fixture.run(audit='center',ready_deadline=deadline)
+                    self.assertEqual(fixture.now,deadline)
+
+    def test_recovery_never_stops_a_role_after_expiry_or_invalid_deadline(self):
+        for deadline,error in ((0,TimeoutError),(-1,TimeoutError),(True,ValueError),
+                               (float('nan'),ValueError),(float('inf'),ValueError)):
+            with self.subTest(deadline=deadline):
+                fixture=ReadinessSimulation(self.node())
+                with self.assertRaises(error):
+                    fixture.run(audit='center',ready_deadline=deadline)
+                self.assertEqual(fixture.stops,[])
+                fixture.processes.audit.assert_not_called()
+
+    def test_recovery_role_exit_and_failed_audit_remain_failures(self):
+        fixture=ReadinessSimulation(self.node(),commit_after=3,host_exit_at=1)
+        with self.assertRaisesRegex(RuntimeError,'service exited'):
+            fixture.run(audit='center',ready_deadline=10)
+        self.assertEqual(fixture.stops,[])
+        fixture.processes.audit.assert_not_called()
+        fixture=ReadinessSimulation(self.node())
+        fixture.processes.audit.side_effect=ValueError('original audit rejected')
+        with self.assertRaisesRegex(ValueError,'original audit rejected'):
+            fixture.run(audit='center',ready_deadline=10)
+        self.assertEqual(len(fixture.stops),1)
+        self.assertEqual(len(fixture.starts),1)
+        fixture.processes.initialize.assert_not_called()
 
     def test_common_cli_has_two_products_and_no_old_server_option(self):
         parser=argparse.ArgumentParser()
