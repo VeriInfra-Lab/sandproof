@@ -16,7 +16,10 @@ class ReceiptTests(unittest.TestCase):
         self.report = dict(candidate='a'*40,run_id='c'*64,guest=self.guest,status='pass',
             checks=[dict(name=name,returncode=0,seconds=1) for name in envd.SUITE],
             faults=[dict(name=name,status='pass') for name in envd.FAULTS],
-            resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,service_cleanup_confirmed=True)
+            resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,service_cleanup_confirmed=True,
+            immutable_template=dict(bytes=3,sha256='d'*64,unchanged=True),
+            environment=dict(installed=True,system_file=True,fresh_control_pristine=True,
+                             daemon_unchanged=True,host_system_path_absent=True))
 
     def reduce(self, report):
         return envd.require_result(report,candidate='a'*40,run_id='c'*64,expected_guest=self.guest)
@@ -47,10 +50,22 @@ class ReceiptTests(unittest.TestCase):
             changed=copy.deepcopy(self.report); changed['checks'][0]['seconds']=seconds
             with self.subTest(seconds=seconds), self.assertRaises(ValueError): self.reduce(changed)
 
+    def test_missing_or_unknown_environment_and_shared_image_evidence_cannot_pass(self):
+        for field in ('immutable_template','environment'):
+            changed=copy.deepcopy(self.report); changed.pop(field)
+            with self.subTest(field=field), self.assertRaises(ValueError): self.reduce(changed)
+        for field,key,value in [('immutable_template','unchanged',1),('immutable_template','sha256','bad'),
+                                ('environment','installed',False),('environment','fresh_control_pristine',None),
+                                ('environment','host_system_path_absent',False)]:
+            changed=copy.deepcopy(self.report); changed[field][key]=value
+            with self.subTest(field=field,key=key), self.assertRaises(ValueError): self.reduce(changed)
+
     def test_public_projection_does_not_copy_private_child_fields(self):
         self.report['checks'][0]['secret']='private'
         self.report['faults'][0]['token']='private'
         self.report['private_log']='private'
+        self.report['immutable_template']['private_path']='private'
+        self.report['environment']['private_payload']='private'
         self.assertNotIn('private',json.dumps(self.reduce(self.report)))
 
     def test_clean_failure_is_recoverable_but_never_a_success(self):
@@ -151,7 +166,10 @@ class SupervisorStageTests(unittest.TestCase):
             checks=[dict(name=name,returncode=0,seconds=1) for name in envd.SUITE],
             faults=[dict(name=name,status='pass') for name in envd.FAULTS],
             resource_cleanup_confirmed=True,staging_cleanup_confirmed=True,service_cleanup_confirmed=True,
-            execution_manifest={},service_processes={})
+            execution_manifest={},service_processes={},
+            immutable_template=dict(bytes=3,sha256='d'*64,unchanged=True),
+            environment=dict(installed=True,system_file=True,fresh_control_pristine=True,
+                             daemon_unchanged=True,host_system_path_absent=True))
         for filename,value in (('report.json',report),('execution-manifest.json',{}),
                                ('service-cleanup.json',{'removed':True})):
             (run/filename).write_text(json.dumps(value)); (run/filename).chmod(0o600)

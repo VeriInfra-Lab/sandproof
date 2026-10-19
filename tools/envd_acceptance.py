@@ -124,6 +124,14 @@ def require_result(report, *, candidate, run_id, expected_guest):
             or [row.get('name') for row in faults] != list(FAULTS)
             or any(row.get('status') != 'pass' for row in faults)):
         raise ValueError('mandatory envd fault evidence incomplete')
+    image = report.get('immutable_template')
+    if type(image) is not dict or image.get('unchanged') is not True:
+        raise ValueError('original shared Rust rootfs observation missing')
+    guest_artifacts.descriptor({key:image.get(key) for key in ('bytes','sha256')}, 2**64-1)
+    environment = report.get('environment')
+    environment_keys = ('installed','system_file','fresh_control_pristine','daemon_unchanged','host_system_path_absent')
+    if type(environment) is not dict or any(environment.get(key) is not True for key in environment_keys):
+        raise ValueError('S03 dependency/system isolation evidence incomplete')
     clean_checks = []
     for row in checks:
         seconds = row.get('seconds')
@@ -133,4 +141,6 @@ def require_result(report, *, candidate, run_id, expected_guest):
     return dict(candidate=candidate, run_id=run_id, status='pass', guest=expected_guest,
                 checks=clean_checks, faults=[dict(name=row['name'],status='pass') for row in faults], resource_cleanup_confirmed=True,
                 staging_cleanup_confirmed=True,
-                service_cleanup_confirmed=True)
+                service_cleanup_confirmed=True,
+                immutable_template={key:image[key] for key in ('bytes','sha256','unchanged')},
+                environment={key:True for key in environment_keys})
