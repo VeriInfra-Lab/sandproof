@@ -13,8 +13,7 @@ bash scripts/python-entry.sh verification/experiments/sqlite-commit/replay.py \
   --source-base "$ROOT_DIR" --destination "$BATCH/correct" --tool-root "$TOOL_ROOT"
 bash scripts/python-entry.sh tools/check_sqlite_extraction.py \
   --evidence "$BATCH/correct/evidence" --tool-root "$TOOL_ROOT" --check-mutations
-bash scripts/python-entry.sh verification/experiments/sqlite-commit/native.py \
-  --source-base "$ROOT_DIR" --destination "$BATCH/native"
+bash scripts/python-entry.sh tools/proof_native_suite.py require sqlite-correct
 lake -f lake-sqlite.toml --no-cache build SandproofSqlite.Audit
 lake -f lake-sqlite.toml env lean verification/aeneas/sqlite/SandproofSqlite/Audit.lean
 bash scripts/python-entry.sh verification/experiments/sqlite-commit/negative.py \

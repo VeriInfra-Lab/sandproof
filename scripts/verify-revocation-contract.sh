@@ -8,6 +8,6 @@ lake build SandboxModel.Boundaries.Revocation.Audit
 lake env lean SandboxModel/Boundaries/Revocation/Audit.lean
 EVIDENCE="$(mktemp -d "${TMPDIR:-/tmp}/sandproof-revocation-contract.XXXXXXXX")"
 echo "B3 component evidence: $EVIDENCE/reproduction"
-bash scripts/python-entry.sh tools/check_revocation_components.py --output "$EVIDENCE/reproduction"
+bash scripts/python-entry.sh tools/proof_native_suite.py require revocation
 echo 'B3 revocation-wait model, kernel audit and actual Rust component checks passed.'
 echo 'Async wiring remains a reviewed trusted adapter; no Aeneas extraction or physical-exit claim.'

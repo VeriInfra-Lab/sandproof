@@ -1,6 +1,6 @@
 """A stale parent checksum must stop the full entry before Cargo starts.
 
-The sentinel Cargo exits 125: these tests are not Rust or proof evidence. Actual
+A sentinel Cargo detects accidental native work: these tests are not Rust or proof evidence. Actual
 source admission uses shasum and the registered frozen inputs, without mocks.
 """
 import os
@@ -45,14 +45,16 @@ class ProofInputPreflightTests(unittest.TestCase):
                                  'SANDPROOF_TEST_CARGO_MARKER': str(self.marker)}
 
     def run_entry(self):
+        self.env.pop('SANDPROOF_NATIVE_EVIDENCE', None)
         return subprocess.run(['bash', 'scripts/verify-controller.sh'], cwd=self.root,
                               env=self.env, text=True, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, check=False, timeout=30)
 
-    def test_consistent_inputs_reach_the_cargo_sentinel(self):
+    def test_consistent_inputs_require_ning_evidence_without_starting_cargo(self):
         result = self.run_entry()
-        self.assertEqual(result.returncode, 125, result.stdout)
-        self.assertTrue(self.marker.exists())
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('ning native acceptance evidence is required', result.stdout)
+        self.assertFalse(self.marker.exists())
 
     def test_stale_parent_stops_before_any_cargo_invocation(self):
         path = self.root / 'verification/first-chain-inputs.sha256'

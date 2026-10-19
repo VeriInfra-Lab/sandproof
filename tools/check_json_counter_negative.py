@@ -19,6 +19,7 @@ def sha(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--native-only', action='store_true')
     args = parser.parse_args(argv)
     output = args.output.resolve()
     if output.exists() or output == ROOT or ROOT.is_relative_to(output):
@@ -27,6 +28,14 @@ def main(argv=None):
     before = sha(ROOT / SOURCE)
 
     def run(label, command, cwd=ROOT, expected=0):
+        if command[0] == 'cargo':
+            try:
+                from tools.acceptance_receipts import native_run
+            except ModuleNotFoundError:
+                from acceptance_receipts import native_run
+            identity = 'command' if label == 'original-rust' else 'json-counter-' + label
+            native_run(identity, command, cwd, output / (label + '.log'), expected=expected)
+            return
         with (output / (label + '.log')).open('w') as stream:
             result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT)
         (output / (label + '.exit')).write_text(str(result.returncode) + '\n')
@@ -35,14 +44,11 @@ def main(argv=None):
 
     # A committed source checkout, without build caches, .tools or private logs.
     project = output / 'mutant'
-    tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).split(b'\0')
-    for item in tracked:
-        if not item:
-            continue
-        relative = Path(item.decode())
-        target = project / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / relative, target)
+    try:
+        from tools.check_json_request_negative import materialize
+    except ModuleNotFoundError:
+        from check_json_request_negative import materialize
+    materialize(ROOT, project)
     for relative in ('.lake/packages', '.tools/lean-mcp'):
         target = project / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -64,6 +70,10 @@ def main(argv=None):
     if ('successful decode returned zero: 0' not in log
             or 'test result: FAILED. 0 passed; 1 failed;' not in log):
         raise ValueError('mutant failed for a reason other than the same zero-safety assertion')
+    if args.native_only:
+        if sha(ROOT / SOURCE) != before:
+            raise ValueError('original production source changed')
+        return 0
     run('mutant-extraction', ['bash', 'scripts/regenerate-foundations-lean.sh'], cwd=project)
     shutil.copyfile(project / 'verification/fixtures/json-counter-negative.lean.in',
                     project / 'Evidence.lean')

@@ -36,19 +36,22 @@ def main():
     parser.add_argument('--destination', type=Path, required=True)
     parser.add_argument('--correct-replay', type=Path, required=True)
     parser.add_argument('--tool-root', type=Path, required=True)
+    parser.add_argument("--native-only", action="store_true")
     args = parser.parse_args()
     assets = Path(__file__).resolve().parent
     repository = assets.parents[2]
     sys.path.insert(0, str(repository))
     from tools.check_first_chain_extraction import check_tools
     from tools.check_foundations_extraction import llbc_digest
-    check_tools(repository, args.tool_root)
-    baseline = json.loads((args.correct_replay / 'evidence/replay.json').read_text())
+    if not args.native_only:
+        check_tools(repository, args.tool_root)
     profile = json.loads((assets / 'candidate.json').read_text())
-    if (baseline.get('exit_code') != 0 or not baseline.get('source_unchanged')
-            or baseline['core_llbc_digest'] != profile['core_llbc_digest']
-            or baseline['public_llbc_digest'] != profile['public_binding_llbc_digest']):
-        raise ValueError('a successful exact correct replay is required')
+    if not args.native_only:
+        baseline = json.loads((args.correct_replay / 'evidence/replay.json').read_text())
+        if (baseline.get('exit_code') != 0 or not baseline.get('source_unchanged')
+                or baseline['core_llbc_digest'] != profile['core_llbc_digest']
+                or baseline['public_llbc_digest'] != profile['public_binding_llbc_digest']):
+            raise ValueError('a successful exact correct replay is required')
     subprocess.run([sys.executable, str(assets / 'prepare.py'), '--source-base', str(args.source_base),
                     '--destination', str(args.destination)], check=True)
     root = args.destination / 'source'
@@ -68,6 +71,11 @@ def main():
 
     def run(stage, command, expected=0, environment=None, cwd=root):
         print('START', stage, flush=True)
+        if command[0] == 'cargo':
+            from tools.acceptance_receipts import native_run
+            output = evidence / (stage + '.log')
+            native_run('redis-result-' + stage, command, cwd, output, environment, expected)
+            return output
         start = time.monotonic()
         output = evidence / (stage + '.log')
         with output.open('xb') as log:
@@ -86,6 +94,8 @@ def main():
 
     run('mutant-native', ['cargo', 'check', '--manifest-path', 'verification/extract-storage/Cargo.toml',
                          '--locked', '--offline'])
+    if args.native_only:
+        return
     recipes = [item for item in baseline['results'] if item['stage'] == 'charon-core']
     if len(recipes) != 1:
         raise ValueError('correct Charon recipe missing')
