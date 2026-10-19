@@ -20,7 +20,7 @@
 
 ## V0 底座统一与组合验收
 
-#515/#510 的公共任务统一归 V0 #333，按 T0–T8 验收；具体依赖保证见[依赖登记](formal/dependencies.md)。[汇总 PR #551](https://github.com/VeriInfra-Lab/sandproof/pull/551)组合已有 V0、任务/排空、隔离业务试点和旧生成链退役成果，不新增业务证明。下文历史记录继续绑定各自冻结提交；当前组合证据以本节和该 PR 的最终验收记录为准。
+#515/#510 的公共任务统一归 V0 #333，按 T0–T8 验收；具体依赖保证见[依赖登记](formal/dependencies.md)。[汇总 PR #551](https://github.com/VeriInfra-Lab/sandproof/pull/551)组合已有 V0、任务/排空、隔离业务试点和旧生成链退役成果，不新增业务证明。下文历史记录继续绑定各自冻结提交；#551 的组合证据以本节和该 PR 的最终验收记录为准。后续接口扩展以本页 T6/T8 节各自冻结组合为准，不能把一个批次的证据用于其它未核对组合。
 
 组合 91fc769be12eacba589afb9a839c3421823f43f7 在指定 Linux 证明环境通过原 check-function.sh（1752 秒、1166 项工具测试、13 阶段）和完整 verify-controller.sh（1229 秒）。143 个保留证明文件及公共入口编译，744 个唯一声明的实际依赖审计通过；两个总入口经原 Lean 服务完整诊断，无错误、非陈旧。原任务正确/错误版组件及 root 安装文件场景通过。1629 个跟踪输入最终一致；原始 LLBC 差异先封存，经原审计器确认仅为允许的无序短名排列后恢复。机器收据 SHA256 为 8ebe95f4a09ca3ce290509a5aa779784a7db47e9de0e48d0392a096a08692174。
 
@@ -109,6 +109,20 @@ A4 提供固定 SQLite/rusqlite 的原事务结果；B2/B4 连接原事务句柄
 1660 个跟踪输入在两个入口前后按原审计规则核对一致；两份原始 LLBC 只有允许的无序短名排列差异，先封存、确认规范化摘要相同后恢复，未编辑生成 Lean 或清理 `.lake`。最终机器收据 SHA256 为 `5c84f9e45d4d6600e31a5607d1d57a73753f8cd51dbd25dab4d7ffe2a17b948e`。最终报告提交只补录本页，程序、证明和冻结输入与上述版本相同。首版 poll 表示的修订、旧失败及恢复记录保留在 #554/PR #556，不以历史局部结果背书本组合。
 
 当前保留集合与声明组件的完整验收通过；原 opt-in/特权忽略项不计为已执行，没有新增实际 async Rust 的抽取证明，也未执行本批产品 KVM、云 SDK 或完整 VM/TLS 部署验收。T6 其它任务机制、具体业务/释放/退出及 T0–T8 未勾验收点继续开放，T9 排除。
+
+## T8 边界：双向字节中继（隔离候选）
+
+归 [#575](https://github.com/VeriInfra-Lab/sandproof/issues/575)/#333，来源为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`，证明组合依赖固定 #556 `398b114d516bf9233875823c18a2f9618cf108b7`。代码与证明冻结于 `73789e6840fc926b78dcc13586f53b642596666d`；[候选补丁及复现](../verification/experiments/tunnel-contract/README.md)只在私有副本拆出并实际调用 `decide/finish_upload`，生产 Rust、Charon/Aeneas 与工具版本未改。原 async 入口的 coroutine 不支持及带错误中间表示保留为失败证据，未冒充有效抽取物。
+
+[Contract](../verification/aeneas/tunnel/SandproofTunnel/Contract.lean)/[Results](../verification/aeneas/tunnel/SandproofTunnel/Results.lean) 的 29 项审计声明由 8 条实际生成体值性质、3 条条件步骤连接和 18 条模型/历史/允许执行性质组成，涉及两个真实 Rust 同步函数，**不是 29 个 async Rust 函数证明**。上传先返回仍等待原下行；下行错误优先，否则保留原上传结果。下行先返回允许结束尚未完成的上传；非 biased select 同时就绪时保留两种选择。复用原 StreamHistory，保持原绑定、两个方向的字节前缀和待写预算，给出零字节、上传未读完即可正常返回及满足预算的任意有限源允许通过等见证。允许轨迹存在不保证实际调度最终完成；本层 Ok、raw EOF 和写端接受字节均不等于 HTTP/Connect 成功、客户端读到、子进程退出或 VM 排空。
+
+[A6/B3/B4 登记](formal/dependencies.md#a6b3b4-双向字节中继与结果处理隔离候选)约束原 I/O、四个实际管道/TCP 对象、所选结果和动作接线。实际 poll/await/Pin/Drop 到历史的对应仍是已登记的可信符合性条件，不是完整 async Rust 的机器精化。当前实例限于固定匿名管道 Receiver/Sender、原 TcpStream 的两个 owned halves及无可观察资源/共享状态析构效果的错误载荷；自定义 I/O、带业务资源的错误析构或额外许可/FD 捕获不能直接套用。关闭/Drop 不补造真实退出或释放证据，panic/unwind、abort/崩溃和无条件进展仍在范围外；完整请求绑定、授权、协议、预算和退出/排空由 V6/V8 提供。
+
+正式重放核对 28 个非空前端声明、37 个正常/异常析构位置、完整 AST/目标/配置、原工具及固定库源。原版/候选各 5 项 relay 和 2 项真实管道回归通过，候选严格 Clippy 通过。真实 Rust 错误版只在下行成功后丢弃上传错误，先独立编译及原工具抽取成功，再被原 `upload_write_failure_preserves_the_guests_rejection_response` 断言拒绝；逐字相同的 Contract 在同一 `finish_download_ok` 性质处失败。错误生成体上的三个独立反例/辅助声明通过内核及标准依赖审计，不导入失败证明。有限旧新回归不构成一般行为等价证明。新准入门槛拒绝遗漏/隐藏声明、变更析构、缺失/重复冻结输入及陈旧/不完整/错误指纹服务回执。
+
+本冻结提交在指定隔离 Linux 证明环境的专用 `verify-tunnel.sh`、原完整 `verify-controller.sh` 和原 Linux `check-function.sh` 分别退出 0（146.901 / 2259.132 / 1700.550 秒）；797 个唯一声明审计、1199 项工具测试无跳过及全部 13 个基础阶段通过。1676 个跟踪输入按原规则核对一致；两份旧 LLBC 仅有原规则允许的无序 short_names 排列差异，实际新输出先封存，确认整个 AST 一致后恢复冻结序列化，未删除其它字段或编辑生成 Lean。最终三份物理文件的真实服务诊断完整、非陈旧，无错误/警告：主入口、15 项总审计及新中继 29 项审计均通过（16.954 秒）；共同证明源指纹为 `4835959930aa9bdddf6ac3f3de02d74d11cc421e5ef7fe901988508baca2d2f0`。机器收据 SHA256 为 `a2cf8aed7d401a057184aeeec893c6af285938aa8b144e6563ba963075959884`。
+
+旧模块的 Lean 样式警告保留，未关闭 linter；真实客户端在完整结果后输出的 Python 关闭提示也保留，不冒充 Lean 诊断或忽略失败回执。最终报告提交只补录本页，程序、证明和冻结输入与通过版本相同，另核对报告差异、文档和全部清单。本批未执行产品 VM、云 SDK 或完整 TLS/外部代理部署验收，原 opt-in/特权忽略项不计为已执行。其它 OS/Firecracker/TLS/I/O 使用点和 V8 全业务仍开放，不关闭整个 T8/V0，T9 排除。
 
 ## T5/T6 边界：DataLease 只读判定
 

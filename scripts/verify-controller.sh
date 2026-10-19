@@ -24,6 +24,7 @@ bash scripts/verify-json-identifiers.sh
 bash scripts/verify-json-counter.sh
 bash scripts/verify-task-contract.sh
 bash scripts/verify-revocation-contract.sh
+bash scripts/verify-tunnel.sh
 bash scripts/verify-data-drain.sh
 bash scripts/verify-sqlite.sh
 bash scripts/verify-foundations.sh
