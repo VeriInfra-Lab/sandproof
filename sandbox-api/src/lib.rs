@@ -315,13 +315,22 @@ async fn blocking<T: Send + 'static>(
     let lease = admission
         .try_acquire(class)
         .ok_or(ApiFailure::Port(PortError::QuotaExceeded))?;
-    tokio::task::spawn_blocking(move || {
+    let joined = tokio::task::spawn_blocking(move || {
         let _lease = lease;
         work()
     })
-    .await
-    .map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
-    .map_err(ApiFailure::Port)
+    .await;
+    finish_blocking(joined)
+}
+
+// Only classify a completed wait. Admission, spawning and the worker's lease
+// stay in `blocking`; this helper cannot infer that physical work was undone.
+fn finish_blocking<T>(
+    joined: Result<Result<T, PortError>, tokio::task::JoinError>,
+) -> Result<T, ApiFailure> {
+    joined
+        .map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
+        .map_err(ApiFailure::Port)
 }
 
 async fn bounded_kill(
@@ -331,9 +340,15 @@ async fn bounded_kill(
 ) -> Result<(), ApiFailure> {
     // After a response timeout the blocking task continues under the durable
     // reducer lock. The caller sees unknown, not a fabricated completion.
-    tokio::time::timeout(deadline, blocking(admission, RequestClass::Control, work))
-        .await
-        .map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
+    let waited =
+        tokio::time::timeout(deadline, blocking(admission, RequestClass::Control, work)).await;
+    finish_kill_wait(waited)
+}
+
+fn finish_kill_wait(
+    waited: Result<Result<(), ApiFailure>, tokio::time::error::Elapsed>,
+) -> Result<(), ApiFailure> {
+    waited.map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
 }
 
 fn valid_timeout(timeout: Option<i64>) -> bool {
@@ -596,6 +611,56 @@ mod lifecycle_deadline_tests {
             control_reserve: 1,
         })
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn unpolled_lifecycle_futures_do_not_admit_or_start_work() {
+        let budget = budget();
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let call = called.clone();
+        let pending = blocking(budget.clone(), RequestClass::Ordinary, move || {
+            call.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        });
+        let ordinary = budget.try_acquire(RequestClass::Ordinary).unwrap();
+        drop(pending);
+        let call = called.clone();
+        let pending = bounded_kill(
+            budget.clone(),
+            move || {
+                call.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            },
+            Duration::from_secs(1),
+        );
+        let control = budget.try_acquire(RequestClass::Control).unwrap();
+        drop(pending);
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+        drop((ordinary, control));
+    }
+
+    #[test]
+    fn completed_waits_preserve_success_and_each_application_error() {
+        assert!(matches!(finish_blocking(Ok(Ok(17))), Ok(17)));
+        assert!(matches!(finish_kill_wait(Ok(Ok(()))), Ok(())));
+        for error in [
+            PortError::Invalid,
+            PortError::NotFound,
+            PortError::Conflict,
+            PortError::QuotaExceeded,
+            PortError::Busy,
+            PortError::OutcomeUnknown,
+            PortError::Failed,
+        ] {
+            assert!(matches!(
+                finish_blocking::<()>(Ok(Err(error))),
+                Err(ApiFailure::Port(actual)) if actual == error
+            ));
+            assert!(matches!(
+                finish_kill_wait(Ok(Err(ApiFailure::Port(error)))),
+                Err(ApiFailure::Port(actual)) if actual == error
+            ));
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

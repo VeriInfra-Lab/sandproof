@@ -512,9 +512,14 @@ impl AuthorityPort for SharedBusinessAuthority {
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .snapshot_envelope()?;
         let hidden_sandboxes = value.metadata.private_sandboxes();
+        let templates = value
+            .metadata
+            .projection_templates()
+            .map_err(to_authority)?;
         Ok(crate::PublicSnapshot {
             state: value.center,
             hidden_sandboxes,
+            templates,
         })
     }
     fn create(

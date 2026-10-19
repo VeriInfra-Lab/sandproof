@@ -27,9 +27,11 @@ impl CenterState {
 
     #[must_use]
     pub fn lane(&self, node: &NodeIdentity, slot: u16) -> Option<&RetentionLane> {
-        self.retention_lanes
+        let index = self
+            .retention_lanes
             .iter()
-            .find(|lane| &lane.node == node && lane.retention_slot == slot)
+            .position(|lane| &lane.node == node && lane.retention_slot == slot)?;
+        self.retention_lanes.get(index)
     }
 
     fn lane_index(&self, node: &NodeIdentity, slot: u16) -> Result<usize, DecisionError> {
@@ -40,21 +42,23 @@ impl CenterState {
     }
 
     fn lane_record(&self, node: &NodeIdentity, slot: u16) -> Option<&Sandbox> {
-        self.sandboxes.iter().find(|record| {
+        let index = self.sandboxes.iter().position(|record| {
             record.operations.first().is_some_and(|first| {
                 &first.request.identity.node == node
                     && first.request.identity.retention_slot == slot
             })
-        })
+        })?;
+        self.sandboxes.get(index)
     }
 
     pub(crate) fn available_lane(&self, node: &NodeIdentity) -> Option<&RetentionLane> {
-        self.retention_lanes.iter().find(|lane| {
+        let index = self.retention_lanes.iter().position(|lane| {
             &lane.node == node
                 && lane.phase == LanePhase::Open
                 && lane.current().is_some()
                 && self.lane_record(node, lane.retention_slot).is_none()
-        })
+        })?;
+        self.retention_lanes.get(index)
     }
 
     /// Empty slots do not rotate, and a long-lived peer never blocks this candidate.
@@ -79,9 +83,14 @@ impl CenterState {
         let mut identities = BTreeSet::new();
         self.retention_lanes.len() == expected
             && self.retention_lanes.iter().all(|lane| {
-                let Some(node) = self.nodes.iter().find(|node| node.identity == lane.node) else {
+                let Some(index) = self
+                    .nodes
+                    .iter()
+                    .position(|node| node.identity == lane.node)
+                else {
                     return false;
                 };
+                let node = &self.nodes[index];
                 if lane.retention_slot == 0
                     || lane.retention_slot > node.retention_slots
                     || !identities.insert((lane.node.node_id.as_str(), lane.retention_slot))

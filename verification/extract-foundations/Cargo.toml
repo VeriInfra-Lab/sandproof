@@ -1,0 +1,15 @@
+[package]
+name = "sandproof-foundations-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Extraction roots call production functions; this crate is not a runtime service.
+[workspace]
+
+[dependencies]
+sandbox-controller-core = { path = "../../controller-core" }
+sandproof-center-core = { path = "../../sandbox-center-core" }
+sandproof-protocol = { path = "../../sandbox-protocol" }
+serde = "=1.0.228"
+serde_json = "=1.0.142"

@@ -29,7 +29,8 @@ from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import AuthenticationException, FileNotFoundException, InvalidArgumentException
 from e2b.sandbox.filesystem.filesystem import FileType
 
-from sdk_command_input import call
+from sdk_command_input import call, destroy_probes
+from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
 
 
@@ -180,7 +181,7 @@ async def isolation_cases(victim, control, directory, host_canary):
     # Only a new harness-owned canary path is allowed; never probe real secrets.
     target = PurePosixPath(host_canary)
     assert target.is_absolute() and target.name == 'host-canary'
-    assert '..' not in target.parts and str(target).startswith('/var/lib/sp-01a0e1bd/fp8-')
+    assert '..' not in target.parts and str(target) == host_canary
     assert not await call(victim.files.exists, host_canary)
     assert not await call(control.files.exists, host_canary)
     original = b'control VM independent file\n'
@@ -202,33 +203,83 @@ async def isolation_cases(victim, control, directory, host_canary):
     return results
 
 
+async def mode_cases(cls, args, template, candidate, owner, item):
+    live, failure = [], None
+    try:
+        item['phase'] = 'create'
+        for ordinal in (1, 2):
+            attempt = dict(ordinal=ordinal, outcome='unknown')
+            item['create_attempts'].append(attempt)
+            sandbox = await call(cls.create, template=template, timeout=300,
+                                 allow_internet_access=False, **owner)
+            live.append(sandbox)
+            attempt.update(outcome='returned', sandbox_id=sandbox.sandbox_id)
+        victim, control = live
+        item.update(victim=victim.sandbox_id, control=control.sandbox_id, phase='observe-before')
+        before = [await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+                  for sandbox in live]
+        if candidate is not None:
+            item['rust_guests'] = [dict(sandbox_id=sandbox.sandbox_id, rust_guest=observation)
+                                   for sandbox, observation in zip(live, before)]
+        item['phase'] = 'setup'
+        directory = '/tmp/file-permissions-' + uuid.uuid4().hex
+        await call(victim.commands.run, 'mkdir -m 0777 ' + shlex.quote(directory))
+        for phase, operation, arguments in (
+                ('users', user_cases, (victim, directory)),
+                ('paths', path_cases, (victim, directory)),
+                ('batch', batch_cases, (victim, directory)),
+                ('isolation', isolation_cases, (victim, control, directory, args.host_canary))):
+            item['phase'] = phase
+            # Only whole completed groups contribute cases; an interrupted group
+            # is not turned into a successful partial result.
+            item['cases'].extend(await operation(*arguments))
+        item['phase'] = 'observe-after'
+        after = [await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+                 for sandbox in live]
+        assert before == after, 'Rust guest identity changed during file cases'
+        item['phase'] = 'cleanup'
+    except BaseException as error:
+        failure = error
+        item.update(status='failed', failure=type(error).__name__)
+    try:
+        await destroy_probes(live)
+        item['known_destroy_acknowledged'] = True
+    except BaseException as cleanup:
+        item.update(status='failed', known_destroy_acknowledged=False,
+                    cleanup_failure=type(cleanup).__name__)
+        if failure is not None:
+            raise BaseExceptionGroup('file probe and known-VM cleanup failed', [failure, cleanup])
+        raise
+    if failure is not None:
+        raise failure
+    item.update(status='pass', phase='complete')
+
+
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
+    template, candidate = guest_candidate(args)
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     results = []
-    for cls in (Sandbox, AsyncSandbox):
-        live = []
-        try:
-            for _ in range(2):
-                live.append(await call(cls.create, template='base', timeout=300,
-                                       allow_internet_access=False, **owner))
-            victim, control = live
-            directory = '/tmp/file-permissions-' + uuid.uuid4().hex
-            await call(victim.commands.run, 'mkdir -m 0777 ' + shlex.quote(directory))
-            cases = await user_cases(victim, directory)
-            cases += await path_cases(victim, directory)
-            cases += await batch_cases(victim, directory)
-            cases += await isolation_cases(victim, control, directory, args.host_canary)
-            results.append(dict(sdk=cls.__name__, victim=victim.sandbox_id,
-                                control=control.sandbox_id, cases=cases))
-        finally:
-            for sandbox in reversed(live):
-                _kill_confirmed = (await call(sandbox.kill))
-                assert _kill_confirmed, 'destruction not confirmed'
-    print(json.dumps(dict(sdk_version='2.51.0', results=results,
-                          scope='file user/home/ownership, selected path errors, partial batches, '
-                                'private VM path controls; invoking harness must audit host canary '
-                                'and exact resources; not guest DAC or exhaustive path coverage'), indent=2))
+    report = dict(sdk_version='2.51.0', results=results,
+                  scope='file user/home/ownership, selected path errors, partial batches, '
+                        'private VM path controls; invoking harness must audit host canary '
+                        'and exact resources; not guest DAC or exhaustive path coverage')
+    if getattr(args, 'template', None) is not None:
+        report['template'] = template
+    try:
+        for cls in (Sandbox, AsyncSandbox):
+            item = dict(sdk=cls.__name__, status='incomplete', cases=[], create_attempts=[])
+            results.append(item)
+            await mode_cases(cls, args, template, candidate, owner, item)
+        report['status'] = 'pass'
+    except BaseException as error:
+        report.update(status='failed', failure=type(error).__name__)
+        raise
+    finally:
+        # Keep the bounded original attempts/results even on SDK or cleanup
+        # failure. A known-VM kill acknowledgement says nothing about an
+        # unknown create outcome or the supervisor's physical resource audit.
+        print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':
@@ -236,4 +287,5 @@ if __name__ == '__main__':
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
     parser.add_argument('--host-canary', required=True)
+    guest_arguments(parser)
     asyncio.run(exercise(parser.parse_args()))

@@ -71,6 +71,7 @@ impl Fixture {
         private_directory(&path("registry/inbox"));
         private_directory(&path("registry/artifacts"));
         let binding = TemplateBinding {
+            guest: None,
             template_id: "base".into(),
             revision: "r1".into(),
             owner: None,

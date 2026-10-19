@@ -4,7 +4,9 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +14,16 @@ from tools.template_worker import Commands
 
 
 class CommandDeadlineTests(unittest.TestCase):
+    def test_explicit_child_directory_does_not_change_parent_or_later_default(self):
+        original = os.getcwd()
+        log = io.BytesIO()
+        runner = Commands(time.monotonic() + 5, log, 4096)
+        with tempfile.TemporaryDirectory() as directory:
+            runner.run([sys.executable, '-c', 'import os; print(os.getcwd())'], cwd=directory)
+            runner.run([sys.executable, '-c', 'import os; print(os.getcwd())'])
+            self.assertEqual(log.getvalue().decode().splitlines(), [os.path.realpath(directory), original])
+            self.assertEqual(os.getcwd(), original)
+
     def closed_output(self, after_eof, *, hanging=True, after_wait=None):
         now = [100.0]
         log = io.BytesIO()

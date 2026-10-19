@@ -13,6 +13,8 @@ mod engine;
 )]
 #[path = "../../controller-service/tests/support/mod.rs"]
 mod local;
+#[path = "business_authority/owner_retirement.rs"]
+mod owner_retirement;
 #[path = "business_authority/private_builds.rs"]
 mod private_builds;
 #[path = "business_authority/registration.rs"]
@@ -55,6 +57,7 @@ use std::collections::BTreeMap;
 
 fn descriptor(id: &str, owner: Option<u64>) -> TemplateBinding {
     TemplateBinding {
+        guest: None,
         template_id: id.into(),
         revision: "r1".into(),
         owner,
@@ -80,9 +83,16 @@ fn descriptor(id: &str, owner: Option<u64>) -> TemplateBinding {
 }
 fn candidate() -> Publication {
     let id = format!("{:032x}", 1);
+    let mut binding = descriptor(&format!("tpl-{id}"), Some(8));
+    binding.guest = Some(
+        serde_json::from_str(include_str!(
+            "../../tests/compat/guest-template-identity.json"
+        ))
+        .unwrap(),
+    );
     Publication {
         candidate_id: id.clone(),
-        binding: descriptor(&format!("tpl-{id}"), Some(8)),
+        binding,
         image_digest: format!("sha256:{}", "3".repeat(64)),
         free_bytes: 4096,
         min_free_bytes: 4096,
@@ -261,6 +271,7 @@ fn actual_unknown_metadata_and_coupled_create_fence_both_adapters_then_reaffirm_
     assert_eq!(recovered.center.pending().len(), 1);
     let original = &recovered.center.pending()[0].identity;
     let record = &recovered.metadata.registry().records()[0];
+    assert_eq!(record.value().binding.guest, candidate().binding.guest);
     assert_eq!(&record.validation().unwrap().create, original);
     assert_eq!(original.sandbox_id.as_str(), "sandbox-1");
     assert_eq!(original.operation_id.as_str(), "operation-1");
@@ -674,7 +685,7 @@ fn assert_settled_and_independent(state: &BusinessEnvelope<RegistryMetadata>) {
 }
 
 fn assert_settlement_tampering_refused(state: &BusinessEnvelope<RegistryMetadata>) {
-    for case in 0..12 {
+    for case in 0..14 {
         let mut altered = serde_json::to_value(state).unwrap();
         let link = &mut altered["metadata"]["registry"]["records"][0]["validation"];
         match case {
@@ -709,7 +720,14 @@ fn assert_settlement_tampering_refused(state: &BusinessEnvelope<RegistryMetadata
                 link["settlement"]["original_create"]["identity"]["retention_slot"] =
                     serde_json::json!(2);
             }
-            _ => link["settlement"]["cleaned"]["identity"]["retention_slot"] = serde_json::json!(2),
+            11 => {
+                link["settlement"]["cleaned"]["identity"]["retention_slot"] = serde_json::json!(2);
+            }
+            12 => {
+                link["local"]["descriptor"]["guest"]["configuration"]["sha256"] =
+                    serde_json::json!("f".repeat(64));
+            }
+            _ => link["local"]["descriptor"]["guest"] = serde_json::Value::Null,
         }
         let altered: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(altered).unwrap();
         assert!(!altered.is_valid(), "mutation {case}");

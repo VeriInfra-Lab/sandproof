@@ -1,0 +1,11 @@
+name = "data-authority-expiry"
+version = "0.0.0"
+defaultTargets = ["AuthorityPilot"]
+[[lean_lib]]
+name = "AuthorityPilot"
+srcDir = "lean"
+roots = ["BadExpiry.Funs", "BadExpiry.Types", "FinitePolicy", "ExpiryNegativeProofs"]
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"

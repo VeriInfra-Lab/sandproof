@@ -25,6 +25,8 @@ import urllib.parse
 import urllib.request
 
 if __package__:
+    from . import template_build_guest as guest
+    from .template_build_upload import upload
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write, bounded_configuration, fsync_directory
     from .template_stage import file_hash, private_directory, stage_downloaded as stage, stage_inventory, stage_delete
     from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
@@ -34,6 +36,8 @@ if __package__:
                                        host_native, owned_registry_directory, private_center_configuration, loopback_address)
     from .template_physical_storage import validate_configuration as validate_physical_configuration, PhysicalProfileLease
 else:
+    import template_build_guest as guest
+    from template_build_upload import upload
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write, bounded_configuration, fsync_directory
     from template_stage import file_hash, private_directory, stage_downloaded as stage, stage_inventory, stage_delete
     from template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
@@ -83,8 +87,10 @@ def configuration(path, *, require_physical_lease=True):
     if type(require_physical_lease) is not bool:
         raise ValueError("explicit physical lease validation flag required")
     config = protected_json(path)
-    if set(config) - {"docker_hub_mirror"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers", "bounded_builds", "registry", "registry_owner_uid", "center", "builder_template"}:
+    if set(config) - {"docker_hub_mirror", "rust_guest_profile"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers", "bounded_builds", "registry", "registry_owner_uid", "center", "builder_template"}:
         raise ValueError("invalid build service config")
+    if "rust_guest_profile" in config:
+        config["rust_guest"] = guest.snapshot(config["rust_guest_profile"])
     if "docker_hub_mirror" in config:
         mirror_registry(config["docker_hub_mirror"])
     runtime, builder = host_native(config["runtime_config"]), host_native(config["builder_config"])
@@ -140,7 +146,7 @@ def configuration(path, *, require_physical_lease=True):
         if limits[tenant] > limits[global_field]:
             raise ValueError("tenant budget exceeds global budget")
     tools = config["tools"]
-    validate_tool_names(tools, registry=True)
+    validate_tool_names(tools, registry=True, rust_guest="rust_guest" in config)
     for spec in tools.values():
         path = Path(spec["path"])
         if path.resolve(strict=True) != path or not path.is_file() or file_hash(path) != spec["sha256"]:
@@ -159,10 +165,12 @@ def configuration(path, *, require_physical_lease=True):
     from_center = config["center"]
     if min(from_center["max_timeout_secs"], from_center["max_lifetime_secs"] or from_center["max_timeout_secs"]) < lifetime_required:
         raise ValueError("center lifetime cannot cover builder request")
+    guest_largest, guest_bytes = guest.capacity(config["rust_guest"]) if "rust_guest" in config else (0, 0)
     limits["builder_disk_bytes"] = validate_capacity(runtime, builder, limits, base,
         registry=config["registry"],
         kernel_bytes=Path(runtime["kernel"]).stat().st_size,
-        largest_tool_bytes=max(Path(spec["path"]).stat().st_size for spec in tools.values()))
+        largest_tool_bytes=max(guest_largest, *(Path(spec["path"]).stat().st_size for spec in tools.values())),
+        guest_input_bytes=guest_bytes)
     limits["runtime_cleanup_reserve_bytes"] = runtime["cleanup_reserve_bytes"] + builder["cleanup_reserve_bytes"]
     limits["artifact_margin_bytes"] = Path(runtime["kernel"]).stat().st_size + limits["max_log_bytes"] + 64 * MIB
     physical = validate_physical_configuration(runtime, builder, config)
@@ -272,6 +280,7 @@ class Backend:
         from e2b import Sandbox, CommandExitException, FileNotFoundException, TimeoutException
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
+        rust_guest = guest.recheck(self.config) if "rust_guest_profile" in self.config else None
         if not row.get("private_window"):
             opened = self.request("builder", "POST", "/sandproof/internal-build-windows", {}, owner=row["owner"])
             if (type(opened) is not dict or not isinstance(opened.get("requestWindow"), str)
@@ -294,6 +303,15 @@ class Backend:
             envd_version=Version(session["envdVersion"]), envd_access_token=session["envdAccessToken"], connection_config=connection)
         request = json.loads(row["request"])
         directory = store.directory(row["id"])
+        def write(destination, data, expected=None):
+            if rust_guest is not None:
+                upload(sandbox, Version(session["envdVersion"]), destination, data,
+                       row["deadline"], store.clock, expected=expected)
+            elif isinstance(data, Path):
+                with data.open("rb") as incoming:
+                    sandbox.files.write(destination, incoming, user="root")
+            else:
+                sandbox.files.write(destination, data, user="root")
         def command(value, timeout=30):
             left = int(row["deadline"] - store.clock())
             if left <= 0:
@@ -304,22 +322,32 @@ class Backend:
         for name, spec in self.config["tools"].items():
             if name == "regctl" and request["kind"] != "oci":
                 continue
-            with Path(spec["path"]).open("rb") as incoming:
-                sandbox.files.write("/input/tools/" + name, incoming, user="root")
+            path = Path(spec["path"])
+            write("/input/tools/" + name, path, {"bytes": path.stat().st_size, "sha256": spec["sha256"]})
             profile[name] = {"path": "/input/tools/" + name, "sha256": spec["sha256"]}
         command("chmod 755 /input/tools/*")
-        for name in ("template_worker.py", "template_inputs.py", "template_fetch.py"):
-            with Path(__file__).with_name(name).open("rb") as incoming:
-                sandbox.files.write("/input/" + name, incoming, user="root")
-        sandbox.files.write("/input/profile.json", json.dumps(profile), user="root")
-        sandbox.files.write("/etc/resolv.conf", "".join("nameserver " + v + "\n" for v in self.config["dns_servers"]), user="root")
+        helpers = ("template_worker.py", "template_inputs.py", "template_fetch.py")
+        for name in helpers + (guest.HELPERS if rust_guest is not None else ()):
+            path = Path(__file__).with_name(name)
+            expected = guest.artifacts.fingerprint(path, guest.artifacts.CONFIGURATION_LIMIT) if rust_guest else None
+            write("/input/" + name, path, expected)
+        write("/input/profile.json", json.dumps(profile))
+        write("/etc/resolv.conf", "".join("nameserver " + v + "\n" for v in self.config["dns_servers"]))
+        if rust_guest is not None:
+            command("mkdir -m 700 /input/rust-guest /input/rust-guest/release")
+            files, protected_profile = guest.materials(rust_guest)
+            for source, destination, expected in files:
+                write(destination, source, expected)
+            write(guest.PROFILE, protected_profile)
+            command("chmod 400 /input/rust-guest/*.json /input/rust-guest/release/manifest.json && "
+                    "chmod 500 /input/rust-guest/release/sandproof-guest-service /input/rust-guest/release/sandproof-guest-worker")
         if request["kind"] == "dockerfile":
             if file_hash(directory / "source.tar") != row["input_hash"]:
                 raise BuildError(502, "InputDigestMismatch")
-            with (directory / "source.tar").open("rb") as incoming:
-                sandbox.files.write("/input/source", incoming, user="root")
+            source = directory / "source.tar"
+            write("/input/source", source, {"bytes": source.stat().st_size, "sha256": row["input_hash"]})
         else:
-            sandbox.files.write("/input/source", json.dumps({"image": request["image"]}), user="root")
+            write("/input/source", json.dumps({"image": request["image"]}))
         worker = {"kind": "dockerfile" if request["kind"] == "dockerfile" else "oci-reference",
             "disk_mib": request["resources"]["diskMiB"], "min_free_mib": request["resources"]["minFreeMiB"],
             "max_input_bytes": store.limits["max_input_bytes"], "max_expanded_bytes": store.limits["max_expanded_bytes"],
@@ -328,13 +356,14 @@ class Backend:
         worker["dns_servers"] = self.config["dns_servers"]
         if request["kind"] == "oci" and "docker_hub_mirror" in self.config:
             worker["docker_hub_mirror"] = self.config["docker_hub_mirror"]
-        sandbox.files.write("/input/request.json", json.dumps(worker), user="root")
+        write("/input/request.json", json.dumps(worker))
         boot = command("cat /proc/sys/kernel/random/boot_id").stdout.strip()
         if not re.fullmatch(r"[0-9a-f-]{36}", boot):
             raise BuildError(502, "InvalidBuildVmIdentity")
         worker_error_log = None
         try:
-            command("python3 /input/template_worker.py --work /output/job --source /input/source --request /input/request.json --profile /input/profile.json --guest-boot-id " + boot, worker["timeout_seconds"])
+            option = " --rust-guest-profile " + guest.PROFILE if rust_guest is not None else ""
+            command("python3 /input/template_worker.py --work /output/job --source /input/source --request /input/request.json --profile /input/profile.json --guest-boot-id " + boot + option, worker["timeout_seconds"])
         except TimeoutException:
             try:
                 retain_timeout_logs(sandbox, directory, store.limits["max_log_bytes"])
@@ -418,6 +447,9 @@ class Backend:
         if status.get("state") != "candidate":
             failure = status.get("error_type")
             raise BuildError(422, "WorkerFailed:" + (failure if failure in {"InvalidTemplate", "TimeoutError", "RuntimeError"} else "BuildError"))
+        expected_guest = rust_guest['identity'] if rust_guest is not None else None
+        if not guest.equal(status.get('guest'), expected_guest):
+            raise BuildError(502, 'CandidateGuestMismatch')
         _, digest = download("candidate.ext4", request["resources"]["diskMiB"] * MIB,
                              request["resources"]["diskMiB"] * MIB, sparse=True)
         if digest != status.get("rootfs_sha256"):
@@ -445,11 +477,15 @@ class Backend:
         status = json.loads(row["candidate"])
         resources = request["resources"]
         try:
+            rust_guest = guest.recheck(config) if "rust_guest_profile" in config else None
+            if not guest.equal(status.get('guest'), rust_guest['identity'] if rust_guest else None):
+                raise ValueError('candidate guest differs from protected profile')
             candidate = stage(Path(config["registry"]["root"]), Path(config["runtime"]["kernel"]),
                 store.directory(row["id"]) / "candidate.ext4", status, row["owner"],
                 resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + HOST_MEMORY_OVERHEAD_MIB,
                 candidate_id=row["id"], ownership={"id": row["id"], "nonce": row["fs_nonce"]},
-                registry_owner_uid=config["registry_owner_uid"])
+                registry_owner_uid=config["registry_owner_uid"],
+                rust_guest_profile=config.get("rust_guest_profile"))
         except ValueError:
             raise BuildError(400, "CandidateStagingRejected") from None
         remaining = row["deadline"] - store.clock()

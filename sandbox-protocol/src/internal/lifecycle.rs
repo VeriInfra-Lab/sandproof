@@ -28,7 +28,7 @@ impl Resources {
     }
     #[must_use]
     pub fn positive(self) -> bool {
-        self.values().iter().all(|value| *value > 0)
+        self.instances > 0 && self.cpu > 0 && self.memory_bytes > 0 && self.disk_bytes > 0
     }
     #[must_use]
     pub fn checked_add(self, other: Self) -> Option<Self> {
@@ -41,10 +41,10 @@ impl Resources {
     }
     #[must_use]
     pub fn fits(self, limit: Self) -> bool {
-        self.values()
-            .iter()
-            .zip(limit.values())
-            .all(|(a, b)| *a <= b)
+        self.instances <= limit.instances
+            && self.cpu <= limit.cpu
+            && self.memory_bytes <= limit.memory_bytes
+            && self.disk_bytes <= limit.disk_bytes
     }
     pub const ZERO: Self = Self {
         instances: 0,

@@ -1,0 +1,711 @@
+{
+  "schema": 1,
+  "source_anchor": "208fb4e1bdba78be269a14626b3185d275249b1a",
+  "target": "x86_64-unknown-linux-gnu",
+  "charon_options": {
+    "ullbc": false,
+    "precise_drops": false,
+    "mir": null,
+    "rustc_args": [],
+    "targets": [],
+    "sysroot": "default",
+    "monomorphize": false,
+    "monomorphize_mut": null,
+    "start_from": [
+      "serde_core::de::Error::invalid_type",
+      "serde_core::de::Visitor::visit_str",
+      "serde_core::de::Visitor::visit_string",
+      "serde_core::de::Visitor::visit_borrowed_str",
+      "crate::json_ids::tenant_decode",
+      "crate::json_ids::sandbox_decode",
+      "crate::json_ids::operation_decode",
+      "crate::json_ids::logical_action_decode",
+      "crate::json_ids::resource_decode",
+      "crate::json_ids::client_request_decode",
+      "crate::json_ids::deployment_decode",
+      "crate::json_ids::node_decode",
+      "crate::json_ids::string_primitive",
+      "crate::json::counter_decode",
+      "crate::json::counter_primitive",
+      "crate::json::json_error_passthrough",
+      "serde_core::de::Visitor::visit_u64",
+      "crate::counter_from_u64",
+      "crate::counter_next",
+      "crate::counter_value",
+      "crate::counter_into_u64",
+      "crate::internal_error_text",
+      "crate::lane_current",
+      "crate::store_get_copy",
+      "crate::store_put",
+      "crate::store_retain_above",
+      "crate::option_is_none_or",
+      "crate::resource_add",
+      "crate::resource_positive",
+      "crate::resource_fits",
+      "crate::resource_values",
+      "crate::create_binding_valid",
+      "crate::identity_response",
+      "crate::retry_hint",
+      "crate::outcome_observation",
+      "crate::allocated_number",
+      "crate::tenant_from_string",
+      "crate::tenant_from_str",
+      "crate::tenant_value",
+      "crate::tenant_into_string",
+      "crate::sandbox_from_string",
+      "crate::sandbox_from_str",
+      "crate::sandbox_value",
+      "crate::sandbox_into_string",
+      "crate::operation_from_string",
+      "crate::operation_from_str",
+      "crate::operation_value",
+      "crate::operation_into_string",
+      "crate::logical_action_from_string",
+      "crate::logical_action_from_str",
+      "crate::logical_action_value",
+      "crate::logical_action_into_string",
+      "crate::resource_from_string",
+      "crate::resource_from_str",
+      "crate::resource_value",
+      "crate::resource_into_string",
+      "crate::client_request_from_string",
+      "crate::client_request_from_str",
+      "crate::client_request_value",
+      "crate::client_request_into_string",
+      "crate::deployment_from_string",
+      "crate::deployment_from_str",
+      "crate::deployment_value",
+      "crate::deployment_into_string",
+      "crate::node_from_string",
+      "crate::node_from_str",
+      "crate::node_value",
+      "crate::node_into_string",
+      "crate::center_allocated_number",
+      "crate::numeric::seconds_to_milliseconds",
+      "crate::numeric::bytes_to_mebibytes",
+      "crate::numeric::available_resource",
+      "crate::receipts::action_version",
+      "crate::receipts::receipt_validate"
+    ],
+    "start_from_if_exists": [],
+    "start_from_attribute": [],
+    "start_from_pub": false,
+    "include": [
+      "serde_core::de::impls::{impl serde_core::de::Deserialize for alloc::string::String}::deserialize",
+      "serde_core::de::impls::StringVisitor",
+      "serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::expecting",
+      "serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_str",
+      "serde_core::de::impls::{impl serde_core::de::Visitor for serde_core::de::impls::StringVisitor}::visit_string",
+      "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize",
+      "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::PrimitiveVisitor",
+      "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_::expecting",
+      "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_::visit_u64",
+      "sandproof_protocol",
+      "sandproof_center_core",
+      "sandbox_controller_core"
+    ],
+    "opaque": [
+      "serde_core::de::impls::StringVisitor::_",
+      "serde_core::de::Error::invalid_type",
+      "serde_core::de::Visitor::visit_str",
+      "serde_core::de::Visitor::visit_string",
+      "serde_core::de::Visitor::visit_borrowed_str",
+      "serde_core::de::Visitor::visit_u64",
+      "serde_core::de::impls::{impl serde_core::de::Deserialize for u64}::deserialize::_"
+    ],
+    "exclude": [],
+    "extract_opaque_bodies": false,
+    "translate_all_methods": false,
+    "duplicate_defaulted_methods": false,
+    "lift_associated_types": [
+      "*"
+    ],
+    "hide_marker_traits": true,
+    "hide_allocator": true,
+    "remove_unused_clauses": false,
+    "remove_unused_self_clauses": true,
+    "remove_adt_clauses": true,
+    "desugar_drops": false,
+    "ops_to_function_calls": true,
+    "index_to_function_calls": true,
+    "treat_box_as_builtin": true,
+    "no_gen_tuple_structs": true,
+    "raw_consts": false,
+    "consts": null,
+    "unsized_strings": false,
+    "reconstruct_fallible_operations": true,
+    "reconstruct_asserts": true,
+    "reconstruct_matches": true,
+    "deallocate_all_locals": true,
+    "unbind_item_vars": true,
+    "print_original_ullbc": false,
+    "print_ullbc": false,
+    "print_built_llbc": false,
+    "print_llbc": false,
+    "dest_dir": null,
+    "dest_file": "../aeneas/llbc/sandproof_foundations.llbc",
+    "no_dedup_serialized_ast": false,
+    "format": null,
+    "no_serialize": false,
+    "skip_borrowck": false,
+    "no_typecheck": false,
+    "no_normalize": false,
+    "no_reorder_decls": false,
+    "abort_on_error": false,
+    "error_on_warnings": true,
+    "preset": "Aeneas"
+  },
+  "llbc_sha256": "bceb4c965524112a92059067b1380ef577afc01b3e18b65042f781e0ce0d0c93",
+  "functions": [
+    "sandproof_foundations_extract::json::counter_decode",
+    "sandproof_foundations_extract::json::counter_primitive",
+    "sandproof_foundations_extract::json::json_error_passthrough",
+    "sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from",
+    "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}::fmt",
+    "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize",
+    "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}::call_once",
+    "serde_core::de::Visitor::visit_u64",
+    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize",
+    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}::expecting",
+    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}::visit_u64"
+  ],
+  "library_sources": {
+    "serde_core": {
+      "version": "1.0.228",
+      "files": {
+        "src/de/mod.rs": "5ec8602d593915e0cf480b0ce67b02f6ab066dac34725237d2c7b4a6ef12a845",
+        "src/de/impls.rs": "9fb7a0322af51971fe1fa8f5b56c7ca3716622a6e9127b86bddfc0742c11383c"
+      }
+    },
+    "serde_json": {
+      "version": "1.0.142",
+      "files": {
+        "src/error.rs": "a9b5de0a82f95608b51b8e8875c7c49f94fb60b9f976fc6277aec0213926dec9"
+      }
+    }
+  },
+  "conditional_cleanup": {
+    "sandproof_foundations_extract::json::counter_decode": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 111
+          },
+          "id": 109,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 111
+              },
+              "id": 165,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 111
+              },
+              "id": 166,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 112
+          },
+          "id": 111,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 112
+              },
+              "id": 168,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 112
+              },
+              "id": 169,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 105
+          },
+          "id": 115,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 105
+              },
+              "id": 175,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 105
+              },
+              "id": 176,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_foundations_extract::json::counter_primitive": [
+      {
+        "place": {
+          "kind": {
+            "Local": 2
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 5
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 121
+          },
+          "id": 121,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 121
+              },
+              "id": 183,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 121
+              },
+              "id": 184,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 7
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 122
+          },
+          "id": 123,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 122
+              },
+              "id": 186,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 122
+              },
+              "id": 187,
+              "kind": {
+                "Abort": "UnwindTerminate"
+              },
+              "comments_before": []
+            }
+          ]
+        }
+      },
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 34
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Trait": [
+              {
+                "Deduplicated": 13
+              },
+              0
+            ]
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 6
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 115
+          },
+          "id": 127,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 115
+              },
+              "id": 193,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 115
+              },
+              "id": 194,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ],
+    "sandproof_foundations_extract::json::json_error_passthrough": [
+      {
+        "place": {
+          "kind": {
+            "Local": 1
+          },
+          "ty": {
+            "Deduplicated": 110
+          }
+        },
+        "fn_ptr": {
+          "kind": {
+            "Fun": 194
+          },
+          "generics": {
+            "regions": [
+              {
+                "Body": 0
+              }
+            ],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        },
+        "kind": "Conditional",
+        "on_unwind": {
+          "span": {
+            "Deduplicated": 124
+          },
+          "id": 133,
+          "statements": [
+            {
+              "span": {
+                "Deduplicated": 124
+              },
+              "id": 200,
+              "kind": {
+                "StorageDead": 1
+              },
+              "comments_before": []
+            },
+            {
+              "span": {
+                "Deduplicated": 124
+              },
+              "id": 201,
+              "kind": "UnwindResume",
+              "comments_before": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "cleanup_scope": "Exact conditional extraction-root cleanups; excludes externally observable custom Drop, resource holding and panic/unwind/abort cleanup claims.",
+  "types": [
+    "core::num::error::ParseIntError",
+    "core::str::iter::Bytes",
+    "serde_json::error::Error",
+    "sandbox_controller_core::store::Store",
+    "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}",
+    "sandproof_center_core::model::LanePhase",
+    "sandproof_protocol::NodeId",
+    "sandproof_protocol::DeploymentId",
+    "sandproof_protocol::internal::PositiveCounter",
+    "sandproof_protocol::internal::NodeIdentity",
+    "sandproof_protocol::OperationId",
+    "sandproof_protocol::SandboxId",
+    "sandproof_protocol::TenantId",
+    "sandproof_protocol::internal::ControlIdentity",
+    "sandproof_protocol::internal::lifecycle::LifecycleFact",
+    "sandproof_protocol::internal::lifecycle::LifecycleResponse",
+    "sandproof_center_core::model::RetentionLane",
+    "sandproof_protocol::internal::InternalError",
+    "sandproof_protocol::internal::lifecycle::Resources",
+    "sandproof_protocol::ResourceId",
+    "sandproof_protocol::internal::lifecycle::CreateBinding",
+    "serde_core::de::Unexpected",
+    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor",
+    "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}",
+    "sandproof_protocol::ContractError",
+    "sandproof_protocol::valid_identifier::{closure}",
+    "sandproof_protocol::LogicalActionId",
+    "sandproof_protocol::ClientRequestId",
+    "serde_core::de::impls::StringVisitor",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}",
+    "sandproof_protocol::ResourceKind",
+    "sandproof_protocol::ResourceRef",
+    "sandproof_protocol::ActionIdentity",
+    "sandproof_protocol::WorkAction",
+    "sandproof_protocol::FailureCode",
+    "sandproof_protocol::UnknownReason",
+    "sandproof_protocol::WorkOutcome",
+    "sandproof_protocol::WorkReceipt",
+    "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}",
+    "sandproof_foundations_extract::store_retain_above::{closure}",
+    "sandproof_foundations_extract::option_is_none_or::{closure}"
+  ],
+  "trait_decls": [
+    "core::str::traits::FromStr",
+    "serde_core::de::Expected",
+    "serde_core::de::Error",
+    "serde_core::de::Visitor",
+    "serde_core::de::Deserializer",
+    "sandproof_protocol::ResourceEvidence"
+  ],
+  "trait_impls": [
+    "core::fmt::{impl core::fmt::Display for &'_0 T}",
+    "core::fmt::num::imp::{impl core::fmt::Display for u64}",
+    "core::fmt::num::imp::{impl core::fmt::Display for u16}",
+    "core::num::{impl core::str::traits::FromStr<core::num::error::ParseIntError> for u64}",
+    "core::str::traits::{impl core::cmp::PartialEq<str> for str}",
+    "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnOnce<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
+    "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{impl core::ops::function::FnMut<(&'_ (K, V),), bool> for sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::retain::{closure}<K, V, T2>}",
+    "serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::{impl serde_core::de::Visitor<'de, u64> for serde_core::de::impls::{impl serde_core::de::Deserialize<'de> for u64}::deserialize::PrimitiveVisitor}",
+    "sandproof_protocol::internal::{impl core::fmt::Display for sandproof_protocol::internal::InternalError}",
+    "sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), Clause0_Error> for sandproof_protocol::internal::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::internal::PositiveCounter}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}",
+    "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}",
+    "sandproof_protocol::{impl core::fmt::Display for sandproof_protocol::ContractError}",
+    "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
+    "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}",
+    "serde_core::de::impls::{impl serde_core::de::Visitor<'de, alloc::string::String> for serde_core::de::impls::StringVisitor}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::TenantId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::SandboxId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::OperationId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::LogicalActionId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ResourceId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::ClientRequestId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::DeploymentId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{impl core::ops::function::FnOnce<(sandproof_protocol::ContractError,), Clause0_Error> for sandproof_protocol::{impl serde_core::de::Deserialize<'de> for sandproof_protocol::NodeId}::deserialize::{closure}<'de, D, Clause0_Error>}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ClientRequestId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::DeploymentId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::convert::From<sandproof_protocol::NodeId> for alloc::string::String}",
+    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceRef> for sandproof_protocol::ResourceRef}",
+    "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ActionIdentity> for sandproof_protocol::ActionIdentity}",
+    "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{impl core::ops::function::FnOnce<(&'_ E,), bool> for sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}<'_0, E, C>}",
+    "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnOnce<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
+    "sandproof_foundations_extract::store_retain_above::{impl core::ops::function::FnMut<(&'_ u64, &'_ u64), bool> for sandproof_foundations_extract::store_retain_above::{closure}<'_0>}",
+    "sandproof_foundations_extract::option_is_none_or::{impl core::ops::function::FnOnce<(u64,), bool> for sandproof_foundations_extract::option_is_none_or::{closure}<'_0>}"
+  ],
+  "globals": [
+    "sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES",
+    "sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION",
+    "sandproof_protocol::PROTOCOL_VERSION"
+  ],
+  "extraction_features": {
+    "serde_core": [
+      "result",
+      "std"
+    ],
+    "serde_json": [
+      "default",
+      "std"
+    ]
+  }
+}

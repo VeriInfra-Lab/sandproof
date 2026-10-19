@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pinned SDK wire tests and the real gateway against synthetic envd; no VM/cloud.
+# Pinned SDK fixtures, real guest commands and init/MMDS components; no VM/cloud.
 set -euo pipefail
 
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -11,10 +11,28 @@ uv run --locked --project tests/compat \
 echo "SDK wire checks passed against synthetic loopback responses."
 
 if [[ "$(uname -s)" == Linux ]]; then
+  cargo build -p sandproof-host-service --example guest_rejection_gateway --locked
+  sdk_target="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}"
+  if [[ "$sdk_target" != /* ]]; then sdk_target="$PROJECT_ROOT/$sdk_target"; fi
+  export SANDPROOF_GUEST_GATEWAY_HELPER="$sdk_target/debug/examples/guest_rejection_gateway"
   cargo clippy -p sandproof-host-service --all-targets --features sdk-contract-tests --locked -- -D warnings
   cargo test -p sandproof-host-service --features sdk-contract-tests --locked \
     data_gateway::sdk_tests:: -- --test-threads=1 --nocapture
   echo "SDK/gateway composition checks passed; authorization, host relay and VM are not tested."
+  cargo clippy -p sandproof-guest-runtime --all-targets --features sdk-contract-tests --locked -- -D warnings
+  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test preparation guest::admission:: -- --nocapture
+  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_protocol --test sdk_registered --test protocol --test command_responses --test command_requests -- --nocapture
+  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_files -- --nocapture
+  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_io -- --nocapture
+  cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_transfer -- --nocapture
+  cargo test -p sandproof-guest-runtime --locked --test file_protocol
+  cargo test -p sandproof-guest-runtime --locked --test filesystem
+  cargo test -p sandproof-guest-runtime --locked --test file_transfer
+  cargo test -p sandproof-guest-runtime --locked --lib --test context --test owner --test preparation --test process --test pty
+  echo "SDK/guest commands and real unary/raw/multipart files passed through test routers; this is not a complete guest service or Go envd/KVM comparison."
+  cargo clippy -p sandproof-guest-service --all-targets --locked -- -D warnings
+  cargo test -p sandproof-guest-service --all-targets --locked
+  echo "Guest init/MMDS, account/context, PTY and owned command lifecycle components passed; production command routes, privileged switching and real Firecracker MMDS remain separate checks."
 else
   echo "SDK/gateway composition checks not run: the gateway requires Linux."
 fi

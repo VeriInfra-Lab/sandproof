@@ -668,6 +668,7 @@ fn publication(id: char) -> crate::template_registry::Publication {
     let candidate_id = id.to_string().repeat(32);
     Publication {
         binding: TemplateBinding {
+            guest: None,
             template_id: format!("tpl-{candidate_id}"),
             revision: "r1".into(),
             owner: Some(1),

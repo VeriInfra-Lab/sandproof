@@ -1,13 +1,21 @@
 name = "sandbox-model"
 version = "0.1.0"
-defaultTargets = ["SandboxModel", "SandboxControllerCore"]
+defaultTargets = ["SandboxModel"]
 
 [[lean_lib]]
 name = "SandboxModel"
 
 [[lean_lib]]
-name = "SandboxControllerCore"
-srcDir = "verification/aeneas/generated"
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/foundations"
+
+[[lean_lib]]
+name = "SandproofNetwork"
+srcDir = "verification/aeneas/network"
+
+[[lean_lib]]
+name = "SandproofDataDrain"
+srcDir = "verification/aeneas/data-drain"
 
 [[require]]
 name = "aeneas"

@@ -1,0 +1,644 @@
+{
+  "version": 1,
+  "sdk": {
+    "version": "2.51.0",
+    "revision": "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b"
+  },
+  "runtime_revision": "f455fd58fa3f289e78ce1de690c35968d8d29322",
+  "evidence": "Shared pinned-protocol fixtures only; these are not Rust guest-service, upstream runtime, or KVM execution results.",
+  "rpcs": [
+    {
+      "id": "command-start",
+      "service": "process",
+      "method": "Start",
+      "transport": "server_stream",
+      "request": {
+        "process": {
+          "cmd": "/bin/sh",
+          "args": [
+            "-c",
+            "printf out; printf err >&2; exit 17"
+          ],
+          "envs": {
+            "SAMPLE": "value"
+          },
+          "cwd": "/tmp"
+        },
+        "stdin": false
+      },
+      "responses": [
+        {
+          "event": {
+            "start": {
+              "pid": 4321
+            }
+          }
+        },
+        {
+          "event": {
+            "data": {
+              "stdout": "b3V0"
+            }
+          }
+        },
+        {
+          "event": {
+            "data": {
+              "stderr": "ZXJy"
+            }
+          }
+        },
+        {
+          "event": {
+            "end": {
+              "exitCode": 17,
+              "exited": true,
+              "status": "exit status 17"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "command-connect",
+      "service": "process",
+      "method": "Connect",
+      "transport": "server_stream",
+      "request": {
+        "process": {
+          "pid": 4321
+        }
+      },
+      "responses": [
+        {
+          "event": {
+            "start": {
+              "pid": 4321
+            }
+          }
+        },
+        {
+          "event": {
+            "end": {
+              "exitCode": 17,
+              "exited": true,
+              "status": "exit status 17"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "command-input",
+      "service": "process",
+      "method": "SendInput",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4321
+        },
+        "input": {
+          "stdin": "AP9BCg=="
+        }
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "command-close-input",
+      "service": "process",
+      "method": "CloseStdin",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4321
+        }
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "command-signal",
+      "service": "process",
+      "method": "SendSignal",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4321
+        },
+        "signal": "SIGNAL_SIGKILL"
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "command-list",
+      "service": "process",
+      "method": "List",
+      "transport": "unary",
+      "request": {},
+      "responses": [
+        {
+          "processes": [
+            {
+              "config": {
+                "cmd": "/bin/cat"
+              },
+              "pid": 4321
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pty-start",
+      "service": "process",
+      "method": "Start",
+      "transport": "server_stream",
+      "request": {
+        "process": {
+          "cmd": "/bin/sh"
+        },
+        "pty": {
+          "size": {
+            "cols": 80,
+            "rows": 24
+          }
+        },
+        "stdin": true
+      },
+      "responses": [
+        {
+          "event": {
+            "start": {
+              "pid": 4322
+            }
+          }
+        },
+        {
+          "event": {
+            "data": {
+              "pty": "AP9BCg=="
+            }
+          }
+        },
+        {
+          "event": {
+            "end": {
+              "exited": true,
+              "status": "exit status 0"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "pty-resize",
+      "service": "process",
+      "method": "Update",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4322
+        },
+        "pty": {
+          "size": {
+            "cols": 120,
+            "rows": 40
+          }
+        }
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "file-stat",
+      "service": "filesystem",
+      "method": "Stat",
+      "transport": "unary",
+      "request": {
+        "path": "/tmp/sample.bin"
+      },
+      "responses": [
+        {
+          "entry": {
+            "name": "sample.bin",
+            "type": "FILE_TYPE_FILE",
+            "path": "/tmp/sample.bin",
+            "size": "4",
+            "mode": 420,
+            "permissions": "-rw-r--r--",
+            "owner": "ubuntu",
+            "group": "ubuntu",
+            "modifiedTime": "2026-10-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "file-mkdir",
+      "service": "filesystem",
+      "method": "MakeDir",
+      "transport": "unary",
+      "request": {
+        "path": "~/new/nested"
+      },
+      "responses": [
+        {
+          "entry": {
+            "name": "nested",
+            "type": "FILE_TYPE_DIRECTORY",
+            "path": "/home/ubuntu/new/nested",
+            "mode": 493
+          }
+        }
+      ]
+    },
+    {
+      "id": "file-list",
+      "service": "filesystem",
+      "method": "ListDir",
+      "transport": "unary",
+      "request": {
+        "path": "/tmp",
+        "depth": 2
+      },
+      "responses": [
+        {
+          "entries": [
+            {
+              "name": "sample.bin",
+              "type": "FILE_TYPE_FILE",
+              "path": "/tmp/sample.bin",
+              "size": "4"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "file-move",
+      "service": "filesystem",
+      "method": "Move",
+      "transport": "unary",
+      "request": {
+        "source": "/tmp/sample.bin",
+        "destination": "/tmp/moved.bin"
+      },
+      "responses": [
+        {
+          "entry": {
+            "name": "moved.bin",
+            "type": "FILE_TYPE_FILE",
+            "path": "/tmp/moved.bin",
+            "size": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "file-remove",
+      "service": "filesystem",
+      "method": "Remove",
+      "transport": "unary",
+      "request": {
+        "path": "/tmp/moved.bin"
+      },
+      "responses": [
+        {}
+      ]
+    }
+  ],
+  "http": [
+    {
+      "id": "file-upload",
+      "method": "POST",
+      "path": "/files?path=%2Ftmp%2Fsample.bin&username=ubuntu",
+      "content_type": "application/octet-stream",
+      "body_base64": "AP9BCg==",
+      "status": 200
+    },
+    {
+      "id": "file-download",
+      "method": "GET",
+      "path": "/files?path=%2Ftmp%2Fsample.bin&username=ubuntu",
+      "status": 200,
+      "body_base64": "AP9BCg=="
+    },
+    {
+      "id": "health",
+      "method": "GET",
+      "path": "/health",
+      "status": 204
+    },
+    {
+      "id": "initialize",
+      "method": "POST",
+      "path": "/init",
+      "visibility": "host_only",
+      "body": {
+        "accessToken": "fixture-only-token",
+        "defaultUser": "root",
+        "envVars": {
+          "SAMPLE": "value"
+        },
+        "defaultWorkdir": "/tmp"
+      },
+      "status": 204
+    }
+  ],
+  "current_gateway_rejections": [
+    "WatchDir",
+    "CreateWatcher",
+    "GetWatcherEvents",
+    "RemoveWatcher"
+  ],
+  "open_contract_decisions": [
+    "File watcher routes are rejected by the current gateway; exposing them requires an explicit scope decision.",
+    "Whole-service E05 peak acceptance remains open; use the declared deployment/task budgets and exact-workload evidence in docs/module-contracts.md and docs/testing-plan.md. Component limits alone do not close E05."
+  ],
+  "error_code_catalog": [
+    {
+      "code": "not_found",
+      "meaning": "unknown command selector or missing file; no replay",
+      "unary_http_status": 404
+    },
+    {
+      "code": "invalid_argument",
+      "meaning": "invalid fields/path; never fall back to a different user",
+      "unary_http_status": 400
+    },
+    {
+      "code": "permission_denied",
+      "meaning": "operation refused; preserve already observed partial file effects",
+      "unary_http_status": 403
+    },
+    {
+      "code": "unauthenticated",
+      "meaning": "no valid instance credential or requested user",
+      "unary_http_status": 401
+    },
+    {
+      "code": "resource_exhausted",
+      "meaning": "declared local capacity exhausted; not a successful start",
+      "unary_http_status": 429
+    },
+    {
+      "code": "deadline_exceeded",
+      "meaning": "requested result not observed in time; effects may have happened",
+      "unary_http_status": 504
+    }
+  ],
+  "error_code_catalog_scope": "Connect code vocabulary and unary status only; not a universal endpoint mapping. Streaming EOS uses HTTP 200; an unclassified or partial transport failure has no complete error response.",
+  "errors": [
+    {
+      "id": "admission-post-Start",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/Start"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Connect",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/Connect"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-List",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/List"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-SendInput",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/SendInput"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-CloseStdin",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/CloseStdin"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-SendSignal",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/SendSignal"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Update",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/process.Process/Update"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Stat",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/Stat"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-MakeDir",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/MakeDir"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-ListDir",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/ListDir"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Move",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/Move"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-Remove",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/filesystem.Filesystem/Remove"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-get-files",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "GET",
+        "path": "/files?path=never"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-post-files",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "POST",
+        "path": "/files?path=never"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": "{\"code\":\"resource_exhausted\",\"message\":\"request capacity exhausted\"}"
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    },
+    {
+      "id": "admission-head-files",
+      "trigger": "selected_request_pool_exhausted",
+      "stage": "before_authorization_and_body",
+      "request": {
+        "method": "HEAD",
+        "path": "/files?path=never"
+      },
+      "response": {
+        "status": 429,
+        "content_type": "application/json",
+        "body": ""
+      },
+      "effects": "no account lookup, body polling, command dispatch or filesystem effect"
+    }
+  ],
+  "start_refusals": [
+    {
+      "id": "pid-writer-capacity",
+      "stage": "single writer slot refused before PID claim and user command dispatch",
+      "status": 200,
+      "content_type": "application/connect+json",
+      "end_stream": {
+        "error": {
+          "code": "resource_exhausted",
+          "message": "command registration capacity exceeded"
+        }
+      },
+      "scope": "Rust's explicit finite writer capacity; not an assertion that fixed Go refuses under the same load. Gated worker cleanup remains owned."
+    }
+  ],
+  "accepted_contract_decisions": [
+    "Public PID claims are durable and never reused within one VM; restart opens the original state and rejects missing, corrupt or foreign state. Restart does not restore the active command registry.",
+    "Tags use deterministic lookup, reject active duplicates before execution and retain terminal records for 30 seconds.",
+    "Explicit keepalive must be a positive whole-second value in 1..9223372036; missing or unparsable values use 90 seconds."
+  ]
+}

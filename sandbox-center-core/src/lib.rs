@@ -7,6 +7,9 @@ mod decision;
 mod model;
 mod validation;
 mod window;
+pub use decision::ResponseDisposition;
 pub use model::*;
+/// Pure syntax/frontier check used by recovery; it grants no authority.
+pub use validation::number as parse_allocated_number;
 #[cfg(test)]
 mod tests;

@@ -2,7 +2,6 @@
 //! nor a host port: each request first checks the durable core authority.
 
 use std::{
-    error::Error,
     io,
     pin::Pin,
     sync::Arc,
@@ -17,6 +16,7 @@ use axum::{
 use hyper::client::conn::http1;
 use hyper_util::rt::TokioIo;
 use sandproof_api::admission::{RequestAdmission, RequestClass, RequestLease};
+use sandproof_controller_service::application::fault::{FaultContext, FaultRecord, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError as PortError, ControllerApplication, ControllerHost, DataAccessPort,
     DataAuthorization, DataKind, DataPermit,
@@ -29,14 +29,18 @@ use tokio::{
 
 mod admission;
 mod drain;
+#[cfg(target_os = "linux")]
+mod relay_stdio;
 pub use admission::Gateway;
+use sandproof_data_transport::{
+    BodyWorkOwner, WriteIdle, access_token, control_request, forward_request, hold_response,
+    prepare_body, request_kind, response, until_revoked,
+};
 #[cfg(all(target_os = "linux", test, feature = "sdk-contract-tests"))]
 use sandproof_data_transport::{FILE_REQUEST_LIMIT, RESPONSE_LIMIT};
 pub use sandproof_data_transport::{GatewayListener, TransferLimits};
-use sandproof_data_transport::{
-    WriteIdle, access_token, control_request, forward_request, hold_response, prepare_body,
-    request_kind, response, tunnel, until_revoked,
-};
+#[cfg(target_os = "linux")]
+use {sandproof_data_transport::tunnel, std::error::Error};
 
 const ENVD_ADDRESS: &str = "172.16.0.2:49983";
 
@@ -168,6 +172,9 @@ async fn handle_prepared<P: DataAccessPort>(
         None => None,
     };
     let limits = gateway.as_ref().map(|gateway| &gateway.limits);
+    request
+        .extensions_mut()
+        .insert(BodyWorkOwner::new((lease.clone(), request_lease.clone())));
     let request = match until_revoked(
         permit.revocation(),
         prepare_body(request, file_request, limits),
@@ -269,7 +276,20 @@ async fn authorize_data<P: DataAuthorization>(
     {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(PortError::NotFound | PortError::Invalid)) => Err(StatusCode::UNAUTHORIZED),
-        Ok(Err(_)) | Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE),
+        Ok(Err(error)) => {
+            FaultRecord::application(
+                FaultStage::HostDataAuthorization,
+                &error,
+                FaultContext::default(),
+            )
+            .emit();
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+        Err(_) => {
+            FaultRecord::application(FaultStage::Join, &PortError::Busy, FaultContext::default())
+                .emit();
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
     }
 }
 
@@ -290,7 +310,10 @@ async fn launch_data_route<P: DataAccessPort>(
         Ok(child) => drain::RelayProcess::new(child),
         Err(PortError::NotFound | PortError::Invalid) => return Err(StatusCode::UNAUTHORIZED),
         Err(PortError::QuotaExceeded) => return Err(StatusCode::TOO_MANY_REQUESTS),
-        Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE),
+        Err(error) => {
+            FaultRecord::application(FaultStage::Relay, &error, FaultContext::default()).emit();
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
     };
     Ok((permit, child))
 }
@@ -300,10 +323,20 @@ async fn launch_data_route<P: DataAccessPort>(
 ///
 /// # Errors
 /// Fails when envd is unreachable or the caller disconnects.
+#[cfg(target_os = "linux")]
 pub async fn relay() -> Result<(), Box<dyn Error>> {
+    use std::os::fd::AsFd;
+    // Tokio's generic stdin starts a non-cancelable blocking read. Dropping
+    // that future after guest EOF would still block runtime shutdown and keep
+    // stdout open. These are the original anonymous pipes from the host;
+    // checked nonblocking registration neither spawns a reader nor accepts TTYs.
+    let (input, output) = relay_stdio::pipes(
+        std::io::stdin().as_fd().try_clone_to_owned()?,
+        std::io::stdout().as_fd().try_clone_to_owned()?,
+    )?;
     let stream = tokio::net::TcpStream::connect(ENVD_ADDRESS).await?;
     let (reader, writer) = stream.into_split();
-    tunnel::relay(tokio::io::stdin(), tokio::io::stdout(), reader, writer).await?;
+    tunnel::relay(input, output, reader, writer).await?;
     Ok(())
 }
 

@@ -359,8 +359,12 @@ impl BusinessMetadata for RegistryMetadata {
                 if previous.create.node == link.create.node
                     && let (Some(a), Some(b)) = (&previous.local, &link.local)
                     && (a.sandbox == b.sandbox
-                        || ((previous.create.tenant_id == link.create.tenant_id)
-                            != (a.owner == b.owner)))
+                        || (previous.create.tenant_id != link.create.tenant_id
+                            && a.owner == b.owner)
+                        || (previous.create.tenant_id == link.create.tenant_id
+                            && a.owner != b.owner
+                            && !validation_retired(previous, center)
+                            && !validation_retired(link, center)))
                 {
                     return false;
                 }
@@ -391,6 +395,22 @@ impl BusinessMetadata for RegistryMetadata {
             )
             .saturating_add(256 * 512)
     }
+}
+// The original inbox reclaims a tenant mapping after its last window retires.
+// A later mapping may use a fresh monotonic local owner. Keep live mappings
+// stable and never allow two global tenants to share a historical local owner;
+// only exact settled window retirement can end the former equality obligation.
+fn validation_retired(link: &super::ValidationLink, center: &CenterState) -> bool {
+    link.settlement.is_some()
+        && center
+            .lane(&link.create.node, link.create.retention_slot)
+            .is_some_and(|lane| lane.retired_through() >= link.create.request_window.get())
+        && !center.sandboxes().iter().any(|sandbox| {
+            sandbox
+                .operations
+                .first()
+                .is_some_and(|first| first.request.identity.sandbox_id == link.create.sandbox_id)
+        })
 }
 fn registry_error(error: &JournalError) -> PortError {
     match error {

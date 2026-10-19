@@ -21,6 +21,7 @@ use tokio::sync::Semaphore;
 pub mod data_gateway;
 mod driver;
 mod facade;
+mod status_admission;
 pub use driver::{DriveReport, DriverConfig, TemplateSource};
 pub use facade::HostFacade;
 
@@ -29,12 +30,14 @@ pub use facade::HostFacade;
 pub struct HostLifecycle<H: ControllerHost> {
     application: Arc<ControllerApplication<H>>,
     work: Arc<Semaphore>,
+    status: Arc<Semaphore>,
 }
 impl<H: ControllerHost> Clone for HostLifecycle<H> {
     fn clone(&self) -> Self {
         Self {
             application: Arc::clone(&self.application),
             work: Arc::clone(&self.work),
+            status: Arc::clone(&self.status),
         }
     }
 }
@@ -45,6 +48,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         Self {
             application,
             work: Arc::new(Semaphore::new(1)),
+            status: Arc::new(Semaphore::new(1)),
         }
     }
     #[must_use]
@@ -78,7 +82,10 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         self.blocking(move |app| app.internal_pending(&node)).await
     }
 
-    /// Original read-only health sampling shares the SAME non-waiting work gate.
+    /// Read-only health sampling uses the SAME work gate, with at most one
+    /// waiting/running observation. FIFO reservation prevents periodic driver
+    /// work from repeatedly winning `try_acquire` and expiring a healthy node.
+    /// No concurrent application work or longer freshness lease is introduced.
     /// # Errors
     /// Unknown observations never refresh a node as healthy.
     pub async fn free_resources(
@@ -86,8 +93,14 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         node: NodeIdentity,
         compute: ComputeLimits,
     ) -> Result<(u64, sandproof_protocol::internal::lifecycle::Resources), ApplicationError> {
-        self.blocking(move |app| app.internal_free_resources(&node, compute))
-            .await
+        let permits = status_admission::acquire(&self.work, &self.status).await?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permits = permits;
+            app.internal_free_resources(&node, compute)
+        })
+        .await
+        .map_err(|_| ApplicationError::Busy)?
     }
     /// Original physical lease/peak validation before managed cache writes.
     /// # Errors

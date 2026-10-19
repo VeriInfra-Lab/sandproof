@@ -24,7 +24,8 @@ import uuid
 import httpx
 from e2b import AsyncSandbox, Sandbox
 
-from sdk_command_input import call
+from sdk_command_input import call, destroy_probes
+from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
 
 
@@ -42,36 +43,83 @@ def verify_deadline(error):
     # A transport EOF, SDK SandboxException, or arbitrary exception is not this.
     assert type(error) is httpx.ReadTimeout
     assert isinstance(error.__cause__, TimeoutError)
+    # SDK reader cleanup can raise a second exception while handling an
+    # unrelated read failure/cancellation. That is not an accepted deadline.
+    assert error.__context__ is None or error.__context__ is error.__cause__, 'deadline hides another failure'
 
 
-async def read_content(sandbox, path, format, **kwargs):
+async def read_content(sandbox, path, format, *, observation=None, **kwargs):
+    # This probe reads only its fixed payload or an observed prefix of an
+    # unknown upload. Bound its own accumulation; this is not a product limit.
+    data, digest = bytearray(), hashlib.sha256()
+    observation = {} if observation is None else observation
+    observation.update(public_bytes=0, public_sha256=digest.hexdigest(), public_eof=False)
+    def append(chunk):
+        assert isinstance(chunk, (bytes, bytearray)), 'non-byte file chunk'
+        end = len(data) + len(chunk)
+        assert end <= len(PAYLOAD), 'file observation exceeds fixed payload'
+        assert chunk == PAYLOAD[len(data):end], 'file observation has a corrupt prefix'
+        data.extend(chunk)
+        digest.update(chunk)
+        observation.update(public_bytes=len(data), public_sha256=digest.hexdigest())
+
     result = await call(sandbox.files.read, path, format=format, **kwargs)
     if format == 'text':
-        return result.encode()
-    if format == 'bytes':
-        return bytes(result)
-    if hasattr(result, '__aiter__'):
-        async with result:
-            return b''.join([chunk async for chunk in result])
-    def consume():
-        with result:
-            return b''.join(result)
-    return await asyncio.to_thread(consume)
+        append(result.encode())
+    elif format == 'bytes':
+        append(result)
+    elif hasattr(result, '__aiter__'):
+        primary = None
+        try:
+            async for chunk in result:
+                append(chunk)
+        except BaseException as error:
+            primary = error
+        try:
+            await result.aclose()
+        except BaseException as cleanup:
+            if primary is not None:
+                raise BaseExceptionGroup('file read and close failed', [primary, cleanup])
+            raise
+        if primary is not None:
+            raise primary
+    else:
+        def consume():
+            primary = None
+            try:
+                for chunk in result:
+                    append(chunk)
+            except BaseException as error:
+                primary = error
+            try:
+                result.close()
+            except BaseException as cleanup:
+                if primary is not None:
+                    raise BaseExceptionGroup('file read and close failed', [primary, cleanup])
+                raise
+            if primary is not None:
+                raise primary
+        await asyncio.to_thread(consume)
+    observation['public_eof'] = True
+    return bytes(data)
 
 
 async def read_case(sandbox, path, asynchronous, format, field, case, value):
     expected_deadline = case == 'negative' and (field == 'request_timeout' or asynchronous)
+    observation = {}
     try:
-        content = await read_content(sandbox, path, format, **arguments(field, case, value))
+        content = await read_content(sandbox, path, format, observation=observation,
+                                     **arguments(field, case, value))
     except Exception as error:
         assert expected_deadline
         verify_deadline(error)
     else:
         assert not expected_deadline, 'negative deadline returned success'
         assert content == PAYLOAD and hashlib.sha256(content).hexdigest() == DIGEST
-    assert await read_content(sandbox, path, 'bytes') == PAYLOAD
+    control = await read_content(sandbox, path, 'bytes')
+    assert control == PAYLOAD
     return dict(operation='read', format=format, parameter=field, case=case,
-                outcome='deadline' if expected_deadline else 'completed')
+                outcome='deadline' if expected_deadline else 'completed', read_observation=observation)
 
 
 def make_source(kind):
@@ -104,8 +152,8 @@ async def write_case(sandbox, directory, batch, octet, kind, case, value):
         else:
             assert not expected_deadline, 'negative buffered upload deadline returned success'
             assert len(result) == len(paths)
-            assert {entry.path for entry in result} == set(paths)
-        observed = []
+            assert [entry.path for entry in result] == paths
+        observed, digests = [], []
         for path in paths:
             exists = await call(sandbox.files.exists, path)
             if not expected_deadline:
@@ -119,28 +167,34 @@ async def write_case(sandbox, directory, batch, octet, kind, case, value):
                 else:
                     assert content == PAYLOAD and hashlib.sha256(content).hexdigest() == DIGEST
                 observed.append(len(content))
+                digests.append(hashlib.sha256(content).hexdigest())
             else:
                 observed.append(None)
+                digests.append(None)
     finally:
         for source in sources:
             if isinstance(source, io.IOBase):
                 source.close()
     control = f'{directory}/{uuid.uuid4().hex}-control'
     await call(sandbox.files.write, control, PAYLOAD)
-    assert await read_content(sandbox, control, 'bytes') == PAYLOAD
+    control_content = await read_content(sandbox, control, 'bytes')
+    assert control_content == PAYLOAD
     return dict(operation='write_files' if batch else 'write', encoding='octet' if octet else 'multipart',
                 source=kind, parameter='request_timeout', case=case,
-                outcome='deadline' if expected_deadline else 'completed', observed_lengths=observed)
+                outcome='deadline' if expected_deadline else 'completed',
+                observed_lengths=observed, observed_sha256=digests)
 
 
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
+    template, candidate = guest_candidate(args)
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     results = []
     for cls in (Sandbox, AsyncSandbox):
-        sandbox = await call(cls.create, template='base', timeout=300,
+        sandbox = await call(cls.create, template=template, timeout=300,
                              allow_internet_access=False, **owner)
         try:
+            before = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
             directory = '/tmp/file-timeouts-' + uuid.uuid4().hex
             path = directory + '/read-control'
             await call(sandbox.files.write, path, PAYLOAD)
@@ -159,17 +213,25 @@ async def exercise(args):
                             rows.append(await write_case(sandbox, directory, batch, octet,
                                                          kind, case, value))
             assert (await call(sandbox.commands.run, 'printf healthy', timeout=15)).stdout == 'healthy'
-            results.append(dict(sdk=cls.__name__, cases=rows))
+            after = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+            assert before == after, 'Rust guest identity changed during file timeout cases'
+            item = dict(sdk=cls.__name__, cases=rows)
+            if candidate is not None:
+                item.update(sandbox_id=sandbox.sandbox_id, rust_guest=before)
+            results.append(item)
         finally:
-            _kill_confirmed = (await call(sandbox.kill))
-            assert _kill_confirmed
-    print(json.dumps(dict(sdk_version='2.51.0', payload_bytes=len(PAYLOAD), sha256=DIGEST,
-                          results=results, scope='file HTTP request and stream idle timeout values; '
-                          'explicit multipart/octet modes; not unary RPC or lifetime deadlines'), indent=2))
+            await destroy_probes([sandbox])
+    report = dict(sdk_version='2.51.0', payload_bytes=len(PAYLOAD), sha256=DIGEST,
+                  results=results, scope='file HTTP request and stream idle timeout values; '
+                  'explicit multipart/octet modes; not unary RPC or lifetime deadlines')
+    if getattr(args, 'template', None) is not None:
+        report['template'] = template
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
+    guest_arguments(parser)
     asyncio.run(exercise(parser.parse_args()))

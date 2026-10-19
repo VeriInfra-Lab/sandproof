@@ -1,13 +1,17 @@
 """Unprivileged interpreter probes only; never import an SDK or start a VM."""
 
 import ast
+from concurrent.futures import ThreadPoolExecutor, wait
+from itertools import islice
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 
 from tools import system_acceptance as reports
 
@@ -25,6 +29,7 @@ C02_ACTIONS = (
 # function-level guard. New C02 resource entry points are guarded by default.
 C02_SAFE_FUNCTIONS = {"destroyed", "entries", "probe_environment", "main"}
 MODES = (("-O",), ("-OO",), ("env", "1"), ("env", "2"))
+PROBE_WORKERS = 2
 COMMON_PREFIX = '''import runpy as _runpy
 from pathlib import Path as _GuardPath
 _require_assertions = _runpy.run_path(
@@ -65,9 +70,112 @@ def invoke(mode, arguments, *, cwd=ROOT):
                           timeout=10, check=False)
 
 
+def bounded_results(function, items, workers=PROBE_WORKERS):
+    """Keep both running probes and submitted futures bounded, not just threads.
+
+    Yield futures to the test thread so subTest records each error/timeout and
+    continues the entire matrix. Joining the executor also drains owned work.
+    """
+    if type(workers) is not int or workers < 1:
+        raise ValueError("positive probe worker count required")
+    items = iter(items)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        while batch := tuple(islice(items, workers)):
+            pending = [(item, executor.submit(function, item)) for item in batch]
+            yield from pending
+            # Even a consumer collecting futures without result() cannot grow
+            # the queue while the previous bounded batch is still running.
+            wait([future for _, future in pending])
+
+
+def isolated_cli_probe(case):
+    mode, path = case
+    with tempfile.TemporaryDirectory() as temporary:
+        result = invoke(mode, [str(path), "--help"], cwd=temporary)
+        return result, [path.name for path in Path(temporary).iterdir()]
+
+
 def complete_report():
     from tools.tests.test_system_acceptance import complete_report as fixture
     return fixture()
+
+
+class BoundedProbeTests(unittest.TestCase):
+    def test_two_running_and_two_submitted_with_complete_matrix(self):
+        barrier = threading.Barrier(PROBE_WORKERS)
+        lock = threading.Lock()
+        active, high_water = 0, 0
+        consumed, finished = [], []
+
+        def items():
+            for item in range(8):
+                consumed.append(item)
+                yield item
+
+        def work(item):
+            nonlocal active, high_water
+            with lock:
+                active += 1
+                high_water = max(high_water, active)
+            barrier.wait(timeout=5)
+            with lock:
+                active -= 1
+                finished.append(item)
+            return item
+
+        results = bounded_results(work, items())
+        for expected in range(8):
+            item, future = next(results)
+            self.assertEqual(item, expected)
+            self.assertEqual(consumed, list(range((expected // 2 + 1) * 2)))
+            self.assertEqual(future.result(timeout=5), item)
+        with self.assertRaises(StopIteration):
+            next(results)
+        self.assertEqual(sorted(finished), list(range(8)))
+        self.assertEqual(high_water, PROBE_WORKERS)
+        self.assertEqual(active, 0)
+
+    def test_errors_and_timeouts_are_not_lost_and_remaining_cases_complete(self):
+        def work(item):
+            if item == 0:
+                raise subprocess.TimeoutExpired('probe', 10)
+            if item == 1:
+                raise RuntimeError('probe failed')
+            return item
+
+        results = list(bounded_results(work, range(4)))
+        with self.assertRaises(subprocess.TimeoutExpired):
+            results[0][1].result()
+        with self.assertRaisesRegex(RuntimeError, 'probe failed'):
+            results[1][1].result()
+        self.assertEqual([future.result() for _, future in results[2:]], [2, 3])
+
+    def test_parallel_probes_use_distinct_workdirs_and_report_residue_before_cleanup(self):
+        barrier = threading.Barrier(PROBE_WORKERS)
+        directories = []
+        lock = threading.Lock()
+
+        def fake_invoke(mode, arguments, *, cwd):
+            root = Path(cwd)
+            with lock:
+                directories.append(root)
+            if arguments[0] == 'dirty.py':
+                (root / 'unexpected').touch()
+            barrier.wait(timeout=5)
+            return subprocess.CompletedProcess(arguments, 1, '', 'optimized_python')
+
+        cases = [(MODES[0], Path('dirty.py')), (MODES[1], Path('clean.py'))]
+        with patch(__name__ + '.invoke', side_effect=fake_invoke):
+            results = [(case, future.result()) for case, future in bounded_results(isolated_cli_probe, cases)]
+        self.assertEqual(results[0][1][1], ['unexpected'])
+        self.assertEqual(results[1][1][1], [])
+        self.assertEqual(len(set(directories)), 2)
+        self.assertTrue(all(not root.exists() for root in directories))
+
+    def test_nonpositive_or_noninteger_limits_are_rejected(self):
+        for workers in (0, -1, True, 1.5):
+            with self.subTest(workers=workers), self.assertRaises(ValueError):
+                list(bounded_results(lambda item: item, (), workers=workers))
 
 
 class SystemAssertionsTests(unittest.TestCase):
@@ -105,14 +213,17 @@ class SystemAssertionsTests(unittest.TestCase):
     def test_optimized_cli_refuses_every_script_before_sdk_or_platform_tools(self):
         scripts = [path for path in sorted(SYSTEM.glob("*.py"))
                    if path.name != "sdk_c02_acceptance.py"]
-        with tempfile.TemporaryDirectory() as temporary:
-            for mode in MODES:
-                for path in scripts:
-                    with self.subTest(mode=mode, script=path.name):
-                        result = invoke(mode, [str(path), "--help"], cwd=temporary)
-                        self.assertNotEqual(result.returncode, 0, result.stdout)
-                        self.assertIn("optimized_python", result.stderr)
-                        self.assertEqual(list(Path(temporary).iterdir()), [])
+        cases = [(mode, path) for mode in MODES for path in scripts]
+        completed = 0
+        for (mode, path), future in bounded_results(isolated_cli_probe, cases):
+            completed += 1
+            with self.subTest(mode=mode, script=path.name):
+                result, entries = future.result()
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("optimized_python", result.stderr)
+                self.assertEqual(entries, [])
+        self.assertEqual(completed, len(MODES) * len(scripts))
+        print(f"assertion CLI probes: {completed}/{len(cases)}, workers={PROBE_WORKERS}", flush=True)
 
     def test_optimized_importlib_refuses_including_reusable_resource_audits(self):
         scripts = [str(path) for path in sorted(SYSTEM.glob("*.py"))
@@ -198,7 +309,8 @@ print("all_c02_actions_rejected")
             root = Path(temporary)
             arguments = [str(SYSTEM / "sdk_c02_acceptance.py")]
             for name in ('center','host','candidate-manifest','redis-material','tls-material',
-                         'service-staging-parent','service-cgroup-record',"jailer", "firecracker", "kernel", "rootfs", "host-config"):
+                         'service-staging-parent','service-cgroup-record','cgroup-parent',
+                         "jailer", "firecracker", "kernel", "rootfs", "host-config"):
                 arguments.extend(["--" + name, str(root / name)])
             arguments.extend(["--scratch-parent", str(root), "--uid-base", "1000",
                               "--expected-commit", "a" * 40])

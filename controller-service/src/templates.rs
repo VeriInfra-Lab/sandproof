@@ -8,6 +8,9 @@ use std::{
     path::{Component, PathBuf},
 };
 
+mod guest;
+pub use guest::{GuestBinaries, GuestFingerprint, GuestKind, GuestVersions, TemplateGuest};
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateArtifact {
@@ -69,6 +72,10 @@ pub struct TemplateBinding {
     pub rootfs: TemplateArtifact,
     pub resources: ResourceShape,
     pub envd_version: String,
+    /// Exact Rust runtime/configuration identity, independent of the SDK's
+    /// envd version negotiation. Absent in existing fixed-Go descriptors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest: Option<TemplateGuest>,
     /// Normalized OCI defaults. Absent for legacy prebuilt images, whose cwd
     /// remains envd's per-user home. Frozen with the full admitted descriptor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -165,6 +172,7 @@ impl TemplateBinding {
             && !self.envd_version.is_empty()
             && self.envd_version.len() <= 64
             && !self.envd_version.contains('\0')
+            && self.guest.as_ref().is_none_or(TemplateGuest::is_valid)
             && self.startup.as_ref().is_none_or(TemplateStartup::is_valid)
     }
 }

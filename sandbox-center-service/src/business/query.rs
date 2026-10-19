@@ -6,6 +6,24 @@ use sandproof_controller_service::template_registry::{PublicationState, query};
 use sandproof_protocol::ResourceId;
 
 impl RegistryMetadata {
+    /// Query bindings from this exact metadata revision. This finite projection
+    /// does no I/O and does not make Checking publications publicly usable.
+    pub(crate) fn projection_templates(&self) -> Result<Vec<PublicTemplate>, PortError> {
+        let mut templates = self
+            .static_artifacts()?
+            .into_iter()
+            .map(|(revision, binding)| PublicTemplate::from_binding(binding, revision))
+            .collect::<Result<Vec<_>, _>>()?;
+        for record in self.registry.records() {
+            if record.value().state == PublicationState::Ready {
+                templates.push(PublicTemplate::from_binding(
+                    record.value().binding.clone(),
+                    record.revision().clone(),
+                )?);
+            }
+        }
+        Ok(templates)
+    }
     /// Finite protected catalog work, not public list/alias resolution.
     /// # Errors
     /// Corrupt original registration cannot be repaired with a fallback template.
@@ -119,7 +137,7 @@ impl RegistryMetadata {
         }
         PublicTemplate::from_binding(binding, revision.clone())
     }
-    pub(super) fn bound(
+    pub(crate) fn bound(
         &self,
         revision: &ResourceId,
         digest: &[u8; 32],

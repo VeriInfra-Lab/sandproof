@@ -30,6 +30,7 @@ class CiPreparationRunTests(unittest.TestCase):
             oracle_mode='original', ci_build_inputs=self.inputs, prepare_ci_fixtures=self.destination,
             source=self.root / 'source', output=self.output, artifact_limits=None,
             ready_artifacts_root=self.root / 'registry/artifacts', kernel=self.root / 'kernel',
+            ready_artifacts_owner_uid=65532,
             build_url='http://127.0.0.1:1', ci_uv=self.root / 'uv')
         self.lock = {'dataset': 'terminal-bench@2.0',
             'source': dict(repository=PIN.repository, commit=PIN.commit),
@@ -41,7 +42,7 @@ class CiPreparationRunTests(unittest.TestCase):
             build_dispatched=True, build_result={'state': 'Ready'},
             template={'templateId': 'tpl-' + value * 32}) for value in ('a', 'b')]
         self.events = []
-        def publish(entry, *args):
+        def publish(entry, *args, **kwargs):
             self.events.append(('publish', entry['name']))
             return {'name': entry['name']}
         def audit(row):
@@ -82,6 +83,7 @@ class CiPreparationRunTests(unittest.TestCase):
             env.prepare_template.assert_awaited_once()
             self.assertEqual(self.publish.call_args_list[index].args[2],
                              self.args.ready_artifacts_root / env.build_id / 'rootfs.ext4')
+            self.assertEqual(self.publish.call_args_list[index].kwargs, {'ready_owner_uid': 65532})
         report = json.loads((self.output / 'full-set.json').read_bytes())
         for field in ('benchmark_passed', 'original_oracle', 'original_verifier', 'original_environment'):
             self.assertIs(report[field], False)
@@ -121,6 +123,14 @@ class CiPreparationRunTests(unittest.TestCase):
         for value in (False, True, 0, -1, 901, 900.0, '900'):
             self.args.preparation_timeout_secs = value
             with self.subTest(value=value), self.assertRaisesRegex(InvalidInput, 'integer from 1 to 900'):
+                asyncio.run(prepare.prepare_selected(self.args, self.lock))
+            self.assertFalse(self.destination.exists())
+        self.construct.assert_not_called()
+
+    def test_invalid_registry_owner_rejects_before_creation_or_dispatch(self):
+        for owner in (None, True, False, -1, 2**32 - 1, 65532.0, '65532'):
+            self.args.ready_artifacts_owner_uid = owner
+            with self.subTest(owner=owner), self.assertRaises(InvalidInput):
                 asyncio.run(prepare.prepare_selected(self.args, self.lock))
             self.assertFalse(self.destination.exists())
         self.construct.assert_not_called()

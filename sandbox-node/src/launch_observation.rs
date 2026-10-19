@@ -227,6 +227,7 @@ mod tests {
             private_netns: Some("/run/netns/vm-original-8".into()),
         };
         let template = TemplateBinding {
+            guest: None,
             template_id: "original".into(),
             revision: "original-revision".into(),
             owner: Some(1),

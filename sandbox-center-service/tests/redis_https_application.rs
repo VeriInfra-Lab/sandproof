@@ -14,6 +14,8 @@ mod engine;
 )]
 #[path = "../../controller-service/tests/support/internal_application.rs"]
 mod local;
+#[path = "redis_https_application/query_snapshot.rs"]
+mod query_snapshot;
 #[path = "../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 
@@ -27,12 +29,22 @@ use sandproof_center_core::{
     AvailableTemplate, Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget,
 };
 use sandproof_center_service::{
-    CenterApplication, CenterConfig, CenterPort, PublicTemplate, RegisteredHost, RegisteredHosts,
-    TemplateProvider,
+    CenterApplication, CenterConfig, CenterPort, RegisteredHost, RegisteredHosts,
+    business::{
+        BusinessTemplates, CandidatePort, MetadataBudget, PreparationError, ProtectedCandidate,
+        RegistryMetadata, SharedBusinessAuthority, TemplateRegistration,
+    },
 };
-use sandproof_center_store::{RedisLedger, authority::CenterAuthority};
+use sandproof_center_store::{
+    RedisLedger,
+    authority::{AuthorityState, CenterAuthority},
+    business::BusinessEnvelope,
+};
 use sandproof_controller_service::{
-    InternalInboxConfig, InternalTemplate, application::ApplicationError,
+    InternalInboxConfig, InternalTemplate,
+    application::ApplicationError,
+    template_registry::RegistryConfig,
+    templates::{ComputeLimits, TemplateCatalog},
 };
 use sandproof_host_service::{DriverConfig, HostLifecycle, TemplateSource};
 use sandproof_internal::{
@@ -40,13 +52,14 @@ use sandproof_internal::{
     ReceiveError, RegisteredEndpoint, ServerTls,
 };
 use sandproof_protocol::{
-    ResourceId, TenantId,
+    TenantId,
     internal::lifecycle::{
         CreateBinding, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
     },
 };
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -63,20 +76,22 @@ use tower::ServiceExt;
 const ALICE: &str = "center-component-alice-test-only-key-0001";
 const BOB: &str = "center-component-bob-test-only-key-000002";
 const TOKEN_KEY: &[u8; 32] = b"center-component-token-test-only";
-type Application = CenterApplication<CenterAuthority, RegisteredHosts, Templates>;
+type Envelope = BusinessEnvelope<RegistryMetadata>;
+type Application = CenterApplication<
+    SharedBusinessAuthority,
+    RegisteredHosts,
+    BusinessTemplates<NoPublication, RegisteredHosts>,
+>;
 
 #[derive(Clone)]
 struct Templates {
-    public: PublicTemplate,
     host: InternalTemplate,
 }
 impl Templates {
     fn new() -> Self {
         let mut host = local::template();
-        let public =
-            PublicTemplate::from_binding(host.local.clone(), host.revision.clone()).unwrap();
-        host.digest = public.digest();
-        Self { public, host }
+        host.digest = host.local.canonical_digest().unwrap();
+        Self { host }
     }
 }
 impl TemplateSource for Templates {
@@ -89,54 +104,14 @@ impl TemplateSource for Templates {
         Ok(self.host.clone())
     }
 }
-impl TemplateProvider for Templates {
-    fn resolve(&self, _: &TenantId, name: &str) -> Result<PublicTemplate, PortError> {
-        if name == "base" {
-            Ok(self.public.clone())
-        } else {
-            Err(PortError::NotFound)
-        }
-    }
-    fn bound(&self, revision: &ResourceId, digest: &[u8; 32]) -> Result<PublicTemplate, PortError> {
-        if *revision == *self.public.revision() && *digest == self.public.digest() {
-            Ok(self.public.clone())
-        } else {
-            Err(PortError::NotFound)
-        }
-    }
-    fn publish(
-        &self,
-        _: &dyn sandproof_center_service::CommittedDriver,
-        _: &str,
-        _: &str,
-    ) -> Result<sandproof_api::PublicationView, PortError> {
+#[derive(Clone)]
+struct NoPublication;
+impl CandidatePort for NoPublication {
+    fn verified(&self, _: &TenantId, _: &str) -> Result<ProtectedCandidate, PortError> {
         Err(PortError::NotFound)
     }
-    fn publication(&self, _: &str, _: &str) -> Result<sandproof_api::PublicationView, PortError> {
-        Err(PortError::NotFound)
-    }
-    fn get(&self, _: &str, _: &str) -> Result<sandproof_api::TemplateView, PortError> {
-        Err(PortError::NotFound)
-    }
-    fn list(
-        &self,
-        _: &str,
-        _: usize,
-        _: Option<&str>,
-    ) -> Result<sandproof_api::TemplatePage, PortError> {
-        Err(PortError::NotFound)
-    }
-    fn set_alias(
-        &self,
-        _: &str,
-        _: &str,
-        _: &str,
-        _: Option<&str>,
-    ) -> Result<sandproof_api::TemplateView, PortError> {
-        Err(PortError::NotFound)
-    }
-    fn delete_alias(&self, _: &str, _: &str) -> Result<(), PortError> {
-        Err(PortError::NotFound)
+    fn prepare(&self, _: &ProtectedCandidate, _: Duration) -> Result<(), PreparationError> {
+        Err(PreparationError::Rejected)
     }
 }
 
@@ -271,14 +246,51 @@ fn initial_state(templates: &Templates) -> CenterState {
     .unwrap()
 }
 
+fn initial_envelope(templates: &Templates) -> Envelope {
+    let shape = templates.host.local.resources;
+    let metadata = RegistryMetadata::new(
+        TemplateCatalog {
+            templates: vec![templates.host.local.clone()],
+            aliases: BTreeMap::from([("base".into(), templates.host.local.template_id.clone())]),
+            compute_limits: ComputeLimits {
+                max_vcpus_global: 2,
+                max_vcpus_per_tenant: 2,
+                max_memory_bytes_global: 2 * shape.host_memory_bytes,
+                max_memory_bytes_per_tenant: 2 * shape.host_memory_bytes,
+            },
+        },
+        vec![TemplateRegistration {
+            revision: templates.host.revision.clone(),
+            template_id: templates.host.local.template_id.clone(),
+        }],
+        RegistryConfig {
+            root: "/protected/registry".into(),
+            max_templates_global: 2,
+            max_templates_per_tenant: 2,
+            max_artifact_bytes_global: 4 * shape.disk_bytes,
+            max_artifact_bytes_per_tenant: 2 * shape.disk_bytes,
+            validation_timeout_secs: 5,
+        },
+        MetadataBudget {
+            max_certificate_bytes: 65_536,
+        },
+        None,
+    )
+    .unwrap();
+    Envelope {
+        center: initial_state(templates),
+        metadata,
+    }
+}
+
 impl Fixture {
     async fn new() -> Self {
         let engine = engine::Engine::new();
         let templates = Templates::new();
-        let initial = initial_state(&templates);
+        let initial = initial_envelope(&templates);
         let (ledger, _) = RedisLedger::initialize(
             engine::endpoint(engine.address),
-            engine::Engine::config(initial.bounds().required_block_bytes()),
+            engine::Engine::config(initial.required_block_bytes()),
             engine.lease(),
             &initial,
         )
@@ -386,21 +398,20 @@ impl Fixture {
             tokio::runtime::Handle::current(),
         )
         .unwrap();
-        let (ledger, _) = RedisLedger::<CenterState>::open(
+        let (ledger, _) = RedisLedger::<Envelope>::open(
             engine::endpoint(self.engine.address),
-            engine::Engine::config(
-                initial_state(&self.templates)
-                    .bounds()
-                    .required_block_bytes(),
-            ),
+            engine::Engine::config(initial_envelope(&self.templates).required_block_bytes()),
             self.engine.lease(),
         )
         .unwrap();
+        let authority = SharedBusinessAuthority::new(CenterAuthority::attach(ledger).unwrap());
+        let templates =
+            BusinessTemplates::new(authority.clone(), NoPublication, hosts.clone()).unwrap();
         Arc::new(
             CenterApplication::new(
-                CenterAuthority::attach(ledger).unwrap(),
+                authority,
                 hosts,
-                self.templates.clone(),
+                templates,
                 CenterConfig {
                     domain: "example.invalid".into(),
                     max_timeout_secs: 300,

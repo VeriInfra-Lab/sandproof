@@ -23,6 +23,8 @@ import SandboxModel.WorkflowCleanupReceipt
 import SandboxModel.Persistence
 import SandboxModel.PersistenceShell
 import SandboxModel.AllocationProofs
-import SandboxModel.RustRefinement
+import SandboxModel.Foundations
 
-/-! Public entry point for the verified sandbox state machine. -/
+/-! Retained mathematical models and source-bound public foundations.
+The historical whole-controller Rust refinement is retired; importing this
+module does not establish a refinement of the current deployed controller. -/
