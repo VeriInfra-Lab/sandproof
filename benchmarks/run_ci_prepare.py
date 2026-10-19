@@ -28,6 +28,9 @@ def validate_preparation_timeout(value=None):
 
 
 async def prepare_selected(args, lock):
+    owner_uid = args.ready_artifacts_owner_uid
+    if type(owner_uid) is not int or not 0 <= owner_uid <= 2**32 - 2:
+        raise InvalidInput('explicit approved Ready registry owner required')
     selected = set(args.task)
     if (lock['dataset'] != 'terminal-bench@2.0' or args.all
             or selected != set(ci_task_names(lock))
@@ -66,7 +69,7 @@ async def prepare_selected(args, lock):
             await env.prepare_template()
             item = await asyncio.to_thread(publish_ready_fixture, entry, env.template,
                 args.ready_artifacts_root / env.build_id / 'rootfs.ext4', args.kernel,
-                destination / entry['name'], inputs[entry['name']])
+                destination / entry['name'], inputs[entry['name']], ready_owner_uid=owner_uid)
             row['status'] = 'prepared'
         except Exception as error:
             row['error_type'] = type(error).__name__
