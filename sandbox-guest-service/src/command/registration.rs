@@ -3,6 +3,7 @@ use super::{
     AdmissionObserver, AdmissionStatus, CommandError, CommandSubscription, ManagedCommand,
     PendingCommand,
 };
+use crate::task_accounting::{self, BlockingTask};
 use sandproof_guest_core::CommandIdentity;
 use sandproof_guest_runtime::pid_claims::{Binding, Claim, Error as ClaimError, PidClaims};
 use std::sync::{Arc, Mutex};
@@ -108,7 +109,7 @@ impl PendingCommand {
             .await
             .map_err(RegistrationError::Preparation)?;
         let (cancelled, alive) = tokio::sync::oneshot::channel::<()>();
-        let task = tokio::task::spawn_blocking(move || {
+        let task = task_accounting::spawn_blocking(BlockingTask::PidRegistration, move || {
             let _storage = storage;
             if cancelled.is_closed() {
                 return Err(RegistrationError::Preparation(CommandError::Cancelled));

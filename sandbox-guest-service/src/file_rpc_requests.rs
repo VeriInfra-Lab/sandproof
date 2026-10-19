@@ -2,6 +2,7 @@
 //! This is a component of the future RPC handler, not protocol negotiation or
 //! Basic account middleware. Linux `FilePool::prepare_rpc` supplies the explicit
 //! account preflight; the caller must still select the supported route/codec.
+use crate::task_accounting::{self, BlockingTask};
 use crate::{
     AuthPermit, MetadataSource, ServiceError, Session,
     file_upload::{self, HeaderLimits},
@@ -253,7 +254,7 @@ impl Authenticated {
             check_deadline(deadline)?;
             let compressed = selection::is_gzip_request(&self.headers);
             let (signal, cancelled) = watch::channel(false);
-            let task = tokio::task::spawn_blocking(move || {
+            let task = task_accounting::spawn_blocking(BlockingTask::FileDecode, move || {
                 owned_body::check_active::<Error>(deadline, &cancelled)?;
                 if compressed {
                     payload = compression::expand(

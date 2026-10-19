@@ -3,7 +3,8 @@
 use super::{
     Decoder, Failure, JsonError, JsonField as F, JsonOneof, JsonReason as R, Kind, Token, finish,
 };
-use std::collections::BTreeSet;
+mod environment;
+use environment::map;
 
 #[derive(Clone, Copy)]
 enum Schema {
@@ -192,26 +193,6 @@ fn list(decoder: &mut Decoder<'_>, field: F, body: &[u8]) -> Result<(), Failure>
             return Ok(());
         }
         scalar(decoder, field, body)?;
-    }
-}
-fn map(decoder: &mut Decoder<'_>, body: &[u8]) -> Result<(), Failure> {
-    let first = decoder.read()?;
-    if first.kind != Kind::ObjectOpen {
-        return Err(Failure::token(R::UnexpectedToken, &first));
-    }
-    let mut keys = BTreeSet::new();
-    loop {
-        let key = decoder.read()?;
-        if key.kind == Kind::ObjectClose {
-            return Ok(());
-        }
-        if key.kind != Kind::Name {
-            return Err(Failure::token(R::UnexpectedToken, &key));
-        }
-        if !keys.insert(string(&key, body)?) {
-            return Err(Failure::token(R::DuplicateMap, &key));
-        }
-        scalar(decoder, F::MapValue, body)?;
     }
 }
 fn skip(decoder: &mut Decoder<'_>) -> Result<(), Failure> {

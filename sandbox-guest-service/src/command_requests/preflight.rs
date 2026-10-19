@@ -1,7 +1,7 @@
 //! Explicit Basic account lookup precedes the caller's protocol selection.
 use super::{Authenticated, Body, Decoded, Error, Failure, Instant, Request, check_deadline};
 use crate::{AccountPool, AccountSource, ContextError, ContextLimits, basic_auth};
-use sandproof_guest_runtime::accounts::Account;
+use sandproof_guest_runtime::{accounts::Account, protocol::StartLimits};
 use std::sync::Arc;
 
 pub struct Prepared {
@@ -9,6 +9,7 @@ pub struct Prepared {
     // Preserve the exact explicit account for Start context composition.
     // PID operations don't switch credentials or refresh this lookup.
     account: Option<Account>,
+    start_limits: StartLimits,
 }
 pub struct Ready {
     pub(super) decoded: Decoded,
@@ -77,6 +78,10 @@ impl Authenticated {
             Ok(Prepared {
                 authenticated,
                 account,
+                start_limits: StartLimits {
+                    arguments: limits.arguments,
+                    env_entries: limits.env_entries,
+                },
             })
         }
         .await;
@@ -109,10 +114,19 @@ impl Prepared {
         body: Body,
         protocol_deadline: Instant,
     ) -> Result<Ready, Failure> {
+        let start_limits = self.start_limits;
         Ok(Ready {
             decoded: self
                 .authenticated
-                .decode(method, body, protocol_deadline)
+                .decode_with(body, protocol_deadline, move |bytes, limit, _, _| {
+                    sandproof_guest_runtime::protocol::decode_request_with_start_limits(
+                        method,
+                        bytes,
+                        limit,
+                        start_limits,
+                    )
+                    .map_err(Error::Protocol)
+                })
                 .await?,
             account: self.account,
             response: None,
@@ -128,6 +142,7 @@ impl Prepared {
         gzip: bool,
     ) -> Result<Ready, Failure> {
         let chunk = self.authenticated.admitted.limits.body.frame_bytes;
+        let start_limits = self.start_limits;
         Ok(Ready {
             decoded: self
                 .authenticated
@@ -135,8 +150,14 @@ impl Prepared {
                     body,
                     protocol_deadline,
                     move |bytes, limit, deadline, cancelled| {
-                        super::compression::decode_selected(
-                            method, bytes, limit, chunk, deadline, cancelled, gzip,
+                        super::compression::decode_limited(
+                            method,
+                            bytes,
+                            limit,
+                            chunk,
+                            deadline,
+                            cancelled,
+                            (gzip, Some(start_limits)),
                         )
                     },
                 )

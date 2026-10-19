@@ -1,7 +1,7 @@
 use super::*;
 use wire::Wire;
 
-fn transport() -> listener::Listener {
+pub(super) fn transport() -> listener::Listener {
     listener::Listener::new(listener::Limits {
         connections: 4,
         header_count: 32,
@@ -70,7 +70,12 @@ async fn guest_listener_composes_actual_command_and_file_effects_and_preserves_c
     let download = Wire::open(address, at(Method::GET, "/files?path=data", Body::empty())).await;
     assert_eq!(download.status, 200);
     assert_eq!(download.body().await, b"file-content");
-    wire::rejected(address, "/process.Process/List", b"{}").await; // Ordinary pool is still occupied.
+    let rejected = Wire::open(address, request("List", &json!({}))).await;
+    assert_eq!(rejected.status, 429);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&rejected.body().await).unwrap()["code"],
+        "resource_exhausted"
+    );
     full(&pools.ordinary);
     let closed = Wire::open(
         address,
@@ -91,7 +96,7 @@ async fn guest_listener_composes_actual_command_and_file_effects_and_preserves_c
         .unwrap()
         .unwrap()
         .unwrap();
-    assert_eq!(report.failed, 1);
+    assert_eq!(report.failed, 0);
     assert_eq!(report.refused, 0);
     assert_eq!(report.expired, 0);
     assert_eq!(report.admitted, report.completed + report.failed);

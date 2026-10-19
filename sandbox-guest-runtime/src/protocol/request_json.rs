@@ -79,31 +79,46 @@ pub(super) fn signal<'de, D: Deserializer<'de>>(
     }))
 }
 
-pub(super) fn envs<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<BTreeMap<String, String>, D::Error> {
-    struct Map(BTreeMap<String, String>);
-    impl<'de> Deserialize<'de> for Map {
+/// The owned map validates decoded duplicates. Field-only counting must still
+/// pass ordered JSON validation before any refusal marker is returned; it can
+/// never become an executable request.
+pub(crate) trait Environment<'de>: Default {
+    fn entries<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>;
+}
+
+pub(super) fn envs<'de, D, E>(deserializer: D) -> Result<E, D::Error>
+where
+    D: Deserializer<'de>,
+    E: Environment<'de>,
+{
+    struct Map<E>(E);
+    impl<'de, E: Environment<'de>> Deserialize<'de> for Map<E> {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            struct Visitor;
-            impl<'de> de::Visitor<'de> for Visitor {
-                type Value = Map;
-                fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    f.write_str("a string map")
-                }
-                fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<Map, M::Error> {
-                    let mut values = BTreeMap::new();
-                    while let Some(key) = map.next_key::<String>()? {
-                        let Entry::Vacant(entry) = values.entry(key) else {
-                            return Err(de::Error::custom("duplicate environment key"));
-                        };
-                        entry.insert(map.next_value::<String>()?);
-                    }
-                    Ok(Map(values))
-                }
-            }
-            deserializer.deserialize_map(Visitor)
+            E::entries(deserializer).map(Map)
         }
     }
-    Ok(Option::<Map>::deserialize(deserializer)?.map_or_else(BTreeMap::new, |map| map.0))
+    Ok(Option::<Map<E>>::deserialize(deserializer)?.map_or_else(E::default, |map| map.0))
+}
+
+impl<'de> Environment<'de> for BTreeMap<String, String> {
+    fn entries<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = BTreeMap<String, String>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a string map")
+            }
+            fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+                let mut values = BTreeMap::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    let Entry::Vacant(entry) = values.entry(key) else {
+                        return Err(de::Error::custom("duplicate environment key"));
+                    };
+                    entry.insert(map.next_value::<String>()?);
+                }
+                Ok(values)
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
 }

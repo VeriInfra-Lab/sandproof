@@ -101,7 +101,11 @@ impl Ready {
                 Request::List => registry
                     .list_json(limits.message_bytes)
                     .map_err(Error::Registry)?,
-                Request::Start(_) => return Err(Error::UnsupportedOperation),
+                Request::Start(_)
+                | Request::StartArgumentsExceeded { .. }
+                | Request::StartEnvironmentExceeded { .. } => {
+                    return Err(Error::UnsupportedOperation);
+                }
                 _ => {
                     let bytes = protocol::encode_response(Response::Empty, limits.message_bytes)
                         .map_err(Error::Protocol)?;

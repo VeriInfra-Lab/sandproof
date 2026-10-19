@@ -428,17 +428,13 @@ async fn saturation_and_response_clones_retain_original_capacity_without_auth_lo
     let copy = bytes.clone();
     drop(bytes);
     drop(body);
-    let failure = f
+    let rejected = f
         .http
         .clone()
         .handle(request("Remove", Body::from(r#"{"path":"made"}"#)))
         .await
-        .unwrap_err();
-    assert_eq!(
-        failure.error(),
-        &Error::Admission(file_rpc_requests::AdmissionError::ResourceExhausted)
-    );
-    assert_eq!(failure.deadline(), None);
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(f.calls.load(Ordering::SeqCst), 1);
     assert!(root.path().join("made").exists());
     f.session

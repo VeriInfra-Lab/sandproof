@@ -6,6 +6,7 @@ use super::{
     AdmissionObserver, AdmissionStatus, CommandError, CommandSubscription, LaunchStatus,
     ManagedCommand, PidRegisteredCommand,
 };
+use crate::task_accounting::{self, AsyncTask};
 use sandproof_guest_core::CommandIdentity;
 use sandproof_guest_runtime::{
     pid_claims::Binding,
@@ -493,7 +494,7 @@ impl RegistryReservation {
             record,
             removed: false,
         };
-        tokio::spawn(run(ticket, reply, guard));
+        task_accounting::spawn(AsyncTask::CommandRegistry, run(ticket, reply, guard));
         Ok(RegisteredStart {
             identity,
             reply: receive,

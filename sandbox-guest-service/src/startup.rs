@@ -1,5 +1,6 @@
 //! Normal startup binds trusted metadata, initialization and existing PID state.
 //! This never provisions missing state or restores an old active command table.
+use crate::task_accounting::{self, BlockingTask};
 use crate::{InitLimits, Metadata, MetadataSource, ServiceError, Session};
 use sandproof_guest_runtime::pid_claims::{self, Binding, PidClaims};
 use sha2::{Digest, Sha256};
@@ -213,7 +214,7 @@ impl<M: MetadataSource> Startup<M> {
         }
         let binding = identity.binding();
         let (cancelled, _alive) = oneshot::channel::<()>();
-        let task = tokio::task::spawn_blocking(move || {
+        let task = task_accounting::spawn_blocking(BlockingTask::StartupOpen, move || {
             if Instant::now() >= deadline {
                 return Err(Error::DeadlineExceeded);
             }

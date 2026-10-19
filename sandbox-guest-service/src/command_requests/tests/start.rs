@@ -23,6 +23,12 @@ mod expansion;
 #[path = "start/capacity.rs"]
 mod capacity;
 
+#[path = "start/argument_budget.rs"]
+mod argument_budget;
+
+#[path = "start/environment_budget.rs"]
+mod environment_budget;
+
 struct StartFixture {
     directory: tempfile::TempDir,
     owners: CommandOwners,

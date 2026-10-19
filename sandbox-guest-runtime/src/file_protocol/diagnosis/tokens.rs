@@ -4,6 +4,7 @@
 use super::{Failure, JsonReason};
 use std::ops::Range;
 mod string;
+pub(super) use string::length as string_length;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {

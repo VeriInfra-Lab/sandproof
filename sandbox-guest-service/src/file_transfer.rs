@@ -1,6 +1,7 @@
 //! Owned streaming file work. This is an admitted component, not a production
 //! HTTP listener. Caller-owned input, serialization and transport buffers have
 //! separate budgets. Cancellation never rolls back or replays a write.
+use crate::task_accounting::{self, BlockingTask};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -179,7 +180,7 @@ impl FileStreams {
         let worker_lease = Arc::clone(&lease);
         let limits = self.limits;
         let runtime = Handle::current();
-        tokio::task::spawn_blocking(move || {
+        task_accounting::spawn_blocking(BlockingTask::FileUpload, move || {
             if opened.is_closed() || Instant::now() >= deadline {
                 return;
             }
@@ -237,7 +238,7 @@ impl FileStreams {
         let worker_lease = Arc::clone(&lease);
         let limits = self.limits;
         let runtime = Handle::current();
-        tokio::task::spawn_blocking(move || {
+        task_accounting::spawn_blocking(BlockingTask::FileDownload, move || {
             if opened.is_closed() || Instant::now() >= deadline {
                 return;
             }

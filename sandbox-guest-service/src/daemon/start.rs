@@ -1,4 +1,5 @@
 use super::{Error, Prepared, config::CONFIG_BYTES};
+use crate::task_accounting::{self, BlockingTask};
 use crate::{MetadataSource, MmdsClient, startup::VmIdentity};
 use sandproof_guest_runtime::{
     file_download::local_zone::Snapshot, file_mime::Catalog, pid_claims::PidClaims, startup_files,
@@ -41,7 +42,7 @@ impl Prepared {
         let timezone = self.config.snapshots.timezone.clone();
         let zone_limits = self.config.snapshots.timezone_limits;
         let mime_limits = self.config.snapshots.mime;
-        let job = tokio::task::spawn_blocking(move || {
+        let job = task_accounting::spawn_blocking(BlockingTask::DaemonLoad, move || {
             timely(deadline)?;
             let directory = startup_files::state_directory(&directory, owner, CONFIG_BYTES)
                 .map_err(|_| Error::Files)?;
@@ -102,7 +103,7 @@ impl Prepared {
         let owner = self.config.paths.owner_uid;
         let max_pid = self.config.paths.max_pid;
         let (cancelled, _alive) = tokio::sync::oneshot::channel::<()>();
-        let job = tokio::task::spawn_blocking(move || {
+        let job = task_accounting::spawn_blocking(BlockingTask::DaemonInitialize, move || {
             timely(deadline)?;
             if cancelled.is_closed() {
                 return Err(Error::Cancelled);

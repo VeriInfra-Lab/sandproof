@@ -3,7 +3,7 @@
 // BSD license: ../PROTOBUF-LICENSE.
 use super::{Failure, JsonReason, rune_length};
 
-pub(super) fn length(input: &[u8], start: usize) -> Result<usize, Failure> {
+pub(in super::super) fn length(input: &[u8], start: usize) -> Result<usize, Failure> {
     let mut at = 1;
     while let Some(byte) = input.get(at) {
         match byte {

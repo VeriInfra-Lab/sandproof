@@ -12,10 +12,12 @@ use base64::engine::general_purpose::STANDARD;
 use sandproof_guest_core::Channel;
 use serde::{Deserialize, Serialize};
 
+mod argument_count;
 mod content_type;
 mod end_stream;
 mod request_body;
 pub(crate) mod request_json;
+mod start_budget;
 use crate::file_protocol::request_json::{prepare_command, uint32};
 pub use content_type::canonical_content_type;
 pub use end_stream::{EndStreamError, EndStreamReason};
@@ -93,19 +95,27 @@ impl<'de> Deserialize<'de> for Selector {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ProcessConfig {
+#[serde(bound(
+    deserialize = "A: Deserialize<'de> + Default, E: request_json::Environment<'de>",
+    serialize = "A: Serialize + Default + PartialEq, E: Serialize + Default + PartialEq"
+))]
+pub struct ProcessConfig<A = Vec<String>, E = BTreeMap<String, String>> {
     #[serde(default, deserialize_with = "null_default")]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub cmd: String,
     #[serde(default, deserialize_with = "null_default")]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "is_default")]
+    pub args: A,
     #[serde(default, deserialize_with = "envs")]
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub envs: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "is_default")]
+    pub envs: E,
     #[serde(default, deserialize_with = "null_default")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+}
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 /// Borrowed list metadata, already selected by the active command registry.
@@ -166,9 +176,10 @@ pub struct PtySize {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub struct StartRequest {
+#[serde(bound(deserialize = "A: Deserialize<'de> + Default, E: request_json::Environment<'de>"))]
+pub struct StartRequest<A = Vec<String>, E = BTreeMap<String, String>> {
     #[serde(default, deserialize_with = "optional_object")]
-    pub process: Option<ProcessConfig>,
+    pub process: Option<ProcessConfig<A, E>>,
     #[serde(default, deserialize_with = "optional_object")]
     pub pty: Option<Pty>,
     #[serde(default, deserialize_with = "null_default")]
@@ -225,6 +236,20 @@ pub enum Signal {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Request {
     Start(StartRequest),
+    /// Fully validated Start JSON exceeded the trusted argument count. No
+    /// truncated launch is provided. The executor must preserve account/clock
+    /// checks before rejecting under this same limit; it must never execute it.
+    StartArgumentsExceeded {
+        limit: usize,
+    },
+    /// Fully validated Start exceeded the original request environment count.
+    /// No executable command is retained. The executor must check matching
+    /// limits, the original account/clock, cwd expansion and invalid names.
+    StartEnvironmentExceeded {
+        limits: StartLimits,
+        cwd: Option<String>,
+        invalid_name: bool,
+    },
     Connect(Option<Selector>),
     List,
     SendInput {
@@ -275,6 +300,22 @@ struct UpdateRequest {
 #[derive(Deserialize)]
 struct Empty {}
 
+/// Existing executor quotas, not new wire limits. The decoder may retain a
+/// non-executable refusal only after validating the complete original schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StartLimits {
+    pub arguments: usize,
+    pub env_entries: usize,
+}
+impl StartLimits {
+    const fn arguments_only(arguments: usize) -> Self {
+        Self {
+            arguments,
+            env_entries: usize::MAX,
+        }
+    }
+}
+
 /// Decode one complete HTTP body after bounded HTTP collection. Start/Connect
 /// require one uncompressed data envelope with its full declared length and
 /// optionally one final, validated Connect EOS metadata envelope. Unary methods
@@ -299,6 +340,56 @@ pub fn decode_request(
         |_| Err(ProtocolError::InvalidArgument),
         |_| ProtocolError::InvalidArgument,
         &(decode_message, end_stream::validate),
+    )
+}
+
+/// Decode with the executor's existing Start argument limit, without allocating
+/// a String vector for an oversized array. Other fields, JSON and complete
+/// framing are still checked. Excess arguments produce an opaque refusal, not
+/// a shortened command or an early public error. This is not a total RAM bound.
+/// # Errors
+/// Same framing/JSON/body errors as `decode_request`.
+pub fn decode_request_with_argument_limit(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    arguments: usize,
+) -> Result<Request, ProtocolError> {
+    decode_request_with_start_limits(
+        method,
+        body,
+        max_message_bytes,
+        StartLimits::arguments_only(arguments),
+    )
+}
+
+/// Decode using the original argument/environment quotas. Entire JSON and
+/// framing still precede a deferred execution refusal; no partial command can
+/// be returned. Compact field counting retains no environment strings; an
+/// ordered JSON check must still reject duplicate keys before any refusal
+/// marker can be returned. This is not a whole-service allocation bound.
+/// # Errors
+/// Same framing/JSON/body errors as `decode_request`.
+pub fn decode_request_with_start_limits(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    limits: StartLimits,
+) -> Result<Request, ProtocolError> {
+    request_body::decode(
+        method,
+        body,
+        max_message_bytes,
+        false,
+        |_| Err(ProtocolError::InvalidArgument),
+        |_| ProtocolError::InvalidArgument,
+        &(
+            |method: &str, payload: &[u8]| {
+                decode_message_limited(method, payload, Some(limits))
+                    .map_err(MessageError::protocol)
+            },
+            end_stream::validate,
+        ),
     )
 }
 
@@ -345,6 +436,49 @@ pub fn decode_request_observed<
     gzip: bool,
     expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
 ) -> Result<Request, E> {
+    decode_request_observed_limited(method, body, max_message_bytes, gzip, None, expand)
+}
+
+/// Observed decoding with an optional trusted Start argument limit. An exceeded
+/// limit retains the original account/execution rejection order through
+/// `Request::StartArgumentsExceeded`; no prefix can be executed. The original
+/// framing, gzip and JSON observations take precedence over this refusal.
+/// # Errors
+/// Same errors as `decode_request_observed`, including malformed late fields.
+pub fn decode_request_observed_limited<
+    E: From<ProtocolError> + From<FramingError> + From<JsonError> + From<EndStreamError>,
+>(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    gzip: bool,
+    arguments: Option<usize>,
+    expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
+) -> Result<Request, E> {
+    decode_request_observed_with_start_limits(
+        method,
+        body,
+        max_message_bytes,
+        gzip,
+        arguments.map(StartLimits::arguments_only),
+        expand,
+    )
+}
+
+/// Observed decoding under the executor's existing argument/environment quotas.
+/// Complete framing/gzip/JSON errors precede any non-executable Start marker.
+/// # Errors
+/// Same errors as `decode_request_observed`, including malformed late fields.
+pub fn decode_request_observed_with_start_limits<
+    E: From<ProtocolError> + From<FramingError> + From<JsonError> + From<EndStreamError>,
+>(
+    method: &str,
+    body: &[u8],
+    max_message_bytes: usize,
+    gzip: bool,
+    limits: Option<StartLimits>,
+    expand: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
+) -> Result<Request, E> {
     request_body::decode(
         method,
         body,
@@ -354,7 +488,11 @@ pub fn decode_request_observed<
         E::from,
         &(
             |method: &str, payload: &[u8]| {
-                decode_message(method, payload).map_err(|error| {
+                decode_message_limited(method, payload, limits).map_err(|error| {
+                    let error = match error {
+                        MessageError::Json(observed) => return E::from(observed),
+                        MessageError::Protocol(error) => error,
+                    };
                     if error == ProtocolError::InvalidArgument
                         && let Some(observed) =
                             crate::file_protocol::diagnosis::observe_command(method, payload)
@@ -370,8 +508,51 @@ pub fn decode_request_observed<
 }
 
 fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError> {
+    decode_message_limited(method, payload, None).map_err(MessageError::protocol)
+}
+
+enum MessageError {
+    Protocol(ProtocolError),
+    Json(JsonError),
+}
+impl From<ProtocolError> for MessageError {
+    fn from(error: ProtocolError) -> Self {
+        Self::Protocol(error)
+    }
+}
+impl MessageError {
+    fn protocol(self) -> ProtocolError {
+        match self {
+            Self::Protocol(error) => error,
+            Self::Json(_) => ProtocolError::InvalidArgument,
+        }
+    }
+}
+
+fn decode_message_limited(
+    method: &str,
+    payload: &[u8],
+    limits: Option<StartLimits>,
+) -> Result<Request, MessageError> {
+    let original = payload;
     let prepared = prepare_command(payload)?;
     let payload = prepared.as_ref();
+    if method == "Start"
+        && let Some(limits) = limits
+        && let Some(candidate) = start_budget::refusal_candidate(payload, limits)?
+    {
+        // The candidate owns its remaining context. Release a compatibility
+        // normalization copy before allocating keys against the original body.
+        drop(prepared);
+        // Field counting alone does not establish map uniqueness. Validate the
+        // original ordered schema before any non-executable marker escapes.
+        // Carry an actual failure out so observed callers never run a second
+        // allocation-heavy diagnostic just to recover the same error.
+        if let Some(error) = crate::file_protocol::diagnosis::observe_command(method, original) {
+            return Err(MessageError::Json(error));
+        }
+        return Ok(candidate);
+    }
     match method {
         "Start" => Ok(Request::Start(parse(payload)?)),
         "Connect" => Ok(Request::Connect(parse::<SelectRequest>(payload)?.process)),
@@ -403,7 +584,7 @@ fn decode_message(method: &str, payload: &[u8]) -> Result<Request, ProtocolError
                 pty: request.pty,
             })
         }
-        _ => Err(ProtocolError::Unimplemented),
+        _ => Err(ProtocolError::Unimplemented.into()),
     }
 }
 

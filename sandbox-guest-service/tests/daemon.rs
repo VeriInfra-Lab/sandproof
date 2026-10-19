@@ -117,7 +117,39 @@ impl Fixture {
     async fn refuse(&self, action: &str, config: &str, stage: &str) {
         let output = self.run(action, config).await;
         assert_eq!(output.status.code(), Some(1), "{output:?}");
-        assert!(output.stdout.is_empty());
+        if matches!(
+            stage,
+            "Service(Files)" | "Service(WorkerArtifact)" | "Service(Snapshots)"
+        ) {
+            let stdout = std::str::from_utf8(&output.stdout).unwrap();
+            let report: Value = serde_json::from_str(
+                stdout
+                    .strip_prefix("task accounting: ")
+                    .unwrap()
+                    .strip_suffix('\n')
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(report["schema_version"], 1);
+            assert_eq!(report["scope"], "process_service_owned_tasks");
+            assert_eq!(report["exact"], true);
+            assert_eq!(report["total"], json!({"live": 0, "peak": 1}));
+            assert_eq!(
+                report["asynchronous"]["count"],
+                json!({"live": 0, "peak": 0})
+            );
+            assert_eq!(report["blocking"]["count"], json!({"live": 0, "peak": 1}));
+            let roles = report["blocking"]["roles"].as_array().unwrap();
+            assert_eq!(roles.len(), 13);
+            for role in roles {
+                assert_eq!(
+                    role["count"],
+                    json!({"live": 0, "peak": usize::from(role["name"] == "daemon_load")})
+                );
+            }
+        } else {
+            assert!(output.stdout.is_empty());
+        }
         // Compare the entire diagnostic: private paths, config payload and
         // operating-system details must not leak through the formal entry.
         assert_eq!(

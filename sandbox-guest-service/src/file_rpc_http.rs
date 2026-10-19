@@ -93,7 +93,7 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
     /// fixed JSON codec, decode once, execute once and return an owned response.
     /// Settings and all pools are trusted daemon inputs, with no defaults here.
     /// # Errors
-    /// Admission, unsupported route/format, unmapped context/body/I/O
+    /// Invalid admission clock, unsupported route/format, unmapped context/body/I/O
     /// error or failed response preparation. Acquired slots and original expiry
     /// remain owned by the failure; the listener needs a bounded failure policy.
     pub async fn handle(&self, request: Request<Body>) -> Result<Response, Failure> {
@@ -110,20 +110,19 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
     /// Same request/preparation failures and original ownership as handle.
     pub async fn prepare(&self, request: Request<Body>) -> Result<Prepared<M, S>, Failure> {
         let inner = &self.inner;
-        let admitted = inner.requests.admit().map_err(|error| Failure {
-            error: Error::Admission(error),
-            deadline: None,
-            _owner: None,
-        })?;
+        let admitted = match inner.requests.admit() {
+            Ok(admitted) => admitted,
+            Err(file_rpc_requests::AdmissionError::ResourceExhausted) => {
+                return Ok(Prepared::Response(crate::admission_response::exhausted(
+                    request.method(),
+                )));
+            }
+            Err(error) => return Err(Failure::admission(error)),
+        };
         let deadline = admitted.deadline();
         let owner = admitted.owner();
-        let method = match request.uri().path() {
-            "/filesystem.Filesystem/Stat" => "Stat",
-            "/filesystem.Filesystem/MakeDir" => "MakeDir",
-            "/filesystem.Filesystem/ListDir" => "ListDir",
-            "/filesystem.Filesystem/Move" => "Move",
-            "/filesystem.Filesystem/Remove" => "Remove",
-            _ => return Err(Failure::retained(Error::Route, deadline, owner)),
+        let Some(method) = route(request.uri().path()) else {
+            return Err(Failure::retained(Error::Route, deadline, owner));
         };
         let (parts, body) = request.into_parts();
         let authenticated = match admitted.authenticate(&inner.session, parts.headers).await {
@@ -211,6 +210,17 @@ impl<M: MetadataSource, S: AccountSource> FileRpcHttp<M, S> {
         })))
     }
 }
+fn route(path: &str) -> Option<&'static str> {
+    Some(match path {
+        "/filesystem.Filesystem/Stat" => "Stat",
+        "/filesystem.Filesystem/MakeDir" => "MakeDir",
+        "/filesystem.Filesystem/ListDir" => "ListDir",
+        "/filesystem.Filesystem/Move" => "Move",
+        "/filesystem.Filesystem/Remove" => "Remove",
+        _ => return None,
+    })
+}
+
 impl<M: MetadataSource, S: AccountSource> Ready<M, S> {
     #[must_use]
     pub const fn request(&self) -> &file_protocol::Request {
@@ -273,6 +283,13 @@ pub struct Failure {
     _owner: Option<Owner>,
 }
 impl Failure {
+    fn admission(error: file_rpc_requests::AdmissionError) -> Self {
+        Self {
+            error: Error::Admission(error),
+            deadline: None,
+            _owner: None,
+        }
+    }
     fn retained(error: Error, deadline: Instant, owner: Owner) -> Self {
         Self {
             error,

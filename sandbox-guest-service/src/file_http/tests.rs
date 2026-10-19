@@ -470,17 +470,13 @@ async fn full_pool_rejects_without_body_work_and_unknown_route_has_no_side_effec
     let root = tempfile::tempdir().unwrap();
     let fixture = fixture(root.path()).await;
     let slot = fixture.requests.admit().unwrap();
-    let failed = fixture
+    let rejected = fixture
         .http
         .handle(request(Method::POST, "path=never", Body::from("no")))
         .await
-        .err()
         .unwrap();
-    assert_eq!(
-        failed.error(),
-        &Error::Admission(AdmissionError::ResourceExhausted)
-    );
-    assert!(failed.deadline().is_none());
+    assert_eq!(rejected.status(), StatusCode::TOO_MANY_REQUESTS);
+    full(&fixture.requests);
     drop(slot);
     let mut req = request(Method::POST, "path=never", Body::from("no"));
     *req.uri_mut() = "/other?path=never".parse().unwrap();

@@ -20,6 +20,9 @@ use sandproof_guest_runtime::{
 use std::{os::unix::ffi::OsStrExt, path::Path, sync::Arc};
 use tokio::time::Instant;
 
+#[cfg(test)]
+mod tests;
+
 pub type Http<M = MmdsClient> = GuestHttp<PinnedMetadata<M>, SystemAccounts, Snapshot>;
 
 /// Validated settings and original bounded pools. Construction creates no
@@ -31,6 +34,7 @@ pub struct Prepared {
     pub(super) listener: Listener,
     pub(super) worker: sandproof_guest_runtime::artifact::Expected,
     accounts: AccountPool<SystemAccounts>,
+    control_executor: Option<tokio::runtime::Handle>,
     owners: CommandOwners,
     commands: RequestPools,
     files: FileRequests,
@@ -143,6 +147,7 @@ impl Prepared {
             listener,
             worker,
             accounts,
+            control_executor: None,
             owners,
             commands,
             files,
@@ -150,6 +155,17 @@ impl Prepared {
             operations,
             streams,
         })
+    }
+
+    pub(super) fn with_control_executor(
+        mut self,
+        blocking: tokio::runtime::Handle,
+    ) -> Result<Self, Error> {
+        if self.control_executor.is_some() {
+            return Err(Error::Configuration);
+        }
+        self.control_executor = Some(blocking);
+        Ok(self)
     }
 
     pub(super) fn assemble<M: crate::MetadataSource>(
@@ -185,6 +201,10 @@ impl Prepared {
             },
             config.commands.response,
         ))?;
+        let commands = match self.control_executor {
+            Some(control) => checked(commands.with_control_executor(control))?,
+            None => commands,
+        };
         let filesystem = checked(FileRpcHttp::new(
             session.clone(),
             self.rpc,

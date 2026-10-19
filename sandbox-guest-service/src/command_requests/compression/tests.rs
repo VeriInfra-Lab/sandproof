@@ -25,6 +25,93 @@ fn decode_now(method: &str, bytes: &[u8], limit: usize) -> Result<Request, Error
 }
 
 #[test]
+fn environment_refusal_keeps_original_gzip_json_and_tail_observations() {
+    let payload = br#"{"process":{"envs":{"a":"","b":""}}}"#;
+    let valid = frame(1, &compressed(payload));
+    let mut corrupt = compressed(payload);
+    *corrupt.last_mut().unwrap() ^= 1;
+    let (_cancel, cancelled) = watch::channel(false);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    for wire in [
+        frame(
+            1,
+            &compressed(br#"{"process":{"envs":{"a":"","b":"","\u0061":""}}}"#),
+        ),
+        frame(1, &corrupt),
+        [valid.clone(), frame(2, b"!")].concat(),
+        [valid.clone(), frame(3, b"bad")].concat(),
+        [valid, frame(0, b"{}")].concat(),
+    ] {
+        let original = decode_selected("Start", &wire, 4096, 7, deadline, &cancelled, true);
+        assert!(original.is_err());
+        assert_eq!(
+            decode_limited(
+                "Start",
+                &wire,
+                4096,
+                7,
+                deadline,
+                &cancelled,
+                (
+                    true,
+                    Some(protocol::StartLimits {
+                        arguments: 2,
+                        env_entries: 1
+                    })
+                ),
+            ),
+            original,
+        );
+    }
+}
+
+#[test]
+fn compact_environment_sorting_cannot_reorder_public_json_failures() {
+    let (_cancel, cancelled) = watch::channel(false);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    for payload in [
+        // Duplicate before a malformed value or a late syntax failure.
+        br#"{"process":{"envs":{"z":"","z":"","a":null}}}"#.as_slice(),
+        br#"{"process":{"envs":{"z":"","z":"","a":!}}}"#,
+        br#"{"process":{"envs":{"z":"","z":""},"cwd":[]}}"#,
+        // Wire order wins over sorted key order, including escaped spellings.
+        br#"{"process":{"envs":{"z":"","a":"","\u007a":"","a":""}}}"#,
+        br#"{"process":{"envs":{"z":"","a":null,"z":""}}}"#,
+        br#"{"process":{"envs":{"\ud83d\ude00":"","a":"","\ud83d\ude00":null}}}"#,
+        br#"{"process":{"envs":{"a123456789012345":"","\u0061123456789012345":"","b":false}}}"#,
+        br#"{"process":{"envs":{"a":"","b":""},"envs":null}}"#,
+    ] {
+        for gzip in [false, true] {
+            let wire = if gzip {
+                frame(1, &compressed(payload))
+            } else {
+                frame(0, payload)
+            };
+            let original = decode_selected("Start", &wire, 4096, 7, deadline, &cancelled, gzip);
+            assert!(matches!(original, Err(Error::Json(_))));
+            assert_eq!(
+                decode_limited(
+                    "Start",
+                    &wire,
+                    4096,
+                    7,
+                    deadline,
+                    &cancelled,
+                    (
+                        gzip,
+                        Some(protocol::StartLimits {
+                            arguments: 2,
+                            env_entries: 1,
+                        }),
+                    ),
+                ),
+                original,
+            );
+        }
+    }
+}
+
+#[test]
 fn compressed_command_data_and_eos_keep_empty_wire_and_first_failure_semantics() {
     for method in ["Start", "Connect"] {
         let expected = protocol::decode_request(method, &frame(0, b"{}"), 1024).unwrap();

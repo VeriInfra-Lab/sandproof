@@ -76,6 +76,7 @@ struct Inner<M, S> {
     session: Session<M>,
     requests: RequestPools,
     accounts: AccountPool<S>,
+    control_executor: Option<tokio::runtime::Handle>,
     settings: ExecutionSettings,
     processes: Processes,
     response: ResponseLimits,
@@ -98,6 +99,7 @@ pub enum Prepared<M, S> {
 pub struct Ready<M, S> {
     inner: Arc<Inner<M, S>>,
     operation: command_requests::Ready,
+    blocking: Option<tokio::runtime::Handle>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,6 +155,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
                 session,
                 requests,
                 accounts,
+                control_executor: None,
                 settings,
                 processes,
                 response,
@@ -161,10 +164,29 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
         })
     }
 
+    /// Bind caller-provisioned control execution before sharing the assembly.
+    /// The caller keeps the runtime alive within its aggregate thread/shutdown
+    /// budgets. Account admission remains shared, with its original capacity.
+    /// This changes neither the request pools nor the original request deadlines.
+    /// # Errors
+    /// The assembly was already cloned or already has a control executor.
+    pub fn with_control_executor(
+        mut self,
+        control: tokio::runtime::Handle,
+    ) -> Result<Self, InvalidConfiguration> {
+        let inner = Arc::get_mut(&mut self.inner).ok_or(InvalidConfiguration)?;
+        if inner.control_executor.is_some() {
+            return Err(InvalidConfiguration);
+        }
+        inner.control_executor = Some(control);
+        Ok(self)
+    }
+
     /// Admit before token/Basic/body work and execute exactly once. Errors from
     /// partial/accepted operations never authorize replay or a replacement PID.
     /// # Errors
-    /// Saturation, unknown route, unmapped original faults, expiry or encoding.
+    /// Invalid admission clock, unknown route, unmapped faults, expiry or encoding.
+    /// Saturation returns the fixed bounded 429 before any request work.
     /// Retained failures keep the original capacity until their last owner exits.
     pub async fn handle(&self, request: Request<Body>) -> Result<Response, Failure> {
         match self.prepare(request).await? {
@@ -178,14 +200,43 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
     /// # Errors
     /// Same admission/preparation failures as handle, with original ownership.
     pub async fn prepare(&self, request: Request<Body>) -> Result<Prepared<M, S>, Failure> {
-        let inner = &self.inner;
         let rpc = route(request.uri().path());
-        let pool = if matches!(rpc, Some(Rpc::CloseStdin | Rpc::SendSignal | Rpc::Update)) {
+        let control = matches!(rpc, Some(Rpc::CloseStdin | Rpc::SendSignal | Rpc::Update));
+        let blocking = self
+            .inner
+            .control_executor
+            .as_ref()
+            .filter(|_| control)
+            .cloned();
+        crate::blocking_executor::scope(
+            blocking.clone(),
+            self.prepare_selected(request, rpc, control, blocking),
+        )
+        .await
+    }
+
+    async fn prepare_selected(
+        &self,
+        request: Request<Body>,
+        rpc: Option<Rpc>,
+        control: bool,
+        blocking: Option<tokio::runtime::Handle>,
+    ) -> Result<Prepared<M, S>, Failure> {
+        let inner = &self.inner;
+        let pool = if control {
             &inner.requests.control
         } else {
             &inner.requests.ordinary
         };
-        let admitted = pool.admit().map_err(Failure::Admission)?;
+        let admitted = match pool.admit() {
+            Ok(admitted) => admitted,
+            Err(command_requests::AdmissionError::ResourceExhausted) => {
+                return Ok(Prepared::Response(crate::admission_response::exhausted(
+                    request.method(),
+                )));
+            }
+            Err(error) => return Err(Failure::Admission(error)),
+        };
         let Some(rpc) = rpc else {
             return Err(Failure::Route(Retained {
                 deadline: admitted.deadline(),
@@ -245,6 +296,7 @@ impl<M: MetadataSource, S: AccountSource> CommandHttp<M, S> {
         Ok(Prepared::Ready(Box::new(Ready {
             inner: self.inner.clone(),
             operation,
+            blocking,
         })))
     }
 }
@@ -278,8 +330,19 @@ impl<M: MetadataSource, S: AccountSource> Ready<M, S> {
     /// Original execution/response failure or exhausted ID sequence. Unknown
     /// faults remain owned typed failures; this component invents no public text.
     pub async fn execute(self) -> Result<Response, Failure> {
-        let Self { inner, operation } = self;
-        let reply = if matches!(operation.request(), protocol::Request::Start(_)) {
+        crate::blocking_executor::scope(self.blocking.clone(), self.execute_selected()).await
+    }
+
+    async fn execute_selected(self) -> Result<Response, Failure> {
+        let Self {
+            inner, operation, ..
+        } = self;
+        let reply = if matches!(
+            operation.request(),
+            protocol::Request::Start(_)
+                | protocol::Request::StartArgumentsExceeded { .. }
+                | protocol::Request::StartEnvironmentExceeded { .. }
+        ) {
             let command = next_command(&inner.sequence).ok_or_else(|| {
                 Failure::SequenceExhausted(Retained {
                     deadline: operation.deadline(),

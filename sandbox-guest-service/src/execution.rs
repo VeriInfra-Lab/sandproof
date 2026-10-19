@@ -1,6 +1,7 @@
 //! Authenticated default/context composition. This does not register a public
 //! command or release a process. The caller retains `AuthPermit` through actual
 //! admission/dispatch and separately owns process/public-selector capacity.
+use crate::task_accounting::{self, BlockingTask};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -136,7 +137,7 @@ impl<S: AccountSource> AccountPool<S> {
             .try_acquire_owned()
             .map_err(|_| ContextError::ResourceExhausted)?;
         let source = Arc::clone(&self.source);
-        let task = tokio::task::spawn_blocking(move || {
+        let task = task_accounting::spawn_blocking(BlockingTask::AccountLookup, move || {
             let _owner = owner;
             let _permit = permit;
             if tokio::time::Instant::now() >= deadline {
@@ -227,41 +228,42 @@ impl AuthPermit {
     ) -> Result<LaunchSpec, CommandContextError> {
         let limit = settings.limits;
         let process = command_process(request, settings)?;
-        let cwd = resolve_path(
-            process
-                .cwd
-                .as_deref()
-                .filter(|path| !path.is_empty())
-                .or(self.defaults().workdir.as_deref())
-                .unwrap_or(""),
-            &account,
-            &settings.daemon_workdir,
-        )?;
-        let mut env = BTreeMap::from([
-            ("PATH".into(), settings.daemon_path.clone()),
-            ("HOME".into(), account.home.clone()),
-            ("USER".into(), account.name.clone()),
-            ("LOGNAME".into(), account.name),
-        ]);
-        env.extend(self.defaults().env.clone());
-        env.extend(process.envs.clone());
-        if env
-            .iter()
-            .any(|(key, _)| key.is_empty() || key.contains('='))
-        {
-            return Err(ContextError::InvalidArgument.into());
-        }
-        let mut sizes = std::iter::once(process.cmd.len())
+        let cwd = self.command_cwd(process.cwd.as_deref(), &account, settings)?;
+        let environment = merged_environment(
+            [
+                ("PATH", settings.daemon_path.as_str()),
+                ("HOME", account.home.as_str()),
+                ("USER", account.name.as_str()),
+                ("LOGNAME", account.name.as_str()),
+            ],
+            &self.defaults().env,
+            &process.envs,
+        );
+        let mut bytes = std::iter::once(process.cmd.len())
             .chain(std::iter::once(cwd.len()))
             .chain(process.args.iter().map(String::len))
-            .chain(env.iter().flat_map(|(key, value)| [key.len(), value.len()]));
-        if env.len() > limit.env_entries
-            || sizes
-                .try_fold(0usize, usize::checked_add)
-                .is_none_or(|sum| sum > limit.bytes)
+            .try_fold(0usize, usize::checked_add);
+        let mut entries = Some(0usize);
+        for (key, value) in environment.clone() {
+            // Invalid keys still precede count/byte refusal, including when a
+            // previous entry has already exceeded either budget. No full copy
+            // of the request/default map exists during these checks.
+            if invalid_environment_name(key) {
+                return Err(ContextError::InvalidArgument.into());
+            }
+            entries = entries.and_then(|count| count.checked_add(1));
+            bytes = bytes
+                .and_then(|count| count.checked_add(key.len()))
+                .and_then(|count| count.checked_add(value.len()));
+        }
+        if entries.is_none_or(|count| count > limit.env_entries)
+            || bytes.is_none_or(|count| count > limit.bytes)
         {
             return Err(ContextError::ResourceExhausted.into());
         }
+        let env = environment
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .collect();
         Ok(LaunchSpec {
             envd_wrapper_path: Some(settings.daemon_path.clone()),
             program: process.cmd.clone(),
@@ -277,6 +279,75 @@ impl AuthPermit {
             credentials: Some(account.credentials),
         })
     }
+
+    fn command_cwd(
+        &self,
+        cwd: Option<&str>,
+        account: &Account,
+        settings: &ExecutionSettings,
+    ) -> Result<String, CommandContextError> {
+        resolve_path(
+            cwd.filter(|path| !path.is_empty())
+                .or(self.defaults().workdir.as_deref())
+                .unwrap_or(""),
+            account,
+            &settings.daemon_workdir,
+        )
+    }
+
+    // The caller already checked matching original limits, account and clock.
+    // All unique request keys remain in the effective environment after merge,
+    // so a request map alone exceeding env_entries cannot become a legal launch.
+    // Keep cwd and invalid-name precedence without owning that oversized map.
+    pub(crate) fn environment_refusal_observed(
+        &self,
+        cwd: Option<&str>,
+        invalid_request_name: bool,
+        account: &Account,
+        settings: &ExecutionSettings,
+    ) -> CommandContextError {
+        if let Err(error) = self.command_cwd(cwd, account, settings) {
+            return error;
+        }
+        if invalid_request_name
+            || self
+                .defaults()
+                .env
+                .keys()
+                .any(|key| invalid_environment_name(key))
+        {
+            ContextError::InvalidArgument.into()
+        } else {
+            ContextError::ResourceExhausted.into()
+        }
+    }
+}
+
+fn invalid_environment_name(key: &str) -> bool {
+    key.is_empty() || key.contains('=')
+}
+
+// Borrow only the effective entries in the original override order. The four
+// builtins have unique keys; both other inputs are already decoded unique maps.
+// Iteration order is private: the final LaunchSpec still owns a sorted map.
+fn merged_environment<'a>(
+    base: [(&'a str, &'a str); 4],
+    defaults: &'a BTreeMap<String, String>,
+    request: &'a BTreeMap<String, String>,
+) -> impl Iterator<Item = (&'a str, &'a str)> + Clone {
+    base.into_iter()
+        .filter(move |(key, _)| !defaults.contains_key(*key) && !request.contains_key(*key))
+        .chain(
+            defaults
+                .iter()
+                .filter(move |(key, _)| !request.contains_key(*key))
+                .map(|(key, value)| (key.as_str(), value.as_str())),
+        )
+        .chain(
+            request
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str())),
+        )
 }
 
 pub(crate) fn validate_command_settings(settings: &ExecutionSettings) -> Result<(), ContextError> {

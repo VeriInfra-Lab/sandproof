@@ -1,6 +1,7 @@
 //! Bounded serialization is blocking; transmitting its finished bytes is not.
 //! A known-length transport need not poll EOF after the final data frame.
 use crate::owned_body::{self, Failure, Owner};
+use crate::task_accounting::{self, BlockingTask};
 use axum::body::{Body, Bytes};
 use futures_util::stream;
 use std::marker::PhantomData;
@@ -24,7 +25,7 @@ pub(crate) async fn prepare<E: Failure>(
     // Dropping the original preparation future cancels its worker. The worker
     // retains capacity until the encoder actually returns, not just until cancel.
     let (signal, cancelled) = watch::channel(false);
-    tokio::task::spawn_blocking(move || {
+    task_accounting::spawn_blocking(BlockingTask::BodyEncode, move || {
         let result = (|| {
             owned_body::check_active::<E>(deadline, &cancelled)?;
             let bytes = encode(cancelled.clone())?;
