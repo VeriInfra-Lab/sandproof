@@ -25,6 +25,11 @@ def file_digest(path):
     return sha(path)
 
 
+def tracked_inputs(root=ROOT):
+    names=subprocess.check_output(['git','ls-files','-z'],cwd=root).decode().split('\0')
+    return {n:file_digest(root/n) for n in names if n}
+
+
 def closure(root, seeds):
     """Resolve every local Lean import, including imports omitted by roots.
 
@@ -52,9 +57,12 @@ def closure(root, seeds):
                 queue.append(match[1])
         if path.suffix == '.lean':
             for line in path.read_text().splitlines():
-                if not line.startswith('import '):
+                header=re.match(r'^\s*(?:(?:public|private|meta)\s+)?import\s+(.+)$',line.lstrip('\ufeff'))
+                if not header:
                     continue
-                for module in line[7:].split('--', 1)[0].split():
+                for module in header[1].split('--', 1)[0].split():
+                    if module == 'all':
+                        continue
                     prefix = module.split('.')[0]
                     if prefix in libraries:
                         target = libraries[prefix] / (module.replace('.', '/') + '.lean')
@@ -71,6 +79,8 @@ def module_key(name, command, root=ROOT):
     else:
         manifest = 'foundations' if name == 'foundations-generation' else name
         seeds = [f'verification/{manifest}-inputs.sha256','verification/acceptance-inputs.sha256']
+    seeds += [p.name for p in root.glob('lake*.toml')]
+    seeds += [n for n in ('lean-toolchain','lake-manifest.json','rust-toolchain.toml') if (root/n).is_file()]
     # Full Rust closure is deliberately conservative. A Rust change can
     # invalidate extra modules, but can never silently miss an indirect use.
     return dict(schema=1, module=name, command=command, rust=rust_inputs(root),
@@ -156,7 +166,7 @@ def runtime():
     """
     result={'tools':{},'libraries':{},'environment':{k:v for k,v in os.environ.items()
         if k.startswith(('RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','CARGO_PROFILE_',
-                         'CARGO_BUILD_TARGET','LEAN_','OCAMLRUNPARAM'))}}
+                         'CARGO_BUILD_TARGET','LEAN_','LAKE_','OCAMLRUNPARAM'))}}
     for name,args in [('rustc',['-vV']),('cargo',['-V']),('lean',['--version']),('lake',['--version'])]:
         binary=shutil.which(name)
         if name in ('rustc','cargo'):
@@ -180,6 +190,8 @@ def runtime():
         entries={}
         for parent,dirs,files in os.walk(directory,followlinks=True):
             dirs[:]=[d for d in dirs if d not in ('.git','target','artifacts','_build','node_modules')]
+            if label == 'packages':
+                dirs[:]=[d for d in dirs if d!='.lake']
             for name in files:
                 path=Path(parent)/name
                 if label == 'packages':
@@ -202,6 +214,8 @@ def run_batch(cache, recompute=False):
     # Serialize the shared checkout as well as cache publication. Different
     # branches need separate worktrees/.lake/build, not one writable directory.
     with locked(cache/'checkout-locks'/digest(str(ROOT.resolve()))):
+        inputs_before=tracked_inputs()
+        native_before=sha(native/'complete.json')
         profile=runtime();stamp=cache/('runtime-'+digest(profile)+'.json');write_json(stamp,profile)
         os.environ['SANDPROOF_FORMAL_RUNTIME']=str(stamp)
         os.environ['SANDPROOF_FORMAL_CACHE']=str(cache)
@@ -217,11 +231,29 @@ def run_batch(cache, recompute=False):
         subprocess.run([sys.executable,'tools/check_json_request_binding.py'],cwd=ROOT,check=True)
         for name in MODULES:
             results.append(step(name,['bash',f'scripts/verify-{name}.sh']))
+            if tracked_inputs()!=inputs_before:
+                raise ValueError('tracked inputs changed between modules')
         results.append(step('retained',['bash','scripts/verify-retained-proofs.sh']))
+        expected=set()
+        for directory in ('SandboxModel','verification/aeneas'):
+            for path in (ROOT/directory).rglob('*.lean'):
+                expected.update(re.findall(r'^#audit_controller_proof (\S+)$',path.read_text(),re.M))
+        expected.update(re.findall(r'^#audit_controller_proof (\S+)$',
+                                   (ROOT/'verification/ProofAudit.lean').read_text(),re.M))
+        observed=set()
+        for row in results:
+            text=(Path(row['receipt']).parent/'command.log').read_text()
+            observed.update(re.findall(r'Checked ([\w.]+): \d+ standard logical dependencies',text))
+        if not expected <= observed:
+            raise ValueError('missing dependency audits: '+repr(sorted(expected-observed)))
+        if tracked_inputs()!=inputs_before or sha(native/'complete.json')!=native_before:
+            raise ValueError('batch source or native evidence changed')
+        validate_native(native)
         if runtime()!=profile:
             raise ValueError('formal runtime changed during the batch')
         write_json(cache/'latest-batch.json',dict(complete=True,exit_code=0,results=results,
             seconds=round(time.monotonic()-started,3),runtime_sha256=digest(profile),
+            audits=dict(expected=len(expected),observed=len(observed),missing=sorted(expected-observed),additional=sorted(observed-expected)),
             native_receipt_sha256=sha(native/'complete.json')))
         print(json.dumps(dict(complete=True,results=results,seconds=round(time.monotonic()-started,3))))
 

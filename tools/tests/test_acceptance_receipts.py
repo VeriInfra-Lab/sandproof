@@ -163,4 +163,62 @@ class ClosureTests(unittest.TestCase):
         self.assertIn('tools/proof_services.py',retained)
 
 
+class FormalReuseTests(unittest.TestCase):
+    def setUp(self):
+        ReceiptTests.setUp(self)
+        verification=self.source/'verification';verification.mkdir()
+        (verification/'network-inputs.sha256').write_text('')
+        (verification/'acceptance-inputs.sha256').write_text('')
+        stamp=self.base/'formal-runtime.json';receipts.write_json(stamp,{'unit_test_fixture':True})
+        receipts.write_json(self.cache/'complete.json',{'unit_test_fixture':True})
+        self.formal_env=mock.patch.dict(os.environ,{'SANDPROOF_FORMAL_RUNTIME':str(stamp),
+            'SANDPROOF_FORMAL_CACHE':str(self.base/'formal-cache'),
+            'TMPDIR':str(self.base),'SANDPROOF_PROOF_RECOMPUTE':'0',
+            'SANDPROOF_PROOF_BATCH':'unit-batch'})
+        self.formal_env.start();self.addCleanup(self.formal_env.stop)
+
+    def test_same_batch_and_next_batch_reuse_exact_success(self):
+        first=proof_batch.step('network',self.command,self.source)
+        second=proof_batch.step('network',self.command,self.source)
+        self.assertFalse(first['reused']);self.assertTrue(second['reused'])
+        with mock.patch.dict(os.environ,{'SANDPROOF_PROOF_BATCH':'next-batch'}):
+            self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_full_recompute_still_deduplicates_one_batch(self):
+        with mock.patch.dict(os.environ,{'SANDPROOF_PROOF_RECOMPUTE':'1'}):
+            self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+            self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+            with mock.patch.dict(os.environ,{'SANDPROOF_PROOF_BATCH':'next-batch'}):
+                self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_corrupt_log_and_missing_raw_evidence_force_reexecution(self):
+        row=proof_batch.step('network',self.command,self.source)
+        entry=Path(row['receipt']).parent
+        (entry/'command.log').write_text('corrupt')
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+        data=json.loads((entry/'receipt.json').read_text())
+        data['evidence']={str(self.base/'deleted-raw.llbc'):'0'*64}
+        receipts.write_json(entry/'receipt.json',data)
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_unrelated_lean_stays_reusable_but_imported_contract_changes_miss(self):
+        model=self.source/'Library.lean';model.write_text('def x := 1\n')
+        (self.source/'verification/network-inputs.sha256').write_text(receipts.sha(model)+'  Library.lean\n')
+        proof_batch.step('network',self.command,self.source)
+        (self.source/'Unrelated.lean').write_text('def y := 1\n')
+        self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+        model.write_text('def x := 2\n')
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_checker_negative_fixture_and_tool_changes_force_reexecution(self):
+        fixture=self.source/'verification/fixtures/negative.rs';fixture.parent.mkdir();fixture.write_text('fixture one')
+        subprocess.run(['git','add','verification/fixtures/negative.rs'],cwd=self.source,check=True)
+        proof_batch.step('network',self.command,self.source)
+        fixture.write_text('fixture two')
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+        runtime=Path(os.environ['SANDPROOF_FORMAL_RUNTIME'])
+        receipts.write_json(runtime,{'unit_test_fixture':'tool changed'})
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+
 if __name__=='__main__':unittest.main()
