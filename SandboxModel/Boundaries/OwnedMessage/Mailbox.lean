@@ -75,10 +75,10 @@ structure OneShot (α : Type) where
 inductive OneStep : OneShot α → OneShot α → Prop
   | send (value : α) : OneStep
       ⟨true, true, none, none, none⟩ ⟨false, true, some value, none, none⟩
-  | reject (value : α) : OneStep
-      ⟨true, false, none, none, none⟩ ⟨false, false, none, none, some value⟩
-  | senderDrop (receiver) : OneStep
-      ⟨true, receiver, none, none, none⟩ ⟨false, receiver, none, none, none⟩
+  | reject (value : α) (finished) : OneStep
+      ⟨true, false, none, finished, none⟩ ⟨false, false, none, finished, some value⟩
+  | senderDrop (receiver finished) : OneStep
+      ⟨true, receiver, none, finished, none⟩ ⟨false, receiver, none, finished, none⟩
   | receive (value : α) (receiver returned) : OneStep
       ⟨false, receiver, some value, none, returned⟩ ⟨false, receiver, none, some (.value value), returned⟩
   | receiveClosed (receiver returned) : OneStep
@@ -103,7 +103,7 @@ theorem oneshot_sent_value_survives_close (value : α) :
       ⟨false, false, none, some (.value value), none⟩ := .receive ..
 
 theorem oneshot_rejection_returns_original (value : α) :
-    OneStep ⟨true, false, none, none, none⟩ ⟨false, false, none, none, some value⟩ := .reject value
+    OneStep ⟨true, false, none, none, none⟩ ⟨false, false, none, none, some value⟩ := .reject value none
 
 theorem oneshot_sender_loss_is_transport_error (receiver) :
     OneStep (⟨false, receiver, none, none, none⟩ : OneShot α)
@@ -112,10 +112,16 @@ theorem oneshot_sender_loss_is_transport_error (receiver) :
 theorem transport_error_is_not_business_value (value : α) :
     Completion.transportClosed ≠ Completion.value value := by simp
 
-theorem settled_oneshot_cannot_deliver_again {s t : OneShot α} (done : s.outcome.isSome = true) :
-    ¬ OneStep s t := by
-  intro step
+-- Consumer completion does not stop a sender that still owns its value.
+-- It only prevents a second consumer delivery. Rejection/normal sender Drop
+-- can still happen afterwards and must retain the original rejected value.
+theorem settled_oneshot_cannot_deliver_again {s t : OneShot α} (done : s.outcome.isSome = true)
+    (step : OneStep s t) : t.outcome = s.outcome := by
   cases step <;> simp_all
+
+theorem receiver_loss_then_send_returns_original (value : α) :
+    OneStep ⟨true, false, none, some .transportClosed, none⟩
+      ⟨false, false, none, some .transportClosed, some value⟩ := .reject value _
 
 theorem send_success_does_not_imply_delivery (value : α) :
     OneStep ⟨false, true, some value, none, none⟩

@@ -43,11 +43,17 @@ def preflight(output):
         result = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=False, timeout=900)
     partial = json.loads(path.read_text()) if path.exists() else None
     log = (output/'charon.log').read_text()
-    actual_unsupported = (result.returncode != 0 and partial is not None
+    next_lines = [i+1 for i, line in enumerate((ROOT/'sandbox-guest-service/src/command/streams.rs').read_text().splitlines())
+                  if 'pub async fn next(&mut self)' in line]
+    if len(next_lines) != 1:
+        raise ValueError('Ambiguous actual async root')
+    target_diagnostic = f"--> sandbox-guest-service/src/command/streams.rs:{next_lines[0]}:" in log
+    actual_unsupported = (result.returncode != 0 and partial is not None and target_diagnostic
                           and partial.get('has_errors') is True and 'Coroutines are not supported' in log)
     receipt = dict(kind='translation-preflight-not-semantic-counterexample', command=command,
         source=before, sources_unchanged=source_inputs()==before, exit_code=result.returncode,
         seconds=round(time.monotonic()-start,3), coroutine_unsupported=actual_unsupported,
+        target_diagnostic=target_diagnostic,
         partial_llbc_sha256=hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None)
     (output/'result.json').write_text(json.dumps(receipt, indent=2)+'\n')
     if not receipt['sources_unchanged'] or not actual_unsupported:

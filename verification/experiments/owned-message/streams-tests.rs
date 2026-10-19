@@ -256,7 +256,11 @@ pub(in crate::command) mod owned_message_contract_tests {
         let mut rig = fixture().await;
         publish(&rig.command, b"abcd");
         let output = take(&mut rig.subscription).await;
-        let CommandOutput { _record: record, _subscriber: subscriber, .. } = &output;
+        let CommandOutput {
+            _record: record,
+            _subscriber: subscriber,
+            ..
+        } = &output;
         let original_record = Arc::as_ptr(record);
         let original_subscriber = Arc::as_ptr(subscriber);
         let (sender, receiver) = mpsc::channel(1);
@@ -264,7 +268,11 @@ pub(in crate::command) mod owned_message_contract_tests {
         let error = sender.try_send(output).unwrap_err();
         assert!(matches!(error, mpsc::error::TrySendError::Closed(_)));
         let returned = error.into_inner();
-        let CommandOutput { _record: record, _subscriber: subscriber, .. } = &returned;
+        let CommandOutput {
+            _record: record,
+            _subscriber: subscriber,
+            ..
+        } = &returned;
         assert_eq!(Arc::as_ptr(record), original_record);
         assert_eq!(Arc::as_ptr(subscriber), original_subscriber);
         assert_eq!(returned.bytes(), b"abcd");
@@ -302,5 +310,13 @@ pub(in crate::command) mod owned_message_contract_tests {
         let (send, receive) = oneshot::channel::<Result<CommandExit, CommandError>>();
         drop(send);
         assert!(receive.await.is_err());
+        let (send, receive) = oneshot::channel::<Result<CommandExit, CommandError>>();
+        drop(receive);
+        let original = Ok(CommandExit {
+            code: 17,
+            signal: None,
+            core_dumped: false,
+        });
+        assert_eq!(send.send(original).unwrap_err(), original);
     }
 }

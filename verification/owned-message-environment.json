@@ -48,6 +48,7 @@
     "SandboxModel.Boundaries.OwnedMessage.oneshot_sender_loss_is_transport_error",
     "SandboxModel.Boundaries.OwnedMessage.transport_error_is_not_business_value",
     "SandboxModel.Boundaries.OwnedMessage.settled_oneshot_cannot_deliver_again",
+    "SandboxModel.Boundaries.OwnedMessage.receiver_loss_then_send_returns_original",
     "SandboxModel.Boundaries.OwnedMessage.send_success_does_not_imply_delivery",
     "SandboxModel.Boundaries.OwnedMessage.frame_initial_safe",
     "SandboxModel.Boundaries.OwnedMessage.frame_drop_step_safe",
@@ -164,7 +165,9 @@
       "caller_obligations": "V8: choose actual terminal result and when it is valid; only take/transfer of original result is mechanical",
       "public_results": [
         "SandboxModel.Boundaries.OwnedMessage.transport_error_is_not_business_value",
-        "SandboxModel.Boundaries.OwnedMessage.send_success_does_not_imply_delivery"
+        "SandboxModel.Boundaries.OwnedMessage.send_success_does_not_imply_delivery",
+        "SandboxModel.Boundaries.OwnedMessage.oneshot_rejection_returns_original",
+        "SandboxModel.Boundaries.OwnedMessage.receiver_loss_then_send_returns_original"
       ],
       "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
     },
@@ -181,7 +184,8 @@
       "public_results": [
         "SandboxModel.Boundaries.OwnedMessage.oneshot_cancel_keeps_slot",
         "SandboxModel.Boundaries.OwnedMessage.oneshot_sent_value_survives_close",
-        "SandboxModel.Boundaries.OwnedMessage.settled_oneshot_cannot_deliver_again"
+        "SandboxModel.Boundaries.OwnedMessage.settled_oneshot_cannot_deliver_again",
+        "SandboxModel.Boundaries.OwnedMessage.oneshot_sender_loss_is_transport_error"
       ],
       "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
     },
