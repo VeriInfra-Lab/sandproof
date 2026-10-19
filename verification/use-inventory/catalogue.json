@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "capture_commit": "1d051915ba8420a5d5bbb5bbb605f23fd9595b31",
-  "config_sha256": "b3dddc6690065728d127b528cacdf7778cd819a55c34b8c59a203e7fd81e9444",
-  "source_inputs": 798,
+  "capture_commit": "9c2b6d4f5d2d64c521ba7e5dc2a901132160e706",
+  "config_sha256": "d12f4cac13d42ebc86263d1057ffc75dbcc39eb10d2f0fdef2711c3842bf15b7",
+  "source_inputs": 816,
   "packages": [
     "sandbox-controller-core",
     "sandbox-runtime",
@@ -33,8 +33,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=04832717d2ecc8d7",
-        "extra-filename=-d3a3433a7577b504"
+        "metadata=645728eae8505df6",
+        "extra-filename=-e8b76d3c49227c00"
       ],
       "sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad",
       "bytes": 11440302,
@@ -55,8 +55,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=34392b9cb0779ca6",
-        "extra-filename=-97029ee5f3a68ef8"
+        "metadata=69d01490cfc9706f",
+        "extra-filename=-ca05c86083049b4c"
       ],
       "sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad",
       "bytes": 11440302,
@@ -78,8 +78,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=14358252446abbcf",
-        "extra-filename=-5f23b6f5a80df9d2",
+        "metadata=9f89f4cd3eb0a158",
+        "extra-filename=-eb1dbf735bf25f0a",
         "strip=debuginfo"
       ],
       "sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a",
@@ -102,8 +102,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=a8f09c4428486ae9",
-        "extra-filename=-a2bc315ff1646ef7",
+        "metadata=f440cd81193df388",
+        "extra-filename=-48e5406c54a87995",
         "strip=debuginfo"
       ],
       "sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a",
@@ -127,8 +127,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=e6290355d5445066",
-        "extra-filename=-024a04f2444574f4"
+        "metadata=d56bf252762f74b6",
+        "extra-filename=-9d4aa8a4577c4e6c"
       ],
       "sha256": "19cf6649d11f882870ef8905351636f80be1fbf46daf1d72f8295badd013c833",
       "bytes": 105954,
@@ -152,8 +152,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=316ac498191a56c9",
-        "extra-filename=-3353ef71da76b8cf",
+        "metadata=100812c9b5597215",
+        "extra-filename=-99970931f57b054a",
         "strip=debuginfo"
       ],
       "sha256": "75dc627ce00389f88426077e30ac65c9e57c627a2a235d3ef058241ad46d2651",
@@ -177,36 +177,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=13848b6bf6d55fc4",
-        "extra-filename=-156e817bf1b46e49"
-      ],
-      "sha256": "3ed2bae0bb20cf9d8abdeac8037ebc7cc641acb228cdf33e23e6cc30f2dfeac7",
-      "bytes": 12756045,
-      "lines": 339246,
-      "functions": 2287,
-      "declarations": 5442,
-      "local_types": 49355,
-      "terminators": 40814,
-      "drop_functions": [
-        "fn relay_child::<impl at controller-service/src/application/relay_child.rs:99:1: 99:32>::drop(_1: &mut TrackedRelayChild) -> () {",
-        "fn transaction::<impl at controller-service/src/controller/transaction.rs:147:1: 147:35>::drop(_1: &mut WorldTransaction<'_>) -> () {",
-        "fn controller::<impl at controller-service/src/controller/mod.rs:65:1: 65:30>::drop(_1: &mut ControllerLease) -> () {"
-      ],
-      "drop_sites": 4985
-    },
-    {
-      "crate": "sandproof_controller_service",
-      "source": "controller-service/src/lib.rs",
-      "cfg": [
-        "feature=\"default\"",
-        "feature=\"durable\"",
-        "feature=\"host-artifacts\""
-      ],
-      "codegen": [
-        "embed-bitcode=no",
-        "debuginfo=2",
-        "metadata=8498f871494564b9",
-        "extra-filename=-367c1108c7fd1c39"
+        "metadata=2c9068b6cbe89ddb",
+        "extra-filename=-0ce84b19b0163e93"
       ],
       "sha256": "d33d5fcc06cb799885c6593ecd7d38d6819dd3b53e534919e0a1387e9893ae8e",
       "bytes": 12757193,
@@ -231,26 +203,24 @@
         "feature=\"host-artifacts\""
       ],
       "codegen": [
-        "opt-level=3",
         "embed-bitcode=no",
-        "overflow-checks=on",
-        "metadata=0f7d2657877d088a",
-        "extra-filename=-5004ac95d7328b6e",
-        "strip=debuginfo"
+        "debuginfo=2",
+        "metadata=8fd3f9b3a9096fa7",
+        "extra-filename=-7801ffa0a9ffcaf8"
       ],
-      "sha256": "b056274742153b11daa14e7f6307000ea5348cca1332a715b4c1ce38a4e2d72f",
-      "bytes": 29967340,
-      "lines": 695852,
+      "sha256": "3ed2bae0bb20cf9d8abdeac8037ebc7cc641acb228cdf33e23e6cc30f2dfeac7",
+      "bytes": 12756045,
+      "lines": 339246,
       "functions": 2287,
-      "declarations": 5843,
-      "local_types": 80048,
-      "terminators": 39681,
+      "declarations": 5442,
+      "local_types": 49355,
+      "terminators": 40814,
       "drop_functions": [
         "fn relay_child::<impl at controller-service/src/application/relay_child.rs:99:1: 99:32>::drop(_1: &mut TrackedRelayChild) -> () {",
         "fn transaction::<impl at controller-service/src/controller/transaction.rs:147:1: 147:35>::drop(_1: &mut WorldTransaction<'_>) -> () {",
         "fn controller::<impl at controller-service/src/controller/mod.rs:65:1: 65:30>::drop(_1: &mut ControllerLease) -> () {"
       ],
-      "drop_sites": 5061
+      "drop_sites": 4985
     },
     {
       "crate": "sandproof_controller_service",
@@ -264,8 +234,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=a14ff37b57945d9d",
-        "extra-filename=-fe9f513276f7af06",
+        "metadata=3360277cc19dd2ee",
+        "extra-filename=-b82b793ff3ed9d3f",
         "strip=debuginfo"
       ],
       "sha256": "dd9a042cee291c52684ad102949eaf21bde24f66d94e9cb15c3c0e1197fb7acb",
@@ -286,13 +256,43 @@
       "crate": "sandproof_controller_service",
       "source": "controller-service/src/lib.rs",
       "cfg": [
+        "feature=\"default\"",
+        "feature=\"durable\"",
+        "feature=\"host-artifacts\""
+      ],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=d0b69606c310dd51",
+        "extra-filename=-3d10e2e4c619fe9a",
+        "strip=debuginfo"
+      ],
+      "sha256": "b056274742153b11daa14e7f6307000ea5348cca1332a715b4c1ce38a4e2d72f",
+      "bytes": 29967340,
+      "lines": 695852,
+      "functions": 2287,
+      "declarations": 5843,
+      "local_types": 80048,
+      "terminators": 39681,
+      "drop_functions": [
+        "fn relay_child::<impl at controller-service/src/application/relay_child.rs:99:1: 99:32>::drop(_1: &mut TrackedRelayChild) -> () {",
+        "fn transaction::<impl at controller-service/src/controller/transaction.rs:147:1: 147:35>::drop(_1: &mut WorldTransaction<'_>) -> () {",
+        "fn controller::<impl at controller-service/src/controller/mod.rs:65:1: 65:30>::drop(_1: &mut ControllerLease) -> () {"
+      ],
+      "drop_sites": 5061
+    },
+    {
+      "crate": "sandproof_controller_service",
+      "source": "controller-service/src/lib.rs",
+      "cfg": [
         "feature=\"host-artifacts\""
       ],
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=d845e4688115c347",
-        "extra-filename=-54e093f89e3efaea"
+        "metadata=0fe39c9843a43532",
+        "extra-filename=-f234f7fe12429979"
       ],
       "sha256": "19c30b129e4f77b9029e4444b4f4c144f64eaa2b0bf263b8b58d01137aede805",
       "bytes": 4935343,
@@ -314,8 +314,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=fa2040f924e88776",
-        "extra-filename=-23d1ed58bae7938c",
+        "metadata=8e61b8ee2bfedb1f",
+        "extra-filename=-439d8438218bd72d",
         "strip=debuginfo"
       ],
       "sha256": "2088c3e26ebb53904245d541d710cb111d4f6d8c6b003711a556cdf7327ed74f",
@@ -335,8 +335,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=618b70268d88f6c6",
-        "extra-filename=-046cb11d15a24476"
+        "metadata=2292d04c1917e8a7",
+        "extra-filename=-1bf25c3fb9b2298a"
       ],
       "sha256": "79257e6dca31f9b77bef5fd034bd030f0ef4672bc60187cd1b0a0839442a4c64",
       "bytes": 1303781,
@@ -355,8 +355,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=62b398db10c52544",
-        "extra-filename=-45f849c50296254d"
+        "metadata=35c8a9d5eec19ca4",
+        "extra-filename=-2cb55bd5747eb672"
       ],
       "sha256": "79257e6dca31f9b77bef5fd034bd030f0ef4672bc60187cd1b0a0839442a4c64",
       "bytes": 1303781,
@@ -376,8 +376,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=d9a60463c5926450",
-        "extra-filename=-c4f2179b13be523c",
+        "metadata=3c3b9639949d67af",
+        "extra-filename=-5e36d871155eacdc",
         "strip=debuginfo"
       ],
       "sha256": "14aaa6ed7881acbc21028d8b3e8529e871073e0529d19778466345a9c47c9782",
@@ -398,8 +398,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=f930a34a77afaa7e",
-        "extra-filename=-26a5b4b51cfc5e3a",
+        "metadata=d80f9f89ccfbfe34",
+        "extra-filename=-ad258427750b410a",
         "strip=debuginfo"
       ],
       "sha256": "14aaa6ed7881acbc21028d8b3e8529e871073e0529d19778466345a9c47c9782",
@@ -419,8 +419,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=4041f3914033c4a1",
-        "extra-filename=-4a11243a6e65d47d"
+        "metadata=afd44eecfb649a4d",
+        "extra-filename=-d4dea21b4551714b"
       ],
       "sha256": "f12a2c7fac67054198c2886214f434c4ae4f809a9a51cac9abc2a3f6adc738b7",
       "bytes": 1330081,
@@ -440,8 +440,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=fb8963b52747774d",
-        "extra-filename=-ddda173a71d6aa66",
+        "metadata=64325324b1e3e826",
+        "extra-filename=-0d4159091fe1b1d1",
         "strip=debuginfo"
       ],
       "sha256": "cc74781182d11e19b038f206a805a17f3d9feb5bc08a214fa0ed1c4866ccf272",
@@ -461,8 +461,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=f46a0282c67802e6",
-        "extra-filename=-91867eaef112ded5"
+        "metadata=5deb15798f495f1b",
+        "extra-filename=-183fdc5876d8e182"
       ],
       "sha256": "ac97b62c53611ba865a1b95cd9fc40597c6ef6fc2130a136ab6d9ed9513f04d8",
       "bytes": 4330119,
@@ -482,8 +482,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=2ef53ca705445546",
-        "extra-filename=-86c18c12fdf952d5",
+        "metadata=7152af771ff9c891",
+        "extra-filename=-0ead0544cf9d2d12",
         "strip=debuginfo"
       ],
       "sha256": "d17e3b4a762a1aedb6a30687c852bcc6f943505013a8064e28bdc88abbaf50f4",
@@ -503,8 +503,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=8b12be5b31b80aa3",
-        "extra-filename=-6adb1108821426a1"
+        "metadata=bf1923545f9446ff",
+        "extra-filename=-9e7f9e44b02c70bd"
       ],
       "sha256": "63bb6e593864da5d9802d832c344387424900ad856a84a952d9ca22b19ecd843",
       "bytes": 357591,
@@ -526,8 +526,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=9844d6c195ed814c",
-        "extra-filename=-117f36a0f56f2dfb",
+        "metadata=f03f44336d010fd8",
+        "extra-filename=-8f3c932e11acbe62",
         "strip=debuginfo"
       ],
       "sha256": "69e2460d016296851429c7c5602ecf9fc7ea081c944d852808154512b5c92663",
@@ -549,8 +549,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=dbd1374ff8e43a4e",
-        "extra-filename=-9ad91e1e6643c598"
+        "metadata=ea816f43214d3bca",
+        "extra-filename=-92bf9a79c858edcc"
       ],
       "sha256": "a9fc9ff4b4a0f46e9d770b3d6829442cf6a72a7406c27926b5574bbe0f70fc4d",
       "bytes": 1060024,
@@ -570,8 +570,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=e1f9c5460c9034e1",
-        "extra-filename=-3a9174b51ff6c9a1",
+        "metadata=f0c35fb733cc2beb",
+        "extra-filename=-c1b2a0e59b2c649f",
         "strip=debuginfo"
       ],
       "sha256": "40af1150db595cfea065ee786d0d5329024764019aa2f98ff31cba991caafb91",
@@ -591,8 +591,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=7637418a3d3aeae1",
-        "extra-filename=-81c83ff75edc6013"
+        "metadata=334f5f997ae39c94",
+        "extra-filename=-357d9ba48ea02781"
       ],
       "sha256": "6f0340c7b4e7a5a23bbcee99d3718004292bce63bef1c5c0b4cbfe81b459e6e7",
       "bytes": 672361,
@@ -614,8 +614,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=b764de4acd67ba79",
-        "extra-filename=-0679bc8ee50cbe59"
+        "metadata=f4a32238060b39e6",
+        "extra-filename=-d3aa0293a1571d14"
       ],
       "sha256": "6f0340c7b4e7a5a23bbcee99d3718004292bce63bef1c5c0b4cbfe81b459e6e7",
       "bytes": 672361,
@@ -638,8 +638,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=562d96316b102a53",
-        "extra-filename=-a12e9ad39526891e",
+        "metadata=078a945cb5118588",
+        "extra-filename=-e8477f58f77e004f",
         "strip=debuginfo"
       ],
       "sha256": "a48730dbf0417c8cd45314ebe6b84909c0a1d700549233ec954152e9accf801e",
@@ -663,8 +663,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=b904a20acc1f26e4",
-        "extra-filename=-fe0a7b4b9172439f",
+        "metadata=9e5eb387542680b1",
+        "extra-filename=-2e58c108b4ba0c86",
         "strip=debuginfo"
       ],
       "sha256": "a48730dbf0417c8cd45314ebe6b84909c0a1d700549233ec954152e9accf801e",
@@ -687,8 +687,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=fafd270d77bcad96",
-        "extra-filename=-a77de01c5b32a4a5"
+        "metadata=e6cf983357302907",
+        "extra-filename=-32b7219d0fe2dc55"
       ],
       "sha256": "6aae609350ceac6071caf306c2e39b60f066ac4502d05a138f0f567e0fce66c2",
       "bytes": 97222,
@@ -708,8 +708,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=bca2d4463dd8c490",
-        "extra-filename=-1d941cbe455028c9",
+        "metadata=0500679a9dccd844",
+        "extra-filename=-867769fef33fcc5e",
         "strip=debuginfo"
       ],
       "sha256": "b2dd20698803e6613fbb92e67c3ac4d5630a2510bdb9825875b8380d1c85bf3e",
@@ -729,22 +729,22 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=a2a0816aee6a4da1",
-        "extra-filename=-ca0fddd95cc98447"
+        "metadata=e024cc8ce9ebea1d",
+        "extra-filename=-f3b526c2232cda53"
       ],
-      "sha256": "f50bc9453b7c7df628be9c6ddc651cdfb9026a5b694d0eaba636456242bdf354",
-      "bytes": 5626726,
-      "lines": 164893,
-      "functions": 1898,
-      "declarations": 3974,
-      "local_types": 24945,
-      "terminators": 18252,
+      "sha256": "ff16d7c0f3c1bf0f352f14a6c349dfd367f319bf232402c3cf3555737dfc777a",
+      "bytes": 5735937,
+      "lines": 168028,
+      "functions": 1970,
+      "declarations": 4074,
+      "local_types": 25458,
+      "terminators": 18554,
       "drop_functions": [
         "fn pid_claims::<impl at sandbox-guest-runtime/src/pid_claims.rs:330:1: 330:24>::drop(_1: &mut PidClaims) -> () {",
         "fn preparation::<impl at sandbox-guest-runtime/src/process/preparation.rs:60:1: 60:33>::drop(_1: &mut CommandPreparation) -> () {",
         "fn process::<impl at sandbox-guest-runtime/src/process.rs:189:1: 189:29>::drop(_1: &mut CommandProcess) -> () {"
       ],
-      "drop_sites": 1556
+      "drop_sites": 1588
     },
     {
       "crate": "sandproof_guest_runtime",
@@ -754,23 +754,23 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=b87f008b6a5a1a25",
-        "extra-filename=-62639abf6c52d63d",
+        "metadata=7cb1ac784eea8a83",
+        "extra-filename=-58ac3fa434644222",
         "strip=debuginfo"
       ],
-      "sha256": "363cc7c56d6647ba8cd9ef768441669471c7f75c275926d8ccaed7c8f2575ab0",
-      "bytes": 12636867,
-      "lines": 321813,
-      "functions": 1898,
-      "declarations": 4403,
-      "local_types": 36463,
-      "terminators": 19614,
+      "sha256": "1f7231ad0b691b86ce8a578e71d02c40a9e4aaed890ad796ae8e77e039e7b292",
+      "bytes": 12880107,
+      "lines": 328131,
+      "functions": 1970,
+      "declarations": 4513,
+      "local_types": 37223,
+      "terminators": 19972,
       "drop_functions": [
         "fn pid_claims::<impl at sandbox-guest-runtime/src/pid_claims.rs:330:1: 330:24>::drop(_1: &mut PidClaims) -> () {",
         "fn preparation::<impl at sandbox-guest-runtime/src/process/preparation.rs:60:1: 60:33>::drop(_1: &mut CommandPreparation) -> () {",
         "fn process::<impl at sandbox-guest-runtime/src/process.rs:189:1: 189:29>::drop(_1: &mut CommandProcess) -> () {"
       ],
-      "drop_sites": 1543
+      "drop_sites": 1580
     },
     {
       "crate": "sandproof_guest_worker",
@@ -779,8 +779,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=1b061828216aa45c",
-        "extra-filename=-de83e41eef37bcd7"
+        "metadata=d46e638a1c4821ab",
+        "extra-filename=-ee76e4e8fa3c89ba"
       ],
       "sha256": "d21996e01d73fbe9586bc95c946e78cdfd58f459a865a79909353dd58ec4163e",
       "bytes": 9886,
@@ -800,8 +800,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=8e8db576be64bfd2",
-        "extra-filename=-8d761f3e7d7f298d",
+        "metadata=edfc4b4e3553cace",
+        "extra-filename=-1deeb1a46938ec71",
         "strip=debuginfo"
       ],
       "sha256": "bf40818b90cb8e60d81c2174084a67823fee40f5fb3880b641402982804074c0",
@@ -821,29 +821,31 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=0ec80600fbb8fc52",
-        "extra-filename=-7587608dd5dd10c5"
+        "metadata=28dc1a5644c36bb7",
+        "extra-filename=-b2723157a798c262"
       ],
-      "sha256": "fae8b8aac597dd7ee3c9b3a177757cd70752e7f15b8959745e265df94a60cab1",
-      "bytes": 10424706,
-      "lines": 270674,
-      "functions": 2900,
-      "declarations": 5327,
-      "local_types": 38318,
-      "terminators": 30413,
+      "sha256": "f1b463ac051a7ae0428a3207e696f50af2051d0183a17a4b9c0534b60160d789",
+      "bytes": 10620794,
+      "lines": 275867,
+      "functions": 2981,
+      "declarations": 5505,
+      "local_types": 39079,
+      "terminators": 30927,
       "drop_functions": [
         "fn listener::rejection::<impl at sandbox-guest-service/src/listener/rejection.rs:62:1: 62:27>::drop(_1: &mut ObservedBody) -> () {",
-        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:39:1: 39:25>::drop(_1: &mut OwnedChunk) -> () {",
-        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:56:1: 56:39>::drop(_1: &mut OwnedBody<E>) -> () {",
-        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:166:1: 166:25>::drop(_1: &mut CancelWait) -> () {",
+        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:40:1: 40:25>::drop(_1: &mut OwnedChunk) -> () {",
+        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:57:1: 57:39>::drop(_1: &mut OwnedBody<E>) -> () {",
+        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:167:1: 167:25>::drop(_1: &mut CancelWait) -> () {",
+        "fn task_accounting::<impl at sandbox-guest-service/src/task_accounting.rs:213:1: 213:20>::drop(_1: &mut task_accounting::Guard) -> () {",
         "fn command::body::<impl at sandbox-guest-service/src/command/body.rs:70:1: 70:20>::drop(_1: &mut command::body::Frame) -> () {",
-        "fn driver::<impl at sandbox-guest-service/src/command/driver.rs:16:1: 16:25>::drop(_1: &mut OwnerGuard) -> () {",
-        "fn owner::<impl at sandbox-guest-service/src/command/preparation/owner.rs:50:1: 50:29>::drop(_1: &mut AdmissionOwner) -> () {",
-        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:376:1: 376:23>::drop(_1: &mut TagClaim) -> () {",
-        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:527:1: 527:20>::drop(_1: &mut Guard) -> () {",
-        "fn file_transfer::<impl at sandbox-guest-service/src/file_transfer.rs:449:1: 449:28>::drop(_1: &mut DownloadChunk) -> () {"
+        "fn driver::<impl at sandbox-guest-service/src/command/driver.rs:17:1: 17:25>::drop(_1: &mut OwnerGuard) -> () {",
+        "fn owner::<impl at sandbox-guest-service/src/command/preparation/owner.rs:51:1: 51:29>::drop(_1: &mut AdmissionOwner) -> () {",
+        "fn owner::<impl at sandbox-guest-service/src/command/preparation/owner.rs:91:1: 91:32>::drop(_1: &mut FailedPreparation) -> () {",
+        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:377:1: 377:23>::drop(_1: &mut TagClaim) -> () {",
+        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:528:1: 528:20>::drop(_1: &mut registry::Guard) -> () {",
+        "fn file_transfer::<impl at sandbox-guest-service/src/file_transfer.rs:450:1: 450:28>::drop(_1: &mut DownloadChunk) -> () {"
       ],
-      "drop_sites": 4308
+      "drop_sites": 4391
     },
     {
       "crate": "sandproof_guest_service",
@@ -853,30 +855,32 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=7671921c25221e02",
-        "extra-filename=-f7807deb4570415c",
+        "metadata=a779c7fc21dd39a5",
+        "extra-filename=-50e837fc1d92be0d",
         "strip=debuginfo"
       ],
-      "sha256": "e5b66ab733024550ad2372b07e882c7d17bb049e83b3c483780abd23e558a33b",
-      "bytes": 18374655,
-      "lines": 463146,
-      "functions": 2900,
-      "declarations": 5894,
-      "local_types": 48116,
-      "terminators": 34363,
+      "sha256": "f46c6943b6e8e2038f5ec4dc79464293466ada470f35916e230ecedc7e67e8d6",
+      "bytes": 18694476,
+      "lines": 471753,
+      "functions": 2981,
+      "declarations": 6090,
+      "local_types": 49128,
+      "terminators": 34913,
       "drop_functions": [
         "fn listener::rejection::<impl at sandbox-guest-service/src/listener/rejection.rs:62:1: 62:27>::drop(_1: &mut ObservedBody) -> () {",
-        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:39:1: 39:25>::drop(_1: &mut OwnedChunk) -> () {",
-        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:56:1: 56:39>::drop(_1: &mut OwnedBody<E>) -> () {",
-        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:166:1: 166:25>::drop(_1: &mut CancelWait) -> () {",
+        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:40:1: 40:25>::drop(_1: &mut OwnedChunk) -> () {",
+        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:57:1: 57:39>::drop(_1: &mut OwnedBody<E>) -> () {",
+        "fn owned_body::<impl at sandbox-guest-service/src/owned_body.rs:167:1: 167:25>::drop(_1: &mut CancelWait) -> () {",
+        "fn task_accounting::<impl at sandbox-guest-service/src/task_accounting.rs:213:1: 213:20>::drop(_1: &mut task_accounting::Guard) -> () {",
         "fn command::body::<impl at sandbox-guest-service/src/command/body.rs:70:1: 70:20>::drop(_1: &mut command::body::Frame) -> () {",
-        "fn driver::<impl at sandbox-guest-service/src/command/driver.rs:16:1: 16:25>::drop(_1: &mut OwnerGuard) -> () {",
-        "fn owner::<impl at sandbox-guest-service/src/command/preparation/owner.rs:50:1: 50:29>::drop(_1: &mut AdmissionOwner) -> () {",
-        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:376:1: 376:23>::drop(_1: &mut TagClaim) -> () {",
-        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:527:1: 527:20>::drop(_1: &mut Guard) -> () {",
-        "fn file_transfer::<impl at sandbox-guest-service/src/file_transfer.rs:449:1: 449:28>::drop(_1: &mut DownloadChunk) -> () {"
+        "fn driver::<impl at sandbox-guest-service/src/command/driver.rs:17:1: 17:25>::drop(_1: &mut OwnerGuard) -> () {",
+        "fn owner::<impl at sandbox-guest-service/src/command/preparation/owner.rs:51:1: 51:29>::drop(_1: &mut AdmissionOwner) -> () {",
+        "fn owner::<impl at sandbox-guest-service/src/command/preparation/owner.rs:91:1: 91:32>::drop(_1: &mut FailedPreparation) -> () {",
+        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:377:1: 377:23>::drop(_1: &mut TagClaim) -> () {",
+        "fn registry::<impl at sandbox-guest-service/src/command/registry.rs:528:1: 528:20>::drop(_1: &mut registry::Guard) -> () {",
+        "fn file_transfer::<impl at sandbox-guest-service/src/file_transfer.rs:450:1: 450:28>::drop(_1: &mut DownloadChunk) -> () {"
       ],
-      "drop_sites": 4184
+      "drop_sites": 4261
     },
     {
       "crate": "sandproof_guest_service",
@@ -885,8 +889,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=1354d947cfaa3763",
-        "extra-filename=-803cbed3f9e369bd"
+        "metadata=c891b7f1af12e18e",
+        "extra-filename=-d9c80451f8322bcd"
       ],
       "sha256": "3115e0c94326b73e9358f3aa38b87fad26a63df019b3f2eb74d3fb9c7c601009",
       "bytes": 422,
@@ -906,8 +910,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=db739b989d6dde1a",
-        "extra-filename=-fb047263048a344c",
+        "metadata=beb31b869824f844",
+        "extra-filename=-aeae0f25d7758864",
         "strip=debuginfo"
       ],
       "sha256": "3115e0c94326b73e9358f3aa38b87fad26a63df019b3f2eb74d3fb9c7c601009",
@@ -927,8 +931,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=098713225176658c",
-        "extra-filename=-9f5a1fc0c1d38fd1"
+        "metadata=6cac79895197de2c",
+        "extra-filename=-60989a216771f69b"
       ],
       "sha256": "4bde4f9605f311a64960b6b5a9963997c61f3add04577b7d2d36df2867c2588a",
       "bytes": 508102,
@@ -950,8 +954,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=ede0ce114897cb50",
-        "extra-filename=-c47807df15d45faa",
+        "metadata=973be614bd5fcbec",
+        "extra-filename=-22742f7aa340eb69",
         "strip=debuginfo"
       ],
       "sha256": "273e679927cdb817c7f15721afa20d44637b5d40149d16fb8a9cd5a1a8a76bd7",
@@ -973,8 +977,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=0957d3e5e09dabee",
-        "extra-filename=-7605bcd1835e282c"
+        "metadata=3f6319e18de9e8ce",
+        "extra-filename=-348368dcec31137d"
       ],
       "sha256": "c92a538e7bc30f827423af5580b91407d20a1cbbab1f0cf750401003131957d8",
       "bytes": 1612233,
@@ -993,8 +997,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=74055cb538b3d90d",
-        "extra-filename=-35ff8b19dd57bc08"
+        "metadata=7a6d14d5d51454db",
+        "extra-filename=-8924000a486307a4"
       ],
       "sha256": "0263d227d348bdf88167ff5c05ecbd7741f22445964fb27111a64d602d435de2",
       "bytes": 1611954,
@@ -1014,8 +1018,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=1b12c08a16a7e683",
-        "extra-filename=-864ce4fed915dc8e",
+        "metadata=4fb6592ecd70753c",
+        "extra-filename=-e0c63edaa338fcb6",
         "strip=debuginfo"
       ],
       "sha256": "15f2a90f707eff624e595df02177cdd198b8738d4cbcb1a279f97220bdc66351",
@@ -1036,8 +1040,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=8d8b4c1557110f3a",
-        "extra-filename=-a95a39875e204b65",
+        "metadata=b10bc41372fa376d",
+        "extra-filename=-adf8aa1ab67d48aa",
         "strip=debuginfo"
       ],
       "sha256": "3618e70fa41b776c73ff7e496499c6d8c9cbb97e35317136baa5b1c42e0ccb97",
@@ -1057,8 +1061,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=87dbdd698fabbd1a",
-        "extra-filename=-4b376e07de406ddc"
+        "metadata=1c92499269c8c386",
+        "extra-filename=-5e8aa9c2dbd84ee6"
       ],
       "sha256": "6c64e1e52fc718a8cd4ba57f04f4bf6916571022bb855dc79f4096cac3212d1b",
       "bytes": 4235543,
@@ -1081,8 +1085,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=71996fbbe5d86df8",
-        "extra-filename=-6219b2ea0315b683",
+        "metadata=65cef80245564d57",
+        "extra-filename=-322c6da24b44d7bc",
         "strip=debuginfo"
       ],
       "sha256": "a70ed214e08cb39ad441ead467080631004d6cbb69f233f765ba8113dd1ed840",
@@ -1105,8 +1109,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=5251804d3fe26959",
-        "extra-filename=-087ce15930c4cbc6"
+        "metadata=0c79c45ccba1e5a0",
+        "extra-filename=-077e64e1b6d31796"
       ],
       "sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72",
       "bytes": 1797254,
@@ -1125,8 +1129,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=72f6d64a60756ed0",
-        "extra-filename=-7b189915199124a9"
+        "metadata=366dc61a6a6d242f",
+        "extra-filename=-7196609a16443729"
       ],
       "sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72",
       "bytes": 1797254,
@@ -1146,8 +1150,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=3c6fc91f0b3e8ca1",
-        "extra-filename=-8459670d5c761657",
+        "metadata=3e32c13f1fabefbd",
+        "extra-filename=-bd549115ab4b6e95",
         "strip=debuginfo"
       ],
       "sha256": "47151b2a3f24254004a0b61d6c1d27ed43e540f0e5f3e12349c125dd6a32b07f",
@@ -1168,8 +1172,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=dd8b08693d23de11",
-        "extra-filename=-2b128e48269a17f8",
+        "metadata=c30c81cd8b7ad32d",
+        "extra-filename=-394006494b67c391",
         "strip=debuginfo"
       ],
       "sha256": "d851afebd9e446c2d6d01527dfe6363dbeafc680a7641a0ecb2ed3694daf824b",
@@ -1189,8 +1193,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=6ab4f2c6053a088b",
-        "extra-filename=-4d488c7681d9b5b5"
+        "metadata=bf30680cc478e6e6",
+        "extra-filename=-7b0ec4cba0f848db"
       ],
       "sha256": "9a3d0c5ba0b41104bd816425677ecd7071eb2e6ef34fabef622cd83013fa72fd",
       "bytes": 4930670,
@@ -1212,8 +1216,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=ece8837430a7cdf7",
-        "extra-filename=-8607c42f885d148b"
+        "metadata=e1f08dba147355f8",
+        "extra-filename=-437e7952fc813324"
       ],
       "sha256": "9a3d0c5ba0b41104bd816425677ecd7071eb2e6ef34fabef622cd83013fa72fd",
       "bytes": 4930670,
@@ -1236,33 +1240,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=78991d56553793e3",
-        "extra-filename=-07e7a9bf91e0337e",
-        "strip=debuginfo"
-      ],
-      "sha256": "c9efe186fa59cd20b3ddac3c18ba130409989788ea52f81d7fb0aa47e288f648",
-      "bytes": 13474538,
-      "lines": 310732,
-      "functions": 741,
-      "declarations": 3024,
-      "local_types": 35920,
-      "terminators": 16631,
-      "drop_functions": [
-        "fn reaper::<impl at sandbox-runtime/src/child_process/reaper.rs:57:1: 57:19>::drop(_1: &mut reaper::Slot) -> () {",
-        "fn child_process::<impl at sandbox-runtime/src/child_process.rs:297:1: 297:25>::drop(_1: &mut OwnedChild) -> () {"
-      ],
-      "drop_sites": 2417
-    },
-    {
-      "crate": "sandbox_runtime",
-      "source": "sandbox-runtime/src/lib.rs",
-      "cfg": [],
-      "codegen": [
-        "opt-level=3",
-        "embed-bitcode=no",
-        "overflow-checks=on",
-        "metadata=8ae380a1c1b2178b",
-        "extra-filename=-65832f6e6e6296e3",
+        "metadata=0bdde38d3642b389",
+        "extra-filename=-5a5abde4d05629bf",
         "strip=debuginfo"
       ],
       "sha256": "18b1763425bb32b2b370af0ab48c56649fa86b67283464298f70a5fec6f4f099",
@@ -1279,14 +1258,39 @@
       "drop_sites": 2417
     },
     {
+      "crate": "sandbox_runtime",
+      "source": "sandbox-runtime/src/lib.rs",
+      "cfg": [],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=afae0b78b9b78ee3",
+        "extra-filename=-a492bd1b336eb42f",
+        "strip=debuginfo"
+      ],
+      "sha256": "c9efe186fa59cd20b3ddac3c18ba130409989788ea52f81d7fb0aa47e288f648",
+      "bytes": 13474538,
+      "lines": 310732,
+      "functions": 741,
+      "declarations": 3024,
+      "local_types": 35920,
+      "terminators": 16631,
+      "drop_functions": [
+        "fn reaper::<impl at sandbox-runtime/src/child_process/reaper.rs:57:1: 57:19>::drop(_1: &mut reaper::Slot) -> () {",
+        "fn child_process::<impl at sandbox-runtime/src/child_process.rs:297:1: 297:25>::drop(_1: &mut OwnedChild) -> () {"
+      ],
+      "drop_sites": 2417
+    },
+    {
       "crate": "sandproof_vm",
       "source": "sandbox-runtime/src/main.rs",
       "cfg": [],
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=2e4547adbec16c99",
-        "extra-filename=-d2aa6e8354523681"
+        "metadata=3c43a1bceb41a70e",
+        "extra-filename=-c82d9574b3da6dfd"
       ],
       "sha256": "b5d91e920b3c41736182a8eadfcb96243e16f8369498a6bb9c4139d49cbe39f5",
       "bytes": 81850,
@@ -1306,8 +1310,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=2c0f27f1c3c25ac7",
-        "extra-filename=-4bcab2b2eafce77c",
+        "metadata=c6449c349470174a",
+        "extra-filename=-535dabf0de45f338",
         "strip=debuginfo"
       ],
       "sha256": "c4a1e1efa50c568fe4faf3da81039ee6aadedca54585d3e12a678fe0878e9f3e",
@@ -1327,8 +1331,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=fe8fb066aeccf8cf",
-        "extra-filename=-0fb554b9986eb19b"
+        "metadata=71df20161b3db7ff",
+        "extra-filename=-afe3a4a69c855193"
       ],
       "sha256": "65c347b2adb8d76130f7d367990463090ead6fb8d2da31292c6cd51e288eb856",
       "bytes": 2165937,
@@ -1350,8 +1354,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=4592a156b78ae3cd",
-        "extra-filename=-ccf3e94aa61941fd",
+        "metadata=8b945ac8eed20950",
+        "extra-filename=-a820515ea12942dc",
         "strip=debuginfo"
       ],
       "sha256": "10d160649ee5dec2bd04a0e643ed8f33410f56d6fccea83ecf6d0cf6084e7909",
@@ -1373,8 +1377,8 @@
       "codegen": [
         "embed-bitcode=no",
         "debuginfo=2",
-        "metadata=be53b9eca64d9460",
-        "extra-filename=-2c3264caff803e88"
+        "metadata=7a0a29a513716892",
+        "extra-filename=-a3f24452891aa52e"
       ],
       "sha256": "357030d8096950b515d95b278891270a6da281e5a22bd27a31275ba54e28fe17",
       "bytes": 158228,
@@ -1394,8 +1398,8 @@
         "opt-level=3",
         "embed-bitcode=no",
         "overflow-checks=on",
-        "metadata=73bb8150fe341e76",
-        "extra-filename=-9d924365d0b5d055",
+        "metadata=b57d058b00f25f9f",
+        "extra-filename=-369fe948f295571d",
         "strip=debuginfo"
       ],
       "sha256": "d319be30225e7971860b83642f4419d8af71e1e7231dc3926d02166c80bd8430",
@@ -1409,10 +1413,10 @@
       "drop_sites": 26
     }
   ],
-  "custom_drop_implementations": 25,
+  "custom_drop_implementations": 27,
   "evidence": {
-    "receipt_sha256": "b6e7baacbb4bad46f98a2d62e52d3826613932ca120a87800a0a8f3e884ce0ea",
-    "index_sha256": "2f85339b07d91020e288424ea8bc0f66073f7ea189a435a7f729248f77e68214"
+    "receipt_sha256": "4a19c5ff8af49d5d497cf8ba7dba402702d5fcab4b2636f19db3d145c63e8615",
+    "index_sha256": "bb2ead29b45da3e931b318ee0412d841d85f2c41b2f9e779e70b61e2b538939d"
   },
   "scope": "compiled source census; no semantic coverage or call-graph completeness claim"
 }
