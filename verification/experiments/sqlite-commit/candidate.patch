@@ -1,0 +1,118 @@
+--- a/controller-service/src/controller/transaction.rs
++++ b/controller-service/src/controller/transaction.rs
+@@ -6,6 +6,8 @@
+ use sandbox_controller_core::World;
+ use std::{cell::RefCell, ops::Deref};
+ 
++mod memo;
++
+ pub(super) struct CommittedWorld {
+     value: RefCell<Option<World>>,
+     // SQLite changes this connection-local value on another connection's
+@@ -68,6 +70,24 @@
+     committed: &'a CommittedWorld,
+     candidate: RefCell<Option<World>>,
+     pub(super) input_start: u64,
++}
++
++// Only value transfer lives here. The memo core selects None versus the
++// original candidate and decides when each operation occurs. No RefCell guard
++// survives a database callback; the original reentrant read behavior is kept.
++struct TransactionCells<'a> {
++    committed: &'a RefCell<Option<World>>,
++    candidate: &'a RefCell<Option<World>>,
++}
++
++impl memo::Cells<World> for TransactionCells<'_> {
++    fn set_committed(&mut self, value: Option<World>) {
++        *self.committed.borrow_mut() = value;
++    }
++
++    fn take_candidate(&mut self) -> Option<World> {
++        self.candidate.borrow_mut().take()
++    }
+ }
+ 
+ impl<'a> WorldTransaction<'a> {
+@@ -126,13 +146,11 @@
+         mut self,
+         commit: impl FnOnce(Transaction<'a>) -> rusqlite::Result<()>,
+     ) -> Result<(), JournalError> {
+-        // Invalidate before the call: even a failed commit/rollback may have
+-        // committed. No candidate is visible until success is confirmed.
+-        self.committed.invalidate();
+-        commit(self.transaction.take().expect("live transaction"))
+-            .map_err(JournalError::CommitUncertain)?;
+-        *self.committed.value.borrow_mut() = self.candidate.borrow_mut().take();
+-        Ok(())
++        let mut cells = TransactionCells {
++            committed: &self.committed.value,
++            candidate: &self.candidate,
++        };
++        memo::commit_with(&mut self.transaction, &mut cells, commit)
+     }
+ }
+ 
+@@ -146,13 +164,11 @@
+ 
+ impl Drop for WorldTransaction<'_> {
+     fn drop(&mut self) {
+-        if let Some(transaction) = self.transaction.take()
+-            && transaction.rollback().is_err()
+-        {
+-            // The Drop path cannot report rollback failure to the caller.
+-            // Invalidation prevents any later use of a possibly stale memo.
+-            self.committed.invalidate();
+-        }
++        let mut cells = TransactionCells {
++            committed: &self.committed.value,
++            candidate: &self.candidate,
++        };
++        memo::rollback_if_live(&mut self.transaction, &mut cells, Transaction::rollback);
+     }
+ }
+ 
+--- /dev/null
++++ b/controller-service/src/controller/transaction/memo.rs
+@@ -0,0 +1,41 @@
++//! Original transaction decisions with an explicit mutable cell interface.
++//! Cells performs only the supplied value transfer; this core owns the order,
++//! invalidation decision and commit-error classification. It never runs SQL or
++//! authorizes a host effect, and does not assume an error means a rollback.
++use crate::JournalError;
++
++pub(super) trait Cells<W> {
++    fn set_committed(&mut self, value: Option<W>);
++    fn take_candidate(&mut self) -> Option<W>;
++}
++
++pub(super) fn commit_with<W, T, S, F>(
++    transaction: &mut Option<T>,
++    cells: &mut S,
++    commit: F,
++) -> Result<(), JournalError>
++where
++    S: Cells<W>,
++    F: FnOnce(T) -> rusqlite::Result<()>,
++{
++    // Clear before even taking the transaction: a panic or failed commit may
++    // leave an unknown outcome. Only a confirmed return can publish a value.
++    cells.set_committed(None);
++    commit(transaction.take().expect("live transaction")).map_err(JournalError::CommitUncertain)?;
++    let candidate = cells.take_candidate();
++    cells.set_committed(candidate);
++    Ok(())
++}
++
++pub(super) fn rollback_if_live<W, T, S, R>(transaction: &mut Option<T>, cells: &mut S, rollback: R)
++where
++    S: Cells<W>,
++    R: FnOnce(T) -> rusqlite::Result<()>,
++{
++    if let Some(transaction) = transaction.take()
++        && rollback(transaction).is_err()
++    {
++        // Drop cannot report rollback failure; retain no potentially stale memo.
++        cells.set_committed(None);
++    }
++}

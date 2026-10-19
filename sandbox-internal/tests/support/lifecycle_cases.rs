@@ -8,7 +8,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[path = "../../../sandbox-protocol/tests/support/lifecycle.rs"]
 mod fixture;
 
-struct Counted(Arc<AtomicUsize>);
+struct Counted(
+    Arc<AtomicUsize>,
+    Arc<std::sync::Mutex<Vec<LifecycleRequest>>>,
+);
 impl sandproof_internal::ValidationReceiver for Counted {
     async fn validation_evidence(
         &self,
@@ -32,6 +35,7 @@ impl sandproof_internal::DataReceiver for Counted {
 impl LifecycleReceiver for Counted {
     async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
         self.0.fetch_add(1, Ordering::SeqCst);
+        self.1.lock().unwrap().push(request.clone());
         Ok(fixture::response(&request, 2, LifecycleFact::Recorded))
     }
     async fn confirm(&self, _: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
@@ -49,6 +53,7 @@ impl LifecycleReceiver for Counted {
 async fn lifecycle_rejects_untrusted_binding_and_bounded_wire_before_receiver() {
     let certs = certificates();
     let count = Arc::new(AtomicUsize::new(0));
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let server = InternalServer::new(
         ServerTls::new(
             certs.host.material(),
@@ -58,7 +63,10 @@ async fn lifecycle_rejects_untrusted_binding_and_bounded_wire_before_receiver() 
         .unwrap(),
         fixture::node("host-a"),
         limits(),
-        sandproof_internal::diagnostic::RejectTemplateCache::new(Counted(Arc::clone(&count))),
+        sandproof_internal::diagnostic::RejectTemplateCache::new(Counted(
+            Arc::clone(&count),
+            Arc::clone(&captured),
+        )),
     );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -66,11 +74,7 @@ async fn lifecycle_rejects_untrusted_binding_and_bounded_wire_before_receiver() 
     let run = server.clone();
     let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
     let good = fixture::request(1, 1, Intent::Create);
-    let mut variants = vec![good.clone(); 3];
-    variants[0].identity.node.node_generation = 2.try_into().unwrap();
-    variants[1].identity.protocol_version += 1;
-    variants[2].identity.node.node_id = "other-host".try_into().unwrap();
-    for request in variants {
+    for request in invalid_requests(&good) {
         let (status, body) = raw_request(
             address,
             raw_config(&certs, Some(&certs.center)),
@@ -137,8 +141,66 @@ async fn lifecycle_rejects_untrusted_binding_and_bounded_wire_before_receiver() 
         LifecycleFact::Recorded
     );
     assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert_eq!(*captured.lock().unwrap(), vec![good.clone()]);
+    assert_complete_fields(&client, &good, &count, &captured).await;
     stop.send(()).unwrap();
     task.await.unwrap().unwrap();
     assert_eq!(server.active_connections(), 0);
     assert_eq!(client.active_calls(), 0);
+}
+
+fn invalid_requests(good: &LifecycleRequest) -> Vec<LifecycleRequest> {
+    let mut variants = vec![good.clone(); 7];
+    variants[0].identity.node.node_generation = 2.try_into().unwrap();
+    variants[1].identity.protocol_version += 1;
+    variants[2].identity.node.node_id = "other-host".try_into().unwrap();
+    variants[3].identity.retention_slot = 0;
+    variants[4].create.resources.cpu = 0;
+    variants[5].intent = Intent::Renew { end_at_ms: 0 };
+    variants[6].intent = Intent::Destroy;
+    variants[6].create.options.clear();
+    variants
+}
+
+async fn assert_complete_fields(
+    client: &InternalClient,
+    good: &LifecycleRequest,
+    count: &AtomicUsize,
+    captured: &std::sync::Mutex<Vec<LifecycleRequest>>,
+) {
+    for (index, intent) in [
+        Intent::Create,
+        Intent::Renew { end_at_ms: 11 },
+        Intent::Destroy,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut expected = good.clone();
+        expected.identity.tenant_id = "tenant-fields".try_into().unwrap();
+        expected.identity.sandbox_id = "sandbox-fields".try_into().unwrap();
+        expected.identity.operation_id = "operation-fields".try_into().unwrap();
+        expected.identity.intent_version = 17.try_into().unwrap();
+        expected.identity.retention_slot = 19;
+        expected.identity.request_window = 23.try_into().unwrap();
+        expected.create.template_revision = "revision-fields".try_into().unwrap();
+        expected.create.template_digest = std::array::from_fn(|i| u8::try_from(i).unwrap());
+        expected.create.resources = sandproof_protocol::internal::lifecycle::Resources {
+            instances: 1,
+            cpu: 2,
+            memory_bytes: 4096,
+            disk_bytes: 8192,
+        };
+        expected.create.options = vec![0, 127, 255];
+        expected.create.startup_deadline_ms = 10;
+        expected.create.timeout_ms = 1;
+        expected.create.max_lifetime_ms = 2;
+        expected.intent = intent;
+        assert_eq!(
+            client.lifecycle(&expected).await.unwrap().fact,
+            LifecycleFact::Recorded
+        );
+        assert_eq!(count.load(Ordering::SeqCst), index + 2);
+        assert_eq!(captured.lock().unwrap().last(), Some(&expected));
+    }
 }

@@ -1,0 +1,22 @@
+import SandboxModel.Boundaries.JsonRequest.Model
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofFoundationsRust
+open SandboxModel.Foundations
+open SandboxModel.Boundaries.JsonRequest
+
+-- This certificate is checked only against freshly generated mutant functions.
+-- The positive implementation proves precisely this GuardContract.
+theorem bypassed_binding_refutes_original_guard_contract :
+    ¬ GuardContract sandproof_protocol.internal.lifecycle.LifecycleRequest.validate := by
+  intro claimed
+  have create : sandproof_protocol.internal.lifecycle.CreateBinding.is_valid
+      initialCreatePlan = .ok true := create_plan_init_realizable.2
+  have accepted : sandproof_protocol.internal.lifecycle.LifecycleRequest.validate
+      zeroSlotRequest initialRequest.identity.node = .ok (.Ok ()) := by
+    simp [sandproof_protocol.internal.lifecycle.LifecycleRequest.validate,
+      zeroSlotRequest, initialRequest, create]
+  have conditions := (claimed zeroSlotRequest initialRequest.identity.node).mp accepted
+  exact conditions.2.2.1 (by rfl)
+
+#audit_controller_proof bypassed_binding_refutes_original_guard_contract

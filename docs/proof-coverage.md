@@ -2,9 +2,39 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## 七项边界统一候选的组合验收（#585）
+
+本批在同一候选组合 #556、#563、#569、#574、#576、#578、#584。可执行与证明输入冻结于 `029840e4b1c82450c388ecc16d3655b45c5b9dba`。同步 integration 的 `b305b852` 只补历史关系；同步前后候选文件树逐字一致。各单项的历史冻结证据保留，最终组合以本节和 [PR #585](https://github.com/VeriInfra-Lab/sandproof/pull/585) 的精确回执为准。最终报告提交只改覆盖说明和依赖它的冻结摘要，另核对全部程序、证明、生成物和工具输入未变。
+
+原生产编译器重新采集十组开发/发布构建，覆盖 18 个自有包、60 个编译变体、816 项 Rust/Cargo 来源；27 项已观察自定义 Drop 均有责任登记。原文保留，实际来源准入通过；它是代码定位与失效检查，不是动态调用或取消路径的完整证明。新增嵌套函数地址的 MIR 索引处理只保留完整原文并检查括号配对，25 项索引回归及重新整轮采集通过，没有修改 Charon/Aeneas。完整 foundations AST 重建仅发现一处宏源码 span 的结束列 8→25，生成 Lean 与 translation.json 逐字相同；采用原工具输出并更新对应来源摘要，没有放宽有序 AST 检查。完整组合的一轮验收另在 JSON decode 整图摘要处退出 1：原冻结产物与真实新产物完整比较，仅 valid_identifier 闭包所引标准宏源码 span 的结束列 8→25，两个完整直接调用快照及 encode 全图均相同；只更新 decode 摘要及七份父清单。原脚本再次独立生成、完整绑定/features 和 1699 项清单准入通过，检查器和生成语义未改，原失败记录保留。
+
+指定 Linux 证明环境的原完整 `verify-controller.sh` 退出 0（4943.471 秒）：1035 个预期命名声明的实际依赖审计全部齐全，无缺项或额外项；该数量含辅助和见证声明，不是定理数量。所有保留模块、原工具重抽取、正确/同性质错误版及占位检查通过。原 Linux `check-function.sh` 退出 0（1285.831 秒），13 阶段和 1254 项工具测试通过，无 Linux 排除或工具测试跳过；Rust 工作区、文档测试及诊断配置均通过。同一精确提交的 [CI 完整步骤](https://github.com/VeriInfra-Lab/sandproof/actions/runs/39248077058) 已分别执行原 `check-compat.sh`、`check-bench.sh` 和 `check-distributed-contract.sh` 并成功；SDK/分布式任务与 Harbor 输入任务分开记录，不声称这三项在证明机上再次通过。兼容入口包含真实 SDK/网关与 Guest 组件，但无云端/VM；Harbor 入口只检查框架/回环合同，没有执行评测任务。证明机上额外安排的重复 SDK 入口因 PATH 缺少 uv 退出 127，尚未执行测试；原失败回执保留，没有改为成功，也没有为重复验收扩建 Python 环境。
+
+八份实际 Lean 文件通过原服务完整诊断，文件指纹相符，非陈旧、无错误/警告及未完成依赖；客户端退出时原有 Event loop is closed 收尾提示完整保留，不是 Lean 诊断失败，未改客户端或过滤诊断。旧证明的样式警告在完整构建日志中保留，没有关闭检查。1799 个跟踪输入在每个阶段前后核对，完整 LLBC 仅允许原规则的无序短名排列，原始差异先封存后恢复；生成 Lean 字节未改。完整机器回执 SHA256 为 `4e29979479f5e88cfb18e97eb56df18f0efd8a17a130e69a0ccf8ed37b869377`。最终报告及同树合入复用这些相同程序/证明输入的实际回执，只重跑受影响文档和冻结准入，不重复运行未变证明。PR 的 SDK、Harbor 输入、标题及策略 CI 与上述完整验收分开记录；最终头部全绿后才合入。
+
+首次完整轮次在维护测试中真实失败：夹具使用墙钟，慢盘同步期间越过所建实例的 300 秒寿命，原 get 正确返回 NotFound。仅该测试通过现有 Clock 注入固定时间，保留原 16 轮维护和全部断言，并增加推进时间后必须拒绝过期实例的用例；生产实现、安全检查和超时均未修改。严格 Clippy、格式与八项维护用例通过。原慢盘轮次未完成记录单独保留；最终完整验收的临时数据库使用实测持久 ext4 私有目录，保留原 fsync/事务设置、64 GiB 地址空间限制、CPU0–7、Cargo4作业和串行 Rust 测试，未用内存盘代替持久化或清理缓存。
+
+真实 Rust 同步核心的条件证明、有限轨迹模型和可信机械适配的源码/AST/测试证据仍分别记录。A/B 与业务前提沿用[逐接口依赖登记](formal/dependencies.md)，不是将全部 Tokio、自有回调或外壳认领为已证；隔离候选未因此进入生产调用。未执行的原 opt-in/特权场景不计为通过，没有新增产品 VM、云 SDK 或部署系统验收。V0 的全部使用点、其它通道/通知/锁及 SQL/OS 代表连接和下游业务义务仍以 #333 未完成项为准；T9 继续排除。
+
+## Redis 提交结果：隔离候选与完整验收（#564）
+
+[冻结候选](../verification/experiments/redis-result/candidate.json)以生产基线 `824abe2b6285774ef8983fbe02db3a6509c9b5fb` 加固定补丁构建，生产文件未改。[生成核心](../verification/aeneas/storage/SandproofStorage/Funs.lean)来自固定原 Charon/Aeneas。公开 commit/reaffirm 的四个薄转调另经完整 Charon AST 核对参数、结果、关联常量、codec/clock 字典和 unwind 路径；该机械准入不等于具体 Serde 回调图已由 Lean 闭合。[依赖明细](formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)区分外部 A6/A8/A11、获批 B4 与仍由调用者提供的自有条件。
+
+正式库包含[结果与写围栏](../verification/aeneas/storage/SandproofStorage/Results.lean)、[健康检查回写范围](../verification/aeneas/storage/SandproofStorage/Health.lean)、[泛型调用链的未知围栏](../verification/aeneas/storage/SandproofStorage/Caller.lean)及[原完整载荷和新修订来源](../verification/aeneas/storage/SandproofStorage/Success.lean)，共 40 项核心与辅助声明；[具体见证](../verification/aeneas/storage/SandproofStorage/Examples.lean)另有 91 项见证及辅助声明。中央 Audit 逐项审计全部 131 项，只依赖标准逻辑。成功性质显式要求同一 codec 状态链的往返，正常错误范围由自有 codec 提供，未把这些业务义务移入外部边界。示例 codec 会拒绝超容量和非法字节，并证明自己的条件；完整成功见证经过实际生成的写前健康、修订推进、CAS、写后健康和 Committed 构造，不实例化生产 JsonCodec/schema、物理租约或部署条件。
+
+两个不同私有目录的原工具重建通过，完整核心/公开 LLBC 摘要一致，三个生成文件逐字一致；仅按既有规则规范化无序 short_names 字典，不删除其余 AST。七类公开接线错误和五类源码/析构准入错误被拒绝。全部 27 个不透明调用、52 个由原工具处理的内建/全局/析构声明、363 个 Drop 位置及两版标准库/固定 Redis 源码均有登记。真实 Rust 错误版只将 fence_unknown 的赋值 true 改为 false，编译、原 Charon/Aeneas 抽取及生成 Funs 构建先成功；原 Results 仅更换 import 后，被同一 fence_unknown_exact 与 eval_error_returns_unknown 性质拒绝，三个内核反例/允许输入声明完成依赖审计，未手改生成 Lean 或改弱性质。
+
+完整验收冻结于 `dfaf79a710db0475c3390ac1b888d37b2c37024a`，全部构建、抽取、测试和证明在指定 Linux x86_64 验证环境运行。原 verify-controller.sh 退出 0（1569.987 秒），全部保留模块重抽取、构建、真实正负用例、占位检查及 966 项唯一声明审计完成；原 Linux check-function.sh 退出 0（1717.152 秒），13 个阶段和 1210 项必需工具测试通过，工具测试无跳过、无 Linux 项排除。候选严格 Clippy 与 40 项组件测试通过，其中 26 项使用固定真实 Redis，候选无忽略项；仓库原有 opt-in/特权忽略项不计为已执行。既有 Lean 源的样式 linter 警告保留，未修改旧证明或禁用检查。
+
+本批正式文件的真实 Lean 服务完成 131 项 Redis 审计，最终主 ProofAudit 服务另完成 15 项审计；均完整、非陈旧且无错误/警告。服务准入不筛选行号、声明或严重性，检查实际文件与全部证明源码指纹；18 类无效回执及保留的虚拟 worker 崩溃回执被拒绝。1710 项跟踪输入最终一致；两份原 LLBC 仅允许的无序短名排列先封存、核对完整规范化摘要后恢复原字节。完整机器收据 SHA256 为 `fc9490f8e39bfdbf4eb63e26bec1de18f79eba4ced3c449ff3951c6c56f0f1c6`，原失败记录保留。最后补录仅修改本覆盖章节，不改变已验收代码、定理、工具或冻结输入。
+
+交付依赖固定 #563（头 `824abe2b`，前置 #556），最终目标 integration。验收期间 integration 已推进到 `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；该版本未改 Redis 主体、根锁文件或本批依赖合同，但新增 Host CandidateVerification 传递与中心后台接线。它们须重新核对对应使用点；冻结候选的完整通过不自动背书最新 integration 组合，集成后仍需复验。
+
+正常返回性质仅覆盖登记的普通 payload 值域，排除可观察自定义 Drop、共享可变或资源 payload；异常、panic/unwind、abort、崩溃及终止性不从正常后态定理推出。逻辑连接消失不是物理关闭、回滚或持久化证据，错误允许已发生部分效果，读取/reconnect 不能单独解除未知围栏。完整生产 codec/schema、全部 Lua、读取/reconnect、缓存/outbox/派发和崩溃恢复继续由 V2 提供；原实现与候选的一般等价、物理外部效果及完整 VM/TLS/云端部署未据此证明或验收。不关闭整个 T7/V0，T9 继续排除。
+
 ## V0 底座统一与组合验收
 
-#515/#510 的公共任务统一归 V0 #333，按 T0–T8 验收；具体依赖保证见[依赖登记](formal/dependencies.md)。[汇总 PR #551](https://github.com/VeriInfra-Lab/sandproof/pull/551)组合已有 V0、任务/排空、隔离业务试点和旧生成链退役成果，不新增业务证明。下文历史记录继续绑定各自冻结提交；当前组合证据以本节和该 PR 的最终验收记录为准。
+#515/#510 的公共任务统一归 V0 #333，按 T0–T8 验收；具体依赖保证见[依赖登记](formal/dependencies.md)。[汇总 PR #551](https://github.com/VeriInfra-Lab/sandproof/pull/551)组合已有 V0、任务/排空、隔离业务试点和旧生成链退役成果，不新增业务证明。下文历史记录继续绑定各自冻结提交；#551 的组合证据以本节和该 PR 的最终验收记录为准。后续接口扩展以本页 T6/T8 节各自冻结组合为准，不能把一个批次的证据用于其它未核对组合。
 
 组合 91fc769be12eacba589afb9a839c3421823f43f7 在指定 Linux 证明环境通过原 check-function.sh（1752 秒、1166 项工具测试、13 阶段）和完整 verify-controller.sh（1229 秒）。143 个保留证明文件及公共入口编译，744 个唯一声明的实际依赖审计通过；两个总入口经原 Lean 服务完整诊断，无错误、非陈旧。原任务正确/错误版组件及 root 安装文件场景通过。1629 个跟踪输入最终一致；原始 LLBC 差异先封存，经原审计器确认仅为允许的无序短名排列后恢复。机器收据 SHA256 为 8ebe95f4a09ca3ce290509a5aa779784a7db47e9de0e48d0392a096a08692174。
 
@@ -14,6 +44,46 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 
 **当前保留证明集合的组合验收已通过；V0 的全部使用点、完整异步 Rust、业务生命周期与部署系统仍未完成证明。** #333 的未勾验收点和 #101 的业务/组合义务继续保留，T9 仍排除。
 
+
+## T0 真实使用来源与析构复核
+
+[#577](https://github.com/VeriInfra-Lab/sandproof/issues/577) 的隔离来源候选基于固定 #556（398b114d），实际生产来源仍为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；相对该依赖不修改生产 Rust、Cargo.lock 或 Charon/Aeneas。原生采集代码冻结于 `1d051915`，发布/准入实现为 `570c8997`，两者的 Rust 输入和编译配置相同。采集由原生产 Rust 1.97.0 完成，不经过新的解释器，也不产生新的 Lean 程序定理。
+
+[固定入口](../verification/use-inventory/config.json)的五组开发/普通发布构建在 a6000 全部退出 0，完整采集退出 0（611.036 秒）；覆盖 18 个自有包、60 个实际编译单位变体与 798 项 Rust/Cargo 输入。45,129 个函数体记录包含配置重复，不能读作独立函数已证明；完整原文、调用/局部类型/终结语句及实际 Cargo 产物保留在忽略的证据目录。[登记结果](../verification/use-inventory/catalogue.json)与原文回执核对，[责任清单](../verification/use-inventory/responsibilities.json)精确匹配 25 项已观察自定义 Drop。解锁、计数、Unknown、取消、转交子进程与是否归还仍保留原业务责任，不新增整类可信假设。
+
+初版十组编译均成功，索引因发布 MIR 的单行/匿名常量等格式退出 1；该轮原文和失败完整保留，修正后重新执行上述整轮采集。四个保留抽取根另外实际重建，生成 Lean 逐字一致，完整 LLBC 按原允许规则一致；本批只更新已审查的文档、新增来源检查入口及相应摘要，没有更换工具或修改生成语义。发布/来源回归及真实缺项错误对照的结果见 #577。
+
+验收代码冻结于 `ba92936119c08f4c14811672f596a7762d377bcb`。独立 Linux x86_64 检出的原完整 `verify-controller.sh` 退出 0（1800.266 秒），原 `check-function.sh` 退出 0（2005.029 秒，13 阶段、1223 项工具测试无跳过）；768 个预期命名声明全部由实际依赖审计覆盖，无缺项。来源检查及完整入口预检共 26 项定向回归通过，完整原文与发布清单核对通过；三个真实数据缺项错误均被对应检查拒绝，它们不是业务错误版的形式化反例。两个总入口文件经原真实 Lean 服务完整、非陈旧诊断（13.701 秒），主审计的 15 项依赖检查通过。1668 个跟踪输入前后核对一致；两份原始 LLBC 只有原规则允许的无序短名排列差异，先封存、确认完整规范化摘要相同后恢复，没有修改生成 Lean 或清理 `.lake`。完整验收汇总回执 SHA256 为 `63f9f7893736083cc4050b097f29530ae00f011ad0ed8d5588f0d85ac08a6671`。
+
+首轮完整证明因 Lean 创建线程失败退出 134；同一失败命令在原 64 GiB 地址空间上限内，采用 `LEAN_NUM_THREADS=8`、`LEAN_STACK_SIZE_KB=65536` 后通过，上述完整证明沿用该资源设置，不更换工具版本、证明目标或内核。首轮基础检查另发现预检源码副本缺少 Git 上下文；修正测试副本的登记后，原 Cargo 哨兵/陈旧父摘要断言及新增未登记 Rust 拒绝检查均通过。两类失败证据保留，未放宽准入或安全检查。最终报告只补本节、将公共文档的机器别名改为通用环境称谓并同步对应摘要，可执行代码、模型、证明和生成语义与验收代码相同。既有 opt-in/特权忽略项不计为执行，未新增产品 VM、SDK 云端、TLS 或部署验收。
+
+本项只加强已观察源码的清单与可复现定位。动态回调实际实例、结构体字段/合法域、future 取消时的编译器清理、嵌套库析构及外部脚本/配置的完整绑定仍按[依赖登记](formal/dependencies.md#真实使用点的来源清单)和 #333 继续处理。额外 VM 运维入口只作防漏观察，不增加历史工具证明前置；模板范围与 T9 排除不扩大。**T0 全部使用连接、T1–T8 其余义务和整个 V0 均未因此完成。**
+
+## T7 边界：SQLite 提交回执与缓存发布（隔离候选）
+
+[#570](https://github.com/VeriInfra-Lab/sandproof/issues/570) 的 Rust 输入固定为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；本批验证代码冻结于 `c47c42329560cd226ae1ca48674d206f5d509fc3`，依赖固定 PR #556（398b114d）的最新 B1 接线复核。候选仅在私有副本应用[固定补丁](../verification/experiments/sqlite-commit/candidate.patch)，原 WorldTransaction::commit_with/Drop 实际调用新增同步核心。生产 Rust、锁文件和 Charon/Aeneas 没有因此改动。正式源、生成物和条件分别见[候选清单](../verification/experiments/sqlite-commit/candidate.json)、[环境与完整析构登记](../verification/experiments/sqlite-commit/environment.json)及[接口保证](formal/dependencies.md#a4b2b4-sqlite-提交回执与缓存发布接口隔离候选)。
+
+[Results](../verification/aeneas/sqlite/SandproofSqlite/Results.lean) 的 13 条核心/通用状态性质连接原清空、回调结果分类、事务槽消耗、原候选发布和 rollback 分支；正常返回须取得原 live 事务，正常成功必须由原回调确认。[Examples](../verification/aeneas/sqlite/SandproofSqlite/Examples.lean) 的 5 条允许输入/结果见证分别保留提交未知的写前、写后结局，两者都不能保留旧缓存。18 项声明由原标准依赖命令与真实物理 Audit 文件检查，不增加自定义假设。这些是隔离候选真实核心的条件性质，不是整个生产事务外壳已证。
+
+A4 提供固定 SQLite/rusqlite 的原事务结果；B2/B4 连接原事务句柄、两个原缓存单元及给定值/结果传递，要求不同单元、正常借用、回调及捕获值析构不额外改写缓存。逻辑状态表示两单元的值，不声称机器证明 RefCell 的堆实现。核心后态早于外层 WorldTransaction 候选字段销毁；普通 World 值域及原事务内部结束按登记限制，不提供物理关闭/回滚/释放、终止、panic/unwind、abort 或崩溃后保证，也没有证明原版/候选任意行为等价。
+
+实际保留旧缓存错误版只删除首次清空，先编译并通过原 Charon/Aeneas，再由未改动的 cache_tests.rs:102 拒绝。正式 Results.lean 逐字复制，在四个对应性质处拒绝；三个错误见证/辅助声明经独立内核和标准依赖审计。核心 35 项前端声明/81 个析构位置，包装 49 项声明/117 个析构位置均完整登记；这些包含预声明，不代表每项均在运行。两版标准库各 26 份源及固定 SQLite 源核对通过，实际使用 bundled SQLite 3.53.2（3053002）。完整中间表示只按原规则规范化无序 short_names；生成 Types/Funs/translation.json 逐字再生核对。
+
+指定 Linux x86_64 验证环境的原完整 verify-controller.sh 在 c47c4232 退出 0（1797.588 秒）：全部保留模块、实际重新提取一致性、占位检查及 786 个唯一声明依赖审计通过。专用 verify-sqlite.sh 独立退出 0（182.247 秒），正确候选的原 16 项缓存测试、真实错误版和 18 项物理 Audit 服务检查均通过。原完整 Linux check-function.sh 退出 0（1747.478 秒、13 阶段），1199 项工具测试无跳过，包含工作区与 contention-diagnostics 的 Rust 测试、文档测试和严格 Clippy。最后对 SandboxModel.lean、verification/ProofAudit.lean 和本库 Audit.lean 的真实服务检查退出 0（18.922 秒）；主审计 15 项和本库 18 项均完整、非陈旧、无错误/警告。1683 个跟踪输入按原规则核对一致；两份新 LLBC 的原始输出已保留，仅完整摘要确认无序 short_names 排列等价后恢复原序列化。预置工具链接另行核对。原 opt-in/特权忽略项不计为已执行，产品 VM、TLS、外部云端 SDK 及部署验收没有运行；这不是整个 V0 的验收结论。
+
+完整 commit() 的自有验证器图在原 64 GiB 地址空间限制下仍出现分配失败，没有完整 LLBC；没有证明实际峰值为 64 GiB，也没有把验证器设为可信。具体 SQL/参数/列、完整投影/额度/寿命/outbox、候选正确性、data_version/autocommit、恢复与派发仍归 V5 #338。当前接口不关闭整个代表性 SQL 写入链、T7/V0 或全系统，T9 继续排除。
+
+## T8 边界：TLS 首叶指纹隔离候选
+
+[模型与对应](../SandboxModel/Boundaries/TlsPin.lean)及[候选范围](../verification/tls-pin-environment.json)提供两个实际同步 Rust 决定体的对应，以及显式 A6/A9/A12/B4 条件下的原完整输入组合。源码来自冻结 integration `8a33bc23`，以 `982bc63d` 为证明父基线；候选只通过[隔离补丁](../verification/fixtures/tls-pin-candidate.patch)安装到私有副本，生产 Rust 和 Charon/Aeneas 不改。正常功能、失败和剩余责任以[接口合同](formal/dependencies.md#a6b4-tls-叶证书指纹接口)为准。
+
+验收代码冻结于 `d9d644a1cda45a2e21ce8c37dacecf248c80261a`。固定 Linux 环境的原 `verify-controller.sh` 退出 0（1632.875 秒），原 Linux `check-function.sh` 退出 0（1765.305 秒，13 阶段、1235 项工具测试，无工具跳过）。153 个保留模块及总入口编译，790 个预期唯一声明的实际依赖审计无缺项；最终两个总入口与 TLS 三个文件经原真实 Lean 服务完整、非陈旧诊断（24.417 秒），无警告/错误。1689 个跟踪输入最终一致；原始 LLBC 的无序短名排列差异先封存、按原完整摘要规则确认后恢复，生成 Lean 未改、`.lake` 未清理。完整验收收据 SHA256 为 `12feabf7d58a3a12f190fd7b2927c1b239af50470f6c6eec7e5a090d5227e840`。
+
+本批独立 `verify-tls-pin.sh` 退出 0（191.953 秒），正确和错误候选分别新建 Cargo 目标并由原工具实际重抽取。正确版的 5 项原生检查、16 项真实 TLS 回环、22 条正式定理和依赖审计通过；把授权首叶误换为末证书的版本先编译/抽取成功，再被原 Rust 断言（101）及同一 `RustPinSafe` 的 5 条形式反例拒绝，真实服务与内核分别核对。12 项来源/类型/函数体/接口/审计防漏回归在完整基础入口通过，它们不算程序反例。
+
+此前失败证据保留：反例夹具漏显式导入审计命令，已只补导入；过长临时目录使原 Guest preparation 超过 Unix socket 路径上限，同一二进制只改短私有 TMPDIR 后原全集 70 通过、3 项原忽略；严格再生另发现公共基础 `matches!` 源位置结束列 8→25，生成 Lean 和其它全部字段相同。固定原工具三次输出一致后，采用完整实际再生产物并更新原冻结字段，未扩大规范化规则或删除检查；新提交的三个受影响原门槛和上述完整入口均通过。旧 opt-in/特权忽略场景未计为已运行。最终报告只更新本节、短目录复现说明及既有摘要，可执行代码、生成语义和证明与验收提交逐字一致。
+
+原借用入口的闭包/嵌套借用翻译失败仍保留，不以候选结论背书原函数。两份完整快照、原 pins、实际 SHA-256 和外层转交仍有明确可信符合性条件，原式/候选的一般 Rust 等价证明未交付；增加复制/分配的正常资源条件保留。已核对 integration `2325922a` 的 TLS/Cargo/依赖及 V0 计划输入未变，其 Guest/持久 PID 更新不由本冻结候选自动获得证明，最终组合仍须复验。整个 T8/V0、部署 TLS、任意异步取消及物理退出均未因本批完成；本批未查询、等待或重试 CI。
 
 ## 适用版本与边界
 
@@ -56,7 +126,9 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 
 ## T6 边界：Host 公共任务与双池合同
 
-状态：本接口局部交付已完成，[PR #547](https://github.com/VeriInfra-Lab/sandproof/pull/547) 待审查／合入，整套证明未通过。生产基线为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`，分支承接 #545，不修改生产 Rust 或 Charon/Aeneas。合同、源码和库版本以[环境清单](../verification/task-contract-environment.json)、[输入摘要](../verification/task-contract-inputs.sha256)及[B1 登记](formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)为准。
+以下保留 [PR #547](https://github.com/VeriInfra-Lab/sandproof/pull/547) 的原冻结记录；该成果已随 #551 进入 integration，后面的历史局部退出码不代表当前组合仍被旧阻断拦截。原生产基线为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`，分支承接 #545。当前合同、源码和库版本以[环境清单](../verification/task-contract-environment.json)、[输入摘要](../verification/task-contract-inputs.sha256)及[B1 登记](formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)为准，不修改生产 Rust 或 Charon/Aeneas。
+
+本次复验纳入 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`，验证代码冻结于 `ed3910ec04d5d9bac5f2f9630676e3d7c9a8d746`。原 `lib.rs/status_admission.rs/facade.rs` 机械接线逐字未变，驱动新增的可选模板校验凭据仍在同一 blocking 回调内传递，测试夹具增加对应计数。环境清单补全五处实际调用及边界；模板凭据与缓存正确性没有移入 B1。本轮 29 条条件模型定理、7 项许可组件和 2 项原状态许可测试通过；三个错误副本各自独立编译出新二进制后，被原资源断言拒绝（测试退出 101）。两个完整入口均通过，精确组合证据见下方撤销等待记录；不将这些结果称为回调业务或实际 async Rust 的机器证明。
 
 [Task](../SandboxModel/Boundaries/Task.lean) 提供单次调用的持额／取消／结果来源、任意有限调用集合的双池预算守恒与容量界限。原池绑定、合法执行、逐个析构许可和反例合计 29 条定理纳入模块及总审计。a6000 正式模块编译／29 条实际依赖审计通过，三个正式文件的真实 Lean 服务诊断均 `success=true`、`partial=false`、`stale=false`。这些是接口模型定理，**本模块没有把实际 async Rust 交给 Aeneas 翻译**。
 
@@ -67,6 +139,30 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 后续 `b3d3e830ad5bdc5cb73cbcb44741a37969aeeb2e` 仅澄清 A6 接管闭包与 B1 跨回调持额的责任、补录复现并同步文档摘要，Rust、Lean、测试及执行脚本与冻结代码逐字相同；a6000 的文档、来源、7 项准入回归、Task 内核／审计及原四个模块门槛再次通过。最终三份服务诊断完整且非过期，230 个正式 Lean 源均为跟踪文件，源码指纹为 `a940f597814612878c80caa13f8c79f59e44972c652bd41d76a0295e9229014d`。本页最终提交只补录结果。最终机器收据 SHA256 为 `db8f9476443530062e6682155ee58f1f83f00c361ea85be540166cf8ad4229aa`；完整日志与收据在忽略的 `artifacts/task-contract-formal-20261017/` 保存。局部合同与组件验收完成，整套证明仍未通过。
 
 本批不声称回调业务、完整异步实现或 Tokio 已获机器证明。调用者仍须提供具体业务核心定理、真实输入／池／部署绑定，以及 B1 所登记机械接线符合合同；有限并发测试不替代该符合性的形式化证明。容量结论是同一家族 work/status 门的任务额度，不是 VM／物理资源总额度。#510 的 R2 业务分支、R3 网关撤销／退出和 V9 组合仍保留；T9 排除，#337 仅记录历史阻断。
+
+## T6 边界：撤销等待
+
+[Revocation](../SandboxModel/Boundaries/Revocation.lean) 是 [B3-until_revoked](formal/dependencies.md#b3-撤销等待的逐符号可信适配) 的独立条件模型，来源为 integration `a2b8a4b6ce5c170c953130b57abc8c2d6c468d0b`，当前精确输入见 [清单](../verification/revocation-contract-inputs.sha256)。24 条定理覆盖原信号/工作标签、选择后无新 poll、正常析构凭证、返回分类、允许竞态、错误分支顺序及 B1 组合；正在 poll 的可见前缀可在 panic 或不返回前保留。中断时不补造清理凭证，也不据此认定没有发生析构。**真实 async Rust 未被 Aeneas 抽取；其接线符合性属于登记的可信适配条件。** 这不证明完整网关授权、撤销后再无任何 I/O、relay 退出、持久提交、物理释放或无条件进展，也不关闭整个 T6/V0。
+
+本批验证代码冻结于 `ed3910ec04d5d9bac5f2f9630676e3d7c9a8d746`，纳入上述最新 integration。a6000 的原 `verify-controller.sh` 退出 0（1220.163 秒），原 `check-function.sh` 退出 0（1682.707 秒、1199 项工具测试、13 阶段）。全部保留证明编译、实际重抽取一致性及 768 个唯一声明的依赖审计通过；总审计根经原真实 Lean 服务完整、非陈旧诊断，无 Lean 错误（6.966 秒）。本轮十项真实 Rust 正例通过；work-first 副本先独立编译成功，再被原 `prior_revocation_or_lost_authority_never_polls_work` 断言拒绝（101）。编译失败不计为语义反例。
+
+1660 个跟踪输入在两个入口前后按原审计规则核对一致；两份原始 LLBC 只有允许的无序短名排列差异，先封存、确认规范化摘要相同后恢复，未编辑生成 Lean 或清理 `.lake`。最终机器收据 SHA256 为 `5c84f9e45d4d6600e31a5607d1d57a73753f8cd51dbd25dab4d7ffe2a17b948e`。最终报告提交只补录本页，程序、证明和冻结输入与上述版本相同。首版 poll 表示的修订、旧失败及恢复记录保留在 #554/PR #556，不以历史局部结果背书本组合。
+
+当前保留集合与声明组件的完整验收通过；原 opt-in/特权忽略项不计为已执行，没有新增实际 async Rust 的抽取证明，也未执行本批产品 KVM、云 SDK 或完整 VM/TLS 部署验收。T6 其它任务机制、具体业务/释放/退出及 T0–T8 未勾验收点继续开放，T9 排除。
+
+## T8 边界：双向字节中继（隔离候选）
+
+归 [#575](https://github.com/VeriInfra-Lab/sandproof/issues/575)/#333，来源为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`，证明组合依赖固定 #556 `398b114d516bf9233875823c18a2f9618cf108b7`。代码与证明冻结于 `73789e6840fc926b78dcc13586f53b642596666d`；[候选补丁及复现](../verification/experiments/tunnel-contract/README.md)只在私有副本拆出并实际调用 `decide/finish_upload`，生产 Rust、Charon/Aeneas 与工具版本未改。原 async 入口的 coroutine 不支持及带错误中间表示保留为失败证据，未冒充有效抽取物。
+
+[Contract](../verification/aeneas/tunnel/SandproofTunnel/Contract.lean)/[Results](../verification/aeneas/tunnel/SandproofTunnel/Results.lean) 的 29 项审计声明由 8 条实际生成体值性质、3 条条件步骤连接和 18 条模型/历史/允许执行性质组成，涉及两个真实 Rust 同步函数，**不是 29 个 async Rust 函数证明**。上传先返回仍等待原下行；下行错误优先，否则保留原上传结果。下行先返回允许结束尚未完成的上传；非 biased select 同时就绪时保留两种选择。复用原 StreamHistory，保持原绑定、两个方向的字节前缀和待写预算，给出零字节、上传未读完即可正常返回及满足预算的任意有限源允许通过等见证。允许轨迹存在不保证实际调度最终完成；本层 Ok、raw EOF 和写端接受字节均不等于 HTTP/Connect 成功、客户端读到、子进程退出或 VM 排空。
+
+[A6/B3/B4 登记](formal/dependencies.md#a6b3b4-双向字节中继与结果处理隔离候选)约束原 I/O、四个实际管道/TCP 对象、所选结果和动作接线。实际 poll/await/Pin/Drop 到历史的对应仍是已登记的可信符合性条件，不是完整 async Rust 的机器精化。当前实例限于固定匿名管道 Receiver/Sender、原 TcpStream 的两个 owned halves及无可观察资源/共享状态析构效果的错误载荷；自定义 I/O、带业务资源的错误析构或额外许可/FD 捕获不能直接套用。关闭/Drop 不补造真实退出或释放证据，panic/unwind、abort/崩溃和无条件进展仍在范围外；完整请求绑定、授权、协议、预算和退出/排空由 V6/V8 提供。
+
+正式重放核对 28 个非空前端声明、37 个正常/异常析构位置、完整 AST/目标/配置、原工具及固定库源。原版/候选各 5 项 relay 和 2 项真实管道回归通过，候选严格 Clippy 通过。真实 Rust 错误版只在下行成功后丢弃上传错误，先独立编译及原工具抽取成功，再被原 `upload_write_failure_preserves_the_guests_rejection_response` 断言拒绝；逐字相同的 Contract 在同一 `finish_download_ok` 性质处失败。错误生成体上的三个独立反例/辅助声明通过内核及标准依赖审计，不导入失败证明。有限旧新回归不构成一般行为等价证明。新准入门槛拒绝遗漏/隐藏声明、变更析构、缺失/重复冻结输入及陈旧/不完整/错误指纹服务回执。
+
+本冻结提交在指定隔离 Linux 证明环境的专用 `verify-tunnel.sh`、原完整 `verify-controller.sh` 和原 Linux `check-function.sh` 分别退出 0（146.901 / 2259.132 / 1700.550 秒）；797 个唯一声明审计、1199 项工具测试无跳过及全部 13 个基础阶段通过。1676 个跟踪输入按原规则核对一致；两份旧 LLBC 仅有原规则允许的无序 short_names 排列差异，实际新输出先封存，确认整个 AST 一致后恢复冻结序列化，未删除其它字段或编辑生成 Lean。最终三份物理文件的真实服务诊断完整、非陈旧，无错误/警告：主入口、15 项总审计及新中继 29 项审计均通过（16.954 秒）；共同证明源指纹为 `4835959930aa9bdddf6ac3f3de02d74d11cc421e5ef7fe901988508baca2d2f0`。机器收据 SHA256 为 `a2cf8aed7d401a057184aeeec893c6af285938aa8b144e6563ba963075959884`。
+
+旧模块的 Lean 样式警告保留，未关闭 linter；真实客户端在完整结果后输出的 Python 关闭提示也保留，不冒充 Lean 诊断或忽略失败回执。最终报告提交只补录本页，程序、证明和冻结输入与通过版本相同，另核对报告差异、文档和全部清单。本批未执行产品 VM、云 SDK 或完整 TLS/外部代理部署验收，原 opt-in/特权忽略项不计为已执行。其它 OS/Firecracker/TLS/I/O 使用点和 V8 全业务仍开放，不关闭整个 T8/V0，T9 排除。
 
 ## T5/T6 边界：DataLease 只读判定
 
@@ -110,6 +206,18 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 证明在另一个独立 Linux 工作区执行，使用私有 Ubuntu 24 用户态、glibc 2.39 和既有固定工具二进制；没有升级宿主系统、重编译 Charon 或改变证明依赖。原 `verify-controller.sh` 实际通过 Rust 回归/静态检查，以及 V0 118、网络 43、授权 85、本地状态 153、Linux 回执 32 项定理审计和对应模块的重新抽取一致性。全部本地控制核心翻译用时 161.933676 秒完成，没有 OOM；随后历史 `Types/Funs/translation.json` 的原一致性检查拒绝，退出 1，未进入全部历史定理的编译与审计。候选生成物和失败诊断保留在私有忽略目录，未用它们覆盖旧成果造绿灯。**局部集合通过，整套验收仍未通过；历史业务迁移继续归 #337。**
 
 首链模型另在 `3235e7ee5f0a6428cc5b78c7675769332bfbdc2d` 执行原 `verify-first-chain.sh`：传递输入摘要、V0 再生检查、模型编译及 53 项依赖审计通过。它仍是模型不变量与条件连接，不能代替中心/节点真实持久微步骤、宿主证据或完成性证明。同一 Lean 服务已在组合版本实测目标读取、隔离尝试及正式诊断；检查的公共插入文件 `stale=false`、`partial=false` 且无错误，不将交互检查推广为未检查模块已证。
+
+## T2 / V0：完整生命周期请求守卫的局部对应
+
+归 #558/#333，开发基线为 #556 的 `398b114d516bf9233875823c18a2f9618cf108b7`，直接 Rust 探针冻结于 `c2c0e707413e612991679488dae28ca15eff3736`。生产 `LifecycleRequest::validate` 未改：身份检查先行，其后核对完整 CreateBinding 和 Renew 非零形状。[模型及合同](../SandboxModel/Boundaries/JsonRequest/Model.lean)、[实际生成体对应](../SandboxModel/Boundaries/JsonRequest/Guard.lean)复用原 V0 类型和身份/创建参数定理。新校验根在原共享生成链中重新抽取，原 176 个不同名称的透明函数体仍全部存在，未新增不透明接口；没有把自有守卫交给 A6。
+
+a6000 的真实 Lean 服务探索、正式模块构建、12 条实际依赖审计通过，正式审计文件诊断 `success=true`、`partial=false`、`stale=false`，仅有标准逻辑依赖。性质覆盖任意表示请求的接受充要条件、原拒绝顺序、非法创建/零值续租的拒绝，并有合法输入域及真实守卫接受见证。另在独立副本删除原身份检查：先 Rust 编译成功、原工具重新抽取成功；原错误断言以 101 拒绝，Lean 内核又证明同一 `GuardContract` 不成立。负向证书 SHA256 为 `2f4643ee0aa459e86159beded8b5f000ae01fbcbd7a8d8e3d29438b1d5cb090c`，没有把编译失败当作反例。
+
+基于 `6d18cfa34199a27c3ede384621250c70d8f308ba` 补入字段连接后，本模块共有 42 条局部审计：原 12 条守卫结果之外，另有九个自有字段回调到完整输入域、完整字段投影的单射、实际编码转换和字节接口条件下的往返，以及先解码再查尾随输入的错误顺序。它们在 a6000 完成模块构建、实际依赖审计和真实 Lean 服务诊断（完整、非陈旧、无失败依赖）。Codec 的字段字节关系/派生合同仍为显式参数，Encoding 是标准派生的字段规约；这部分不是具体 parser、全部异步 Rust 或 serde 内部已获机器证明。
+
+新增原解码器矩阵检查六个编号字段和三个计数器字段，保留字段错误早于后续截断 JSON 的首错，以及固定 Intent unit 分支忽略额外字段/Renew 拒绝额外字段的实际差别。共享抽取 crate 全部 37 项原生测试通过；sandproof-internal 全包 24 项及严格 Clippy 通过。实际 InternalClient 经本地双向 TLS 到原 InternalServer，核对三种 intent 的完整参数到达原回调，七种无效绑定/形状在回调前拒绝；原未知根字段、大小、错误身份和容量检查均保留。该组件回调只记录字段并回显原结果，不执行宿主业务，也不代替真实 VM/部署验收。
+
+本节只报告这个同步守卫的局部结果。八项真实 JSON 回归与严格 Clippy 已通过；完整字节解码、标准派生/原叶子回调、具体 parser 状态/错误字典和编码往返仍在连接，标准派生的有限不透明预检不计为这些目标已证。新根的正式准入/摘要、负向自动入口及原完整证明/基础验收尚未收尾；旧回执不背书当前开发候选，不宣称 #558、T2 或 V0 完成。`GuardContract` 不提供授权、原寿命、持久提交、异步调用等价或宿主效果；普通有限值库合同及实际字节边界条件仍须由各调用者落实。
 
 ## T2 / V0：八类字符串编号 JSON 叶子接线
 
@@ -850,3 +958,26 @@ V0/共享状态及首链抽取的输出路径按实际驱动工作目录冻结�
 标准证明服务客户端在服务器读取正式分类定理的实时目标，并返回完整诊断：`success=true`、`partial=false`、`stale=false`，无错误及失败依赖；文件 SHA-256 为 `1d59de88e63db03f694d280b8f1d7229d47505c03ac59b32cc0a9f8a22e38c51`。隔离探索及客户端启动/关闭的传输提示不计作证明成功，正式文件编译与上述依赖审计分别验收。
 
 批次自查已完成，相邻模块的人工独立复核仍待认领。原请求的真实选择、完整中心更新、持久提交、宿主证据、权限撤销/排空与系统投递连接及条件最终完成性仍未闭合；FC-ID/COMMIT/EVIDENCE/DRAIN/INIT/EXTEND/IMPLEMENT 保持未解，不关闭 #342/#101。
+
+### 完整生命周期 JSON 请求的有条件验证（#558）
+
+本批连接原 `server::receive_intent` / `InternalClient::lifecycle` 使用的完整 `LifecycleRequest`，复用共享编号、计数器和身份类型。原 `LifecycleRequest::validate`、`ControlIdentity::validate_node`、`CreateBinding::is_valid` 及自有校验/转换保留固定 Charon/Aeneas 的真实生成体。实际字节入口的完整 Serde 图仍不能由原后端生成 Lean；两个只调用原 `from_slice<LifecycleRequest>` / `to_vec<LifecycleRequest>` 的包装，按[依赖登记 A6/B4](formal/dependencies.md#a6-json-与标准派生的最小合同)保留逐符号可信条件，没有增加独立 Rust 解释器或把自有业务守卫整体设为 opaque。
+
+| 已证明的结论 | 适用条件和限制 |
+| --- | --- |
+| 原守卫的完整结果、接受条件和首个拒绝 | 检查原版本、完整节点、槽位、创建参数及三个 intent 的形状；不提供授权、寿命准入、持久提交或接收回调业务结论 |
+| 全字段表示及逐值相等 | 保留身份、资源、32字节摘要、options、时间和 intent；投影相等推出原请求相等，没有隐藏截断或省略字段 |
+| 完整字段读写、往返和有界合法接受 | [具体组合](../SandboxModel/Boundaries/JsonRequest/SliceBinding.lean)使用原叶子/转换与固定标准派生、SliceRead和紧凑渲染条件；原输入域及创建守卫推出存在不超过270336字节的编码和逐值往返，含非空初态见证。往返保持请求值，不要求原始JSON的空白、字段顺序或转义逐字不变 |
+| 原错误及容器/文档结束顺序 | 原编号/计数器错误文本、类别和初始位置有对应；容器结束在visitor普通错误后仍可能推进游标，原错误优先，已有位置不被外层改写；最外层document end仅在解码成功后执行。不计算任意输入的parser位置，也不把失败解释成输入状态回滚 |
+
+固定 serde/serde_core/serde_derive 1.0.228、serde_json 1.0.142 的扫描、UTF-8/转义、数值、标准派生、普通Clone及正常分配/有限渲染，实际切片、原错误字典和参数/结果机械绑定，仍由A6/B4提供。源码审查、完整AST准入和原生对照支持这些条件的采用，不是JSON库或async外壳的机器精化。普通String、Vec<u8>及无自定义IO来源的SliceRead/Vec错误属于本域；自定义可观察Drop、FD/许可/锁、panic/unwind、OOM/abort、异步取消及任意有状态序列化器没有据此覆盖。
+
+[调用登记](../verification/json-request-binding.json)绑定五份生产源、十份相关库源、实际编译特性、完整字段/属性/声明顺序、两个完整根AST及完整LLBC摘要。标准结构体按实际派生接受对象或声明顺序的序列；固定Create/Destroy单元分支忽略可成功解析的额外字段，Renew拒绝未知字段，生产策略没有改变。原HTTP输入上限由真实`Limited`提供，options上限仍由原守卫提供，不能把`from_slice`本身当作HTTP限额。旧180个透明生成定义逐字不变，只加入两个真实守卫函数及对应类型；完整中间表示只沿用原无序`short_names`表排序规则，其余有序字段、清理记录和完整源文件文本全部保留。
+
+本模块67条声明进入[依赖审计](../SandboxModel/Boundaries/JsonRequest/Audit.lean)。真实extraction crate的39项回归、严格Clippy和原客户端→mTLS→服务器字段/拒绝检查通过；后者为组件接线证据。永久错误版只移除原身份守卫，先构建和实际重抽取成功，再被原Rust错误顺序断言及同一`GuardContract`的否定证书拒绝，真实Lean服务和内核均核对通过；编译失败不算性质反例。
+
+可执行代码和测试冻结于`a5b43c9b76eec060fbc201737d67c7bcbf451104`。a6000隔离Linux的原完整`verify-controller.sh`退出0（1172.612秒），157份保留项目Lean文件及入口编译、835个唯一声明审计和占位检查通过；原完整`check-function.sh`退出0（1734.82秒，1210项工具测试、13阶段）。1680项跟踪输入前后一致，仅对既有无序短名表采用原规范摘要；本模块与总审计的最终真实服务诊断均完整、非陈旧、无错误/失败依赖，证明源码指纹相同。最终报告只更新本覆盖小节，可执行/证明输入与该验收提交相同，并另核对文档及全部保留冻结清单。
+
+此前完整入口检出的两次失败均保留：一次为字节LLBC嵌入的整份验证文件测试文本过期，按完整字段重新生成后增加提前源码身份检查；另一次为两个旧检查器私有夹具漏复制新公共依赖，19项在原断言前缺文件。修复只补13行夹具依赖和六份摘要，19个测试方法AST、全部检查器及原输入集合未变，最终完整套件中的19项均通过。没有放宽断言、安全检查或AST准入，也未改变生产Rust、Charon/Aeneas、工具版本或清理`.lake`。
+
+原opt-in/特权忽略项未计为已运行；完整VM、部署TLS/网络、授权/存储/宿主效果、真实排空及系统完成性未由本批验收。本项提供代表性完整请求的有条件接入，不关闭T1/T2的其它使用点、T0–T8或整个V0，T9继续排除。
