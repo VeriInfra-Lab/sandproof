@@ -97,7 +97,7 @@ Rust envd 的受控验收阶段（#311）：
 
 同一[监督器](../tools/ci_e2e_supervisor.py)可显式配置 `rust_envd_acceptance`，在原 DK 组之后、原 Harbor 题集之前运行[来宾验收入口](../tests/system/envd_acceptance.py)。这不是普通 PR root runner，也不切换产品默认 Go 模板；旧配置不发布 Rust envd 成功结论。已运行任务仍使用原冻结配置，不在途中追加或移除该阶段。安装与实跑结果须绑定精确候选，源码合入不能代替宿主受控安装。
 
-该私有对象的唯一字段由[验收策略](../tools/envd_acceptance.py)校验：`configuration`、`policy_template`、`oci_archive`、`go_rootfs`、`builder_rootfs` 是审核后登记在原 `host_assets` 的只读材料；`tls_material` 指向本阶段独立的中心、运行和构建节点证书/密钥目录，每个材料同样登记原摘要，不更换现役单节点两题的证书或复用同一节点叶子。另显式提供原 `registry_limits`、`build_limits`、`data_transfer`，不从题名推导或自动扩大预算。配置不含 App 密钥。制备沿用原离线 Rust 来宾工具，输出绑定同一源码的新清单，只将批准配置中的 worker 身份替换为真实新产物，保留原数值、路径及版本检查。固定 OCI 输入在原私有构建 VM 内转换并经原中心发布/实际启动验证，不在宿主运行容器构建或把旧镜像重标为新源码。
+该私有对象的唯一字段由[验收策略](../tools/envd_acceptance.py)校验：`configuration`、`policy_template`、`oci_archive`、`go_rootfs`、`builder_rootfs` 是审核后登记在原 `host_assets` 的只读材料；`tls_material` 指向本阶段独立的中心、运行和构建节点证书/密钥目录，每个材料同样登记原摘要，不更换现役单节点两题的证书或复用同一节点叶子。另显式提供原 `registry_limits`、`build_limits`、`data_transfer`，不从题名推导或自动扩大预算。配置不含 App 密钥。`toolchain_bin` 中的 rustc/cargo 必须是同一固定版本的实际原生文件，不能用 rustup 代理或符号链接替代来宾打包器要求的独立编译器指纹。制备沿用原离线 Rust 来宾工具，输出绑定同一源码的新清单，只将批准配置中的 worker 身份替换为真实新产物，保留原数值、路径及版本检查。固定 OCI 输入在原私有构建 VM 内转换并经原中心发布/实际启动验证，不在宿主运行容器构建或把旧镜像重标为新源码。
 
 阶段复用原双端 SDK、stdin、PTY、命令/RPC/文件期限及文件权限用例；补充丢 Start 回执、服务重启/旧 PID、来宾文件系统写满、慢输出、登记回收及独立寿命清理。真实结果还核对实际中心/宿主执行清单、Rust 服务/worker/配置身份、每组原终态和物理残留、服务 cgroup 收尾。完整固定清单缺项、错误候选、非零退出、未知或清理失败均不能进入后续题集或发布绿灯；启动意图先持久化，丢派发回执不再启动一轮。原两题、评分、App 身份及分支保护保持，普通 CI 仍不持有宿主权限。
 
