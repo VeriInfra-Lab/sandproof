@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "capture_commit": "9c2b6d4f5d2d64c521ba7e5dc2a901132160e706",
+  "capture_commit": "c301867ba34d3de24e594f0645e04a0ac46cdf34",
   "config_sha256": "d12f4cac13d42ebc86263d1057ffc75dbcc39eb10d2f0fdef2711c3842bf15b7",
   "source_inputs": 816,
   "packages": [
@@ -1415,8 +1415,8 @@
   ],
   "custom_drop_implementations": 27,
   "evidence": {
-    "receipt_sha256": "4a19c5ff8af49d5d497cf8ba7dba402702d5fcab4b2636f19db3d145c63e8615",
-    "index_sha256": "bb2ead29b45da3e931b318ee0412d841d85f2c41b2f9e779e70b61e2b538939d"
+    "receipt_sha256": "e13eea3aca7daf9b6e6c66ccf7bbc5abf0d50d400474984477a440197b9cd390",
+    "index_sha256": "48fe0a9d26c0f11139ceedb8f467cfac0d928c92a4c34632e15837501d79a94d"
   },
   "scope": "compiled source census; no semantic coverage or call-graph completeness claim"
 }
