@@ -251,11 +251,16 @@ def runtime(force=False):
     result['libraries']['cargo-config']={str(p):sha(p) for p in
         (cargo_home/'config',cargo_home/'config.toml') if p.is_file()}
     for label,directory in [('lean-lib',prefix/'lib'),('frontend',frontend),('packages',ROOT/'.lake/packages')]:
+        tree_started=time.monotonic()
         # Follow the already admitted package links; detect linked package file
         # edits too, rather than trusting only their Git commit or version text.
         entries={}
         for parent,dirs,files in os.walk(directory,followlinks=True):
             dirs[:]=[d for d in dirs if d not in ('.git','target','artifacts','_build','node_modules')]
+            if label == 'frontend' and Path(parent)==directory:
+                # Compiler, Rust libraries/sources and target configuration are
+                # inputs. Installed HTML/man pages are not used by extraction.
+                dirs[:]=[d for d in dirs if d!='share']
             if label == 'packages':
                 dirs[:]=[d for d in dirs if d!='.lake']
             for name in files:
@@ -265,6 +270,7 @@ def runtime(force=False):
                         continue
                 if path.is_file(): entries[str(path.relative_to(directory))]=fixed_sha(path)
         result['libraries'][label]=digest(entries)
+        print(json.dumps(dict(runtime_tree=label,files=len(entries),seconds=round(time.monotonic()-tree_started,3))),flush=True)
     write_json(cache_file,dict(schema=1,files=new_hashes))
     return result
 
