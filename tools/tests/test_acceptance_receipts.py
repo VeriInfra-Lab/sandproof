@@ -131,6 +131,15 @@ class ReceiptTests(unittest.TestCase):
         self.assertIn('sandbox-added/src/control.rs',after)
         self.assertIn('.cargo/config.toml',after)
 
+    def test_functional_acceptance_cannot_reuse_stale_documents(self):
+        doc=self.source/'README.md';doc.write_text('[valid](Cargo.toml)\n')
+        subprocess.run(['git','add','README.md'],cwd=self.source,check=True)
+        before=receipts.native_key('functional',['component-case'],self.source)
+        native_before=receipts.native_key('fixture',self.command,self.source)
+        doc.write_text('[broken](missing.md)\n')
+        self.assertNotEqual(receipts.native_key('functional',['component-case'],self.source),before)
+        self.assertEqual(receipts.native_key('fixture',self.command,self.source),native_before)
+
 
 class ClosureTests(unittest.TestCase):
     def test_transitive_lean_imports_and_added_inventory_are_not_ignored(self):
@@ -220,6 +229,16 @@ class FormalReuseTests(unittest.TestCase):
         runtime=Path(os.environ['SANDPROOF_FORMAL_RUNTIME'])
         receipts.write_json(runtime,{'unit_test_fixture':'tool changed'})
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_new_functional_document_check_does_not_discard_an_unchanged_proof(self):
+        seal=dict(rules={},rust={},runtime={},commands={})
+        receipts.write_json(self.cache/'complete.json',seal)
+        proof_batch.step('network',self.command,self.source)
+        identity='a'*64;entry=self.cache/'commands'/identity;entry.mkdir(parents=True)
+        receipts.write_json(entry/'receipt.json',{'key':{'label':'functional','rules':{},'runtime':{}}})
+        seal['commands'][identity]=receipts.sha(entry/'receipt.json')
+        receipts.write_json(self.cache/'complete.json',seal)
+        self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
 
 
 class FixedRuntimeDigestTests(unittest.TestCase):

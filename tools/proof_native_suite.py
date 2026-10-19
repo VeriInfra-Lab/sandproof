@@ -63,6 +63,18 @@ def command(command, source=ROOT, label='command', expected=0, env=None):
 
 def run_suite(output):
     output.mkdir(parents=True, exist_ok=True)
+    # A permissive caller TMPDIR would cause genuine protected-file rejection.
+    # Use a private child of Linux's root-owned sticky /tmp; no shared modes or
+    # production checks are changed. Keep its identity in the private evidence.
+    import stat
+    system_tmp=Path('/tmp');info=system_tmp.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0
+            or not info.st_mode & stat.S_ISVTX):
+        raise ValueError('native fixture requires the normal root-owned sticky /tmp')
+    private_tmp=Path(tempfile.mkdtemp(prefix='sandproof-native-',dir=system_tmp))
+    os.environ['TMPDIR']=str(private_tmp);tempfile.tempdir=None
+    write_json(output/'temporary-root.json',dict(path=str(private_tmp),uid=private_tmp.stat().st_uid,
+                                               mode=oct(private_tmp.stat().st_mode&0o777)))
     os.environ['SANDPROOF_NATIVE_EVIDENCE'] = str(output)
     os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'native'
     initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime())

@@ -86,7 +86,20 @@ def module_key(name, command, root=ROOT):
     return dict(schema=1, module=name, command=command, rust=rust_inputs(root),
                 rules=rules(root), inputs=closure(root,seeds),
                 runtime=json.loads(Path(os.environ['SANDPROOF_FORMAL_RUNTIME']).read_text()),
-                native=json.loads((Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])/'complete.json').read_text()))
+                native=native_dependencies(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])))
+
+
+def native_dependencies(cache):
+    seal=json.loads((cache/'complete.json').read_text())
+    commands={}
+    for identity,value in seal.get('commands',{}).items():
+        key=json.loads((cache/'commands'/identity/'receipt.json').read_text())['key']
+        if (key.get('label')!='functional' and key.get('rules')==seal.get('rules')
+                and key.get('runtime')==seal.get('runtime')):
+            commands[identity]=value
+    # The full functional gate is mandatory admission for every batch, but a
+    # Markdown-only change to that gate's inputs does not change a Lean module.
+    return dict(rules=seal.get('rules'),rust=seal.get('rust'),runtime=seal.get('runtime'),commands=commands)
 
 
 def evidence_files(directory):

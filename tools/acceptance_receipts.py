@@ -104,9 +104,13 @@ def native_key(label, command, source, root=ROOT, environment=None):
     options = {k:v for k,v in env.items() if k.startswith(('CARGO_PROFILE_', 'RUSTFLAGS',
         'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_TARGET', 'RUSTC_BOOTSTRAP',
         'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'))}
-    return dict(schema=1, label=label, command=normalized, options=options,
+    result=dict(schema=1, label=label, command=normalized, options=options,
                 rust=rust_inputs(source), rules=rules(root),
                 runtime=json.loads(runtime_path.read_text()))
+    if label == 'functional':
+        names=subprocess.check_output(['git','ls-files','-z'],cwd=source).decode().split('\0')
+        result['repository']={n:sha(source/n) for n in names if n}
+    return result
 
 
 def load_success(directory, key):
