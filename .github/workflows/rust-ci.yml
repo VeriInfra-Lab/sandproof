@@ -16,12 +16,15 @@ concurrency:
 jobs:
   rust:
     runs-on: [self-hosted, Linux, X64, sandproof-ci-rust]
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Check pinned Rust workspace
+        id: workspace
+        env:
+          SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
         # The full workspace includes real Redis-backed component contracts.
         # Missing sealed material must fail before the original check entry.
         run: |
@@ -29,3 +32,21 @@ jobs:
           export SANDPROOF_REDIS_SERVER="$redis_server"
           export CARGO_NET_OFFLINE=true
           bash scripts/check-function.sh
+      - name: Check root-owned guest startup installation
+        env:
+          CARGO_NET_OFFLINE: "true"
+          SANDPROOF_GUEST_ROOT_WORKER: /usr/bin/false
+        # Ordinary unit tests use private fixtures. This separate check must
+        # fail if the CI installation lacks the required root ownership.
+        run: cargo --config scripts/check-profiles.toml test --locked -p sandproof-guest-runtime --lib startup_files::tests::root_owned_installation_is_opened_from_os_root -- --exact --ignored --nocapture
+      - name: Summarize check stages
+        if: ${{ always() && steps.workspace.outcome != 'skipped' }}
+        env:
+          SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
+        run: |
+          if [[ -f "$SANDPROOF_CHECK_EVENTS" ]]; then
+            bash scripts/python-entry.sh tools/check_stages.py summary \
+              --events "$SANDPROOF_CHECK_EVENTS" --github-summary "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' '阶段报告未生成；核对前置依赖或运行中断，不能据此判断测试通过。' >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -26,7 +26,8 @@ from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import InvalidArgumentException, TimeoutException
 from e2b.sandbox.commands.command_handle import CommandExitException
 
-from sdk_command_input import call
+from sdk_command_input import KnownCommand, call, destroy_probes
+from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
 
 
@@ -90,13 +91,23 @@ async def file_case(sandbox, operation, case, value):
                 observed_entries=observed)
 
 
-async def killed_result(handle):
+async def killed_result(owned, handle):
     try:
-        await call(handle.wait)
+        await owned.wait(handle)
     except CommandExitException as error:
-        assert (error.exit_code, error.error) == (-1, 'signal: killed')
+        actual = (error.stdout, error.stderr, error.exit_code, error.error)
+        assert actual == ('', '', -1, 'signal: killed'), actual
     else:
         raise AssertionError('SendSignal did not terminate the waiting process')
+
+
+async def input_result(owned, handle, allowed):
+    finished = await owned.wait(handle)
+    actual = (finished.stdout, finished.stderr, finished.exit_code, finished.error)
+    for data in allowed:
+        if actual == (data.hex() + '\n', '', 0, None):
+            return data
+    raise AssertionError('unexpected original stdin result', actual)
 
 
 async def command_case(sandbox, operation, case, value):
@@ -104,73 +115,85 @@ async def command_case(sandbox, operation, case, value):
     command = "printf 'once\\n' >> " + shlex.quote(marker)
     command += '; exec python3 -c ' + shlex.quote(QUIET)
     handle = await call(sandbox.commands.run, command, stdin=True, background=True, timeout=60)
-    try:
+    async with KnownCommand(sandbox.commands, handle) as owned:
         # Ensure the shell side effect and the known process exist before the
         # unary operation (including kill), without a timing-based sleep.
-        assert (await call(sandbox.commands.run,
-                           'while [ ! -s ' + shlex.quote(marker) + ' ]; do :; done', timeout=15)).exit_code == 0
+        ready = await call(sandbox.commands.run,
+                           'while [ ! -s ' + shlex.quote(marker) + ' ]; do :; done', timeout=15)
+        assert ready.exit_code == 0 and ready.error is None
         if operation == 'list':
             function, arguments = sandbox.commands.list, ()
         elif operation == 'kill':
-            function, arguments = sandbox.commands.kill, (handle.pid,)
+            function, arguments = owned.kill, ()
         elif operation.startswith('handle.'):
             name = operation.split('.')[1]
             function = getattr(handle, name)
             arguments = (INPUT,) if name == 'send_stdin' else ()
         else:
             function = getattr(sandbox.commands, operation)
-            arguments = (handle.pid, INPUT) if operation == 'send_stdin' else (handle.pid,)
+            arguments = (owned.pid, INPUT) if operation == 'send_stdin' else (owned.pid,)
         outcome, result = await invoke(function, case, value, *arguments)
         if outcome == 'completed':
             if operation == 'list':
-                assert handle.pid in [entry.pid for entry in result]
+                assert owned.pid in [entry.pid for entry in result]
             elif operation == 'kill':
                 assert result is True
             else:
                 assert result is None
-        live = handle.pid in [entry.pid for entry in await call(sandbox.commands.list)]
+        listed = await call(sandbox.commands.list, request_timeout=15)
+        listed_original = owned.pid in [entry.pid for entry in listed]
         received = None
+        rejection_recovered = False
         if operation in ('send_stdin', 'handle.send_stdin', 'list'):
-            assert live
-            await call(handle.close_stdin)
-            finished = await call(handle.wait)
-            received = bytes.fromhex(finished.stdout.strip())
-            assert finished.stderr == '' and finished.exit_code == 0
+            assert listed_original
+            await call(handle.close_stdin, request_timeout=15)
             if operation == 'list' or outcome == 'invalid_rpc_timeout':
-                assert received == b''
+                allowed = (b'',)
             elif outcome == 'completed':
-                assert received == INPUT
+                allowed = (INPUT,)
             else:
-                assert received in (b'', INPUT), 'unknown input was duplicated'
+                allowed = (b'', INPUT)
+            received = await input_result(owned, handle, allowed)
         elif outcome == 'invalid_rpc_timeout':
-            assert live, 'rejected control request affected the process'
+            assert listed_original
+            # List can still contain a finished command. A confirmed header
+            # rejection must leave this original stdin open and command usable.
+            # This is recovery after a known rejection, never an unknown retry.
+            await call(handle.send_stdin, INPUT, request_timeout=15)
+            await call(handle.close_stdin, request_timeout=15)
+            received = await input_result(owned, handle, (INPUT,))
+            rejection_recovered = True
         elif outcome == 'completed':
             if operation == 'kill':
-                await killed_result(handle)
+                await killed_result(owned, handle)
             else:
-                finished = await call(handle.wait)
-                assert (finished.stdout, finished.stderr, finished.exit_code) == ('\n', '', 0)
+                received = await input_result(owned, handle, (b'',))
         # With a deadline on kill/CloseStdin, only record the observed state.
-        # The finally block explicitly cleans up the known PID; no RPC replay
-        # is used to turn an unknown outcome into a claimed original success.
-        assert await call(sandbox.files.read, marker) == 'once\n'
-        return dict(operation=operation if operation.startswith('handle.') else 'commands.' + operation,
-                    case=case, outcome=outcome, observed_live=live,
-                    received_bytes=None if received is None else len(received), start_markers=1)
-    finally:
-        await call(handle.kill)
-        await call(handle.disconnect)
-        assert (await call(sandbox.commands.run, 'printf healthy', timeout=15)).stdout == 'healthy'
+        # An attempted kill is never sent again by cleanup. Unknown CloseStdin
+        # is not repeated; one distinct cleanup signal may stop the original PID.
+        # Subscription close and the outer VM's destruction remain independent.
+        started = await call(sandbox.files.read, marker)
+        assert started == 'once\n'
+    healthy = await call(sandbox.commands.run, 'printf healthy', timeout=15)
+    assert (healthy.stdout, healthy.stderr, healthy.exit_code, healthy.error) == ('healthy', '', 0, None)
+    return dict(operation=operation if operation.startswith('handle.') else 'commands.' + operation,
+                case=case, outcome=outcome, original_pid=owned.pid,
+                observed_listed=listed_original, terminal_observed=owned.finished,
+                signal_attempt_source=('operation' if operation == 'kill' else 'cleanup') if owned.signal_attempted else None,
+                rejection_recovered=rejection_recovered,
+                received_bytes=None if received is None else len(received), start_markers=1)
 
 
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
+    template, candidate = guest_candidate(args)
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     results = []
     for cls in (Sandbox, AsyncSandbox):
-        sandbox = await call(cls.create, template='base', timeout=300,
+        sandbox = await call(cls.create, template=template, timeout=300,
                              allow_internet_access=False, **owner)
         try:
+            before = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
             rows = []
             for operation in ('get_info', 'exists', 'list', 'make_dir', 'remove', 'rename'):
                 for case, value in VALUES:
@@ -179,17 +202,25 @@ async def exercise(args):
                               'handle.send_stdin', 'handle.close_stdin'):
                 for case, value in VALUES:
                     rows.append(await command_case(sandbox, operation, case, value))
-            results.append(dict(sdk=cls.__name__, cases=rows))
+            after = await observe_candidate(sandbox, candidate, asynchronous=cls is AsyncSandbox)
+            assert before == after, 'Rust guest identity changed during unary timeout cases'
+            item = dict(sdk=cls.__name__, cases=rows)
+            if candidate is not None:
+                item.update(sandbox_id=sandbox.sandbox_id, rust_guest=before)
+            results.append(item)
         finally:
-            _kill_confirmed = (await call(sandbox.kill))
-            assert _kill_confirmed
-    print(json.dumps(dict(sdk_version='2.51.0', results=results,
-                          scope='selected unary filesystem and command request timeout values; '
-                                'negative 1 ms may race success; not lifecycle or watcher API'), indent=2))
+            await destroy_probes([sandbox])
+    report = dict(sdk_version='2.51.0', results=results,
+                  scope='selected unary filesystem and command request timeout values; '
+                        'negative 1 ms may race success; not lifecycle or watcher API')
+    if getattr(args, 'template', None) is not None:
+        report['template'] = template
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
+    guest_arguments(parser)
     asyncio.run(exercise(parser.parse_args()))

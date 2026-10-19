@@ -5,6 +5,7 @@ use sandproof_controller_service::{
     InternalTemplate,
     application::fault::{FaultContext, FaultRecord, FaultStage},
     application::{ApplicationError, ControllerHost},
+    template_registry::CandidateVerification,
     templates::ComputeLimits,
 };
 use sandproof_protocol::internal::{
@@ -20,6 +21,13 @@ pub trait TemplateSource: Send + Sync + 'static {
     /// # Errors
     /// Missing, unauthorized or unavailable material is not a VM failure fact.
     fn bound(&self, binding: &CreateBinding) -> Result<InternalTemplate, ApplicationError>;
+
+    /// Optional in-process evidence from complete reads of the exact local
+    /// artifacts. Missing/stale evidence must leave normal node validation in
+    /// place; neither the wire digest nor a disk manifest can construct it.
+    fn verification(&self, _binding: &CreateBinding) -> Option<Arc<CandidateVerification>> {
+        None
+    }
 }
 
 /// Trusted deployment supplies explicit scheduling and original local limits.
@@ -84,7 +92,15 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                 } else {
                     None
                 };
-                match app.advance_internal_lifecycle(&request, template, config.compute) {
+                let verification = template
+                    .as_ref()
+                    .and_then(|_| templates.verification(&request.create));
+                match app.advance_internal_lifecycle_with_verification(
+                    &request,
+                    template,
+                    config.compute,
+                    verification.as_deref(),
+                ) {
                     Ok(_) => report.advanced += 1,
                     Err(
                         ApplicationError::Busy

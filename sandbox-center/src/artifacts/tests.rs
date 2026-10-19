@@ -1,6 +1,8 @@
 //! Real pinned HTTPS and Redis; artifact images are controlled format fixtures,
 //! not an assertion that these tiny bytes can boot a KVM guest.
 use super::*;
+#[path = "tests/cache_fairness.rs"]
+mod cache_fairness;
 #[allow(
     dead_code,
     reason = "shared fixed Redis fixture exposes additional failure cases"
@@ -77,9 +79,11 @@ fn store(fixture: &engine::Engine) -> (Arc<CandidateStore>, TemplateBinding) {
     image[1028..1032].copy_from_slice(&1024_u32.to_le_bytes());
     image[1036..1040].copy_from_slice(&1000_u32.to_le_bytes());
     image[1080..1082].copy_from_slice(&[0x53, 0xef]);
+    image[512 * 1024 + 7] = 42;
     fs::write(&rootfs, &image).unwrap();
     fs::set_permissions(&rootfs, fs::Permissions::from_mode(0o400)).unwrap();
     let binding = TemplateBinding {
+        guest: None,
         template_id: "base".into(),
         revision: "r1".into(),
         owner: None,
@@ -129,6 +133,14 @@ fn authority_with_catalog(
     store: &CandidateStore,
     bindings: &[TemplateBinding],
 ) -> SharedBusinessAuthority {
+    authority_with_nodes(fixture, store, bindings, &[node()])
+}
+fn authority_with_nodes(
+    fixture: &engine::Engine,
+    store: &CandidateStore,
+    bindings: &[TemplateBinding],
+    nodes: &[NodeIdentity],
+) -> SharedBusinessAuthority {
     let metadata = RegistryMetadata::new(
         TemplateCatalog {
             templates: bindings.to_vec(),
@@ -159,24 +171,27 @@ fn authority_with_catalog(
     let center = CenterState::new(
         engine::deployment(),
         Bounds {
-            max_nodes: 1,
+            max_nodes: u16::try_from(nodes.len()).unwrap(),
             max_templates_per_node: 2,
             max_sandboxes: 2,
             operations_per_sandbox: 4,
             max_options_bytes: 4096,
             platform: resources(),
         },
-        vec![NodeRegistration {
-            retention_slots: 2,
-            identity: node(),
-            role: NodeRole::Runtime,
-            limit: resources(),
-            free: Resources::ZERO,
-            healthy_until_ms: 0,
-            mode: NodeMode::Accepting,
-            protocol_version: 2,
-            templates: vec![],
-        }],
+        nodes
+            .iter()
+            .map(|identity| NodeRegistration {
+                retention_slots: 2,
+                identity: identity.clone(),
+                role: NodeRole::Runtime,
+                limit: resources(),
+                free: Resources::ZERO,
+                healthy_until_ms: 0,
+                mode: NodeMode::Accepting,
+                protocol_version: 2,
+                templates: vec![],
+            })
+            .collect(),
         vec![TenantBudget {
             tenant: "1".try_into().unwrap(),
             limit: resources(),
@@ -254,6 +269,7 @@ async fn actual_artifact_https_binds_registered_node_revision_hash_and_immutable
         .await
         .unwrap();
     assert_eq!(output.metadata().unwrap().len(), binding.kernel.size_bytes);
+    assert_sparse_artifact_download(&client, &request, &binding).await;
     let mut wrong_hash = binding.kernel.clone();
     wrong_hash.sha256 = "0".repeat(64);
     assert_eq!(
@@ -292,6 +308,65 @@ async fn actual_artifact_https_binds_registered_node_revision_hash_and_immutable
     );
     let _ = stop.send(true);
     serving.await.unwrap().unwrap();
+}
+
+async fn assert_sparse_artifact_download(
+    client: &ArtifactClient,
+    kernel_request: &ArtifactRequest,
+    binding: &TemplateBinding,
+) {
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    let mut request = kernel_request.clone();
+    request.part = ArtifactPart::Rootfs;
+    let mut output = tempfile::tempfile().unwrap();
+    client
+        .download_to(&request, &binding.rootfs, &mut output)
+        .await
+        .unwrap();
+    output.sync_all().unwrap();
+    let metadata = output.metadata().unwrap();
+    assert_eq!(metadata.len(), binding.rootfs.size_bytes);
+    assert!(metadata.blocks() * 512 < metadata.len() / 2);
+    output.rewind().unwrap();
+    let mut actual = Vec::new();
+    output.read_to_end(&mut actual).unwrap();
+    assert_eq!(actual, fs::read(&binding.rootfs.path).unwrap());
+
+    // All streamed bytes, including sparse zero ranges, still contribute to
+    // the expected hash. Allocation is never a substitute for verification.
+    actual[256 * 1024] ^= 1;
+    let mut wrong = binding.rootfs.clone();
+    wrong.sha256 = format!("{:x}", Sha256::digest(&actual));
+    assert_eq!(
+        client
+            .download_to(&request, &wrong, &mut tempfile::tempfile().unwrap())
+            .await,
+        Err(TransportError::InvalidResponse)
+    );
+
+    // Skipping zeroes cannot expose previous contents or inherit an offset.
+    let mut reused = tempfile::tempfile().unwrap();
+    reused.write_all(b"previous bytes").unwrap();
+    reused.rewind().unwrap();
+    assert_eq!(
+        client
+            .download_to(&request, &binding.rootfs, &mut reused)
+            .await,
+        Err(TransportError::Rejected)
+    );
+    let mut bytes = Vec::new();
+    reused.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"previous bytes");
+    let mut offset = tempfile::tempfile().unwrap();
+    offset.seek(SeekFrom::Start(1)).unwrap();
+    assert_eq!(
+        client
+            .download_to(&request, &binding.rootfs, &mut offset)
+            .await,
+        Err(TransportError::Rejected)
+    );
+    assert_eq!(offset.metadata().unwrap().len(), 0);
 }
 
 async fn assert_online_readiness(client: &ArtifactClient, binding: &TemplateBinding) {
@@ -342,6 +417,8 @@ struct VerifiedCache {
     store: Arc<CandidateStore>,
     requests: Arc<Mutex<Vec<CacheRequest>>>,
     corrupt_authority: Option<std::net::SocketAddrV4>,
+    identity: NodeIdentity,
+    release: Option<Arc<tokio::sync::Notify>>,
 }
 impl CacheReceiver for VerifiedCache {
     async fn cache_template(
@@ -349,12 +426,17 @@ impl CacheReceiver for VerifiedCache {
         request: CacheRequest,
     ) -> Result<CacheAvailability, ReceiveError> {
         request
-            .validate(&node())
+            .validate(&self.identity)
             .map_err(|_| ReceiveError::Conflict)?;
         self.store
             .verify_binding(&request.descriptor)
             .map_err(|_| ReceiveError::Conflict)?;
         self.requests.lock().unwrap().push(request.clone());
+        if let Some(release) = &self.release {
+            // Explicitly stalled after authenticated receipt, not a random
+            // sleep. Only the caller's original deadline ends the attempt.
+            release.notified().await;
+        }
         if let Some(address) = self.corrupt_authority {
             let _: usize = redis::cmd("HSET")
                 .arg(engine::KEY)
@@ -419,12 +501,22 @@ struct CacheFixture {
     requests: Arc<Mutex<Vec<CacheRequest>>>,
     stop: tokio::sync::oneshot::Sender<()>,
     serving: tokio::task::JoinHandle<Result<(), TransportError>>,
+    host: RegisteredHost,
 }
 impl CacheFixture {
     async fn start(
         authority: SharedBusinessAuthority,
         store: Arc<CandidateStore>,
         corrupt_authority: Option<std::net::SocketAddrV4>,
+    ) -> Self {
+        Self::start_on(authority, store, corrupt_authority, node(), None).await
+    }
+    async fn start_on(
+        authority: SharedBusinessAuthority,
+        store: Arc<CandidateStore>,
+        corrupt_authority: Option<std::net::SocketAddrV4>,
+        identity: NodeIdentity,
+        release: Option<Arc<tokio::sync::Notify>>,
     ) -> Self {
         let certificates = tls::certificates_with_dual_roles();
         let limits = Limits::new(4, Duration::from_secs(1), Duration::from_secs(3)).unwrap();
@@ -433,6 +525,8 @@ impl CacheFixture {
             store: Arc::clone(&store),
             requests: Arc::clone(&requests),
             corrupt_authority,
+            identity: identity.clone(),
+            release,
         };
         let server = InternalServer::new(
             ServerTls::new(
@@ -441,7 +535,7 @@ impl CacheFixture {
                 vec![certificates.center.pin()],
             )
             .unwrap(),
-            node(),
+            identity.clone(),
             limits,
             receiver,
         );
@@ -456,22 +550,17 @@ impl CacheFixture {
                 vec![certificates.host.pin()],
             )
             .unwrap(),
-            RegisteredEndpoint::new(address, "host.test".into(), node()).unwrap(),
+            RegisteredEndpoint::new(address, "host.test".into(), identity.clone()).unwrap(),
             limits,
         );
-        let hosts = RegisteredHosts::new(
-            vec![RegisteredHost {
-                identity: node(),
-                client,
-            }],
-            Handle::current(),
-        )
-        .unwrap();
+        let host = RegisteredHost { identity, client };
+        let hosts = RegisteredHosts::new(vec![host.clone()], Handle::current()).unwrap();
         Self {
             candidates: ProtectedCandidates::new(authority, hosts, store),
             requests,
             stop,
             serving,
+            host,
         }
     }
     async fn prepare(&self) -> Result<(), sandproof_api::PortError> {

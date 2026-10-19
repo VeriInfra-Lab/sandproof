@@ -13,6 +13,7 @@ use sandproof_api::{
     PrivateBuildCredential,
     admission::{RequestAdmission, RequestClass, RequestLease},
 };
+use sandproof_controller_service::application::fault::{FaultContext, FaultRecord, FaultStage};
 use sandproof_data_transport::{
     TransferBudget, TransferLimits, access_token, control_request, prepare_body, request_kind,
     response,
@@ -186,7 +187,15 @@ impl Gateway {
             Err(PortError::NotFound | PortError::Invalid) => {
                 return response(StatusCode::UNAUTHORIZED);
             }
-            _ => return response(StatusCode::SERVICE_UNAVAILABLE),
+            Err(error) => {
+                FaultRecord::application(
+                    FaultStage::CenterDataAuthorization,
+                    &error,
+                    FaultContext::default(),
+                )
+                .emit();
+                return response(StatusCode::SERVICE_UNAVAILABLE);
+            }
         };
         let instance = (
             identity.node.node_id.as_str().to_owned(),

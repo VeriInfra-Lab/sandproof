@@ -9,8 +9,11 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
+import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import AsyncMock, Mock, patch
 
 from benchmarks import run_generic, run_local
@@ -28,6 +31,72 @@ finally:
 
 
 class PreparedCiWiringTests(unittest.TestCase):
+    def test_private_builder_gateway_waits_for_readiness_and_keeps_one_deadline(self):
+        for statuses, timeout, failure in (([502, 502, 404], 30, None),
+                                           ([503, 503, 404], 1, 'did not become ready'),
+                                           ([200, 200, 404], 1, 'did not become ready')):
+            with self.subTest(statuses=statuses, timeout=timeout):
+                requests, sleeps = [], []
+                now = [0.0]
+                class Handler(BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        status = statuses[len(requests)]
+                        requests.append((self.path, self.headers.get('X-API-Key')))
+                        self.send_response(status)
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                    def log_message(self, *_args):
+                        pass
+                server = HTTPServer(('127.0.0.1', 0), Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                def advance(seconds):
+                    sleeps.append(seconds)
+                    now[0] += seconds
+                try:
+                    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                    process = Mock()
+                    process.poll.return_value = None
+                    with (patch.object(chain.time, 'monotonic', side_effect=lambda: now[0]),
+                          patch.object(chain.time, 'sleep', side_effect=advance)):
+                        arguments = (opener, 'http://127.0.0.1:' + str(server.server_port),
+                                     'component-only-key', process)
+                        if failure:
+                            with self.assertRaisesRegex(RuntimeError, failure):
+                                chain.wait_build_service(*arguments, timeout=timeout)
+                        else:
+                            chain.wait_build_service(*arguments, timeout=timeout)
+                    self.assertEqual(sleeps, [.5, .5])
+                    self.assertEqual(len(requests), 2 if failure else 3)
+                    self.assertTrue(all(row == ('/sandproof/template-builds/' + '0'*32,
+                                                'component-only-key') for row in requests))
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+
+    def test_private_builder_late_ready_response_cannot_reset_deadline(self):
+        now = [0.0]
+        process = Mock()
+        process.poll.return_value = None
+        def late(*_args, **_kwargs):
+            now[0] = 31
+            return 404, b''
+        with (patch.object(chain.time, 'monotonic', side_effect=lambda: now[0]),
+              patch.object(chain.time, 'sleep'), patch.object(chain, 'fetch', side_effect=late)):
+            with self.assertRaisesRegex(RuntimeError, 'did not become ready'):
+                chain.wait_build_service(object(), 'http://127.0.0.1:1', 'unused', process)
+
+    def test_exited_private_builder_never_probes_or_restarts(self):
+        process = Mock()
+        process.poll.return_value = 1
+        with patch.object(chain, 'fetch') as fetch, patch.object(chain.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'build supervisor startup failed'):
+                chain.wait_build_service(object(), 'http://127.0.0.1:1', 'unused', process)
+        fetch.assert_not_called()
+        sleep.assert_not_called()
+
     def test_lost_prepared_create_explicitly_selects_ci_recovery_binding(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

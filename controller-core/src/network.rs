@@ -3,7 +3,7 @@
 
 use std::{collections::BTreeSet, fmt, net::Ipv4Addr};
 
-use crate::{Ipv4Cidr, NetworkPolicy};
+use crate::{Endpoint, Ipv4Cidr, NetworkPolicy};
 
 pub const MAX_IPV4_RULES_PER_LIST: usize = 128;
 pub const PLATFORM_DENY_IPV4: &[Ipv4Cidr] = &[
@@ -134,12 +134,66 @@ pub fn normalize_sdk_ipv4_list(values: &[String]) -> Result<Vec<Ipv4Cidr>, SdkIp
 /// Static platform exclusions; actual host-local addresses are additional.
 #[must_use]
 pub fn platform_protected_ipv4(address: u32) -> bool {
-    PLATFORM_DENY_IPV4
-        .iter()
-        .any(|range| range.contains(address))
+    ipv4_list_contains(PLATFORM_DENY_IPV4, address)
+}
+
+// Same first-match query as slice::Iter::any, owned here so its traversal and
+// CIDR callback are proved together rather than placed in the library boundary.
+fn ipv4_list_contains(ranges: &[Ipv4Cidr], address: u32) -> bool {
+    let mut cursor = 0;
+    while cursor < ranges.len() {
+        if ranges[cursor].contains(address) {
+            return true;
+        }
+        cursor += 1;
+    }
+    false
 }
 
 impl NetworkPolicy {
+    /// Decide only the immutable destination policy. Current sandbox authority
+    /// and host-local exclusions remain checks of the caller and host adapter.
+    #[must_use]
+    pub fn destination_allowed(&self, destination: &Endpoint) -> bool {
+        match self {
+            Self::DenyAll => false,
+            Self::StaticAllowlist(endpoints) => {
+                let mut cursor = 0;
+                let mut allowed = false;
+                while cursor < endpoints.len() && !allowed {
+                    if &endpoints[cursor] == destination {
+                        allowed = true;
+                    }
+                    cursor += 1;
+                }
+                allowed
+            }
+            Self::Ipv4 {
+                internet_access,
+                allow_out,
+                deny_out,
+            } => {
+                let Ok(address) = destination.address.parse::<Ipv4Addr>() else {
+                    return false;
+                };
+                if destination.prefix_length != 32 {
+                    return false;
+                }
+                let address = u32::from(address);
+                if platform_protected_ipv4(address) {
+                    return false;
+                }
+                if ipv4_list_contains(allow_out, address) {
+                    return true;
+                }
+                if ipv4_list_contains(deny_out, address) {
+                    return false;
+                }
+                *internet_access
+            }
+        }
+    }
+
     /// Convert the fixed SDK's address lists to one canonical durable policy.
     /// False with no allow exceptions is exactly the existing deny-all mode.
     /// # Errors

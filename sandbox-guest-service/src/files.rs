@@ -1,0 +1,452 @@
+//! File account/path resolution from the original authenticated snapshot.
+//! This does no file I/O and grants no per-user DAC isolation. The future
+//! dispatcher must retain the original authorization until side effects settle.
+use axum::http::HeaderMap;
+use sandproof_guest_runtime::accounts::Account;
+use sandproof_guest_runtime::file_protocol::Request;
+
+use crate::execution::{expand_path, selected_user_with_limits};
+use crate::{AccountPool, AccountSource, AuthPermit, ContextError};
+
+#[cfg(test)]
+mod tests;
+
+/// Per-path bounds include the resolved path. A Move retains at most two.
+/// These are explicit component budgets, not a frozen production policy.
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileContextLimits {
+    pub path_bytes: usize,
+    pub username_bytes: usize,
+    pub authorization_bytes: usize,
+}
+
+#[derive(Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileSettings {
+    pub daemon_workdir: String,
+    pub limits: FileContextLimits,
+}
+
+impl FileSettings {
+    pub(crate) fn validate(&self) -> Result<(), ContextError> {
+        if self.limits.path_bytes == 0
+            || self.limits.path_bytes > isize::MAX as usize / 2
+            || self.limits.username_bytes == 0
+            || self.limits.authorization_bytes == 0
+            || !self.daemon_workdir.starts_with('/')
+            || self.daemon_workdir.contains('\0')
+            || self.daemon_workdir.len() > self.limits.path_bytes
+        {
+            return Err(ContextError::InvalidArgument);
+        }
+        Ok(())
+    }
+}
+
+/// Intended ownership for created objects, not credentials to install on the
+/// filesystem worker. Fixed envd file I/O runs with daemon privileges.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileOwner {
+    pub username: String,
+    pub uid: u32,
+    pub gid: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileContext {
+    pub owner: FileOwner,
+    pub request: Request,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HttpFileContext {
+    pub owner: FileOwner,
+    pub path: String,
+}
+
+/// One account/default snapshot for a sequential HTTP upload. The dispatcher
+/// must keep the exact original authorization alive; this is not a credential.
+pub struct HttpFileSelection {
+    account: Account,
+    workdir: Option<String>,
+    settings: FileSettings,
+}
+
+pub(crate) enum SelectionError {
+    UnknownUser(crate::upload_response::UnknownUser),
+    Context(ContextError),
+}
+impl From<ContextError> for SelectionError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<SelectionError> for ContextError {
+    fn from(error: SelectionError) -> Self {
+        match error {
+            SelectionError::UnknownUser(_) => Self::Unauthenticated,
+            SelectionError::Context(error) => error,
+        }
+    }
+}
+
+pub(crate) enum PathError {
+    Expansion(crate::upload_response::PathExpansion),
+    Context(ContextError),
+}
+impl From<ContextError> for PathError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<PathError> for ContextError {
+    fn from(error: PathError) -> Self {
+        match error {
+            PathError::Expansion(_) => Self::InvalidArgument,
+            PathError::Context(error) => error,
+        }
+    }
+}
+
+pub(crate) enum RpcContextError {
+    UnknownUser(crate::upload_response::UnknownUser),
+    Expansion(crate::upload_response::PathExpansion),
+    Context(ContextError),
+}
+impl From<ContextError> for RpcContextError {
+    fn from(error: ContextError) -> Self {
+        Self::Context(error)
+    }
+}
+impl From<SelectionError> for RpcContextError {
+    fn from(error: SelectionError) -> Self {
+        match error {
+            SelectionError::UnknownUser(user) => Self::UnknownUser(user),
+            SelectionError::Context(error) => Self::Context(error),
+        }
+    }
+}
+impl From<PathError> for RpcContextError {
+    fn from(error: PathError) -> Self {
+        match error {
+            PathError::Expansion(error) => Self::Expansion(error),
+            PathError::Context(error) => Self::Context(error),
+        }
+    }
+}
+impl From<RpcContextError> for ContextError {
+    fn from(error: RpcContextError) -> Self {
+        match error {
+            RpcContextError::UnknownUser(_) => Self::Unauthenticated,
+            RpcContextError::Expansion(_) => Self::InvalidArgument,
+            RpcContextError::Context(error) => error,
+        }
+    }
+}
+
+impl HttpFileSelection {
+    pub(crate) fn check_input(&self, path: &str) -> Result<(), ContextError> {
+        check_path_size(path, &self.settings)
+    }
+
+    /// Resolve an already decoded full filename (not its basename).
+    /// # Errors
+    /// Invalid or oversized paths, before any file effect.
+    pub fn resolve(&self, path: &str) -> Result<HttpFileContext, ContextError> {
+        self.resolve_detailed(path).map_err(Into::into)
+    }
+
+    pub(crate) fn resolve_detailed(&self, path: &str) -> Result<HttpFileContext, PathError> {
+        Ok(HttpFileContext {
+            owner: FileOwner {
+                username: self.account.name.clone(),
+                uid: self.account.credentials.uid,
+                gid: self.account.credentials.gid,
+            },
+            path: resolve_file_path_detailed(
+                path,
+                self.workdir.as_deref(),
+                &self.account,
+                &self.settings,
+            )?,
+        })
+    }
+}
+
+impl AuthPermit {
+    /// RPC files use Basic username, with the same fallback as commands. Both
+    /// Move paths share one lookup/snapshot; an invalid second path never
+    /// dispatches the first. No rename/parent creation happens in this method.
+    /// # Errors
+    /// Invalid/budgeted context, account lookup failure and path expansion error.
+    pub async fn resolve_file_rpc<S: AccountSource>(
+        &self,
+        request: &Request,
+        headers: &HeaderMap,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+    ) -> Result<FileContext, ContextError> {
+        self.resolve_file_rpc_with_origin(request, headers, accounts, settings, None)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn resolve_file_rpc_admitted<S: AccountSource>(
+        &self,
+        request: &Request,
+        headers: &HeaderMap,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<FileContext, RpcContextError> {
+        self.resolve_file_rpc_with_origin(
+            request,
+            headers,
+            accounts,
+            settings,
+            Some((deadline, owner)),
+        )
+        .await
+    }
+
+    // Only the opaque preflight's absent/malformed Basic branch enters here.
+    // It already validated Basic headers; retain the original default snapshot.
+    pub(crate) async fn resolve_default_file_rpc_admitted<S: AccountSource>(
+        &self,
+        request: &Request,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<FileContext, RpcContextError> {
+        settings.validate()?;
+        check_request_paths(request, settings)?;
+        let account = file_account(
+            &self.defaults().user,
+            accounts,
+            settings,
+            Some((deadline, owner)),
+        )
+        .await?;
+        self.resolve_file_rpc_account(request, account, settings)
+            .map_err(Into::into)
+    }
+
+    async fn resolve_file_rpc_with_origin<S: AccountSource>(
+        &self,
+        request: &Request,
+        headers: &HeaderMap,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        origin: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
+    ) -> Result<FileContext, RpcContextError> {
+        settings.validate()?;
+        check_request_paths(request, settings)?;
+        let name = selected_user_with_limits(
+            headers,
+            &self.defaults().user,
+            settings.limits.username_bytes,
+            settings.limits.authorization_bytes,
+        )?;
+        let account = file_account(&name, accounts, settings, origin).await?;
+        self.resolve_file_rpc_account(request, account, settings)
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn resolve_file_rpc_account(
+        &self,
+        request: &Request,
+        account: Account,
+        settings: &FileSettings,
+    ) -> Result<FileContext, PathError> {
+        check_request_paths(request, settings)?;
+        let path = |value: &str| {
+            resolve_file_path_detailed(
+                value,
+                self.defaults().workdir.as_deref(),
+                &account,
+                settings,
+            )
+        };
+        let request = match request {
+            Request::Stat(value) => Request::Stat(path(value)?),
+            Request::MakeDir(value) => Request::MakeDir(path(value)?),
+            Request::Remove(value) => Request::Remove(path(value)?),
+            Request::ListDir { path: value, depth } => Request::ListDir {
+                path: path(value)?,
+                depth: *depth,
+            },
+            Request::Move {
+                source,
+                destination,
+            } => Request::Move {
+                source: path(source)?,
+                destination: path(destination)?,
+            },
+        };
+        Ok(FileContext {
+            owner: owner(account),
+            request,
+        })
+    }
+
+    /// GET/POST /files use the decoded `username` query, never Basic user or
+    /// a `user` query alias. Absent username selects init defaults; explicit
+    /// empty stays invalid. Raw-upload path requirements belong to its route.
+    /// # Errors
+    /// Same bounded account/path failures as RPC resolution. No file is opened.
+    pub async fn resolve_http_file<S: AccountSource>(
+        &self,
+        username: Option<&str>,
+        path: Option<&str>,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+    ) -> Result<HttpFileContext, ContextError> {
+        settings.validate()?;
+        let path = path.unwrap_or("");
+        check_path_size(path, settings)?;
+        self.resolve_http_files(username, accounts, settings)
+            .await?
+            .resolve(path)
+    }
+
+    /// Resolve the account once for all files in one HTTP request. Initialization
+    /// must remain blocked by the original permit until actual writes settle.
+    /// # Errors
+    /// Invalid settings, unknown/invalid account or query budget/timeout.
+    pub async fn resolve_http_files<S: AccountSource>(
+        &self,
+        username: Option<&str>,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+    ) -> Result<HttpFileSelection, ContextError> {
+        settings.validate()?;
+        let name = username.unwrap_or(&self.defaults().user);
+        let account = file_account(name, accounts, settings, None).await?;
+        Ok(HttpFileSelection {
+            account,
+            workdir: self.defaults().workdir.clone(),
+            settings: settings.clone(),
+        })
+    }
+
+    pub(crate) async fn resolve_http_files_admitted<S: AccountSource>(
+        &self,
+        username: Option<&str>,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<HttpFileSelection, SelectionError> {
+        settings.validate()?;
+        let name = username.unwrap_or(&self.defaults().user);
+        let account = file_account(name, accounts, settings, Some((deadline, owner))).await?;
+        Ok(HttpFileSelection {
+            account,
+            workdir: self.defaults().workdir.clone(),
+            settings: settings.clone(),
+        })
+    }
+}
+
+fn resolve_file_path_detailed(
+    path: &str,
+    workdir: Option<&str>,
+    account: &Account,
+    settings: &FileSettings,
+) -> Result<String, PathError> {
+    let path = if path.is_empty() {
+        workdir.unwrap_or("")
+    } else {
+        path
+    };
+    check_path_size(path, settings)?;
+    // Keep absolute spelling, relative lexical cleaning and ~ expansion.
+    // Do not resolve symlinks or pre-check filesystem existence. NUL also
+    // survives here: fixed envd rejects it at the operation's I/O boundary,
+    // not as an ExpandAndResolve error. No CString/syscall occurs here.
+    let resolved = expand_path(path, &account.home, &settings.daemon_workdir).map_err(|error| {
+        // This pure function returns InvalidArgument only for ~other, after
+        // the path budget above. Settings/account validation happens earlier.
+        if error == ContextError::InvalidArgument {
+            PathError::Expansion(crate::upload_response::PathExpansion::new(&account.name))
+        } else {
+            PathError::Context(error)
+        }
+    })?;
+    check_path_size(&resolved, settings)?;
+    Ok(resolved)
+}
+
+fn check_path_size(path: &str, settings: &FileSettings) -> Result<(), ContextError> {
+    if path.len() > settings.limits.path_bytes {
+        return Err(ContextError::ResourceExhausted);
+    }
+    Ok(())
+}
+
+pub(crate) async fn file_account<S: AccountSource>(
+    name: &str,
+    accounts: &AccountPool<S>,
+    settings: &FileSettings,
+    admitted: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
+) -> Result<Account, SelectionError> {
+    if name.len() > settings.limits.username_bytes {
+        return Err(ContextError::ResourceExhausted.into());
+    }
+    let missing = || SelectionError::UnknownUser(crate::upload_response::UnknownUser::new(name));
+    if name.is_empty() || name.contains(['\0', '\n', '\r', ':']) {
+        return Err(missing());
+    }
+    let account = match admitted {
+        Some((deadline, owner)) => {
+            accounts
+                .lookup_admitted(name.to_owned(), deadline, owner)
+                .await
+        }
+        None => accounts.lookup(name.to_owned()).await,
+    }
+    .map_err(|error| match error {
+        // AccountPool maps only AccountError::NotFound to Unauthenticated.
+        ContextError::Unauthenticated => missing(),
+        other => SelectionError::Context(other),
+    })?;
+    if account.name != name
+        || account.home.contains('\0')
+        || account.credentials.uid == u32::MAX
+        || account.credentials.gid == u32::MAX
+    {
+        return Err(ContextError::Unavailable.into());
+    }
+    // Source allocation is bounded by AccountPool's source contract. Check
+    // before joining so a long home cannot allocate an unbudgeted result.
+    check_path_size(&account.home, settings)?;
+    Ok(account)
+}
+
+fn owner(account: Account) -> FileOwner {
+    FileOwner {
+        username: account.name,
+        uid: account.credentials.uid,
+        gid: account.credentials.gid,
+    }
+}
+
+fn check_request_paths(request: &Request, settings: &FileSettings) -> Result<(), ContextError> {
+    match request {
+        Request::Stat(path)
+        | Request::MakeDir(path)
+        | Request::Remove(path)
+        | Request::ListDir { path, .. } => check_path_size(path, settings)?,
+        Request::Move {
+            source,
+            destination,
+        } => {
+            check_path_size(source, settings)?;
+            check_path_size(destination, settings)?;
+        }
+    }
+    Ok(())
+}

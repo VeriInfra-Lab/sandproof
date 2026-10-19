@@ -71,7 +71,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             {
                 return Err(PortError::Busy);
             }
-            let detail = self.detail_for_record(tenant, record)?;
+            let template = state.metadata.bound(
+                &anchor.original_create.create.template_revision,
+                &anchor.original_create.create.template_digest,
+            )?;
+            let detail = self.detail_for_record(tenant, record, &template)?;
             Some(Session {
                 template_id: detail.info.template_id,
                 sandbox_id: detail.info.sandbox_id,
@@ -268,6 +272,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     .center
                     .node_is_reachable(&anchor.original_create.identity.node, now)
                 {
+                    sandproof_controller_service::application::fault::FaultRecord::application(
+                        sandproof_controller_service::application::fault::FaultStage::CenterNodeFreshness,
+                        &PortError::Busy,
+                        sandproof_controller_service::application::fault::FaultContext::default(),
+                    ).emit();
                     return Err(PortError::Busy);
                 }
                 if result.is_some() {

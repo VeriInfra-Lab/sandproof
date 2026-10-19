@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.request
 
-REPOSITORY = 'ningZhang-cs/sandproof'
+REPOSITORY = 'VeriInfra-Lab/sandproof'
 PERMISSIONS = {'actions': 'read', 'administration': 'write', 'metadata': 'read'}
 CHECK_PERMISSIONS = {'actions': 'read', 'checks': 'write', 'metadata': 'read'}
 SOURCE_PERMISSIONS = {'contents': 'read', 'metadata': 'read'}

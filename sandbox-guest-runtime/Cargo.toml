@@ -1,0 +1,44 @@
+[package]
+name = "sandproof-guest-runtime"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+sdk-contract-tests = []
+
+[dependencies]
+sandproof-stream-codec = { path = "../sandbox-stream-codec" }
+time = "=0.3.44"
+tz = { package = "tz-rs", version = "=0.7.3", default-features = false, features = ["alloc"] }
+base64 = "=0.22.1"
+sandproof-guest-core = { path = "../sandbox-guest-core" }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.142", features = ["raw_value"] }
+sha2 = "=0.10.9"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.5", features = ["process", "net", "thread", "fs", "pty", "termios", "pipe"] }
+
+[dev-dependencies]
+crc32fast = "=1.5.2"
+tempfile = "=3.23.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tempfile = "=3.23.0"
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time", "sync"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+tokio = { version = "=1.49.0", features = ["test-util"] }
+sandproof-guest-service = { path = "../sandbox-guest-service" }
+axum = { version = "=0.8.9", features = ["tokio", "http1"] }
+futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
+tower = { version = "=0.5.2", features = ["util"] }
+
+[[bin]]
+name = "sandproof-guest-worker"
+path = "src/main.rs"
+
+[lints]
+workspace = true

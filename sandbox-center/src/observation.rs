@@ -1,5 +1,7 @@
 //! Registered physical/time observations are admission vetoes. All state is
 //! refreshed in the original business CAS; no status cache or release decision.
+mod diagnostics;
+
 use sandproof_api::PortError;
 use sandproof_center_core::NodeRegistration;
 use sandproof_center_service::{
@@ -19,7 +21,7 @@ pub fn refresh(
     // The fresh bounded authority supplies the exact registered generations;
     // HTTP never supplies a destination or a replacement node list.
     let nodes = authority.snapshot()?.center.nodes().to_vec();
-    for node in nodes {
+    for (index, node) in nodes.into_iter().enumerate() {
         let before = now()?;
         let observation = runtime.block_on(hosts.status(&node.identity));
         let after = now()?;
@@ -27,9 +29,19 @@ pub fn refresh(
             // A busy original host work slot or lost read-only reply cannot
             // extend the previous finite freshness lease. Let it expire;
             // do not manufacture a physical failure or release responsibility.
+            diagnostics::emit(index, &node, None, policy, before, after, false);
             continue;
         };
         let accepted = accepted_observation(&node, &status, policy, before, after);
+        diagnostics::emit(
+            index,
+            &node,
+            Some(&status),
+            policy,
+            before,
+            after,
+            accepted.is_some(),
+        );
         let (healthy_until, free) = accepted.unwrap_or((0, Resources::ZERO));
         // An unavailable host affects its veto only; a shared commit fault
         // aborts the scan so no old observation can authorize later admission.

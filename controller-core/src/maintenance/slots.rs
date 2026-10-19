@@ -87,14 +87,20 @@ pub fn reduce_slot(
             binding,
             ..
         } => {
-            if previous.map(|row| row.binding.vm) != expected_previous {
+            // Preserve the first rejection without generic Option comparison.
+            let expected_matches = match (previous, expected_previous) {
+                (None, None) => true,
+                (Some(row), Some(expected)) => row.binding.vm == expected,
+                _ => false,
+            };
+            if !expected_matches {
                 return Err(SlotReject::BindingMismatch);
             }
             if let Some(prior) = previous {
                 if prior.phase != HostSlotPhase::Free {
                     return Err(SlotReject::NotFree);
                 }
-                if binding.vm <= prior.binding.vm {
+                if binding.vm.0 <= prior.binding.vm.0 {
                     return Err(SlotReject::StaleIdentity);
                 }
             }
@@ -153,6 +159,59 @@ mod tests {
             generation: 1,
             vm: VmId(vm),
             network: NetSlotId(vm),
+        }
+    }
+
+    #[test]
+    fn explicit_bind_checks_match_original_order_and_integer_boundaries() {
+        let identities = [0, 1, u64::MAX - 1, u64::MAX];
+        let expected = [None, Some(VmId(0)), Some(VmId(1)), Some(VmId(u64::MAX))];
+        let phases = [
+            HostSlotPhase::Occupied,
+            HostSlotPhase::Releasing,
+            HostSlotPhase::Free,
+        ];
+        let mut previous_values = vec![None];
+        for vm in identities {
+            for phase in phases {
+                previous_values.push(Some(HostSlotRecord {
+                    binding: binding(vm),
+                    phase,
+                }));
+            }
+        }
+        for previous in previous_values {
+            for expected_previous in expected {
+                for vm in identities {
+                    for position in [HostSlotId(0), HostSlotId(u64::MAX)] {
+                        let binding = binding(vm);
+                        // Original expression and rejection order, kept only as a regression oracle.
+                        let original = if previous.map(|row| row.binding.vm) != expected_previous {
+                            Err(SlotReject::BindingMismatch)
+                        } else if previous.is_some_and(|row| row.phase != HostSlotPhase::Free) {
+                            Err(SlotReject::NotFree)
+                        } else if previous.is_some_and(|row| binding.vm <= row.binding.vm) {
+                            Err(SlotReject::StaleIdentity)
+                        } else {
+                            Ok(HostSlotRecord {
+                                binding,
+                                phase: HostSlotPhase::Occupied,
+                            })
+                        };
+                        assert_eq!(
+                            reduce_slot(
+                                previous,
+                                SlotInput::Bind {
+                                    position,
+                                    expected_previous,
+                                    binding,
+                                }
+                            ),
+                            original
+                        );
+                    }
+                }
+            }
         }
     }
 

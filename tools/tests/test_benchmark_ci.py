@@ -3,9 +3,11 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
+import venv
 from unittest.mock import Mock, patch
 
 from tools import benchmark_ci as bench
@@ -1055,6 +1057,35 @@ class BenchmarkCITests(unittest.TestCase):
                 restarted.tick()
                 launch.assert_not_called()
         self.assertEqual(restarted.state['batches'][0]['phase'], 'launching')
+
+    def test_preparation_uses_manager_venv_and_ignores_python_environment(self):
+        environment = self.root / 'manager-venv'
+        venv.EnvBuilder(with_pip=False).create(environment)
+        interpreter = environment / 'bin/python'
+        supervisor = self.supervisor(phase='preparing')
+        supervisor.config['control_checkout'] = str(ROOT)
+        with patch.object(sys, 'executable', str(interpreter)), patch.object(ci.subprocess, 'run') as run:
+            supervisor.tick()
+        command = run.call_args.args[0]
+        module = command.index('tools.ci_e2e_prepare')
+        executable = command.index(str(interpreter))
+        self.assertLess(executable, module)
+        poisoned = self.root / 'python-environment'
+        poisoned.mkdir()
+        (poisoned / 'json.py').write_text('raise RuntimeError("untrusted Python path loaded")\n')
+        # Execute the real preparation module's import/CLI path in the selected
+        # venv, without a candidate build or systemd/root requirement.
+        result = subprocess.run([*command[executable:module+1], '--help'], cwd=ROOT,
+            env={'PATH':'/no-fallback-interpreter', 'LANG':'C.UTF-8',
+                 'PYTHONPATH':str(poisoned), 'PYTHONHOME':str(poisoned)},
+            capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--config', result.stdout)
+        restarted = ci.Supervisor(supervisor.config)
+        with patch.object(ci, 'unit_state', return_value=dict(LoadState='loaded', ActiveState='active',
+                ExecMainCode='0')), patch.object(ci.subprocess, 'run') as run:
+            restarted.tick()
+        run.assert_not_called()
 
     def test_mandatory_fault_group_running_restart_never_launches_harbor(self):
         supervisor=self.supervisor()

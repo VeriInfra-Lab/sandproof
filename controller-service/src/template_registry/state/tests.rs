@@ -6,6 +6,7 @@ fn publication(id: u64, owner: u64) -> Publication {
     Publication {
         candidate_id: candidate_id.clone(),
         binding: TemplateBinding {
+            guest: None,
             template_id: format!("tpl-{candidate_id}"),
             revision: "r1".into(),
             owner: Some(owner),

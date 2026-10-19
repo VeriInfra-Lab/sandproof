@@ -2307,6 +2307,7 @@ fn template_catalog() -> sandproof_controller_service::templates::TemplateCatalo
         ComputeLimits, ResourceShape, TemplateArtifact, TemplateBinding, TemplateCatalog,
     };
     let first = TemplateBinding {
+        guest: None,
         startup: None,
         template_id: "ubuntu-r1".into(),
         revision: "r1".into(),

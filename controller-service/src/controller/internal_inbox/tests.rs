@@ -41,6 +41,7 @@ fn local_admission() -> InternalAdmission {
 }
 fn local_template() -> TemplateBinding {
     TemplateBinding {
+        guest: None,
         template_id: "base-fixed".into(),
         revision: "r1".into(),
         owner: None,

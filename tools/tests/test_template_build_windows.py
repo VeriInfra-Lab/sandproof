@@ -20,8 +20,8 @@ from unittest.mock import patch
 from tools.template_build_windows import (
     MIN_OUTPUT_BYTES, WindowBridgeError, WindowHelper, WindowReducer, WindowRejected,
 )
+from tools.tests.template_build_fixture import compiled_helper
 
-ROOT = Path(__file__).resolve().parents[2]
 FAULT_SOURCE = r'''
 use std::io::{Read, Write};
 fn main() {
@@ -83,14 +83,12 @@ def encoded(value):
 class WindowBridgeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Required real compilation: missing toolchain is failure, never a skip.
-        subprocess.run(["cargo", "build", "--locked", "-p", "sandproof-controller-service",
-                        "--bin", "sandproof-window-reducer"], cwd=ROOT, check=True, timeout=180)
-        target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
-        if not target.is_absolute():
-            target = ROOT / target
-        cls.binary = target / "debug/sandproof-window-reducer"
-        cls.digest = hashlib.sha256(cls.binary.read_bytes()).hexdigest()
+        # Same required real compilation/profile as the retention fixtures.
+        # The per-process cache cannot reuse another checkout/job's artifact.
+        helper = compiled_helper()
+        cls.binary = Path(helper['path'])
+        cls.digest = helper['sha256']
+        target = cls.binary.parent.parent
         # Path components are tested as-is; no permission/owner relaxation.
         cls.temp = tempfile.TemporaryDirectory(prefix="window-bridge-", dir=target)
         cls.addClassCleanup(cls.temp.cleanup)

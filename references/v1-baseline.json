@@ -3,9 +3,16 @@
   "purpose": "固定开发依赖和源码阅读依据；不是部署机器台账、测试结果或形式化验收报告",
   "code_baseline": {
     "rust_toolchain": "1.97.0",
-    "cargo_lock_sha256": "67b07c2d0cc5afc8851d362ea20d272b6c7686c820d988ae91eb1c225331303d",
+    "cargo_lock_sha256": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "sdk_python": "e2b==2.51.0",
     "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
+    "rust_guest": {
+      "service_package_version": "0.1.0",
+      "worker_package_version": "0.1.0",
+      "config_version": 3,
+      "worker_protocol_version": 2,
+      "pid_format_version": 2
+    },
     "center_storage": {
       "redis_server": "7.2.16",
       "archive_url": "https://download.redis.io/releases/redis-7.2.16.tar.gz",

@@ -1,0 +1,46 @@
+import SandboxModel.Boundaries.JsonIdentifiers.Calls
+import SandboxModel.Boundaries.JsonIdentifiers.Model
+import SandboxModel.Boundaries.JsonIdentifiers.ValueReader
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofFoundationsRust
+open SandboxModel.Foundations
+open SandboxModel.Boundaries.JsonIdentifiers
+namespace JsonIdentifierNegative
+
+theorem mutant_accepts_empty (kind : OpaqueKind) :
+    actual kind (valueReader "") 0#u64 = .ok (.Ok "") := by
+  cases kind
+  all_goals simp [actual,
+    sandproof_protocol.TenantId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.TenantId.Insts.CoreConvertTryFromStringContractError.try_from,
+    sandproof_protocol.SandboxId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from,
+    sandproof_protocol.OperationId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.OperationId.Insts.CoreConvertTryFromStringContractError.try_from,
+    sandproof_protocol.LogicalActionId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.LogicalActionId.Insts.CoreConvertTryFromStringContractError.try_from,
+    sandproof_protocol.ResourceId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.ResourceId.Insts.CoreConvertTryFromStringContractError.try_from,
+    sandproof_protocol.ClientRequestId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.ClientRequestId.Insts.CoreConvertTryFromStringContractError.try_from,
+    sandproof_protocol.DeploymentId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.DeploymentId.Insts.CoreConvertTryFromStringContractError.try_from,
+    sandproof_protocol.NodeId.Insts.Serde_coreDeDeserialize.deserialize,
+    sandproof_protocol.NodeId.Insts.CoreConvertTryFromStringContractError.try_from,
+    alloc.string.String.Insts.Serde_coreDeDeserialize.deserialize,
+    valueReader,
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString,
+    serde_core.de.impls.StringVisitor.Insts.Serde_coreDeVisitorDeString.visit_string,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    core.result.Result.map_err]
+
+theorem mutant_violates_identifier_safe (kind : OpaqueKind) :
+    ¬ IdentifierSafe (actual kind (valueReader "") 0#u64) := by
+  intro safe
+  have bad := safe "" (mutant_accepts_empty kind)
+  simp [opaqueValid, opaqueBytesValid, IdentifierLibrary.stringBytes] at bad
+
+#audit_controller_proof JsonIdentifierNegative.mutant_accepts_empty
+#audit_controller_proof JsonIdentifierNegative.mutant_violates_identifier_safe
+end JsonIdentifierNegative

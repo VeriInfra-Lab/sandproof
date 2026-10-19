@@ -84,7 +84,7 @@ class PrepareCiFixturesTests(unittest.TestCase):
 
     def publish(self, **kwargs):
         args = dict(entry=self.entry, template=self.template, ready_rootfs=self.disk, kernel=self.kernel,
-                    dest=self.destination, original_digest=self.digest)
+                    dest=self.destination, original_digest=self.digest, ready_owner_uid=os.geteuid())
         args.update(kwargs)
         return publish_ready_fixture(**args)
 
@@ -189,6 +189,18 @@ class PrepareCiFixturesTests(unittest.TestCase):
         with self.assertRaises(InvalidInput):
             self.publish()
         self.assertFalse(self.destination.exists())
+
+    def test_source_owner_must_be_explicit_exact_and_cannot_authorize_the_kernel(self):
+        for owner in (None, True, False, -1, 2**32 - 1, 1.0, '1', os.geteuid() + 1):
+            with self.subTest(owner=owner), self.assertRaises(InvalidInput):
+                self.publish(ready_owner_uid=owner)
+            self.assertFalse(self.destination.exists())
+        from benchmarks.prepare_ci_fixtures import _read
+        with patch('benchmarks.prepare_ci_fixtures._read', wraps=_read) as reader:
+            self.publish()
+        self.assertEqual(reader.call_args_list[0].kwargs, {'owner_uid': os.geteuid()})
+        self.assertEqual(reader.call_args_list[1].args, (self.kernel,))
+        self.assertEqual(reader.call_args_list[1].kwargs, {})
 
     def test_destination_collision_and_symlink_cannot_replace_other_material(self):
         self.destination.mkdir(mode=0o700)

@@ -19,6 +19,13 @@ OBSERVATION = 'sampled_pathname_peak_not_hard_quota'
 LIMITATIONS = 'No instantaneous peak, open-unlinked allocation or long-term disk guarantee.'
 USAGE_FIELDS = frozenset({'logical_file_bytes', 'allocated_bytes', 'entries'})
 DECLARATION_FIELDS = frozenset({'index', 'identity', 'owner_uid', 'budget'})
+REJECTION_REASONS = {
+    'service inventory owner, filesystem, type or alias changed': 'entry_identity_or_mode',
+    'service inventory contains an inode alias': 'inode_alias',
+    'service inventory exceeds original inode budget': 'entries_exceeded',
+    'service inventory exceeds original logical byte budget': 'bytes_exceeded',
+    'original service inventory root replaced': 'root_replaced',
+}
 
 
 def require_storage_declaration(value):
@@ -105,8 +112,13 @@ def _directory_stamp(info):
 def _check(info, record, device):
     if (not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
             or info.st_uid != record['owner_uid'] or info.st_dev != device
-            or info.st_mode & 0o077 or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1)):
+            or info.st_mode & 0o077):
         raise ValueError('service inventory owner, filesystem, type or alias changed')
+    if stat.S_ISREG(info.st_mode):
+        if info.st_nlink == 0:
+            raise ObservationUnknown('service inventory file unlinked during observation')
+        if info.st_nlink != 1:
+            raise ValueError('service inventory owner, filesystem, type or alias changed')
 
 
 def inventory(record, expected, deadline):
@@ -226,6 +238,7 @@ class ServiceStoragePeaks:
         self.latest = None
         self.successful_samples = self.unknown_samples = 0
         self.failure = None
+        self.failure_details = None
         self.lock, self.stopped = threading.Lock(), threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.closed = False
@@ -241,7 +254,7 @@ class ServiceStoragePeaks:
             deadline = time.monotonic() + SCAN_SECONDS
             observed = []
             try:
-                for row, identity, peak in zip(self.records, self.identities, self.peaks):
+                for index, (row, identity, peak) in enumerate(zip(self.records, self.identities, self.peaks)):
                     current = inventory(row, identity, deadline)
                     observed.append(current)
                     # A later root becoming unknown cannot erase this root's
@@ -253,8 +266,10 @@ class ServiceStoragePeaks:
                 self.unknown_samples = min(U64_MAX, self.unknown_samples + 1)
                 self.latest = None
                 return False
-            except ValueError:
+            except ValueError as error:
                 self.failure = 'original service_data inventory/budget rejected'
+                self.failure_details = dict(kind='inventory_rejected', root_index=index,
+                    reason=REJECTION_REASONS.get(str(error), 'unexpected_value_error'))
                 raise ValueError(self.failure) from None
             self.successful_samples = min(U64_MAX, self.successful_samples + 1)
             self.latest = observed
@@ -272,11 +287,23 @@ class ServiceStoragePeaks:
                 self.sample()
             except ValueError:
                 return
-            except Exception:
+            except Exception as error:
                 with self.lock:
                     self.failure = 'original storage sampler observation failed'
+                    self.failure_details = dict(kind='background_observation_failed',
+                                                error_type=type(error).__name__[:128])
                     self.latest = None
                 return
+
+    def diagnostics(self):
+        """Bounded original history, including failure; never a PASS or new scan."""
+        with self.lock:
+            return dict(schema_version=1, sampler_exited=self.closed,
+                successful_samples=self.successful_samples, unknown_samples=self.unknown_samples,
+                failure=copy.deepcopy(self.failure_details),
+                roots=[dict(row, observed_peak=copy.deepcopy(peak),
+                    last_stable=copy.deepcopy(self.latest[index]) if self.latest is not None else None)
+                    for index, (row, peak) in enumerate(zip(self.declaration(), self.peaks))])
 
     def _stable(self):
         deadline = time.monotonic() + SCAN_SECONDS

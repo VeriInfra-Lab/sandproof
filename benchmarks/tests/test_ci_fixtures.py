@@ -91,6 +91,34 @@ class CIProfileTests(unittest.TestCase):
 
 
 class CIFixtureTests(unittest.TestCase):
+    def test_explicit_source_owner_is_required_and_does_not_authorize_private_material(self):
+        owner = self.kernel.stat().st_uid
+        # Model the root operator reading a separately owned center source;
+        # use real files, permissions, link counts and read identities.
+        with patch('benchmarks.ci_fixtures.os.geteuid', return_value=owner + 1):
+            with self.assertRaises(InvalidInput):
+                ci_fixtures._read(self.kernel)
+            with self.assertRaises(InvalidInput):
+                ci_fixtures._read(self.kernel, owner_uid=owner + 2)
+            with self.assertRaises(InvalidInput):
+                ci_fixtures._read(self.kernel, private=True, owner_uid=owner)
+            checksum, identity, data = ci_fixtures._read(self.kernel, owner_uid=owner, maximum=MIB)
+            self.assertEqual(checksum, sha(self.kernel.read_bytes()))
+            self.assertEqual(identity[5], owner)
+            self.assertEqual(data, self.kernel.read_bytes())
+            self.kernel.chmod(0o666)
+            with self.assertRaises(InvalidInput):
+                ci_fixtures._read(self.kernel, owner_uid=owner)
+            self.kernel.chmod(0o444)
+            link = self.root / 'source-alias'
+            os.link(self.kernel, link)
+            with self.assertRaises(InvalidInput):
+                ci_fixtures._read(self.kernel, owner_uid=owner)
+            link.unlink()
+            link.symlink_to(self.kernel)
+            with self.assertRaises(InvalidInput):
+                ci_fixtures._read(link, owner_uid=owner)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(dir=str(Path(tempfile.gettempdir()).resolve()))
         self.root = Path(self.temporary.name)

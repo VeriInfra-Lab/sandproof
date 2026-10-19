@@ -7,7 +7,13 @@ use hyper::{Request, header};
 use sandproof_controller_service::templates::TemplateArtifact;
 use sandproof_protocol::internal::NodeIdentity;
 use sha2::{Digest, Sha256};
-use std::{fs::File, io::Write, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    fs::File,
+    io::{Seek, SeekFrom, Write},
+    net::SocketAddr,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::time::{Instant, timeout};
 
 #[derive(Clone)]
@@ -52,7 +58,7 @@ impl ArtifactClient {
             idle_timeout,
         })
     }
-    /// Write only to the caller's already opened exact temporary inode. No
+    /// Write only to the caller's already opened empty temporary inode. No
     /// descriptor path/redirect/archive is interpreted. The host cache caller
     /// owns admission, total temporary disk capacity, fsync and atomic publish.
     /// # Errors
@@ -65,6 +71,21 @@ impl ArtifactClient {
         output: &mut File,
     ) -> Result<(), TransportError> {
         if request.node != *self.transport.node_identity() || !expected.is_valid() {
+            return Err(TransportError::Rejected);
+        }
+        // Sparse writes must never preserve bytes from a previous download or
+        // start at an inherited offset. The caller retains this fresh inode's
+        // full logical reservation even on failure or cancellation.
+        if output
+            .metadata()
+            .map_err(|_| TransportError::Communication)?
+            .len()
+            != 0
+            || output
+                .stream_position()
+                .map_err(|_| TransportError::Communication)?
+                != 0
+        {
             return Err(TransportError::Rejected);
         }
         let encoded = serde_json::to_vec(request).map_err(|_| TransportError::Rejected)?;
@@ -122,15 +143,28 @@ impl ArtifactClient {
                 if Instant::now() >= deadline {
                     return Err(TransportError::Deadline);
                 }
-                output
-                    .write_all(chunk)
-                    .map_err(|_| TransportError::Communication)?;
+                if chunk.iter().all(|byte| *byte == 0) {
+                    output
+                        .seek(SeekFrom::Current(
+                            i64::try_from(chunk.len()).map_err(|_| TransportError::Rejected)?,
+                        ))
+                        .map_err(|_| TransportError::Communication)?;
+                } else {
+                    output
+                        .write_all(chunk)
+                        .map_err(|_| TransportError::Communication)?;
+                }
                 digest.update(chunk);
             }
         }
         if bytes != expected.size_bytes || format!("{:x}", digest.finalize()) != expected.sha256 {
             return Err(TransportError::InvalidResponse);
         }
+        // A trailing zero range has advanced the offset without extending the
+        // file. Preserve the entire verified logical image and its budget.
+        output
+            .set_len(bytes)
+            .map_err(|_| TransportError::Communication)?;
         Ok(())
     }
 }

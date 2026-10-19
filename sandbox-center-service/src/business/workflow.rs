@@ -237,6 +237,15 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
         {
             return Ok(false);
         }
+        // A saved capacity refusal and its exact host acknowledgement are
+        // separate durable facts. Reply expiry/loss may leave only the first.
+        // Keep Checking until reconciliation confirms this SAME result; do not
+        // misclassify pending confirmation as an uncertain authority failure.
+        if cleaned.fact == LifecycleFact::NotAccepted
+            && sandbox.terminal_confirmation.as_ref() != Some(cleaned)
+        {
+            return Ok(false);
+        }
         let request = ValidationRequest {
             create: link.create.clone(),
             terminal: current.request.identity.clone(),

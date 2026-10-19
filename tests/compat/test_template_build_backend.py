@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.template_build_service import Backend
@@ -16,6 +16,20 @@ from e2b import CommandExitException, FileNotFoundException, TimeoutException
 
 
 class BuildSdkSession(unittest.TestCase):
+    def test_rust_uploads_only_runtime_material_and_passes_independent_identity(self):
+        for kind in ('oci', 'dockerfile'):
+            self.exercise(kind, rust='valid')
+
+    def test_rust_candidate_mismatch_refuses_before_disk_download(self):
+        for mode in ('missing', 'changed', 'boolean'):
+            with self.subTest(mode=mode): self.exercise('oci', rust=mode)
+
+    def test_rust_profile_change_refuses_before_window_or_vm_request(self):
+        self.exercise('oci', rust='profile_changed')
+
+    def test_rust_upload_expiry_never_runs_worker_or_downloads_candidate(self):
+        self.exercise('oci', rust='upload_expired')
+
     def test_existing_private_vm_session_uses_real_sdk_without_second_create(self):
         self.exercise("dockerfile")
 
@@ -147,7 +161,7 @@ class BuildSdkSession(unittest.TestCase):
         self.exercise('dockerfile', download_deadline={'phase': 'eof', 'name': 'candidate.ext4'})
 
     def exercise(self, kind, early_failure=False, failure=None, bad_digest=False, command_timeout=None,
-                 download_deadline=None):
+                 download_deadline=None, rust=None):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary).resolve()
             backend_key = "private-builder-key-opaque-credential-123456"
@@ -166,9 +180,25 @@ class BuildSdkSession(unittest.TestCase):
                     "credential_file": str(credential),
                     "private_windows": {"window_duration_ms": 1000000, "max_anchors": 2},
                     "max_timeout_secs": 3600, "max_lifetime_secs": 3600},
-                "tools": {name: {"path": str(source), "sha256": "a" * 64} for name in
+                "tools": {name: {"path": str(source), "sha256": hashlib.sha256(source.read_bytes()).hexdigest()} for name in
                     ("buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl")},
                 "dns_servers": ["1.1.1.1", "8.8.8.8"]}
+            if rust:
+                from tools.tests.test_template_guest import GuestFixture
+                from tools import template_build_guest as guest
+                fixture = GuestFixture()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                profile['rust_guest_profile'] = str(fixture.profile_path)
+                profile['rust_guest'] = guest.snapshot(fixture.profile_path)
+                del profile['tools']['envd']
+                if rust != 'missing':
+                    status['guest'] = json.loads(json.dumps(profile['rust_guest']['identity']))
+                if rust == 'changed': status['guest']['configuration']['sha256'] = '0' * 64
+                if rust == 'boolean': status['guest']['versions']['config_version'] = True
+                if rust == 'profile_changed':
+                    fixture.config['runtime']['worker_threads'] += 1
+                    fixture.save_profile()
             backend = Backend(profile)
             row = {"id": "a" * 32, "owner": 1, "input_hash": hashlib.sha256(source.read_bytes()).hexdigest(), "deadline": 1000,
                 "request": json.dumps({"kind": kind, "image": "docker.io/library/ubuntu:24.04",
@@ -194,6 +224,16 @@ class BuildSdkSession(unittest.TestCase):
             session = {"sandboxID": "sb-test-1", "envdVersion": "0.9.0", "envdAccessToken": "private-token"}
             timeout_error = TimeoutException('host-connection-context:private-token:builder-key')
             closed, extra_reads = [], []
+            uploaded = {}
+            async def send(destination, data, **_opts):
+                if rust == 'upload_expired':
+                    now[0] = 1000
+                if isinstance(data, (str, bytes)):
+                    uploaded[destination] = data
+                else:
+                    result = bytearray()
+                    while block := data.read(65536): result.extend(block)
+                    uploaded[destination] = bytes(result)
             if download_deadline is not None:
                 (directory / 'candidate.ext4').write_bytes(b'previous artifact')
             @contextlib.contextmanager
@@ -248,9 +288,24 @@ class BuildSdkSession(unittest.TestCase):
             with patch.object(backend, "request", return_value=opened) as window_http, \
                     patch.object(backend, "vm", side_effect=existing_session) as identity, \
                     patch("e2b.sandbox_sync.main.Filesystem") as files, \
+                    patch("e2b.sandbox_async.filesystem.filesystem.Filesystem") as async_files, \
                     patch("e2b.sandbox_sync.main.Commands") as commands:
                 files.return_value.read.side_effect = stream
+                async_files.return_value.write = AsyncMock(side_effect=send)
                 commands.return_value.run.side_effect = execute
+                if rust in ('profile_changed', 'upload_expired', 'missing', 'changed', 'boolean'):
+                    error = ValueError if rust == 'profile_changed' else BuildError
+                    reason = 'changed since' if rust == 'profile_changed' else 'BuildDeadlineExceeded' if rust == 'upload_expired' else 'CandidateGuestMismatch'
+                    with self.assertRaisesRegex(error, reason): backend.build(store, row)
+                    self.assertFalse((directory / 'candidate.ext4').exists())
+                    self.assertNotIn('/output/job/candidate.ext4', [c.args[0] for c in files.return_value.read.call_args_list])
+                    if rust == 'profile_changed':
+                        identity.assert_not_called()
+                        window_http.assert_not_called()
+                    if rust == 'upload_expired':
+                        self.assertFalse(any(c.args[0].startswith('python3 ') for c in commands.return_value.run.call_args_list))
+                        files.return_value.read.assert_not_called()
+                    return
                 if download_deadline is not None:
                     with self.assertRaisesRegex(BuildError, 'BuildDeadlineExceeded'):
                         backend.build(store, row)
@@ -325,7 +380,20 @@ class BuildSdkSession(unittest.TestCase):
                 self.assertEqual((directory / "candidate.ext4").read_bytes(), candidate)
                 if hasattr((directory / "candidate.ext4").stat(), 'st_blocks'):
                     self.assertLess((directory / "candidate.ext4").stat().st_blocks * 512, len(candidate) // 4)
-                writes = {call.args[0]: call.args[1] for call in files.return_value.write.call_args_list}
+                writes = uploaded if rust else {call.args[0]: call.args[1] for call in files.return_value.write.call_args_list}
+                if rust:
+                    files.return_value.write.assert_not_called()
+                    self.assertEqual(async_files.call_args.args[2].sandbox_headers, config.sandbox_headers)
+                    self.assertNotIn('/input/tools/envd', writes)
+                    translated = json.loads(writes['/input/rust-guest/profile.json'])
+                    self.assertEqual(translated['manifest_sha256'], fixture.profile['manifest_sha256'])
+                    self.assertEqual(translated['release'], '/input/rust-guest/release')
+                    for name in ('sandproof-guest-service', 'sandproof-guest-worker', 'manifest.json'):
+                        self.assertEqual(writes['/input/rust-guest/release/' + name], (fixture.release / name).read_bytes())
+                    self.assertNotIn('/input/rust-guest/release/source.tar', writes)
+                    worker_calls = [c.args[0] for c in commands.return_value.run.call_args_list if c.args[0].startswith('python3 ')]
+                    self.assertEqual(len(worker_calls), 1)
+                    self.assertTrue(worker_calls[0].endswith(' --rust-guest-profile /input/rust-guest/profile.json'))
                 self.assertIn("/input/template_fetch.py", writes)
                 guest_profile = json.loads(writes["/input/profile.json"])
                 self.assertEqual("regctl" in guest_profile, kind == "oci")

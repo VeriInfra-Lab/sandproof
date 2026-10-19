@@ -18,8 +18,10 @@ class InvalidTemplate(ValueError):
     pass
 
 
-def validate_tool_names(profile, *, registry=False):
-    required = {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox"}
+def validate_tool_names(profile, *, registry=False, rust_guest=False):
+    required = {"buildctl", "buildkitd", "buildkit-runc", "umoci", "busybox"}
+    if not rust_guest:
+        required.add("envd")
     if registry:
         required.add("regctl")
     if set(profile) not in (required, required | {"igzip", "libisal.so.2"}):

@@ -200,6 +200,12 @@ fn admitted_options_bound_secret_startup_and_request_payloads() {
         size_bytes: 4096,
     };
     let template = TemplateBinding {
+        guest: Some(
+            serde_json::from_str(include_str!(
+                "../../../tests/compat/guest-template-identity.json"
+            ))
+            .unwrap(),
+        ),
         template_id: "template".into(),
         revision: "revision".into(),
         owner: Some(u64::MAX),

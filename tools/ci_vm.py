@@ -36,9 +36,11 @@ PROXY = 'http://10.0.2.100:3128'
 RUNNER_JOBS = {'rust': 'rust', 'sdk': 'sdk-contract', 'harbor': 'harbor-inputs',
                'title': 'pr-title', 'policy': 'pr-policy'}
 RUNNER_WAIT_SECONDS = 300
-RUNNER_JOB_SECONDS = 1800
+RUNNER_JOB_SECONDS = dict.fromkeys(RUNNER_JOBS, 1800) | {'rust': 2100}
 # Independent systemd ceiling includes both phases and bounded own cleanup.
-RUNNER_UNIT_SECONDS = RUNNER_WAIT_SECONDS + RUNNER_JOB_SECONDS + 100
+# Rust's 30-minute Actions deadline has five minutes for runner reporting/exit.
+RUNNER_UNIT_SECONDS = {role: RUNNER_WAIT_SECONDS + seconds + 100
+                       for role, seconds in RUNNER_JOB_SECONDS.items()}
 
 
 def valid_slot(role, slot):

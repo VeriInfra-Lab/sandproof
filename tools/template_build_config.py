@@ -216,7 +216,8 @@ def validate_runtime_capacity(runtime, limits, *, registry, kernel_bytes):
             raise ValueError("publication artifact budget cannot contain one maximum candidate")
 
 
-def validate_capacity(runtime, builder, limits, base, *, registry, kernel_bytes, largest_tool_bytes):
+def validate_capacity(runtime, builder, limits, base, *, registry, kernel_bytes, largest_tool_bytes,
+                      guest_input_bytes=0):
     """Checks static necessary conditions; returns the actual bound builder disk."""
     lifetime(builder, limits["timeout_seconds"] + 60, "builder")
     validate_runtime_capacity(runtime, limits, registry=registry, kernel_bytes=kernel_bytes)
@@ -228,7 +229,9 @@ def validate_capacity(runtime, builder, limits, base, *, registry, kernel_bytes,
     target = limits["max_disk_mib"] * MIB
     # Same necessary-space formula as the OCI-reference worker preflight.
     # A filesystem's actual free blocks are still checked inside the guest.
-    if disk < target + limits["max_expanded_bytes"] + 2 * limits["max_input_bytes"] + 64 * MIB:
+    if type(guest_input_bytes) is not int or guest_input_bytes < 0:
+        raise ValueError("invalid additional guest material size")
+    if disk < target + limits["max_expanded_bytes"] + 2 * limits["max_input_bytes"] + 64 * MIB + guest_input_bytes:
         raise ValueError("builder disk cannot contain target, expanded input and download staging")
     transfer = builder.get("data_transfer")
     if not isinstance(transfer, dict):

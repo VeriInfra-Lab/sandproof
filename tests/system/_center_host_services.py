@@ -99,6 +99,8 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
     credentials=test_credentials(key,extra_credentials)
     center_root = Path(center_root)
     catalog = {'templates': [], 'aliases': {}, 'compute_limits': {}}
+    template_ids = {binding['template_id'] for registered in registered_catalogs
+                    for binding in registered['templates']}
     hosts, nodes, registrations = [], [], []
     platform = dict(instances=0, cpu=0, memory_bytes=0, disk_bytes=0)
     tenant = dict(platform)
@@ -128,6 +130,13 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         catalog['templates'].extend(copy.deepcopy(registered['templates']))
         for alias, target in registered['aliases'].items():
             name = alias if index == 0 else 'builder-' + alias
+            # The merged name may already resolve directly to this descriptor
+            # (builder + base -> builder-base). Rust rejects aliases that shadow
+            # any template ID, including a redundant alias to itself.
+            if name in template_ids:
+                if name != target:
+                    raise ValueError('static template alias shadows another template identity')
+                continue
             if name in catalog['aliases']:
                 raise ValueError('static template aliases collide')
             catalog['aliases'][name] = target
@@ -169,6 +178,13 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         raise ValueError('static template identities collide across registered hosts')
     runtime = native_pools[0]
     transfers = runtime['data_transfer']['max_transfers']
+    center_transfer = copy.deepcopy(runtime['data_transfer'])
+    # Both public runtime and private builder files pass this shared gateway.
+    # Carry the already approved host file envelopes, while each destination
+    # still enforces its own native limit and center concurrency stays fixed.
+    for native in native_pools[1:]:
+        for field in ('file_upload_bytes', 'file_download_bytes'):
+            center_transfer[field] = max(center_transfer[field], native['data_transfer'][field])
     tls_root = center_root / 'tls'
     common_tls = dict(certificate_chain_der=[str(tls_root / 'center.der')],
         private_key_der=str(tls_root / 'center-key.der'), trusted_roots_der=[str(tls_root / 'ca.der')])
@@ -179,7 +195,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         poll_interval_ms=100, expiry_scan_ms=runtime['expiry_scan_seconds']*1000,
         public_ipv4_enabled=runtime['public_ipv4_enabled'],
         request_admission=dict(max_pending_requests=transfers + 4, control_reserve=4),
-        data_transfer=copy.deepcopy(runtime['data_transfer']),
+        data_transfer=center_transfer,
         redis=dict(address=redis_address, username='default', password=password,
             max_block_bytes=BLOCK_BYTES, memory_bytes=REDIS_MEMORY_BYTES,
             operation_timeout_ms=1000, writer_root=str(center_root / 'writer')),
