@@ -34,6 +34,7 @@ from _complete_registry_runtime import prepare_registry_runtime, assert_terminal
 from _envd_template import build as build_template
 from _runtime_services import RuntimeServices
 from sdk_c02_acceptance import processes_in_uid_range
+from sdk_guest_environment import cached_template, MARKER
 from server_process_crash import free_loopback_port, fetch
 from server_vm_id_capacity import check_no_resources
 from template_build import BUILDKIT_HASHES
@@ -279,6 +280,10 @@ def worker(config, expected):
         template = build_template(deployment,checkout=ROOT,source=Path(config['rust_envd_acceptance']['oci_archive']),
             profile=Path(envd_acceptance.prepared_paths(config)['profile']),kernel=args.kernel)
         report['rust_template'] = template
+        built = json_file(deployment.root/'inputs/rust-build-status.json')
+        expected_disk = dict(bytes=built['disk_bytes'], sha256=built['rootfs_sha256'])
+        cache = services.host_configs[0]['template_cache']
+        original_disk = cached_template(cache, template, expected_disk)
         for name in envd_acceptance.SUITE:
             report['phase']='probe-'+name
             _save(root/'report.json',report)
@@ -287,6 +292,16 @@ def worker(config, expected):
         # The original fault probe emits only its finite JSON report, not logs.
         raw = json_file(root/'faults.log', limit=16*1024**2)
         report['faults'] = raw['faults']
+        environment = next(row for row in raw['faults'] if row['name']=='lifecycle')['details']['environment']
+        nonce = environment['nonce']
+        assert len(nonce)==32 and all(c in '0123456789abcdef' for c in nonce)
+        host_path = Path(MARKER + nonce)
+        assert not host_path.exists() and not host_path.is_symlink(), 'guest system write reached the host'
+        assert cached_template(cache, template, expected_disk) == original_disk, 'shared Rust rootfs changed'
+        report['immutable_template'] = dict(**expected_disk, unchanged=True)
+        report['environment'] = {key:environment[key] for key in
+            ('installed','system_file','fresh_control_pristine','daemon_unchanged')}
+        report['environment']['host_system_path_absent'] = True
         report['status'] = 'pass'
     except BaseException as error:
         report['failure_type']=type(error).__name__

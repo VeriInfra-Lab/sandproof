@@ -235,7 +235,29 @@ class Harness:
         result=self.services.planned_audit('center')
         self.next_center_audit=time.monotonic()+(
             self.services.center_config['expiry_scan_ms']+self.services.center_config['poll_interval_ms'])/1000
+        self.wait_center_listener()
         return result
+
+    def wait_center_listener(self):
+        """Wait for the restarted HTTP role, without requiring healthy hosts.
+
+        DK04 deliberately partitions the host. Its offline snapshot stays the
+        authority; a read-only list response only proves the new center can
+        receive the next request. It cannot prove host health or VM cleanup.
+        """
+        deadline=time.monotonic()+self.args.wait_seconds
+        while time.monotonic()<deadline:
+            if self.services.processes.children['center'].poll() is not None:
+                raise RuntimeError('original center exited after its planned audit')
+            try:
+                status,_=fetch(self.opener,self.services.sdk_url,'GET','/v2/sandboxes',self.key,
+                    timeout=min(5,max(.001,deadline-time.monotonic())))
+                if status==200 and time.monotonic()<deadline:
+                    return
+            except (OSError,ValueError):
+                pass  # Only this read-only probe is repeated, never a command.
+            time.sleep(min(.05,max(0,deadline-time.monotonic())))
+        raise RuntimeError('restarted original center HTTP listener remained unavailable')
 
     def host(self, *, resume_ready=True):
         # The original CLI's physical inspection requires its offline host
