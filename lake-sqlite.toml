@@ -23,6 +23,10 @@ git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" 
 rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
 
 [[lean_lib]]
+name = "SandproofTls"
+srcDir = "verification/aeneas/tls"
+
+[[lean_lib]]
 name = "SandproofFirstChain"
 srcDir = "verification/aeneas/first-chain"
 
