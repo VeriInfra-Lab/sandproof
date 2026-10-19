@@ -622,6 +622,7 @@ def exercise(args):
                 run_args.preparation_timeout_secs = preparation_timeout
                 run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
                 run_args.ready_artifacts_root, run_args.kernel = registry_root / 'artifacts', args.kernel
+                run_args.ready_artifacts_owner_uid = services.layout['center_identity'][0]
             if ci_fixtures is not None:
                 from benchmarks.ci_verifier import prepare_ci_verifier_task
                 from harbor.models.task.task import Task

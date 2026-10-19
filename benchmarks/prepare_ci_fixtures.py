@@ -129,13 +129,15 @@ def archive_ci_context(entry, source, output, uv_path, base_digest):
         raise InvalidInput('CI context material is unavailable: ' + type(error).__name__) from error
 
 
-def publish_ready_fixture(entry, template, ready_rootfs, kernel, dest, original_digest):
+def publish_ready_fixture(entry, template, ready_rootfs, kernel, dest, original_digest, *, ready_owner_uid):
     """Copy ready opaque bytes into a new private fixture; never share source inodes.
 
     Failure preserves the precise partial directory for the caller's journaled
     cleanup; it does not delete, adopt, or overwrite an existing destination.
     """
     try:
+        if type(ready_owner_uid) is not int or not 0 <= ready_owner_uid <= 2**32 - 2:
+            raise InvalidInput('explicit approved Ready registry owner required')
         name, shape, reference = _entry(entry)
         _digest_reference(reference, original_digest)
         if (not isinstance(template, dict)
@@ -145,7 +147,10 @@ def publish_ready_fixture(entry, template, ready_rootfs, kernel, dest, original_
                 or re.fullmatch(r'sha256:[0-9a-f]{64}', template['imageDigest']) is None):
             raise InvalidInput('ready CI template differs from the task shape or immutable image')
         _startup(template.get('startup'))
-        root_hash, root_identity, _ = _read(ready_rootfs)
+        # The Ready registry belongs to the independently running center.
+        # Only this source may use its explicit operator-approved UID; the
+        # kernel, destination and final manifest remain operator-owned.
+        root_hash, root_identity, _ = _read(ready_rootfs, owner_uid=ready_owner_uid)
         kernel_hash, kernel_identity, _ = _read(kernel)
         if (root_hash != _hash(template.get('rootfsSha256'), 'ready rootfs')
                 or kernel_hash != _hash(template.get('kernelSha256'), 'ready kernel')
@@ -158,10 +163,10 @@ def publish_ready_fixture(entry, template, ready_rootfs, kernel, dest, original_
         _directory(dest.parent)
         dest.mkdir(mode=0o700)
         destination_identity = _directory(dest)[1][:2]
-        for source, target, expected, original in (
-                (ready_rootfs, dest / 'rootfs.ext4', root_hash, root_identity),
-                (kernel, dest / 'kernel', kernel_hash, kernel_identity)):
-            if _identity(_path(source, private=False)[1]) != original:
+        for source, target, expected, original, owner in (
+                (ready_rootfs, dest / 'rootfs.ext4', root_hash, root_identity, ready_owner_uid),
+                (kernel, dest / 'kernel', kernel_hash, kernel_identity, None)):
+            if _identity(_path(source, private=False, owner_uid=owner)[1]) != original:
                 raise InvalidInput('ready CI source identity changed before copying')
             copy_sparse(source, target)
             target.chmod(0o444)
@@ -170,7 +175,7 @@ def publish_ready_fixture(entry, template, ready_rootfs, kernel, dest, original_
             observed, copied_identity, _ = _read(target)
             if (observed != expected or copied_identity[2] != original[2]
                     or copied_identity[:2] == original[:2]
-                    or _identity(_path(source, private=False)[1]) != original):
+                    or _identity(_path(source, private=False, owner_uid=owner)[1]) != original):
                 raise InvalidInput('CI artifact copy content or source identity changed')
         if _directory(dest)[1][:2] != destination_identity:
             raise InvalidInput('CI fixture destination identity changed')
