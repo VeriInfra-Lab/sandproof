@@ -281,6 +281,43 @@ pub(in crate::command) mod owned_message_contract_tests {
         assert_eq!(rig.bytes.available_permits(), 8);
         finish(&rig.command);
     }
+    #[test]
+    fn zero_strong_references_does_not_mean_inner_resource_returned() {
+        struct PausedDrop {
+            _permit: OwnedSemaphorePermit,
+            entered: std::sync::mpsc::Sender<()>,
+            resume: Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+        impl Drop for PausedDrop {
+            fn drop(&mut self) {
+                let _ = self.entered.send(());
+                if let Ok(receiver) = self.resume.get_mut() {
+                    let _ = receiver.recv();
+                }
+            }
+        }
+        let pool = Arc::new(Semaphore::new(1));
+        let (entered, observe) = std::sync::mpsc::channel();
+        let (release, resume) = std::sync::mpsc::channel();
+        let owner = Arc::new(PausedDrop {
+            _permit: Arc::clone(&pool).try_acquire_owned().unwrap(),
+            entered,
+            resume: Mutex::new(resume),
+        });
+        let weak = Arc::downgrade(&owner);
+        let dropping = std::thread::spawn(move || drop(owner));
+        observe.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(weak.upgrade().is_none());
+        assert_eq!(weak.strong_count(), 0);
+        assert_eq!(
+            pool.available_permits(),
+            0,
+            "zero Arc references is not a permit refund"
+        );
+        release.send(()).unwrap();
+        dropping.join().unwrap();
+        assert_eq!(pool.available_permits(), 1);
+    }
     #[tokio::test]
     async fn oneshot_original_payload_error_is_not_transport_loss() {
         let (mut tx, mut rx) = (None, None);

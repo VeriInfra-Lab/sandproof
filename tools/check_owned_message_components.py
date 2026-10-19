@@ -120,8 +120,8 @@ def reproduce(output):
             if clippy:
                 raise ValueError('Actual-source fixture Clippy failed: ' + str(clippy_log))
             receipt['clippy'] = dict(exit_code=clippy, log_sha256=sha(clippy_log))
-            if code != 0 or not re.search(r'test result: ok\. 9 passed; 0 failed; 0 ignored;', text):
-                raise ValueError('All nine actual-source tests must execute and pass: ' + str(test_log))
+            if code != 0 or not re.search(r'test result: ok\. 10 passed; 0 failed; 0 ignored;', text):
+                raise ValueError('All ten actual-source/primitive tests must execute and pass: ' + str(test_log))
         elif (code != 101 or 'test result: FAILED. 0 passed; 1 failed; 0 ignored;' not in text
               or 'held frame released its byte permit early' not in text):
             raise ValueError('Mutant did not fail the same original held-byte assertion: ' + str(test_log))

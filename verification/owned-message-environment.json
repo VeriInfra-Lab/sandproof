@@ -32,6 +32,9 @@
     "SandboxModel.Boundaries.OwnedMessage.clone_does_not_allocate_again",
     "SandboxModel.Boundaries.OwnedMessage.nonlast_drop_does_not_refund",
     "SandboxModel.Boundaries.OwnedMessage.last_normal_drop_refunds_once",
+    "SandboxModel.Boundaries.OwnedMessage.last_drop_starts_without_credit",
+    "SandboxModel.Boundaries.OwnedMessage.zero_references_can_still_be_charged",
+    "SandboxModel.Boundaries.OwnedMessage.pending_last_drop_keeps_charge",
     "SandboxModel.Boundaries.OwnedMessage.no_refund_then_clone",
     "SandboxModel.Boundaries.OwnedMessage.early_shared_refund_breaks_same_property",
     "SandboxModel.Boundaries.OwnedMessage.empty_fifo",
@@ -246,7 +249,8 @@
       "caller_obligations": "V8: original request guard and subscription/record identity, all other shared holders, and absence of new owners when concluding drain",
       "public_results": [
         "SandboxModel.Boundaries.OwnedMessage.clone_does_not_allocate_again",
-        "SandboxModel.Boundaries.OwnedMessage.last_normal_drop_refunds_once"
+        "SandboxModel.Boundaries.OwnedMessage.last_normal_drop_refunds_once",
+        "SandboxModel.Boundaries.OwnedMessage.zero_references_can_still_be_charged"
       ],
       "preconditions": "Original handles and finite valid values; this operation actually occurred under the registered A6/B3/B4 conditions. Caller supplies the listed business preconditions; no general async refinement is claimed."
     },
@@ -301,6 +305,7 @@
     "Arc<OwnedSemaphorePermit> has one allocation; reference clones do not allocate again",
     "Arc<Shared> retains only original object; its record mutex may already be None or permit forgotten",
     "Frame notification follows encoded/output normal destruction and can precede final shared lease field drop",
-    "weighted byte charge is not a proof of total physical memory (encoding/copies/overheads belong V8)"
+    "weighted byte charge is not a proof of total physical memory (encoding/copies/overheads belong V8)",
+    "last strong reference decrement precedes inner destructor/permit return; zero references can remain charged until observed normal return"
   ]
 }
