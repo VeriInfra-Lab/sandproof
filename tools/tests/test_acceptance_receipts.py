@@ -174,6 +174,17 @@ class ReceiptTests(unittest.TestCase):
             proof_native_suite.trusted_checkout(self.source)
         self.assertEqual(self.source.stat().st_mode&0o777,0o775)
 
+    def test_json_mutant_copy_preserves_tracked_inventory_without_a_commit(self):
+        from tools.check_json_request_negative import materialize
+        (self.source/'.gitignore').write_text('ignored.rs\n')
+        (self.source/'ignored.rs').write_text('pub fn retained() {}\n')
+        subprocess.run(['git','add','--force','.gitignore','ignored.rs'],cwd=self.source,check=True)
+        candidate=self.base/'mutant'
+        materialize(self.source,candidate)
+        self.assertEqual(receipts.rust_inputs(self.source),receipts.rust_inputs(candidate))
+        (candidate/'ignored.rs').write_text('pub fn changed() {}\n')
+        self.assertNotEqual(receipts.rust_inputs(self.source),receipts.rust_inputs(candidate))
+
 
 class ClosureTests(unittest.TestCase):
     def test_transitive_lean_imports_and_added_inventory_are_not_ignored(self):

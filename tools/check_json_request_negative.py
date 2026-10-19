@@ -16,6 +16,21 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def materialize(source, project):
+    tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=source)
+    for item in tracked.split(b'\0'):
+        if item:
+            relative = Path(item.decode())
+            target = project / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / relative, target)
+    # Keep the exact source inventory for native evidence on both machines.
+    # This is an index only, without a fabricated commit or build artifacts.
+    subprocess.run(['git', 'init', '--quiet', str(project)], check=True)
+    subprocess.run(['git', 'add', '--force', '--pathspec-from-file=-',
+                    '--pathspec-file-nul'], cwd=project, input=tracked, check=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -43,14 +58,7 @@ def main(argv=None):
 
     # A committed source checkout, without build caches, .tools or private logs.
     project = output / 'mutant'
-    tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).split(b'\0')
-    for item in tracked:
-        if not item:
-            continue
-        relative = Path(item.decode())
-        target = project / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / relative, target)
+    materialize(ROOT, project)
     for relative in ('.lake/packages', '.tools/lean-mcp'):
         target = project / relative
         target.parent.mkdir(parents=True, exist_ok=True)

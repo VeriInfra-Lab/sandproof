@@ -249,7 +249,7 @@ end SandproofTlsRust
                  for line in log.read_text().splitlines() if "Checked " in line}
         if found != expected:
             raise ValueError("missing actual theorem dependency audit")
-    
+
     wrong = clone("last-leaf")
     run("last-leaf-install", ["git", "apply", str(root / contract.PATCH)], wrong)
     path = wrong / contract.SOURCE
