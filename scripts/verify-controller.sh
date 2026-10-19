@@ -9,6 +9,7 @@ cd "$ROOT_DIR"
 for proof_inputs in verification/*inputs.sha256; do
   shasum -a 256 -c "$proof_inputs"
 done
+bash scripts/verify-use-inventory.sh
 
 # Reject stale byte-wrapper source before the expensive workspace checks.
 bash scripts/python-entry.sh tools/check_json_request_binding.py

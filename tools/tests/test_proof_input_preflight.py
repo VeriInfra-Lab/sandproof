@@ -1,6 +1,6 @@
 """A stale parent checksum must stop the full entry before Cargo starts.
 
-The sentinel Cargo exits 125: neither test is Rust or proof evidence. Actual
+The sentinel Cargo exits 125: these tests are not Rust or proof evidence. Actual
 source admission uses shasum and the registered frozen inputs, without mocks.
 """
 import os
@@ -29,6 +29,12 @@ class ProofInputPreflightTests(unittest.TestCase):
             destination = self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
+        # Source admission compares Git's tracked native inputs and rejects
+        # untracked Rust. Give this isolated copy the same repository context;
+        # never replace or skip the real admission check in the test.
+        subprocess.run(['git', 'init', '--quiet', str(self.root)], check=True)
+        subprocess.run(['git', '-C', str(self.root), 'add', '--', *sorted(names)],
+                       check=True)
         binary = self.root / 'sentinel-bin'
         binary.mkdir()
         cargo = binary / 'cargo'
@@ -59,4 +65,13 @@ class ProofInputPreflightTests(unittest.TestCase):
         result = self.run_entry()
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn('verification/foundations-inputs.sha256: FAILED', result.stdout)
+        self.assertFalse(self.marker.exists())
+
+    def test_untracked_native_source_stops_before_any_cargo_invocation(self):
+        path = self.root / 'sandbox-unreviewed/src/lib.rs'
+        path.parent.mkdir(parents=True)
+        path.write_text('pub fn unreviewed() {}\n')
+        result = self.run_entry()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('untracked native source', result.stdout)
         self.assertFalse(self.marker.exists())
