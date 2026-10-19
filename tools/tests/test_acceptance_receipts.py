@@ -270,6 +270,19 @@ class FormalReuseTests(unittest.TestCase):
         receipts.write_json(entry/'receipt.json',data)
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
 
+    def test_existing_fixed_output_is_snapshotted_and_required_for_reuse(self):
+        relative='artifacts/existing/source.llbc'
+        raw=self.source/relative;raw.parent.mkdir(parents=True);raw.write_text('original raw fixture')
+        with mock.patch.object(proof_batch,'FIXED_EVIDENCE',{'network':(relative,)},create=True):
+            row=proof_batch.step('network',self.command,self.source)
+            snapshot=Path(row['receipt']).parent/'fixed-output'/relative
+            self.assertTrue(snapshot.is_file(),'pre-existing raw output was omitted')
+            self.assertEqual(snapshot.read_bytes(),raw.read_bytes())
+            raw.unlink()
+            self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+            raw.write_text('original raw fixture');snapshot.unlink()
+            self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
     def test_unrelated_lean_stays_reusable_but_imported_contract_changes_miss(self):
         model=self.source/'Library.lean';model.write_text('def x := 1\n')
         (self.source/'verification/network-inputs.sha256').write_text(receipts.sha(model)+'  Library.lean\n')

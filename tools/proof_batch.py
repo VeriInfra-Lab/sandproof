@@ -18,6 +18,14 @@ MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-cont
            'revocation-contract','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage')
 
+# These generators intentionally reuse a fixed workspace output location.
+# Keep immutable raw copies in the success entry, even when the directory
+# already existed before this invocation. Other module outputs are tracked
+# source files or fresh, uniquely named evidence directories below.
+FIXED_EVIDENCE = {'json-request': (
+    'artifacts/json-request-binding/encode.llbc',
+    'artifacts/json-request-binding/decode.llbc')}
+
 
 def file_digest(path):
     if path.suffix == '.llbc':
@@ -166,6 +174,19 @@ def step(name, command, root=ROOT):
             evidence.update(evidence_files(directory))
         files={'command.log':sha(log)}
         files.update({str(p.relative_to(entry)):sha(p) for p in (entry/'raw-generated').glob('*')})
+        for relative in FIXED_EVIDENCE.get(name, ()):
+            path=Path(relative)
+            if path.is_absolute() or '..' in path.parts:
+                raise ValueError('fixed evidence must be project-relative')
+            source=root/path
+            if not source.is_file() or source.is_symlink():
+                raise ValueError('missing fixed raw evidence: '+relative)
+            expected=sha(source)
+            target=entry/'fixed-output'/path;target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(source,target)
+            if sha(target)!=expected or sha(source)!=expected:
+                raise ValueError('fixed raw evidence changed while preserving it')
+            files[str(target.relative_to(entry))]=expected
         receipt=dict(complete=True,exit_code=0,key=key,files=files,evidence=evidence,
                      batch=os.environ.get('SANDPROOF_PROOF_BATCH'),
                      seconds=round(time.monotonic()-started,3))
