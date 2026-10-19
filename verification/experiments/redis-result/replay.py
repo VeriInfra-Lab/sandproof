@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--source-base', type=Path, required=True)
     parser.add_argument('--destination', type=Path, required=True)
     parser.add_argument('--tool-root', type=Path, required=True)
+    parser.add_argument("--native-only", action="store_true")
     args = parser.parse_args()
     assets = Path(__file__).resolve().parent
     repository = assets.parents[2]
@@ -32,8 +33,9 @@ def main():
     from tools.check_storage_binding import check as check_bindings, check_mutations
     from tools.check_storage_extraction import check as check_extraction, check_libraries
     # Reuse the existing exact binary/frontend/backend/source-version admission.
-    check_tools(repository, args.tool_root)
-    check_libraries(repository, args.tool_root)
+    if not args.native_only:
+        check_tools(repository, args.tool_root)
+        check_libraries(repository, args.tool_root)
     subprocess.run([sys.executable, str(assets / 'prepare.py'),
                     '--source-base', str(args.source_base), '--destination', str(args.destination)], check=True)
     root = args.destination / 'source'
@@ -49,6 +51,10 @@ def main():
         (evidence / 'replay.json').write_text(json.dumps(receipt, indent=2) + '\n')
 
     def run(stage, command, environment=None):
+        if str(command[0]) == 'cargo':
+            from tools.acceptance_receipts import native_run
+            native_run('redis-replay-' + stage, command, root, evidence / (stage + '.log'), environment)
+            return
         print('START', stage, flush=True)
         start = time.monotonic()
         with (evidence / (stage + '.log')).open('xb') as log:
@@ -66,6 +72,8 @@ def main():
     manifest = 'verification/extract-storage/Cargo.toml'
     run('native-check', ['cargo', 'check', '--manifest-path', manifest, '--locked', '--offline'])
     run('root-format', ['cargo', 'fmt', '--manifest-path', manifest, '--check'])
+    if args.native_only:
+        return
     charon = args.tool_root / 'aeneas/charon/bin/charon'
     aeneas = args.tool_root / 'aeneas/bin/aeneas'
     environment = dict(os.environ, RUSTFLAGS='--remap-path-prefix=' + str(root) + '=.')

@@ -19,9 +19,9 @@ bash scripts/python-entry.sh tools/check_storage_extraction.py \
 (
   cd "$BATCH/correct/source"
   echo 'Checking the actual isolated Rust candidate with strict Clippy and real Redis tests.'
-  cargo clippy -p sandproof-center-store --all-targets --features redis-tests --locked --offline \
+  bash "$ROOT_DIR/scripts/acceptance-native.sh" cargo clippy -p sandproof-center-store --all-targets --features redis-tests --locked --offline \
     -- -D warnings > "$BATCH/candidate-clippy.log" 2>&1
-  RUST_TEST_THREADS=1 cargo test -p sandproof-center-store --features redis-tests --locked --offline \
+  RUST_TEST_THREADS=1 bash "$ROOT_DIR/scripts/acceptance-native.sh" cargo test -p sandproof-center-store --features redis-tests --locked --offline \
     > "$BATCH/candidate-tests.log" 2>&1
 )
 # This is an additive view; the original main and first-chain views are intact.

@@ -1,0 +1,161 @@
+"""Admission regressions, not Rust/Lean proof evidence or forged CI statuses."""
+import copy
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+from tools import acceptance_receipts as receipts
+from tools import proof_batch
+
+
+class ReceiptTests(unittest.TestCase):
+    def setUp(self):
+        temp=tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.base=Path(temp.name); self.source=self.base/'source'; self.source.mkdir()
+        (self.source/'Cargo.toml').write_text('[workspace]\n')
+        (self.source/'Cargo.lock').write_text('version = 4\n')
+        (self.source/'lib.rs').write_text('pub fn keep() {}\n')
+        subprocess.run(['git','init','--quiet',str(self.source)],check=True)
+        subprocess.run(['git','add','.'],cwd=self.source,check=True)
+        self.cache=self.base/'evidence';self.cache.mkdir()
+        receipts.write_json(self.cache/'runtime.json',{'unit_test_fixture':True})
+        self.env=mock.patch.dict(os.environ,{'SANDPROOF_NATIVE_EVIDENCE':str(self.cache),
+            'SANDPROOF_ACCEPTANCE_ROLE':'native'})
+        self.env.start();self.addCleanup(self.env.stop)
+        self.command=[sys.executable,'-c','print("actual native fixture ran")']
+        self.log=self.base/'command.log'
+
+    def publish(self, expected=0):
+        command=self.command if expected==0 else [sys.executable,'-c','print("semantic fixture");raise SystemExit(101)']
+        receipts.native_run('fixture',command,self.source,self.log,expected=expected)
+        key=receipts.native_key('fixture',command,self.source)
+        entry=self.cache/'commands'/receipts.digest(key)
+        receipts.write_json(self.cache/'complete.json',dict(complete=True,exit_code=0,
+            rules=receipts.rules(),runtime={'unit_test_fixture':True},
+            commands={entry.name:receipts.sha(entry/'receipt.json')}))
+        return command,key,entry
+
+    def test_identical_native_command_executes_once(self):
+        with mock.patch.object(receipts.subprocess,'run',wraps=subprocess.run) as run:
+            self.publish()
+            first=self.log.read_bytes();self.log.unlink()
+            receipts.native_run('fixture',self.command,self.source,self.log)
+            self.assertEqual(run.call_count,1)
+            self.assertEqual(self.log.read_bytes(),first)
+
+    def test_formal_reads_complete_evidence_without_executing_native(self):
+        command,_,_=self.publish(expected=101)
+        os.environ['SANDPROOF_ACCEPTANCE_ROLE']='formal'
+        with mock.patch.object(receipts.subprocess,'run',side_effect=AssertionError('native on proof host')):
+            self.assertEqual(receipts.native_run('fixture',command,self.source,self.log,expected=101),101)
+        self.assertIn('semantic fixture',self.log.read_text())
+
+    def test_missing_or_incomplete_seal_cannot_replay(self):
+        command,_,_=self.publish();os.environ['SANDPROOF_ACCEPTANCE_ROLE']='formal'
+        seal=json.loads((self.cache/'complete.json').read_text())
+        for field,value in [('complete',False),('exit_code',17),('rules',{})]:
+            bad=copy.deepcopy(seal);bad[field]=value
+            receipts.write_json(self.cache/'complete.json',bad)
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                receipts.native_run('fixture',command,self.source,self.log)
+        (self.cache/'complete.json').unlink()
+        with self.assertRaises(OSError):receipts.native_run('fixture',command,self.source,self.log)
+
+    def test_changed_source_dependency_configuration_and_runtime_invalidate(self):
+        command,key,_=self.publish();os.environ['SANDPROOF_ACCEPTANCE_ROLE']='formal'
+        for file in ['lib.rs','Cargo.toml','Cargo.lock']:
+            path=self.source/file;original=path.read_bytes();path.write_bytes(original+b'\n')
+            with self.subTest(file=file),self.assertRaises(ValueError):
+                receipts.native_run('fixture',command,self.source,self.log)
+            path.write_bytes(original)
+        with mock.patch.dict(os.environ,{'CARGO_BUILD_TARGET':'different-target'}):
+            self.assertNotEqual(receipts.native_key('fixture',command,self.source),key)
+        receipts.write_json(self.cache/'runtime.json',{'unit_test_fixture':'changed tool'})
+        with self.assertRaises(ValueError):receipts.native_run('fixture',command,self.source,self.log)
+
+    def test_missing_corrupt_log_receipt_and_wrong_exit_are_not_success(self):
+        _,key,entry=self.publish()
+        receipt=json.loads((entry/'receipt.json').read_text())
+        for field,value in [('complete',False),('exit_code',101),('key',{}),('files',{})]:
+            bad=copy.deepcopy(receipt);bad[field]=value
+            receipts.write_json(entry/'receipt.json',bad)
+            with self.subTest(field=field):self.assertIsNone(receipts.load_success(entry,key))
+        receipts.write_json(entry/'receipt.json',receipt)
+        (entry/'command.log').write_text('changed')
+        self.assertIsNone(receipts.load_success(entry,key))
+        with self.assertRaises(ValueError):receipts.validate_native(self.cache)
+        (entry/'command.log').unlink()
+        self.assertIsNone(receipts.load_success(entry,key))
+
+    def test_one_missing_component_blocks_the_whole_native_packet(self):
+        _,_,entry=self.publish()
+        self.assertTrue(receipts.validate_native(self.cache)['complete'])
+        (entry/'command.log').unlink()
+        with self.assertRaises(ValueError):receipts.validate_native(self.cache)
+
+    def test_failure_or_interruption_never_publishes_success(self):
+        command=[sys.executable,'-c','raise SystemExit(17)']
+        with self.assertRaises(ValueError):receipts.native_run('bad',command,self.source,self.log)
+        entry=self.cache/'commands'/receipts.digest(receipts.native_key('bad',command,self.source))
+        self.assertFalse((entry/'receipt.json').exists())
+
+    def test_fresh_component_failure_does_not_publish_a_case(self):
+        def fail():raise RuntimeError('fresh binary or semantic assertion failed')
+        with self.assertRaises(RuntimeError):receipts.native_case('bad-case',self.source,self.base,fail)
+        key=receipts.native_key('bad-case',['component-case'],self.source)
+        self.assertFalse((self.cache/'commands'/receipts.digest(key)/'receipt.json').exists())
+
+    def test_path_escape_in_evidence_is_rejected(self):
+        _,key,entry=self.publish()
+        receipt=json.loads((entry/'receipt.json').read_text())
+        for path in ['../outside.log','/tmp/outside.log']:
+            receipt['files']={path:'0'*64};receipts.write_json(entry/'receipt.json',receipt)
+            self.assertIsNone(receipts.load_success(entry,key))
+
+    def test_new_untracked_candidate_and_cargo_config_are_inputs(self):
+        before=receipts.rust_inputs(self.source)
+        path=self.source/'sandbox-added/src/control.rs';path.parent.mkdir(parents=True);path.write_text('pub fn f() {}')
+        config=self.source/'.cargo/config.toml';config.parent.mkdir();config.write_text('[build]\ntarget="x"')
+        after=receipts.rust_inputs(self.source)
+        self.assertNotEqual(before,after)
+        self.assertIn('sandbox-added/src/control.rs',after)
+        self.assertIn('.cargo/config.toml',after)
+
+
+class ClosureTests(unittest.TestCase):
+    def test_transitive_lean_imports_and_added_inventory_are_not_ignored(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);(root/'SandboxModel').mkdir()
+            (root/'lakefile.toml').write_text('[[lean_lib]]\nname="SandboxModel"\n')
+            a=root/'SandboxModel/A.lean';b=root/'SandboxModel/B.lean';c=root/'SandboxModel/C.lean'
+            a.write_text('import SandboxModel.B\n');b.write_text('import SandboxModel.C\n');c.write_text('def x := 1\n')
+            before=proof_batch.closure(root,['SandboxModel/A.lean'])
+            self.assertEqual(set(before),{'SandboxModel/A.lean','SandboxModel/B.lean','SandboxModel/C.lean'})
+            c.write_text('def x := 2\n')
+            self.assertNotEqual(before,proof_batch.closure(root,['SandboxModel/A.lean']))
+            c.unlink()
+            with self.assertRaises(OSError):proof_batch.closure(root,['SandboxModel/A.lean'])
+
+    def test_manifest_cannot_hide_a_parent_or_escape_the_repository(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path=root/'inputs.sha256'
+            path.write_text('0'*64+'  ../outside\n')
+            with self.assertRaises(ValueError):proof_batch.closure(root,['inputs.sha256'])
+
+    def test_formal_task_list_preserves_all_original_modules(self):
+        self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
+            'task-contract','revocation-contract','tunnel','data-drain','sqlite','foundations','network',
+            'first-chain-linux','first-chain','storage'})
+        root=Path(__file__).resolve().parents[2]
+        retained=(root/'scripts/verify-retained-proofs.sh').read_text()
+        self.assertIn("rg --files SandboxModel -g '*.lean'",retained)
+        self.assertIn('verification/ProofAudit.lean',retained)
+        self.assertIn('tools/proof_services.py',retained)
+
+
+if __name__=='__main__':unittest.main()

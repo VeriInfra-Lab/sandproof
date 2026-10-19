@@ -19,6 +19,7 @@ def sha(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument("--native-only", action="store_true")
     args = parser.parse_args(argv)
     output = args.output.resolve()
     if output.exists() or output == ROOT or ROOT.is_relative_to(output):
@@ -27,6 +28,13 @@ def main(argv=None):
     before = sha(ROOT / SOURCE)
 
     def run(label, command, cwd=ROOT, expected=0):
+        if command[0] == 'cargo':
+            try:
+                from tools.acceptance_receipts import native_run
+            except ModuleNotFoundError:
+                from acceptance_receipts import native_run
+            native_run('json-' + label, command, cwd, output / (label + '.log'), expected=expected)
+            return
         with (output / (label + '.log')).open('w') as stream:
             result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT)
         (output / (label + '.exit')).write_text(str(result.returncode) + '\n')
@@ -64,6 +72,8 @@ def main(argv=None):
             or 'right: Err(UnsupportedVersion)' not in log
             or 'test result: FAILED. 0 passed; 1 failed;' not in log):
         raise ValueError('mutant did not fail the original binding/order assertion')
+    if args.native_only:
+        return 0
     run('mutant-extraction', ['bash', 'scripts/regenerate-foundations-lean.sh'], cwd=project)
     shutil.copyfile(project / 'verification/fixtures/json-request-guard-negative.lean.in',
                     project / 'Evidence.lean')

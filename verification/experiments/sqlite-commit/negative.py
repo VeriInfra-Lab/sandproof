@@ -34,17 +34,19 @@ def main():
     parser.add_argument("--correct-replay", type=Path, required=True)
     parser.add_argument("--tool-root", type=Path, required=True)
     parser.add_argument("--charon-target", type=Path)
+    parser.add_argument("--native-only", action="store_true")
     args = parser.parse_args()
     root = HERE.parents[2]
     sys.path.insert(0, str(root))
     from tools.check_sqlite_extraction import check_pair, read_json
-    baseline = read_json(args.correct_replay / "evidence/result.json")
-    if (not baseline.get("source_unchanged")
-            or baseline.get("generated_files_byte_identical") != 3
-            or any(x["exit_code"] != 0 for x in baseline["stages"])):
-        raise ValueError("successful exact correct replay required")
-    check_pair(root, read_json(args.correct_replay / "evidence/sandproof_sqlite_core.llbc"),
-               read_json(args.correct_replay / "evidence/sandproof_sqlite_wrapper.llbc"))
+    if not args.native_only:
+        baseline = read_json(args.correct_replay / "evidence/result.json")
+        if (not baseline.get("source_unchanged")
+                or baseline.get("generated_files_byte_identical") != 3
+                or any(x["exit_code"] != 0 for x in baseline["stages"])):
+            raise ValueError("successful exact correct replay required")
+        check_pair(root, read_json(args.correct_replay / "evidence/sandproof_sqlite_core.llbc"),
+                   read_json(args.correct_replay / "evidence/sandproof_sqlite_wrapper.llbc"))
     destination = args.destination.absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError("negative destination exists")
@@ -64,6 +66,11 @@ def main():
 
     def run(stage, command, cwd=source, expected=0, environment=None):
         command = [str(x) for x in command]
+        if command[0] == 'cargo':
+            from tools.acceptance_receipts import native_run
+            output = evidence / (stage + '.log')
+            native_run('sqlite-commit-' + stage, command, cwd, output, environment, expected)
+            return output
         started = time.monotonic()
         print("START", stage, flush=True)
         output = evidence / (stage + ".log")
@@ -91,6 +98,8 @@ def main():
         raise ValueError("bad Rust must compile and hit the original cache assertion")
     if sha(source / "controller-service/src/controller/cache_tests.rs") != profile["source_files"]["controller-service/src/controller/cache_tests.rs"]:
         raise ValueError("original native assertion changed")
+    if args.native_only:
+        return
     recipes = [x["command"] for x in baseline["stages"] if x["stage"] == "charon-core"]
     if len(recipes) != 1:
         raise ValueError("actual Charon recipe missing")

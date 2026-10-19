@@ -7,7 +7,7 @@ shasum -a 256 -c verification/first-chain-inputs.sha256
 
 # Identity composition imports source-bound V0 results; recheck their actual
 # Rust roots, versions and regenerated semantics before accepting this batch.
-bash scripts/verify-foundations.sh
+bash scripts/proof-cache-step.sh foundations bash scripts/verify-foundations.sh
 
 while IFS= read -r theorem; do
   if ! rg -q '^#audit_controller_proof SandboxModel\.FirstChain\.'"$theorem"'$' SandboxModel/FirstChain/Audit.lean; then

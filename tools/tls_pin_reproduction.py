@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     import check_tls_pin_contract as contract
 
 
-def reproduce(root, tool_root, output):
+def reproduce(root, tool_root, output, native_only=False):
     root = root.resolve()
     tool_root = tool_root.resolve()
     output = output.resolve()
@@ -25,7 +25,8 @@ def reproduce(root, tool_root, output):
         raise ValueError("actual TLS candidate reproduction requires the frozen Linux environment")
     environment = contract.check_artifacts(root)
     contract.check_sources(root, environment)
-    contract.check_tools(root, tool_root)
+    if not native_only:
+        contract.check_tools(root, tool_root)
     for name in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_TARGET"):
         if os.environ.get(name):
             raise ValueError("unreviewed compiler override: " + name)
@@ -45,6 +46,14 @@ def reproduce(root, tool_root, output):
     before_inputs = contract.sha(root / "verification/tls-pin-inputs.sha256")
 
     def run(label, command, project=root, env=None, expected=0):
+        if command[0] == 'rustfmt' and '--check' in command:
+            try:
+                from tools.acceptance_receipts import native_run
+            except ModuleNotFoundError:
+                from acceptance_receipts import native_run
+            path = output / (label + '.log')
+            native_run('tls-' + label, command, project, path, env, expected)
+            return path
         start = time.monotonic()
         path = output / (label + ".log")
         with path.open("x") as log:
@@ -118,6 +127,14 @@ end SandproofTlsRust
                     raise ValueError("actual regenerated semantic input differs: " + relative)
 
     def native(project, label, mutant=False):
+        try:
+            from tools.acceptance_receipts import native_case
+        except ModuleNotFoundError:
+            from acceptance_receipts import native_case
+        native_case('tls-' + label, project, output,
+                    lambda: native_body(project, label, mutant))
+
+    def native_body(project, label, mutant=False):
         native_project = clone(label + "-native")
         text = (project / contract.SOURCE).read_text()
         path = native_project / contract.SOURCE
@@ -215,22 +232,24 @@ end SandproofTlsRust
     if contract.sha(correct / contract.SOURCE) != environment["candidate_tls_sha256"]:
         raise ValueError("the exact formatted Rust candidate was not installed")
     run("correct-format", ["rustfmt", "--check", "--edition", "2024", contract.SOURCE], correct)
-    extract(correct, "correct")
+    if not native_only:
+        extract(correct, "correct")
     native(correct, "correct")
-    lean_setup(correct)
-    run("correct-imports", ["lake", "build", "SandproofTls.Funs",
-        "SandboxModel.Boundaries.TlsPin.Audit"], correct, env)
-    correct_service = service(correct, "correct", [
-        "SandboxModel/Boundaries/TlsPin/Refinement.lean",
-        "SandboxModel/Boundaries/TlsPin/Calls.lean", "SandboxModel/Boundaries/TlsPin/Audit.lean"])
-    log = run("correct-kernel-audit", ["lake", "env", "lean",
-        "SandboxModel/Boundaries/TlsPin/Audit.lean"], correct, env)
-    expected = {contract.NAMESPACE + name for name in contract.LAWS}
-    found = {line.split("Checked ", 1)[1].split(":", 1)[0]
-             for line in log.read_text().splitlines() if "Checked " in line}
-    if found != expected:
-        raise ValueError("missing actual theorem dependency audit")
-
+    if not native_only:
+        lean_setup(correct)
+        run("correct-imports", ["lake", "build", "SandproofTls.Funs",
+            "SandboxModel.Boundaries.TlsPin.Audit"], correct, env)
+        correct_service = service(correct, "correct", [
+            "SandboxModel/Boundaries/TlsPin/Refinement.lean",
+            "SandboxModel/Boundaries/TlsPin/Calls.lean", "SandboxModel/Boundaries/TlsPin/Audit.lean"])
+        log = run("correct-kernel-audit", ["lake", "env", "lean",
+            "SandboxModel/Boundaries/TlsPin/Audit.lean"], correct, env)
+        expected = {contract.NAMESPACE + name for name in contract.LAWS}
+        found = {line.split("Checked ", 1)[1].split(":", 1)[0]
+                 for line in log.read_text().splitlines() if "Checked " in line}
+        if found != expected:
+            raise ValueError("missing actual theorem dependency audit")
+    
     wrong = clone("last-leaf")
     run("last-leaf-install", ["git", "apply", str(root / contract.PATCH)], wrong)
     path = wrong / contract.SOURCE
@@ -241,8 +260,11 @@ end SandproofTlsRust
     if region.count("chain.first()") != 1:
         raise ValueError("mutation no longer selects exactly the original guard")
     path.write_text(original[:begin] + region.replace("chain.first()", "chain.last()") + original[end:])
-    extract(wrong, "last-leaf", True)
+    if not native_only:
+        extract(wrong, "last-leaf", True)
     native(wrong, "last-leaf", True)
+    if native_only:
+        return
     lean_setup(wrong)
     evidence = wrong / "TlsPinNegativeEvidence.lean"
     shutil.copyfile(root / "verification/fixtures/tls-pin-negative.lean.in", evidence)

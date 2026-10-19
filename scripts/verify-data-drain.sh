@@ -5,7 +5,7 @@ cd "$ROOT_DIR"
 shasum -a 256 -c verification/data-drain-inputs.sha256
 bash scripts/python-entry.sh tools/check_data_drain_extraction.py \
   --tool-root "${SANDPROOF_PROOF_TOOL_ROOT:-$ROOT_DIR/.tools}"
-rustfmt --check --edition 2024 verification/extract-data-drain/src/lib.rs
+bash scripts/acceptance-native.sh rustfmt --check --edition 2024 verification/extract-data-drain/src/lib.rs
 FILES=(verification/aeneas/data-drain/SandproofDataDrain/Types.lean
   verification/aeneas/data-drain/SandproofDataDrain/Funs.lean
   verification/aeneas/data-drain/translation.json)
