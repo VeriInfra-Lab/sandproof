@@ -45,13 +45,18 @@ class ReceiptTests(unittest.TestCase):
             self.publish()
             first=self.log.read_bytes();self.log.unlink()
             receipts.native_run('fixture',self.command,self.source,self.log)
-            self.assertEqual(run.call_count,1)
+            executions=[c for c in run.call_args_list if c.args[0]==self.command]
+            self.assertEqual(len(executions),1)
             self.assertEqual(self.log.read_bytes(),first)
 
     def test_formal_reads_complete_evidence_without_executing_native(self):
         command,_,_=self.publish(expected=101)
         os.environ['SANDPROOF_ACCEPTANCE_ROLE']='formal'
-        with mock.patch.object(receipts.subprocess,'run',side_effect=AssertionError('native on proof host')):
+        actual_run=subprocess.run
+        def git_only(command,*args,**kwargs):
+            if command[0]!='git':raise AssertionError('native on proof host: '+repr(command))
+            return actual_run(command,*args,**kwargs)
+        with mock.patch.object(receipts.subprocess,'run',side_effect=git_only):
             self.assertEqual(receipts.native_run('fixture',command,self.source,self.log,expected=101),101)
         self.assertIn('semantic fixture',self.log.read_text())
 

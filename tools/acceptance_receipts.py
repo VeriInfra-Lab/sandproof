@@ -157,7 +157,7 @@ def native_run(label, command, source, log, environment=None, expected=0):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') == 'formal':
         seal = json.loads((cache / 'complete.json').read_text())
         if (seal.get('complete') is not True or seal.get('exit_code') != 0
-                or seal.get('rules') != rules()):
+                or seal.get('rules') != rules() or seal.get('runtime') != key['runtime']):
             raise ValueError('native suite missing, incomplete or has different acceptance rules')
         receipt = load_success(entry, key)
         if receipt is None or receipt.get('expected') != expected:
@@ -199,6 +199,7 @@ def native_case(label, source, output, action=None):
         receipt = load_success(entry, key)
         if (seal.get('complete') is not True or seal.get('exit_code') != 0
                 or seal.get('rules') != rules() or receipt is None
+                or seal.get('runtime') != key['runtime']
                 or seal['commands'].get(entry.name) != sha(entry / 'receipt.json')):
             raise ValueError('missing/incomplete/changed native component: ' + label)
         return receipt
