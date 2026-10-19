@@ -56,6 +56,8 @@ JSON 非零计数器叶子另执行 `bash scripts/verify-json-counter.sh`，检�
 
 八类字符串编号叶子执行 `bash scripts/verify-json-identifiers.sh`，冻结[真实调用根](extract-foundations/src/json_ids.rs)、[环境](json-identifiers-environment.json)及[输入](json-identifiers-inputs.sha256)，与原 V0/计数器共用生成类型并审计 18 条新定理。提交本批源码后执行 `bash scripts/python-entry.sh tools/check_json_identifiers_negative.py --output artifacts/json-identifiers-negative-run`：输出目录必须不存在；正确版和移除真实校验的错误版从同一个 Git 提交归档创建，分别使用新 Cargo 构建目录，错误版须先编译/抽取成功，再由同一 Rust 安全断言和同一 `IdentifierSafe` 反例拒绝。库默认方法、标准 String 释放、有限格式化及 parser/schema/调用者剩余条件见[接口合同](../docs/formal/dependencies.md#a6-json-字符串编号叶子接口)。值读取器是非空见证，不是真实 JSON parser；同一安全性定理不证明完整请求绑定或授权。
 
+SQLite 提交回执与缓存发布的隔离候选执行 `bash scripts/verify-sqlite.sh`；[实验说明](experiments/sqlite-commit/README.md)给出固定输入与复现。它从原事务文件的小范围隔离重构提取真实同步决定，核对完整核心/包装/析构中间表示，保留外部 A4、RefCell B2 和参数/回调 B4 条件；同一接口分别检查确认成功、两种提交未知及 rollback。它不证明整个 SQL、验证器、恢复或生产外壳，不能关闭 T7/V0。此入口附加到原完整验收，不替换已有模块。
+
 模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；退役旧生成链不消除当前生命周期等业务的实现证明义务，也不使其成为 V0 的关单前置。完整入口按保留集合执行，局部/当前集合验收/全系统完成分别登记。
 
 完整生命周期请求执行 `bash scripts/verify-json-request.sh`。入口冻结[实际调用与字段/字典登记](json-request-binding.json)、原生产协议与服务器/客户端调用、完整公共生成物以及 `verification/json-request-inputs.sha256`；先按原工具重抽取并比对，再检查两个直接库调用的完整 LLBC 和 AST、全部请求定理及其真实依赖。原 `LifecycleRequest::validate`、编号/计数器校验和转换保留生成体；固定 Serde/serde_json 引擎、标准派生及单次参数/结果接线采用明确 A6/B4 条件，不能称整个 async 服务已自动证明。具体输入/错误/解析位置/正常分配和有界合法接受条件见[唯一依赖合同](../docs/formal/dependencies.md#a6-json-与标准派生的最小合同)。
