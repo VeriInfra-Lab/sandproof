@@ -2,11 +2,11 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
-## T5/T6 Guest 持额消息（在途，未完成验收）
+## T5/T6 Guest 持额消息
 
 从 integration `81885df6` 开展，未修改生产 Rust 或 Charon/Aeneas。有限范围为真实 `CommandOutput` 的 mpsc/oneshot 交接、许可/引用随对象持有，以及 `Producer::frame` 到最后一个 Bytes 所有者正常析构的接线；[依赖合同](formal/dependencies.md#a6b3b4-guest-持额消息)、[逐操作登记](../verification/owned-message-environment.json)和复现入口共同约束范围。
 
-模型是显式条件下的消息/许可/FIFO/oneshot/Frame 历史，不是实际 async Rust 机器证明。隔离夹具使用真实生产类型和函数；它在消息检查前先中止并回收私有 helper，不执行命令驱动或会话业务。成功版和提前释放错误版的编译、原断言与严格检查分别报告；未通过整套验收和 CI 前，本节不称本接口已交付，也不关闭 T5/T6/V0。
+模型是显式条件下的消息/许可/FIFO/oneshot/Frame 历史，不是实际 async Rust 机器证明。候选 `a47a0650` 的 45 条定理在 a6000 经同版真实服务隔离检查、完整项目构建及内核/依赖审计通过；ning 九个原源码组件用例与严格 Clippy 通过，提前丢弃 output 的真实错误副本先成功编译，再被正确版同一持额断言拒绝。隔离夹具在消息检查前先中止并回收私有 helper，不执行命令驱动或会话业务。以上是局部结果；组合版本、原工具预检、真实文件诊断、完整验收及 CI 以 #333 中本接口 PR 的精确回执为准，局部通过不能代替这些门槛，不据此关闭 T5/T6/V0。
 
 Data-before-End、授权、消费者掉线策略、全部字节副本/引用的预算，以及真实进程/FD/记录归还仍归 V8/V6/V9。尤其不能从保留 `Arc<Shared>` 或收到 Frame 释放通知推出生产记录许可已归还；未知运行方丢失的 `forget` 分支没有因此证明。其他 channel/任务机制继续在 #333 开放，T9 排除。
 
