@@ -96,6 +96,26 @@ def launch_build_service(checkout, root, service_prefix, *, prepared=False):
     return process, log
 
 
+def wait_build_service(opener, url, key, process, *, timeout=30):
+    """Wait for the original private helper under one startup deadline."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError('build supervisor startup failed')
+        try:
+            # This authenticated route forwards to the private helper. An
+            # early gateway error is not readiness and must not spin out the
+            # startup window before the newly launched process can listen.
+            code = fetch(opener, url, 'GET', '/sandproof/template-builds/' + '0'*32, key,
+                         timeout=min(5, max(.001, deadline-time.monotonic())))[0]
+            if code == 404 and time.monotonic() < deadline:
+                return
+        except OSError:
+            pass
+        time.sleep(min(.5, max(0, deadline-time.monotonic())))
+    raise RuntimeError('build endpoint did not become ready')
+
+
 def pending_build_reservations(directory, *, prepared=False, row=None):
     if prepared:
         if row is not None and row.get('build_dispatched'):
@@ -572,19 +592,7 @@ def exercise(args):
         supervisor, log = launch_build_service(checkout, root, service_prefix,
                                                prepared=ci_fixtures is not None)
         if supervisor is not None:
-            for _ in range(60):
-                try:
-                    # This known route reaches the private helper only AFTER
-                    # center authentication. A generic center 404 proves none
-                    # of the builder boundary and must not signal readiness.
-                    if fetch(opener,urls[2],'GET','/sandproof/template-builds/'+'0'*32,key)[0]==404:
-                        break
-                except OSError:
-                    if supervisor.poll() is not None:
-                        raise RuntimeError('build supervisor startup failed')
-                    time.sleep(0.5)
-            else:
-                raise RuntimeError('build endpoint did not become ready')
+            wait_build_service(opener, urls[2], key, supervisor)
         observe_services()
         deployment['host']['control_allowance_enforced_by_cgroup'] = True
         (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
