@@ -73,13 +73,13 @@ class SupervisorStageTests(unittest.TestCase):
             'cgroup_parent','build_cgroup_parent','service_cgroup_parent','window_helper','budget_profile')
         self.stage.config={name:str(self.root/name) for name in fields}
         self.stage.checks=None
-        self.stage.config.update(host_assets={},rust_envd_acceptance={'reviewed':True},
+        self.stage.config.update(host_assets={},rust_envd_acceptance={'reviewed':True,'budget_profile':str(self.root/'rust-budget')},
                                  client_id='must-not-enter-stage')
         self.stage.save=Mock()
         self.stage.block=Mock()
         self.stage.verified_candidate=Mock(return_value={})
         self.addCleanup(patch.stopall)
-        patch.object(envd,'policy',return_value={'reviewed':True}).start()
+        patch.object(envd,'policy',return_value=self.stage.config['rust_envd_acceptance']).start()
         patch.object(envd,'identity',return_value={'source_commit':'a'*40}).start()
 
     def test_persists_launching_intent_before_launch_and_excludes_app_configuration(self):
@@ -90,6 +90,8 @@ class SupervisorStageTests(unittest.TestCase):
             self.assertNotIn('client_id',config)
             self.assertEqual(config['candidate'],'a'*40)
             self.assertEqual(config['run_id'],'b'*64)
+            self.assertEqual(config['budget_profile'],str(self.root/'rust-budget'))
+            self.assertEqual(self.stage.config['budget_profile'],str(self.root/'budget_profile'))
             self.assertEqual(group['command'][1],str(self.root/'checkout/tests/system/envd_acceptance.py'))
             # Exercise the REAL strict identity parser, not a mock of it. The
             # new stage is an original batch unit, not a second naming scheme.
@@ -218,7 +220,9 @@ class PreparationTests(unittest.TestCase):
             value=dict(registry_limits={},build_limits={},data_transfer={})
             assets={}
             for name in envd.FILES:
-                p=root/name; p.write_bytes(b'approved input'); p.chmod(0o600)
+                raw = (json.dumps({'host':{'control_cpu_allowance':4,'control_memory_allowance_bytes':64*1024**2}}).encode()
+                       if name=='budget_profile' else b'approved input')
+                p=root/name; p.write_bytes(raw); p.chmod(0o600)
                 value[name]=str(p); assets[str(p)]=digest(p)
             tls=root/'stage-tls'; tls.mkdir(mode=0o700); value['tls_material']=str(tls)
             for name in tls_material_files(('runtime','builder')):
@@ -232,6 +236,17 @@ class PreparationTests(unittest.TestCase):
                 assets[str(builder)]=original
                 builder.write_bytes(b'changed')
                 with self.assertRaises(ValueError): envd.policy(config)
+                builder.write_bytes(builder.name.encode())
+                budget=value.pop('budget_profile')
+                with self.assertRaises(ValueError): envd.policy(config)
+                value['budget_profile']=budget
+                path=Path(budget); original_budget=path.read_bytes()
+                for cpu,memory in ((True,64*1024**2),(0,64*1024**2),(4,0),(4,3)):
+                    path.write_text(json.dumps({'host':{'control_cpu_allowance':cpu,'control_memory_allowance_bytes':memory}}))
+                    assets[budget]=digest(path)
+                    with self.subTest(cpu=cpu,memory=memory),self.assertRaises(ValueError): envd.policy(config)
+                path.write_bytes(original_budget);assets[budget]=digest(path)
+                self.assertEqual(envd.policy(config),value)
             self.assertEqual(config['tls_material'],'unchanged-existing-gate')
 
     def test_missing_profile_does_not_build_or_switch_any_go_material(self):

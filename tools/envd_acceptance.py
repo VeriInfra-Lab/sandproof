@@ -10,7 +10,7 @@ from tools import guest_artifacts
 from tools.check_kvm_host import require_keys
 from tools.system_acceptance import digest, json_file, private_path, write_once
 
-FILES = ('configuration', 'policy_template', 'oci_archive', 'go_rootfs', 'builder_rootfs')
+FILES = ('configuration', 'policy_template', 'oci_archive', 'go_rootfs', 'builder_rootfs', 'budget_profile')
 SUITE = ('paired', 'input', 'input-chunks', 'pty', 'command-deadlines',
          'rpc-deadlines', 'file-deadlines', 'file-permissions', 'faults')
 PROBES = dict(paired='sdk_guest_compare.py', input='sdk_command_input.py',
@@ -32,6 +32,14 @@ def policy(config):
         expected = config['host_assets'].get(str(path))
         if expected is None or digest(path) != expected:
             raise ValueError('unapproved or changed envd acceptance input')
+    # The serial Rust stage has its own reviewed original service envelope.
+    # Never enlarge the Go/DK/Harbor budget or inherit its one-CPU limit for a
+    # private builder whose original resource shape requires two vCPUs.
+    host = json_file(private_path(value['budget_profile'])).get('host')
+    if type(host) is not dict or type(host.get('control_cpu_allowance')) is not int:
+        raise ValueError('explicit Rust stage service budget required')
+    from tools.service_cgroup import limits
+    limits(host['control_cpu_allowance'] * 100000, host.get('control_memory_allowance_bytes'))
     # The existing prepared two-task gate has only one host certificate. This
     # stage builds privately on a second host role; never rotate the old gate's
     # material or reuse one node's leaf for both roles just to make it start.

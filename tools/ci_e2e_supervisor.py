@@ -608,7 +608,8 @@ class Supervisor:
         """Use the same host lease and candidate, never a privileged PR job."""
         from tools import envd_acceptance as envd
         try:
-            if envd.policy(self.config) is None:
+            value = envd.policy(self.config)
+            if value is None:
                 if 'envd' in self.state:
                     raise ValueError('in-flight Rust stage cannot become a Go-only run')
                 return True  # No Rust result is published for the existing Go gate.
@@ -636,7 +637,7 @@ class Supervisor:
                 'host_assets', 'rust_envd_acceptance')
             config = {key:self.config[key] for key in fields}
             config.update(candidate=self.state['candidate'], candidate_manifest=self.state['candidate_manifest'],
-                          run_id=self.state['id'], run_root=str(root))
+                          run_id=self.state['id'], run_root=str(root), budget_profile=value['budget_profile'])
             path = self.root / (self.state['id'] + '-envd.json')
             write_once(path, config)
             checkout = Path(self.config['checkout'])
