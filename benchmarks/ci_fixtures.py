@@ -69,14 +69,18 @@ def _identity(info):
             info.st_uid, info.st_mode, info.st_nlink)
 
 
-def _path(value, *, private):
+def _path(value, *, private, owner_uid=None):
+    owner = os.geteuid() if owner_uid is None else owner_uid
+    if (type(owner) is not int or not 0 <= owner <= 2**32 - 2
+            or (private and owner != os.geteuid())):
+        raise InvalidInput('explicit source owner or operator-owned private material required')
     if not isinstance(value, (str, Path)) or '\0' in str(value):
         raise InvalidInput('invalid CI fixture material path')
     path = Path(value)
     if not path.is_absolute() or path.resolve(strict=True) != path:
         raise InvalidInput('canonical nonsymlink CI fixture material required')
     info = path.lstat()
-    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != owner
             or info.st_nlink != 1 or not info.st_size
             or info.st_mode & (0o077 if private else 0o022)):
         raise InvalidInput('ordinary trusted CI fixture material required')
@@ -86,14 +90,14 @@ def _path(value, *, private):
         metadata = parent.lstat()
         sticky_root = bool(metadata.st_mode & stat.S_ISVTX) and metadata.st_uid == 0
         if (not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
-                or metadata.st_uid not in (0, os.geteuid())
+                or metadata.st_uid not in (0, os.geteuid(), owner)
                 or (metadata.st_mode & 0o022 and not sticky_root)):
             raise InvalidInput('unsafe CI fixture material ancestry')
     return path, info
 
 
-def _read(path, *, private=False, maximum=None, expected_identity=None):
-    path, info = _path(path, private=private)
+def _read(path, *, private=False, maximum=None, expected_identity=None, owner_uid=None):
+    path, info = _path(path, private=private, owner_uid=owner_uid)
     if expected_identity is not None and _identity(info) != expected_identity:
         raise InvalidInput('CI fixture material identity changed')
     if maximum is not None and info.st_size > maximum:
@@ -113,7 +117,7 @@ def _read(path, *, private=False, maximum=None, expected_identity=None):
             if data is not None:
                 data.append(block)
         if (_identity(os.fstat(fd)) != _identity(info)
-                or _identity(_path(path, private=private)[1]) != _identity(info)):
+                or _identity(_path(path, private=private, owner_uid=owner_uid)[1]) != _identity(info)):
             raise InvalidInput('CI fixture material changed during read')
     finally:
         os.close(fd)
