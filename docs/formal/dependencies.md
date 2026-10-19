@@ -128,6 +128,29 @@ B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2
 
 Redis 脚本原子执行指不被其他请求插入，不保证任意多写脚本报错后回滚；当前实际脚本把检查放在唯一HSET之前，需V2证明这一事实。读成功只构造Observed；Committed要经过实际CAS与健康/耐久确认。未知写围栏不能靠再次读到旧记录解除，reaffirm须提交原完整payload的新修订后再派发。[Redis脚本](https://redis.io/docs/latest/develop/programmability/eval-intro/)、[Redis持久化](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
 
+### A11/B4 Redis 提交结果接口的具体范围
+
+[#564](https://github.com/VeriInfra-Lab/sandproof/issues/564) 的[隔离候选](../../verification/experiments/redis-result/README.md)固定原生产基线、补丁、回调入口、工具与完整生成摘要。以下是该候选的使用条件；当前生产 `RedisLedger` 尚未因此获得证明。`JsonCodec`、健康检查和返回码判断是自有代码，不能因使用 Redis 而移进 A11。
+
+| 操作或对象 | 可使用的保证 | 不能由此推出的结论与自有义务 |
+|---|---|---|
+| A11：Redis 7.2.16 与 redis-rs 1.7.1 | 原受保护 IPv4 回环、ACL、单有效写者及冻结持久化/内存配置下，采用该版本命令和回复的合同。EVAL 执行期间不插入其它命令 | 不承诺外部调用总返回；错误不保证无写入或回滚。实际 Lua 的检查、参数和唯一写入顺序仍由 V2 提供；磁盘/文件系统及机器故障范围必须另有部署条件 |
+| B4：候选 `storage_io::eval` | 将原 CAS 文本、单个 key、部署、格式、旧修订、新修订、完整新旧 payload 和限额按实际 KEYS/ARGV 顺序传给原连接；保留实际数字或错误 | `LibraryRequest` 只记录传给适配的参数，不表示发包、执行或落盘。选择文本/对象/字段、解释返回码以及确认/未知决定不属于机械适配 |
+| B4：候选 `storage_io::info/settings/query` | 把实际 section、完整有序配置键和原绝对 deadline 交给同一连接；按原调用设置剩余读写超时，忠实传递回复/错误及连接回写 | 多次检查不是原子快照；超时设置不是整个调用的严格墙钟上界。失去响应、协议/类型转换错误或读取失败都可能在命令已执行之后发生；不能因本地连接被清空推导数据库没变或物理连接已经关闭 |
+| A6：候选 `trim_cr/split_colon` 与固定字符串/表操作 | 固定标准库的 UTF-8/字节接口；按第一个冒号分割、按原规则去掉末尾 CR，Lines 保留原 LF/CRLF 行语义；仅采用纯 String/str 比较和借用、唯一键字典及纯字节克隆 | 自有 INFO 扫描、重复键拒绝及配置选择仍抽取；任意自定义比较器、Borrow、Clone、格式回调或有状态两次编码不在本范围 |
+| A8/B4：候选 `OperationClock/SystemClock` | 本次原超时配置传给原时钟，产生的 deadline 原样交给后续调用；回调状态在抽取结果中保留 | 不假设跨机时钟一致，也不从一个 deadline 推出调用一定结束；单位、溢出和更高层寿命仍由调用者负责 |
+| B4：公开 `commit/reaffirm` 到泛型核心 | 实际薄转调传递原账本、原观察、原 next、`T::FORMAT_VERSION`、原 `JsonCodec` 和 `SystemClock`；完整返回与异常路径保留 | 完整公开 Charon AST 的源码/参数准入是审查和检查证据，不是具体 Serde 回调图的 Lean 精化；改变回调、参数、分支或字典必须重查 |
+
+原 LLBC 的析构逐位置登记在候选 `environment.json`：普通 String/Vec、已登记字典和自有载荷容器，仅在普通值域中忽略其内存释放；泛型 T 不得含可观察自定义 Drop 或共享资源。`fence_unknown` 对原 Option<Connection> 的替换另按外部 A6/B4 处理，**不把 TCP 连接析构说成纯内存操作**：实际关闭可能让对端继续处理已发请求或产生其它网络结果，物理效果仍未知。此域只允许原受控非 PubSub TCP 连接，不安装用户 push sender，不据模型中的 None 证明物理关闭、退出或回滚。写者文件租约及 codec/clock 原所有者均为借用，不在这组调用中释放。异常清理位置同样冻结，但正常后态定理不覆盖 panic/unwind/abort；若将来引入资源载荷、PubSub、用户析构或新关闭行为，须重审该域。
+
+正常值模型允许数字、文本、配置表、调用前拒绝、送达未知、panic 与不返回。正常拒绝或错误返回不携带物理“未生效”保证；panic/不返回没有正常后态，不能引用正常返回的围栏定理来断言异常被捕获后仍安全。自有 V2 调用方须连接异常后的停用、责任保留和恢复；进程崩溃/abort 不依赖 Drop 收尾。
+
+正常成功要经过实际 CAS 返回 0 及原后置健康检查；抽取定理保留部署、修订、完整载荷和解码后的状态。1/2/3/4 仅分别映射 Missing/AlreadyInitialized/InvalidRecord/Conflict，物理无写入仍依赖自有脚本证明；未知数字、EVAL 错误和后置健康错误进入 OutcomeUnknown、保留围栏并清空本地连接。读取观察不能自行解除该围栏，reaffirm 的成功必须保留原完整 payload 并使用新修订。
+
+泛型定理显式保留两个自有条件：codec 的正常错误限于 InvalidRecord/InvalidState/Capacity，以及同一 codec 状态链上的成功编解码往返。它们不是 A6/B4 的保证，具体生产 schema 的实例由 V2 提供；没有实例就只是有条件结论。接口限于正常分配、有限可表示字符串/字节和普通值载荷；带许可、FD、锁、共享可变资源或可观察自定义 Drop 的载荷须另登记，不能套用纯值析构擦除。写者租约在本调用中借用而非销毁；身份模型也不提供物理锁/文件释放证据。
+
+候选源、外部模型、公开 AST、完整生成物和真实 Rust 错误版均须绑定同一冻结版本。原工具的抽取、定理依赖审计及回归分别给出证据；局部通过不替代两个完整验收入口，不关闭整个 T7。完整 codec/Lua、读取/reconnect、缓存/outbox/派发与崩溃恢复组合仍由 V2 负责。
+
 SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受实际文件系统/硬件合同限制；只有明确冻结的故障范围才可依赖，未约定断电行为仍排除。[SQLite同步配置](https://www.sqlite.org/pragma.html#pragma_synchronous)、[WAL](https://www.sqlite.org/wal.html)
 
 ## TLS、传输库、来宾与工具链的登记

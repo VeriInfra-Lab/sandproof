@@ -2,6 +2,22 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## Redis 提交结果：隔离候选与完整验收（#564）
+
+[冻结候选](../verification/experiments/redis-result/candidate.json)以生产基线 `824abe2b6285774ef8983fbe02db3a6509c9b5fb` 加固定补丁构建，生产文件未改。[生成核心](../verification/aeneas/storage/SandproofStorage/Funs.lean)来自固定原 Charon/Aeneas。公开 commit/reaffirm 的四个薄转调另经完整 Charon AST 核对参数、结果、关联常量、codec/clock 字典和 unwind 路径；该机械准入不等于具体 Serde 回调图已由 Lean 闭合。[依赖明细](formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)区分外部 A6/A8/A11、获批 B4 与仍由调用者提供的自有条件。
+
+正式库包含[结果与写围栏](../verification/aeneas/storage/SandproofStorage/Results.lean)、[健康检查回写范围](../verification/aeneas/storage/SandproofStorage/Health.lean)、[泛型调用链的未知围栏](../verification/aeneas/storage/SandproofStorage/Caller.lean)及[原完整载荷和新修订来源](../verification/aeneas/storage/SandproofStorage/Success.lean)，共 40 项核心与辅助声明；[具体见证](../verification/aeneas/storage/SandproofStorage/Examples.lean)另有 91 项见证及辅助声明。中央 Audit 逐项审计全部 131 项，只依赖标准逻辑。成功性质显式要求同一 codec 状态链的往返，正常错误范围由自有 codec 提供，未把这些业务义务移入外部边界。示例 codec 会拒绝超容量和非法字节，并证明自己的条件；完整成功见证经过实际生成的写前健康、修订推进、CAS、写后健康和 Committed 构造，不实例化生产 JsonCodec/schema、物理租约或部署条件。
+
+两个不同私有目录的原工具重建通过，完整核心/公开 LLBC 摘要一致，三个生成文件逐字一致；仅按既有规则规范化无序 short_names 字典，不删除其余 AST。七类公开接线错误和五类源码/析构准入错误被拒绝。全部 27 个不透明调用、52 个由原工具处理的内建/全局/析构声明、363 个 Drop 位置及两版标准库/固定 Redis 源码均有登记。真实 Rust 错误版只将 fence_unknown 的赋值 true 改为 false，编译、原 Charon/Aeneas 抽取及生成 Funs 构建先成功；原 Results 仅更换 import 后，被同一 fence_unknown_exact 与 eval_error_returns_unknown 性质拒绝，三个内核反例/允许输入声明完成依赖审计，未手改生成 Lean 或改弱性质。
+
+完整验收冻结于 `dfaf79a710db0475c3390ac1b888d37b2c37024a`，全部构建、抽取、测试和证明在指定 Linux x86_64 验证环境运行。原 verify-controller.sh 退出 0（1569.987 秒），全部保留模块重抽取、构建、真实正负用例、占位检查及 966 项唯一声明审计完成；原 Linux check-function.sh 退出 0（1717.152 秒），13 个阶段和 1210 项必需工具测试通过，工具测试无跳过、无 Linux 项排除。候选严格 Clippy 与 40 项组件测试通过，其中 26 项使用固定真实 Redis，候选无忽略项；仓库原有 opt-in/特权忽略项不计为已执行。既有 Lean 源的样式 linter 警告保留，未修改旧证明或禁用检查。
+
+本批正式文件的真实 Lean 服务完成 131 项 Redis 审计，最终主 ProofAudit 服务另完成 15 项审计；均完整、非陈旧且无错误/警告。服务准入不筛选行号、声明或严重性，检查实际文件与全部证明源码指纹；18 类无效回执及保留的虚拟 worker 崩溃回执被拒绝。1710 项跟踪输入最终一致；两份原 LLBC 仅允许的无序短名排列先封存、核对完整规范化摘要后恢复原字节。完整机器收据 SHA256 为 `fc9490f8e39bfdbf4eb63e26bec1de18f79eba4ced3c449ff3951c6c56f0f1c6`，原失败记录保留。最后补录仅修改本覆盖章节，不改变已验收代码、定理、工具或冻结输入。
+
+交付依赖固定 #563（头 `824abe2b`，前置 #556），最终目标 integration。验收期间 integration 已推进到 `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；该版本未改 Redis 主体、根锁文件或本批依赖合同，但新增 Host CandidateVerification 传递与中心后台接线。它们须重新核对对应使用点；冻结候选的完整通过不自动背书最新 integration 组合，集成后仍需复验。
+
+正常返回性质仅覆盖登记的普通 payload 值域，排除可观察自定义 Drop、共享可变或资源 payload；异常、panic/unwind、abort、崩溃及终止性不从正常后态定理推出。逻辑连接消失不是物理关闭、回滚或持久化证据，错误允许已发生部分效果，读取/reconnect 不能单独解除未知围栏。完整生产 codec/schema、全部 Lua、读取/reconnect、缓存/outbox/派发和崩溃恢复继续由 V2 提供；原实现与候选的一般等价、物理外部效果及完整 VM/TLS/云端部署未据此证明或验收。不关闭整个 T7/V0，T9 继续排除。
+
 ## V0 底座统一与组合验收
 
 #515/#510 的公共任务统一归 V0 #333，按 T0–T8 验收；具体依赖保证见[依赖登记](formal/dependencies.md)。[汇总 PR #551](https://github.com/VeriInfra-Lab/sandproof/pull/551)组合已有 V0、任务/排空、隔离业务试点和旧生成链退役成果，不新增业务证明。下文历史记录继续绑定各自冻结提交；当前组合证据以本节和该 PR 的最终验收记录为准。
