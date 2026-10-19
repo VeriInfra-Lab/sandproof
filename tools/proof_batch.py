@@ -158,7 +158,7 @@ def step(name, command, root=ROOT):
         return dict(module=name,reused=False,receipt=str(entry/'receipt.json'),seconds=receipt['seconds'])
 
 
-def fixed_runtime_sha(path, cached, new_hashes):
+def fixed_runtime_sha(path, cached, new_hashes, allow_metadata=False):
     path=Path(path).resolve(strict=True)
     started=time.time_ns()
     with path.open('rb') as stream:
@@ -172,7 +172,7 @@ def fixed_runtime_sha(path, cached, new_hashes):
         # again even when size/mtime/ctime all compare equal. A clock rollback
         # also forces a content read. Only old, quiescent fixed tools use this.
         verified=prior.get('verified_started_ns')
-        quiescent=(type(verified) is int and started>=verified
+        quiescent=(allow_metadata and type(verified) is int and started>=verified
                    and verified-stat.st_ctime_ns>=2_000_000_000
                    and verified-stat.st_mtime_ns>=2_000_000_000)
         if (not quiescent or prior.get('identity')!=identity or not isinstance(value,str)
@@ -199,8 +199,14 @@ def runtime(force=False):
     except (OSError,ValueError,TypeError):cached={'schema':1,'files':{}}
     if force:cached={'schema':1,'files':{}}
     new_hashes={}
+    filesystems={}
     def fixed_sha(path):
-        return fixed_runtime_sha(path,cached,new_hashes)
+        path=Path(path).resolve(strict=True)
+        device=path.stat().st_dev
+        if device not in filesystems:
+            probe=subprocess.run(['stat','-f','-c','%T',str(path)],capture_output=True,text=True)
+            filesystems[device]=(probe.returncode==0 and probe.stdout.strip() in ('ext2/ext3','ext4'))
+        return fixed_runtime_sha(path,cached,new_hashes,allow_metadata=filesystems[device])
     result={'tools':{},'libraries':{},'environment':{k:v for k,v in os.environ.items()
         if k.startswith(('RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','CARGO_PROFILE_',
                          'CARGO_BUILD_TARGET','LEAN_','LAKE_','OCAMLRUNPARAM'))}}
