@@ -207,6 +207,11 @@ def dk05(h):
     identity=h.known[sandbox.sandbox_id]['create']
     original_vm=h.known[sandbox.sandbox_id]['physical']
     original=center_record(h.center(),identity)
+    # The offline audit restarts center without waiting for its HTTP listener
+    # or a new authenticated host round. Freeze Redis only after the ORIGINAL
+    # service is ready; otherwise this injects a bootstrap failure, not an
+    # outage into the already serving authority tested below.
+    h.services.wait_ready(for_admission=False)
     processes=h.services.processes
     actual=processes.observe()
     redis=processes.children['redis']
