@@ -226,9 +226,12 @@ class FixedRuntimeDigestTests(unittest.TestCase):
     def test_unchanged_fixed_file_is_not_read_again(self):
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'fixed-tool';path.write_text('fixed version')
-            current={};expected=proof_batch.fixed_runtime_sha(path,{'files':{}},current)
-            with mock.patch('hashlib.file_digest',side_effect=AssertionError('unnecessary content reread')):
-                self.assertEqual(proof_batch.fixed_runtime_sha(path,{'files':current},{}),expected)
+            # Model a quiescent installed tool, rather than a just-written file
+            # whose timestamp can still share the writer's filesystem tick.
+            with mock.patch.object(proof_batch.time,'time_ns',return_value=path.stat().st_ctime_ns+3_000_000_000):
+                current={};expected=proof_batch.fixed_runtime_sha(path,{'files':{}},current)
+                with mock.patch('hashlib.file_digest',side_effect=AssertionError('unnecessary content reread')):
+                    self.assertEqual(proof_batch.fixed_runtime_sha(path,{'files':current},{}),expected)
 
     def test_preserving_size_and_mtime_does_not_hide_content_change(self):
         with tempfile.TemporaryDirectory() as temporary:

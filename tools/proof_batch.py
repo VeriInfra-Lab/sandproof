@@ -160,20 +160,29 @@ def step(name, command, root=ROOT):
 
 def fixed_runtime_sha(path, cached, new_hashes):
     path=Path(path).resolve(strict=True)
+    started=time.time_ns()
     with path.open('rb') as stream:
         stat=os.fstat(stream.fileno())
         identity=[stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns]
         prior=cached.get('files',{}).get(str(path),{})
         if not isinstance(prior,dict):prior={}
         value=prior.get('sha256')
-        if (prior.get('identity')!=identity or not isinstance(value,str)
+        # Linux local-filesystem timestamps can share one clock tick. Like a
+        # racy Git index entry, a digest taken near the last write must be read
+        # again even when size/mtime/ctime all compare equal. A clock rollback
+        # also forces a content read. Only old, quiescent fixed tools use this.
+        verified=prior.get('verified_started_ns')
+        quiescent=(type(verified) is int and started>=verified
+                   and verified-stat.st_ctime_ns>=2_000_000_000
+                   and verified-stat.st_mtime_ns>=2_000_000_000)
+        if (not quiescent or prior.get('identity')!=identity or not isinstance(value,str)
                 or re.fullmatch('[0-9a-f]{64}',value) is None):
             import hashlib
             value=hashlib.file_digest(stream,'sha256').hexdigest()
         after=os.fstat(stream.fileno())
         if identity!=[after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns]:
             raise ValueError('fixed runtime file changed while fingerprinting: '+str(path))
-    new_hashes[str(path)]=dict(identity=identity,sha256=value)
+    new_hashes[str(path)]=dict(identity=identity,sha256=value,verified_started_ns=started)
     return value
 
 def runtime(force=False):
