@@ -17,7 +17,7 @@ from tools import proof_native_suite
 class ReceiptTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
-        self.base=Path(temp.name); self.source=self.base/'source'; self.source.mkdir()
+        self.base=Path(temp.name); self.source=self.base/'source'; self.source.mkdir(mode=0o700)
         (self.source/'Cargo.toml').write_text('[workspace]\n')
         (self.source/'Cargo.lock').write_text('version = 4\n')
         (self.source/'lib.rs').write_text('pub fn keep() {}\n')
