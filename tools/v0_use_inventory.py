@@ -333,14 +333,13 @@ def review_coverage(output, receipt):
     return assignment
 
 
-def publish(output):
-    receipt = check(output)
+def catalogue(output, receipt):
     assignment = review_coverage(output, receipt)
     metadata = read_json(output / "metadata.json")
     units = [{k: v for k, v in u.items() if k not in {"raw", "command_sha256"}}
              for u in receipt["units"]]
     units.sort(key=lambda u: (u["source"], u["cfg"], u["codegen"]))
-    summary = dict(schema=1, capture_commit=receipt["source_commit"],
+    return dict(schema=1, capture_commit=receipt["source_commit"],
                    config_sha256=receipt["config_sha256"],
                    source_inputs=len(receipt["sources"]),
                    packages=sorted(p["name"] for p in metadata["packages"]), units=units,
@@ -348,7 +347,18 @@ def publish(output):
                    evidence=dict(receipt_sha256=sha(output / "receipt.json"),
                                  index_sha256=receipt["index_sha256"]),
                    scope="compiled source census; no semantic coverage or call-graph completeness claim")
-    write_json(ROOT / DIRECTORY / "catalogue.json", summary)
+
+
+def check_published(output):
+    receipt = check(output)
+    if read_json(ROOT / DIRECTORY / "catalogue.json") != catalogue(output, receipt):
+        raise ValueError("published census differs from complete compiler evidence")
+    return receipt
+
+
+def publish(output):
+    receipt = check(output)
+    write_json(ROOT / DIRECTORY / "catalogue.json", catalogue(output, receipt))
     inputs = {**sources(ROOT), **{n: sha(ROOT / n) for n in AUDIT_INPUTS}}
     (ROOT / MANIFEST).write_text("".join(f"{value}  {name}\n" for name, value in sorted(inputs.items())))
     return receipt
@@ -395,7 +405,7 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "rustc":
         return compiler_wrapper(sys.argv[2:])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("capture", "check", "publish", "admit", "query"))
+    parser.add_argument("mode", choices=("capture", "check", "check-published", "publish", "admit", "query"))
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--contains")
     args = parser.parse_args()
@@ -411,7 +421,8 @@ def main():
                 parser.error("nonempty --contains required")
             query(output, args.contains)
             return 0
-        result = {"capture": capture, "check": check, "publish": publish}[args.mode](output)
+        result = {"capture": capture, "check": check, "check-published": check_published,
+                  "publish": publish}[args.mode](output)
         print(json.dumps(dict(units=len(result["units"]), sources=len(result["sources"]))))
     return 0
 

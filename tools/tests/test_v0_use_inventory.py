@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -157,7 +158,7 @@ class BuildCoverageTests(unittest.TestCase):
             self.check()
 
     def test_wrong_optimization_profile_is_rejected(self):
-        self.receipt["units"][0]["codegen"] = ["opt-level=3"]
+        self.receipt["units"][0]["codegen"] = ["extra-filename=-exact", "opt-level=3"]
         with self.assertRaisesRegex(ValueError, "no complete MIR"):
             self.check()
 
@@ -182,6 +183,48 @@ class BuildCoverageTests(unittest.TestCase):
         inventory.write_json(self.root / "metadata.json", self.metadata)
         with self.assertRaisesRegex(ValueError, "changed Cargo metadata"):
             self.check()
+
+    def test_dependency_artifact_cannot_replace_configured_root(self):
+        config = {"profiles": ["dev"], "roots": [
+            {"id": "service", "cargo": ["-p", "own", "--bin", "own"],
+             "entry": "own/src/main.rs"}]}
+        self.receipt["stages"][0].update(
+            id="dev-service", command=["cargo", "build", "--locked", "--offline", "--target",
+                                       inventory.TARGET, "--profile", "dev", "--message-format=json",
+                                       "-p", "own", "--bin", "own"])
+        with self.assertRaisesRegex(ValueError, "root was not actually compiled"):
+            inventory.check_build_coverage(self.root, self.receipt, config)
+
+    def test_another_build_command_cannot_replace_configured_command(self):
+        config = {"profiles": ["dev"], "roots": [
+            {"id": "service", "cargo": ["-p", "own", "--lib"],
+             "entry": "own/src/lib.rs"}]}
+        self.receipt["stages"][0].update(id="dev-service", command=["cargo", "check"])
+        with self.assertRaisesRegex(ValueError, "root was not actually compiled"):
+            inventory.check_build_coverage(self.root, self.receipt, config)
+
+
+class SourceCensusTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        subprocess.run(["git", "init", "--quiet", str(self.root)], check=True)
+        self.source = self.root / "sandbox-demo/src/lib.rs"
+        self.source.parent.mkdir(parents=True)
+        self.source.write_text("// tracked source fixture\n")
+        subprocess.run(["git", "add", "sandbox-demo/src/lib.rs"], cwd=self.root, check=True)
+
+    def test_source_bytes_are_bound(self):
+        before = inventory.sources(self.root)
+        self.assertEqual(set(before), {"sandbox-demo/src/lib.rs"})
+        self.source.write_text("// changed source fixture\n")
+        self.assertNotEqual(before, inventory.sources(self.root))
+
+    def test_untracked_native_input_is_rejected(self):
+        (self.source.parent / "hidden.rs").write_text("// untracked source fixture\n")
+        with self.assertRaisesRegex(ValueError, "untracked native source"):
+            inventory.sources(self.root)
 
 
 if __name__ == "__main__":

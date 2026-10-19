@@ -141,7 +141,9 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 [入口清单](../../verification/use-inventory/config.json)固定中心、宿主、请求窗口辅助进程、来宾服务与 worker，以及额外保留的 VM 运维入口；分别编译开发和普通发布配置。前者开启调试断言，后者关闭，两者保留溢出检查。SDK/Redis 测试、诊断特性、示例和非 Linux 配置不计入这份生产源码清单；启用新的部署特性后必须补采。模板函数即使不属于证明范围，也不从混合 crate 的编译证据中删除，T9 仍不排除 Guest 的安全责任。
 
-[采集工具](../../tools/v0_use_inventory.py)仅给原生产编译器增加 MIR 输出，不改 Rust 代码、Charon/Aeneas 或其语义。完整原文、实际 Cargo 产物/参数、签名、局部类型和终结语句保存在本轮忽略的证据目录；[登记结果](../../verification/use-inventory/catalogue.json)及[输入摘要](../../verification/use-inventory-inputs.sha256)绑定本轮来源。用 Cargo 实际产物逐项查漏，不能用几个函数计数代替完整输出。`query` 按原文定位调用/类型，搜索没有命中不证明路径不存在。
+额外运维入口只作防漏观察，不新增 V0 或业务模块的证明前置；哪些行为需要证明仍以 V0–V9 详细计划及实际生产调用为准。编译清单中的死代码、模板代码和辅助入口不能自动变成新的证明目标，也不能反过来借“辅助”标签排除真正被服务调用的函数。
+
+[采集工具](../../tools/v0_use_inventory.py)仅给原生产编译器增加 MIR 输出，不改生产 Rust、Charon/Aeneas 或翻译规则，也不把 MIR 送进新的解释器；本批产物只作来源审计，不用于发布。完整原文、实际 Cargo 产物/参数、签名、局部类型和终结语句保存在本轮忽略的证据目录；[登记结果](../../verification/use-inventory/catalogue.json)及[输入摘要](../../verification/use-inventory-inputs.sha256)绑定本轮来源。用 Cargo 实际产物逐项查漏，不能用几个函数计数代替完整输出。`query` 按原文定位调用/类型，搜索没有命中不证明路径不存在。
 
 [责任清单](../../verification/use-inventory/responsibilities.json)给每个自有包和本轮观察到的自定义 Drop 指定复核归属，**不是新增可信白名单**。归还计数、锁下修改、标记 Unknown、选择取消、转交子进程和是否释放仍是自有业务；只有具体登记的 A/B 原语及机械接线可以作为条件。清单中“尝试解锁/发送/终止”不能改读为这些动作必定成功，也不能推出工作已经退出。
 
