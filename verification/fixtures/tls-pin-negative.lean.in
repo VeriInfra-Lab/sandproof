@@ -1,0 +1,58 @@
+import SandboxModel.Boundaries.TlsPin.Model
+import SandboxModel.Boundaries.TlsPin.Library
+
+open Aeneas Aeneas.Std SandproofTlsRust SandboxModel.Boundaries.TlsPin
+namespace SandboxModel.Boundaries.TlsPin.Negative
+
+def zeroPin : tls.CertificatePin :=
+  Aeneas.Std.Array.from (List.replicate 32 (0#u8)) (by simp)
+def onePin : tls.CertificatePin :=
+  Aeneas.Std.Array.from (List.replicate 32 (1#u8)) (by simp)
+
+theorem pins_differ : zeroPin ≠ onePin := by
+  decide
+
+-- A finite value provider witnessing the algorithm error, not a SHA-256 implementation.
+def reference (bytes : Bytes) : tls.CertificatePin :=
+  if bytes = [0#u8] then zeroPin else onePin
+
+def provider : tls.CertificateDigest Unit := {
+  digest := fun _ bytes => .ok (reference bytes.val)
+}
+
+theorem provider_correct : DigestCorrect provider () reference := by
+  intro input
+  rfl
+
+def firstLeaf : alloc.vec.Vec U8 := alloc.vec.Vec.from [0#u8] (by scalar_tac)
+def lastLeaf : alloc.vec.Vec U8 := alloc.vec.Vec.from [1#u8] (by scalar_tac)
+def chain : Slice (alloc.vec.Vec U8) := Slice.from [firstLeaf, lastLeaf] (by scalar_tac)
+def registrations : Slice tls.CertificatePin := Slice.from [onePin] (by scalar_tac)
+
+theorem original_policy_rejects :
+    reply (allow reference (chainView (some chain)) registrations.val) =
+      .ok (.Err .Authentication) := by
+  simp [chainView, allow, chain, firstLeaf, lastLeaf, registrations, reference,
+    reply, pins_differ]
+
+theorem mutant_accepts :
+    tls.verify_pin_bytes provider (some chain) registrations () = .ok (.Ok ()) := by
+  simp [tls.verify_pin_bytes, SandproofTlsRust.core.slice.Slice.last, chain, firstLeaf,
+    lastLeaf, provider, reference, registrations, alloc.vec.Vec.deref, contains_pin]
+
+theorem mutant_not_safe : ¬ RustPinSafe tls.verify_pin_bytes := by
+  intro safe
+  have contradiction : tls.verify_pin_bytes provider (some chain) registrations () =
+      reply (allow reference (chainView (some chain)) registrations.val) :=
+    safe provider () reference provider_correct (some chain) registrations
+  rw [mutant_accepts, original_policy_rejects] at contradiction
+  simp at contradiction
+
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.Negative.pins_differ
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.Negative.provider_correct
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.Negative.original_policy_rejects
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.Negative.mutant_accepts
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.Negative.mutant_not_safe
+
+end SandboxModel.Boundaries.TlsPin.Negative
+

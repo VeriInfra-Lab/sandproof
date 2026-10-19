@@ -1,0 +1,25 @@
+import SandboxModel.Boundaries.TlsPin.Examples
+import SandboxModel.ProofAuditCommand
+
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.allow_iff
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.peer_acceptance_iff
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.byte_ne
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.all_pairs
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.pin_eq
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.any_pins
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.contains_pin
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.actual_schema
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.actual_correct
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.actual_safe
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.no_certificate_rejects
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.empty_chain_rejects
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.same_first_is_enough
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.hash_failure_preserved
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.hash_divergence_preserved
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.leaf_schema
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.leaf_correct
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.linked_refusal_preserved
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.linked_correct
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.linked_matches_original
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.accepts_registered_first
+#audit_controller_proof SandboxModel.Boundaries.TlsPin.returns_registered_first
