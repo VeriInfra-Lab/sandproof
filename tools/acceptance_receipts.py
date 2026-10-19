@@ -112,12 +112,15 @@ def native_key(label, command, source, root=ROOT, environment=None):
 def load_success(directory, key):
     try:
         receipt = json.loads((directory / 'receipt.json').read_text())
-        if (receipt.get('complete') is not True or receipt.get('key') != key
-                or receipt.get('exit_code') != 0 or not receipt.get('files')):
+        if (not isinstance(receipt,dict) or receipt.get('complete') is not True or receipt.get('key') != key
+                or type(receipt.get('exit_code')) is not int or receipt.get('exit_code') != 0
+                or not isinstance(receipt.get('files'),dict) or not receipt.get('files')):
             return None
         for name, expected in receipt['files'].items():
             path = Path(name)
-            if path.is_absolute() or '..' in path.parts or sha(directory / path) != expected:
+            if (path.is_absolute() or '..' in path.parts or (directory/path).is_symlink()
+                    or not (directory/path).resolve().is_relative_to(directory.resolve())
+                    or sha(directory / path) != expected):
                 return None
         return receipt
     except (OSError, ValueError, KeyError, TypeError):

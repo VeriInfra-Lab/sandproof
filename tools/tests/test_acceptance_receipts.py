@@ -86,7 +86,7 @@ class ReceiptTests(unittest.TestCase):
     def test_missing_corrupt_log_receipt_and_wrong_exit_are_not_success(self):
         _,key,entry=self.publish()
         receipt=json.loads((entry/'receipt.json').read_text())
-        for field,value in [('complete',False),('exit_code',101),('key',{}),('files',{})]:
+        for field,value in [('complete',False),('exit_code',101),('exit_code',False),('key',{}),('files',{}),('files',[])]:
             bad=copy.deepcopy(receipt);bad[field]=value
             receipts.write_json(entry/'receipt.json',bad)
             with self.subTest(field=field):self.assertIsNone(receipts.load_success(entry,key))
@@ -196,6 +196,7 @@ class FormalReuseTests(unittest.TestCase):
         entry=Path(row['receipt']).parent
         (entry/'command.log').write_text('corrupt')
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
         data=json.loads((entry/'receipt.json').read_text())
         data['evidence']={str(self.base/'deleted-raw.llbc'):'0'*64}
         receipts.write_json(entry/'receipt.json',data)
@@ -219,6 +220,32 @@ class FormalReuseTests(unittest.TestCase):
         runtime=Path(os.environ['SANDPROOF_FORMAL_RUNTIME'])
         receipts.write_json(runtime,{'unit_test_fixture':'tool changed'})
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+
+class FixedRuntimeDigestTests(unittest.TestCase):
+    def test_unchanged_fixed_file_is_not_read_again(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'fixed-tool';path.write_text('fixed version')
+            current={};expected=proof_batch.fixed_runtime_sha(path,{'files':{}},current)
+            with mock.patch('hashlib.file_digest',side_effect=AssertionError('unnecessary content reread')):
+                self.assertEqual(proof_batch.fixed_runtime_sha(path,{'files':current},{}),expected)
+
+    def test_preserving_size_and_mtime_does_not_hide_content_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'fixed-tool';path.write_text('version one')
+            current={};before=proof_batch.fixed_runtime_sha(path,{'files':{}},current)
+            stat=path.stat();path.write_text('version two')
+            os.utime(path,ns=(stat.st_atime_ns,stat.st_mtime_ns))
+            self.assertNotEqual(proof_batch.fixed_runtime_sha(path,{'files':current},{}),before)
+
+    def test_inode_replacement_and_broken_digest_force_content_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'fixed-tool';path.write_text('version one')
+            current={};before=proof_batch.fixed_runtime_sha(path,{'files':{}},current)
+            other=Path(temporary)/'replacement';other.write_text('version two');other.replace(path)
+            self.assertNotEqual(proof_batch.fixed_runtime_sha(path,{'files':current},{}),before)
+            current[str(path.resolve())]['sha256']='not-a-digest'
+            self.assertEqual(proof_batch.fixed_runtime_sha(path,{'files':current},{}),receipts.sha(path))
 
 
 if __name__=='__main__':unittest.main()

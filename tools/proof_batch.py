@@ -158,12 +158,40 @@ def step(name, command, root=ROOT):
         return dict(module=name,reused=False,receipt=str(entry/'receipt.json'),seconds=receipt['seconds'])
 
 
-def runtime():
+def fixed_runtime_sha(path, cached, new_hashes):
+    path=Path(path).resolve(strict=True)
+    with path.open('rb') as stream:
+        stat=os.fstat(stream.fileno())
+        identity=[stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns]
+        prior=cached.get('files',{}).get(str(path),{})
+        if not isinstance(prior,dict):prior={}
+        value=prior.get('sha256')
+        if (prior.get('identity')!=identity or not isinstance(value,str)
+                or re.fullmatch('[0-9a-f]{64}',value) is None):
+            import hashlib
+            value=hashlib.file_digest(stream,'sha256').hexdigest()
+        after=os.fstat(stream.fileno())
+        if identity!=[after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns]:
+            raise ValueError('fixed runtime file changed while fingerprinting: '+str(path))
+    new_hashes[str(path)]=dict(identity=identity,sha256=value)
+    return value
+
+def runtime(force=False):
     """Hash actual tool binaries, installed Lean library and all package files.
 
     Once per batch, again at completion; a child cannot introduce its own
     environment stamp. Kept outside .lake; no compiler or cache is changed.
     """
+    cache_file=Path(os.environ['SANDPROOF_FORMAL_CACHE'])/'runtime-file-hashes.json'
+    try:
+        cached=json.loads(cache_file.read_text())
+        if not isinstance(cached,dict) or cached.get('schema')!=1 or not isinstance(cached.get('files'),dict):
+            cached={'schema':1,'files':{}}
+    except (OSError,ValueError,TypeError):cached={'schema':1,'files':{}}
+    if force:cached={'schema':1,'files':{}}
+    new_hashes={}
+    def fixed_sha(path):
+        return fixed_runtime_sha(path,cached,new_hashes)
     result={'tools':{},'libraries':{},'environment':{k:v for k,v in os.environ.items()
         if k.startswith(('RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','CARGO_PROFILE_',
                          'CARGO_BUILD_TARGET','LEAN_','LAKE_','OCAMLRUNPARAM'))}}
@@ -173,15 +201,20 @@ def runtime():
             binary=subprocess.check_output(['rustup','which',name],text=True).strip()
         else:
             binary=str(Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin'/name)
-        result['tools'][name]=dict(sha256=sha(binary),version=subprocess.check_output([binary,*args],text=True))
+        result['tools'][name]=dict(sha256=fixed_sha(binary),version=subprocess.check_output([binary,*args],text=True))
     tools=Path(os.environ.get('SANDPROOF_PROOF_TOOL_ROOT',str(ROOT/'.tools')))
     for name in ('aeneas/bin/aeneas','aeneas/charon/bin/charon','aeneas/charon/bin/charon-driver'):
-        result['tools'][name]=sha(tools/name)
+        result['tools'][name]=fixed_sha(tools/name)
+    service=ROOT/'.tools/lean-mcp'
+    result['tools']['service-python']=fixed_sha(service/'bin/python')
+    result['libraries']['service']=digest({str(p.relative_to(service)):fixed_sha(p)
+        for p in (service/'lib').rglob('*') if p.is_file() and p.suffix in ('.py','.so','.pth')})
     # Both the frontend and its full Rust sysroot affect extraction.
     frontend=Path(subprocess.check_output([str(tools/'aeneas/charon/bin/charon'),'toolchain-path'],text=True).strip())
     prefix=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())
     cargo_home=Path(os.environ.get('CARGO_HOME',str(Path.home()/'.cargo')))
-    result['libraries']['cargo-registry']=tree_digest(cargo_home/'registry/src')
+    result['libraries']['cargo-registry']=digest({str(p.relative_to(cargo_home/'registry/src')):fixed_sha(p)
+        for p in (cargo_home/'registry/src').rglob('*') if p.is_file()})
     result['libraries']['cargo-config']={str(p):sha(p) for p in
         (cargo_home/'config',cargo_home/'config.toml') if p.is_file()}
     for label,directory in [('lean-lib',prefix/'lib'),('frontend',frontend),('packages',ROOT/'.lake/packages')]:
@@ -197,8 +230,9 @@ def runtime():
                 if label == 'packages':
                     if '.lake' in path.relative_to(directory).parts or path.suffix not in ('.lean','.toml','.json','.c','.h'):
                         continue
-                if path.is_file(): entries[str(path.relative_to(directory))]=sha(path)
+                if path.is_file(): entries[str(path.relative_to(directory))]=fixed_sha(path)
         result['libraries'][label]=digest(entries)
+    write_json(cache_file,dict(schema=1,files=new_hashes))
     return result
 
 
@@ -211,12 +245,15 @@ def run_batch(cache, recompute=False):
     from tools.acceptance_receipts import native_case
     native_case('functional',ROOT,None)
     cache.mkdir(parents=True,exist_ok=True)
+    os.environ['SANDPROOF_FORMAL_CACHE']=str(cache)
     # Serialize the shared checkout as well as cache publication. Different
     # branches need separate worktrees/.lake/build, not one writable directory.
     with locked(cache/'checkout-locks'/digest(str(ROOT.resolve()))):
         inputs_before=tracked_inputs()
         native_before=sha(native/'complete.json')
-        profile=runtime();stamp=cache/('runtime-'+digest(profile)+'.json');write_json(stamp,profile)
+        from tools.check_first_chain_extraction import check_tools
+        check_tools(ROOT,Path(os.environ.get('SANDPROOF_PROOF_TOOL_ROOT',str(ROOT/'.tools'))))
+        profile=runtime(force=recompute);stamp=cache/('runtime-'+digest(profile)+'.json');write_json(stamp,profile)
         os.environ['SANDPROOF_FORMAL_RUNTIME']=str(stamp)
         os.environ['SANDPROOF_FORMAL_CACHE']=str(cache)
         os.environ['SANDPROOF_PROOF_BATCH']=str(time.time_ns())+'-'+str(os.getpid())
