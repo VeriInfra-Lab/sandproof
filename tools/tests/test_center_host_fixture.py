@@ -143,7 +143,9 @@ class FixtureTests(unittest.TestCase):
             max_active_global=2, max_active_per_tenant=2, max_disk_bytes_global=12000,
             max_disk_bytes_per_tenant=8000, cleanup_reserve_bytes=4000,
             max_timeout_secs=86400, max_lifetime_secs=86400, startup_timeout_secs=300,
-            public_ipv4_enabled=False, expiry_scan_seconds=1, data_transfer=dict(max_transfers=8),
+            public_ipv4_enabled=False, expiry_scan_seconds=1,
+            data_transfer=dict(max_transfers=8, file_upload_bytes=64*1024**2,
+                               file_download_bytes=96*1024**2),
             bounded_host=dict(physical_storage=dict(pools=[dict(namespace='a'*16,role='runtime')],
                 host_template_caches=[dict(namespace='a'*16, root='/approved/host/cache',
                 max_entries=2, max_downloads=1, max_entry_bytes=1000, artifact_bytes=2000,
@@ -269,6 +271,42 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual([binding['template_id'] for binding in center['templates']['templates']],
                          ['runtime-base', 'builder-base'])
         self.assertEqual(builder['templates']['aliases'], {'base': 'builder-base'})
+
+    def test_builder_files_fit_center_without_changing_either_native_pool(self):
+        runtime = self.native()
+        builder = self.native()
+        builder['namespace'] = 'b'*16
+        builder['bounded_host']['physical_storage']['pools'] = [dict(namespace='b'*16,role='builder')]
+        builder['bounded_host']['physical_storage']['host_template_caches'][0].update(
+            namespace='b'*16, root='/approved/builder/cache')
+        builder['templates']['templates'][0]['template_id'] = 'builder-base'
+        builder['templates']['aliases'] = dict(base='builder-base')
+        # The original builder admits the fixed 77,683,250-byte buildkitd
+        # upload and a complete 10 GiB candidate. The runtime pool remains
+        # limited to 64/96 MiB; its limits cannot configure both routes.
+        builder['data_transfer'].update(max_transfers=16, file_upload_bytes=4*1024**3+65536,
+                                        file_download_bytes=10*1024**3)
+        pools = [runtime, builder]
+        before = copy.deepcopy(pools)
+        center, hosts = fixture.render(pools,
+            registered_catalogs=[p['templates'] for p in pools], deployment='one-deployment',
+            center_root='/approved/center', host_tls_roots=['/approved/runtime/tls','/approved/builder/tls'],
+            host_addresses=['127.0.0.1:9001','127.0.0.1:9004'], public_address='127.0.0.1:9000',
+            artifact_address='127.0.0.1:9002',redis_address='127.0.0.1:9003',
+            password='TESTONLYREDISKEY',key='TESTONLYPUBLICKEY',job_count=2,
+            registry=dict(root='/approved/center/registry', max_templates_global=2),
+            versions=dict(internal_protocol=2,center_store=6,host_store=16))
+        self.assertGreaterEqual(center['data_transfer']['file_upload_bytes'], 77683250)
+        self.assertGreaterEqual(center['data_transfer']['file_download_bytes'], 10*1024**3)
+        self.assertEqual(center['data_transfer']['file_upload_bytes'], 4*1024**3+65536)
+        self.assertEqual(center['data_transfer']['file_download_bytes'], 10*1024**3)
+        self.assertEqual(center['data_transfer']['max_transfers'], 8)
+        self.assertEqual([host['native'] for host in hosts], before)
+        self.assertEqual(pools, before)
+        self.assertEqual(center['request_admission']['max_pending_requests'], 12)
+        single, _ = self.render([runtime])
+        self.assertEqual(single['data_transfer'], runtime['data_transfer'])
+        self.assertEqual(single['data_transfer']['file_upload_bytes'], 64*1024**2)
 
     def test_alias_cannot_redirect_a_canonical_template_identity(self):
         native = self.native()
