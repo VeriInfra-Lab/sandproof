@@ -8,7 +8,7 @@
     {"id": "center", "cargo": ["-p", "sandproof-center", "--bin", "sandproof-center"], "entry": "sandbox-center/src/main.rs", "owner": ["V1", "V2", "V3", "V7", "V8"]},
     {"id": "host", "cargo": ["-p", "sandproof-server", "--bin", "sandproof-host"], "entry": "sandbox-server/src/main.rs", "owner": ["V4", "V5", "V6", "V8"]},
     {"id": "window-reducer", "cargo": ["-p", "sandproof-controller-service", "--bin", "sandproof-window-reducer"], "entry": "controller-service/src/bin/sandproof-window-reducer.rs", "owner": ["V5"]},
-    {"id": "guest", "cargo": ["-p", "sandproof-guest-service", "-p", "sandproof-guest-runtime", "--bins"], "entry": "sandbox-guest-service/src/main.rs", "additional_entry": "sandbox-guest-runtime/src/main.rs", "owner": ["V8", "T9-excluded"]},
+    {"id": "guest", "cargo": ["-p", "sandproof-guest-service", "-p", "sandproof-guest-runtime", "--bins"], "entry": "sandbox-guest-service/src/main.rs", "additional_entry": "sandbox-guest-runtime/src/main.rs", "owner": ["V8"]},
     {"id": "vm-cli", "cargo": ["-p", "sandbox-runtime", "--bin", "sandproof-vm"], "entry": "sandbox-runtime/src/main.rs", "owner": ["V6"], "role": "conservative additional operator entry; not a deployed service"}
   ],
   "limits": [

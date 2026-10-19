@@ -18,6 +18,14 @@ CONFIG = "verification/use-inventory/config.json"
 COMPILER = "2d8144b7880597b6e6d3dfd63a9a9efae3f533d3"
 TARGET = "x86_64-unknown-linux-gnu"
 ROOT_IDS = ["center", "host", "window-reducer", "guest", "vm-cli"]
+DIRECTORY = "verification/use-inventory/"
+MANIFEST = "verification/use-inventory-inputs.sha256"
+AUDIT_INPUTS = {
+    CONFIG, DIRECTORY + "responsibilities.json", DIRECTORY + "catalogue.json",
+    "tools/v0_use_inventory.py", "tools/tests/test_v0_use_inventory.py",
+    "scripts/v0-mir-wrapper.sh", "scripts/verify-use-inventory.sh",
+    "docs/formal/dependencies.md", "docs/formal/00-foundations.md", "scripts/verify-controller.sh",
+}
 
 
 def sha(path):
@@ -40,6 +48,11 @@ def write_json(path, data):
 
 
 def sources(root):
+    untracked = subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=root).decode().split("\0")
+    if any(n and n.split("/", 1)[0].startswith(("sandbox-", "controller-"))
+           and (n.endswith(".rs") or n.endswith("/Cargo.toml")) for n in untracked):
+        raise ValueError("untracked native source cannot satisfy a frozen census")
     names = subprocess.check_output(
         ["git", "ls-files", "-z"], cwd=root).decode().split("\0")
     return {name: sha(root / name) for name in sorted(names) if name and (
@@ -60,9 +73,18 @@ def index_mir(path):
                 raise ValueError("unterminated declaration")
             kind = next((k for k in ("fn", "const", "static", "alloc")
                          if line.startswith(k + " ") or (k == "alloc" and line.startswith(k))), None)
-            if kind is None or not line.endswith("{"):
+            if kind is None:
                 raise ValueError("unreviewed top-level MIR declaration")
             current = dict(kind=kind, line=number, header=line, locals=[], terminators=[])
+            if ((kind in {"const", "static"} and line.endswith(";") and " = const " in line)
+                    or (kind == "alloc" and (line.endswith(" {}")
+                        or re.fullmatch(r"alloc\d+ \(fn: [^()]+\)", line)))):
+                current["end"] = number
+                current["sha256"] = hashlib.sha256((line + "\n").encode()).hexdigest()
+                bodies.append(current)
+                current = None
+            elif not line.endswith("{"):
+                raise ValueError("unreviewed top-level MIR declaration")
         elif current is not None:
             if line == "}":
                 current["end"] = number
@@ -131,7 +153,7 @@ def unit_data(record, output, before):
     return unit, dict(**key, **indexed)
 
 
-def check_build_coverage(output, receipt):
+def check_build_coverage(output, receipt, config=None):
     metadata = read_json(output / "metadata.json")
     if sha(output / "metadata.json") != receipt["metadata_sha256"]:
         raise ValueError("changed Cargo metadata")
@@ -149,6 +171,18 @@ def check_build_coverage(output, receipt):
                 artifacts.append(message)
         if not artifacts:
             raise ValueError("no own compiler artifacts for production root")
+        if config is not None:
+            profile_name, root_id = next((p, r["id"]) for p in config["profiles"]
+                                         for r in config["roots"] if p + "-" + r["id"] == stage["id"])
+            entry = next(r for r in config["roots"] if r["id"] == root_id)
+            expected_command = ["cargo", "build", "--locked", "--offline", "--target", TARGET,
+                                "--profile", profile_name, "--message-format=json"] + entry["cargo"]
+            required = {entry["entry"]} | ({entry["additional_entry"]}
+                                           if "additional_entry" in entry else set())
+            actual_sources = {Path(a["target"]["src_path"]).relative_to(ROOT).as_posix()
+                              for a in artifacts}
+            if stage["command"] != expected_command or not required <= actual_sources:
+                raise ValueError("configured root was not actually compiled")
         for artifact in artifacts:
             source = Path(artifact["target"]["src_path"]).relative_to(ROOT).as_posix()
             profile = artifact["profile"]
@@ -235,7 +269,7 @@ def capture(output):
         stages=stages, units=units, index_sha256=sha(output / "index.json"),
         metadata_sha256=sha(output / "metadata.json"))
     write_json(output / "receipt.json", receipt)
-    check_build_coverage(output, receipt)
+    check_build_coverage(output, receipt, config)
     return receipt
 
 
@@ -263,21 +297,111 @@ def check(output):
             (output / unit["raw"]).parent / "command.json", output, receipt["sources"])
         if actual != unit or actual_index != indexed:
             raise ValueError("changed or truncated complete MIR")
-    check_build_coverage(output, receipt)
+    check_build_coverage(output, receipt, config)
     # No dispatch resolution, coroutine destructor reconstruction or library
     # correctness claim is obtained by this evidence consistency check.
     return receipt
+
+
+def review_coverage(output, receipt):
+    assignment = read_json(ROOT / DIRECTORY / "responsibilities.json")
+    packages = {p["name"] for p in read_json(output / "metadata.json")["packages"]}
+    if packages != set(assignment["packages"]):
+        raise ValueError("workspace package has no review owner")
+    actual = set()
+    for unit in receipt["units"]:
+        for header in unit["drop_functions"]:
+            match = re.search(r"<impl at ([^:]+\.rs):.*>::drop\(_1: (.*)\) ->", header)
+            if match is None:
+                raise ValueError("unassigned Drop header: " + header)
+            actual.add(match.groups())
+    expected = [(d["source"], d["receiver"]) for d in assignment["drop_review"]]
+    if len(expected) != len(set(expected)) or set(expected) != actual:
+        raise ValueError("missing, duplicate or stale custom Drop assignment: "
+                         + repr(actual.symmetric_difference(expected)))
+    return assignment
+
+
+def publish(output):
+    receipt = check(output)
+    assignment = review_coverage(output, receipt)
+    metadata = read_json(output / "metadata.json")
+    units = [{k: v for k, v in u.items() if k not in {"raw", "command_sha256"}}
+             for u in receipt["units"]]
+    units.sort(key=lambda u: (u["source"], u["cfg"], u["codegen"]))
+    summary = dict(schema=1, capture_commit=receipt["source_commit"],
+                   config_sha256=receipt["config_sha256"],
+                   source_inputs=len(receipt["sources"]),
+                   packages=sorted(p["name"] for p in metadata["packages"]), units=units,
+                   custom_drop_implementations=len(assignment["drop_review"]),
+                   evidence=dict(receipt_sha256=sha(output / "receipt.json"),
+                                 index_sha256=receipt["index_sha256"]),
+                   scope="compiled source census; no semantic coverage or call-graph completeness claim")
+    write_json(ROOT / DIRECTORY / "catalogue.json", summary)
+    inputs = {**sources(ROOT), **{n: sha(ROOT / n) for n in AUDIT_INPUTS}}
+    (ROOT / MANIFEST).write_text("".join(f"{value}  {name}\n" for name, value in sorted(inputs.items())))
+    return receipt
+
+
+def admit():
+    records = []
+    for line in (ROOT / MANIFEST).read_text().splitlines():
+        match = re.fullmatch(r"([0-9a-f]{64})  ([^\n]+)", line)
+        if match is None:
+            raise ValueError("malformed frozen inventory input")
+        records.append((match[2], match[1]))
+    expected = set(sources(ROOT)) | AUDIT_INPUTS
+    if len(records) != len(dict(records)) or set(dict(records)) != expected:
+        raise ValueError("missing, duplicate or extra frozen inventory input")
+    for name, digest in records:
+        if sha(ROOT / name) != digest:
+            raise ValueError("frozen inventory input changed: " + name)
+    config = read_json(ROOT / CONFIG)
+    catalogue = read_json(ROOT / DIRECTORY / "catalogue.json")
+    if (catalogue["config_sha256"] != sha(ROOT / CONFIG)
+            or catalogue["source_inputs"] != len(sources(ROOT))
+            or config["profiles"] != ["dev", "release"]
+            or [r["id"] for r in config["roots"]] != ROOT_IDS):
+        raise ValueError("unreviewed source census/configuration")
+    return catalogue
+
+
+def query(output, needle):
+    # A search result is a locator into raw evidence, never a proof of absence.
+    receipt = read_json(output / "receipt.json")
+    if sha(output / "index.json") != receipt["index_sha256"]:
+        raise ValueError("changed full index")
+    for unit, indexed in zip(receipt["units"], read_json(output / "index.json"), strict=True):
+        for body in indexed["bodies"]:
+            rows = [dict(line=body["line"], text=body["header"])] + body["locals"] + body["terminators"]
+            for row in rows:
+                if needle in row["text"]:
+                    print(json.dumps(dict(crate=unit["crate"], raw=unit["raw"],
+                                          declaration=body["header"], **row)))
 
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "rustc":
         return compiler_wrapper(sys.argv[2:])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("capture", "check"))
-    parser.add_argument("output", type=Path)
+    parser.add_argument("mode", choices=("capture", "check", "publish", "admit", "query"))
+    parser.add_argument("output", type=Path, nargs="?")
+    parser.add_argument("--contains")
     args = parser.parse_args()
-    result = capture(args.output.resolve()) if args.mode == "capture" else check(args.output.resolve())
-    print(json.dumps(dict(units=len(result["units"]), sources=len(result["sources"]))))
+    if args.mode == "admit":
+        result = admit()
+        print(json.dumps(dict(units=len(result["units"]), sources=result["source_inputs"])))
+    else:
+        if args.output is None:
+            parser.error("evidence directory required")
+        output = args.output.resolve()
+        if args.mode == "query":
+            if not args.contains:
+                parser.error("nonempty --contains required")
+            query(output, args.contains)
+            return 0
+        result = {"capture": capture, "check": check, "publish": publish}[args.mode](output)
+        print(json.dumps(dict(units=len(result["units"]), sources=len(result["sources"]))))
     return 0
 
 

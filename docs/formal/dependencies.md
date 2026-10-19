@@ -137,6 +137,26 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 进入证明批次先由V0维护合同清单、各模块认领使用路径、V9审查系统使用的前提集合。最小受控失败和真实部署核对沿用现有测试，不为了“证明库可靠”增加无限黑箱测试。获批 B 合同逐项显式使用，不要求先完成通用异步翻译；未建立的自有 Lua、规则字符串或业务决定仍保持未解，不借 B 合同消除。
 
+### 真实使用点的来源清单
+
+[入口清单](../../verification/use-inventory/config.json)固定中心、宿主、请求窗口辅助进程、来宾服务与 worker，以及额外保留的 VM 运维入口；分别编译开发和普通发布配置。前者开启调试断言，后者关闭，两者保留溢出检查。SDK/Redis 测试、诊断特性、示例和非 Linux 配置不计入这份生产源码清单；启用新的部署特性后必须补采。模板函数即使不属于证明范围，也不从混合 crate 的编译证据中删除，T9 仍不排除 Guest 的安全责任。
+
+[采集工具](../../tools/v0_use_inventory.py)仅给原生产编译器增加 MIR 输出，不改 Rust 代码、Charon/Aeneas 或其语义。完整原文、实际 Cargo 产物/参数、签名、局部类型和终结语句保存在本轮忽略的证据目录；[登记结果](../../verification/use-inventory/catalogue.json)及[输入摘要](../../verification/use-inventory-inputs.sha256)绑定本轮来源。用 Cargo 实际产物逐项查漏，不能用几个函数计数代替完整输出。`query` 按原文定位调用/类型，搜索没有命中不证明路径不存在。
+
+[责任清单](../../verification/use-inventory/responsibilities.json)给每个自有包和本轮观察到的自定义 Drop 指定复核归属，**不是新增可信白名单**。归还计数、锁下修改、标记 Unknown、选择取消、转交子进程和是否释放仍是自有业务；只有具体登记的 A/B 原语及机械接线可以作为条件。清单中“尝试解锁/发送/终止”不能改读为这些动作必定成功，也不能推出工作已经退出。
+
+这份清单是源码与编译来源审计，**没有证明调用图闭合或新的 Rust 语义**。稳定 MIR 文本不能单独补齐动态回调实际实例、结构体全部字段/运行时合法域、future 在每个挂起点被取消时的生成清理、嵌套库析构及外部可执行脚本的完整使用绑定；这些缺口在责任清单继续归 T1–T8 和业务模块，不能因为有 MIR 就勾选整个 T0。正常 Drop、实际发生的 unwind、Drop 自身 panic、abort 和进程崩溃仍分开，后两者不保证执行 Drop。
+
+可复现入口（固定 a6000 环境；完整日志不提交）：
+
+```sh
+bash scripts/python-entry.sh tools/v0_use_inventory.py capture artifacts/use-census
+bash scripts/python-entry.sh tools/v0_use_inventory.py check artifacts/use-census
+bash scripts/python-entry.sh tools/v0_use_inventory.py query artifacts/use-census --contains OwnedSemaphorePermit
+```
+
+`publish` 在完成来源/责任复核后生成登记结果和摘要，属于审查更新，不能用它接受未经核对的变更。`verify-use-inventory.sh` 只做已登记来源的快速准入，不冒充重新编译或 Lean 证明。已有真实核心仍执行原抽取和完整保留证明验收；来源清单不扩大任何已证明范围。
+
 ### A6 公共基础库模型使用登记
 
 `A6-foundations-stdlib` 只覆盖抽取前端 `nightly-2026-08-18` 中九个标准库函数：`Option::as_ref/is_none_or/is_some_and`、Option 的 `Try::branch`/`FromResidual::from_residual`、`Result::ok`、`String::eq`、`Vec::is_empty/retain`。前提是有效、有限的 Rust 值/借用及容器表示；正常返回分别保持可选值、精确传播残余、将 Result 的成功值投影为 Some（错误为 None）、比较完整字符串、判断长度是否为零。这些库接口不自行构造提交或物理证据，不提供 Ready/Cleaned/Committed，也不把外部未知转换为明确失败；用户回调的失败、效果或发散必须原样传播，具体回调语义由调用方证明。`Result::ok` 不保留错误原因，不能据此区分未执行、明确失败或结果未知。失效后不得继续使用依赖它们的资源加法、身份判断、回执检查、观察、窗口后继查询和创建参数对应。

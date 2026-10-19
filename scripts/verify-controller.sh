@@ -9,6 +9,7 @@ cd "$ROOT_DIR"
 for proof_inputs in verification/*inputs.sha256; do
   shasum -a 256 -c "$proof_inputs"
 done
+bash scripts/verify-use-inventory.sh
 
 # The obsolete whole-controller extraction and its RustRefinement dependants
 # were retired by the project owner. Each retained source-bound module still
