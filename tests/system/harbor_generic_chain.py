@@ -525,7 +525,8 @@ def exercise(args):
                 row['kill_dispatched']=True  # Survives later completion callbacks.
                 return fetch(opener,urls[0],'DELETE','/sandboxes/'+ident,key)[0]
             recovered=recover_runtime_create(row['runtime_intent'],
-                read_center=lambda:services.planned_audit('center'),read_host=read_host,
+                read_center=lambda:services.planned_audit('center',ready_deadline=deadline),
+                read_host=read_host,
                 deployment=services.center_config['deployment_id'],owner=1,delete=delete,
                 deadline=deadline,sandbox_id=row.get('sandbox_id'),
                 create_identity=create_identities.get(row.get('sandbox_id')),

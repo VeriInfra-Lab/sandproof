@@ -389,14 +389,30 @@ class RuntimeServices:
             time.sleep(min(.2,max(0,deadline-time.monotonic())))
         raise RuntimeError('authenticated host/cache readiness unobserved; no sandbox creation attempted')
 
-    def planned_audit(self,name):
+    def planned_audit(self,name,*,ready_deadline=None):
         """Explicit test stop/read/restart of one ORIGINAL authority.
 
         Never silently stop a role as part of local_for, never initialize on a
         restart, and never stop another healthy role for this observation.
+        Recovery loops can require a fresh online round before their next
+        offline audit, under the SAME absolute recovery and download bounds.
+        Otherwise repeated stop/read/restart can starve cache restoration and
+        the original terminal-confirmation exchange.
         """
         if name not in self.processes.children or self.processes.children[name].poll() is not None:
             raise RuntimeError('planned offline audit requires the original running role')
+        if ready_deadline is not None:
+            import math
+            if (type(ready_deadline) not in (int,float) or not math.isfinite(ready_deadline)):
+                raise ValueError('finite original recovery deadline required')
+            remaining=ready_deadline-time.monotonic()
+            if remaining<=0:
+                raise TimeoutError('original recovery deadline expired before planned audit')
+            download_bound=max(config['artifact_source']['download_timeout_ms']
+                               for config in self.host_configs)/1000
+            self.wait_ready(timeout=min(remaining,download_bound),for_admission=False)
+            if time.monotonic()>=ready_deadline:
+                raise TimeoutError('original recovery deadline expired before planned audit')
         self.processes.stop(name)
         try:
             return self.processes.audit(name)
