@@ -4,20 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Reject stale child or parent manifests before starting expensive checks.
+# Each module still repeats its own admission and regeneration checks below.
+for proof_inputs in verification/*inputs.sha256; do
+  shasum -a 256 -c "$proof_inputs"
+done
+bash scripts/verify-use-inventory.sh
+
+# Reject stale byte-wrapper source before the expensive workspace checks.
+bash scripts/python-entry.sh tools/check_json_request_binding.py
+
 # The obsolete whole-controller extraction and its RustRefinement dependants
 # were retired by the project owner. Each retained source-bound module still
 # regenerates and compares its complete artifacts in its own mandatory gate.
 cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+bash scripts/verify-json-request.sh
+bash scripts/verify-tls-pin.sh
 bash scripts/verify-json-identifiers.sh
 bash scripts/verify-json-counter.sh
 bash scripts/verify-task-contract.sh
+bash scripts/verify-revocation-contract.sh
+bash scripts/verify-tunnel.sh
 bash scripts/verify-data-drain.sh
+bash scripts/verify-sqlite.sh
 bash scripts/verify-foundations.sh
 bash scripts/verify-network.sh
 bash scripts/verify-first-chain-linux.sh
 bash scripts/verify-first-chain.sh
+bash scripts/verify-storage.sh
 
 # Check every retained project proof, including files omitted by an import
 # aggregator. The additive Linux Lake view also declares the first-chain

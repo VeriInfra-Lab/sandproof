@@ -95,7 +95,7 @@ A_safe允许恶意来宾/坏请求/断网/资源不足，但依赖宿主隔离�
 | B3 网关任务、撤销信号与流驱动：[until_revoked](../../sandbox-data-transport/src/revocation.rs)、[drain](../../sandbox-host-service/src/data_gateway/drain.rs) | 原信号/连接/租约身份不串线；已撤销或权限方已关闭时优先结束本次等待，不 poll 工作；后续撤销按实际 select/poll 观察中止该 future；字节、结束、错误和句柄按库合同传递；body 与 relay 的独立持有、Drop 通知按登记接线发生 | 撤销权限和生效点、已授权完整绑定、已写字节及预算、终局分类、真实退出/排空证据、Unknown 保持及释放许可。撤销到被观察前可能已有 I/O；Drop 通知不提供 relay 退出或全部排空证明，未确认退出时保留未知 |
 | B4 外部调用的薄参数/结果接线 | 固定 API/调用目标接收给定的原完整参数与稳定句柄；给定码的封装、成功值与错误如实传递，部分效果和未知不被抹去，修改范围及借用/所有权按合同传递 | 选择哪个对象、命令、SQL/Lua 文本和参数；错误/未知的业务解释及是否重试、提交、发布、确认或释放。动态外壳不包含自有鉴权、恢复或结果判断；有状态回调的次数/顺序/状态必须显式保留 |
 
-B1 已有下面的逐符号范围和正式条件模型；B2/B3/B4 是获准登记的类别，只有补齐实际符号、合同和依据的使用点才能引用，不能把整类直接当作已验证适配。以上不是整文件/整个服务的可信白名单。每批列出实际函数及不可抽取语句，固定摘要，删去与本批无关的保证；有业务判断的同一函数先拆出真实同步核心。B1–B4 的源码审查、确定性测试和错误对照核对真实接线；若未形成机器精化，最终结论明确以该绑定符合合同为条件，不能声称所有 Rust 已获证明。接口签名仍含不支持类型时改用具体值/句柄/结果边界并重新预检；无法以窄接口和合理重构接通则报告阻断，不自动扩大工具开发。
+B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2、B3 的其它操作及 B4 是获准登记的类别，只有补齐实际符号、合同和依据的使用点才能引用，不能把整类直接当作已验证适配。以上不是整文件/整个服务的可信白名单。每批列出实际函数及不可抽取语句，固定摘要，删去与本批无关的保证；有业务判断的同一函数先拆出真实同步核心。B1–B4 的源码审查、确定性测试和错误对照核对真实接线；若未形成机器精化，最终结论明确以该绑定符合合同为条件，不能声称所有 Rust 已获证明。接口签名仍含不支持类型时改用具体值/句柄/结果边界并重新预检；无法以窄接口和合理重构接通则报告阻断，不自动扩大工具开发。
 
 进展另区分外部调用最终返回、运行时调度/队列公平和业务自身的启用/出队/预算/无环等待。前两项可按精确条件依赖 A/B，后一项仍由模块/V9 证明；公平不能使一个从未启用的业务步骤发生。
 
@@ -104,6 +104,20 @@ B1 已有下面的逐符号范围和正式条件模型；B2/B3/B4 是获准登�
 固定 serde/serde_json 引擎及其标准 `Serialize/Deserialize` 派生可按实际类型与属性登记：保持完整字段/字节和值，不截断编号；字段名、顺序要求、默认/可选值、缺失/重复/未知字段、枚举/数组形状及错误消费状态都按该派生配置，而非一律假设未知字段会拒绝。只覆盖冻结的标准派生与读取/写出接口，不覆盖任意自定义 visitor、校验器或业务解码器。失败允许已消费输入或已输出前缀；有状态两次编码不假定同结果。
 
 自有 `TryFrom`/`is_valid`、长度/预算、完整身份和参数绑定、接受/拒绝规则仍需实际抽取及证明；真实类型/属性到模型字段的接线由审查、合同样例和差分测试登记证据，未机器证明时显式保留该符合性前提。不能为绕过输入业务而直接假设“解码结果已获授权且合法”，也不要求先证明第三方 JSON 内部扫描/UTF-8/转义算法。其他容器/整数库模型仍按下文实际使用点单独冻结。
+
+生命周期请求的具体 schema 还需保留固定派生的一个差别：NodeIdentity、ControlIdentity、Resources、CreateBinding、LifecycleRequest 的对象拒绝未知字段；内部标记的 Intent 中，Create/Destroy 使用的固定 unit visitor 会消耗并忽略可成功解析的额外字段，Renew 的结构体分支才拒绝未知字段。`deny_unknown_fields` 属性本身不能替代这个逐分支登记。输出仍按声明字段生成对象；标准结构体的序列输入按固定字段顺序处理。上述差异由原解码器回归核对，不改变生产策略，也不将忽略的字段解释为命令或授权。
+
+[字段回调连接](../../SandboxModel/Boundaries/JsonRequest/Callbacks.lean)要求每个自有字段有原 Deserialize、原字典和输入的调用证据，再由已有真实叶子证明推出完整输入域；有限 value reader 仅证明条件可实现，不能提供实际 parser 绑定。[完整投影](../../SandboxModel/Boundaries/JsonRequest/Representation.lean)保留全部身份、创建字段和 intent，投影相等可推出原值相等。[编码字段规约](../../SandboxModel/Boundaries/JsonRequest/Encoding.lean)调用原 String/u64 转换；JSON 渲染、标准派生的字段接线及 Clone 仍按实际 A6 使用点落实。
+
+[文档结束顺序](../../SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean)按固定 `serde_json::de::from_trait` 先 Deserialize 再 end 的顺序组合；前面的叶子错误不执行后面的尾随检查，已有错误、失败、发散和效果保持。[字节组合定理](../../SandboxModel/Boundaries/JsonRequest/Codec.lean)显式接收字段字节关系及派生合同参数；[具体 SliceRead 连接](../../SandboxModel/Boundaries/JsonRequest/SliceBinding.lean)将其限定为本请求的原输入切片、原错误字典、六个编号与三个计数器回调。固定库的现场、标准派生组装及紧凑 Vec 渲染由 `SliceDeriveContract` 作为显式 A6/B4 条件提供；自有转换、校验、完整字段和守卫结论则由实际生成体的定理提供。该条件的采用依据是下述逐符号源/AST 登记与原生回归，不是库或异步外壳已经机器精化。
+
+[容器结束与错误位置](../../SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean)另区分内部收尾与最外层文档结束：固定 `deserialize_struct` 即使收到 visitor 的普通错误，仍执行 `end_map/end_seq`，可能继续消费空白；普通收尾错误不能覆盖更早的字段错误。原 `fix_position` 只在错误行号为零时补齐当时位置，外层不能再次覆盖已有位置。直接对自有编号/计数器调用 `from_slice` 时可能仍是 `(0,0)`；嵌入结构体后才由最近容器补齐。模型接收固定 SliceRead 提供的实际字节、偏移和位置，不另实现 JSON 扫描器，也不声称错误后解析状态回滚。
+
+具体 `A6-json-lifecycle-derive` / `B4-json-lifecycle-call` 范围见[调用登记](../../verification/json-request-binding.json)。它逐项列完整字段/声明顺序、三个 intent 的固定行为、六个原编号和三个计数器字典、private SliceRead/Vec 的状态与错误、实际生产调用及独立预算来源。两个包装根由原 Charon 生成的完整 LLBC 和单次调用 AST 核对参数、结果、类型字典及 unwind 路径；[绑定检查器](../../tools/check_json_request_binding.py)同时固定生产源和十份库源，并拒绝隐藏守卫、替换类型/参数、增加调用或业务析构。它不翻译完整 Serde trait 图，也不是编译器、库或异步外壳的机器精化证明。`SliceDeriveContract` 到公共 `StandardDeriveRecipe` 的组合已由内核检查；这不会消除固定库符合该条件的可信责任。负向自动入口和原完整验收分别检查，不由登记文件存在推定通过。
+
+正常分配域中，固定紧凑 renderer 对本 schema 的安全长度上界为 `2048 + 6 × 六个编号的 UTF-8 字节数之和 + 4 × options 字节数`。2048 覆盖固定键名、标记、标点、有界整数和 32 字节摘要；6 覆盖最坏字符转义，4 覆盖 u8 的三位十进制与分隔符。源/属性改变后必须重查这个界，不能沿用给新 schema。第三方 renderer 的完成及此结构长度保证属于明确 A6 正常分配条件；自有编号每项不超过 128 字节、options 不超过 65536，以及由此得到总长不超过原 270336 字节，则由自有输入域和原创建守卫的已证结论推出。所有合法有界请求有完整往返见证，初始请求有真正接受见证；不只证明拒绝安全，也不假设编码已经成功。物理 OOM/abort 或任意自定义序列化器不在该完成条件内。
+
+本项纯值析构仅限普通 String、Vec<u8> 和 SliceRead/Vec 路径产生且不含自定义 IO 错误来源的库错误；原输入/请求为借用，parser 的可变游标与 scratch 由这次固定库调用私有持有。FD、许可、锁、任意自定义 Drop、panic/unwind 收尾、OOM/abort 和 async 取消均不在此域。真实服务器中 receiver、连接和任务所有权仍需其原模块提供条件，不能因 JSON 编解码采用 A6 而一并排除。
 
 ## Redis 与 SQLite 的落地合同
 
@@ -114,7 +128,49 @@ B1 已有下面的逐符号范围和正式条件模型；B2/B3/B4 是获准登�
 
 Redis 脚本原子执行指不被其他请求插入，不保证任意多写脚本报错后回滚；当前实际脚本把检查放在唯一HSET之前，需V2证明这一事实。读成功只构造Observed；Committed要经过实际CAS与健康/耐久确认。未知写围栏不能靠再次读到旧记录解除，reaffirm须提交原完整payload的新修订后再派发。[Redis脚本](https://redis.io/docs/latest/develop/programmability/eval-intro/)、[Redis持久化](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
 
+### A11/B4 Redis 提交结果接口的具体范围
+
+[#564](https://github.com/VeriInfra-Lab/sandproof/issues/564) 的[隔离候选](../../verification/experiments/redis-result/README.md)固定原生产基线、补丁、回调入口、工具与完整生成摘要。以下是该候选的使用条件；当前生产 `RedisLedger` 尚未因此获得证明。`JsonCodec`、健康检查和返回码判断是自有代码，不能因使用 Redis 而移进 A11。
+
+| 操作或对象 | 可使用的保证 | 不能由此推出的结论与自有义务 |
+|---|---|---|
+| A11：Redis 7.2.16 与 redis-rs 1.7.1 | 原受保护 IPv4 回环、ACL、单有效写者及冻结持久化/内存配置下，采用该版本命令和回复的合同。EVAL 执行期间不插入其它命令 | 不承诺外部调用总返回；错误不保证无写入或回滚。实际 Lua 的检查、参数和唯一写入顺序仍由 V2 提供；磁盘/文件系统及机器故障范围必须另有部署条件 |
+| B4：候选 `storage_io::eval` | 将原 CAS 文本、单个 key、部署、格式、旧修订、新修订、完整新旧 payload 和限额按实际 KEYS/ARGV 顺序传给原连接；保留实际数字或错误 | `LibraryRequest` 只记录传给适配的参数，不表示发包、执行或落盘。选择文本/对象/字段、解释返回码以及确认/未知决定不属于机械适配 |
+| B4：候选 `storage_io::info/settings/query` | 把实际 section、完整有序配置键和原绝对 deadline 交给同一连接；按原调用设置剩余读写超时，忠实传递回复/错误及连接回写 | 多次检查不是原子快照；超时设置不是整个调用的严格墙钟上界。失去响应、协议/类型转换错误或读取失败都可能在命令已执行之后发生；不能因本地连接被清空推导数据库没变或物理连接已经关闭 |
+| A6：候选 `trim_cr/split_colon` 与固定字符串/表操作 | 固定标准库的 UTF-8/字节接口；按第一个冒号分割、按原规则去掉末尾 CR，Lines 保留原 LF/CRLF 行语义；仅采用纯 String/str 比较和借用、唯一键字典及纯字节克隆 | 自有 INFO 扫描、重复键拒绝及配置选择仍抽取；任意自定义比较器、Borrow、Clone、格式回调或有状态两次编码不在本范围 |
+| A8/B4：候选 `OperationClock/SystemClock` | 本次原超时配置传给原时钟，产生的 deadline 原样交给后续调用；回调状态在抽取结果中保留 | 不假设跨机时钟一致，也不从一个 deadline 推出调用一定结束；单位、溢出和更高层寿命仍由调用者负责 |
+| B4：公开 `commit/reaffirm` 到泛型核心 | 实际薄转调传递原账本、原观察、原 next、`T::FORMAT_VERSION`、原 `JsonCodec` 和 `SystemClock`；完整返回与异常路径保留 | 完整公开 Charon AST 的源码/参数准入是审查和检查证据，不是具体 Serde 回调图的 Lean 精化；改变回调、参数、分支或字典必须重查 |
+
+原 LLBC 的析构逐位置登记在候选 `environment.json`：普通 String/Vec、已登记字典和自有载荷容器，仅在普通值域中忽略其内存释放；泛型 T 不得含可观察自定义 Drop 或共享资源。`fence_unknown` 对原 Option<Connection> 的替换另按外部 A6/B4 处理，**不把 TCP 连接析构说成纯内存操作**：实际关闭可能让对端继续处理已发请求或产生其它网络结果，物理效果仍未知。此域只允许原受控非 PubSub TCP 连接，不安装用户 push sender，不据模型中的 None 证明物理关闭、退出或回滚。写者文件租约及 codec/clock 原所有者均为借用，不在这组调用中释放。异常清理位置同样冻结，但正常后态定理不覆盖 panic/unwind/abort；若将来引入资源载荷、PubSub、用户析构或新关闭行为，须重审该域。
+
+正常值模型允许数字、文本、配置表、调用前拒绝、送达未知、panic 与不返回。正常拒绝或错误返回不携带物理“未生效”保证；panic/不返回没有正常后态，不能引用正常返回的围栏定理来断言异常被捕获后仍安全。自有 V2 调用方须连接异常后的停用、责任保留和恢复；进程崩溃/abort 不依赖 Drop 收尾。
+
+正常成功要经过实际 CAS 返回 0 及原后置健康检查；抽取定理保留部署、修订、完整载荷和解码后的状态。1/2/3/4 仅分别映射 Missing/AlreadyInitialized/InvalidRecord/Conflict，物理无写入仍依赖自有脚本证明；未知数字、EVAL 错误和后置健康错误进入 OutcomeUnknown、保留围栏并清空本地连接。读取观察不能自行解除该围栏，reaffirm 的成功必须保留原完整 payload 并使用新修订。
+
+泛型定理显式保留两个自有条件：codec 的正常错误限于 InvalidRecord/InvalidState/Capacity，以及同一 codec 状态链上的成功编解码往返。它们不是 A6/B4 的保证，具体生产 schema 的实例由 V2 提供；没有实例就只是有条件结论。接口限于正常分配、有限可表示字符串/字节和普通值载荷；带许可、FD、锁、共享可变资源或可观察自定义 Drop 的载荷须另登记，不能套用纯值析构擦除。写者租约在本调用中借用而非销毁；身份模型也不提供物理锁/文件释放证据。
+
+候选源、外部模型、公开 AST、完整生成物和真实 Rust 错误版均须绑定同一冻结版本。原工具的抽取、定理依赖审计及回归分别给出证据；局部通过不替代两个完整验收入口，不关闭整个 T7。完整 codec/Lua、读取/reconnect、缓存/outbox/派发与崩溃恢复组合仍由 V2 负责。
+
 SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受实际文件系统/硬件合同限制；只有明确冻结的故障范围才可依赖，未约定断电行为仍排除。[SQLite同步配置](https://www.sqlite.org/pragma.html#pragma_synchronous)、[WAL](https://www.sqlite.org/wal.html)
+
+### A4/B2/B4 SQLite 提交回执与缓存发布接口（隔离候选）
+
+本条适用于 [#570](https://github.com/VeriInfra-Lab/sandproof/issues/570) 的[固定候选](../../verification/experiments/sqlite-commit/candidate.json)，不是整个 ControllerJournal 的可信声明。原生产基线为 `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`，候选只在私有副本应用[补丁](../../verification/experiments/sqlite-commit/candidate.patch)。原 WorldTransaction 的 commit_with/Drop 实际转调新增 memo 核心；核心生成物及条件性质位于 [SandproofSqlite](../../verification/aeneas/sqlite/SandproofSqlite/Results.lean)。完成与完整验收状态见覆盖记录及任务，不从本登记推定全入口已证。
+
+| 接口及提供方 | 可以依赖的具体保证 | 条件和不能推出的结论 |
+| --- | --- | --- |
+| A4：rusqlite 0.40.2 / libsqlite3-sys 0.38.2 的原 Transaction::commit | 对原事务执行提交接口；正常 Ok 采用同一受保护数据库和声明同步合同下的事务提交含义 | 本候选实际链接的 bundled SQLite 为 3.53.2（3053002），与固定 0.38.2 源匹配；要求原 WAL、synchronous FULL、可靠文件/同步环境及原排他控制租约。成功不补造哪些行应当同事务，也不把 VM/I/O 纳入数据库事务 |
+| A4：原 commit 的 Err | 允许提交前或提交后两种耐久结局，原错误值继续可见 | Err 不是未写入或已回滚证明；也不保证连接已回到 autocommit。A4 不负责本项目的缓存失效、恢复身份或是否派发 |
+| A4：原 Transaction::rollback 及其内部结束处理 | 对仍持有的原事务调用原 rollback；正常 Ok 采用数据库的对应事务合同 | 失败不提供回滚完成、连接关闭或物理资源释放证据。公开 API 调用一次不意味着引擎内部只执行一条 SQL；内部结束及部分失败仍按 A4 解释 |
+| B2：隔离 TransactionCells::set_committed(value) | 将给定原 Option<World> 写入原 committed.value；不选择值、不写 candidate 或 data_version | 两个单元与所属事务/外层 CommittedWorld 必须绑定，正常借用有效，操作的临时 RefMut 不跨数据库回调。逻辑模型记录原单元的值，未证明 RefCell 内部实现 |
+| B2：隔离 TransactionCells::take_candidate() | 取走同一原 candidate 单元的值，将该单元改为 None，返回原完整值 | committed 与 candidate 是两个不同单元。调用期间没有冲突借用或并发/重入改写；不能将其推广到任意共享引用或可观察自定义析构。取值后临时借用较早结束的差异不构成任意程序一般等价证明 |
+| B4：WorldTransaction::commit_with/Drop 的原参数、状态与回调接线 | 原 transaction 槽、上述两单元和完整回调交给同一真实 memo 核心，原 Rust 结果如实返回；Drop 采用原 Transaction::rollback | 正常生产提交回调固定为 Transaction::commit；测试丢回执闭包保持相同缓存修改范围。回调可以改变数据库，但不能改写这两个缓存单元。FnOnce 捕获值的析构也不得改写缓存；任意自有回调捕获共享缓存或额外资源时不得直接套用。T 为原事务句柄时，其结束/析构仍属 A4，不是可任意擦除的资源。需要单独证明或登记修改范围 |
+
+**本项目仍要证明的决定。** 先给原 committed 单元传入 None，再取出原 live transaction 并调用给定提交回调；正常 Err 包装为 CommitUncertain，保持已清空状态；仅正常 Ok 后取出并发布原 candidate。rollback 核心仅在原槽仍有事务时调用回调，失败才给 committed 单元传入 None。None/候选的选择、错误解释、调用次序及原事务槽的变化保留真实生成函数，未移入 B2/B4。通用方程通过显式原语调用条件使用任意状态，具体双单元模型提供可计算实例，不增加自定义公理。
+
+这些状态方程描述同步核心的调用边界。核心返回时的 candidate 值不承诺在外层 WorldTransaction 析构后仍有对应内存；失败路径可正常丢弃其候选。外层 committed 单元仍由原 CommittedWorld 拥有。实际字段析构、作用域和借用绑定须单独核对，普通 World 值域不提供许可/FD/外部进程的释放保证。panic/unwind、abort/崩溃、非返回、分配失败及未登记自定义 Drop 不从正常后态定理推出。
+
+**V5 的自有条件。** live transaction、候选来源/正确性、所有前置校验、完整 SQL/参数/列、投影/额度/寿命/outbox 的同事务一致性、提交后读缓存、data_version/autocommit 判断、检查点和恢复仍由 V5 提供。缓存被清空不等于数据库恢复完成，也不授权重放或派发。主 commit() 的验证器调用图在本次原 Charon 采集中仍有分配失败；实际 commit_with/Cells/Drop 子图可以提取，不以它代替全入口已证。完整声明、实际调用绑定、正负用例及原完整门槛分别验收。
 
 ## TLS、传输库、来宾与工具链的登记
 
@@ -131,11 +187,54 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 [rustls官方说明](https://docs.rs/rustls/0.23.45/rustls/) 与 [Aeneas项目](https://github.com/AeneasVerif/aeneas) 仅作接口/工具范围出处，不是我们使用正确的证明。机器部署、库模型及翻译器可靠性也不是Lean内核检查自身能证明的事项。
 
+### A6/B4 TLS 叶证书指纹接口
+
+本接口为后续模块提供“给定原证书链和原 pin 列表，准确检查首叶并返回同一摘要”的公共结论。[正式模型与对应](../../SandboxModel/Boundaries/TlsPin.lean)直接导入固定原工具生成的两个同步 Rust 核心；[来源与范围](../../verification/tls-pin-environment.json)、[隔离重构补丁](../../verification/fixtures/tls-pin-candidate.patch)及输入摘要固定同一候选。**证明适用于该隔离候选；当前生产的借用入口尚未机器精化。** 原式到候选的一般 Rust 等价证明未交付，有限对照只作工程依据。
+
+| 实际部分 | 可以使用的保证 | 条件及调用者责任 |
+| --- | --- | --- |
+| 候选 `verify_pin_bytes` | None、空链和不匹配准确返回 Authentication；成功当且仅当原第一张证书的完整摘要属于原完整 pin 列表；后续证书不改变这个决定 | 输入是完整有序字节序列，pin 保留全部 32 字节；不预先假设“已获授权”。实际角色、节点和登记来源由 V3/V7/V8 提供 |
+| 候选 `leaf_pin_bytes` | None/空链准确拒绝，否则返回原首叶摘要 | 本函数单独不授权。外层必须先使用同一原链和原 pins 通过检查，不能只调用返回函数 |
+| `CertificateDigest` 与 `Sha256CertificateDigest` | 核心显式调用传入的摘要接口；在 `DigestCorrect` 条件下，正常返回参考摘要 | A9/B4 绑定实际 SHA-256 和原完整输入，保留输入只读及正常返回条件；不假定全局摘要单射，不覆盖任意有状态或自定义实现 |
+| 候选 `certificate_chain_bytes` | B4 条件要求保留 None/空链、全部元素、顺序和每个原字节；pins 不截断、不换对象 | 这是逐符号可信复制接线，尚未机器精化。两次复制均须来自同一原 TLS 连接的原链，不能以客户端请求头或别的连接替代 |
+| 候选 `verify_pin`、两类 `verify_peer`、`ServerTls::peer_pin` | B4 条件要求原参数/字段转交、先验证、原样传播拒绝，再返回摘要；成功路径仍两次哈希 | 外层没有被自动抽取；`linkedPeerPin` 是两个已证核心的条件组合，不能冒充外层源码的机器精化。两个完整快照和 pin 列表的表示关系须分别落实 |
+| 原 `ProtectedServer::serve`、客户端 `exchange_bytes/data_connection` | 采用 A12 的实际握手、证书验证、连接字节与错误合同；核对 pin/ALPN/HTTP 的原调用顺序 | 证书链、时间、用途、DNS、TLS1.3、禁用提前数据/恢复等配置分别绑定；握手成功不自动证明节点、请求或当前业务权限正确 |
+
+`RustPinSafe` 精确连接实际生成的授权核心与上述全输入策略；`linked_matches_original` 再连接两份原完整快照和原 pin 列表。`peer_acceptance_iff` 给出成功时的首叶、返回值和成员关系；接受/返回见证排除“总是拒绝”的空结论。摘要接口自身的失败/发散在核心行为等式中保留，不伪造 Authentication；正常功能结论额外使用明确的摘要正常返回条件。
+
+固定 A6 使用点为 slice 的 first/contains、Vec 的 deref、完整 u8 数组相等及结果操作；只有 first 需要本包的有限模型，其余复用原 Aeneas 库。该模型返回原列表的第一个值或 None；它不是新 Rust 解释器，也不证明实际标准库本身正确。自有比较和两个业务函数必须保留真实生成体，不允许整段 opaque。两个抽取体不包含可观察自有 Drop 或循环；正常字节复制/释放依赖原库合同，自定义回调、额外许可/锁/FD、panic/abort 和物理退出不自动获得同样结论。
+
+候选增加了复制和分配。采用前须明确正常分配、连接数及字节和容器开销预算；固定 rustls 的证书载荷限制不能代替整体堆内存证明，也不能把本地 identity 的八张证书限制套给任意 peer。分配失败或 abort 不算鉴权拒绝，更不提供完成析构/排空证据。真实握手已可能收发网络字节，核心拒绝只约束本判定，不声称此前没有 I/O。
+
+[验收入口](../../scripts/verify-tls-pin.sh)核对源/选项/完整 LLBC/原样生成体、逐符号调用和全定理审计，在独立副本运行原工具、真实 SHA-256、实际 TLS 回环与同一性质的首叶→末叶错误版。错误版必须先编译和抽取，再由原断言及 Lean 反例拒绝；结构防漏测试不冒充程序证明。变更补丁、原 source/pins/配置、摘要接口、库模型或工具时，重新抽取、证明、核对绑定及受影响调用；不能只刷新摘要。真实生产采用、全局授权、进度和部署仍按各模块交付，T8/V0 不因本接口自动完成。
+
 ## 失败时怎么把控前提
 
 预检可证伪版本/配置/权限/预算不匹配；运行观察可证伪原资源身份或健康，二者都不能证明所有外部合同永远成立。可失败观察统一保留Unknown/Error。库/配置变更时登记哪些R_i和系统结论失效并重查依赖闭包；不能沿用旧摘要/旧测试自动背书。
 
 进入证明批次先由V0维护合同清单、各模块认领使用路径、V9审查系统使用的前提集合。最小受控失败和真实部署核对沿用现有测试，不为了“证明库可靠”增加无限黑箱测试。获批 B 合同逐项显式使用，不要求先完成通用异步翻译；未建立的自有 Lua、规则字符串或业务决定仍保持未解，不借 B 合同消除。
+
+### 真实使用点的来源清单
+
+[入口清单](../../verification/use-inventory/config.json)固定中心、宿主、请求窗口辅助进程、来宾服务与 worker，以及额外保留的 VM 运维入口；分别编译开发和普通发布配置。前者开启调试断言，后者关闭，两者保留溢出检查。SDK/Redis 测试、诊断特性、示例和非 Linux 配置不计入这份生产源码清单；启用新的部署特性后必须补采。模板函数即使不属于证明范围，也不从混合 crate 的编译证据中删除，T9 仍不排除 Guest 的安全责任。
+
+额外运维入口只作防漏观察，不新增 V0 或业务模块的证明前置；哪些行为需要证明仍以 V0–V9 详细计划及实际生产调用为准。编译清单中的死代码、模板代码和辅助入口不能自动变成新的证明目标，也不能反过来借“辅助”标签排除真正被服务调用的函数。
+
+[采集工具](../../tools/v0_use_inventory.py)仅给原生产编译器增加 MIR 输出，不改生产 Rust、Charon/Aeneas 或翻译规则，也不把 MIR 送进新的解释器；本批产物只作来源审计，不用于发布。完整原文、实际 Cargo 产物/参数、签名、局部类型和终结语句保存在本轮忽略的证据目录；[登记结果](../../verification/use-inventory/catalogue.json)及[输入摘要](../../verification/use-inventory-inputs.sha256)绑定本轮来源。用 Cargo 实际产物逐项查漏，不能用几个函数计数代替完整输出。`query` 按原文定位调用/类型，搜索没有命中不证明路径不存在。
+
+[责任清单](../../verification/use-inventory/responsibilities.json)给每个自有包和本轮观察到的自定义 Drop 指定复核归属，**不是新增可信白名单**。归还计数、锁下修改、标记 Unknown、选择取消、转交子进程和是否释放仍是自有业务；只有具体登记的 A/B 原语及机械接线可以作为条件。清单中“尝试解锁/发送/终止”不能改读为这些动作必定成功，也不能推出工作已经退出。
+
+这份清单是源码与编译来源审计，**没有证明调用图闭合或新的 Rust 语义**。稳定 MIR 文本不能单独补齐动态回调实际实例、结构体全部字段/运行时合法域、future 在每个挂起点被取消时的生成清理、嵌套库析构及外部可执行脚本的完整使用绑定；这些缺口在责任清单继续归 T1–T8 和业务模块，不能因为有 MIR 就勾选整个 T0。正常 Drop、实际发生的 unwind、Drop 自身 panic、abort 和进程崩溃仍分开，后两者不保证执行 Drop。
+
+可复现入口（固定 Linux 证明环境；完整日志不提交）：
+
+```sh
+bash scripts/python-entry.sh tools/v0_use_inventory.py capture artifacts/use-census
+bash scripts/python-entry.sh tools/v0_use_inventory.py check artifacts/use-census
+bash scripts/python-entry.sh tools/v0_use_inventory.py query artifacts/use-census --contains OwnedSemaphorePermit
+```
+
+`publish` 在完成来源/责任复核后生成登记结果和摘要，属于审查更新，不能用它接受未经核对的变更。`verify-use-inventory.sh` 只做已登记来源的快速准入，不冒充重新编译或 Lean 证明。已有真实核心仍执行原抽取和完整保留证明验收；来源清单不扩大任何已证明范围。
 
 ### A6 公共基础库模型使用登记
 
@@ -203,6 +302,12 @@ V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议
 接口继续受固定 preset 擦除 Drop 的限制。泛型调用根的条件清理，以及自有构造/解码路径实际调用的标准 String DropGlue 均逐项登记；后者只按正常返回域中的标准堆释放处理，不证明释放效果或物理内存用量。准入检查核对其确为外部 String 清理，拒绝改为业务析构。实际 D/E/visitor/回调的使用点必须无本接口忽略的可观察自定义析构和资源持有语义。本批不是 Future、取消、许可或 Drop 证明。完整 JSON 扫描、尾随字节处理、复合 schema、编码往返、实际输入/状态/字典绑定以及业务拒绝顺序仍由具体使用点落实。有限值读取器只作合法接受和拒绝的非空见证；真实 JSON 回归覆盖未转义、转义及拥有字符串分支和首错顺序，回归不代替引擎证明。
 
 独立 [IdentifierSafe](../../SandboxModel/Boundaries/JsonIdentifiers/Model.lean) 复用[公共编号词汇](../../SandboxModel/Foundations/IdentifierModel.lean)，不导入自有构造正确性证明，允许在真实校验缺失版重新抽取后用同一性质给出反例。源码/依赖/模型/工具/配置改变后重查整个共享 V0 和计数器闭包；实际证明状态和版本只见覆盖记录，不以刷新冻结摘要替代复验。
+
+### 完整生命周期请求的自有形状校验
+
+[请求守卫合同](../../SandboxModel/Boundaries/JsonRequest/Model.lean)区分三个来源：JSON 引擎/标准派生解释字段；原编号和计数器 Deserialize 检查叶子；原 `LifecycleRequest::validate` 检查版本、完整节点、非零槽位、创建参数和 Renew 非零结束时间。最后一层仍保留真实函数体，[对应证明](../../SandboxModel/Boundaries/JsonRequest/Guard.lean)复用原身份及创建参数结论，不属于可信 JSON 适配。
+
+该守卫先返回原身份拒绝；身份通过后才检查创建绑定与 intent 形状。成功只表示这组检查成立，不表示请求已获授权、续租没有超过原寿命、存储已提交或宿主已执行。`retention_slot=0` 属于可解析的 u16 输入，由守卫拒绝；输入总字节数由调用路由的 Limited 提供，不能归给 `from_slice`。调用者仍须建立实际字节/schema/原叶子和错误字典的连接，以及后续授权和生命周期条件；GuardContract 不提供这些结论。
 
 ### A6 网络地址库模型使用登记
 
@@ -342,7 +447,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 ## B1 Host 任务与原许可池的逐符号可信适配
 
-本登记落实 V0 #333 的 T6 验收范围（原 #510 已迁移）。适用生产实现定位为 integration `4a5dfdafd4465fef8ec2832f89798f1f16dd09b2`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
+本登记落实 V0 #333 的 T6 验收范围（原 #510 已迁移）。当前候选的生产实现定位为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。许可取得、转移和归还的三个实现文件与此前组合基线逐字一致；驱动回调及测试夹具的变化单列在环境清单，须完成新组合的组件和完整入口复验后认领其适用性。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
 
 ### A6-task-pools 外部原语条件
 
@@ -360,7 +465,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 | `HostLifecycle::blocking`、`receive/confirm/close/validation_evidence` | 领取原 work 许可后提交原 FnOnce，将命名许可绑定移入闭包并跨越实际回调；Join 错误保持原映射 | 每个真实回调的业务不变量及每个可观察前缀；请求、模板、compute、回执、发布等参数正确；来源不同的错误不被用于补造“未执行”或释放事实 |
 | `status_admission::acquire`、`HostLifecycle::free_resources` | 先非等待领取 status，再等待同一 work；队列取消归还已得预留；获额后两许可跟随原只读回调，调用方取消不提前归还 | 节点／compute 绑定、健康观察本身正确、时间和结果解释；不由有界等待推出健康时效、宿主工作终止或公平进展 |
 
-`blocking` 的当前真实调用者为 `advance/pending/cache_storage_ready/recover`，分别调用原 `advance_internal_lifecycle/internal_pending/validate_internal_cache_storage` 及顺序的 `recover_on_startup/expire_due_report`。直接入口保持原 `record_internal_intent/confirm_internal_result/close_internal_window/internal_validation_evidence`，健康路径保持原 `internal_free_resources`。这些回调体没有整体列入 B1；本批也未新增它们的 Aeneas 对应证明。可信的是登记的任务／许可机械接线，其符合性依据为逐符号源码审查、冻结摘要和确定性组件回归，不是完整异步 Rust 的机器证明。
+`blocking` 的真实调用者共五处：`advance/pending/cache_storage_ready/recover` 分别调用原 `advance_internal_lifecycle/internal_pending/validate_internal_cache_storage` 及顺序的 `recover_on_startup/expire_due_report`；`drive_once` 在同一阻塞回调内执行维护、恢复、过期处理及有限扫描。驱动只在原模板已取得时，按原请求的 create 绑定查询可选 `CandidateVerification`，再将原 request、template、compute 和该凭据交给 `advance_internal_lifecycle_with_verification`。它没有另建许可池或提前归还原 work 许可；模板凭据来源、缓存有效性、允许省略哪些重复校验及完整生命周期行为仍由相应业务模块证明。直接入口保持原 `record_internal_intent/confirm_internal_result/close_internal_window/internal_validation_evidence`，健康路径保持原 `internal_free_resources`。这些回调体没有整体列入 B1；本批也未新增它们的 Aeneas 对应证明。可信的是登记的任务／许可机械接线，其符合性依据为逐符号源码审查、冻结摘要和确定性组件回归，不是完整异步 Rust 的机器证明。
 
 ### 可复用合同及组合方式
 
@@ -371,3 +476,54 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 使用者将实际调用历史投影到合同步骤，并提供同池、封闭许可使用范围和回调绑定后，可复用每调用次数至多一次、取消不提前放行仍在执行的工作、原池身份保持、有限任务集合不超 work/status 容量，以及 Busy 不能推出无业务效果。模型有合法非空执行和提前释放／错误池的同性质反例。**实际异步历史符合该投影仍属于上述 B1 条件**；模型定理不自动证明这层符合性，更不证明回调业务、全系统 CPU/内存/VM 额度、网关撤销或无条件进展。
 
 不同模块只可实例化同一合同，不复制一套许可语义。新增池、公开增额、许可逃逸、其它提交入口、自定义 Drop 或生产源码变化，须更新符号登记、调用范围、摘要与组件证据后再使用当前结论。
+
+
+## B3 撤销等待的逐符号可信适配
+
+登记对象仅为 [until_revoked](../../sandbox-data-transport/src/revocation.rs)；以 integration `a2b8a4b6ce5c170c953130b57abc8c2d6c468d0b` 为来源，当前输入由[清单](../../verification/revocation-contract-environment.json)和[摘要](../../verification/revocation-contract-inputs.sha256)绑定。生产函数体保持原样，只增加确定性测试入口。原固定 Charon 直接预检真实入口返回 `Coroutines are not supported`，因此这里采用获准的条件接口模型，不将 async Rust 标记为已抽取。
+
+### A6-watch-select 原语提供什么
+
+固定 Tokio 1.49.0 的 `watch::Receiver<bool>::wait_for` 读取最新值；值为 true 时就绪，最后一个 sender 关闭后也结束等待。`watch` 不是事件日志：在观察前 true 已被 false 覆盖时，不能从历史上曾有 true 推出本次等待应结束。`tokio::select! { biased; ... }` 按源码分支顺序 poll；本轮撤销分支就绪后不再 poll 工作分支。两个分支之间仍允许其它线程更新信号；不能把这一轮当作原子事务。固定 `.crate`、完整解包源码和 watch/select 审查位置均检查摘要。该完整性检查不是 Tokio 的形式化证明。
+
+### B3 适配自身提供什么
+
+| 原函数/语句 | 有条件保证 | 不包含的承诺 |
+| --- | --- | --- |
+| `until_revoked(signal, work)` 的参数与固定 biased 分支 | 使用传入的原 receiver 和原 work，不重新授权、不替换对象；撤销分支先观察到 true 或关闭时返回 None，不 poll work | future 的构造表达式可能已执行，捕获值即使从未 poll 也可能有 Drop 效果；None 不能推出从未产生效果 |
+| 撤销分支 Pending 后 poll work | 工作 Ready 时原样返回 Some(value)，包括 value 本身是 Err；工作 Pending 后，下一轮仍先检查撤销；一次 poll 内可先产生效果再 panic 或不返回 | 信号在两分支之间才变为 true、work 随后 Ready 时，允许 Some(value)；不承诺撤销发送之后全局再无 I/O，也不能抢占一个尚未返回的同步 poll |
+| 分支选择后的正常局部析构；调用方取消 | 被丢弃的局部 future 不再被该等待 poll，正常析构其剩余捕获值；外层取消不伪造一次 None 返回 | 不回滚已发出的操作；Drop 内部可能有新的清理效果；丢弃 JoinHandle 不等于其后台任务停止、许可已归还或 relay 退出 |
+| panic/unwind/abort 或未获再次调度 | 保留中断/未知分支；不凭函数未返回补造完成或 Drop 证据 | 不保证析构完成、无泄漏、公平进展、外部工作必定退出 |
+
+[Revocation.Model](../../SandboxModel/Boundaries/Revocation/Model.lean) 单独记录原 signal/work 标签、分支检查、进入/正在执行/返回的工作 poll、观察到的工作效果历史、选择结果与正常析构观察。效果历史不代表可回滚的全局内存快照；析构的内部效果不在这个变量里。`drops` 仅记录正常结束路径提供的析构完成凭证；中断时为零不表示没有运行析构，也不排除部分或全部清理已经发生。正在 poll 时可观察到工作效果前缀，随后允许 panic 或永不返回，不虚构一次 Pending 来代表它。模型证明标签保持、选择之后无后续 work poll、正常析构观察至多一次、返回分类、上述两个允许竞态和错误分支顺序反例，并直接复用 B1 的“取消运行中任务的等待仍持额”定理。实际 Rust 历史符合这些步骤，仍是本段 B3 可信条件；模型不是该符合性的机器证明。
+
+### 当前四处生产接线及使用者要证明什么
+
+四处调用均在 [data_gateway.rs](../../sandbox-host-service/src/data_gateway.rs)：正文准备、HTTP 握手、上游连接驱动、请求转发。三个直接等待点（正文准备、握手、请求转发）使用本次 permit 的 receiver；连接驱动使用从同一 receiver 克隆出的 `connection_revocation`，同时持有原 child/relay_exit/connection_lease，结束等待后仍执行原 relay stop。检查器记录全部 `*/src` 调用数量，包括测试，新增调用必须重新审查；文件摘要绑定原接线。这是源码审查范围，不是四个完整业务函数都已证明。
+
+使用者仍须证明：permit 属于正确请求/对象/代际及授权；信号对应同一权限且需要单调撤销时不重新置 false；撤销后的新准入拒绝；工作内业务、字节预算和可能已发生的效果；原 body/lease/relay 生命周期、未知保持及真实退出/排空证据。不能仅凭 Some、None、watch 当前值或局部 Drop 释放 VM 或宣告持久事务成功。网关其它循环、流操作和 B3 大类未由本登记自动覆盖。
+
+工程核对运行原 Rust 的两个已有测试及八个新增确定性测试，覆盖预先撤销/权限方关闭、捕获值析构、两个分支间竞态、最新值覆盖、外层取消、工作产生效果后 panic 和后台许可仍被持有。隔离错误版只交换两个 biased 分支，先确认独立编译成功，再由原 `prior_revocation_or_lost_authority_never_polls_work` 同一断言拒绝。组件证据与 Lean 定理分别报告，不把一组测试提升为一般等价证明。
+
+## A6/B3/B4 双向字节中继与结果处理（隔离候选）
+
+本条只适用于 [#575](https://github.com/VeriInfra-Lab/sandproof/issues/575) 的[固定候选](../../verification/experiments/tunnel-contract/candidate.json)，不表示完整数据网关已证。来源为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；[隔离补丁](../../verification/experiments/tunnel-contract/candidate.patch)让原 `tunnel::relay` 调用 `control::decide/finish_upload`，生产源码未改。工具、实际库源码、完整中间表示、声明和析构位置见[环境登记](../../verification/experiments/tunnel-contract/environment.json)；完成状态仍见覆盖记录与任务。
+
+实际生产调用为 Linux 的 `sandbox_host_service::data_gateway::relay`：将原匿名管道的 Receiver/Sender 和同一原 TcpStream 的 OwnedReadHalf/OwnedWriteHalf 交给中继。命名空间、目标实例、原进程和许可是否正确仍由 V6/V8 提供。父 HTTP 网关的 WriteIdle、TLS、正文限额和撤销不是这一原调用的 I/O 参数，不随本条自动完成证明。
+
+| 提供方与接口 | 可以依赖的具体行为 | 不能据此推出 |
+| --- | --- | --- |
+| A6：Tokio 1.49.0 的 BufReader::with_capacity、AsyncBufRead 与 copy_buf | 两方向分别使用原 64 KiB 读缓冲；每次确认写入只消费对应缓冲的前 n 字节，短写继续处理剩余部分，零写按 WriteZero 失败；原读端 EOF 后还要完成该操作的 flush 才正常返回 | 不能把 64 KiB 当成 HTTP frame、全部库/内核队列或整个系统驻留上限；返回计数未被本中继用于预算或释放，也不表示远端应用已接收 |
+| A6：原 read/write、flush、shutdown 的结果 | Pending 可继续等待；正常结果与原对象上的操作对应；错误前可以已传输一段前缀，flush/shutdown 本身也可以失败 | 错误不回滚已发送字节；写入端半关闭不等于另一方向结束，socket EOF 不等于 HTTP/Connect 或文件业务完整 |
+| B3：原两个复制 future、pin/select 和正常局部结束 | 保持原四个流对象及所选结果来源；select 未设置 biased，同时可就绪时允许任一分支先被选中；返回或停止等待后，本函数不再 poll 被丢弃的复制 future | 不承诺取消前没有字节，不消除已进入缓冲的后续交付；局部 Drop、flush、原函数返回都不是子进程退出、通道排空或 VM 释放证据 |
+| B4：原 First/Action 和给定结果的机械接线 | 将所选原结果交给同一真实 control 核心；依照核心给出的 AwaitDownload 动作等待原下行，再把原两个结果交给 finish_upload；Finish 动作返回给定原值 | 不能把“选择等哪一侧、是否保留错误”整个假设正确；这两项决定保留实际生成体。新增或替换流/结果、提前返回、错误来源串线须重新核对 |
+
+本项目同步核心负责的决定是：先取得上传结果时继续等待下行；下行成功时保留原上传结果，下行错误时返回原下行错误。先取得下行结果时直接结束这次单请求中继，允许上传尚未完成，防止客户端等 stdout EOF、中继又等 stdin EOF 的循环。因而本函数的 `Ok(())` 是本层的结果，**不能命名为整个请求已成功**。两支都可就绪时，不推定上传分支必先选中，也不把未选中分支的潜在结果当作已观察回执。
+
+[Contract](../../verification/aeneas/tunnel/SandproofTunnel/Contract.lean) 连接原生成决定与选择/继续等待/返回/中断，并复用现有 StreamHistory。字节历史只记录本次原流的读取、确认写入及待写内容；原始字节 EOF 与协议/业务结束使用不同的责任。[Results](../../verification/aeneas/tunnel/SandproofTunnel/Results.lean) 对任意允许的有限交错保持两个方向的前缀、缓冲界和原绑定；Raw 返回成功时只能推出在上述原 I/O 合同下，完整原始下行字节已由写端确认接收；不能推出客户端已经读到、上传已完整或业务协议已成功。合法轨迹包括任意满足预算的有限源完整通过，以及下行结束时仍有未读上传；存在可行轨迹不保证实际调度最终完成。原命令输出不新增累计字节上限。
+
+正常同步值方程使用原 Aeneas 的 Result/Try/FromSame 模型；错误载荷按完整原值传递。当前实例限于上述固定管道/TCP 类型，以及没有可观察资源或共享状态析构效果的错误载荷。任意自定义 AsyncRead/AsyncWrite、有副作用的错误 Drop、额外许可/FD 捕获不能直接套用。原流句柄自身的关闭与其它析构效果仍在 A6/B3 条件和 V6/V8 责任中，不因同步核心的值证明而成为已机器验证的资源释放。
+
+实际异步历史到这些 I/O/选择步骤的对应仍是明确的 B3/B4 符合性条件，依据是原符号/参数审查、源码摘要及确定性组件回归，不是完整 async Rust 的机器精化。源库、实际类型、四个对象、调用者、分支接线或捕获/析构变化都须重查，不能只刷新摘要。
+
+本条不提供一般原版/候选等价、panic/unwind/abort/崩溃后态或无条件进展。完整 HTTP/Connect framing、授权/路由、其余缓冲与额度、子进程真实退出、DataLease/Unknown 和释放准入继续由 V3/V5/V6/V8 提供；不以 EOF、中继返回或一次错误码替代这些义务。

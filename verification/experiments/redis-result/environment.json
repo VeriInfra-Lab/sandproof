@@ -1,0 +1,5491 @@
+{
+  "schema": 1,
+  "kind": "reviewed isolated source/model/Drop admission; not library or destructor proof",
+  "charon_options": {
+    "ullbc": false,
+    "precise_drops": false,
+    "mir": null,
+    "rustc_args": [],
+    "targets": [],
+    "sysroot": "default",
+    "monomorphize": false,
+    "monomorphize_mut": null,
+    "start_from": [
+      "crate::finish",
+      "crate::commit",
+      "crate::reaffirm"
+    ],
+    "start_from_if_exists": [],
+    "start_from_attribute": [],
+    "start_from_pub": false,
+    "include": [
+      "sandproof_center_store",
+      "sandproof_protocol",
+      "sandproof_center_core"
+    ],
+    "opaque": [
+      "sandproof_storage_extract::store::storage_io::eval",
+      "sandproof_storage_extract::store::storage_io::info",
+      "sandproof_storage_extract::store::storage_io::settings",
+      "sandproof_storage_extract::store::storage_io::trim_cr",
+      "sandproof_storage_extract::store::storage_io::split_colon"
+    ],
+    "exclude": [],
+    "extract_opaque_bodies": false,
+    "translate_all_methods": false,
+    "duplicate_defaulted_methods": false,
+    "lift_associated_types": [
+      "*"
+    ],
+    "hide_marker_traits": true,
+    "hide_allocator": true,
+    "remove_unused_clauses": false,
+    "remove_unused_self_clauses": true,
+    "remove_adt_clauses": true,
+    "desugar_drops": false,
+    "ops_to_function_calls": true,
+    "index_to_function_calls": true,
+    "treat_box_as_builtin": true,
+    "no_gen_tuple_structs": true,
+    "raw_consts": false,
+    "consts": null,
+    "unsized_strings": false,
+    "reconstruct_fallible_operations": true,
+    "reconstruct_asserts": true,
+    "reconstruct_matches": true,
+    "deallocate_all_locals": true,
+    "unbind_item_vars": true,
+    "print_original_ullbc": false,
+    "print_ullbc": false,
+    "print_built_llbc": false,
+    "print_llbc": false,
+    "dest_dir": null,
+    "dest_file": "../aeneas/llbc/sandproof_storage.llbc",
+    "no_dedup_serialized_ast": false,
+    "format": null,
+    "no_serialize": false,
+    "skip_borrowck": false,
+    "no_typecheck": false,
+    "no_normalize": false,
+    "no_reorder_decls": false,
+    "abort_on_error": false,
+    "error_on_warnings": true,
+    "preset": "Aeneas"
+  },
+  "opaque_functions": {
+    "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt": {
+      "def_id": 80,
+      "lean_name": "Shared0T.Insts.CoreFmtDisplay.fmt",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/mod.rs",
+        "begin_line": 2887,
+        "end_line": 2887
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: fixed single-prefix format/display and bounded value decimal/string rendering"
+    },
+    "core::fmt::{impl core::fmt::Display for str}::fmt": {
+      "def_id": 81,
+      "lean_name": "Str.Insts.CoreFmtDisplay.fmt",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::fmt::{impl core::fmt::Display for str}::fmt",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/mod.rs",
+        "begin_line": 2981,
+        "end_line": 2981
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: fixed single-prefix format/display and bounded value decimal/string rendering"
+    },
+    "core::hint::must_use": {
+      "def_id": 63,
+      "lean_name": "core.hint.must_use",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::hint::must_use",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/hint.rs",
+        "begin_line": 613,
+        "end_line": 613
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq": {
+      "def_id": 90,
+      "lean_name": "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/option.rs",
+        "begin_line": 2436,
+        "end_line": 2436
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "core::result::{core::result::Result<T, E>}::is_err": {
+      "def_id": 43,
+      "lean_name": "core.result.Result.is_err",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::result::{core::result::Result<T, E>}::is_err",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/result.rs",
+        "begin_line": 647,
+        "end_line": 647
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "core::str::iter::{impl core::iter::traits::iterator::Iterator<&'a str> for core::str::iter::Lines<'a>}::next": {
+      "def_id": 84,
+      "lean_name": "core.str.iter.Lines.Insts.CoreIterTraitsIteratorIteratorSharedAStr.next",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::str::iter::{impl core::iter::traits::iterator::Iterator<&'a str> for core::str::iter::Lines<'a>}::next",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/iter.rs",
+        "begin_line": 1169,
+        "end_line": 1169
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "core::str::{str}::lines": {
+      "def_id": 83,
+      "lean_name": "core.str.Str.lines",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::str::{str}::lines",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/mod.rs",
+        "begin_line": 1329,
+        "end_line": 1329
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "core::str::traits::{impl core::cmp::PartialOrd<str> for str}::partial_cmp": {
+      "def_id": 212,
+      "lean_name": "Str.Insts.CoreCmpPartialOrdStr.partial_cmp",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::str::traits::{impl core::cmp::PartialOrd<str> for str}::partial_cmp",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 48,
+        "end_line": 48
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "core::str::traits::{impl core::cmp::PartialEq<str> for str}::eq": {
+      "def_id": 92,
+      "lean_name": "Str.Insts.CoreCmpPartialEqStr.eq",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::str::traits::{impl core::cmp::PartialEq<str> for str}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 29,
+        "end_line": 29
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "core::str::traits::{impl core::cmp::Ord for str}::cmp": {
+      "def_id": 186,
+      "lean_name": "Str.Insts.CoreCmpOrd.cmp",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::str::traits::{impl core::cmp::Ord for str}::cmp",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 20,
+        "end_line": 20
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::collections::btree::map::{alloc::collections::btree::map::BTreeMap<K, V, A>}::get": {
+      "def_id": 95,
+      "lean_name": "alloc.collections.btree.map.BTreeMap.get",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::collections::btree::map::{alloc::collections::btree::map::BTreeMap<K, V, A>}::get",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/collections/btree/map.rs",
+        "begin_line": 717,
+        "end_line": 720
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: unique String/str map with pure fixed borrow/order and Global allocator"
+    },
+    "alloc::fmt::format": {
+      "def_id": 62,
+      "lean_name": "alloc.fmt.format",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::fmt::format",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/fmt.rs",
+        "begin_line": 649,
+        "end_line": 649
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: fixed single-prefix format/display and bounded value decimal/string rendering"
+    },
+    "alloc::str::{impl core::borrow::Borrow<str> for alloc::string::String}::borrow": {
+      "def_id": 181,
+      "lean_name": "alloc.string.String.Insts.CoreBorrowBorrowStr.borrow",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::str::{impl core::borrow::Borrow<str> for alloc::string::String}::borrow",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/str.rs",
+        "begin_line": 231,
+        "end_line": 231
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq": {
+      "def_id": 101,
+      "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{impl core::cmp::PartialOrd<alloc::string::String> for alloc::string::String}::partial_cmp": {
+      "def_id": 211,
+      "lean_name": "alloc.string.String.Insts.CoreCmpPartialOrdString.partial_cmp",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialOrd<alloc::string::String> for alloc::string::String}::partial_cmp",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{impl core::cmp::Ord for alloc::string::String}::cmp": {
+      "def_id": 185,
+      "lean_name": "alloc.string.String.Insts.CoreCmpOrd.cmp",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::cmp::Ord for alloc::string::String}::cmp",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{alloc::string::String}::new": {
+      "def_id": 26,
+      "lean_name": "alloc.string.String.new",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{alloc::string::String}::new",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 446,
+        "end_line": 446
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{alloc::string::String}::as_str": {
+      "def_id": 70,
+      "lean_name": "alloc.string.String.as_str",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{alloc::string::String}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 1055,
+        "end_line": 1055
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone": {
+      "def_id": 71,
+      "lean_name": "alloc.string.String.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2388,
+        "end_line": 2388
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref": {
+      "def_id": 64,
+      "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2859,
+        "end_line": 2859
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "alloc::string::{impl alloc::string::ToString for T}::to_string": {
+      "def_id": 29,
+      "lean_name": "alloc.string.ToString.Blanket.to_string",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl alloc::string::ToString for T}::to_string",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2930,
+        "end_line": 2930
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: fixed single-prefix format/display and bounded value decimal/string rendering"
+    },
+    "alloc::vec::{alloc::vec::Vec<T>}::as_slice": {
+      "def_id": 30,
+      "lean_name": "alloc.vec.Vec.as_slice",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::as_slice",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/vec/mod.rs",
+        "begin_line": 1848,
+        "end_line": 1848
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
+    },
+    "sandproof_storage_extract::store::storage_io::eval": {
+      "def_id": 40,
+      "lean_name": "store.storage_io.eval",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::eval",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 18,
+        "end_line": 38
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "B4: original command/argument/result/connection/deadline forwarding only"
+    },
+    "sandproof_storage_extract::store::storage_io::info": {
+      "def_id": 66,
+      "lean_name": "store.storage_io.info",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::info",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 40,
+        "end_line": 46
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "B4: original command/argument/result/connection/deadline forwarding only"
+    },
+    "sandproof_storage_extract::store::storage_io::settings": {
+      "def_id": 68,
+      "lean_name": "store.storage_io.settings",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::settings",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 48,
+        "end_line": 58
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "B4: original command/argument/result/connection/deadline forwarding only"
+    },
+    "sandproof_storage_extract::store::storage_io::trim_cr": {
+      "def_id": 87,
+      "lean_name": "store.storage_io.trim_cr",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::trim_cr",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 60,
+        "end_line": 62
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: one-call standard string operation"
+    },
+    "sandproof_storage_extract::store::storage_io::split_colon": {
+      "def_id": 85,
+      "lean_name": "store.storage_io.split_colon",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::split_colon",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 92,
+        "end_line": 94
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6: one-call standard string operation"
+    }
+  },
+  "owned_opaque": [
+    "sandproof_storage_extract::store::storage_io::eval",
+    "sandproof_storage_extract::store::storage_io::info",
+    "sandproof_storage_extract::store::storage_io::settings",
+    "sandproof_storage_extract::store::storage_io::split_colon",
+    "sandproof_storage_extract::store::storage_io::trim_cr"
+  ],
+  "builtin_or_drop_declarations": [
+    {
+      "def_id": 0,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "array",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [
+                  {
+                    "index": 0,
+                    "name": "T",
+                    "variance": "Unknown"
+                  }
+                ],
+                "const_generics": [
+                  {
+                    "index": 0,
+                    "name": "N",
+                    "ty": {
+                      "Deduplicated": 0
+                    }
+                  }
+                ],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 1
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "as_slice",
+            0
+          ]
+        }
+      ],
+      "src": "Normal",
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 1,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "array",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [
+                  {
+                    "index": 0,
+                    "name": "T",
+                    "variance": "Unknown"
+                  }
+                ],
+                "const_generics": [
+                  {
+                    "index": 0,
+                    "name": "N",
+                    "ty": {
+                      "Deduplicated": 0
+                    }
+                  }
+                ],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 1
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "as_mut_slice",
+            0
+          ]
+        }
+      ],
+      "src": "Normal",
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 2,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "array",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "repeat",
+            0
+          ]
+        }
+      ],
+      "src": "Normal",
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 3,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "array",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 0
+          }
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 0,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [
+                {
+                  "Deduplicated": 1
+                }
+              ],
+              "trait_refs": [
+                {
+                  "Value": [
+                    2,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 1,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 42
+                              },
+                              {
+                                "Deduplicated": 29
+                              },
+                              {
+                                "Deduplicated": 45
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 1,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 40
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 4,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 1
+          }
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 1,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Value": [
+                    3,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 2,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 29
+                              },
+                              {
+                                "Deduplicated": 42
+                              },
+                              {
+                                "Deduplicated": 45
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 1,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 5,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "array",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 2
+          }
+        },
+        {
+          "Ident": [
+            "index_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [
+                {
+                  "Deduplicated": 1
+                }
+              ],
+              "trait_refs": [
+                {
+                  "Value": [
+                    4,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 3,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 42
+                              },
+                              {
+                                "Deduplicated": 29
+                              },
+                              {
+                                "Deduplicated": 45
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 3,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 40
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 6,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 3
+          }
+        },
+        {
+          "Ident": [
+            "index_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 3,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Deduplicated": 3
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 3,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 7,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 4
+          }
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 0
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 4,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 8,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 4
+          }
+        },
+        {
+          "Ident": [
+            "index_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 0
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 5,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 9,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 5
+          }
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 5,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 50
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 42
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 4,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 10,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 5
+          }
+        },
+        {
+          "Ident": [
+            "index_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 5,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 50
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 42
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 5,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 14,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 4
+          }
+        },
+        {
+          "Ident": [
+            "get",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 0
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 15,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 4
+          }
+        },
+        {
+          "Ident": [
+            "get_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 0
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 1,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 16,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 4
+          }
+        },
+        {
+          "Ident": [
+            "get_unchecked",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 0
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 2,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 17,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 4
+          }
+        },
+        {
+          "Ident": [
+            "get_unchecked_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 0
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 3,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 18,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 5
+          }
+        },
+        {
+          "Ident": [
+            "get",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 5,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 50
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 42
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 19,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 5
+          }
+        },
+        {
+          "Ident": [
+            "get_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 5,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 50
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 42
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 1,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 20,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 5
+          }
+        },
+        {
+          "Ident": [
+            "get_unchecked",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 5,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 50
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 42
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 2,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 21,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "slice",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "index",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 5
+          }
+        },
+        {
+          "Ident": [
+            "get_unchecked_mut",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 5,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 2,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 50
+                },
+                {
+                  "Deduplicated": 42
+                },
+                {
+                  "Deduplicated": 42
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 3,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 31,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_storage_extract",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "store",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "DecodedWrite",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 6
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 6,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 55
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "bc50f10a05c97876bcd003aa1428a21161519ce37f7086d85a13df34a2b18992",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 32,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "result",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 10
+          }
+        },
+        {
+          "Ident": [
+            "branch",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 10,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 10,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 152
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 1,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 33,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "result",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 14
+          }
+        },
+        {
+          "Ident": [
+            "from_residual",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 14,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Value": [
+                    13,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 8,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 45
+                              },
+                              {
+                                "Deduplicated": 29
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 11,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 155
+                },
+                {
+                  "Deduplicated": 154
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 35,
+      "name": [
+        {
+          "Ident": [
+            "alloc",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "vec",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 16
+          }
+        },
+        {
+          "Ident": [
+            "clone",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 16,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Value": [
+                    17,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 0,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 18
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Value": [
+                    18,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 1
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 0,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 29
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 0,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 149
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 39,
+      "name": [
+        {
+          "Ident": [
+            "alloc",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "vec",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 19
+          }
+        },
+        {
+          "Ident": [
+            "deref",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 19,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 15,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 149
+                },
+                {
+                  "Deduplicated": 42
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 45,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "fmt",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "num",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "imp",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 8
+          }
+        },
+        {
+          "Ident": [
+            "fmt",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 8,
+            "generics": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 7,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 13
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 46,
+      "name": [
+        {
+          "Ident": [
+            "alloc",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "string",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "String",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 9
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 9,
+            "generics": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 4
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 47,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "result",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 10
+          }
+        },
+        {
+          "Ident": [
+            "from_output",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 10,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 10,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 152
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 48,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "result",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Result",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 11
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 11,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 152
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 49,
+      "name": [
+        {
+          "Ident": [
+            "alloc",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "vec",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Vec",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 12
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 12,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 149
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 50,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ops",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "control_flow",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ControlFlow",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 13
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 13,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 498
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 51,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "convert",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 15
+          }
+        },
+        {
+          "Ident": [
+            "from",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 15,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 8,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 52,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "cmp",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "PartialEq",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ne",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitDefault": {
+          "trait_ref": {
+            "id": 13,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 1
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 54,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "result",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [
+                  {
+                    "index": 0,
+                    "name": "T",
+                    "variance": "Unknown"
+                  },
+                  {
+                    "index": 1,
+                    "name": "E",
+                    "variance": "Unknown"
+                  }
+                ],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 9
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "map_err",
+            0
+          ]
+        }
+      ],
+      "src": "Normal",
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 57,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "clone",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "impls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 17
+          }
+        },
+        {
+          "Ident": [
+            "clone",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 17,
+            "generics": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 0,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 26
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 58,
+      "name": [
+        {
+          "Ident": [
+            "alloc",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "alloc",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 18
+          }
+        },
+        {
+          "Ident": [
+            "clone",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 18,
+            "generics": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 0,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 109
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 59,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_storage_extract",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "scripts",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "CAS",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "GlobalInitializer": {
+          "id": 7,
+          "generics": {
+            "regions": [],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        }
+      },
+      "body_sha256": "9425c8c98e2cf15323c3c25c68cf0b4dfd09594110ade3daa8fd788df75f275a",
+      "class": "global initializer"
+    },
+    {
+      "def_id": 60,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "fmt",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "rt",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [
+                  {
+                    "index": 0,
+                    "name": null,
+                    "variance": "Unknown",
+                    "mutability": "Unknown"
+                  }
+                ],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 11
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "new_display",
+            0
+          ]
+        }
+      ],
+      "src": "Normal",
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 61,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "fmt",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [
+                  {
+                    "index": 0,
+                    "name": "'a",
+                    "variance": "Unknown",
+                    "mutability": "Unknown"
+                  }
+                ],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 12
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "new",
+            0
+          ]
+        }
+      ],
+      "src": "Normal",
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 65,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_storage_extract",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "store",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "storage_io",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Cas",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 20
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 20,
+            "generics": {
+              "regions": [
+                {
+                  "Var": {
+                    "Free": 0
+                  }
+                }
+              ],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 523
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "08bd3451668c48482023e7c8ab6e3cd9a5715d60fa21adbd131bde831af34a66",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 72,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_protocol",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "DeploymentId",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 22
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 22,
+            "generics": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 8
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "067fa7d06a5195bbc16a6d77ec7ff8e1f17a4f22a2868b8d4d0f2fdfb67566d1",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 73,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_storage_extract",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "store",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Observed",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 23
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 23,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 30
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "9aca022812e5c9979ee03e8b81ed28ca4551acee9276cb1c60d285aa43e628e7",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 74,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_storage_extract",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "store",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Committed",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 24
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 24,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 57
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "ea9a4fb399958b782ce9d9c676f28daa7fb86227e6e5fa529627d7edeba9f862",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 77,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "num",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 13
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "checked_add",
+            0
+          ]
+        }
+      ],
+      "src": "Normal",
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 79,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_storage_extract",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "store",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [
+                  {
+                    "index": 0,
+                    "name": "T",
+                    "variance": "Unknown"
+                  }
+                ],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 3
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "replace_using",
+            0
+          ]
+        },
+        {
+          "Builtin": [
+            "Closure",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 28
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 28,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Deduplicated": 5
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 161
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "7d36b26d9b400a116670cd401f26a332bcc0007e17d8049fd4c911fcdf08a5e2",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 82,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "option",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Option",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 32
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 32,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 581
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 86,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "cmp",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "impls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 34
+          }
+        },
+        {
+          "Ident": [
+            "eq",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 34,
+            "generics": {
+              "regions": [
+                {
+                  "Var": {
+                    "Free": 0
+                  }
+                },
+                {
+                  "Var": {
+                    "Free": 1
+                  }
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Value": [
+                    35,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 13,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 18
+                              },
+                              {
+                                "Deduplicated": 29
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 13,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 513
+                },
+                {
+                  "Deduplicated": 588
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 91,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "cmp",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "impls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 34
+          }
+        },
+        {
+          "Ident": [
+            "ne",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 34,
+            "generics": {
+              "regions": [
+                {
+                  "Var": {
+                    "Free": 0
+                  }
+                },
+                {
+                  "Var": {
+                    "Free": 1
+                  }
+                }
+              ],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Deduplicated": 35
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 13,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 513
+                },
+                {
+                  "Deduplicated": 588
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 1,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 94,
+      "name": [
+        {
+          "Ident": [
+            "alloc",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "collections",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "btree",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "map",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "BTreeMap",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 36
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 36,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 45
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Value": [
+                    38,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 0,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 45
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 4,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 607
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": false
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "reviewed Drop"
+    },
+    {
+      "def_id": 180,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "iter",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "traits",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "collect",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 45
+          }
+        },
+        {
+          "Ident": [
+            "into_iter",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 45,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": [
+                {
+                  "Value": [
+                    39,
+                    {
+                      "kind": {
+                        "Clause": {
+                          "Free": 0
+                        }
+                      },
+                      "trait_decl_ref": {
+                        "regions": [],
+                        "skip_binder": {
+                          "id": 19,
+                          "generics": {
+                            "regions": [],
+                            "types": [
+                              {
+                                "Deduplicated": 18
+                              },
+                              {
+                                "Deduplicated": 29
+                              }
+                            ],
+                            "const_generics": [],
+                            "trait_refs": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "trait_ref": {
+            "id": 21,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 18
+                },
+                {
+                  "Deduplicated": 29
+                },
+                {
+                  "Deduplicated": 18
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 207,
+      "name": [
+        {
+          "Ident": [
+            "sandproof_center_store",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "REDIS_VERSION",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "GlobalInitializer": {
+          "id": 26,
+          "generics": {
+            "regions": [],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        }
+      },
+      "body_sha256": "176a28a533aed98ceff50e840fc3ea8d1157ef679e79dd094baaad13753f926f",
+      "class": "global initializer"
+    },
+    {
+      "def_id": 213,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "clone",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "impls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 52
+          }
+        },
+        {
+          "Ident": [
+            "clone",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 52,
+            "generics": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 0,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 0
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    },
+    {
+      "def_id": 214,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "num",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "niche_types",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 53
+          }
+        },
+        {
+          "Ident": [
+            "clone",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "TraitImpl": {
+          "impl_ref": {
+            "id": 53,
+            "generics": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "trait_ref": {
+            "id": 0,
+            "generics": {
+              "regions": [],
+              "types": [
+                {
+                  "Deduplicated": 617
+                }
+              ],
+              "const_generics": [],
+              "trait_refs": []
+            }
+          },
+          "item_id": 0,
+          "reuses_default": true
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "original Aeneas builtin"
+    }
+  ],
+  "types": [
+    {
+      "def_id": 28,
+      "lean_name": "core.net.socket_addr.SocketAddrV4",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "core::net::socket_addr::SocketAddrV4",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/socket_addr.rs",
+        "begin_line": 81,
+        "end_line": 81
+      }
+    },
+    {
+      "def_id": 44,
+      "lean_name": "core.str.iter.Lines",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "core::str::iter::Lines",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/iter.rs",
+        "begin_line": 1162,
+        "end_line": 1162
+      }
+    },
+    {
+      "def_id": 25,
+      "lean_name": "core.time.Duration",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "core::time::Duration",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/time.rs",
+        "begin_line": 81,
+        "end_line": 81
+      }
+    },
+    {
+      "def_id": 29,
+      "lean_name": "std.fs.File",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "std::fs::File",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/fs.rs",
+        "begin_line": 135,
+        "end_line": 135
+      }
+    },
+    {
+      "def_id": 21,
+      "lean_name": "std.time.Instant",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "std::time::Instant",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 156,
+        "end_line": 156
+      }
+    },
+    {
+      "def_id": 39,
+      "lean_name": "alloc.collections.btree.map.BTreeMap",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "alloc::collections::btree::map::BTreeMap",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/collections/btree/map.rs",
+        "begin_line": 189,
+        "end_line": 193
+      }
+    },
+    {
+      "def_id": 15,
+      "lean_name": "redis.connection.Connection",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "redis::connection::Connection",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redis-1.7.1/src/connection.rs",
+        "begin_line": 826,
+        "end_line": 826
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "SandproofStorageRust.core.marker.PhantomData",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "core::marker::PhantomData",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/marker.rs",
+        "begin_line": 811,
+        "end_line": 811
+      }
+    },
+    {
+      "def_id": 8,
+      "lean_name": "SandproofStorageRust.sandproof_center_store.StoreError",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_center_store::StoreError",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-center-store/src/lib.rs",
+        "begin_line": 46,
+        "end_line": 46
+      }
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofStorageRust.sandproof_protocol.internal.PositiveCounter",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_protocol::internal::PositiveCounter",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal.rs",
+        "begin_line": 49,
+        "end_line": 49
+      }
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofStorageRust.sandproof_protocol.internal.InternalError",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_protocol::internal::InternalError",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal.rs",
+        "begin_line": 225,
+        "end_line": 225
+      }
+    },
+    {
+      "def_id": 17,
+      "lean_name": "SandproofStorageRust.sandproof_protocol.DeploymentId",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_protocol::DeploymentId",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 30,
+      "lean_name": "SandproofStorageRust.store.storage_io.Cas",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::Cas",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 6,
+        "end_line": 16
+      }
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofStorageRust.store.RedisEndpoint",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::RedisEndpoint",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 18,
+        "end_line": 22
+      }
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofStorageRust.store.StoreConfig",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::StoreConfig",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 50,
+        "end_line": 55
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofStorageRust.store.Observed",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::Observed",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 92,
+        "end_line": 97
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "SandproofStorageRust.store.Committed",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::Committed",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 112,
+        "end_line": 112
+      }
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofStorageRust.writer.WriterLease",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::writer::WriterLease",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/writer.rs",
+        "begin_line": 12,
+        "end_line": 15
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofStorageRust.store.RedisLedger",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::RedisLedger",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 132,
+        "end_line": 139
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "SandproofStorageRust.store.DecodedWrite",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::DecodedWrite",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 382,
+        "end_line": 388
+      }
+    },
+    {
+      "def_id": 36,
+      "lean_name": "SandproofStorageRust.store.RedisLedger.replace_using.closure",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{closure}",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 586,
+        "end_line": 586
+      }
+    }
+  ],
+  "globals": [
+    {
+      "def_id": 26,
+      "lean_name": "SandproofStorageRust.sandproof_center_store.REDIS_VERSION",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "sandproof_center_store::REDIS_VERSION",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-center-store/src/lib.rs",
+        "begin_line": 31,
+        "end_line": 31
+      },
+      "can_fail": false
+    },
+    {
+      "def_id": 7,
+      "lean_name": "SandproofStorageRust.scripts.CAS",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "sandproof_storage_extract::scripts::CAS",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/scripts.rs",
+        "begin_line": 19,
+        "end_line": 37
+      },
+      "can_fail": false
+    }
+  ],
+  "trait_decls": [
+    {
+      "def_id": 16,
+      "lean_name": "SandproofStorageRust.core.borrow.Borrow",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "core::borrow::Borrow",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/borrow.rs",
+        "begin_line": 158,
+        "end_line": 158
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "SandproofStorageRust.store.ValueCodec",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::ValueCodec",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 517,
+        "end_line": 520
+      }
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofStorageRust.store.OperationClock",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::OperationClock",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 532,
+        "end_line": 534
+      }
+    }
+  ],
+  "trait_impls": [
+    {
+      "def_id": 29,
+      "lean_name": "SandproofStorageRust.Shared0T.Insts.CoreFmtDisplay",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/mod.rs",
+        "begin_line": 2886,
+        "end_line": 2886
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "core::fmt::Display",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 30,
+      "lean_name": "SandproofStorageRust.Str.Insts.CoreFmtDisplay",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::fmt::{impl core::fmt::Display for str}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/mod.rs",
+        "begin_line": 2980,
+        "end_line": 2980
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "core::fmt::Display",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 8,
+      "lean_name": "SandproofStorageRust.U64.Insts.CoreFmtDisplay",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::fmt::num::imp::{impl core::fmt::Display for u64}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/fmt/num.rs",
+        "begin_line": 134,
+        "end_line": 134
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "core::fmt::Display",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 33,
+      "lean_name": "SandproofStorageRust.core.option.Option.Insts.CoreCmpPartialEqOption",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/option.rs",
+        "begin_line": 2434,
+        "end_line": 2434
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofStorageRust.Str.Insts.CoreCmpPartialEqStr",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::str::traits::{impl core::cmp::PartialEq<str> for str}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 27,
+        "end_line": 27
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 49,
+      "lean_name": "SandproofStorageRust.Str.Insts.CoreCmpPartialOrdStr",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::str::traits::{impl core::cmp::PartialOrd<str> for str}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 46,
+        "end_line": 46
+      },
+      "impl_trait_def_id": 31,
+      "impl_trait_rust_name": "core::cmp::PartialOrd",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 48,
+      "lean_name": "SandproofStorageRust.Str.Insts.CoreCmpEq",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::str::traits::{impl core::cmp::Eq for str}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 36,
+        "end_line": 36
+      },
+      "impl_trait_def_id": 33,
+      "impl_trait_rust_name": "core::cmp::Eq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 42,
+      "lean_name": "SandproofStorageRust.Str.Insts.CoreCmpOrd",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "core::str::traits::{impl core::cmp::Ord for str}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 18,
+        "end_line": 18
+      },
+      "impl_trait_def_id": 17,
+      "impl_trait_rust_name": "core::cmp::Ord",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 40,
+      "lean_name": "SandproofStorageRust.alloc.string.String.Insts.CoreBorrowBorrowStr",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "alloc::str::{impl core::borrow::Borrow<str> for alloc::string::String}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/str.rs",
+        "begin_line": 229,
+        "end_line": 229
+      },
+      "impl_trait_def_id": 16,
+      "impl_trait_rust_name": "core::borrow::Borrow",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 43,
+      "lean_name": "SandproofStorageRust.alloc.string.String.Insts.CoreCmpPartialEqString",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 47,
+      "lean_name": "SandproofStorageRust.alloc.string.String.Insts.CoreCmpPartialOrdString",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialOrd<alloc::string::String> for alloc::string::String}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "impl_trait_def_id": 31,
+      "impl_trait_rust_name": "core::cmp::PartialOrd",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 46,
+      "lean_name": "SandproofStorageRust.alloc.string.String.Insts.CoreCmpEq",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "alloc::string::{impl core::cmp::Eq for alloc::string::String}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "impl_trait_def_id": 33,
+      "impl_trait_rust_name": "core::cmp::Eq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofStorageRust.alloc.string.String.Insts.CoreCmpOrd",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "alloc::string::{impl core::cmp::Ord for alloc::string::String}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "impl_trait_def_id": 17,
+      "impl_trait_rust_name": "core::cmp::Ord",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 27,
+      "lean_name": "SandproofStorageRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 26,
+      "lean_name": "SandproofStorageRust.store.RedisLedger.replace_using.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorStoreError",
+      "lean_file": "SandproofStorage/Funs.lean",
+      "rust_name": "sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), sandproof_center_store::StoreError> for sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{closure}<T, C>}",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store.rs",
+        "begin_line": 586,
+        "end_line": 586
+      },
+      "impl_trait_def_id": 14,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    }
+  ],
+  "library_sources": {
+    "production": {
+      "alloc/src/collections/btree/map.rs": "f58ece50e59502b344616a4c7dcbb13987b5b5ef6b2c4038888ceefaac5635d1",
+      "alloc/src/fmt.rs": "5787ee1ac366050193db15b5ac46d74fde2bdcc0ce096e9962b2bf39c5d49510",
+      "alloc/src/str.rs": "ef6974342cf6a89eb7ce00d32a7fa49bfa88a4e9058bbfe4ca6bee2436bad8bf",
+      "alloc/src/string.rs": "68d7464cc83b0064bac9b600b72b4feb7c90eb5efc92def549b7eb586c6537ed",
+      "alloc/src/vec/mod.rs": "93e3f8bad8de514ccd23c84d9c036405f32cf0b24c40e11f69f012b5264ad08e",
+      "core/src/fmt/mod.rs": "0b01f8c3ef1a7c1a75eaf468456a2fc10a608d9f9191b56e1793f8b9bfb29b23",
+      "core/src/hint.rs": "b1eab1ed407ac89ff58fc6fc540b969e3854c4709254331a35c6620ec163e843",
+      "core/src/marker.rs": "f4a52b2ab3d831aee8b28b1044e821d00fbe6eba7a4a0095ba01997f6d34c0cf",
+      "core/src/net/socket_addr.rs": "d85f7765b0c03e27e2ed1a6c6b1e2279749e6bf4a534ac5cdfba626adad436fc",
+      "core/src/option.rs": "ddba805a572e9cdbae5c1809bec07b36afdabd67a918bbccc7dab4cfe27cf067",
+      "core/src/result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d",
+      "core/src/str/iter.rs": "88858f9fa60fe17d5d2277035d4df4b6805c5a46986b19efd61cb6759b78656e",
+      "core/src/str/mod.rs": "2c90ff097999f139148ef065c428c35a07807d8b38535ce5e2b43d65ad0deaae",
+      "core/src/str/traits.rs": "e243be20a65e3d80eb53f275fe9b5369d4262b98b4a965b1f91e6c13a3479f3d",
+      "core/src/time.rs": "4e758247a8ffc498dd04975af3d2cd9fe4cbeffc8a6157e8c72085aada3365d8",
+      "std/src/fs.rs": "50e3ed9eeb546023b0f6ac074c27d3718221e022cdf450f529466c336ddaec56",
+      "std/src/net/tcp.rs": "6facc60928de960fa41d69a4f8fb616515441f5df4c3b90813fdcdecab306a0f",
+      "std/src/os/fd/owned.rs": "7dfc471fedb90c0ac426845f2fe584216b5d1af27bc846d05fc5631d93f8319d",
+      "std/src/sys/net/connection/socket/mod.rs": "603be0288ac6a1dae023bb5cc8a2c466f61e501ee926242b028b8604d251ed20",
+      "std/src/sys/net/connection/socket/unix.rs": "a3b2e9018050f18bf42f8a7a6b7227011a994798b1a8b75225d73cf41ad7aa5a",
+      "std/src/time.rs": "42eaa9d6a1a4c9ea37a9156f629ad2935e368a12c3ab29ff1d33ef6618484da0"
+    },
+    "extraction": {
+      "alloc/src/collections/btree/map.rs": "67b794871d39e6c6e7dbd3e3cb4d6b7fadc9a534d13a52a054b9c03bd62abf78",
+      "alloc/src/fmt.rs": "5787ee1ac366050193db15b5ac46d74fde2bdcc0ce096e9962b2bf39c5d49510",
+      "alloc/src/str.rs": "f160c025a52379d8300a6d2602d162362568691ff6f3b224ab9d0d92f5c03666",
+      "alloc/src/string.rs": "525acea77c51de51eae6457674dd6942adb5aca1580de26d2e25d24d8f0b5bb8",
+      "alloc/src/vec/mod.rs": "161d97d3549abee6416787475f3da48780f70a34065b333478e2b1f629fff2e9",
+      "core/src/fmt/mod.rs": "54596bb5eb43b6f24c4815543c486c997ccac39f9b6dadefb4c98ddd106317c3",
+      "core/src/hint.rs": "b4f66d4ba3e10b07d8106e94818577290b76e74d3252932f308c489eb3520426",
+      "core/src/marker.rs": "4ee78584c05376c32368d7d3e83d737671e68d57d63e3850d0ef124812a65d4f",
+      "core/src/net/socket_addr.rs": "b762bc55385ecd97e94757300b8144b4ce8e4c70feccb85771904aa1246dc55d",
+      "core/src/option.rs": "2dab92cdbec51b006307496b24cc757d7b2bc4056eff156d0fff445f66c1d2f5",
+      "core/src/result.rs": "b7a1da21e96c0fbb74af31dfcf4904c8f74a974733aa62a69b0ae41c2107a196",
+      "core/src/str/iter.rs": "7333a75588ddbaf58d44ce53a317bbad57f4789d5f7a1b382cee352663e69f54",
+      "core/src/str/mod.rs": "f03f33d0e9c37226a2b31b112207b7e430a1e7e73b7d35fb2690b39da57645d5",
+      "core/src/str/traits.rs": "c62e78cdf36bca4eddef7653d564b693044e1bab1a81301acddbd6354c10ca16",
+      "core/src/time.rs": "12efe985ec205c32a8813a64c889464f5d7692d3a5fe97ab3e12088d9964b526",
+      "std/src/fs.rs": "f55687b208e28570d9dcf303d0d75180c4bdd32a3db96ad0b5ce65c06568e522",
+      "std/src/net/tcp.rs": "18dac6038af0a5f1d9a0b79ddb816344cc105e4428154c3bfa9bdcef8ce5bfc1",
+      "std/src/os/fd/owned.rs": "baea17171eb861778e6b00c6998a16682449c9122f403401a39e1a6d1f6cfedc",
+      "std/src/sys/net/connection/socket/mod.rs": "cbb416659032845b685544ac570000483708afe5df5591fba2731e539dd5089c",
+      "std/src/sys/net/connection/socket/unix.rs": "c9997415bf1c89a9deb3d6f12840abfd58dc91b6e43c8a16095fc34dd216072c",
+      "std/src/time.rs": "dbf93afc64e22548a08fbcfa68290a63b657933eb006ee6670270f6eddc0f9c3"
+    }
+  },
+  "registry_sources": {
+    "redis-1.7.1/src/connection.rs": "8fa2c40f0081f0d5762a2e75cca7856be91dcc66b8af7be5f9e3060233fd143a",
+    "redis-1.7.1/src/cmd.rs": "03db93dfbfe877bbb3e03b29f06c86a945d91f21701c8f997e3d812a9a5fa5b1",
+    "redis-1.7.1/src/types.rs": "e7ba285cb8f24c9ea2685b270d72e3eb23e6fe7c148f3deebcfca33d8a4f8d0b",
+    "redis-1.7.1/src/parser.rs": "068137b284c45b03604b1963406d90d138eacae07f91fcd321d289bff0e0acde"
+  },
+  "domain": {
+    "payload": "plain values without observable custom Drop/shared resources",
+    "connection": "original controlled non-PubSub TCP connection, no user push sender",
+    "normal": "normal-return logical state only, does not prove physical close/durability",
+    "unwind": "positions preserved for admission; panic/unwind/abort/crash have no normal post-state theorem",
+    "borrowed": "writer lease, callback and clock owners are borrowed; not disposed by these roots"
+  },
+  "drop_review": {
+    "count": 363,
+    "all_sites_sha256": "070414b7701e7b2a7681b216f94c4b5efcb1606162a0749ae1d61e004b2ad248",
+    "groups": [
+      {
+        "function": 11,
+        "target": "sandproof_storage_extract::store::DecodedWrite",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 2,
+        "sites_sha256": "89ffd367758a8496728edd39fc216545b25d8151de2a92e2e28f6fb47d3e1a4e"
+      },
+      {
+        "function": 11,
+        "target": "sandproof_storage_extract::store::DecodedWrite",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "4bf6051f665a84c96d04b0b4bc5f1105d287f227c959fba2d2cf45e292df7a95"
+      },
+      {
+        "function": 22,
+        "target": "sandproof_storage_extract::store::DecodedWrite",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 8,
+        "sites_sha256": "508a0c04a8814b6fbcb2de21b1a15e99c217155d09125b1d616d86e5e70bd73a"
+      },
+      {
+        "function": 22,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 3,
+        "sites_sha256": "6f1e8171d44f10c0e42abe87ce40a3ce47aed2c22ab59806377f0b2ed494ca7f"
+      },
+      {
+        "function": 22,
+        "target": "sandproof_storage_extract::store::DecodedWrite",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "1624be1a850aef3c544fbd956b1d5a332f0e1f449d240eb888880550fe0c7f0b"
+      },
+      {
+        "function": 23,
+        "target": "core::result::Result",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "0b9a80b42966d37371e3958e30e34354ea2388004f5d2d99f50daecbbebe39c2"
+      },
+      {
+        "function": 23,
+        "target": "core::ops::control_flow::ControlFlow",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 2,
+        "sites_sha256": "3a2fbdfb05bdaee11a1c02e7215b215121663c4764eb531faba2dec27a849eb0"
+      },
+      {
+        "function": 23,
+        "target": "core::ops::control_flow::ControlFlow",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "1e2de0f21b10687d3495f64fb6680fe2b16b4ee07b2a263c3dd905b3a4413cb7"
+      },
+      {
+        "function": 23,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "735789f1e7295ae8ef4f2fc22d7c95ce93214ebf1c2b7a0f279df26eee82e552"
+      },
+      {
+        "function": 23,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 3,
+        "sites_sha256": "9768f3958956b4466759d583035c10eeb9086fc90b2e1b9f528f8ee838a34497"
+      },
+      {
+        "function": 24,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 3,
+        "sites_sha256": "c02421cf0c088305932e47808e02a6d7f2cca52aaef6e5b9f2a565806ef24e4c"
+      },
+      {
+        "function": 24,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "2aee13cabeff990babd3ed7b093ff8f1e2b3b6447fc823b1cf0a19766e5a3232"
+      },
+      {
+        "function": 27,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": true,
+        "count": 21,
+        "sites_sha256": "fbb793b129fa4dbfc615904a96eaa1e7917c9fc28a2e230b5eea7b4646c80a1a"
+      },
+      {
+        "function": 27,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 22,
+        "sites_sha256": "a2816451f5ae2c141a08544760c769f9fdcbc52211925c4b8abe2146f974c2fb"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::DecodedWrite",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 24,
+        "sites_sha256": "bcd4f30ff6db5b0c2f56b7eefe265a6108d8d0230acbba02125b89aa1e12a3b1"
+      },
+      {
+        "function": 27,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 32,
+        "sites_sha256": "cde44ecc1fffd786b2a5b575f9eb76604b757d099b3c760a012e265d60bd15e6"
+      },
+      {
+        "function": 27,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 4,
+        "sites_sha256": "ddcaccc7d34500be4e9a711095e7e3d95290bb437d2c84fd5d7e3853c9b42cd5"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::storage_io::Cas",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 13,
+        "sites_sha256": "fad07c4c4d02e46c1c2d46d305832b57d54bc6819de14d52961ae265576e8f7f"
+      },
+      {
+        "function": 27,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 3,
+        "sites_sha256": "645b4fd7093f9f113c5229afb0b322b82f6901dcd1501c6f7deefb67a5f5b340"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_protocol::DeploymentId",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 2,
+        "sites_sha256": "e9242564729003a6f257cb39e43cf74026e05ebcc3cd6cd537aae84bf40d1858"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::Observed",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 3,
+        "sites_sha256": "54edd777cf05a97dacf53b2d37a515545006d0e506dce19321b6e2fbe5ee2cb0"
+      },
+      {
+        "function": 27,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": false,
+        "count": 3,
+        "sites_sha256": "7a7bd970a6b7cfb950c09d95b5cab758b060e60414083fa81451419a85162281"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_protocol::DeploymentId",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "a6788659ab196ba4053dea4808a4786fe486ed562912be0be2676828a76f18b5"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::Observed",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "a7ff0ae9af68a1930428ac73a21bae613b8dc0eed7698e607d512eb988f4405c"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::Committed",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "b0e8f53f5e3d2655fe43c45b9267fe51d4ae6b959b8359e7907a81e6b14a91ef"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::Committed",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "8954da86d3d00f4898f17b05cdde793a6e9bc4819e98467571d6989d50405d8c"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::storage_io::Cas",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "b1f5eb7ad6581196350bd22f0c58f32771c6ab5976637c6576a86ebf2fbfd31c"
+      },
+      {
+        "function": 27,
+        "target": "sandproof_storage_extract::store::DecodedWrite",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "1f05338dfede9ffe9a298bdf55c8189698a6c6d9fb54223534cc1ae33b0f21f8"
+      },
+      {
+        "function": 31,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "773e18f59cbe83955fd0c4eff0fdfa20bbc6157135fd972aa8e27debe3330571"
+      },
+      {
+        "function": 31,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "f8c7d7c37e2747d18dff905e8d0331b77cac1936926414511e893aa0bf48c282"
+      },
+      {
+        "function": 31,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "d360551ebb9cefffe8145b524aa182a07074592838e4959f9f050e83442ed7e4"
+      },
+      {
+        "function": 34,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 10,
+        "sites_sha256": "bc2b95e25e208e595faf59a449bc530ab3ddeb44ee9ea86c0d178fc14283ec5c"
+      },
+      {
+        "function": 34,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "100f4bfe1f1deeb56949509e5ab302b390022a82cf9b001f959ec5df19cf0b58"
+      },
+      {
+        "function": 37,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "41bf639d51e54a769091d16c0b9648261ab20c6dac6f56125cc01dc0ff958717"
+      },
+      {
+        "function": 41,
+        "target": "core::option::Option",
+        "category": "A6/B4: original non-PubSub TCP connection disposal; no physical-close claim",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "9aaa07a0742832a8096a9b989333ec822f5d2b336fe2c1e3aad57acd2fb3a5b3"
+      },
+      {
+        "function": 41,
+        "target": "core::option::Option",
+        "category": "A6/B4: original non-PubSub TCP connection disposal; no physical-close claim",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "d8c94bf07c444c7fc7fb35f349ba094bb48c00015652681675f3014355acc4d8"
+      },
+      {
+        "function": 42,
+        "target": "core::result::Result",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 3,
+        "sites_sha256": "8859c030f0cc819317d0360bfe936e88419d1316f3670cee616af5dcbce3be93"
+      },
+      {
+        "function": 42,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 8,
+        "sites_sha256": "ddada1f03178f7d028c4aa644d150aa8d073729ff538731fc473696018cf4584"
+      },
+      {
+        "function": 42,
+        "target": "core::ops::control_flow::ControlFlow",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 6,
+        "sites_sha256": "e3cc6076706f1c7a57484231040a87821d8578a46d1ebb7bcbf2c95c18372f75"
+      },
+      {
+        "function": 42,
+        "target": "core::ops::control_flow::ControlFlow",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 6,
+        "sites_sha256": "de07198b512470c4976698ecda63709c3400fb0481d30e69874a994e753b9bfc"
+      },
+      {
+        "function": 42,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 82,
+        "sites_sha256": "298c4581b0677eab23615b9b1555173d1083410da3bfd969b1630189d0935e91"
+      },
+      {
+        "function": 42,
+        "target": "alloc::collections::btree::map::BTreeMap",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 3,
+        "sites_sha256": "e5c1fa7472ca87ef5ff733a2bcf78dff3270fb2749866dbc7c5b93866d8aee38"
+      },
+      {
+        "function": 42,
+        "target": "alloc::collections::btree::map::BTreeMap",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 31,
+        "sites_sha256": "4e5d24564f8c5f4ee1678d574e9dba385c49950ff5e5b1cc83d481aba9a7c291"
+      },
+      {
+        "function": 55,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 12,
+        "sites_sha256": "8f1d3c97542bcba264b81f5fc18761f565460a40bc3c595ceee53e9ad5b3a5f8"
+      },
+      {
+        "function": 55,
+        "target": "core::result::Result",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "9b394271b105eb84a1e58bd979c4b2edccb520a4da89ad2ad451d746725de4ea"
+      },
+      {
+        "function": 55,
+        "target": "core::ops::control_flow::ControlFlow",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 2,
+        "sites_sha256": "e3ba1946f732380f837b6c3083f082c2d95914e75fa7243f9cfea73445b1ca5b"
+      },
+      {
+        "function": 55,
+        "target": "core::ops::control_flow::ControlFlow",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "bd58b9fa10ef766ba75c8e4bef9fa6c33b3e4b91568e5309ecdd8b997aac4c18"
+      },
+      {
+        "function": 55,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 3,
+        "sites_sha256": "c73141ceb16f7046b413a61a0c76a22018886c7f05ae9db84a3bb3c0c08def0a"
+      },
+      {
+        "function": 55,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": false,
+        "count": 3,
+        "sites_sha256": "e4862b13d965c02c7419c9a3a8d4379fa61e963e0e937c40e97ee06e259b28f6"
+      },
+      {
+        "function": 55,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": true,
+        "count": 4,
+        "sites_sha256": "eccac7fdec3b76becdec430a9e0bad86f8c5bd67a467cad92a5fbf05a68bfc9c"
+      },
+      {
+        "function": 55,
+        "target": "sandproof_storage_extract::store::DecodedWrite",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 3,
+        "sites_sha256": "bb07a8ed1b6ed70ad32cedc6984f371aeedeaffe4968fb0978b7537fb8f87f21"
+      },
+      {
+        "function": 65,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 2,
+        "sites_sha256": "9a745ecc40e0b9ab17ef64ee37e420ea0f519f519ec1d2fab3892df5f338b87e"
+      },
+      {
+        "function": 65,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "13859c8da4888208120b8059e2ac6fd80659b66b36be915b6dbf3c4e9fa0497d"
+      },
+      {
+        "function": 72,
+        "target": "alloc::string::String",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "873c3cf6408a819e103c79f2cdbfd0ec52505850c2c85a2642fbf2e3cfa100dc"
+      },
+      {
+        "function": 73,
+        "target": "sandproof_protocol::DeploymentId",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "a1673deffd7c15785ac0cedf5bb83535cd2c365b39aed760193eae65a9157467"
+      },
+      {
+        "function": 73,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": true,
+        "count": 1,
+        "sites_sha256": "4acc14489e26fd4c26a53bfa461cabbf8f7f08b8b6b45064371bfce14f5c8c98"
+      },
+      {
+        "function": 73,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": true,
+        "count": 2,
+        "sites_sha256": "337ad5170f8d21a3d9dc352510aa1f1de361129cf7be0e682d0927b0f93d4f53"
+      },
+      {
+        "function": 73,
+        "target": "core::marker::Destruct on plain payload T",
+        "category": "caller must instantiate T without observable Drop/shared mutable resources",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "c6b5120ee1383a60ee4fc1f93ae7a1c4b8c2b0962d5c7b54960fd3e338acc3b9"
+      },
+      {
+        "function": 73,
+        "target": "alloc::vec::Vec",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "6cfc767d04afb188451a6217a840d5d9735063c3c84f5163849a342b73d60769"
+      },
+      {
+        "function": 74,
+        "target": "sandproof_storage_extract::store::Observed",
+        "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
+        "unwind": false,
+        "count": 1,
+        "sites_sha256": "64c042a78386e6313dbf228032b260409e72f2eac8f05dcf3ceec9dfdc4238f4"
+      }
+    ]
+  }
+}

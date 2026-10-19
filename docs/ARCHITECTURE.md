@@ -67,7 +67,7 @@ E2B 对照使用其 [runtime 架构文档](https://github.com/e2b-dev/runtime/bl
 
 envd 在 VM 内执行用户进程、信号与文件操作；来宾及来宾 root 不可信，来宾文件路径不是宿主路径。我们不重新实现完整 POSIX/ACL，也不证明来宾系统或虚拟化逃逸不存在。
 
-现役模板仍复用固定 Go envd；自主替换由 [#311](https://github.com/VeriInfra-Lab/sandproof/issues/311) 推进，不作为当前 V1 发布前置。Rust 来宾分为以下三层，共用原函数与唯一服务装配，不增加第二套中心或宿主控制器。PID 复用、身份和接口语义见[模块合同](module-contracts.md)，未证明范围见[覆盖记录](proof-coverage.md)。
+每个不可变模板绑定实际来宾实现。既有固定 Go envd 模板保留原修订；[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311) 的 Rust 替换通过受保护配置生成新模板，不改写旧运行盘或同时启动两个服务，也不成为当前 V1 的新增发布前置。Rust 来宾分为以下三层，共用原函数与唯一服务装配，不增加第二套中心或宿主控制器。身份与迁移政策见[模块合同](module-contracts.md)，未证明范围见[覆盖记录](proof-coverage.md)。
 
 持续命令输出使用有界在途缓冲、分块、并发和背压，不设累计字节上限；执行期限不等于字节上限。文件、一元回复和宿主辅助命令各有有限预算。取消、撤销、实际退出与排空责任见[模块合同](module-contracts.md)。
 
@@ -75,7 +75,7 @@ envd 在 VM 内执行用户进程、信号与文件操作；来宾及来宾 root
 
 [sandproof-guest-service](../sandbox-guest-service/src/lib.rs)编排原初始化/鉴权、账户、命令与文件接口、容量池和有界监听器。正式二进制提供 `check / initialize / serve --config 绝对路径`，读取完整显式配置；首次初始化与服务重启分离，重启只打开原状态并分配新服务会话，不重建丢失状态或收编旧 PID。命令在持久登记后唯一放行；阻塞准备、真实进程和在途响应分别保留原责任，未知结果不重执行。等待取消不等于已派发系统调用结束，服务停止也不证明后代进程或 VM 已回收。
 
-[离线发布工具](../tools/prepare_guest.py)从精确源码制备服务/worker 材料并登记版本及摘要；原[模板构建流水线](../tools/template_worker.py)可按受保护配置显式安装 Rust 来宾，把材料与配置绑定同一不可变模板。它不默认改写现役 Go 模板，不同时启动两种来宾服务。入口、安装和双端验收工具已实现，不等于实际模板或 Firecracker 端到端已通过；已批准的兼容差异、具体实现边界及完整兼容、资源与故障验收待办，只在[模块合同](module-contracts.md)和[验收清单](testing-plan.md)维护。
+[离线发布工具](../tools/prepare_guest.py)从精确源码制备服务/worker 材料并登记版本及摘要；原[模板构建流水线](../tools/template_worker.py)可按受保护配置显式安装 Rust 来宾，把材料与配置绑定同一不可变模板。同一原构建/发布链检查新模板并观察实际启动；旧模板不被重标为 Rust，新模板初始化失败也不回退 Go。准备产物、静态 check、真实 VM 和监督链结果各自绑定精确候选，不能互相代替。已批准差异、迁移合同与验收要求分别在[模块合同](module-contracts.md)和[验收清单](testing-plan.md)维护，动态结果归关联 issue/PR。
 
 宿主通过 Linux 网络空间、TAP 和防火墙强制禁网及静态 IPv4 规则，不依赖来宾自觉。公网需部署显式开启，平台禁区始终生效。DNS 也是出站通道，固定 DNS 地址不等于查询内容过滤。域名策略、IPv6 放行、运行时网络切换、任意服务端口公开不在当前版本。
 

@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "issue": 575,
+  "base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
+  "proof_dependency": {
+    "pr": 556,
+    "head": "398b114d516bf9233875823c18a2f9618cf108b7"
+  },
+  "patch_sha256": "8f881fda44bb60f0e4c384fab7325d6800df61fb16894237c8dd1c072897ab7f",
+  "source_files": {
+    "sandbox-data-transport/src/tunnel.rs": "3ad1086c8774d777778a6f7e38c00c4336e83fae02251550c2eb6e47eea09c43",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "sandbox-data-transport/Cargo.toml": "cce2235094ab8830035ff723eaf602693a52df182723dac71ae6670497dd8da5",
+    "sandbox-data-transport/src/lib.rs": "ed5a9f2c221d5e95f8ad4b845f5593864499d95ab9b13dbb1fce6b0ef9257115",
+    "sandbox-host-service/Cargo.toml": "54926ee65380c5fc8ee63eb2d0e89d84994885a754027203ef426ebaf8e3a7a1",
+    "sandbox-host-service/src/data_gateway.rs": "ac359fb15e1496e11f264e3fbedb66c57c451e1310ec9fde472b00cfe692db56",
+    "sandbox-host-service/src/data_gateway/relay_stdio.rs": "7c68e02a4a8e70234831ad1a78779073ed319d2fd5b0c98bf5232d8d9159f34f"
+  },
+  "candidate_files": {
+    "sandbox-data-transport/src/tunnel.rs": "4006ad61002bd4b94162240bb2f0f916116973ac3306c04e38937e8ea12b8ab3",
+    "sandbox-data-transport/src/tunnel/control.rs": "20c8efa9bf3279ddeace3f4c070e56927f98307a74aa486ea1de1dd23235f4f1"
+  },
+  "scope": "static source profile for isolated candidate; completion status is maintained by issue and proof coverage",
+  "crate": "sandproof-data-transport",
+  "target": "x86_64-unknown-linux-gnu",
+  "cargo_features": "default manifest configuration; this crate declares no feature table",
+  "roots": [
+    "crate::tunnel::control::decide",
+    "crate::tunnel::control::finish_upload"
+  ],
+  "production_callers": [
+    "sandproof_host_service::data_gateway::relay"
+  ],
+  "production_io_types": [
+    "tokio::net::unix::pipe::Receiver",
+    "tokio::net::unix::pipe::Sender",
+    "tokio::net::tcp::OwnedReadHalf",
+    "tokio::net::tcp::OwnedWriteHalf"
+  ],
+  "normal_domain": [
+    "normal returns of the extracted generic value decisions",
+    "plain error payloads with no observable resource/shared-state destructor effects",
+    "registered original pipes and TCP halves; arbitrary custom AsyncRead/AsyncWrite implementations are not automatically admitted"
+  ],
+  "unproved": [
+    "async/poll/Pin/Drop/IO-history correspondence, supplied conditionally by A6/B3/B4",
+    "general original/candidate equivalence",
+    "HTTP/Connect and endpoint/business completion or authorization",
+    "physical child exit, real drain and resource release",
+    "panic/unwind/abort/crash poststates and unconditional progress"
+  ]
+}

@@ -140,6 +140,46 @@ class ServiceStorageTests(unittest.TestCase):
         sampler.stop()
         self.assertEqual(sampler.report()['roots'][0]['last_stable']['logical_file_bytes'], 11)
 
+    def test_atomic_rename_between_opened_names_is_unknown_and_does_not_latch_alias_failure(self):
+        pending = self.write('a-pending', b'new-content')
+        published = self.write('z-published', b'old')
+        original_inode = pending.stat().st_ino
+        sampler = storage.ServiceStoragePeaks([self.record])
+        self.assertTrue(sampler.sample())
+        original_scan, renamed = storage.os.scandir, False
+
+        class OrderedScan:
+            def __init__(inner, fd):
+                inner.iterator = original_scan(fd)
+            def __enter__(inner):
+                return inner
+            def __iter__(inner):
+                nonlocal renamed
+                for entry in sorted(inner.iterator, key=lambda entry: entry.name):
+                    yield entry
+                    # The consumer has checked and queued the first actual
+                    # descriptor before it opens the second enumerated name.
+                    if entry.name == pending.name and not renamed:
+                        renamed = True
+                        pending.replace(published)
+                        self.assertEqual(published.stat().st_ino, original_inode)
+                        self.assertEqual(published.stat().st_nlink, 1)
+            def __exit__(inner, *_):
+                inner.iterator.close()
+
+        with patch.object(storage.os, 'scandir', OrderedScan):
+            self.assertFalse(sampler.sample())
+        self.assertTrue(renamed)
+        self.assertIsNone(sampler.failure)
+        self.assertIsNone(sampler.latest)
+        self.assertEqual(sampler.unknown_samples, 1)
+        self.assertEqual(sampler.peaks[0]['logical_file_bytes'], 14)
+        sampler.stop()
+        final = storage.require_storage_observation(sampler.report(), expected=sampler.declaration())
+        self.assertEqual(final['roots'][0]['last_stable']['logical_file_bytes'], 11)
+        self.assertEqual(final['roots'][0]['observed_peak']['logical_file_bytes'], 14)
+        self.assertTrue(final['sampler_exited'])
+
     def test_unknown_peer_does_not_erase_an_independently_observed_original_root_peak(self):
         peer = tempfile.TemporaryDirectory()
         self.addCleanup(peer.cleanup)
