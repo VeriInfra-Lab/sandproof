@@ -18,6 +18,10 @@ from tools.check_tunnel_extraction import check_libraries, check_pair, read_json
 
 def run(out, name, command, cwd, environment, expected=0):
     command = [str(x) for x in command]
+    if command[0] == 'cargo':
+        from tools.acceptance_receipts import native_run
+        code = native_run('tunnel-' + name, command, cwd, out / (name + '.log'), environment, expected)
+        return dict(stage=name, command=command, exit_code=code, expected_exit=expected)
     start = time.monotonic()
     with (out / (name + ".log")).open("xb") as log:
         process = subprocess.Popen(command, cwd=cwd, env=environment,
@@ -113,8 +117,10 @@ def main():
     parser.add_argument("--source-base", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--tool-root", type=Path, required=True)
+    parser.add_argument("--native-only", action="store_true")
     args = parser.parse_args()
-    check_libraries(ROOT, args.tool_root)
+    if not args.native_only:
+        check_libraries(ROOT, args.tool_root)
     profile = read_json(HERE / "candidate.json")
     out = args.destination.absolute()
     if out.exists() or out.is_symlink():
@@ -135,33 +141,35 @@ def main():
     materialize(args.source_base, correct, profile)
     before = snapshot(correct)
     stages.extend(native_tests(out, "original", correct, native))
-    original_name = "sandproof_tunnel_original.llbc"
-    stages.append(run(out, "original-unsupported", common + ["--start-from", "crate::tunnel::relay",
-                       "--dest-file", original_name] + cargo, correct, frontend, 101))
-    path, partial = llbc(correct, original_name, out)
-    if partial.get("has_errors") is not True or "Coroutines are not supported" not in (
-            out / "original-unsupported.log").read_text():
-        raise ValueError("original unsupported evidence changed")
-    # Preserve the actual failed frontend output outside the candidate tree.
-    path.unlink()
-    unchanged(correct, before)
+    if not args.native_only:
+        original_name = "sandproof_tunnel_original.llbc"
+        stages.append(run(out, "original-unsupported", common + ["--start-from", "crate::tunnel::relay",
+                           "--dest-file", original_name] + cargo, correct, frontend, 101))
+        path, partial = llbc(correct, original_name, out)
+        if partial.get("has_errors") is not True or "Coroutines are not supported" not in (
+                out / "original-unsupported.log").read_text():
+            raise ValueError("original unsupported evidence changed")
+        # Preserve the actual failed frontend output outside the candidate tree.
+        path.unlink()
+        unchanged(correct, before)
     apply_candidate(correct, profile)
     stages.append(run(out, "format", ["cargo", "fmt", "--all", "--", "--check"], correct, native))
     stages.append(run(out, "clippy", ["cargo", "clippy", "-p", "sandproof-data-transport", "--lib",
                       "--tests", "--locked", "--offline", "--", "-D", "warnings"], correct, native))
     stages.extend(native_tests(out, "candidate", correct, native))
-    policy_name = "sandproof_tunnel_policy.llbc"
-    stages.append(run(out, "charon-correct", common + roots + ["--dest-file", policy_name] + cargo,
-                      correct, frontend))
-    path, data = llbc(correct, policy_name, out)
-    check_pair(ROOT, data)
-    stages.append(run(out, "aeneas-correct", [aeneas, "-backend", "lean", "-abort-on-error",
-                      "-warnings-as-errors", "-split-files", "-emit-json", "-namespace", "SandproofTunnelRust",
-                      "-subdir", "SandproofTunnel", "-dest", out / "generated", path], correct, frontend))
-    for name in ("SandproofTunnel/Types.lean", "SandproofTunnel/Funs.lean", "translation.json"):
-        if (out / "generated" / name).read_bytes() != (ROOT / "verification/aeneas/tunnel" / name).read_bytes():
-            raise ValueError("fresh generation differs: " + name)
-    unchanged(correct, before, profile["candidate_files"])
+    if not args.native_only:
+        policy_name = "sandproof_tunnel_policy.llbc"
+        stages.append(run(out, "charon-correct", common + roots + ["--dest-file", policy_name] + cargo,
+                          correct, frontend))
+        path, data = llbc(correct, policy_name, out)
+        check_pair(ROOT, data)
+        stages.append(run(out, "aeneas-correct", [aeneas, "-backend", "lean", "-abort-on-error",
+                          "-warnings-as-errors", "-split-files", "-emit-json", "-namespace", "SandproofTunnelRust",
+                          "-subdir", "SandproofTunnel", "-dest", out / "generated", path], correct, frontend))
+        for name in ("SandproofTunnel/Types.lean", "SandproofTunnel/Funs.lean", "translation.json"):
+            if (out / "generated" / name).read_bytes() != (ROOT / "verification/aeneas/tunnel" / name).read_bytes():
+                raise ValueError("fresh generation differs: " + name)
+        unchanged(correct, before, profile["candidate_files"])
     materialize(args.source_base, mutant, profile)
     mutant_before = snapshot(mutant)
     apply_candidate(mutant, profile)
@@ -188,6 +196,9 @@ def main():
     if ("running 1 test" not in text or "0 passed; 1 failed; 0 ignored" not in text
             or "called `Result::unwrap_err()` on an `Ok` value" not in text):
         raise ValueError("fault did not reach the original error assertion")
+    if args.native_only:
+        unchanged(mutant, mutant_before, wrong_files)
+        return
     stages.append(run(out, "charon-mutant", common + roots +
                       ["--dest-file", "sandproof_tunnel_mutant.llbc"] + cargo, mutant, frontend))
     wrong_path, wrong_data = llbc(mutant, "sandproof_tunnel_mutant.llbc", out)

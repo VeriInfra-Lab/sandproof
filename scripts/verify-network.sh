@@ -5,8 +5,8 @@ cd "$ROOT_DIR"
 shasum -a 256 -c verification/network-inputs.sha256
 bash scripts/python-entry.sh tools/check_network_extraction.py \
   --tool-root "${SANDPROOF_PROOF_TOOL_ROOT:-$ROOT_DIR/.tools}"
-cargo fmt --manifest-path verification/extract-network/Cargo.toml -- --check
-cargo clippy --manifest-path verification/extract-network/Cargo.toml --locked --offline -- -D warnings
+bash scripts/acceptance-native.sh cargo fmt --manifest-path verification/extract-network/Cargo.toml -- --check
+bash scripts/acceptance-native.sh cargo clippy --manifest-path verification/extract-network/Cargo.toml --locked --offline -- -D warnings
 FILES=(verification/aeneas/network/SandproofNetwork/Types.lean
   verification/aeneas/network/SandproofNetwork/Funs.lean
   verification/aeneas/network/translation.json)

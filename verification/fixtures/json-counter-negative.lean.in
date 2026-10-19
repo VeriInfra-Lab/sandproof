@@ -10,6 +10,7 @@ def unitError : serde_core.de.Error Unit := {
     fmtDisplayInst := { fmt := fun _ formatter => .ok (.Ok (), formatter) }
   }
   custom := fun {_} _ _ => .ok ()
+  invalid_type := fun _ _ => .ok ()
 }
 
 def valueReader : serde_core.de.Deserializer U64 Unit := {

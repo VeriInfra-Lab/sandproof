@@ -5,8 +5,8 @@ cd "$ROOT_DIR"
 shasum -a 256 -c verification/json-counter-inputs.sha256
 bash scripts/python-entry.sh tools/check_json_counter_extraction.py \
   --tool-root "${SANDPROOF_PROOF_TOOL_ROOT:-$ROOT_DIR/.tools}"
-cargo fmt --manifest-path verification/extract-foundations/Cargo.toml -- --check
-cargo test --manifest-path verification/extract-foundations/Cargo.toml --locked --offline
+bash scripts/acceptance-native.sh cargo fmt --manifest-path verification/extract-foundations/Cargo.toml -- --check
+bash scripts/acceptance-native.sh cargo test --manifest-path verification/extract-foundations/Cargo.toml --locked --offline
 FILES=(verification/aeneas/foundations/SandproofFoundations/Types.lean
   verification/aeneas/foundations/SandproofFoundations/Funs.lean
   verification/aeneas/foundations/translation.json)
@@ -16,7 +16,7 @@ cleanup() { rm -f "$BEFORE" "$AFTER"; }
 trap cleanup EXIT
 shasum -a 256 "${FILES[@]}" > "$BEFORE"
 bash scripts/python-entry.sh tools/check_json_counter_extraction.py --llbc-digest-only >> "$BEFORE"
-bash scripts/regenerate-foundations-lean.sh
+bash scripts/proof-cache-step.sh foundations-generation bash scripts/regenerate-foundations-lean.sh
 shasum -a 256 "${FILES[@]}" > "$AFTER"
 bash scripts/python-entry.sh tools/check_json_counter_extraction.py --llbc-digest-only >> "$AFTER"
 if ! cmp -s "$BEFORE" "$AFTER"; then
