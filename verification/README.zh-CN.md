@@ -48,6 +48,8 @@ scripts/verify-controller.sh
 
 完整入口包含真实 Redis 用例，须按[开发指南](../CONTRIBUTING.md#3-测试规则)设置经固定版本校验的 `SANDPROOF_REDIS_SERVER`，不能缺失后跳过。内存受限环境可用 `OCAMLRUNPARAM=o=20 scripts/verify-controller.sh` 降低固定 OCaml 运行时的堆空间冗余；这是运行资源调优，不改变工具版本、抽取根或检查内容，也不保证任意源码都能在该内存中完成。完整验收的实际结果仍以覆盖记录和关联 PR 为准。
 
+完整 Rust 检查会在 `TMPDIR` 下继续建立 `gates/guest-gate-…/launch` 等 Unix socket 路径。运行前使用较短、当前用户独占且权限为 0700 的临时根，并用相同嵌套形状实际绑定一次 socket；Linux 路径连同结尾字节须满足原内核上限。超长目录引发的 `SUN_LEN` 错误是环境失败，不能跳过相关测试或放宽安全检查；日志与失败目录先保留，修正环境后重新执行原完整入口。
+
 公共基础可独立执行 `bash scripts/verify-foundations.sh`：检查输入指纹、固定工具与平台、重新抽取一致性、真实入口/全部自有函数体、库模型范围、定理编译和实际依赖。冻结环境见 [foundations-environment.json](foundations-environment.json)，源码/模型/脚本/生成输入摘要见 [foundations-inputs.sha256](foundations-inputs.sha256)。独立模块检查不替代完整验收；完整入口保留全部当前模块检查；旧全量控制器生成链已删除，不再作为这些模块的前置。独立工作区可用 `SANDPROOF_PROOF_TOOL_ROOT` 指向已有固定工具，修订和二进制摘要仍需匹配，不改变工具版本。
 
 公共基础及共享状态的 Charon 输出参数使用抽取 crate 内的固定相对路径 `../aeneas/llbc/...`，因为 Cargo 的编译进程在 crate 目录执行；脚本随后从项目根读取同一输出。每次保留旧产物并要求本次实际生成，规则见[证明工作流](../docs/proof-workflow.md#翻译障碍的识别与处理)。该参数仍在完整 LLBC 摘要中检查，源码位置仍由原 `--remap-path-prefix` 绑定。换工作目录不应只因输出路径而产生差异，错误或绝对输出参数仍拒绝。摘要仅规范化无序 `short_names` 表，不删除路径或其它有序输入字段。
@@ -70,11 +72,21 @@ DataLease 的只读接口执行 `bash scripts/verify-data-drain.sh`：直接引�
 
 Host 公共任务／许可合同执行 `bash scripts/verify-task-contract.sh`：核对冻结来源、固定 Tokio 的 `.crate` 和完整解包源码、定理清单与实际依赖，编译 `SandboxModel.Boundaries.Task.Audit`，随后在私有副本重放正确和三个错误版本。也可单独用 `bash scripts/python-entry.sh tools/check_task_contract_components.py --output artifacts/task-contract-check` 重放组件，输出目录必须不存在；每副本独立 Cargo 目标目录，确认编译成功并取得新二进制后才运行同一资源断言。仅在隔离副本追加测试模块和受控宿主夹具屏障，正式生产文件保持不变。入口要求当前输入与 HEAD 冻结一致，不能用旧提交的副本测试当前代码。
 
-环境和调用登记见 [task-contract-environment.json](task-contract-environment.json)、[task-contract-inputs.sha256](task-contract-inputs.sha256)和[B1 条款](../docs/formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)。这些是条件接口模型及适配工程核对，**不是实际 async Rust 的自动抽取证明**。模型不承诺任务终止、物理退出或回调的业务不变量；错误副本被组件断言拒绝与 Lean 模型反例分别报告。所有这些入口按当前批次约定在 a6000 运行。
+环境和调用登记见 [task-contract-environment.json](task-contract-environment.json)、[task-contract-inputs.sha256](task-contract-inputs.sha256)和[B1 条款](../docs/formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)。这些是条件接口模型及适配工程核对，**不是实际 async Rust 的自动抽取证明**。模型不承诺任务终止、物理退出或回调的业务不变量；错误副本被组件断言拒绝与 Lean 模型反例分别报告。所有这些入口在固定 Linux 证明环境运行。
 
 撤销等待执行 `bash scripts/verify-revocation-contract.sh`：核对 [B3 环境](revocation-contract-environment.json)、输入、实际调用范围、固定 Tokio 源码、24 条条件模型定理及依赖审计，再在独立副本运行正确版和交换分支的错误版。每版须新编译；错误版必须被原同一断言拒绝。单独复现入口为 `bash scripts/python-entry.sh tools/check_revocation_components.py --output artifacts/revocation-check`，输出目录必须不存在。原固定 Charon 不支持该 async 入口，实际接线以[逐符号 B3 条款](../docs/formal/dependencies.md#b3-撤销等待的逐符号可信适配)为条件，不声明自动抽取、回滚或外部任务退出。完整证明入口追加此门槛，保留其余全部模块检查。
 
 缺失 unknown 检查的错误版可在同一固定 Linux 环境用 `bash scripts/python-entry.sh tools/check_data_drain_negative.py --output artifacts/data-drain-negative-check` 复现，输出目录必须不存在。入口在私有副本修改真实表达式、编译／抽取错误版，运行原 Rust 回归，并通过同一真实 Lean 服务和内核证明错误版不满足正确版相同的 `RustReadSafe` 性质；失败日志保留，只有全部步骤通过才生成成功收据。服务使用项目 `.tools/lean-mcp` 和原标准客户端；不修改生产文件或正式生成体。
+
+TLS 首叶指纹接口执行 `bash scripts/verify-tls-pin.sh`，独立入口为：
+
+```sh
+bash scripts/python-entry.sh tools/check_tls_pin_contract.py --check-only
+bash scripts/python-entry.sh tools/check_tls_pin_contract.py \
+  --tool-root /prepared/fixed-tools --output artifacts/tls-pin-reproduction
+```
+
+输出目录必须全新；先提交本批冻结输入再复现。入口在独立 Git 副本应用[固定补丁](fixtures/tls-pin-candidate.patch)，只调用原 Charon/Aeneas，实际重抽取两个同步入口，比较完整规范化 LLBC 和原样生成文件，再核对真实 Rust/SHA-256、实际 TLS 回环及同性质错误版。Lean 使用原库和同一标准服务客户端，外部模板只保留为未编译证据；不把模板公理导入项目。工具目录结构与其他模块一致，版本及二进制仍按共享冻结环境核对。接口保证、候选适用范围、快照/摘要/外层可信条件和未验证的生产连接只见[依赖登记](../docs/formal/dependencies.md#a6b4-tls-叶证书指纹接口)，不能把包通过称为原生产 TLS 或整个部署已验证。
 
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
 见证明覆盖记录。已有纯核心定理不自动覆盖新增服务或真实持久化与执行。

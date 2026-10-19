@@ -21,6 +21,7 @@ cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 bash scripts/verify-json-request.sh
+bash scripts/verify-tls-pin.sh
 bash scripts/verify-json-identifiers.sh
 bash scripts/verify-json-counter.sh
 bash scripts/verify-task-contract.sh
