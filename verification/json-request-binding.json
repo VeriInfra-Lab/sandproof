@@ -273,7 +273,7 @@
   "entries": {
     "json_request::decode": {
       "trust": "B4: direct call binding only; not machine refinement",
-      "full_llbc_sha256": "5d1a6848735d99120e82569d327b1236e101511226aea40850149355f9d96f53",
+      "full_llbc_sha256": "f16325079e47a9b9d244b3b50786e63b2bc313b4ca4f419fa0b895a30731a060",
       "snapshot": {
         "root": {
           "def_id": 11,
