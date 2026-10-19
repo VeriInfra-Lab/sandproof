@@ -154,7 +154,7 @@ SANDPROOF_GUEST_ROOT_WORKER=/usr/bin/false \
 
 #490 的模板身份源提交 12070f83bd1996163d12c4c375f6950062575694（checkout 87698b989accca687c3450a71fabea654a41d388）已在四项普通 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38773547217) 通过，包含实际固定 Redis 的 18 项中心权威块回归。该入口不执行 Linux 专属宿主元数据预算测试，不背书下述安装连接。
 
-[模板安装回归](../tools/tests/test_template_guest.py)在真实私有候选目录核对复制后的 service/worker/config/manifest 指纹、权限、保留路径及静态 check 失败/原期限耗尽。实际 `/bin/sh` 执行生成的 boot/agent，挂载/网络/BusyBox 操作及 daemon 是受控程序：覆盖一次初始化、respawn/重启、PID 状态缺失、initialize 前后失败、重命名/sync 失败、符号链接/重复制备标记。原 opaque 暂存验证独立 pin 必需、身份持久化和重复恢复拒绝变更，并实跑源文件名已消失的精确交接；这些用例不检查 ext4 稀疏程度或假装 Linux 挂载。Go 原安装回归保持，平铺模块导入和额外 applet 拒绝另测试；不把 stub 的 check、sync 或 PID 文件当作真实 daemon、持久磁盘或 KVM 验收。真实 release、镜像 ABI、实际 builder 上传与完整 E06/E09 仍待补证。
+[模板安装回归](../tools/tests/test_template_guest.py)在真实私有候选目录核对复制后的 service/worker/config/manifest 指纹、权限、保留路径及静态 check 失败/原期限耗尽。实际 `/bin/sh` 执行生成的 boot/agent，挂载/网络/BusyBox 操作及 daemon 是受控程序：覆盖一次初始化、respawn/重启、PID 状态缺失、initialize 前后失败、重命名/sync 失败、符号链接/重复制备标记。原 opaque 暂存验证独立 pin 必需、身份持久化和重复恢复拒绝变更，并实跑源文件名已消失的精确交接；这些用例不检查 ext4 稀疏程度或假装 Linux 挂载。Go 原安装回归保持，平铺模块导入和额外 applet 拒绝另测试；不把 stub 的 check、sync 或 PID 文件当作真实 daemon、持久磁盘或 KVM 验收。真实 release、镜像 ABI、实际 builder 上传与完整 E06/E09 仍须使用下文的 Rust 来宾实机入口独立验收，具体版本结果在[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311)记录。
 
 #491 安装源提交 a3301f449382ab91175d00079f71f05ea39c2466（checkout 5916ce0d714849bdb8995e9482cdc68cfc7dd5e7）的四项普通 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38777145956) 已通过，包含实际固定 Redis 的 18 项中心权威块回归；不表示实际模板安装/启动通过。
 

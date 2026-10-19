@@ -353,7 +353,7 @@ Rust 来宾配置版本 3 的 `input_chunk_bytes` 只限定一次内部 pipe/PTY
 
 上传与一元文件回复的有限 JSON/gzip 载荷共用[有限响应所有权](../sandbox-guest-service/src/finite_body.rs)：阻塞编码结束后不保留等待下一块的阻塞任务；最后数据块持有原请求/文件名额，全部字节副本释放后归还，不要求 HTTP 再读取一次 EOF。中间块仍须完整释放才交付下一块，取消编码仍等实际工作退出后归还；原预算和绝对期限不变。未知长度下载继续使用原阻塞源，不把有限载荷与真实流读取混为一谈。
 
-现役模板继续使用固定 envd。#311 在同仓库实现来宾命令/文件服务，公开路径仍经中心和私有宿主网关；中心/宿主链冻结并完成对应实机验收后才切换新不可变模板。下面区分冻结合同、已实现的组件与正式入口接线，以及尚未完成的映射/系统验收；合同样例和组件实现不作为实际来宾替换的证据。
+现役模板继续使用固定 envd。#311 在同仓库实现来宾命令/文件服务，公开路径仍经中心和私有宿主网关；中心/宿主链冻结并完成对应实机验收后才切换新不可变模板。下面区分冻结合同、组件、正式入口接线与各层验收；精确版本、通过项和未运行项在[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311)记录。合同样例和组件实现不代替实际来宾替换的独立证据。
 
 固定依据为 SDK 2.51.0 / `ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b` 和 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322` 的 [process.proto](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/spec/process/process.proto)、[filesystem.proto](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/spec/filesystem/filesystem.proto)。[共享协议样例](../tests/compat/guest-service-contract.json)由固定 SDK 的生成类型读取并往返编码；同一文件也由 [Rust 命令协议](../sandbox-guest-runtime/tests/protocol.rs)、[文件协议](../sandbox-guest-runtime/tests/file_protocol.rs)和[初始化组件](../sandbox-guest-service/tests/session.rs)消费；共享样例不是另一份能力矩阵，也不代表完整协议对照已通过。
 
@@ -390,13 +390,13 @@ Rust 来宾配置版本 3 的 `input_chunk_bytes` 只限定一次内部 pipe/PTY
 
 VmIdentity 的稳定绑定为 SHA-256：域字节 `sandproof/guest/pid-binding/v1` 加 NUL，然后依次加入 instanceID、templateID 的 u64 小端 UTF-8 字节长度和原字节。两个 ID 须非空、无 NUL，合计字节不超过显式上限；访问令牌、默认上下文和服务重启不参与摘要。可信新 VM 制备可调用同一派生函数再显式 create；旧任意绑定格式不自动转换。前提是受控 MMDS 的 instanceID 永远对应原 VM 创建身份且模板身份不变，不以摘要本身证明身份真实性，也不抵抗旧有效盘回滚或来宾 root。
 
-返回 Session 的 PinnedMetadata 保留同一元数据源和不可变 ID，每次原 Session 需要新的元数据交换时，先拒绝 ID 改变，再允许原令牌验证/轮换；原同 token 重复初始化行为保持。启动读取的令牌 hash 不预先授权客户端，不保存在身份对象里。目录祖先/预期 UID、元数据响应与先行分配、阻塞线程数仍由可信装配约束。排队/运行中的文件打开不能被超时中断，原名额保留到任务和遗留结果实际退出；取消后结果持有的锁定 FD 先释放，再归还启动名额。排队任务在开始及 open 返回后检查等待者是否已取消；已进入的计数写入不能中断，取消/超时仍可能烧掉编号，绝不自动回收。启动取消或故障不会重放用户命令。下述正式入口消费该组件；不可变模板安装和 E04/E06/E09 整体验收仍待完成。
+返回 Session 的 PinnedMetadata 保留同一元数据源和不可变 ID，每次原 Session 需要新的元数据交换时，先拒绝 ID 改变，再允许原令牌验证/轮换；原同 token 重复初始化行为保持。启动读取的令牌 hash 不预先授权客户端，不保存在身份对象里。目录祖先/预期 UID、元数据响应与先行分配、阻塞线程数仍由可信装配约束。排队/运行中的文件打开不能被超时中断，原名额保留到任务和遗留结果实际退出；取消后结果持有的锁定 FD 先释放，再归还启动名额。排队任务在开始及 open 返回后检查等待者是否已取消；已进入的计数写入不能中断，取消/超时仍可能烧掉编号，绝不自动回收。启动取消或故障不会重放用户命令。下述正式入口消费该组件；不可变模板安装和 E04/E06/E09 整体验收按[验收清单](testing-plan.md)独立核对，版本证据在[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311)记录。
 
 [来宾正式入口](../sandbox-guest-service/src/daemon/entry.rs)实现 Linux 二进制 `sandproof-guest-service check|initialize|serve --config /absolute/config.json`。只接受一个显式配置路径，不读取生产预算、PATH、账户或 MMDS 地址的环境变量替代值。配置文件最多 1 MiB，在同一 FD 上以固定缓冲读取并检查实际字节，再按[唯一结构](../sandbox-guest-service/src/daemon/config.rs)解码；版本为 3，全部字段必需，未知/重复/错类型字段拒绝，时长采用 Serde 的 secs/nanos 表示。字段直接复用原组件预算类型；进程配置、响应、登记、文件和时区校验也复用原规则，不把 JSON 解码成功当成可启动许可。[测试配置](../sandbox-guest-service/src/daemon/tests/configuration.json)只为可执行回归材料，worker 指纹是三个字节 abc 的测试摘要，不是可执行文件、生产默认或已复核的部署预算。
 
 两个 Linux 二进制另接受唯一参数 `--version`，输出[服务](../sandbox-guest-service/src/build_info.rs)/[worker](../sandbox-guest-runtime/src/build_info.rs) 的紧凑 JSON，不读取配置、打开 gate、连接 MMDS 或创建运行时。字段区分自身包版本、配置版本、私有 worker 协议与 PID 存储格式，并报告编译目标 OS/架构；与[输入锁](../references/v1-baseline.json)逐项回归核对，不冒用 Go envd 0.9.0，也不改变 SDK 协商字段或健康响应。包版本不是精确源码或二进制身份；这些输出不宣称已安装、就绪、协议完全兼容或已证明。
 
-配置 v3 必须显式给出 worker 的 package_version、protocol_version 和 artifact.bytes/sha256；静态阶段拒绝与本服务所链接 runtime 的包/协议版本不一致，以及零/不可表示长度、非 64 位小写十六进制摘要。旧 v1/v2 配置原样拒绝，没有缺省指纹或自动迁移；旧版安装材料须按精确构建产物重新制备 v3，不能只更改版本号或改写旧运行实例。initialize/serve 在原受信任 worker FD 上[核对指纹](../sandbox-guest-runtime/src/artifact.rs)，从偏移零用固定 8 KiB 缓冲及一字节超长探针读取，前后核对普通文件类型/长度，比较实际完整内容的 SHA-256；每段及完成前检查原启动期限。错长度/摘要或 I/O 失败在 MMDS、PID 文件访问与监听之前拒绝，不执行候选文件来相信它的自报版本。配置中的版本与摘要由可信制备者共同登记；校验不是签名、ELF 适配或源码出处证明。下述准备入口登记源码与双二进制摘要；配置与受保护不可变模板描述的消费、实际构建/安装仍须完成 E09。
+配置 v3 必须显式给出 worker 的 package_version、protocol_version 和 artifact.bytes/sha256；静态阶段拒绝与本服务所链接 runtime 的包/协议版本不一致，以及零/不可表示长度、非 64 位小写十六进制摘要。旧 v1/v2 配置原样拒绝，没有缺省指纹或自动迁移；旧版安装材料须按精确构建产物重新制备 v3，不能只更改版本号或改写旧运行实例。initialize/serve 在原受信任 worker FD 上[核对指纹](../sandbox-guest-runtime/src/artifact.rs)，从偏移零用固定 8 KiB 缓冲及一字节超长探针读取，前后核对普通文件类型/长度，比较实际完整内容的 SHA-256；每段及完成前检查原启动期限。错长度/摘要或 I/O 失败在 MMDS、PID 文件访问与监听之前拒绝，不执行候选文件来相信它的自报版本。配置中的版本与摘要由可信制备者共同登记；校验不是签名、ELF 适配或源码出处证明。下述准备入口登记源码与双二进制摘要；配置与受保护不可变模板描述的消费、实际构建/安装仍须按[验收清单](testing-plan.md)的 E09 核对。
 
 [来宾产物准备](../tools/prepare_guest.py)提供 `scripts/python-entry.sh -m tools.prepare_guest --config /absolute/private.json`，只在受控、可回收的 Linux x86_64 构建环境运行，不启动 VM 或安装模板。配置精确包含 candidate（40 位 Git 提交）、checkout、output、cargo_home、toolchain_bin、timeout_seconds（1..3600）和 max_log_bytes（1..16 MiB）。已有输入目录及输出父目录须为调用者的规范私有目录，output 须为与检出、缓存、编译器分离的新目录；失败后也不复用原目录。工具链目录提供固定原生 cargo/rustc，不使用 rustup 代理或联网补料；缓存与构建镜像须预先审核，编译脚本不是租户输入。构建临时盘、内核、链接器、动态库/编译器后端及残留回收由该隔离环境负责，工具自身的日志/产物字节界不冒充整个构建的内存或磁盘界。
 
@@ -418,7 +418,7 @@ VmIdentity 的稳定绑定为 SHA-256：域字节 `sandproof/guest/pid-binding/v
 既有 Go 模板及其运行实例按原不可变修订继续使用原服务；新 Rust 修订不改写其运行盘、命令登记或句柄。旧 Rust 配置/PID 格式同样按上文版本合同保留或拒绝，不对原实例自动迁移、补表或清空。原模板与别名机制保持；改变默认 `base` 是另一次显式别名发布，须先完成对应新修订的同提交验收，不能由安装器或 CI 选项静默切换。旧修订的退休沿原模板管理和引用规则处理，不因新实现验收通过便删除仍使用的旧材料。
 
 
-候选状态包含安装时的 guest 身份。原[暂存入口](../tools/template_stage.py)同样接受独立的 `--rust-guest-profile`，只读取受保护材料，不在宿主执行二进制、解包或挂载镜像；状态中的 guest 必须与独立 profile 相同，不能自行选择信任 pin。新建与原编号恢复均将完整身份绑定到原 manifest，下载文件名消失后的交接恢复也不得丢失或更换它；没有受保护 profile 时拒绝带 Rust 身份的状态。暂存仍不是 Ready，后续登记/真实启动/精确收尾门保持。自助监督的显式接线见下文，真实 builder/运行 VM 的 E06/E09 仍待实测。
+候选状态包含安装时的 guest 身份。原[暂存入口](../tools/template_stage.py)同样接受独立的 `--rust-guest-profile`，只读取受保护材料，不在宿主执行二进制、解包或挂载镜像；状态中的 guest 必须与独立 profile 相同，不能自行选择信任 pin。新建与原编号恢复均将完整身份绑定到原 manifest，下载文件名消失后的交接恢复也不得丢失或更换它；没有受保护 profile 时拒绝带 Rust 身份的状态。暂存仍不是 Ready，后续登记/真实启动/精确收尾门保持。自助监督的显式接线见下文；真实 builder/运行 VM 的 E06/E09 使用[验收清单](testing-plan.md)中的独立实机入口，具体版本结果只在[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311)记录。
 
 [自助监督器](../tools/template_build_service.py)接受可选受保护配置 `rust_guest_profile`，值为上述私有 profile 的绝对路径；租户请求不能选择或替换它。完整 profile 与派生 guest 身份共同进入原 BuildStore 不可变配置摘要，同一路径换 pin 也不能重开旧库。创建私有窗口/VM 前重新审计并与原配置比对；构建 VM 仅收到 `/input/rust-guest/release` 下的清单/双产物，以及固定 config.json/profile.json，原源码归档留在宿主。额外 helper、配置和产物纳入上传大小与构建盘必要空间检查；worker 在上传后仍检查实际可用空间，不把必要条件视为可构建保证。
 
