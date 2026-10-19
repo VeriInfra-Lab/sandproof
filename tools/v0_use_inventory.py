@@ -196,9 +196,14 @@ def check_build_coverage(output, receipt, config=None):
                                   if v.startswith('feature="') and v.endswith('"'))
                 opt = next((x.split("=", 1)[1] for x in unit["codegen"]
                             if x.startswith("opt-level=")), "0")
+                extra = next((x.split("=", 1)[1] for x in unit["codegen"]
+                              if x.startswith("extra-filename=")), "")
+                exact_library = ("lib" not in artifact["target"]["kind"] or any(
+                    Path(f).name == "lib" + unit["crate"] + extra + ".rlib"
+                    for f in artifact["filenames"]))
                 if (unit["source"] == source and features == sorted(artifact["features"])
                         and unit["crate"] == artifact["target"]["name"].replace("-", "_")
-                        and opt == profile["opt_level"]):
+                        and opt == profile["opt_level"] and exact_library):
                     matching.append(i)
             if not matching:
                 raise ValueError("compiled own artifact has no complete MIR: " + source)
@@ -294,6 +299,10 @@ def check(output):
     paths = [unit["raw"] for unit in receipt["units"]]
     if len(paths) != len(set(paths)):
         raise ValueError("duplicate compilation unit")
+    recorded = {p.parent.relative_to(output).as_posix() + "/complete.mir"
+                for p in (output / "mir").glob("*/command.json")}
+    if set(paths) != recorded:
+        raise ValueError("omitted or extra raw compiler unit")
     for unit, indexed in zip(receipt["units"], full, strict=True):
         actual, actual_index = unit_data(
             (output / unit["raw"]).parent / "command.json", output, receipt["sources"])

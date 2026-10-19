@@ -118,13 +118,14 @@ class BuildCoverageTests(unittest.TestCase):
         self.metadata = {"workspace_members": ["own"], "packages": [{"id": "own"}]}
         inventory.write_json(self.root / "metadata.json", self.metadata)
         self.artifact = {"reason": "compiler-artifact", "package_id": "own", "features": [],
-                         "target": {"src_path": str(self.root / "own/src/lib.rs"), "name": "own"},
+                         "target": {"src_path": str(self.root / "own/src/lib.rs"), "name": "own", "kind": ["lib"]},
+                         "filenames": [str(self.root / "target/debug/deps/libown-exact.rlib")],
                          "profile": {"test": False, "opt_level": "0"}}
         self.log = self.root / "build.jsonl"
         self.log.write_text(json.dumps(self.artifact) + "\n")
         self.receipt = {"metadata_sha256": inventory.sha(self.root / "metadata.json"),
                         "stages": [{"log": self.log.name}],
-                        "units": [{"source": "own/src/lib.rs", "cfg": [], "crate": "own", "codegen": []}]}
+                        "units": [{"source": "own/src/lib.rs", "cfg": [], "crate": "own", "codegen": ["extra-filename=-exact"]}]}
 
     def check(self):
         inventory.check_build_coverage(self.root, self.receipt)
@@ -157,6 +158,11 @@ class BuildCoverageTests(unittest.TestCase):
 
     def test_wrong_optimization_profile_is_rejected(self):
         self.receipt["units"][0]["codegen"] = ["opt-level=3"]
+        with self.assertRaisesRegex(ValueError, "no complete MIR"):
+            self.check()
+
+    def test_another_library_variant_cannot_substitute_the_actual_artifact(self):
+        self.receipt["units"][0]["codegen"] = ["extra-filename=-other"]
         with self.assertRaisesRegex(ValueError, "no complete MIR"):
             self.check()
 
