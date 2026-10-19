@@ -10,6 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 FILES=('SandboxModel.lean','verification/ProofAudit.lean',
        'SandboxModel/Boundaries/JsonRequest/Audit.lean',
        'SandboxModel/Boundaries/Revocation/Audit.lean',
+       'SandboxModel/Boundaries/OwnedMessage/Audit.lean',
        'SandboxModel/Boundaries/TlsPin/Audit.lean',
        'verification/aeneas/storage/SandproofStorage/Audit.lean',
        'verification/aeneas/sqlite/SandproofSqlite/Audit.lean',
@@ -53,7 +54,7 @@ def main():
             if match:checked.add(match[1])
         if expected and checked!=expected:
             raise ValueError('physical service did not report the actual complete dependency audit')
-    print('Eight complete, non-stale physical-file Lean service diagnostics:',out)
+    print(f'{len(FILES)} complete, non-stale physical-file Lean service diagnostics:',out)
 
 
 if __name__=='__main__': main()
