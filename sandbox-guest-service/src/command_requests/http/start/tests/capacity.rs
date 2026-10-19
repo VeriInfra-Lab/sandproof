@@ -2,10 +2,19 @@ use super::*;
 
 #[tokio::test]
 async fn registry_capacity_reply_obeys_identity_gzip_bounds_and_original_owner() {
+    check_capacity_reply(false).await;
+    check_capacity_reply(true).await;
+}
+
+async fn check_capacity_reply(registration: bool) {
     for gzip in [false, true] {
         let make = || {
             let (mut source, slots) = source("unused", gzip);
-            source.rejection = Some(Rejection::RegistryCapacity);
+            source.rejection = Some(if registration {
+                Rejection::RegistrationCapacity
+            } else {
+                Rejection::RegistryCapacity
+            });
             (source, slots)
         };
         let (initial, _) = make();
@@ -14,7 +23,8 @@ async fn registry_capacity_reply_obeys_identity_gzip_bounds_and_original_owner()
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&payload).unwrap(),
             serde_json::json!({"error": {"code": "resource_exhausted",
-                "message": "command registry capacity exceeded"}})
+                "message": if registration { "command registration capacity exceeded" }
+                    else { "command registry capacity exceeded" }}})
         );
         let required = wire.len().max(payload.len() + 5);
         for budget in [required - 1, required] {
@@ -46,4 +56,29 @@ async fn registry_capacity_reply_obeys_identity_gzip_bounds_and_original_owner()
             released(slots).await;
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn registration_capacity_requires_exact_pre_claim_fact_and_original_deadline() {
+    use crate::command::RegistrationError;
+    use sandproof_guest_runtime::pid_claims::Error as ClaimError;
+    let fact = Rejection::RegistrationCapacity;
+    assert!(fact.matches(&RequestError::Registration(RegistrationError::Capacity)));
+    for error in [
+        RequestError::Registration(RegistrationError::Storage(ClaimError::Busy)),
+        RequestError::Registration(RegistrationError::Storage(ClaimError::WriteUnknown)),
+        RequestError::Registration(RegistrationError::WorkerUnavailable),
+        RequestError::DeadlineExceeded,
+    ] {
+        assert!(!fact.matches(&error));
+    }
+    let (mut source, slots) = source("unused", false);
+    source.rejection = Some(Rejection::RegistrationCapacity);
+    source.deadline = Instant::now();
+    let failure = send(source, limits()).await.unwrap_err();
+    assert_eq!(failure.error, reply::Error::DeadlineExceeded);
+    assert_eq!(slots.available_permits(), 0);
+    drop(failure);
+    released(slots).await;
 }

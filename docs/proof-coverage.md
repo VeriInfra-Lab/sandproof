@@ -513,6 +513,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [请求池饱和响应](../sandbox-guest-service/src/admission_response.rs)及三个 HTTP 调用点增加固定 429、HEAD 抑制正文和原连接预算交付，已有共享样例及固定 SDK 定向测试，尚未抽取或证明。待证义务是饱和观察到无鉴权/正文/业务效果、静态回复到有界传输和原连接期限的对应；原已证明控制核心 Rust、LLBC/Lean 未改，旧定理不覆盖此改动。
 
+[持久 PID 单写容量拒绝](../sandbox-guest-service/src/command/registration.rs)新增独立的许可拒绝事实，并连接到同次 Start 的受控 EOS 响应，尚未抽取或证明。新增义务包括拒绝确实先于 PID 状态访问与用户放行、准备 worker 的独立取消/收尾、排队或运行中的写入不因等待者退出而提前归还名额，以及存储未知/Busy/期限错误不可伪装成容量拒绝；原响应期限和最后字节所有权仍须对应。屏障回归和 SDK 错误解析不是形式化证明，也不能据此认定历史 502 的具体根因。原已证明 Rust 核心、LLBC/Lean 和工具链未变，旧结论不覆盖新增错误分支及响应接线。
+
 [sandproof-guest-core](../sandbox-guest-core/src/lib.rs) 新增命令订阅的身份/驻留/完成判定，以及单文件接收、短写、结束和失败计费。该版本的 Rust 定向测试、固定 SDK 协议样例及固定 Charon/Aeneas 抽取试验通过；未启动服务，未执行生成物的 Lean 编译或对应证明，历史控制核心定理不覆盖它。
 
 可用 `bash scripts/try-guest-extraction.sh` 重现：直接抽取两个类型的 14 个选定方法，包括初始化、输出/写入、结束与失败，产物及前后源码指纹放隔离 artifacts，不修改正式控制器生成物。[清单检查](../tools/check_guest_extraction.py)逐项核对实际方法名、局部性和透明函数体，拒绝空抽取、缺项及不透明自有依赖。当前还有一个标准库 `Option::is_some_and` 不透明依赖；它的外部定义模板未导入正式库，不能当成已成立的公理。试验通过只表示选定 Rust 主体能生成 Lean 表达。

@@ -37,6 +37,9 @@ impl PidRegistrar {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RegistrationError {
+    /// The single writer was already occupied before this request could
+    /// inspect a prepared worker or touch persistent PID state.
+    Capacity,
     Preparation(CommandError),
     Storage(ClaimError),
     WorkerUnavailable,
@@ -103,7 +106,7 @@ impl PendingCommand {
             .slot
             .clone()
             .try_acquire_owned()
-            .map_err(|_| RegistrationError::Storage(ClaimError::Busy))?;
+            .map_err(|_| RegistrationError::Capacity)?;
         let identity = self
             .prepared()
             .await
