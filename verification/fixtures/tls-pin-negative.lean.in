@@ -1,5 +1,6 @@
 import SandboxModel.Boundaries.TlsPin.Model
 import SandboxModel.Boundaries.TlsPin.Library
+import SandboxModel.ProofAuditCommand
 
 open Aeneas Aeneas.Std SandproofTlsRust SandboxModel.Boundaries.TlsPin
 namespace SandboxModel.Boundaries.TlsPin.Negative
