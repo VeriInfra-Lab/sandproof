@@ -2,6 +2,14 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## T5/T6 JoinSet：原任务组收齐
+
+来源为 integration `886f2dd6`，生产 Rust 与固定 Charon/Aeneas 未改。[两个条件模型](../SandboxModel/Boundaries/JoinSet.lean)以 35 条声明为审计目标，覆盖组历史守恒、已完成未取出仍计数、原任务/结果与至多一次交付、取消等待和 abort/Drop 的区别、逐 spawn 检查的容量与正常收齐。合法非空执行、提前 Drop 和只 abort 的同性质反例一并保留；[依赖合同](formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[十五组操作/责任登记](../verification/joinset-environment.json)限定范围。
+
+本批代表连接是中心 `supervise`、受保护 HTTP 连接组与 Guest `Listener::serve`。隔离测试追加到原模块，使用原函数/类型；正确用例覆盖原回调收尾、结果中的原许可、取消等待期间完成、abort 后新 spawn、panic/JoinError 与独立阻塞工作。两个错误版仅在私有副本去掉中心或 Guest 原收齐循环，须先新编译，再被正确版同一即时原任务断言拒绝。固定原工具对真实 Guest 异步入口的预检与部分 LLBC 单独保留，不交给 Aeneas 当成成功生成物。
+
+局部候选已通过 a6000 原服务检查及 ning 原生试验；正式提交、完整模块/项目检查、实际文件诊断、完整双机入口与 CI 的状态以 #333 本批 PR 精确回执为准。当前不是 async Rust 的机器精化；机械接线仍依赖 A6/B1/B2/B3。中心错误策略、handler 业务、Guest Report、原许可全部别名及真实工作退出仍由 V2/V6/V8/V9 提供。空组或 JoinError 不证明外部进程结束，提前丢弃组也不满足收齐性质；T0/T5/T6/V0 保持开放。
+
 ## T5/T6 Notify：PTY 广播与原 Record 通知
 
 本批来源 integration `70d08fd0`，生产 Rust 与 Charon/Aeneas 未改。[模型](../SandboxModel/Boundaries/Notify.lean)以 30 条条件声明为审计目标，分别覆盖单消费者通知合并、分配/消费/取消与数量上界，及先登记后检查的关闭广播、原身份和正常完成后的无漏通知。合法初态、非空成功、迟到拒绝和错误替换反例一起保留；[依赖合同](formal/dependencies.md#a6b2b3-notify关闭广播与单接收者通知)与[七组接线及两项责任登记](../verification/notify-environment.json)约束范围。
