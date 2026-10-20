@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -105,6 +106,25 @@ def reproduce(root, tool_root, output):
         one["commands"].append(run(["lake", "env", "lean", audit],
                                    project, env, out / "kernel-audit.log"))
         one["service"] = service(project, files, expected_roots, out, env)
+        # Forward the original, already admitted audit messages to the shared
+        # batch. Integration must register both negative templates as expected
+        # roots as well; missing registration must not silently omit a mutant.
+        for line in (out / "service.log").read_text().splitlines():
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if record.get("request", {}).get("tool") != "lean_diagnostic_messages":
+                continue
+            result = record["result"]
+            for _ in range(4):
+                if "success" in result:
+                    break
+                result = result.get("structuredContent", result.get("result", {}))
+            for item in result.get("items", []):
+                message = item.get("message", "")
+                if re.fullmatch(r"Checked (\S+): \d+ standard logical dependencies", message):
+                    print(message, flush=True)
         one.update(success=True, actual_llbc_sha256=sha(project / LLBC),
                    seconds=round(time.monotonic() - begin, 3))
         receipt["variants"][variant] = one
