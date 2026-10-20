@@ -15,6 +15,7 @@ import SandboxModel.Boundaries.StdMutex.Audit
 import SandboxModel.Boundaries.Condvar.Audit
 import SandboxModel.Boundaries.TokioRwLock.Audit
 import SandboxModel.Foundations.LoopCallbacks.Audit
+import SandboxModel.CenterStore.Lua.Audit
 
 /-! Audit actual theorem dependencies, including imported libraries.  Source
 text scanning alone cannot detect an unproved assumption hidden in an import.

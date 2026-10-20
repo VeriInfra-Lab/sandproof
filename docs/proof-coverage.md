@@ -2,6 +2,16 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V2 实际 READ/CAS：原文与正常控制路径
+
+生产输入固定 integration `a12f4e16b491cd58452d2b967f06af1bfc48a847`：`scripts.rs` SHA256 为 `a77affdf90496ab9d0e4115ff50c0c68ab0a633281355bd5c04fc059c612813f`，READ 700 字节、CAS 1204 字节；包含 #610 的未变 payload 重确认分支。[来源登记](../verification/experiments/redis-lua/source-map.json)冻结完整生产容器和实际 Rust 调用者；[说明](../verification/experiments/redis-lua/README.md)区分输入导入、语法、正常路径与未解语义。生产 Rust/Lua、工具修订及库版本未修改。
+
+[模块](../SandboxModel/CenterStore/Lua.lean)在固定 Lean 4.31.0 内核中检查实际字符到受限 AST 的解析等式，并检查原 key、只读表达式调用、HSET 参数形状及受保护全局名。通用模型保留任意条件分支和提前返回；原 READ 的正常控制路径无写语句，原 CAS 的路径至多一次 HSET，返回0恰一次，返回1–4则没有写调用。25项独立命名审计包含通用/原文/正例与六项错误版声明，不是25个业务入口的完整证明。
+
+两份实际 Lua 错误版从同一原 CAS 产生：漏掉重确认写入、在守卫前提前写入。先证明两者能够解析，再由正确版同一正常路径合同反驳。真实固定 Redis 的25项有限功能检查核对完整字段/二进制载荷、修订文本、首个拒绝和实际 HSET 次数；两份同字节错误版先 SCRIPT LOAD 成功，再被原同一检查拒绝。写后主动报错仍保留已发生的写入。原文准入/篡改/CLI接线七项回归通过；九个实际 Lean 文件的原服务诊断完整、非陈旧，25项原标准逻辑依赖审计通过。初始语法、字符串计算限制、未封口计算取消及受限计算失败分别保留，不计通过；使用字符序列和分块字面量后通过，不采用 native_decide 或关闭内核检查。
+
+本批尚无完整表达式/字节值求值与 Redis 字段后态到 CAS 模型的精化，也未证明一般 Lua 解析器或引擎。输入导入、固定全局环境及 A11 原语合同保持明确；真实 Rust 参数/codec、规范修订、Observed/Committed、耐久健康、未知围栏、恢复、缓存/outbox和派发仍归 #335。原文/正常路径模型通过不能写成 `lua_cas_refines`、生产存储或整项 V2 完成。全仓基础、同提交完整证明及正式交付结果仍待最终批次验收记录，不以局部25项通过代替。
+
 
 ## T5/T6 Tokio RwLock：原读守卫与映射观察
 

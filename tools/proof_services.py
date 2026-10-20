@@ -29,13 +29,22 @@ FILES=('SandboxModel.lean','verification/ProofAudit.lean',
        'SandboxModel/Boundaries/TlsPin/Audit.lean',
        'verification/aeneas/storage/SandproofStorage/Audit.lean',
        'verification/aeneas/sqlite/SandproofSqlite/Audit.lean',
-       'verification/aeneas/tunnel/SandproofTunnel/Audit.lean')
+       'verification/aeneas/tunnel/SandproofTunnel/Audit.lean',
+       'SandboxModel/CenterStore/Lua/Syntax.lean',
+       'SandboxModel/CenterStore/Lua/RawSource.lean',
+       'SandboxModel/CenterStore/Lua/Calls.lean',
+       'SandboxModel/CenterStore/Lua/Flow.lean',
+       'SandboxModel/CenterStore/Lua/Paths.lean',
+       'SandboxModel/CenterStore/Lua/Scripts.lean',
+       'SandboxModel/CenterStore/Lua/Counterexamples.lean',
+       'SandboxModel/CenterStore/Lua/Audit.lean',
+       'SandboxModel/CenterStore/Lua.lean')
 
 
-def main():
+def check_files(files):
     out=Path(tempfile.mkdtemp(prefix='physical-service-',dir=ROOT/'artifacts'))
     requests=[dict(tool='lean_diagnostic_messages',arguments={'file_path':n},
-        expected_sha256=hashlib.sha256((ROOT/n).read_bytes()).hexdigest()) for n in FILES]
+        expected_sha256=hashlib.sha256((ROOT/n).read_bytes()).hexdigest()) for n in files]
     text=''.join(json.dumps(r)+'\n' for r in requests)+'{"tool":"exit"}\n'
     (out/'requests.jsonl').write_text(text)
     with (out/'service.log').open('w') as log:
@@ -76,7 +85,11 @@ def main():
     # The batch must see these audits even when Lake reused compiled imports.
     for message in audited_messages:
         print(message,flush=True)
-    print(f'{len(FILES)} complete, non-stale physical-file Lean service diagnostics:',out)
+    print(f'{len(files)} complete, non-stale physical-file Lean service diagnostics:',out)
+
+
+def main():
+    check_files(FILES)
 
 
 if __name__=='__main__': main()

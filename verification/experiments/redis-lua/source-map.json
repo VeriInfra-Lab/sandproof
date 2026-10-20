@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "source_base": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "scope": "source-bound normal control paths",
+  "source": {
+    "schema": 1,
+    "scope": "literal input import only; not a Lua or Rust correctness result",
+    "container": {
+      "path": "sandbox-center-store/src/scripts.rs",
+      "sha256": "a77affdf90496ab9d0e4115ff50c0c68ab0a633281355bd5c04fc059c612813f"
+    },
+    "caller": {
+      "path": "sandbox-center-store/src/store.rs",
+      "sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116"
+    },
+    "scripts": {
+      "READ": {
+        "bytes": 700,
+        "sha256": "0a63d2c40a071304a58c166480fe2ad095b61da4ad8b7ddf9037b4b297bdd558"
+      },
+      "CAS": {
+        "bytes": 1204,
+        "sha256": "493bcdd80b93d8bf7fddaac780f352d19e69344c5c6a577fd7e4914c96b0350a"
+      }
+    }
+  },
+  "reviewed_callers": {
+    "READ": {
+      "method": "RedisLedger::read",
+      "keys": [
+        "config.key()"
+      ],
+      "argv": [
+        "deployment.as_str()",
+        "T::FORMAT_VERSION",
+        "max_block_bytes"
+      ]
+    },
+    "CAS": {
+      "method": "RedisLedger::write",
+      "keys": [
+        "config.key()"
+      ],
+      "argv": [
+        "deployment.as_str()",
+        "T::FORMAT_VERSION",
+        "prior revision or empty",
+        "new revision",
+        "full encoded payload",
+        "max_block_bytes",
+        "full expected encoded payload or empty"
+      ]
+    }
+  },
+  "not_proved": [
+    "complete Lua expression/value semantics",
+    "Redis field-state refinement",
+    "production Rust argument refinement",
+    "codec and canonical revision",
+    "durable confirmation, unknown commit and recovery"
+  ]
+}

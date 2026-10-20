@@ -153,6 +153,10 @@ def run_locked_suite(output):
     target = work / 'loop-callbacks'
     native_case('loop-callbacks', ROOT, target, lambda p=target:
         call(['tools/check_loop_callbacks_components.py', '--output', p]))
+    target = work / 'redis-lua'
+    native_case('redis-lua', ROOT, target, lambda p=target:
+        call(['verification/experiments/redis-lua/native.py',
+              '--redis-server', os.environ['SANDPROOF_REDIS_SERVER'], '--output', p]))
     target = work / 'sqlite-statements'
     archive = Path(os.environ['SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE']).resolve(strict=True)
     native_case('sqlite-statements', ROOT, target, lambda p=target:
@@ -214,7 +218,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements'])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','redis-lua'])
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':
