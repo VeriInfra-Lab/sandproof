@@ -173,3 +173,7 @@ JoinSet 的条件模型执行 `bash scripts/verify-joinset.sh`，全批入口包
 标准 Mutex 的条件守卫、真实 get_mut 与错误版复现见 [专用说明](experiments/std-mutex/README.md)，实际支持域和业务责任以[依赖合同](../docs/formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)为准；完整验收仍按原证明工作流执行。
 
 Condvar 的单次原等待、原守卫/中毒/超时协议和真实 Reaper 接线见[专用说明](experiments/condvar/README.md)及[接口登记](condvar-environment.json)。执行 `bash scripts/verify-condvar.sh`，普通组件由 ning 的完整原生入口提供；原 `run` 的后端限制、模型反例和原生夹具错误版分别报告，不称整个 Reaper Rust 已机器精化。
+
+### Tokio RwLock 原读守卫
+
+[使用范围和复现](experiments/tokio-rwlock/README.md)覆盖原读/写取得、映射及正常释放的条件模型。普通正反例在原生入口执行；证明入口为 `bash scripts/verify-tokio-rwlock.sh`，要求同提交的完整原生证据。实际 async 接线仍依登记 A6/B2，不据此认领 Guest 业务证明。

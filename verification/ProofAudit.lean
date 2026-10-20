@@ -13,6 +13,7 @@ import SandboxModel.Boundaries.Notify.Audit
 import SandboxModel.Boundaries.JoinSet.Audit
 import SandboxModel.Boundaries.StdMutex.Audit
 import SandboxModel.Boundaries.Condvar.Audit
+import SandboxModel.Boundaries.TokioRwLock.Audit
 import SandboxModel.Foundations.LoopCallbacks.Audit
 
 /-! Audit actual theorem dependencies, including imported libraries.  Source

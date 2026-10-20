@@ -602,6 +602,26 @@
         "V6"
       ],
       "meaning": "conditional API model plus finite source/native binding; original Reaper loop backend limitation retained, not full Rust refinement"
+    },
+    {
+      "id": "tokio-rwlock-original-read-lease",
+      "source_registry": "verification/tokio-rwlock-environment.json",
+      "production_sources": [
+        "sandbox-guest-service/src/session.rs",
+        "sandbox-guest-service/src/session/file_authorization.rs"
+      ],
+      "roots": [
+        "Session::authorize/authorize_file_clock -> original read_owned and Option::as_ref try_map",
+        "Session::apply -> scoped shared read, then original exclusive write",
+        "AuthPermit -> original owned mapped guard and defaults shared observation"
+      ],
+      "proof": "SandboxModel/Boundaries/TokioRwLock/Audit.lean",
+      "condition": "A6/B2 original lock/guard ownership and actual event projection; payload frame only while original lock survives; no FIFO/capacity/unconditional progress",
+      "business_provider": [
+        "V8",
+        "V9"
+      ],
+      "meaning": "conditional read/write/map model plus finite source/native evidence, not full async Rust refinement or authentication correctness"
     }
   ]
 }

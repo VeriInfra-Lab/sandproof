@@ -3,6 +3,21 @@
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
 
+## T5/T6 Tokio RwLock：原读守卫与映射观察
+
+生产 Rust 来源为 integration `e576a8475043c2d21b68231b7f6b1ead09be1952`，两份原源码和固定 Tokio 1.49.0 摘要见[来源登记](../verification/tokio-rwlock-environment.json)。模型首次组件提交为 `924e06a9d2b63d1395cd1edd4189e2d496537d56`；[公共入口](../SandboxModel/Boundaries/TokioRwLock.lean)、[接口条件](formal/dependencies.md#a6b2-tokio-rwlock保留原读守卫的共享观察)和[复现说明](../verification/experiments/tokio-rwlock/README.md)分别提供复用入口、保证与检查方式。生产 Rust、Charon/Aeneas、依赖与固定工具均未改。
+
+42 条条件模型声明已通过 a6000 原服务的组合检查，以及五个实际文件的构建、内核依赖审计和完整非陈旧诊断。Core 提供读写排斥、领取/释放/遗忘及调用者写关系下的不变量保持；Mapping 保留同一个原读持有，失败 Err 仍拥有原守卫；Examples 给出非空多读者历史及同一 `ProtectedRead` 对提前解锁的拒绝。实际 A6/B2 事件、独立 Rust 所有权与整个守卫寿命仍是显式连接条件，不是完整 async Rust 实现证明。
+
+原型的 ning 回归包括原会话与六项 API 夹具共 17 项、严格 Clippy 和实际 `Session::authorize` 的提前释放错误副本。错误版先成功编译业务库及测试二进制，再由正确版原轮换等待断言拒绝，不能称 Rust 形式反例。一次补测检出试验脚本复用上一错误版 rlib 的缓存问题，原失败和库/二进制保留；可复现入口逐变体重建本自有包，同时检查业务库、测试二进制与源副本绑定，并在结束时移除错误版包缓存。其它依赖与 Lean 缓存保留。后续正式入口另运行原文件授权的两个确定性回归；本段不以尚未运行的检查充当通过。
+
+载荷保持只用于原锁继续存活的范围：最后一个 owned Arc 析构可能接着销毁锁与载荷。取消只投影对这次读写权的影响，不把 semaphore 内部预留视为已返回守卫，也不假定整个运行时不变。没有 FIFO、最大读者数、最终调度或硬返回时限定理。
+
+固定 Charon 的原 `Session::authorize` 预检在 coroutine 和 `MetadataSource` GAT 处失败，带错误 LLBC 和原诊断保留。七组有限机械绑定不把三项令牌/签名、默认值/替换业务决定列可信；V8/V9 继续提供业务校验、旧快照使用、守卫寿命、内部进展和最终析构条件。T0 全量连接、其它锁和 T1–T8 剩余公共义务保持开放，T9 排除，#337 不作为前置。
+
+本节记录上述已完成组件的精确范围；本批最终候选、完整双机验收、当前 CI、正式 PR/合入及实际合入适用性由 [#333](https://github.com/VeriInfra-Lab/sandproof/issues/333) 对应回执绑定。局部构建/审计不代替整套验收，不据此认领 V0 或部署系统完成。
+
+
 ## T5/T6 Condvar：原守卫等待与重新持锁
 
 本批在 integration `646fc2c8569083cf4f03554f9acb2ca67bf22e6e`（#615）上开发，代码与正式接线冻结于 `75044cd8b68edbd5ef267364e25d598aadb31cfb`。生产 Rust、Charon/Aeneas、Cargo 依赖和固定工具配置未改。[公共入口](../SandboxModel/Boundaries/Condvar.lean)导出原守卫核心和有限等待协议；[实验说明](../verification/experiments/condvar/README.md)、[依赖合同](formal/dependencies.md#a6b2-condvar等待时释放返回前重新持有原锁)与[七组实际来源](../verification/condvar-environment.json)分别给出复现、适用条件和业务提供方。
