@@ -83,6 +83,11 @@ class TlsCertificateBindingTests(unittest.TestCase):
             binding.calls(t['fun_decls'][23])[0]['func'] = {'UnexpectedIndirect': 0}
         self.rejected(indirect)
 
+    def test_unsafe_is_limited_to_the_exact_compiler_generated_glue(self):
+        for index, unsafe in [(23, True), (34, False)]:
+            with self.subTest(index=index):
+                self.rejected(lambda t: t['fun_decls'][index]['signature'].update(is_unsafe=unsafe))
+
     def test_source_and_candidate_drift_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
