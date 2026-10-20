@@ -180,8 +180,10 @@ mod joinset_primitive_trial {
     async fn application_failure_is_a_value_and_panic_is_a_join_error() {
         let mut group: JoinSet<Result<(), &'static str>> = JoinSet::new();
         group.spawn(async { Err("business-error") });
-        group.spawn(async {
-            panic!("controlled child panic");
+        let pool = Arc::new(Semaphore::new(1));
+        let original = Arc::clone(&pool).try_acquire_owned().unwrap();
+        group.spawn(async move {
+            std::panic::panic_any(original);
         });
         let (mut values, mut panics) = (0, 0);
         while let Some(result) = group.join_next().await {
@@ -192,6 +194,13 @@ mod joinset_primitive_trial {
                 }
                 Err(error) => {
                     assert!(error.is_panic());
+                    assert_eq!(
+                        pool.available_permits(),
+                        0,
+                        "panic payload lost original permit"
+                    );
+                    drop(error);
+                    assert_eq!(pool.available_permits(), 1);
                     panics += 1;
                 }
             }

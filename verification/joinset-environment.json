@@ -128,7 +128,7 @@
       "status": "conditional-mechanical",
       "public_results": [
         "SandboxModel.Boundaries.JoinSetContract.task_history_keeps_original_spawn",
-        "SandboxModel.Boundaries.JoinSetContract.taking_preserves_original_payload"
+        "SandboxModel.Boundaries.JoinSetContract.taking_preserves_whole_result"
       ],
       "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
       "caller_obligations": "V6/V8: original connections pool and permit captured by original connection future. Reuse B1 for permit ownership; prove handler/TLS roles, deadlines, errors and all separately owned work. No full callback correctness or physical release is assumed."
@@ -318,7 +318,8 @@
       "src/task/join_set.rs": "ddc5bc60b4a1f653d810f3d2fd441ce805801fba2562c05fd761cd8732ea3dde",
       "src/runtime/task/harness.rs": "008c697f432197c6537472e2cea55fa973aec45df946b85abfbea966f2db8d51",
       "src/runtime/task/join.rs": "54777ae133745e7f472802d9fd67cd14a2946f2661cabd27ffbc352f2685b0f7",
-      "src/util/idle_notified_set.rs": "660b04db5c0ec3213ea8efdbfc95a1d60ef64325ae55c9454aeec97b3c5fc0bd"
+      "src/util/idle_notified_set.rs": "660b04db5c0ec3213ea8efdbfc95a1d60ef64325ae55c9454aeec97b3c5fc0bd",
+      "src/runtime/task/error.rs": "0c84e9189f351c6e1eb0c5865b9df84a928ed4602b06fd5c2e71fb7c43eb1e27"
     }
   },
   "api_scope": [
@@ -381,7 +382,8 @@
     "SandboxModel.Boundaries.JoinSetContract.dropping_group_does_not_recall_taken_payload",
     "SandboxModel.Boundaries.JoinSetContract.abort_request_can_race_with_normal_return",
     "SandboxModel.Boundaries.JoinSetContract.application_error_is_an_ordinary_returned_value",
-    "SandboxModel.Boundaries.JoinSetContract.abort_of_other_tasks_does_not_mark_future_spawn"
+    "SandboxModel.Boundaries.JoinSetContract.abort_of_other_tasks_does_not_mark_future_spawn",
+    "SandboxModel.Boundaries.JoinSetContract.taking_preserves_whole_result"
   ],
   "inputs": [
     "Cargo.lock",
@@ -416,5 +418,6 @@
     "verification/joinset-environment.json",
     "verification/task-contract-environment.json",
     "verification/task-contract-inputs.sha256"
-  ]
+  ],
+  "error_representation": "Completion carries original successful-value representation alpha OR original JoinError representation rho; rho retains original error identity, including panic-payload ownership. It is not only a classification tag and does not freeze aliased heap contents."
 }
