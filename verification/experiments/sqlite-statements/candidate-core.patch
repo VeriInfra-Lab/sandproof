@@ -1,0 +1,81 @@
+--- a/controller-service/src/journal.rs
++++ b/controller-service/src/journal.rs
+@@ -7,6 +7,8 @@
+ use serde::de::DeserializeOwned;
+ use std::path::Path;
+ use std::time::Duration;
++
++mod statement_core;
+ 
+ const APPLICATION_ID: i64 = 0x5350_4631; // SPF1
+ const FORMAT_VERSION: i64 = 1;
+@@ -131,28 +133,9 @@
+         as_sql_integer(action.identity.attempt)?;
+     }
+ 
+-    let next_revision = match write.expected_revision {
+-        Some(revision) => revision
+-            .checked_add(1)
+-            .ok_or(JournalError::RevisionConflict)?,
+-        None => 1,
+-    };
+-    let next_revision_sql = as_sql_integer(next_revision)?;
++    let (next_revision, next_revision_sql) = statement_core::next_revision(write.expected_revision)?;
+     if let Some(expected) = write.expected_revision {
+-        let changed = transaction.execute(
+-            "UPDATE sandboxes SET revision=?1, state_blob=?2
+-             WHERE sandbox_id=?3 AND owner_id=?4 AND revision=?5",
+-            params![
+-                next_revision_sql,
+-                &write.sandbox_state,
+-                write.sandbox.as_str(),
+-                write.owner.as_str(),
+-                as_sql_integer(expected)?
+-            ],
+-        )?;
+-        if changed != 1 {
+-            return Err(JournalError::RevisionConflict);
+-        }
++        statement_core::update_existing(transaction, write, next_revision_sql, expected)?;
+     } else {
+         transaction
+             .execute(
+--- /dev/null
++++ b/controller-service/src/journal/statement_core.rs
+@@ -0,0 +1,36 @@
++use super::{AcceptedWrite, JournalError, as_sql_integer};
++use rusqlite::Transaction;
++
++pub(super) fn next_revision(expected_revision: Option<u64>) -> Result<(u64, i64), JournalError> {
++    let next_revision = match expected_revision {
++        Some(revision) => revision
++            .checked_add(1)
++            .ok_or(JournalError::RevisionConflict)?,
++        None => 1,
++    };
++    let next_revision_sql = as_sql_integer(next_revision)?;
++    Ok((next_revision, next_revision_sql))
++}
++
++pub(super) fn update_existing<C>(
++    transaction: &Transaction<'_>,
++    write: &AcceptedWrite<C>,
++    next_revision_sql: i64,
++    expected: u64,
++) -> Result<(), JournalError> {
++    let changed = transaction.execute(
++        "UPDATE sandboxes SET revision=?1, state_blob=?2
++             WHERE sandbox_id=?3 AND owner_id=?4 AND revision=?5",
++        (
++            next_revision_sql,
++            &write.sandbox_state,
++            write.sandbox.as_str(),
++            write.owner.as_str(),
++            as_sql_integer(expected)?,
++        ),
++    )?;
++    if changed != 1 {
++        return Err(JournalError::RevisionConflict);
++    }
++    Ok(())
++}
