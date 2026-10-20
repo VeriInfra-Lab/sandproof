@@ -75,6 +75,42 @@ target、.lake/build、TMPDIR 和证据全部使用任务指定的数据盘私�
 必须先新编译，再由原工具抽取；同一独立 `RequestGuardContract` 或
 `ResponseGuardContract` 必须拒绝该实际生成函数。正确和错误版使用同一原生断言。
 
-本批完整模块入口仍在接线。只有其普通验收记录、证明机重生成/比较、正反性质、原文件诊断、
-审计和冻结闭包全部通过，且统筹将本线接入正式双机完整入口、CI 并集成后，才报告本批
-最终完成。局部候选、源码审查、原生测试和有条件库结论分别报告。
+## 可复现入口与集成门槛
+
+普通验收主机使用已分配的稳定 CARGO_TARGET_DIR、固定 Rust、离线 Cargo 缓存和私有输出：
+
+```sh
+bash scripts/verify-schema-domains-native.sh --output /private/status-native
+```
+
+它从本次干净提交分别导出正确版与两个真实错误版，检查新编译二进制、相同原生断言、
+原状态接口测试、fmt、严格 Clippy 和全部本线准入回归，不运行 Lean 或翻译器。
+
+形式主机的正式模块入口为：
+
+```sh
+bash scripts/verify-schema-domains.sh
+```
+
+该入口先核对本线冻结闭包，并强制消费原 acceptance_receipts 中已封口的
+`schema-domains` 原生 case；case 尚未由统筹注册/封口时应失败，不能以本线裸
+complete.json 替换整批收据。随后使用固定原工具、完整新 LLBC 和逐字节生成物比较，
+检查三个真实版本及实际 Lean 文件。所有临时目录继承任务的 TMPDIR；在 a6000 上设置到
+`/data1/zn` 本线目录。固定包只读复用，各源码版本有独立可写 Lean build，Rust target 保持稳定。
+
+单独复现形式组件（不代替正式入口的原生收据或完整项目验收）：
+
+```sh
+bash scripts/python-entry.sh verification/experiments/schema-domains/replay.py \
+  --tool-root "$SANDPROOF_PROOF_TOOL_ROOT" --output /private/status-formal-component
+```
+
+`Bytes.lean` 复用原叶子、原错误字典、原输入切片与结束顺序，提供合法输入域、
+完整字段序列化、正常分配条件下的往返和原 1024/2048 预算。JSON 引擎/标准派生及
+具体 API 符合性始终是显式参数；本线源码/完整 AST/字典/库核对支持条件采用，
+不把第三方引擎或异步外壳称为已机器证明。叶子产生的原自定义错误先于后续文档结束；
+外层 parser 的位置补全仍归固定 A6 引擎条件，不能把叶子的 0/0 位置当作所有最终错误位置。
+
+只有模块重放、原生记录、总入口、完整双机验收和最终 CI 都通过并集成后，才报告本批最终完成。
+共享 Lake/总审计/native case/批次/实际文件服务/use-inventory 与权威文档由统筹接线；
+本线不另造总入口或进度标准。Status 外的 schema 与服务器自有有界 Writer 仍按前述边界保留。

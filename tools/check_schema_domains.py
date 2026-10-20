@@ -64,10 +64,17 @@ def check_sources(root, environment):
                        re.findall(r'^theorem\s+(\w+)', guard, re.M)}
     if set(environment['theorems']) != actual_theorems:
         raise ValueError('guard theorem inventory mismatch')
+    byte_source = root / 'SandboxModel/Boundaries/SchemaDomains/Bytes.lean'
+    byte_theorems = {'SandboxModel.Boundaries.SchemaDomains.' + name for name in
+                     re.findall(r'^theorem\s+(\w+)', byte_source.read_text(), re.M)}
+    if (set(environment['byte_theorems']) != byte_theorems
+            or actual_theorems & byte_theorems):
+        raise ValueError('byte theorem inventory missing, overlapping or changed')
+    all_theorems = actual_theorems | byte_theorems
     audits = (root / 'SandboxModel/Boundaries/SchemaDomains/Audit.lean').read_text()
     guard_audits = re.findall(r'^#audit_controller_proof\s+(\S+)', audits, re.M)
-    if len(guard_audits) != len(actual_theorems) or set(guard_audits) != actual_theorems:
-        raise ValueError('guard audit inventory incomplete or duplicated')
+    if len(guard_audits) != len(all_theorems) or set(guard_audits) != all_theorems:
+        raise ValueError('guard/byte audit inventory incomplete or duplicated')
     return len(schemas)
 
 

@@ -117,8 +117,9 @@ def main():
                     ['cargo', 'test', '-p', 'sandproof-internal', '--test', 'secure_probe',
                      'status_', '--locked', '--offline', '--', '--nocapture', '--test-threads=1'],
                     ['bash', 'scripts/python-entry.sh', '-m', 'unittest',
-                     'tools.tests.test_schema_domains', '-v'],
+                     'tools.tests.test_schema_domains', 'tools.tests.test_schema_domains_binding', '-v'],
                     ['bash', 'scripts/python-entry.sh', 'tools/check_schema_domains.py'],
+                    ['bash', 'scripts/python-entry.sh', 'tools/check_schema_domains_binding.py', '--check-features'],
                 ]
                 for index, command in enumerate(commands):
                     command_log = out / ('correct-step-' + str(index) + '.log')

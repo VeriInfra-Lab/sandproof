@@ -14,9 +14,9 @@ for kind in request_decode request_encode response_decode response_encode; do
   if [[ -f "$LLBC" ]]; then mv "$LLBC" "$PREVIOUS/$kind.llbc"; fi
   RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
-    --targets x86_64-unknown-linux-gnu \
-    --start-from "crate::$kind" --include sandproof_protocol \
+    --start-from "crate::$kind" --include sandproof_internal --include sandproof_protocol \
     --dest-file "../../artifacts/schema-domains-binding/$kind.llbc" -- \
+    --target x86_64-unknown-linux-gnu \
     --manifest-path verification/extract-schema-domains/Cargo.toml --lib --locked --offline
   test -s "$LLBC"
 done
