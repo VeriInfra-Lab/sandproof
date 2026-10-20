@@ -628,6 +628,8 @@ A6 仍只提供固定 JSON 引擎、标准派生和普通值接口；B4 只连�
 
 客户端请求编码、服务器请求解码、客户端响应解码有实际来源绑定；普通 Vec 的响应编码仅是参考。真实服务器的 encode_bounded 使用私有 Writer，不能用参考 to_vec 的定理代替；长度/分配失败/部分输出/错误优先级仍是 T2 公共缺口。22 类型/10 上下文的分类不表示它们已全部证明。V3/V7 提供端点/认证绑定，V6 提供观察真实性，V1/V4 提供实际容量使用。
 
+Status 与 TLS 的独立生成根会产生同名的 TransportError 判别辅助声明，不能在同一个 Lean 环境直接混合导入。公共根提供[纯值词汇和接受条件](../../SandboxModel/Boundaries/SchemaDomains/Values.lean)；完整 Status Rust 对应与 46 项审计保持独立文件/模块检查，并进入全部保留文件构建、真实文件诊断和总清单。没有删除 TLS 或 Status 检查，也没有改写生成物。调用方须区分可共同导入的值合同和各生成根的实现对应；本接线不承诺所有独立生成根能直接共同导入。
+
 ## A6 原 Store 共享查询与成员判断
 
 [LoopCallbacks](../../SandboxModel/Foundations/LoopCallbacks.lean)复用有限首次匹配理论，连接原 Store::get/contains_key 和四个透明 Rust 委托。完整来源邻域见[登记](../../verification/experiments/loop-callbacks/source-map.json)，函数/字典及借用域见[环境](../../verification/loop-callbacks-environment.json)。本条只使用原工具/A6 和有效安全共享借用的既有可信链，不增加整个调用者或比较器正确的 B 条件。

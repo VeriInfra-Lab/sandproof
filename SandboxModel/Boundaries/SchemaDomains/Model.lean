@@ -1,3 +1,4 @@
+import SandboxModel.Boundaries.SchemaDomains.Values
 import SandproofSchemaDomains.Types
 import SandboxModel.Foundations.Representation
 
@@ -20,13 +21,6 @@ def nodeView (node : RustNode) : SandboxModel.Foundations.NodeBinding :=
 
 def resourcesView (resources : RustResources) : SandboxModel.Foundations.ResourceVector :=
   SandboxModel.Foundations.resourceView (toFoundationResources resources)
-
-structure StatusValue where
-  node : SandboxModel.Foundations.NodeBinding
-  retentionSlots : Nat
-  observedAtMs : Nat
-  free : SandboxModel.Foundations.ResourceVector
-  deriving DecidableEq
 
 def requestView (request : RustRequest) := nodeView request.node
 

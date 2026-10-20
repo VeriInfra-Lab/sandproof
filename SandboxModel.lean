@@ -25,7 +25,7 @@ import SandboxModel.PersistenceShell
 import SandboxModel.AllocationProofs
 import SandboxModel.Foundations
 
-import SandboxModel.Boundaries.SchemaDomains
+import SandboxModel.Boundaries.SchemaDomains.Values
 import SandboxModel.Foundations.LoopCallbacks
 import SandboxModel.Boundaries.SqliteStatements.Model
 

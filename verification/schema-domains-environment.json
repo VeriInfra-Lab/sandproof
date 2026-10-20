@@ -388,6 +388,7 @@
     "SandboxModel/Boundaries/SchemaDomains/Bytes.lean",
     "SandboxModel/Boundaries/SchemaDomains/Guard.lean",
     "SandboxModel/Boundaries/SchemaDomains/Model.lean",
+    "SandboxModel/Boundaries/SchemaDomains/Values.lean",
     "SandboxModel/Foundations.lean",
     "SandboxModel/Foundations/AllocatedNumbers.lean",
     "SandboxModel/Foundations/Audit.lean",
