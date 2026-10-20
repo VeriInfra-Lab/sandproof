@@ -5,7 +5,7 @@
 
 ## T5/T6 标准 Mutex：原守卫与真实唯一借用
 
-本批从 integration `489f1ed5` 开始，集成来源更新到 `501e79d8`；三份代表生产源码未改变，生产 Rust 和 Charon/Aeneas 均未修改。正式范围见[依赖合同](formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)和[十三组来源/责任登记](../verification/std-mutex-environment.json)。[公共模块](../SandboxModel/Boundaries/StdMutex.lean)包含 35 条条件守卫声明、7 条真实 get_mut/借用声明及 4 条连接声明，共 46 个正式审计目标。
+本批从 integration `489f1ed5` 开始，集成来源更新到 `18906900`（#607 仅修改镜像校验工具）；三份代表生产源码未改变，生产 Rust 和 Charon/Aeneas 均未修改。正式范围见[依赖合同](formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)和[十三组来源/责任登记](../verification/std-mutex-environment.json)。[公共模块](../SandboxModel/Boundaries/StdMutex.lean)包含 35 条条件守卫声明、7 条真实 get_mut/借用声明及 4 条连接声明，共 46 个正式审计目标。
 
 原守卫模型区分忙碌与持有原守卫的中毒错误、恢复不回滚/清除、正常 Drop 不析构原 payload、取得时已 unwind 的建议性中毒、遗忘守卫仍锁住及独立的唯一借用条件。原 SerialMutex::get_mut 保留透明 Rust 函数体，由固定原工具生成 Types/Funs 并证明原调用、正常/中毒分支和回写保持；库模型仍依 A6。实际吞错版先编译抽取，再由同一 GetMutContract 的否定定理反驳；专用 into_inner 绑定只准入实际 PoisonError<&mut T> 调用。
 
