@@ -80,6 +80,8 @@ def check_domains(data):
     if (d['slots']['minimum'], d['slots']['maximum'], d['slots']['accepted_minimum'],
             d['slots']['accepted_maximum']) != (0, 65535, 1, 4096):
         raise ValueError('wire representation and status accepted domain confused')
+    if d['wire-u16']['version'] != 'actual-guard-specific-not-a-universal-version':
+        raise ValueError('same integer type does not mean same protocol version')
 
 
 def check_fragment(root, span, selected):
@@ -160,6 +162,13 @@ def check(root, data=None, selection=None):
     if (len(wanted) != len(selection['locations']) or len(actual) != len(data['entries'])
             or set(actual) != set(wanted) or {x['family'] for x in actual.values()} != set(FAMILIES)):
         raise ValueError('missing/duplicate/extra reviewed location or family')
+    if data['constants'] != selection['constants']:
+        raise ValueError('reviewed per-interface version constants changed')
+    for constant in data['constants']:
+        expected_line = 'pub const ' + constant['name'] + ': ' + constant['rust_type'] + ' = ' + constant['literal'] + ';'
+        if (expected_line not in file(root, constant['path']).read_text().splitlines()
+                or not set(constant['locations']) <= set(actual)):
+            raise ValueError('wrong original typed version constant')
     t0 = data['t0']
     config = read(file(root, t0['config']))
     published = read(file(root, t0['catalogue']))

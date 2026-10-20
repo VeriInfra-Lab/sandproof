@@ -60,7 +60,7 @@
       "minimum": 0,
       "maximum": 65535,
       "zero": "representable-guard-specific",
-      "version": "only2-accepted-where-version-guard-called"
+      "version": "actual-guard-specific-not-a-universal-version"
     },
     "slots": {
       "kind": "integer",
@@ -887,9 +887,9 @@
       "object": "原PositiveCounter::make的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "构造1..=U64MAX；get/from保留值；next未耗尽严格+1",
+      "acceptance": "value大于0时原样包装；0返回原InvalidCounter",
       "rejection_order": [
-        "零构造拒绝；next先checked_add再TryFrom；耗尽拒绝不回绕"
+        "仅value==0拒绝"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -943,9 +943,9 @@
       "object": "原PositiveCounter::get的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "构造1..=U64MAX；get/from保留值；next未耗尽严格+1",
+      "acceptance": "无新增拒绝，原样返回原PositiveCounter保存的u64",
       "rejection_order": [
-        "零构造拒绝；next先checked_add再TryFrom；耗尽拒绝不回绕"
+        "本函数不重新校验或递增"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -999,9 +999,11 @@
       "object": "原PositiveCounter::next的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "构造1..=U64MAX；get/from保留值；next未耗尽严格+1",
+      "acceptance": "原值未耗尽时严格+1并返回新PositiveCounter；耗尽原InvalidCounter",
       "rejection_order": [
-        "零构造拒绝；next先checked_add再TryFrom；耗尽拒绝不回绕"
+        "原get",
+        "checked_add(1)",
+        "Some时原TryFrom；None拒绝"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -1055,9 +1057,9 @@
       "object": "原PositiveCounter::into的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "构造1..=U64MAX；get/from保留值；next未耗尽严格+1",
+      "acceptance": "无新增拒绝，委托原get后返回相同u64",
       "rejection_order": [
-        "零构造拒绝；next先checked_add再TryFrom；耗尽拒绝不回绕"
+        "本函数不重新校验或递增"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -1167,9 +1169,9 @@
       "object": "原pub struct NodeIdentity {的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "完整字段保留；Control的可表示版本/slot0先解码后守卫",
+      "acceptance": "完整deployment_id/node_id/node_generation保留；叶子合法域和来源分别建立",
       "rejection_order": [
-        "构造域不提供授权或身份来源"
+        "本结构的构造不检查协议版本或slot，也不提供授权"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -1522,9 +1524,9 @@
       "object": "原Resources::values的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原四分量；positive在调用处要求全部>0；加法全部可表示才成功",
+      "acceptance": "无拒绝或运算，按instances/cpu/memory_bytes/disk_bytes次序返回全部四个原值",
       "rejection_order": [
-        "instances→cpu→memory_bytes→disk_bytes的原短路顺序"
+        "无拒绝；原声明顺序投影"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -1577,9 +1579,9 @@
       "object": "原Resources::positive的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原四分量；positive在调用处要求全部>0；加法全部可表示才成功",
+      "acceptance": "当且仅当原四分量都大于0返回true；其它值返回false",
       "rejection_order": [
-        "instances→cpu→memory_bytes→disk_bytes的原短路顺序"
+        "按instances→cpu→memory_bytes→disk_bytes短路"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -1632,9 +1634,12 @@
       "object": "原Resources::add的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原四分量；positive在调用处要求全部>0；加法全部可表示才成功",
+      "acceptance": "每个原u64分量加法均可表示时Some完整结果；首个溢出None；零分量不因此被拒绝",
       "rejection_order": [
-        "instances→cpu→memory_bytes→disk_bytes的原短路顺序"
+        "instances溢出",
+        "cpu溢出",
+        "memory_bytes溢出",
+        "disk_bytes溢出"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -1687,9 +1692,9 @@
       "object": "原Resources::fits的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原四分量；positive在调用处要求全部>0；加法全部可表示才成功",
+      "acceptance": "当且仅当四个分量分别<=对应limit返回true；不改变数值或自动预留资源",
       "rejection_order": [
-        "instances→cpu→memory_bytes→disk_bytes的原短路顺序"
+        "按instances→cpu→memory_bytes→disk_bytes比较，首个false短路"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -1743,9 +1748,9 @@
       "object": "原numeric::seconds的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原机器域和正常返回；秒0保留0，MiB按2^20向上取整，available取饱和剩余与观察的小者",
+      "acceptance": "seconds*1000可表示时Some精确u64毫秒，否则None；0映为0",
       "rejection_order": [
-        "乘法溢出/rounded MiB>U32MAX拒绝；available无错误返回"
+        "原checked_mul(1000)溢出拒绝"
       ],
       "conditions": [
         "时间/现场观察真实性与额度预留不由此提供；cpu的具体单位按调用接口"
@@ -1801,9 +1806,11 @@
       "object": "原numeric::mib的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原机器域和正常返回；秒0保留0，MiB按2^20向上取整，available取饱和剩余与观察的小者",
+      "acceptance": "按2^20向上取整后<=U32MAX时Some精确u32；0映为0",
       "rejection_order": [
-        "乘法溢出/rounded MiB>U32MAX拒绝；available无错误返回"
+        "原商/余数取整",
+        "显式U32上界",
+        "成功后as u32"
       ],
       "conditions": [
         "时间/现场观察真实性与额度预留不由此提供；cpu的具体单位按调用接口"
@@ -1858,9 +1865,9 @@
       "object": "原numeric::available的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原机器域和正常返回；秒0保留0，MiB按2^20向上取整，available取饱和剩余与观察的小者",
+      "acceptance": "对任意三个u64正常返回min(saturating_sub(limit,used),observed)，包括0",
       "rejection_order": [
-        "乘法溢出/rounded MiB>U32MAX拒绝；available无错误返回"
+        "无错误拒绝；先饱和减法再原比较选择"
       ],
       "conditions": [
         "时间/现场观察真实性与额度预留不由此提供；cpu的具体单位按调用接口"
@@ -2341,9 +2348,9 @@
       "object": "原ActionIdentity::validate_version的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "只检查动作协议版本",
+      "acceptance": "仅当原protocol_version==PROTOCOL_VERSION(1)返回Ok，其他值返回带原收到版本的UnsupportedVersion",
       "rejection_order": [
-        "原协议版本"
+        "仅动作协议版本1检查"
       ],
       "conditions": [
         "固定版本、普通值、实际原对象及完整参数；具体调用者仍须实例化前提"
@@ -3072,9 +3079,9 @@
       "object": "原status::request-guard的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原完整node一致；response还要求slots1..4096；time/free不决定接受",
+      "acceptance": "仅当请求与原expected的完整节点相同返回Ok；不检查slots/time/free字段",
       "rejection_order": [
-        "原节点全文"
+        "完整node不相同则原Rejected"
       ],
       "conditions": [
         "原expected与认证连接由V3/V7绑定；time/free真实性由V6提供；原输出Writer仍T2"
@@ -3130,9 +3137,9 @@
       "object": "原status::response-guard的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "原完整node一致；response还要求slots1..4096；time/free不决定接受",
+      "acceptance": "完整node相同且slots在1..4096时Ok；time/free原可表示值不改变此结果",
       "rejection_order": [
-        "原节点全文",
+        "原node不相同",
         "slots==0",
         "slots>4096"
       ],
@@ -3382,12 +3389,14 @@
       "object": "原TemplateStartup::is_valid的完整输入/接收者；不得替换为另一个身份、缓冲区或状态",
       "input_domain": "原签名可表示的Rust输入；此处列出的domains是规则词汇，不提前假设待检查输入已经合法",
       "preservation": "按原字段/原字节保留；额外规范化、截断或隐式非零结论不能从本行取得",
-      "acceptance": "实际user ASCII规则、workdir UTF8字节界/路径规则及argv/env各自限制",
+      "acceptance": "user按原ASCII首字节/集合且<=64字节；workdir绝对、<=4096字节、无NUL/反斜杠/..；env/argv各<=256，每项原字节限制，原总和<=32768；空argv允许，存在的首命令不为空",
       "rejection_order": [
-        "原user长度/首字节/字节集合",
-        "workdir绝对/字节界/NUL/反斜杠/..",
-        "env数量/键和值",
-        "argv等后续条件"
+        "user长度/首字节/集合",
+        "workdir绝对/字节长度/禁止值",
+        "env数量和每个键/值",
+        "argv数量和每项字节/NUL",
+        "存在的首命令非空",
+        "env与argv累计原字节总和"
       ],
       "conditions": [
         "Template依赖边界不抹去自有使用检查；原签名未预检；不得套opaque_id或把字符数当len"
@@ -7467,5 +7476,53 @@
     "normal-return ordinary value results do not prove resource Drop/async cancellation or physical observations",
     "identity/auth/highwater/lifetime/observations stay explicit V1-V9 obligations",
     "Writer is T2;T9 excludes named compatibility algorithms, not Guest security fields"
+  ],
+  "constants": [
+    {
+      "id": "action-version",
+      "path": "sandbox-protocol/src/lib.rs",
+      "name": "PROTOCOL_VERSION",
+      "rust_type": "u16",
+      "literal": "1",
+      "locations": [
+        "D7.action-check",
+        "D7.receipt-check"
+      ]
+    },
+    {
+      "id": "internal-version",
+      "path": "sandbox-protocol/src/internal.rs",
+      "name": "INTERNAL_PROTOCOL_VERSION",
+      "rust_type": "u16",
+      "literal": "2",
+      "locations": [
+        "D3.node-guard",
+        "D3.response-guard",
+        "D3.probe-request",
+        "D3.probe-response",
+        "D9.guard",
+        "D11.versions-current"
+      ]
+    },
+    {
+      "id": "center-store-version",
+      "path": "sandbox-protocol/src/internal.rs",
+      "name": "CENTER_STORE_FORMAT_VERSION",
+      "rust_type": "u32",
+      "literal": "6",
+      "locations": [
+        "D11.versions-current"
+      ]
+    },
+    {
+      "id": "host-store-version",
+      "path": "sandbox-protocol/src/internal.rs",
+      "name": "HOST_STORE_FORMAT_VERSION",
+      "rust_type": "i64",
+      "literal": "16",
+      "locations": [
+        "D11.versions-current"
+      ]
+    }
   ]
 }

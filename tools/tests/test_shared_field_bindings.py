@@ -87,6 +87,14 @@ class SharedFieldCatalogue(unittest.TestCase):
         self.data['domains']['slots']['accepted_maximum'] = 65535
         self.reject('status accepted')
 
+    def test_equal_u16_type_does_not_merge_action_and_internal_versions(self):
+        self.data['domains']['wire-u16']['version'] = 'all-guards-accept2'
+        self.reject('same protocol version')
+        self.data = copy.deepcopy(self.original)
+        row = next(x for x in self.data['constants'] if x['id'] == 'action-version')
+        row['literal'] = '2'
+        self.reject('per-interface version constants')
+
     def test_source_or_exact_fragment_drift_is_rejected(self):
         self.data['entries'][0]['source']['text'] += '\n'
         self.reject('fragment changed')
