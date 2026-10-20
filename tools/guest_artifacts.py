@@ -3,12 +3,14 @@
 The trusted consumer pins the manifest SHA-256 separately. A manifest cannot
 authorize itself, and package versions cannot stand in for binary fingerprints.
 """
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import stat
+import sys
 
 if __package__:
     from .check_kvm_host import require_keys, unique_keys
@@ -41,6 +43,71 @@ def descriptor(value, limit):
     return value
 
 
+def _extent_digest(fd, length):
+    """Hash every logical byte without reading filesystem-reported holes."""
+    if sys.platform != 'linux' or not all(hasattr(os, key) for key in ('SEEK_DATA', 'SEEK_HOLE', 'pread')):
+        return None
+    digest, position = hashlib.sha256(), 0
+    zeros = bytes(65536)
+    while position < length:
+        try:
+            data = os.lseek(fd, position, os.SEEK_DATA)
+        except OSError as error:
+            if error.errno in (errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP):
+                return None
+            if error.errno != errno.ENXIO:
+                raise
+            data = length
+        else:
+            if not position <= data < length:
+                raise ValueError('invalid artifact data extent')
+        while position < data:
+            count = min(data-position, len(zeros))
+            digest.update(zeros[:count])
+            position += count
+        if position == length:
+            break
+        try:
+            end = min(os.lseek(fd, data, os.SEEK_HOLE), length)
+        except OSError as error:
+            if error.errno in (errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP):
+                return None
+            raise
+        if end <= data:
+            raise ValueError('invalid artifact hole extent')
+        while position < end:
+            # Extent queries move the descriptor offset. Positioned reads also
+            # avoid disagreement with a caller's buffered file-object offset.
+            block = os.pread(fd, min(end-position, 65536), position)
+            if not block:
+                raise ValueError('artifact changed while reading')
+            digest.update(block)
+            position += len(block)
+    return digest.hexdigest()
+
+
+def file_digest(source, length):
+    """Full SHA-256 of an opened regular file, with a bounded dense fallback.
+
+    The caller retains its original type, size and inode/metadata checks.
+    Unsupported extent queries restart BOTH the hash and read position, even
+    after partial progress. Other I/O failures and malformed extents fail.
+    """
+    result = _extent_digest(source.fileno(), length)
+    if result is not None:
+        return result
+    source.seek(0)
+    digest, total = hashlib.sha256(), 0
+    while block := source.read(min(65536, length-total+1)):
+        total += len(block)
+        if total > length:
+            raise ValueError('artifact grew while reading')
+        digest.update(block)
+    if total != length:
+        raise ValueError('artifact changed while reading')
+    return digest.hexdigest()
+
+
 def fingerprint(path, limit, *, executable=False, content=False, allow_empty=False, single_link=True):
     """Observe one regular inode with fixed reads and identity checks.
 
@@ -59,24 +126,24 @@ def fingerprint(path, limit, *, executable=False, content=False, allow_empty=Fal
                 or opened.st_uid not in (0, os.geteuid()) or opened.st_mode & 0o022
                 or (executable and not opened.st_mode & 0o111)):
             raise ValueError('artifact type, identity, permissions or size')
-        digest, total = hashlib.sha256(), 0
         with os.fdopen(fd, 'rb', closefd=False) as source:
-            while True:
-                block = source.read(min(65536, opened.st_size - total + 1))
-                if not block:
-                    break
-                total += len(block)
-                if total > opened.st_size:
-                    raise ValueError('artifact grew while reading')
-                digest.update(block)
-                if content:
+            if not content:
+                sha256, total = file_digest(source, opened.st_size), opened.st_size
+            else:
+                digest, total = hashlib.sha256(), 0
+                while block := source.read(min(65536, opened.st_size-total+1)):
+                    total += len(block)
+                    if total > opened.st_size:
+                        raise ValueError('artifact grew while reading')
+                    digest.update(block)
                     result.extend(block)
+                sha256 = digest.hexdigest()
         if (total != opened.st_size or identity(os.fstat(fd)) != identity(opened)
                 or identity(path.lstat()) != identity(opened)):
             raise ValueError('artifact changed while reading')
     finally:
         os.close(fd)
-    value = {'bytes': total, 'sha256': digest.hexdigest()}
+    value = {'bytes': total, 'sha256': sha256}
     return (value, bytes(result)) if content else value
 
 

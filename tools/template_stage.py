@@ -6,7 +6,6 @@ Only a candidate ID is exposed to the authenticated publication API.
 """
 import argparse
 import errno
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +14,11 @@ import shutil
 import stat
 import sys
 import tempfile
+
+if __package__:
+    from .guest_artifacts import file_digest
+else:
+    from guest_artifacts import file_digest
 
 ZERO_BLOCK = bytes(64 * 1024)
 
@@ -30,11 +34,15 @@ def private_directory(path, *, allowed_owners=None):
 
 
 def file_hash(path):
-    digest = hashlib.sha256()
     with Path(path).open("rb") as incoming:
-        while block := incoming.read(1024 * 1024):
-            digest.update(block)
-    return digest.hexdigest()
+        before = os.fstat(incoming.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError('regular artifact required')
+        digest = file_digest(incoming, before.st_size)
+        after = os.fstat(incoming.fileno())
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError('artifact changed while reading')
+    return digest
 
 
 def write_sparse(output, block):
