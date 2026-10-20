@@ -35,7 +35,7 @@ fn repeated_reaffirm_durably_advances_revision_without_rewriting_unchanged_paylo
     for _ in 0..CONFIRMATIONS {
         let next_revision = observed.revision().get() + 1;
         observed = ledger.reaffirm(&observed).unwrap().into_observed();
-        assert!(observed.state() == &payload);
+        assert_eq!(observed.state(), &payload);
         assert_eq!(observed.revision().get(), next_revision);
         assert_eq!(fixture.revision(), next_revision.to_string());
     }
@@ -78,7 +78,7 @@ fn repeated_reaffirm_durably_advances_revision_without_rewriting_unchanged_paylo
         fixture.lease(),
     )
     .unwrap();
-    assert!(reopened.state() == &payload);
+    assert_eq!(reopened.state(), &payload);
     assert_eq!(reopened.revision(), revision);
     assert_eq!(fixture.revision(), revision.get().to_string());
 }
