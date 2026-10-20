@@ -116,9 +116,13 @@ def main():
                 raise ValueError('primitive library source differs: '+name)
             if sha(archives[0]) != locked[package]:
                 raise ValueError('primitive crate archive checksum differs: '+package)
-            checksums = json.loads((candidates[0].parents[len(Path(relative).parts)-1]/'.cargo-checksum.json').read_text())
-            if checksums['files'].get(relative) != digest:
-                raise ValueError('primitive source checksum differs from crate manifest: '+name)
+            with tarfile.open(archives[0]) as crate:
+                member = crate.getmember(name)
+                if not member.isfile():
+                    raise ValueError('primitive source is not a regular archive member: '+name)
+                archived = crate.extractfile(member).read()
+            if hashlib.sha256(archived).hexdigest() != digest:
+                raise ValueError('primitive source differs from locked archive bytes: '+name)
             record['library_sources'][name] = digest
         record['head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         record['rustc'] = subprocess.check_output(['rustc', '--version'], env=env, text=True).strip()
