@@ -225,7 +225,7 @@ class ClosureTests(unittest.TestCase):
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
             'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
-            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements'})
+            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
         retained=(root/'scripts/verify-retained-proofs.sh').read_text()
@@ -241,6 +241,8 @@ class ClosureTests(unittest.TestCase):
                                        entry.read_text()))
         self.assertIn('condvar', required)
         self.assertIn('tokio-rwlock', required)
+        self.assertIn('child-observation', required)
+        self.assertIn('callback-state', required)
         for case in sorted(required):
             with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
                 proof_native_suite.main(['require', case])
@@ -282,7 +284,7 @@ class ClosureTests(unittest.TestCase):
                 'verification/ProofAudit.lean':'Root.accepts',
                 'SandboxModel/Actual/Audit.lean':'Actual.safe',
                 'verification/aeneas/Actual/Audit.lean':'Generated.refines',
-                proof_batch.EXTRA_AUDIT_FILES[0]:'Wrong.rejected'}
+                **{name:'Wrong.rejected'+str(index) for index,name in enumerate(proof_batch.EXTRA_AUDIT_FILES)}}
             for name, declaration in fixtures.items():
                 path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text('#audit_controller_proof '+declaration+'\n')

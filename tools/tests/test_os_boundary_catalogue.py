@@ -31,6 +31,10 @@ class OsBoundaryCatalogue(unittest.TestCase):
         bad=copy.deepcopy(self.data);bad['families'][0]['locations'][0]['line']+=1
         with self.assertRaises(ValueError):validate(ROOT,bad)
     def test_trust_and_proof_promotion_rejected(self):
+        bad=copy.deepcopy(self.data);bad.pop('status_scope')
+        with self.assertRaises(ValueError):validate(ROOT,bad)
+        bad=copy.deepcopy(self.data);bad['families'][0]['public_status']='business_proof'
+        with self.assertRaises(ValueError):validate(ROOT,bad)
         for field in ['new_program_theorems','new_trusted_guarantees']:
             bad=copy.deepcopy(self.data);bad[field]=1
             with self.assertRaises(ValueError):validate(ROOT,bad)

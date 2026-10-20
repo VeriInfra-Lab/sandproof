@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from tools.check_child_observation import (ASSETS, ENVIRONMENT, VARIANTS,
-    check_ast, check_sources, check_formal, expected_audits, sha)
+    check_ast, check_sources, check_formal, expected_audits, fresh_native_artifact, sha)
 from tools.check_sqlite_statements import check_record
 from tools.check_sqlite_extraction import proof_sources_digest
 
@@ -62,3 +62,25 @@ class ChildObservationAdmission(unittest.TestCase):
                 with self.assertRaises(ValueError):check_record(view,wrong,{'Example.child'},name,versions)
 
 if __name__=='__main__':unittest.main()
+
+
+class ActualChildHarnessAdmission(unittest.TestCase):
+    def test_actual_same_crate_harness_required(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);source=root/'source';target=root/'target';target.mkdir()
+            package=source/'sandbox-runtime';binary=target/'runtime-tests';log=root/'cargo.log'
+            row={'reason':'compiler-artifact','fresh':False,'package_id':package.as_uri().replace('file:','path+file:')+'#0.1.0',
+                 'manifest_path':str(package/'Cargo.toml'),'target':{'name':'sandbox_runtime','kind':['lib'],'src_path':str(package/'src/lib.rs')},
+                 'profile':{'test':True},'executable':str(binary),'filenames':[str(binary)]}
+            def admit(rows):
+                log.write_text('\n'.join(json.dumps(x) for x in rows))
+                return fresh_native_artifact(log,target,source)
+            self.assertEqual(admit([row]),row)
+            for mutate in [lambda x:x.update(fresh=True),lambda x:x.update(package_id='registry+https://example.invalid#sandbox-runtime@0.1.0'),
+                           lambda x:x.update(manifest_path=str(root/'old/Cargo.toml')),
+                           lambda x:x['target'].update(src_path=str(root/'old/src/lib.rs')),
+                           lambda x:x.update(executable=None),lambda x:x.update(filenames=[str(root/'other-binary')])]:
+                wrong=copy.deepcopy(row);mutate(wrong)
+                with self.assertRaises(ValueError):admit([wrong])
+            for rows in [[],[row,row]]:
+                with self.assertRaises(ValueError):admit(rows)

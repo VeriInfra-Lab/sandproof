@@ -140,12 +140,13 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 ```
 
 这个入口包含完整 Linux `check-function.sh`，并运行原证明入口中的独立抽取
-crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、标准 Mutex、Condvar、Tokio RwLock、JSON、TLS、relay、SQLite 和 Redis 候选回归。
+crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、标准 Mutex、Condvar、Tokio RwLock、原 Child 观察、有状态回调、JSON、TLS、relay、SQLite 和 Redis 候选回归。
 保留原测试数量、拒绝断言、正确/错误版和新编译二进制检查。它不运行 Lean
 或翻译器。原生错误版仍须确实编译并触发原断言；构建失败不能写入成功记录。
 变体使用同一 Cargo target 时，还须检查实际业务库与测试二进制都绑定当前源副本；
 新测试二进制不能证明其链接库已更新。Tokio RwLock 入口逐变体重建本自有包，并在结束时
-移除错误版包缓存，保留其它依赖。源码时间较旧不能作为复用前一变体库的依据。
+移除错误版包缓存，保留其它依赖。原 Child 入口同样绑定实际同 crate 的业务测试程序，
+检查 package/manifest/src/fresh，并只清理 sandbox-runtime 自有包的变体缓存。源码时间较旧不能作为复用前一变体库的依据。
 SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这份证明批次记录替代。
 入口为测试夹具建立 0700 的私有临时目录；不放宽真实文件的属主、符号链接或
 祖先写权限检查。普通功能验收绑定全部跟踪输入，文档变化也必须重新检查，

@@ -77,6 +77,8 @@ V0–V9 是证明责任模块，不是顺序版本。V0 完成条件只包含本
 
 [共享查询接入](../../SandboxModel/Foundations/LoopCallbacks.lean)另外连接原 get/contains_key 的安全共享值观察及四个透明委托；保留首次匹配/重复键、比较和投影条件，不代表所有业务调用者或有状态回调已完成。
 
+有状态回调另由 [CallbackState](../../SandboxModel/Foundations/CallbackState.lean)提供真实 helper 对应及逐次外部状态组合。正常遍历与机械状态传递分别依 A6/B4；完整自有谓词/比较和业务提供方仍须实例化。原 Child 的退出观察及未知 pair 交接见 [ChildObservation](../../SandboxModel/Boundaries/ChildObservation.lean)与依赖登记；它是隔离同步候选，不代替生产一般等价或完整宿主生命周期。T7/T8 的[有限使用目录](../../verification/experiments/os-boundary-catalogue/README.md)帮助逐点审查，不能当作语义覆盖证明。
+
 ### 可观察组合合同
 
 [Composition](../../SandboxModel/Foundations/Composition.lean)保留参数化的一般有限精化接口；全系统安全结论还须使用[Observations](../../SandboxModel/Foundations/Observations.lean)的加强合同，或提供相同强度的义务：

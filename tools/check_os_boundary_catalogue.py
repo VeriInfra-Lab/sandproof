@@ -14,7 +14,7 @@ IDS=('redis-session redis-result redis-scripts-codec writer-file-lock sqlite-con
      'exact-cleanup disk-copy-space helper-child pidfd firecracker-api cgroup network-rules '
      'tls-config tls-original-provenance byte-stream guest-command-pty guest-files '
      'clock-deadlines crypto-bootstrap template-boundary').split()
-STATUSES={'registered_contract','integrated_representative','business_proof','pending_617',
+STATUSES={'registered_contract','integrated_representative','business_obligation','pending_617',
           'missing_public_binding','explicit_exclusion'}
 EVIDENCE={'candidate-machine-proof','conditional-model','pending-candidate-machine-proof'}
 DENIED={'catalogue_is_program_proof','all_runtime_calls_resolved','sql_success_is_durable_commit',
@@ -33,6 +33,8 @@ def validate(root,data):
     if (data.get('schema')!=1 or data.get('claim_kind')!='finite-source-and-contract-review'
             or data.get('new_program_theorems')!=0 or data.get('new_trusted_guarantees')!=0):
         raise ValueError('catalogue cannot grant trust or certify new program proofs')
+    if data.get('status_scope')!='historical-review-baseline-not-current-completion':
+        raise ValueError('catalogue statuses require explicit historical review scope')
     native=census.sources(root)
     digest=sha(json.dumps(native,sort_keys=True,separators=(',',':')).encode())
     if data.get('native_inputs_sha256')!=digest:

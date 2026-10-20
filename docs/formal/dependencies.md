@@ -684,3 +684,37 @@ B2 只连接原 `current`、原守卫、共享投影和调用次序：`authorize
 模型和有限非空历史证明读写排斥、原领取、映射及保留读者时的值保持，同一 `ProtectedRead` 拒绝提前释放模型。原 Rust 错误副本改持一个副本锁、提前释放原会话锁，由原轮换等待断言检查；这是原生回归证据。固定 Charon 对真实 async `Session::authorize` 的 coroutine/GAT 限制保留，未完成 async Rust 机器精化。源审查和测试仅支持所列 A6/B2 符合条件的采用。
 
 本条没有 FIFO、最大读者数、无条件最终取得或硬返回时限定理；不覆盖任意 `map` 回调、升级/降级、`write_owned`、`blocking_*`、任意其它 RwLock/Mutex 使用点或整个 Guest 业务。未被本条覆盖的公共接法仍归 V0，业务授权和真实资源/释放决定仍归所属模块。
+
+
+## A2/A3/A6/A8/B4 原 Child 的退出观察与未知交接
+
+[公共入口](../../SandboxModel/Boundaries/ChildObservation.lean)针对原 `OwnedChild::stop_and_reap` 的隔离同步候选。来源冻结于 integration `646fc2c8`，生产未采用该拆分；原实现和候选的有限对照是源码/测试证据，不是一般新旧 Rust 等价证明。[逐符号合同](../../verification/experiments/child-observation/contracts.json)保存九个机械函数的完整片段摘要、固定标准库版本、原对象和失败含义；核心、实际调用方及同性质错误版都使用固定原工具。
+
+入口由 V6 提供有效原 Child、已预占原 Slot、真实创建/回收身份及两项都存在的条件。A2 解释这一次原进程观察，A3 解释原管道关闭，A6/A8 解释正常值、时钟和暂停；B4 只连接 `system/try_wait/kill/close_pipes/now/add_grace/pause/retain/unknown_exit` 的原对象、完整参数及该次回复。它不担保整个停止函数、reaper 或释放决定正确。
+
+| 正常返回提供的窄保证 | 不提供的结论与调用者责任 |
+|---|---|
+| `try_wait` 的 Some 是原 Child 的同一完整退出状态，可来自其已缓存状态；None 与普通 io::Error 仍是合法回复 | None/Err 不说明进程仍活着或无效果；V6 防止提前回收后仍向复用 PID 发信号。一个进程退出不代表后代、VM 或全部 FD 已结束 |
+| `kill` 保留原终止请求及回复；已缓存退出时可不发新信号便成功。`close_pipes` 顺序取出并正常析构本地三个原管道 | kill 成功与管道为空均不是退出/排空证据；复制 FD、在途字节及全部后代由 V6/V8 处理。部分关闭不回滚 |
+| 每次 `now` 重新观察时钟，`add_grace` 使用原两秒常量，`pause` 是原十毫秒调用 | 不能推出两秒硬上界、时钟必然推进或最终回收；不可表示加法、panic、不返回没有正常后态 |
+| `retain` 正常返回表示原 Child/Slot 曾一并交给原 reaper，随后执行原通知；`unknown_exit` 保留原错误类别与全文 | 这是历史事实，worker 可能已经回收，不能断言当前队列成员关系；全局计费与原 reaper 释放政策归 V6。通知不提供退出证据 |
+
+机器证明的自有决定是：按原顺序观察/kill/关闭/比较截止；成功保留完整退出观察与本地原名额；未知返回前先取原 Child、再取原 Slot，转交原 pair 后构造原错误。实际生成调用方和具体接口字典另有检查。形式响应流与历史属于每次调用的逻辑上下文，不声称空 Rust SystemIo 物理存储这些字段，也不冻结外部 OS、时钟或其它队列。
+
+普通 Err 是正常回复，不能被删去。正常返回合同不为中断调用、panic/unwind、abort、崩溃或取消补造后态、清理或回滚。Error/Status/Instant 等表示限普通值，不允许把额外许可、FD 或自定义可观察析构藏在其中。缺值 panic 诊断、OwnedChild::Drop/into_child、整个 pump/exchange、SafeLaunch、全局容量和完整生命周期仍由 V6/V8 证明。原生错误版与形式错误版均检验原 pair 责任；编译失败不是反例。
+
+## A6/B4 有状态回调：原外部状态与访问顺序
+
+[CallbackState](../../SandboxModel/Foundations/CallbackState.lean)证明隔离 crate 内真实 `toggle_step/trace_step` 的生成体，再以逐次正常观察连接通用筛选理论。[来源登记](../../verification/experiments/callback-state/source-map.json)明确：trace/calls 来自原 Store 回归，toggle 是隔离代表，完整生产谓词没有因这两个例子完成证明。
+
+A6 仅提供普通值 Vec::retain 的正常有限遍历：对原每一行按原顺序调用一次，按该次 bool 保留原行；B4 只把同一个 helper、原外部可变状态、完整 key/value/配置及结果原样接上。自有比较、克隆、谓词、授权、退休与释放仍由 V4/V6/V9 证明，不能把整个 FnMut 或业务回调列可信。
+
+`Chain/Selected` 记录每次真实返回与原行选择；公共定理推出完整状态转移、次数、顺序、幸存行及 trace 的完整前缀追加。调用者须提供有效独占借用、普通值且无额外 Drop、每次对应及可表示 trace 容量；正常分配与模型容量不同，不保证物理内存足够。bool 回调没有 Result 错误短路；有业务 Result 的接口须另保留首错。中断只说明已完成调用的历史前缀，不声明当前外部堆/Store 回滚；受控 panic 仅为原生测试证据。
+
+两个真实错误 helper 均重新编译抽取，再由正确版同一 ToggleContract/TraceContract 拒绝。机械外壳的来源审查、原生测试与模型条件各自保留；未获得完整高阶闭包的机器精化。
+
+## T7/T8 有限依赖使用目录的读法
+
+[OS/存储目录](../../verification/os-boundary-catalogue.json)在固定五根、60 个编译变体之上核对 25 类接口、71 个代表源码位置；它没有新增可信保证或程序定理。每行说明原对象/配置、正常结果、错误和部分效果、未知/取消、进展和业务提供方。其 public_status 与待办是 review_baseline 的历史审查快照，当前交付状态见 #333 与覆盖记录；business_obligation 表示仍待业务证明。
+
+本页 A/B 是依赖合同的权威位置。目录中对源码行为的解释仍需其自有前提和业务证明，不能把该行整函数变成可信依赖，也不能把有代表例子理解为所有 SQL/Lua、驱动、Guest 或 Firecracker 调用已抽取。尚未接通的具体签名须给最小预检，不提前保证工具支持。有限目录不提供完整调用图、依赖析构或 Future 取消胶水语义。TLS 原借用输入连接仍是公开缺口，不由现有首叶候选或来源定位自动完成。

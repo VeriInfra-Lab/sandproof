@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+from urllib.parse import unquote, urlsplit
 
 from tools.check_sqlite_statements import full_digest, check_record, audit_names
 from tools.check_sqlite_extraction import surface
@@ -160,19 +161,51 @@ def check_tools(root,tool_root):
         for name,digest in env['library_sources'][role].items():
             if sha(base/'lib/rustlib/src/rust/library'/name)!=digest:raise ValueError('standard library source changed')
 
+def fresh_native_artifact(log, target, source):
+    """Bind the actual unit harness containing the changed business body.
+
+    cargo --lib puts the library body and its tests in the same executable;
+    a new unrelated integration binary or a reused original body is insufficient.
+    """
+    rows=[]
+    for line in log.read_text().splitlines():
+        try:row=json.loads(line)
+        except ValueError:continue
+        if (row.get('reason')=='compiler-artifact'
+                and row.get('target',{}).get('name')=='sandbox_runtime'
+                and row.get('target',{}).get('kind')==['lib']
+                and row.get('profile',{}).get('test') is True):rows.append(row)
+    if len(rows)!=1 or rows[0].get('fresh') is not False:
+        raise ValueError('fresh unambiguous actual business unit harness required')
+    row=rows[0];package=(source/'sandbox-runtime').resolve()
+    identity=urlsplit(row.get('package_id','').split('#',1)[0])
+    if (Path(row.get('manifest_path','')).resolve()!=package/'Cargo.toml'
+            or Path(row['target'].get('src_path','')).resolve()!=package/'src/lib.rs'
+            or identity.scheme!='path+file' or identity.netloc
+            or Path(unquote(identity.path)).resolve()!=package):
+        raise ValueError('actual compiled package/source identity differs')
+    binary=row.get('executable');files=row.get('filenames',[])
+    if (not binary or not files or binary not in files
+            or any(not Path(n).resolve().is_relative_to(target.resolve()) for n in files)):
+        raise ValueError('missing or escaped actual harness executable')
+    return row
+
 def check_native(path, root=None):
     record=read(path/'complete.json')
     if record.get('success') is not True or set(record['variants'])!={'original','correct','kill-success-release'}:
         raise ValueError('native batch incomplete')
     for name,variant in record['variants'].items():
         commands=variant['commands']
-        tags=['format-test-attachments','compile-real-source']
+        tags=['format-test-attachments','clean-owned-package','compile-real-source']
         tags += ['same-accounted-'+n for n in ['unknown_after_none_preserves_exact_original_pair','unknown_after_errors_preserves_exact_original_pair']] if name=='kill-success-release' else ['actual-child-tests','clippy']
         if len(commands)!=len(tags):raise ValueError('native commands missing/extra')
         for tag,item in zip(tags,commands):
             expected=101 if tag.startswith('same-accounted-') else 0
             if item['expected_exit_code']!=expected or item['exit_code']!=expected or sha(path/name/(tag+'.log'))!=item['log_sha256']:
                 raise ValueError('native command/log differs')
+        source=path/name/'source'
+        artifact=fresh_native_artifact(path/name/'compile-real-source.log',Path(record['target_dir']),source)
+        if artifact!=variant.get('actual_artifact'):raise ValueError('actual artifact provenance differs')
         if sha(path/name/'actual-tests')!=variant['binary_sha256']:raise ValueError('native binary damaged')
         if name=='kill-success-release':
             bad=[x for x in commands if x['expected_exit_code']==101]
@@ -186,6 +219,9 @@ def check_native(path, root=None):
             count=14 if name=='original' else 16
             if f'test result: ok. {count} passed; 0 failed; 0 ignored;' not in p.read_text():
                 raise ValueError('real OS tests absent or skipped')
+    cleanup=record.get('mutant_cache_cleanup',{})
+    if cleanup.get('exit_code')!=0 or cleanup.get('expected_exit_code')!=0 or sha(path/'mutant-cache-cleanup.log')!=cleanup.get('log_sha256'):
+        raise ValueError('owned mutant package cache cleanup incomplete')
     if root is not None:
         if record['runtime']['rustc'].strip()!=read(root/ENVIRONMENT)['production_rustc'].strip():raise ValueError('native compiler differs from registered production version')
         profile=read(root/ASSETS/'candidate.json')

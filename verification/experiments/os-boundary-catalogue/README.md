@@ -4,6 +4,8 @@
 
 这份材料审查 integration `e576a8475043c2d21b68231b7f6b1ead09be1952` 的既有使用域，不增设业务规格或批准可信保证。机器可核对目录在 [os-boundary-catalogue.json](../../os-boundary-catalogue.json)。`registered_contract` 仅表示可以用现有 A1–A12/B1–B4 描述该类底层操作，不表示整函数已验证或每个实际调用都已满足条件。
 
+本目录的状态与待办是上述审查基线的历史快照；当前交付状态见 #333 和覆盖记录。`business_obligation` 明确表示仍待业务模块证明，不能读成已证明。后续集成 #617 或 TLS 成果不修改这份历史证据的含义，也不因历史待办文字重新打开已经交付的接口。
+
 ## 有限范围与证据
 
 沿用已发布 T0 的 center、host、window-reducer、guest、vm-cli 五根、dev/release、Linux x86-64 共60个编译变体。原捕获提交为 `a9ea9e3d`；本次在同输入的e576副本上实际执行原 `check-published`，818项Rust/Cargo来源、配置、完整MIR/索引、编译回执及日志摘要均通过，未重新编译捕获。目录另外保存确切函数位置、全文/片段摘要和解释。

@@ -6,10 +6,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import time
 
 from prepare import prepare,sha
 HERE=Path(__file__).resolve().parent
+sys.path.insert(0,str(HERE.parents[2]))
+from tools.check_child_observation import fresh_native_artifact, check_native
 
 def command(args,source,output,tag,expected=0):
     log=output/(tag+'.log')
@@ -39,51 +42,65 @@ def run(archive,output):
         raise ValueError('fresh output and dedicated native target required')
     output.mkdir(parents=True,mode=0o700)
     start=time.monotonic();inputs={p.name:sha(p) for p in HERE.iterdir() if p.is_file()}
-    record={'kind':'child-observation-native-module-not-full-acceptance','variants':{}}
+    record={'kind':'child-observation-native-module-not-full-acceptance','variants':{},
+            'target_dir':str(Path(os.environ['CARGO_TARGET_DIR']).resolve())}
     record['runtime']={name:subprocess.check_output(args,text=True).strip() for name,args in {
         'rustc':['rustc','--version','--verbose'],'cargo':['cargo','--version'],
         'rustfmt':['rustfmt','--version']}.items()}
-    for variant in ['original','correct','kill-success-release']:
-        case=output/variant;case.mkdir();source=case/'source'
-        materialized=prepare(archive,source,variant)
-        tests=attach_tests(source,variant)
-        entry={'materialized':materialized,'test_sources':tests,'commands':[]}
-        # Format only test attachments; production/candidate bytes are immutable.
-        entry['commands'].append(command(['rustfmt','--edition','2024']+[str(source/p) for p in tests],source,case,'format-test-attachments'))
-        entry['formatted_test_sources']={p:sha(source/p) for p in tests}
-        args=['cargo','test','-p','sandbox-runtime','--lib','--no-run','--message-format=json','--locked','--offline']
-        entry['commands'].append(command(args,source,case,'compile-real-source'))
-        rows=[json.loads(line) for line in (case/'compile-real-source.log').read_text().splitlines() if line.startswith('{')]
-        binaries=[r['executable'] for r in rows if r.get('reason')=='compiler-artifact' and r.get('executable') and r.get('profile',{}).get('test')]
-        if len(binaries)!=1: raise ValueError('ambiguous real compiled binary')
-        binary=case/'actual-tests'
-        shutil.copy2(binaries[0],binary)
-        entry['binary_sha256']=sha(binary)
-        if variant!='kill-success-release':
-            entry['commands'].append(command([str(binary),'child_process::','--test-threads=1'],source,case,'actual-child-tests'))
-            text=(case/'actual-child-tests.log').read_text()
-            if 'actual_stop_observes_original_child_before_success ... ok' not in text or 'already_observed_exit_returns_exact_status_without_closing_pipes ... ok' not in text:
-                raise ValueError('actual OS positive path did not run')
-            if 'zero_argument_observation_can_change_between_calls ... ok' not in text:
-                raise ValueError('effectful nullary observation contrast did not run')
-            if variant=='correct' and text.count('preserves_exact_original_pair ... ok')!=2:
-                raise ValueError('controlled actual-pair cases did not run')
-            entry['commands'].append(command(['cargo','clippy','-p','sandbox-runtime','--lib','--tests','--locked','--offline','--','-D','warnings'],source,case,'clippy'))
-        else:
-            for name in ['unknown_after_none_preserves_exact_original_pair',
-                         'unknown_after_errors_preserves_exact_original_pair']:
-                tag='same-accounted-'+name
-                entry['commands'].append(command([str(binary),name,'--test-threads=1'],source,case,tag,101))
-                text=(case/(tag+'.log')).read_text()
-                if text.count('unknown result lost the original Child/Slot responsibility')!=1:
-                    raise ValueError('mutant failed for another reason')
-        record['variants'][variant]=entry
-        (output/'progress.json').write_text(json.dumps(record,indent=2)+'\n')
+    source=None
+    try:
+        for variant in ['original','correct','kill-success-release']:
+            case=output/variant;case.mkdir();source=case/'source'
+            materialized=prepare(archive,source,variant)
+            tests=attach_tests(source,variant)
+            entry={'materialized':materialized,'test_sources':tests,'commands':[]}
+            # Format only test attachments; production/candidate bytes are immutable.
+            entry['commands'].append(command(['rustfmt','--edition','2024']+[str(source/p) for p in tests],source,case,'format-test-attachments'))
+            entry['formatted_test_sources']={p:sha(source/p) for p in tests}
+            entry['commands'].append(command(['cargo','clean','-p','sandbox-runtime'],source,case,'clean-owned-package'))
+            args=['cargo','test','-p','sandbox-runtime','--lib','--no-run','--message-format=json','--locked','--offline']
+            entry['commands'].append(command(args,source,case,'compile-real-source'))
+            artifact=fresh_native_artifact(case/'compile-real-source.log',Path(record['target_dir']),source)
+            entry['actual_artifact']=artifact
+            binary=case/'actual-tests'
+            shutil.copy2(artifact['executable'],binary)
+            entry['binary_sha256']=sha(binary)
+            if variant!='kill-success-release':
+                entry['commands'].append(command([str(binary),'child_process::','--test-threads=1'],source,case,'actual-child-tests'))
+                text=(case/'actual-child-tests.log').read_text()
+                if 'actual_stop_observes_original_child_before_success ... ok' not in text or 'already_observed_exit_returns_exact_status_without_closing_pipes ... ok' not in text:
+                    raise ValueError('actual OS positive path did not run')
+                if 'zero_argument_observation_can_change_between_calls ... ok' not in text:
+                    raise ValueError('effectful nullary observation contrast did not run')
+                if variant=='correct' and text.count('preserves_exact_original_pair ... ok')!=2:
+                    raise ValueError('controlled actual-pair cases did not run')
+                entry['commands'].append(command(['cargo','clippy','-p','sandbox-runtime','--lib','--tests','--locked','--offline','--','-D','warnings'],source,case,'clippy'))
+            else:
+                for name in ['unknown_after_none_preserves_exact_original_pair',
+                             'unknown_after_errors_preserves_exact_original_pair']:
+                    tag='same-accounted-'+name
+                    entry['commands'].append(command([str(binary),name,'--test-threads=1'],source,case,tag,101))
+                    text=(case/(tag+'.log')).read_text()
+                    if text.count('unknown result lost the original Child/Slot responsibility')!=1:
+                        raise ValueError('mutant failed for another reason')
+            record['variants'][variant]=entry
+            (output/'progress.json').write_text(json.dumps(record,indent=2)+'\n')
+    finally:
+        # Keep only the current package's mutant out of subsequent shared-target
+        # tests. Dependencies, evidence binaries and Lean caches are untouched.
+        if source is not None:
+            record['mutant_cache_cleanup']=command(['cargo','clean','-p','sandbox-runtime'],source,output,'mutant-cache-cleanup')
+            (output/'progress.json').write_text(json.dumps(record,indent=2)+'\n')
     if any(sha(HERE/name)!=digest for name,digest in inputs.items()):
         raise ValueError('native test inputs changed while running')
     record['inputs']=inputs
     record.update(success=True,seconds=time.monotonic()-start)
     (output/'complete.json').write_text(json.dumps(record,indent=2)+'\n')
+    try:
+        check_native(output,HERE.parents[2])
+    except Exception:
+        (output/'complete.json').rename(output/'rejected-complete.json')
+        raise
     return record
 
 if __name__=='__main__':

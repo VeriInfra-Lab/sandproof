@@ -59,7 +59,10 @@ python3 -m unittest tools.tests.test_child_observation
 # 证明机：固定工具、只读包缓存、独立 formal target
 bash scripts/regenerate-child-observation.sh --archive "$SOURCE_ARCHIVE" \
   --tool-root "$ORIGINAL_TOOLS" --output "$EXTRACTION_EVIDENCE"
-bash scripts/verify-child-observation.sh --output "$LEAN_EVIDENCE"
+export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE="$SOURCE_ARCHIVE"
+# 正式入口要求同输入的 ning 封口；内部执行三根重抽取和三独立证明视图。
+bash scripts/verify-child-observation.sh
+# 如需只重做局部 Lean：调用 proof.py --output "$LEAN_EVIDENCE"；不称完整验收。
 python3 -m tools.check_child_observation
 ```
 
@@ -70,3 +73,5 @@ python3 -m tools.check_child_observation
 V6 负责原对象/动作/名额的业务对应、reaper 的实际释放政策、整体计数、异常前缀和 Firecracker/jailer 生命周期。V8 负责协议、缓冲完整排空、命令和会话。B1/调用方负责“停止等待不等于后台工作退出”的资源所有者关系。
 
 `exchange_until` 可能在收尾后返回原 pump 错误；不能仅据公开错误种类反推无业务效果。`pump` 还存在自然退出加管道 EOF 的另一组合路径。`Drop` 和 `into_child` 不是本定理的自动推论：后者会交出 Child 并释放本 helper 名额，必须另有独立的有界 owner。全部 `OwnedChild` API、整个宿主、VM、Guest 命令、全部后代、严格墙钟上界、T9 和历史 #337 均不在本批验收中。
+
+共享主 Lake 使用完整具体调用方的原生成根，保留全部 Concrete 证明的普通构建；局部泛型、具体调用方和错误版仍由独立视图逐文件检查，不编辑或拼接生成文件。原生驱动绑定实际同 crate 单元测试程序的包/源码身份及 fresh=false，结束只清理本自有包的错误构建缓存。

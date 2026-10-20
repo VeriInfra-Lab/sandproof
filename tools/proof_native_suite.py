@@ -143,7 +143,8 @@ def run_locked_suite(output):
                            ('joinset','check_joinset_components.py'),
                            ('std-mutex','check_std_mutex_components.py'),
                            ('condvar','check_condvar_components.py'),
-                           ('tokio-rwlock','check_tokio_rwlock_components.py')]:
+                           ('tokio-rwlock','check_tokio_rwlock_components.py'),
+                           ('callback-state','check_callback_state_components.py')]:
         target = work / name
         native_case(name, ROOT, target, lambda n=filename, p=target:
                     call(['tools/' + n, '--output', p]))
@@ -153,6 +154,10 @@ def run_locked_suite(output):
     target = work / 'loop-callbacks'
     native_case('loop-callbacks', ROOT, target, lambda p=target:
         call(['tools/check_loop_callbacks_components.py', '--output', p]))
+    target = work / 'child-observation'
+    child_archive=Path(os.environ['SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE']).resolve(strict=True)
+    native_case('child-observation', ROOT, target, lambda p=target:
+        call(['verification/experiments/child-observation/native.py', '--archive', child_archive, '--output', p]))
     target = work / 'sqlite-statements'
     archive = Path(os.environ['SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE']).resolve(strict=True)
     native_case('sqlite-statements', ROOT, target, lambda p=target:
@@ -214,7 +219,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements'])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state'])
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':

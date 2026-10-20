@@ -17,11 +17,14 @@ from tools.check_foundations_extraction import llbc_digest
 MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-contract',
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
-           'schema-domains','loop-callbacks','sqlite-statements')
+           'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
-EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counterexample.lean',)
+EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counterexample.lean',
+    'verification/experiments/child-observation/negative/Counterexample.lean',
+    'verification/experiments/callback-state/NoWriteToggle.lean',
+    'verification/experiments/callback-state/DoubleRecord.lean')
 
 # These generators intentionally reuse a fixed workspace output location.
 # Keep immutable raw copies in the success entry, even when the directory

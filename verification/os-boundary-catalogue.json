@@ -153,7 +153,7 @@
       "business_owners": [
         "V2"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -406,7 +406,7 @@
       "business_owners": [
         "V5"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -501,7 +501,7 @@
         "V5",
         "V6"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -543,7 +543,7 @@
       "business_owners": [
         "V6"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -586,7 +586,7 @@
       "business_owners": [
         "V6"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -699,7 +699,7 @@
       "business_owners": [
         "V6"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -752,7 +752,7 @@
       "business_owners": [
         "V6"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -803,7 +803,7 @@
       "business_owners": [
         "V6"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -846,7 +846,7 @@
       "business_owners": [
         "V6"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -1079,7 +1079,7 @@
       "business_owners": [
         "V8"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -1138,7 +1138,7 @@
       "business_owners": [
         "V8"
       ],
-      "public_status": "business_proof",
+      "public_status": "business_obligation",
       "use_binding": "source-review-not-whole-function-proof",
       "locations": [
         {
@@ -1420,9 +1420,10 @@
     "references/v1-baseline.json",
     "verification/experiments/sqlite-commit/environment.json"
   ],
-  "catalogue_authority": "现有A/B框架的使用解释和自有责任目录，不是新的可信保证批准文件；registered_contract不表示整个函数/所有使用点已经形式化绑定。",
+  "catalogue_authority": "现有A/B框架的使用解释和自有责任目录，不是新的可信保证批准文件；registered_contract不表示整个函数/所有使用点已经形式化绑定。 public_status和public_completion仅记录review_baseline审查时点；当前集成交付与待办以#333和覆盖记录为准。business_obligation表示仍待业务模块证明，不表示已有业务证明。",
   "translation_limits": [
     "query_row/query_map/Row.get、完整codec/Lua、驱动和Guest全部业务原式没有因本目录通过就获得可抽取或已证明结论。",
     "业务实例先沿已有窄接口模式建立前提并做原工具预检；若遇到不能落入既有模式的实际签名，给具体最小入口后再归因，不能把未知冒称已经由公共库解决。"
-  ]
+  ],
+  "status_scope": "historical-review-baseline-not-current-completion"
 }

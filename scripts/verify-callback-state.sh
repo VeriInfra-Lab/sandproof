@@ -6,7 +6,7 @@ shasum -a 256 -c verification/callback-state-inputs.sha256
 bash scripts/python-entry.sh tools/check_callback_state_contract.py
 # Shared registration is owned by the integration coordinator. Missing, stale
 # or unsealed native evidence must fail; this is not an optional test skip.
-bash scripts/python-entry.sh -c 'from tools.acceptance_receipts import ROOT, native_case; native_case("callback-state", ROOT, None)'
+bash scripts/python-entry.sh tools/proof_native_suite.py require callback-state
 EVIDENCE="$(mktemp -d "${TMPDIR:-/tmp}/sandproof-callback-state.XXXXXXXX")"
 bash scripts/python-entry.sh verification/experiments/callback-state/replay.py \
   --tool-root "${SANDPROOF_PROOF_TOOL_ROOT:-$ROOT_DIR/.tools}" \

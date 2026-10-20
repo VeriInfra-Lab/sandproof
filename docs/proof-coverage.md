@@ -3,6 +3,18 @@
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
 
+## T3/T4/T8 接口组合候选：原 Child 责任与回调状态
+
+来源 PR 为 [#617](https://github.com/VeriInfra-Lab/sandproof/pull/617)（封口 `e50f6b5b`）、[#619](https://github.com/VeriInfra-Lab/sandproof/pull/619)（`28facbba`）和 [#620](https://github.com/VeriInfra-Lab/sandproof/pull/620)（`74e9f53d`）。本节区分已交付组件证据与待统筹的正式组合验收；准确组合提交、双机完整入口、当前 CI 和合入后适用性见 #333 对应记录。生产 Rust、Charon/Aeneas 和固定工具版本均未改。
+
+- [ChildObservation](../SandboxModel/Boundaries/ChildObservation.lean)：正常返回下，真实隔离同步核心与具体调用方已由原生成函数证明；成功有原 Child 的完整同一退出观察，未知返回前交出原 Child/Slot。15 项核心、3 项具体调用方和4项同性质错误版审计共22个不同目标；重复视图不重复计数。九个机械 API 仍依 [A2/A3/A6/A8/B4](formal/dependencies.md#a2a3a6a8b4-原-child-的退出观察与未知交接)。生产未采用候选，一般新旧等价、异常后态、整个 reaper 和 V6 生命周期未完成。
+- [CallbackState](../SandboxModel/Foundations/CallbackState.lean)：真实 helper 生成体及有条件的状态/访问/幸存行组合，24 项正例与2/3项实际错误版审计共29个不同目标。原外部状态/参数接线依 A6/B4；toggle 是隔离代表，trace/calls 有原测试来源。不能据此声称所有生产闭包、panic 堆语义或完整 FnMut 机器精化。
+- [OS/存储目录](../verification/experiments/os-boundary-catalogue/README.md)：25类/71位置有限源码与合同审查，沿用原818项/60变体来源记录；未重新捕获 MIR，没有新增程序定理或信任。目录状态是审查基线快照，不能据其 pending_617 历史文字重新打开已交付接口，也不能把 business_obligation 读为已证。
+
+子进程原生驱动在共享接线中加强了同 crate 业务测试程序的 package/manifest/src/fresh 检查，逐变体只重建 sandbox-runtime 包，并在结束时收掉其错误版构建缓存；依赖、原二进制证据和 Lean 缓存保留。加强后的实际验收另按组合提交记录，不能沿用旧驱动结果背书新准入。
+
+各组件局部通过不等于正式组合或 V0 完成。T0 全量连接、其余 JSON/schema、Tokio Mutex、TLS 原借用来源及剩余公共义务继续开放；V1–V9 的真实对象/授权/提交/生命周期/系统组合责任保留，T9 与 #337 历史迁移不作前置。
+
 ## T5/T6 Tokio RwLock：原读守卫与映射观察
 
 生产 Rust 来源为 integration `e576a8475043c2d21b68231b7f6b1ead09be1952`，两份原源码和固定 Tokio 1.49.0 摘要见[来源登记](../verification/tokio-rwlock-environment.json)。模型首次组件提交为 `924e06a9d2b63d1395cd1edd4189e2d496537d56`；[公共入口](../SandboxModel/Boundaries/TokioRwLock.lean)、[接口条件](formal/dependencies.md#a6b2-tokio-rwlock保留原读守卫的共享观察)和[复现说明](../verification/experiments/tokio-rwlock/README.md)分别提供复用入口、保证与检查方式。生产 Rust、Charon/Aeneas、依赖与固定工具均未改。

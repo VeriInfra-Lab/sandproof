@@ -25,6 +25,8 @@ AUDIT_INPUTS = {
     "tools/v0_use_inventory.py", "tools/tests/test_v0_use_inventory.py",
     "scripts/v0-mir-wrapper.sh", "scripts/verify-use-inventory.sh",
     "docs/formal/dependencies.md", "docs/formal/00-foundations.md", "scripts/verify-controller.sh",
+    "verification/os-boundary-catalogue.json", "tools/check_os_boundary_catalogue.py",
+    "tools/tests/test_os_boundary_catalogue.py", "verification/experiments/os-boundary-catalogue/README.md",
 }
 
 

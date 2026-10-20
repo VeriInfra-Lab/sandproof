@@ -45,3 +45,11 @@ srcDir = "verification/aeneas/sqlite-statements"
 [[lean_lib]]
 name = "SandproofSqlite"
 srcDir = "verification/aeneas/sqlite"
+
+[[lean_lib]]
+name = "SandproofChildObservation"
+srcDir = "verification/aeneas/child-observation/concrete"
+
+[[lean_lib]]
+name = "SandproofCallbackState"
+srcDir = "verification/aeneas/callback-state"
