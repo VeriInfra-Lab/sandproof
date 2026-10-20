@@ -138,7 +138,8 @@ def run_locked_suite(output):
                 command(shlex.split(line[len(prefix):]))
     for name, filename in [('task','check_task_contract_components.py'),
                            ('revocation','check_revocation_components.py'),
-                           ('owned-message','check_owned_message_components.py')]:
+                           ('owned-message','check_owned_message_components.py'),
+                           ('notify','check_notify_components.py')]:
         target = work / name
         native_case(name, ROOT, target, lambda n=filename, p=target:
                     call(['tools/' + n, '--output', p]))
@@ -198,7 +199,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','sqlite-correct'])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','sqlite-correct'])
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':

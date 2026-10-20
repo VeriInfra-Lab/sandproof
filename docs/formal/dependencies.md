@@ -546,3 +546,24 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 [OwnedMessage](../../SandboxModel/Boundaries/OwnedMessage.lean)提供原载荷/资源身份保持、持额、共享引用与单张分配、FIFO 观察、oneshot 值/传输错误及 Frame 通知顺序的条件模型。公共历史由实际 A6/B3/B4 操作提供，业务仍证明自己何时使用它们；源码摘要和确定性回归不是一般性的 async Rust 精化。`recv` 等待取消、整个 receiver/body 被丢弃、panic/unwind 的可见前缀与已完成析构分别保留；abort/崩溃不承诺执行 Drop，也不提供后续恢复或资源归还。没有无条件调度、公平或最终消费保证。
 
 本批只登记有界 mpsc 的 `try_send/recv/close/Drop` 与上述 oneshot/Bytes 用法；不把异步 `send` 取消、公开 `reserve/Permit`、Notify、JoinSet、broadcast 或 watch 一并纳入。完整命令协议、授权、进程/FD/输入输出归还及系统容量由 V8/V6/V9 提供，其他公共机制仍在 V0 #333 开放。
+
+
+## A6/B2/B3 Notify：关闭广播与单接收者通知
+
+来源为 integration `70d08fd0`，固定 Tokio 1.49.0。范围是原 [PtyMaster](../../sandbox-guest-runtime/src/pty.rs) 的关闭信号，以及原 [Record.retired](../../sandbox-guest-service/src/command/registry.rs) 的单个保留任务；逐点条件和业务提供方见[登记](../../verification/notify-environment.json)，源码、库和验收绑定见[摘要](../../verification/notify-inputs.sha256)。这不是整个函数、服务或通用 Future 的可信白名单。
+
+| 提供方与实际操作 | 可以依赖的保证 | 仍需使用方证明 |
+| --- | --- | --- |
+| A6：原 `Notify::new`、`notify_one` 与同一信号的 `notified/enable/poll`；本条单接收者域 | 初始无通知；无已登记接收者时最多保存一个待取通知，多次早到通知会合并。已有等待者可获分配；该已分配通知与另外一个保存通知可以并存。Ready 表示本次通知被消费，不表示业务成功 | V8：同一原 Record、同一信号、至多一个当前接收者，没有混入广播或其他接收者；退休资格、真实结束、期限与下一步动作。通知不是计数信号量，不能按发送次数推算容量 |
+| A6：取消原 `Notified`；单通知与广播分别处理 | 已分配但未消费的单通知，在正常 Drop 时交还给下一等待者或合并到保存位；`enable` 也可能已消费通知，返回 Ready 后 Drop 不再补发该通知。广播等待者取消不产生一个新的单通知 | V8：区分取消一个借用等待、丢弃整个任务、正常析构完成和未知中断；不能假造一次 Ready 或归还许可。丢失队列位置不承诺公平进展 |
+| A6：`notify_waiters`，仅使用本次广播前已经 `enable` 的原等待者保证 | 正常广播完成后，这些原等待者的通知可被观察；它不是为后来的新等待者保存一张单通知。多个等待者可以同时被通知 | V8/V6：原对象绑定和关闭资格；通知后是否继续调度、I/O 结果、错误及真实退出另证。收到通知不是外部进程/FD/全部引用已退出 |
+| B2/B3：原 PTY 的 `close` 清空原锁保护的 Option 后广播；`read/write_all` 先创建、pin、enable，再检查原 descriptor | 仅对应这些原字段、锁和信号操作的顺序与结果。登记先于谓词读取；已看到 Open 的原等待者不会因“先检查、后登记”漏掉一次正常关闭广播。关闭后新调用由原 descriptor 检查拒绝，不等待未来通知；锁中毒的原错误或恢复取值语义不抹去 | V8/V6：原关闭调用的资格、所有访问者及不重新打开同一逻辑谓词；原描述符别名与读写在途效果、字节及首错误仍须处理。这是条件接线，不是该 async Rust 的机器精化 |
+| B3：`previous.retired.notify_one()` 与原 `guard.record.retired.notified()` 的机械身份 | 原通知不会被替换成另一 Record 的通知，早于等待的单通知可以保存；只传递通知事件，不执行或授权业务删除 | V8：`finished` 的真实性、tag/原记录选择、表中替换与 `Arc::ptr_eq` 的旧记录保护、原保留期限及 `Guard::remove`。这些判断不进入可信适配 |
+
+[Notify](../../SandboxModel/Boundaries/Notify.lean)分别提供有限单消费者历史和单调关闭谓词下一个任意观察者的模型。单通知模型记录幽灵发送/消费数量，证明消费不会凭空超过实际通知；它不是实现内部的机器计数器。广播模型证明登记后看到 Open、且仍活跃的原等待者，在正常关闭完成后已被通知，并有合法迟到拒绝、非空成功历史及单通知替代广播的同性质反例。每个使用方仍须提供自己的状态表示和真实 A6/B2/B3 事件投影，不能只凭模型定理声称 Rust 已机器证明。
+
+通知方法可在返回前唤醒其他任务，故不承诺它返回时整个业务状态或资源账本未变。已有 I/O 可能在关闭被观察前产生效果；本次 close 清除访问入口，也不会立刻销毁其他 Arc 持有的 FD。原 Record 的 `_slot: Arc<OwnedSemaphorePermit>` 复用已有 [OwnedMessage](../../SandboxModel/Boundaries/OwnedMessage/SharedLease.lean) 的原许可/最后引用规则；通知本身不提供真实归还凭证。Record 工程夹具使用原类型及 reserve 得到的许可，只核对这个持有关系，不冒充 `publish/run` 的业务证明。
+
+panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返回就不补造广播完成、析构完成、退出或恢复。安全模型不承诺最终再次 poll、最终删除或调度公平。模型之外的真实 I/O、锁顺序和内部推进仍按所属 V8/V6/V9 义务完成。
+
+本条不覆盖 `notify_last`、多接收者单通知队列或任意混用单通知/广播。源码中 [reaper.wake](../../sandbox-runtime/src/child_process/reaper.rs) 的同名 `notify_one` 实为标准库 **Condvar**，由已有 typed MIR 定位确认；其公共合同仍归 V0，队列谓词/回收策略归 V6，明确作为未完成项登记，不借本条认领。当前源码定位、原工具不支持诊断和确定性原生回归只支持所列可信条件，未证明全部 Rust 并发。

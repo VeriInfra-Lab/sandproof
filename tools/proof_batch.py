@@ -15,7 +15,7 @@ from tools.acceptance_receipts import ROOT, digest, locked, load_success, rules,
 from tools.check_foundations_extraction import llbc_digest
 
 MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-contract',
-           'revocation-contract','owned-message','tunnel','data-drain','sqlite','foundations','network',
+           'revocation-contract','owned-message','notify','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage')
 
 # These generators intentionally reuse a fixed workspace output location.

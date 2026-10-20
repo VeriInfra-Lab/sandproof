@@ -2,6 +2,14 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## T5/T6 Notify：PTY 广播与原 Record 通知
+
+本批来源 integration `70d08fd0`，生产 Rust 与 Charon/Aeneas 未改。[模型](../SandboxModel/Boundaries/Notify.lean)以 30 条条件声明为审计目标，分别覆盖单消费者通知合并、分配/消费/取消与数量上界，及先登记后检查的关闭广播、原身份和正常完成后的无漏通知。合法初态、非空成功、迟到拒绝和错误替换反例一起保留；[依赖合同](formal/dependencies.md#a6b2b3-notify关闭广播与单接收者通知)与[七组接线及两项责任登记](../verification/notify-environment.json)约束范围。
+
+隔离 Lean 候选已在 a6000 原服务检查通过；ning 的 9 个确定性原生用例及严格 Clippy 已通过，其中原 `PtyMaster::close/read/write_all` 的广播错误版新编译后，被正确版同一即时 poll 断言拒绝。原 Record 类型/原 reserve 许可的测试只核对通知不直接归还原许可，不执行或证明 `publish/run` 的业务决定。原 Charon 预检在实际 `PtyMaster::read` 报告 coroutine 不支持；失败原文及部分 LLBC 保留，不作为语义反例，也不交给 Aeneas 当成功产物。
+
+正式组合提交、模块构建、实际文件诊断、完整双机验收与 CI 的完成结果，以 #333 对应 PR 的精确回执为准，未完成阶段不由隔离成功代替。当前结论是条件模型及原源码工程证据，未形成 async Rust 机器精化；T0/T5/T6/V0 仍开放。关闭/退休资格、真实终态、字节/部分 I/O、保留期限、旧记录删除与原资源归还归 V8/V6。标准库 Condvar 的公共合同仍是 V0 缺口，JoinSet 和其他锁/任务接口未随本批完成。
+
 ## T5/T6 Guest 持额消息
 
 从 integration `81885df6` 开展，未修改生产 Rust 或 Charon/Aeneas。有限范围为真实 `CommandOutput` 的 mpsc/oneshot 交接、许可/引用随对象持有，以及 `Producer::frame` 到最后一个 Bytes 所有者正常析构的接线；[依赖合同](formal/dependencies.md#a6b3b4-guest-持额消息)、[逐操作登记](../verification/owned-message-environment.json)和复现入口共同约束范围。
