@@ -585,6 +585,23 @@
         "V5"
       ],
       "meaning": "source-bound isolated candidate, not production general equivalence/full transaction/recovery"
+    },
+    {
+      "id": "std-condvar-original-waiter",
+      "source_registry": "verification/condvar-environment.json",
+      "production_sources": [
+        "sandbox-runtime/src/child_process/reaper.rs"
+      ],
+      "roots": [
+        "Reaper::run -> original Condvar wait/wait_timeout",
+        "Slot::retain -> original queue then notify_one"
+      ],
+      "proof": "SandboxModel/Boundaries/Condvar/Audit.lean",
+      "condition": "A6/B2 fixed original Condvar/Mutex/guard, one active wait invocation; current payload and inherited panic marker; no unconditional return",
+      "business_provider": [
+        "V6"
+      ],
+      "meaning": "conditional API model plus finite source/native binding; original Reaper loop backend limitation retained, not full Rust refinement"
     }
   ]
 }
