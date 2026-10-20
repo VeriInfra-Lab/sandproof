@@ -55,5 +55,42 @@ class TokioRwLockContractTests(unittest.TestCase):
             check_bindings(self.root, self.env)
 
 
+class TokioRwLockBuildBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.target = self.root / 'target'
+        self.target.mkdir()
+        self.binary = self.target / 'session'
+        self.library = self.target / 'libguest.rlib'
+        self.binary.write_bytes(b'fixture executable')
+        self.library.write_bytes(b'fixture library')
+        manifest = str(self.root / 'sandbox-guest-service/Cargo.toml')
+        self.rows = [dict(reason='compiler-artifact', fresh=False, manifest_path=manifest,
+            target=dict(name='session', kind=['test']), executable=str(self.binary), filenames=[str(self.binary)]),
+            dict(reason='compiler-artifact', fresh=False, manifest_path=manifest,
+            target=dict(name='sandproof_guest_service', kind=['lib']), executable=None, filenames=[str(self.library)])]
+        self.log = self.root / 'build.log'
+
+    def check(self):
+        from tools.check_tokio_rwlock_components import fresh_build
+        self.log.write_text(''.join(json.dumps(row) + '\n' for row in self.rows))
+        return fresh_build(self.log, self.root, self.target)
+
+    def test_fresh_library_and_binary_bound_to_same_source_are_accepted(self):
+        self.assertEqual(self.check(), (self.binary, self.library))
+
+    def test_new_binary_cannot_hide_reused_mutant_library(self):
+        self.rows[1]['fresh'] = True
+        with self.assertRaisesRegex(ValueError, 'Both business library'):
+            self.check()
+
+    def test_other_source_copy_library_is_rejected(self):
+        self.rows[1]['manifest_path'] = str(self.root / 'other/sandbox-guest-service/Cargo.toml')
+        with self.assertRaisesRegex(ValueError, 'source copy'):
+            self.check()
+
+
 if __name__ == '__main__':
     unittest.main()

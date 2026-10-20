@@ -75,6 +75,15 @@ def check_bindings(root, env):
 
 def check(root=ROOT, cargo_home=None):
     env = check_bindings(root, json.loads((root / 'verification/tokio-rwlock-environment.json').read_text()))
+    lines = (root / 'verification/tokio-rwlock-inputs.sha256').read_text().splitlines()
+    paths = [line.split('  ', 1)[1] for line in lines]
+    if len(paths) != len(set(paths)) or sorted(paths) != sorted(env['inputs']):
+        raise ValueError('Missing or duplicate frozen RwLock input')
+    for line in lines:
+        expected, name = line.split('  ', 1)
+        path = (root / name).resolve()
+        if not path.is_relative_to(root.resolve()) or digest(path) != expected:
+            raise ValueError('Frozen RwLock input changed: ' + name)
     b1 = check_b1(root, cargo_home)
     if b1['tokio']['version'] != env['tokio']['version'] or set(env['tokio']['reviewed_sources']) != LIBRARY:
         raise ValueError('Missing reviewed RwLock library or fixed Tokio version')

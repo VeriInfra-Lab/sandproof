@@ -46,7 +46,18 @@ def preflight(output):
     if llbc.exists():
         tree = json.loads(llbc.read_text())
         result['has_errors'] = tree.get('has_errors')
+    diagnostic = (output / 'charon.log').read_text()
+    line = next(index for index, text in enumerate(
+        (ROOT / 'sandbox-guest-service/src/session.rs').read_text().splitlines(), 1)
+        if 'pub async fn authorize(' in text)
+    result['reviewed_unsupported'] = (
+        code == 101 and result.get('has_errors') is True
+        and f'sandbox-guest-service/src/session.rs:{line}:' in diagnostic
+        and 'Coroutines are not supported' in diagnostic
+        and 'GATs cannot work with' in diagnostic)
     (output / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+    if not result['reviewed_unsupported']:
+        raise ValueError('Original async translation surface changed; inspect preserved evidence')
     if not result['sources_unchanged']:
         raise ValueError('Production source changed during original preflight')
     print(json.dumps({k: v for k, v in result.items() if k != 'sources'}))

@@ -224,7 +224,7 @@ class ClosureTests(unittest.TestCase):
 
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
-            'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tunnel','data-drain','sqlite','foundations','network',
+            'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
             'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
@@ -240,6 +240,7 @@ class ClosureTests(unittest.TestCase):
             required.update(re.findall(r'tools/proof_native_suite\.py require ([a-z][a-z0-9-]*)',
                                        entry.read_text()))
         self.assertIn('condvar', required)
+        self.assertIn('tokio-rwlock', required)
         for case in sorted(required):
             with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
                 proof_native_suite.main(['require', case])
