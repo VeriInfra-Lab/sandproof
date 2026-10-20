@@ -223,13 +223,28 @@ class ClosureTests(unittest.TestCase):
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
             'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','tunnel','data-drain','sqlite','foundations','network',
-            'first-chain-linux','first-chain','storage'})
+            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
         retained=(root/'scripts/verify-retained-proofs.sh').read_text()
         self.assertIn("rg --files SandboxModel -g '*.lean'",retained)
         self.assertIn('verification/ProofAudit.lean',retained)
         self.assertIn('tools/proof_services.py',retained)
+
+    def test_audit_inventory_includes_separate_negative_roots_and_requires_their_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            fixtures={
+                'verification/ProofAudit.lean':'Root.accepts',
+                'SandboxModel/Actual/Audit.lean':'Actual.safe',
+                'verification/aeneas/Actual/Audit.lean':'Generated.refines',
+                proof_batch.EXTRA_AUDIT_FILES[0]:'Wrong.rejected'}
+            for name, declaration in fixtures.items():
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text('#audit_controller_proof '+declaration+'\n')
+            self.assertEqual(proof_batch.expected_audits(root),set(fixtures.values()))
+            (root/proof_batch.EXTRA_AUDIT_FILES[0]).unlink()
+            with self.assertRaises(OSError):proof_batch.expected_audits(root)
 
 
 class FormalReuseTests(unittest.TestCase):

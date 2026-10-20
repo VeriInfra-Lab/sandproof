@@ -9400,5 +9400,6 @@
     "scope": "当前闭合根对固定五元组完整 execute 的观察等价；不逐函数声称内部 raw binder 的运行时语义等同编码 helper",
     "raw_binding_errors": "run 包含 raw_bind 的原首错停止和 step/reset 的原返回优先级；不是仅有 sqlite3_step 的返回，且不提供 Drop 成功后状态",
     "not_supported": "直接 __bind_in/raw Statement 观察、复用旧 Statement、任意有状态 ToSql；需新合同及使用点登记"
-  }
+  },
+  "integration_checked_commit": "2165f57f059eb861258c87e595d8bd5774ea3065"
 }

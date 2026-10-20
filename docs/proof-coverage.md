@@ -3,6 +3,18 @@
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
 
+## 三窗口公共接线候选：Status、共享查询与 SQLite UPDATE
+
+本批候选在 integration `2165f57f` 上保留 #609（`5b176a31`）、#611（`fb13711e`）、#613（`8320e736`）原封口提交与文件，生产 Rust、Charon/Aeneas 和工具版本未改。原组件成果可作为增量输入，当前共享接线已实现，最终完整双机验收、CI 与实际合入适用性仍待完成，以 #333 和本批 PR 的精确回执为准，不能沿用上一批 1216 项审计背书新增模块。
+
+- [Status 模块](../SandboxModel/Boundaries/SchemaDomains.lean)：22 项真实同步守卫对应和 24 项条件字节定理；两个实际错误版的同合同反驳。标准引擎/派生/原对象接线仍依 A6/B4；服务器有界 Writer 尚未证明，普通 Vec 响应编码只为参考。
+- [共享查询模块](../SandboxModel/Foundations/LoopCallbacks.lean)：21 项原 Store::get/contains_key 及四个真实委托的对应；两种实际错误版分别由同一 QueryContract/MembershipContract 反驳。普通值共享借用、lawful 比较和单射投影条件保留；源码邻域不等于全部调用者业务或调用图。
+- [SQLite 模块](../SandboxModel/Boundaries/SqliteStatements/Model.lean)：隔离候选条件 UPDATE/修订计算的 38 项正例与 7 项错误版审计；固定五参数执行联合合同包含 raw_bind 失败和 step/reset 原次序，不把编码成功当绑定成功。保持独立完整生成视图，公共根只导入纯行模型；一般候选等价、完整事务/恢复和生产部署未闭合。
+
+[依赖保证](formal/dependencies.md)列明具体 A4/A6/B4、普通值/Drop、失败与下游提供方；[真实使用登记](../verification/use-inventory/responsibilities.json)将本批来源/模块/条件挂到原编译器清单，仍不是完整语义调用图。原源清单的生产输入未变，可在原准入检查通过时复用其原始 MIR 捕获；新增验证根须实际重抽取，不能用清单代替证明。
+
+三个独立原生 case、形式模块、全部生成物/正负例及实际文件诊断已加入原完整入口。新增目标随源代码逐项计入总审计；此处“已接线”不等于“当前整套已通过”。旧 SDK CI 失败及源/服务实验失败保留，T0 全量连接、有界 Writer、其它锁/通知/OS 接口及 T1–T8 剩余公共义务继续开放，T9 排除，#337 历史迁移不作为前置。
+
 ## T5/T6 标准 Mutex：原守卫与真实唯一借用
 
 本批从 integration `489f1ed5` 开始，集成来源更新到 `b973b40b`（含 #604 诊断、#610 Redis 重确认与 #612 测试失败诊断）；三份代表生产源码未改变，生产 Rust 和 Charon/Aeneas 均未修改。正式范围见[依赖合同](formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)和[十三组来源/责任登记](../verification/std-mutex-environment.json)。[公共模块](../SandboxModel/Boundaries/StdMutex.lean)包含 35 条条件守卫声明、7 条真实 get_mut/借用声明及 4 条连接声明，共 46 个正式审计目标。

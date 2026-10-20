@@ -616,3 +616,32 @@ panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返�
 真实 Guest Meter::lock 和 PtyMaster::descriptor/close 分别登记原 Snapshot 和 Option<Arc<AsyncFd<OwnedFd>>>。Meter 的 exact=false、PTY 的中毒拒绝/恢复及 close 资格属于 V8/V6 业务；原句柄克隆仍可持有 FD，清空 Option/通知不提供物理退出或最后归还证据。两处共享借用入口的原工具预检保留后端非可结束借用、动态 I/O 错误类型障碍；条件模型、原源码审查和原生回归不冒充这两个入口已机器精化。
 
 本条不覆盖 Condvar 原子解锁/重锁、Tokio Mutex/RwLock、所有生产 Mutex 使用点、全业务不变量或无条件进展。它们的公共缺口继续归 V0，实际业务守卫、恢复、授权与释放条件归 V1–V9，不能由 A6/B2 整体代替。
+
+
+## A6/B4 Status 字段与普通 JSON 字节
+
+[SchemaDomains](../../SandboxModel/Boundaries/SchemaDomains.lean)只连接原 StatusRequest/HostStatus 守卫和登记的普通字节调用。来源、完整字段、标准派生及四个字节根见[逐符号登记](../../verification/schema-domains-environment.json)与[字段分类](../../verification/experiments/schema-domains/catalogue.json)。固定工具、原 NodeIdentity/Resources 和原切片/游标不能换成另一个请求或字典。
+
+真实同步 validate/validate_for 由原工具抽取，证明全文节点绑定、原拒绝及 slots 的 1..=4096 守卫；可表示的 4097 在守卫拒绝，不假装解码器不能表示它。资源零值及任意可表示时间是原允许输入，不因此获得授权、新鲜性或资源真实性。两条真实错误分支使用正确版同一独立合同反驳。
+
+A6 仍只提供固定 JSON 引擎、标准派生和普通值接口；B4 只连接登记的原对象、完整参数/结果及实际字节位置。正常分配的 SliceRead/Vec 合同保留字段次序、对象/声明顺序数组、缺失/重复/未知字段、原错误和结束检查；异常可能已有输入/输出前缀，不许假定回滚或两次有状态编码相等。自有 ID/非零计数器及守卫继续使用真实生成体定理。任意自有 Serialize/Deserialize 回调、资源载荷、可观察 Drop、panic/unwind/OOM/abort 不属于普通值合同。
+
+客户端请求编码、服务器请求解码、客户端响应解码有实际来源绑定；普通 Vec 的响应编码仅是参考。真实服务器的 encode_bounded 使用私有 Writer，不能用参考 to_vec 的定理代替；长度/分配失败/部分输出/错误优先级仍是 T2 公共缺口。22 类型/10 上下文的分类不表示它们已全部证明。V3/V7 提供端点/认证绑定，V6 提供观察真实性，V1/V4 提供实际容量使用。
+
+## A6 原 Store 共享查询与成员判断
+
+[LoopCallbacks](../../SandboxModel/Foundations/LoopCallbacks.lean)复用有限首次匹配理论，连接原 Store::get/contains_key 和四个透明 Rust 委托。完整来源邻域见[登记](../../verification/experiments/loop-callbacks/source-map.json)，函数/字典及借用域见[环境](../../verification/loop-callbacks-environment.json)。本条只使用原工具/A6 和有效安全共享借用的既有可信链，不增加整个调用者或比较器正确的 B 条件。
+
+返回值保留原有序表的首次匹配，允许重复键；contains_key 由同一次 get 的结果判断。实际 u64 比较已有对应定理；其他键须由使用方证明 TableLawfulEq，键投影须单射，V 不要求 Copy。共享借用仅给出普通值观察，不承诺物理地址、不复制资源，也不把别名可变堆当作不可变快照。跳过首项和反转成员判断的真实错误版均由独立的同一查询/成员合同拒绝。
+
+源码邻域只登记 World、checkpoint 及 runtime 的实际调用，未证明它们的完整业务；V4/V9 继续提供自有比较/表示、恢复、授权、状态选择及释放决定。回调次数/状态和有状态 FnMut 是独立义务，不由这组只读查询定理自动得到。
+
+## A4/A6/B4 SQLite 条件 UPDATE 的固定五参数接口
+
+[SqliteStatements](../../SandboxModel/Boundaries/SqliteStatements/Model.lean)为原 write_accepted_with_ids 中一条条件 UPDATE 提供有限行片段；[环境](../../verification/sqlite-statements-environment.json)与[候选](../../verification/experiments/sqlite-statements/candidate.json)固定 SQL、五个位置/类型、原连接/事务、checked_add、整数边界、原错误和 changed != 1 的决定。这里只证明隔离副本实际调用的核心，生产未改；分离核心/固定五元组的有限数据库对照不构成一般旧新等价。
+
+A4 采用固定 rusqlite 0.40.2/SQLite 3.53.2 的完整 Connection.execute API；A6 保留固定标准库与普通值。B4 只承担已登记的原对象和值传递。固定五元组的 NormalReplyContract 是联合接口：参数编码成功不等于 raw_bind 已成功，run 仍包含 raw_bind 的第一个错误及 step/reset 的原返回优先级。不能从内部 __bind_in 直接推导执行成功，也不支持任意有状态 ToSql、裸 Statement 或旧绑定复用。Statement::drop 忽略 finalize 的 Result，成功返回不证明清理无错。
+
+行效果要求调用者/V5 提供真实 schema、有效非 NULL 列域、BINARY 文本比较、数据库保护、没有未登记触发器及同一事务连续历史；非 STRICT 类型声明本身不提供这些条件。成功恰改一行才能继续；零行的正常观察被错误版接受时由同一性质反驳。底层错误仍可有部分效果，影响一行不等于耐久提交，SQLite 不回滚外部 I/O。完整 outbox/投影/编码、事务提交、读取/确认/恢复、授权和寿命仍归 V5；panic/unwind/abort/崩溃后态与资源真实释放未因此证明。
+
+本模块的完整生成根存在与旧根重名的全局声明，故保留独立 Lake/物理诊断视图；公共根只复用纯行 Model。独立的 38 项正例及 7 项错误版内核审计都进入完整批次清单，不因未强行共同导入而省略任何模块或检查。

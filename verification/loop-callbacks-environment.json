@@ -145,6 +145,7 @@
     }
   ],
   "parent_inputs": [
+    "verification/acceptance-inputs.sha256",
     "verification/foundations-inputs.sha256"
   ],
   "inputs": [
@@ -245,6 +246,8 @@
     "controller-service/src/controller/admission.rs",
     "docs/formal/00-foundations.md",
     "docs/formal/dependencies.md",
+    "docs/proof-workflow.md",
+    "lake-first-chain.toml",
     "lake-loop-callbacks.toml",
     "lake-manifest.json",
     "lakefile.toml",
@@ -269,13 +272,16 @@
     "sandbox-protocol/tests/identity_codec_equivalence.rs",
     "sandbox-protocol/tests/numeric_boundaries.rs",
     "sandbox-protocol/tests/receipt_check_order.rs",
+    "scripts/acceptance-native.sh",
     "scripts/lean-mcp-server.sh",
+    "scripts/proof-cache-step.sh",
     "scripts/python-entry.sh",
     "scripts/regenerate-foundations-lean.sh",
     "scripts/regenerate-loop-callbacks-lean.sh",
     "scripts/verify-foundations.sh",
     "scripts/verify-json-identifiers.sh",
     "scripts/verify-loop-callbacks.sh",
+    "scripts/verify-retained-proofs.sh",
     "tools/acceptance_receipts.py",
     "tools/check_first_chain_extraction.py",
     "tools/check_foundations_extraction.py",
@@ -287,10 +293,15 @@
     "tools/check_owned_message_components.py",
     "tools/lean-mcp-requirements.txt",
     "tools/lean_session.py",
+    "tools/proof_batch.py",
+    "tools/proof_native_suite.py",
+    "tools/proof_services.py",
+    "tools/tests/test_acceptance_receipts.py",
     "tools/tests/test_foundations_extraction.py",
     "tools/tests/test_json_identifiers_extraction.py",
     "tools/tests/test_json_request_binding.py",
     "tools/tests/test_loop_callbacks_contract.py",
+    "verification/acceptance-inputs.sha256",
     "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
     "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
     "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
@@ -320,7 +331,8 @@
     "verification/foundations-inputs.sha256",
     "verification/json-identifiers-environment.json",
     "verification/json-request-binding.json",
-    "verification/loop-callbacks-environment.json"
+    "verification/loop-callbacks-environment.json",
+    "verification/use-inventory/responsibilities.json"
   ],
   "model_modules": [
     "Contracts",
@@ -761,5 +773,5 @@
       ]
     }
   },
-  "integration_checked_commit": "18906900324d77f8ef5537afa719a4928949998c"
+  "integration_checked_commit": "2165f57f059eb861258c87e595d8bd5774ea3065"
 }

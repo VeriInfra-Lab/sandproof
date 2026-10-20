@@ -27,5 +27,21 @@ name = "SandproofTls"
 srcDir = "verification/aeneas/tls"
 
 [[lean_lib]]
+name = "SandproofStdMutex"
+srcDir = "verification/aeneas/std-mutex"
+
+[[lean_lib]]
+name = "SandproofSchemaDomains"
+srcDir = "verification/aeneas/schema-domains"
+
+[[lean_lib]]
 name = "SandproofLoopCallbacks"
 srcDir = "verification/aeneas/loop-callbacks"
+
+[[lean_lib]]
+name = "SandproofSqliteStatements"
+srcDir = "verification/aeneas/sqlite-statements"
+
+[[lean_lib]]
+name = "SandproofSqlite"
+srcDir = "verification/aeneas/sqlite"
