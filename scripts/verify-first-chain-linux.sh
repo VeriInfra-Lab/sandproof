@@ -5,8 +5,8 @@ cd "$ROOT_DIR"
 shasum -a 256 -c verification/first-chain-linux-inputs.sha256
 bash scripts/python-entry.sh tools/check_first_chain_extraction.py \
   --tool-root "${SANDPROOF_PROOF_TOOL_ROOT:-$ROOT_DIR/.tools}"
-cargo fmt --manifest-path verification/extract-first-chain/Cargo.toml -- --check
-cargo clippy --manifest-path verification/extract-first-chain/Cargo.toml --locked --offline -- -D warnings
+bash scripts/acceptance-native.sh cargo fmt --manifest-path verification/extract-first-chain/Cargo.toml -- --check
+bash scripts/acceptance-native.sh cargo clippy --manifest-path verification/extract-first-chain/Cargo.toml --locked --offline -- -D warnings
 FILES=(verification/aeneas/first-chain/SandproofFirstChain/Types.lean
   verification/aeneas/first-chain/SandproofFirstChain/Funs.lean
   verification/aeneas/first-chain/translation.json)

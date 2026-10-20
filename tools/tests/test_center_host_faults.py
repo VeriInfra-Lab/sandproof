@@ -2,7 +2,10 @@
 import argparse
 import copy
 from contextlib import contextmanager, ExitStack
+from http import HTTPStatus
 import json
+import http.server
+import threading
 from pathlib import Path
 import sys
 import subprocess
@@ -21,6 +24,125 @@ import _center_fault_cases as cases
 
 
 class CenterHostFaultsTests(unittest.TestCase):
+    def center_listener_fixture(self):
+        value=harness.Harness.__new__(harness.Harness)
+        value.args=SimpleNamespace(wait_seconds=5)
+        value.next_center_audit=0
+        value.services=Mock()
+        value.services.center_config=dict(expiry_scan_ms=1000,poll_interval_ms=100)
+        value.services.processes.children={'center':Mock()}
+        value.services.processes.children['center'].poll.return_value=None
+        value.services.wait_ready.side_effect=AssertionError('partitioned host must not need fresh health')
+        value.key='synthetic-listener-key'
+        value.opener=harness.urllib.request.build_opener(harness.urllib.request.ProxyHandler({}))
+        snapshot={'original-offline-snapshot':True}
+        value.services.planned_audit.return_value=snapshot
+        return value,snapshot
+
+    def test_planned_center_audit_waits_for_real_HTTP_but_keeps_offline_facts_and_partition(self):
+        value,snapshot=self.center_listener_fixture()
+        requests=[]
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append((self.path,self.headers.get('X-API-Key')))
+                self.send_response(200)
+                self.send_header('Content-Length','2')
+                self.end_headers()
+                self.wfile.write(b'[]')
+            def log_message(self,*args):
+                pass
+        server=http.server.HTTPServer(('127.0.0.1',0),Handler,bind_and_activate=False)
+        server.server_bind()  # Real bound port, deliberately not listening yet.
+        value.services.sdk_url='http://127.0.0.1:'+str(server.server_address[1])
+        thread=None
+        entered=threading.Event()
+        def start(_seconds):
+            nonlocal thread
+            self.assertIsNone(thread,'original listener still unavailable after controlled startup')
+            server.server_activate()
+            def serve():
+                entered.set()
+                server.serve_forever()
+            thread=threading.Thread(target=serve,daemon=True)
+            thread.start()
+            self.assertTrue(entered.wait(5))
+        try:
+            with patch.object(harness.time,'sleep',side_effect=start):
+                self.assertIs(value.center(),snapshot)
+            self.assertEqual(requests,[('/v2/sandboxes','synthetic-listener-key')])
+            value.services.planned_audit.assert_called_once_with('center')
+            value.services.wait_ready.assert_not_called()
+        finally:
+            if thread is not None:
+                server.shutdown()
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+            server.server_close()
+
+    def test_center_listener_timeout_never_returns_an_audit_as_online_readiness(self):
+        value,_=self.center_listener_fixture()
+        value.services.sdk_url='http://127.0.0.1:1'
+        now=[100.0]
+        def advance(_seconds):
+            now[0]+=1
+        with patch.object(harness.time,'monotonic',side_effect=lambda:now[0]), \
+             patch.object(harness.time,'sleep',side_effect=advance), \
+             patch.object(harness,'fetch',return_value=(503,b'')) as fetch:
+            with self.assertRaisesRegex(RuntimeError,'HTTP listener remained unavailable'):
+                value.center()
+        self.assertEqual(fetch.call_count,5)
+        self.assertTrue(all(call.args[2:4]==('GET','/v2/sandboxes') for call in fetch.call_args_list))
+        value.services.wait_ready.assert_not_called()
+
+    def test_center_exit_after_audit_never_probes_an_unowned_listener(self):
+        value,_=self.center_listener_fixture()
+        value.services.processes.children['center'].poll.return_value=1
+        with patch.object(harness,'fetch') as fetch:
+            with self.assertRaisesRegex(RuntimeError,'original center exited'):
+                value.center()
+        fetch.assert_not_called()
+        value.services.wait_ready.assert_not_called()
+
+    def redis_fault_fixture(self):
+        identity=dict(sandbox_id='original-sandbox',node=dict(node_id='original-node'))
+        value=Mock()
+        value.create.return_value=SimpleNamespace(sandbox_id=identity['sandbox_id'])
+        value.known={identity['sandbox_id']:dict(create=identity,physical=dict(pid=123))}
+        value.center.return_value=dict(sandboxes=[dict(create=dict(identity=identity))])
+        value.services.processes.children={'redis':SimpleNamespace(pid=456)}
+        module=ModuleType('e2b');module.Sandbox=Mock()
+        return value,module
+
+    def test_redis_fault_refuses_to_signal_if_restarted_center_is_not_ready(self):
+        value,module=self.redis_fault_fixture()
+        value.services.wait_ready.side_effect=RuntimeError('original readiness unobserved')
+        with patch.dict(sys.modules,{'e2b':module}),patch.object(cases.os,'kill') as kill:
+            with self.assertRaisesRegex(RuntimeError,'original readiness unobserved'):
+                cases.dk05(value)
+        value.services.wait_ready.assert_called_once_with(for_admission=False)
+        value.services.processes.observe.assert_not_called()
+        kill.assert_not_called()
+
+    def test_redis_fault_begins_only_after_original_online_readiness(self):
+        value,module=self.redis_fault_fixture()
+        events=[]
+        value.services.wait_ready.side_effect=lambda **kwargs:events.append('ready')
+        def observe():
+            events.append('observe')
+            return {'host-0':dict(pid=123)}
+        value.services.processes.observe.side_effect=observe
+        class BarrierReached(Exception):
+            pass
+        def stop(pid,number):
+            self.assertEqual((pid,number),(456,cases.signal.SIGSTOP))
+            self.assertEqual(events,['ready','observe'])
+            raise BarrierReached()
+        with patch.dict(sys.modules,{'e2b':module}),patch.object(cases.os,'kill',side_effect=stop):
+            with self.assertRaises(BarrierReached):
+                cases.dk05(value)
+        value.services.wait_ready.assert_called_once_with(for_admission=False)
+        value.fetch.assert_not_called()
+
     def test_recovery_constructor_uses_exact_required_sdk_fields_without_create_or_renew(self):
         # No **kwargs on these fixtures: the previous incomplete constructor
         # must fail just as it did in the real pinned SandboxBase signature.
@@ -150,6 +272,24 @@ class CenterHostFaultsTests(unittest.TestCase):
         self.assertNotIn(secret,raw)
         self.assertNotIn(str(ROOT),raw)
         self.assertLess(len(raw),4096)
+
+    def test_failure_diagnostics_keep_only_valid_numeric_http_status(self):
+        for status in (500, 503, 429, HTTPStatus.INTERNAL_SERVER_ERROR, HTTPStatus.SERVICE_UNAVAILABLE):
+            error=RuntimeError('secret-body-and-key')
+            error.status_code=status
+            value=runner.failure_summary(error)
+            self.assertEqual(value['http_status'],status)
+            self.assertIs(type(value['http_status']),int)
+            self.assertNotIn('secret-body-and-key',json.dumps(value))
+        for status in (None, True, '500', 99, 600, {'secret':500}):
+            error=RuntimeError('private')
+            error.status_code=status
+            self.assertNotIn('http_status',runner.failure_summary(error))
+        class PropertyError(RuntimeError):
+            @property
+            def status_code(self):
+                raise AssertionError('diagnostics must not execute exception properties')
+        self.assertNotIn('http_status',runner.failure_summary(PropertyError()))
 
     def test_fault_harness_imports_the_original_service_activation_ceiling(self):
         self.assertEqual(harness.MAX_ACTIVATION_BYTES, services.MAX_ACTIVATION_BYTES)

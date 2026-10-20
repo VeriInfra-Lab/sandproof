@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "source_baseline": "3f34a8d50da09eab46270db82eb4f64a93dc4a77",
+  "compiler_commit": "2d8144b7880597b6e6d3dfd63a9a9efae3f533d3",
+  "target": "x86_64-unknown-linux-gnu",
+  "profiles": ["dev", "release"],
+  "roots": [
+    {"id": "center", "cargo": ["-p", "sandproof-center", "--bin", "sandproof-center"], "entry": "sandbox-center/src/main.rs", "owner": ["V1", "V2", "V3", "V7", "V8"]},
+    {"id": "host", "cargo": ["-p", "sandproof-server", "--bin", "sandproof-host"], "entry": "sandbox-server/src/main.rs", "owner": ["V4", "V5", "V6", "V8"]},
+    {"id": "window-reducer", "cargo": ["-p", "sandproof-controller-service", "--bin", "sandproof-window-reducer"], "entry": "controller-service/src/bin/sandproof-window-reducer.rs", "owner": ["V5"]},
+    {"id": "guest", "cargo": ["-p", "sandproof-guest-service", "-p", "sandproof-guest-runtime", "--bins"], "entry": "sandbox-guest-service/src/main.rs", "additional_entry": "sandbox-guest-runtime/src/main.rs", "owner": ["V8"]},
+    {"id": "vm-cli", "cargo": ["-p", "sandbox-runtime", "--bin", "sandproof-vm"], "entry": "sandbox-runtime/src/main.rs", "owner": ["V6"], "role": "conservative additional operator entry; not a deployed service"}
+  ],
+  "limits": [
+    "All compiled own bodies are retained, including templates; no reachability pruning.",
+    "No test, example, sdk-contract-tests, redis-tests or contention-diagnostics features are enabled.",
+    "dev uses debug assertions; ordinary release does not; overflow checks stay enabled in both.",
+    "This is a source census; dynamic targets, compiler-generated future cancellation glue and dependency destructors still need per-use bindings.",
+    "Template exclusion is a proof responsibility boundary, not a rule to delete mixed modules from this census. T9 does not exclude Guest security."
+  ]
+}

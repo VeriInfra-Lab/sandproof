@@ -1,0 +1,260 @@
+{
+  "contract_id": "A6-B2-B3-notify",
+  "proof_kind": "conditional-interface-model-not-extracted-async-rust",
+  "source_integration": "70d08fd09c4d1316568c441c63d44cc505d90275",
+  "scope": "Finite current PTY broadcast and single Record retention consumer; not a complete project call graph; Condvar remains open.",
+  "model_modules": [
+    "One",
+    "Broadcast"
+  ],
+  "theorems": [
+    "SandboxModel.Boundaries.NotifyContract.one_initial_safe",
+    "SandboxModel.Boundaries.NotifyContract.one_step_safe",
+    "SandboxModel.Boundaries.NotifyContract.one_history_safe",
+    "SandboxModel.Boundaries.NotifyContract.one_step_keeps_original_signal",
+    "SandboxModel.Boundaries.NotifyContract.one_history_keeps_original_signal",
+    "SandboxModel.Boundaries.NotifyContract.stored_credit_is_not_a_counter",
+    "SandboxModel.Boundaries.NotifyContract.one_consumptions_bounded_by_real_notices",
+    "SandboxModel.Boundaries.NotifyContract.ready_requires_a_real_notice",
+    "SandboxModel.Boundaries.NotifyContract.waiting_has_no_stored_credit",
+    "SandboxModel.Boundaries.NotifyContract.two_early_notices_can_complete_once",
+    "SandboxModel.Boundaries.NotifyContract.early_notices_coalesce",
+    "SandboxModel.Boundaries.NotifyContract.assigned_and_stored_are_distinct_credits",
+    "SandboxModel.Boundaries.NotifyContract.cancelling_assigned_one_returns_credit",
+    "SandboxModel.Boundaries.NotifyContract.dropping_consumed_one_does_not_return_credit",
+    "SandboxModel.Boundaries.NotifyContract.next_wait_does_not_consume_credit",
+    "SandboxModel.Boundaries.NotifyContract.history_consumptions_bounded_by_real_notices",
+    "SandboxModel.Boundaries.NotifyContract.recreating_consumed_credit_breaks_same_property",
+    "SandboxModel.Boundaries.NotifyContract.latch_initial_safe",
+    "SandboxModel.Boundaries.NotifyContract.late_initial_safe",
+    "SandboxModel.Boundaries.NotifyContract.all_update_safe",
+    "SandboxModel.Boundaries.NotifyContract.latch_step_safe",
+    "SandboxModel.Boundaries.NotifyContract.latch_history_safe",
+    "SandboxModel.Boundaries.NotifyContract.latch_step_keeps_original_observer",
+    "SandboxModel.Boundaries.NotifyContract.latch_history_keeps_original_observer",
+    "SandboxModel.Boundaries.NotifyContract.completed_close_does_not_leave_committed_waiter",
+    "SandboxModel.Boundaries.NotifyContract.latch_history_has_no_lost_wait",
+    "SandboxModel.Boundaries.NotifyContract.committed_active_waiter_is_notified",
+    "SandboxModel.Boundaries.NotifyContract.late_observer_can_reject_without_waiting",
+    "SandboxModel.Boundaries.NotifyContract.correct_close_can_notify_original_waiter",
+    "SandboxModel.Boundaries.NotifyContract.notify_one_other_waiter_breaks_same_property"
+  ],
+  "tokio": {
+    "version": "1.49.0",
+    "reviewed_sources": {
+      "src/sync/notify.rs": "80dd33f77882d1dde7ff001423868ba60a13dfb7e5a2a4369a3a2ca9ccfddd2b"
+    }
+  },
+  "use_points": [
+    {
+      "id": "pty.construct",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    pub(crate) fn open_observed(",
+        "    pub(crate) fn resize("
+      ],
+      "anchors": [
+        "closed: Notify::new(),"
+      ],
+      "ordered": false,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.NotifyContract.latch_initial_safe"
+      ],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8/V6: authorize original PTY allocation and bind the descriptor, lock and signal; OS allocation and physical lifetime are separate."
+    },
+    {
+      "id": "pty.close",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    pub(crate) fn close(",
+        "    pub(crate) async fn read("
+      ],
+      "anchors": [
+        "self.descriptor",
+        ".take();",
+        "self.closed.notify_waiters();"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.NotifyContract.latch_step_safe",
+        "SandboxModel.Boundaries.NotifyContract.completed_close_does_not_leave_committed_waiter"
+      ],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8/V6: prove authority/timing for closing original PTY and non-reopening of its predicate. Taking the Option revokes access; aliases and the process may still exist."
+    },
+    {
+      "id": "pty.read",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    pub(crate) async fn read(",
+        "    pub(crate) async fn write_all("
+      ],
+      "anchors": [
+        "let closing = self.closed.notified();",
+        "tokio::pin!(closing);",
+        "closing.as_mut().enable();",
+        "let descriptor = self.descriptor()?;",
+        "biased;",
+        "() = closing => Err(closed()),"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.NotifyContract.latch_history_has_no_lost_wait",
+        "SandboxModel.Boundaries.NotifyContract.latch_history_keeps_original_observer"
+      ],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8: same original lock/Option representation, sticky closure, actual normal event projection. Prove byte and error handling, authorization and I/O effects; poison errors and in-flight I/O are not erased."
+    },
+    {
+      "id": "pty.write",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    pub(crate) async fn write_all(",
+        "\nfn window("
+      ],
+      "anchors": [
+        "let closing = self.closed.notified();",
+        "tokio::pin!(closing);",
+        "closing.as_mut().enable();",
+        "let descriptor = self.descriptor()?;",
+        "biased;",
+        "() = closing => Err(closed()),"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.NotifyContract.latch_history_has_no_lost_wait",
+        "SandboxModel.Boundaries.NotifyContract.latch_history_keeps_original_observer"
+      ],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8: same original lock/Option and sticky closure; account for already-written prefixes, actual retry/short-write/error and caller cancellation. Broadcast does not undo I/O."
+    },
+    {
+      "id": "record.construct",
+      "file": "sandbox-guest-service/src/command/registry.rs",
+      "range": [
+        "        let record = Arc::new(Record {",
+        "            if table.records.contains_key(&identity.pid) {"
+      ],
+      "anchors": [
+        "retired: Notify::new(),"
+      ],
+      "ordered": false,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.NotifyContract.one_initial_safe"
+      ],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8: original Record identity and its one original retention consumer; table/metadata/permit selection and publication guards remain business."
+    },
+    {
+      "id": "record.retire",
+      "file": "sandbox-guest-service/src/command/registry.rs",
+      "range": [
+        "    pub fn publish(",
+        "\nstruct Guard {"
+      ],
+      "anchors": [
+        "previous.retired.notify_one();"
+      ],
+      "ordered": false,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.NotifyContract.early_notices_coalesce",
+        "SandboxModel.Boundaries.NotifyContract.one_history_keeps_original_signal"
+      ],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8: previous identity, terminal evidence, tag eligibility, same original retirement signal and one consumer. Wakeup does not authorize record deletion, a new launch or permit return."
+    },
+    {
+      "id": "record.wait",
+      "file": "sandbox-guest-service/src/command/registry.rs",
+      "range": [
+        "async fn run(",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        "() = guard.record.retired.notified() => {}"
+      ],
+      "ordered": false,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.NotifyContract.history_consumptions_bounded_by_real_notices",
+        "SandboxModel.Boundaries.NotifyContract.cancelling_assigned_one_returns_credit",
+        "SandboxModel.Boundaries.NotifyContract.dropping_consumed_one_does_not_return_credit"
+      ],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8: original Record and sole timer/consumer, retention deadline and actual terminal observation; prove Guard::remove and stale-record protection, live references and real resource release separately."
+    },
+    {
+      "id": "process.close-decision",
+      "file": "sandbox-guest-runtime/src/process.rs",
+      "range": [
+        "    fn close_waited_output(",
+        "    fn close_output("
+      ],
+      "anchors": [
+        "pty.close();"
+      ],
+      "ordered": false,
+      "status": "business-obligation",
+      "public_results": [],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V8/V6: prove why this original process is eligible for close and how cancellation/output/exit are handled; no whole caller is trusted."
+    },
+    {
+      "id": "reaper.condvar",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "use std::{",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        "wake: Condvar,",
+        "reaper.wake.notify_one();"
+      ],
+      "ordered": false,
+      "status": "public-gap",
+      "public_results": [],
+      "preconditions": "Original signal/future identity and actual A6/B2/B3 events. Finite valid values; cancellation and interruption are not fabricated normal returns. The caller supplies the obligations below.",
+      "caller_obligations": "V0: separate std::sync::Condvar contract remains required. V6: queue predicate, identity, reaper business policy, lock order and progress."
+    }
+  ],
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel/Boundaries/Notify.lean",
+    "SandboxModel/Boundaries/Notify/Audit.lean",
+    "SandboxModel/Boundaries/Notify/Broadcast.lean",
+    "SandboxModel/Boundaries/Notify/One.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "docs/formal/dependencies.md",
+    "docs/proof-workflow.md",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "rust-toolchain.toml",
+    "sandbox-guest-runtime/src/process.rs",
+    "sandbox-guest-runtime/src/pty.rs",
+    "sandbox-guest-service/src/command/registry.rs",
+    "sandbox-runtime/src/child_process/reaper.rs",
+    "scripts/verify-notify.sh",
+    "tools/check_notify_components.py",
+    "tools/check_notify_contract.py",
+    "tools/check_owned_message_components.py",
+    "tools/tests/test_notify_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/experiments/notify/preflight.py",
+    "verification/experiments/notify/primitive-tests.rs",
+    "verification/experiments/notify/pty-tests.rs",
+    "verification/experiments/notify/registry-tests.rs",
+    "verification/notify-environment.json",
+    "verification/task-contract-environment.json",
+    "verification/task-contract-inputs.sha256"
+  ]
+}

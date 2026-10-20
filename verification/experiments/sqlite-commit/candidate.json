@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "issue": 570,
+  "base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
+  "source_files": {
+    "controller-service/src/controller/transaction.rs": "3e1d283d410accdb745fb378963f52b98c72c173ed0108471ff9b6b260b7c0e9",
+    "controller-service/src/controller/storage.rs": "d709039037a7b250348bd328ecdcb63b84c32fdacba7c70c20933be2ab1e7727",
+    "controller-service/src/controller/mod.rs": "eb0e7ac2ed93711069932618997ec8ca591c93a9eb43ebf7a18c74f45762cce1",
+    "controller-service/src/controller/cache_tests.rs": "23a8373dc47a0f2c698866acac8c367e1415b0f0512f16c50fddfaba2990fe50",
+    "controller-service/src/journal.rs": "3d1f13327a5dd9c4966357359f95d060214c96f20daf060bd1821ec4582952d6",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99"
+  },
+  "candidate_files": {
+    "controller-service/src/controller/transaction.rs": "bb0f771647d5a262afe20114f09e287523be8e414e6623b9e102a86b8d77832b",
+    "controller-service/src/controller/transaction/memo.rs": "48313cde23179019d42279cca51f7c26083ee41b2dbc5c314f3a4fc5296c594d"
+  },
+  "patch_sha256": "c9a49700b35e985a5c882eac7085c6756f575ae6a1bed1e1c4fe79de62bb5044",
+  "crate": "sandproof-controller-service",
+  "features": [
+    "default",
+    "durable",
+    "host-artifacts"
+  ],
+  "target": "x86_64-unknown-linux-gnu",
+  "roots": [
+    "crate::controller::transaction::memo::commit_with",
+    "crate::controller::transaction::memo::rollback_if_live"
+  ],
+  "core_scope": "normal returns on the registered plain World value domain, explicit mutable Cells dictionary and unchanged typed commit error payload",
+  "unproved": [
+    "B2/B4 RefCell and transaction mechanical binding",
+    "whole original/candidate equivalence",
+    "concrete SQL/projection/outbox correctness and recovery",
+    "panic/unwind/abort/crash poststates or termination"
+  ],
+  "adapter_conditions": [
+    "same original committed/candidate cells and original transaction handle",
+    "committed and candidate are distinct cells, with valid normal borrowing",
+    "commit/rollback callbacks modify their database transaction only, not either memo cell",
+    "production FnOnce items are Transaction::commit/rollback; test injection closures keep the same memo frame",
+    "plain World value domain, excluding observable custom Drop, shared mutable/resource payloads",
+    "early release of the candidate temporary borrow is not an arbitrary aliasing/reentrancy equivalence claim",
+    "FnOnce capture/destructor effects stay inside the stated memo frame; production function items are plain",
+    "transaction handle destruction/finish stays under A4; generic T with unrelated observable resource effects is not a free instantiation"
+  ],
+  "wrapper_probes_sha256": "1089123e337d59b9725f442272f1aeb70f6c403738e92cd6605b3f787632e708",
+  "proof_dependency": {
+    "pr": 556,
+    "head": "398b114d516bf9233875823c18a2f9618cf108b7",
+    "role": "reuse the completed V0 revocation contract and exact integration-8a33 B1 callback binding review; final target integration"
+  }
+}

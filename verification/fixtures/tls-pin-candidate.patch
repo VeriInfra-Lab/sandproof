@@ -1,0 +1,95 @@
+diff --git a/sandbox-internal/src/tls.rs b/sandbox-internal/src/tls.rs
+index 6a0dc71c..133ddc7a 100644
+--- a/sandbox-internal/src/tls.rs
++++ b/sandbox-internal/src/tls.rs
+@@ -14,7 +14,7 @@ pub struct CertificatePin([u8; 32]);
+ impl CertificatePin {
+     #[must_use]
+     pub fn from_certificate(certificate: &CertificateDer<'_>) -> Self {
+-        Self(Sha256::digest(certificate.as_ref()).into())
++        certificate_pin_bytes(certificate.as_ref())
+     }
+ }
+ 
+@@ -95,10 +95,8 @@ impl ServerTls {
+         certificates: Option<&[CertificateDer<'_>]>,
+     ) -> Result<CertificatePin, TransportError> {
+         self.verify_peer(certificates)?;
+-        certificates
+-            .and_then(|chain| chain.first())
+-            .map(CertificatePin::from_certificate)
+-            .ok_or(TransportError::Authentication)
++        let bytes = certificate_chain_bytes(certificates);
++        leaf_pin_bytes(bytes.as_deref(), &Sha256CertificateDigest)
+     }
+ }
+ 
+@@ -178,12 +176,64 @@ fn verify_pin(
+     certificates: Option<&[CertificateDer<'_>]>,
+     pins: &[CertificatePin],
+ ) -> Result<(), TransportError> {
+-    if certificates
+-        .and_then(|chain| chain.first())
+-        .is_some_and(|leaf| pins.contains(&CertificatePin::from_certificate(leaf)))
+-    {
++    let bytes = certificate_chain_bytes(certificates);
++    verify_pin_bytes(bytes.as_deref(), pins, &Sha256CertificateDigest)
++}
++
++fn certificate_chain_bytes(certificates: Option<&[CertificateDer<'_>]>) -> Option<Vec<Vec<u8>>> {
++    certificates.map(|chain| {
++        chain
++            .iter()
++            .map(|certificate| certificate.as_ref().to_vec())
++            .collect()
++    })
++}
++
++trait CertificateDigest {
++    fn digest(&self, certificate: &[u8]) -> CertificatePin;
++}
++
++struct Sha256CertificateDigest;
++
++impl CertificateDigest for Sha256CertificateDigest {
++    fn digest(&self, certificate: &[u8]) -> CertificatePin {
++        CertificatePin(Sha256::digest(certificate).into())
++    }
++}
++
++fn certificate_pin_bytes(certificate: &[u8]) -> CertificatePin {
++    Sha256CertificateDigest.digest(certificate)
++}
++
++fn verify_pin_bytes<H: CertificateDigest>(
++    certificates: Option<&[Vec<u8>]>,
++    pins: &[CertificatePin],
++    hasher: &H,
++) -> Result<(), TransportError> {
++    let Some(chain) = certificates else {
++        return Err(TransportError::Authentication);
++    };
++    let Some(leaf) = chain.first() else {
++        return Err(TransportError::Authentication);
++    };
++    if pins.contains(&hasher.digest(leaf)) {
+         Ok(())
+     } else {
+         Err(TransportError::Authentication)
+     }
+ }
++
++// This reads a leaf digest only; it does not authorize the peer.
++// The real ServerTls::peer_pin calls verify_peer first and propagates refusal.
++fn leaf_pin_bytes<H: CertificateDigest>(
++    certificates: Option<&[Vec<u8>]>,
++    hasher: &H,
++) -> Result<CertificatePin, TransportError> {
++    let Some(chain) = certificates else {
++        return Err(TransportError::Authentication);
++    };
++    let Some(leaf) = chain.first() else {
++        return Err(TransportError::Authentication);
++    };
++    Ok(hasher.digest(leaf))
++}

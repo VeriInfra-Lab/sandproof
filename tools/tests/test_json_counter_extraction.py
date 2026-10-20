@@ -23,6 +23,13 @@ class JsonCounterExtractionTests(unittest.TestCase):
                          'verification/extract-foundations/src/numeric.rs',
                          'verification/extract-foundations/src/receipts.rs',
                          'verification/extract-foundations/src/json_ids.rs',
+                         'verification/extract-foundations/src/json_request.rs',
+                         'verification/json-request-binding.json',
+                         'sandbox-protocol/src/lib.rs',
+                         'sandbox-protocol/src/internal/lifecycle.rs',
+                         'sandbox-internal/src/client.rs',
+                         'sandbox-internal/src/server.rs',
+                         'SandboxModel/Boundaries/JsonRequest/SliceBinding.lean',
                          audit.DEST + '/SandproofFoundations/Funs.lean'):
             target = self.root / relative
             target.parent.mkdir(parents=True, exist_ok=True)

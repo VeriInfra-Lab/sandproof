@@ -1,0 +1,423 @@
+{
+  "schema": 1,
+  "contract_id": "v0-joinset-original-groups-2026-10",
+  "proof_kind": "conditional-interface-model-not-extracted-async-rust",
+  "source_revision": "886f2dd647dc4e83357a018ff20d52c6ad258cf9",
+  "model_modules": [
+    "Ledger",
+    "Task"
+  ],
+  "use_points": [
+    {
+      "id": "center.construct-and-spawn",
+      "file": "sandbox-center/src/runtime.rs",
+      "range": [
+        "pub async fn serve(",
+        "\nstruct BackgroundWork {"
+      ],
+      "anchors": [
+        "let mut tasks = JoinSet::new();",
+        "tasks.spawn(serve_listener(\n        boundaries.public,",
+        "tasks.spawn(async move {\n        artifact_listener",
+        "tasks.spawn(serve_listener(\n            private,",
+        "supervise(tasks, shutdown).await"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.initial_safe",
+        "SandboxModel.Boundaries.JoinSetContract.ledger_history_keeps_original_group",
+        "SandboxModel.Boundaries.JoinSetContract.task_history_keeps_original_spawn"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V2/V9: correct assembly, original authority/listener/registration and shutdown sender; exact optional listener and callback semantics. No whole center service is trusted."
+    },
+    {
+      "id": "center.backgrounds",
+      "file": "sandbox-center/src/runtime.rs",
+      "range": [
+        "fn spawn_backgrounds(",
+        "\nasync fn supervise("
+      ],
+      "anchors": [
+        "tasks.spawn(async move {\n        coordinate_material(",
+        "tasks.spawn(async move {\n        coordinate("
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.task_history_keeps_original_spawn",
+        "SandboxModel.Boundaries.JoinSetContract.each_original_task_is_delivered_at_most_once"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V2/V9: original shared authority, candidates, budgets and shutdown receivers; prove worker selection, callbacks, durable effects, eligibility, no circular waiting and progress."
+    },
+    {
+      "id": "center.supervise",
+      "file": "sandbox-center/src/runtime.rs",
+      "range": [
+        "async fn supervise(",
+        "\nasync fn serve_listener("
+      ],
+      "anchors": [
+        "stopped = tasks.join_next()",
+        "let _ = shutdown.send(true);",
+        "while let Some(stopped) = tasks.join_next().await {"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.cancelling_borrowed_join_removes_no_members",
+        "SandboxModel.Boundaries.JoinSetContract.history_owned_empty_collected_all",
+        "SandboxModel.Boundaries.JoinSetContract.none_observation_is_drained"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V2/V9: same moved JoinSet and no later admission after handoff; prove shutdown policy and each actual worker response/termination. Signal registration, notification and service/VM exit are not JoinSet guarantees."
+    },
+    {
+      "id": "center.result-policy",
+      "file": "sandbox-center/src/runtime.rs",
+      "range": [
+        "async fn supervise(",
+        "\nasync fn serve_listener("
+      ],
+      "anchors": [
+        "Some(Ok(Err(error))) => Err(error)",
+        "result = result.and(completion);"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V2/V9: prove original Result interpretation and fold: retain first observed error, not earliest physical failure; no JoinError is proof of VM/Redis/network termination."
+    },
+    {
+      "id": "protected.construct-and-reap",
+      "file": "sandbox-internal/src/protected_server.rs",
+      "range": [
+        "    pub async fn serve(",
+        "        result\n"
+      ],
+      "anchors": [
+        "let mut tasks = JoinSet::new();",
+        "_ = tasks.join_next(), if !tasks.is_empty() => {},"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.initial_safe",
+        "SandboxModel.Boundaries.JoinSetContract.completed_uncollected_task_still_counts",
+        "SandboxModel.Boundaries.JoinSetContract.task_history_preserves_published_outcome"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V6/V8/V9: same server/listener/group; ignoring returned per-connection results and continued admission are business policy. Live semaphore capacity does not alone bound completed-but-unjoined entries."
+    },
+    {
+      "id": "protected.capture",
+      "file": "sandbox-internal/src/protected_server.rs",
+      "range": [
+        "    pub async fn serve(",
+        "        result\n"
+      ],
+      "anchors": [
+        "let Ok(permit) = Arc::clone(&self.connections).try_acquire_owned()",
+        "tasks.spawn(async move {",
+        "let _permit = permit;"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.task_history_keeps_original_spawn",
+        "SandboxModel.Boundaries.JoinSetContract.taking_preserves_whole_result"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V6/V8: original connections pool and permit captured by original connection future. Reuse B1 for permit ownership; prove handler/TLS roles, deadlines, errors and all separately owned work. No full callback correctness or physical release is assumed."
+    },
+    {
+      "id": "protected.abort-and-drain",
+      "file": "sandbox-internal/src/protected_server.rs",
+      "range": [
+        "    pub async fn serve(",
+        "        result\n"
+      ],
+      "anchors": [
+        "tasks.abort_all();",
+        "while tasks.join_next().await.is_some() {}"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.abort_all_does_not_remove_members",
+        "SandboxModel.Boundaries.JoinSetContract.history_owned_empty_collected_all",
+        "SandboxModel.Boundaries.JoinSetContract.aborting_running_task_does_not_publish_a_result"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V6/V8: no further admissions in this branch, observe same group through None, and distinguish connection future cancellation from accepted durable work/external process exit. Runtime/Drop progress is conditional, not guaranteed by abort request."
+    },
+    {
+      "id": "protected.callback-policy",
+      "file": "sandbox-internal/src/protected_server.rs",
+      "range": [
+        "    pub async fn serve(",
+        "        result\n"
+      ],
+      "anchors": [
+        "handler.respond(peer, request, streaming).await"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V6/V8: actual peer/role, original request and streaming flag, handler authorization, error interpretation, partial I/O and resource policy. ProtectedHttp::respond is not made trusted."
+    },
+    {
+      "id": "guest.construct",
+      "file": "sandbox-guest-service/src/listener.rs",
+      "range": [
+        "    pub async fn serve<H, F, E>(",
+        "\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\nenum Outcome"
+      ],
+      "anchors": [
+        "let mut tasks = JoinSet::new();",
+        "let (stop, stopped) = watch::channel(false);"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.initial_safe",
+        "SandboxModel.Boundaries.JoinSetContract.task_initial_safe"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V8: valid Limits, original listener and stop channel, original logical group identity. Model counters describe histories and are not the finite Report counters."
+    },
+    {
+      "id": "guest.admission",
+      "file": "sandbox-guest-service/src/listener.rs",
+      "range": [
+        "    pub async fn serve<H, F, E>(",
+        "\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\nenum Outcome"
+      ],
+      "anchors": [
+        "if tasks.len() >= self.limits.connections {",
+        "tasks.spawn(task_accounting::track("
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.completed_uncollected_task_still_counts",
+        "SandboxModel.Boundaries.JoinSetContract.ledger_step_keeps_checked_capacity",
+        "SandboxModel.Boundaries.JoinSetContract.bounded_history_keeps_capacity"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V8: actual Limits domain and every spawn passes this original length check; prove refusal/report interpretation. Capacity proof checks the pre-spawn bound and derives preservation, rather than assuming a bounded post-state."
+    },
+    {
+      "id": "guest.spawn",
+      "file": "sandbox-guest-service/src/listener.rs",
+      "range": [
+        "    pub async fn serve<H, F, E>(",
+        "\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\nenum Outcome"
+      ],
+      "anchors": [
+        "tasks.spawn(task_accounting::track(",
+        "AsyncTask::Connection,",
+        "connection(socket, handler, limits, deadline, stopped.clone()),"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.task_history_keeps_original_spawn",
+        "SandboxModel.Boundaries.JoinSetContract.abort_of_other_tasks_does_not_mark_future_spawn"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V8/V6: exact original socket, handler, Limits, unchanged absolute deadline and same stop receiver; task_accounting bookkeeping, response/body and independently owned command work remain business obligations."
+    },
+    {
+      "id": "guest.reap",
+      "file": "sandbox-guest-service/src/listener.rs",
+      "range": [
+        "    pub async fn serve<H, F, E>(",
+        "\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\nenum Outcome"
+      ],
+      "anchors": [
+        "Some(result) = tasks.join_next(), if !tasks.is_empty() => {"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.task_history_preserves_published_outcome",
+        "SandboxModel.Boundaries.JoinSetContract.each_original_task_is_delivered_at_most_once"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V8: map original Outcome and JoinError through Report::record, no replay or semantic success from transport completion. Biased selection is not a claim that ready tasks are always immediately removed."
+    },
+    {
+      "id": "guest.normal-drain",
+      "file": "sandbox-guest-service/src/listener.rs",
+      "range": [
+        "    pub async fn serve<H, F, E>(",
+        "\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\nenum Outcome"
+      ],
+      "anchors": [
+        "drop(listener);",
+        "stop.send_replace(true);",
+        "while let Some(result) = tasks.join_next().await {",
+        "Ok(report)"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.history_owned_empty_collected_all",
+        "SandboxModel.Boundaries.JoinSetContract.none_observation_is_drained"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V8: stop new admission, preserve original per-connection deadline/stop signal and prove connection behavior, report policy and eventual completion separately. Group drain cannot prove blocking work or accepted command exit."
+    },
+    {
+      "id": "guest.interruption",
+      "file": "sandbox-guest-service/src/listener.rs",
+      "range": [
+        "    pub async fn serve<H, F, E>(",
+        "\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\nenum Outcome"
+      ],
+      "anchors": [
+        "let (socket, _) = accepted?;",
+        "unrepresentable connection deadline"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.JoinSetContract.dropping_group_can_look_empty_without_drain",
+        "SandboxModel.Boundaries.JoinSetContract.dropping_running_group_does_not_wait",
+        "SandboxModel.Boundaries.JoinSetContract.late_completion_after_group_drop_is_not_a_delivery"
+      ],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V8/V6: outer future cancellation, accept/deadline error and normally executed generated Drop are distinguished. Preserve partial network/file effects and still-owned work; unwind/abort/crash do not create a normal drain return."
+    },
+    {
+      "id": "guest.result-policy",
+      "file": "sandbox-guest-service/src/listener.rs",
+      "range": [
+        "    pub async fn serve<H, F, E>(",
+        "\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\nenum Outcome"
+      ],
+      "anchors": [
+        "report.record(result.unwrap_or(Outcome::Failed));\n                }",
+        "report.record(result.unwrap_or(Outcome::Failed));\n        }"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "preconditions": "Fixed Tokio 1.49.0 and approved A6/B1/B2/B3. Same original group, logical spawn occurrence, callback/argument and result representation; finite normally completed API events. Interrupted operations retain their observed prefix and do not fabricate completion. The caller proves the separate obligations below.",
+      "caller_obligations": "V8: prove Report saturating arithmetic, Outcome classification and original handler/error behavior; transport Report is not a successful command/file receipt."
+    }
+  ],
+  "tokio": {
+    "version": "1.49.0",
+    "reviewed_sources": {
+      "src/task/join_set.rs": "ddc5bc60b4a1f653d810f3d2fd441ce805801fba2562c05fd761cd8732ea3dde",
+      "src/runtime/task/harness.rs": "008c697f432197c6537472e2cea55fa973aec45df946b85abfbea966f2db8d51",
+      "src/runtime/task/join.rs": "54777ae133745e7f472802d9fd67cd14a2946f2661cabd27ffbc352f2685b0f7",
+      "src/util/idle_notified_set.rs": "660b04db5c0ec3213ea8efdbfc95a1d60ef64325ae55c9454aeec97b3c5fc0bd",
+      "src/runtime/task/error.rs": "0c84e9189f351c6e1eb0c5865b9df84a928ed4602b06fd5c2e71fb7c43eb1e27"
+    }
+  },
+  "api_scope": [
+    "new",
+    "spawn",
+    "len",
+    "is_empty",
+    "borrowed join_next",
+    "abort_all snapshot",
+    "normal group Drop",
+    "original T or JoinError"
+  ],
+  "excluded": [
+    "join_all",
+    "shutdown convenience",
+    "detach_all",
+    "JoinSet spawn_blocking",
+    "task ID APIs",
+    "arbitrary progress/fairness",
+    "whole Rust async machine refinement",
+    "external resource exit"
+  ],
+  "production_sources": {
+    "sandbox-center/src/runtime.rs": "583da5a13d7e044609e8544424496f237c32b25c2b8058dd241b30f01f356da5",
+    "sandbox-guest-service/src/listener.rs": "b38fe85eff96d6e9adae0d6fd294559eca090f0208ed15137f62b63bd62077f1",
+    "sandbox-internal/src/protected_server.rs": "385cd30615731a7c452d26c999fb72c4caad5275f09696d4fe3f3f9d584e8225"
+  },
+  "theorems": [
+    "SandboxModel.Boundaries.JoinSetContract.initial_safe",
+    "SandboxModel.Boundaries.JoinSetContract.ledger_step_safe",
+    "SandboxModel.Boundaries.JoinSetContract.ledger_history_safe",
+    "SandboxModel.Boundaries.JoinSetContract.ledger_step_keeps_original_group",
+    "SandboxModel.Boundaries.JoinSetContract.ledger_history_keeps_original_group",
+    "SandboxModel.Boundaries.JoinSetContract.completed_uncollected_task_still_counts",
+    "SandboxModel.Boundaries.JoinSetContract.abort_all_does_not_remove_members",
+    "SandboxModel.Boundaries.JoinSetContract.cancelling_borrowed_join_removes_no_members",
+    "SandboxModel.Boundaries.JoinSetContract.owned_empty_is_drained",
+    "SandboxModel.Boundaries.JoinSetContract.history_owned_empty_collected_all",
+    "SandboxModel.Boundaries.JoinSetContract.none_observation_is_drained",
+    "SandboxModel.Boundaries.JoinSetContract.ledger_step_keeps_checked_capacity",
+    "SandboxModel.Boundaries.JoinSetContract.bounded_history_keeps_capacity",
+    "SandboxModel.Boundaries.JoinSetContract.correct_drain_has_nonempty_history",
+    "SandboxModel.Boundaries.JoinSetContract.dropping_group_can_look_empty_without_drain",
+    "SandboxModel.Boundaries.JoinSetContract.aborting_group_is_not_draining",
+    "SandboxModel.Boundaries.JoinSetContract.cancelling_join_does_not_freeze_task_completion",
+    "SandboxModel.Boundaries.JoinSetContract.task_initial_safe",
+    "SandboxModel.Boundaries.JoinSetContract.task_step_safe",
+    "SandboxModel.Boundaries.JoinSetContract.task_history_safe",
+    "SandboxModel.Boundaries.JoinSetContract.task_step_keeps_original_spawn",
+    "SandboxModel.Boundaries.JoinSetContract.task_history_keeps_original_spawn",
+    "SandboxModel.Boundaries.JoinSetContract.task_step_preserves_published_outcome",
+    "SandboxModel.Boundaries.JoinSetContract.task_history_preserves_published_outcome",
+    "SandboxModel.Boundaries.JoinSetContract.each_original_task_is_delivered_at_most_once",
+    "SandboxModel.Boundaries.JoinSetContract.collected_task_cannot_be_collected_again",
+    "SandboxModel.Boundaries.JoinSetContract.taking_preserves_original_payload",
+    "SandboxModel.Boundaries.JoinSetContract.aborting_ready_task_can_still_return_original_value",
+    "SandboxModel.Boundaries.JoinSetContract.aborting_running_task_does_not_publish_a_result",
+    "SandboxModel.Boundaries.JoinSetContract.dropping_running_group_does_not_wait",
+    "SandboxModel.Boundaries.JoinSetContract.late_completion_after_group_drop_is_not_a_delivery",
+    "SandboxModel.Boundaries.JoinSetContract.dropping_group_does_not_recall_taken_payload",
+    "SandboxModel.Boundaries.JoinSetContract.abort_request_can_race_with_normal_return",
+    "SandboxModel.Boundaries.JoinSetContract.application_error_is_an_ordinary_returned_value",
+    "SandboxModel.Boundaries.JoinSetContract.abort_of_other_tasks_does_not_mark_future_spawn",
+    "SandboxModel.Boundaries.JoinSetContract.taking_preserves_whole_result"
+  ],
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel/Boundaries/JoinSet.lean",
+    "SandboxModel/Boundaries/JoinSet/Audit.lean",
+    "SandboxModel/Boundaries/JoinSet/Ledger.lean",
+    "SandboxModel/Boundaries/JoinSet/Task.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "docs/formal/dependencies.md",
+    "docs/proof-workflow.md",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "rust-toolchain.toml",
+    "sandbox-center/src/runtime.rs",
+    "sandbox-guest-service/src/listener.rs",
+    "sandbox-guest-service/src/task_accounting.rs",
+    "sandbox-internal/src/protected_server.rs",
+    "sandbox-internal/tests/secure_probe.rs",
+    "scripts/verify-joinset.sh",
+    "tools/check_joinset_components.py",
+    "tools/check_joinset_contract.py",
+    "tools/check_owned_message_components.py",
+    "tools/tests/test_joinset_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/experiments/joinset/center-tests.rs",
+    "verification/experiments/joinset/guest-tests.rs",
+    "verification/experiments/joinset/preflight.py",
+    "verification/experiments/joinset/primitive-tests.rs",
+    "verification/joinset-environment.json",
+    "verification/task-contract-environment.json",
+    "verification/task-contract-inputs.sha256"
+  ],
+  "error_representation": "Completion carries original successful-value representation alpha OR original JoinError representation rho; rho retains original error identity, including panic-payload ownership. It is not only a classification tag and does not freeze aliased heap contents."
+}

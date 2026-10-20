@@ -341,7 +341,7 @@ B 检查动作身份、当前执行资格、终止围栏和真实资源归属，
 
 envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可重连/未知，不仅凭 PID 接管或重执行。空命令列表不等于来宾全部进程停止；原 VM 绑定、占用及宿主停止/清理责任保持，清理不依赖 envd 正常响应。自有路由、转发、撤销和失败处理需证明；端点输出、完成和回调排空为外部功能合同并测试，不证明整个 envd/SDK。
 
-### Rust 来宾替换的合同入口（#311，未启用）
+### Rust 来宾替换的合同入口（#311）
 
 Rust 来宾配置版本 3 的 `input_chunk_bytes` 只限定一次内部 pipe/PTY 写入的借用切片，不是公开 SDK 单次调用或累计命令输入上限。较大的单次 `send_stdin` 在原 HTTP 请求总字节、帧、条数、并发和绝对期限内接受；完整解码请求仍计入原请求驻留预算，不宣称任意大小或零复制。所有内部切片绑定同一原身份和同一写锁，重叠请求不能交叉写入或建立等待队列；每块后让出调度，原终局/请求取消仍可中断，已交付前缀不重放。原命令正文预算超限在写入前以 HTTP 429 / Connect `resource_exhausted` 和 `command request exceeds configured body limits` 拒绝；占用写锁和未知 I/O 不伪装为大小拒绝，不关闭原 stdin、不换 PID。版本 2 的 `stdin_bytes` 不作为别名或旧模式保留，新不可变模板须绑定新版配置与实际产物摘要；现役 Go 模板不变。
 
@@ -353,7 +353,7 @@ Rust 来宾配置版本 3 的 `input_chunk_bytes` 只限定一次内部 pipe/PTY
 
 上传与一元文件回复的有限 JSON/gzip 载荷共用[有限响应所有权](../sandbox-guest-service/src/finite_body.rs)：阻塞编码结束后不保留等待下一块的阻塞任务；最后数据块持有原请求/文件名额，全部字节副本释放后归还，不要求 HTTP 再读取一次 EOF。中间块仍须完整释放才交付下一块，取消编码仍等实际工作退出后归还；原预算和绝对期限不变。未知长度下载继续使用原阻塞源，不把有限载荷与真实流读取混为一谈。
 
-现役模板继续使用固定 envd。#311 在同仓库实现来宾命令/文件服务，公开路径仍经中心和私有宿主网关；中心/宿主链冻结并完成对应实机验收后才切换新不可变模板。下面区分冻结合同、已实现的组件与正式入口接线，以及尚未完成的映射/系统验收；合同样例和组件实现不作为实际来宾替换的证据。
+现役模板继续使用固定 envd。#311 在同仓库实现来宾命令/文件服务，公开路径仍经中心和私有宿主网关；中心/宿主链冻结并完成对应实机验收后才切换新不可变模板。下面区分冻结合同、组件、正式入口接线与各层验收；精确版本、通过项和未运行项在[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311)记录。合同样例和组件实现不代替实际来宾替换的独立证据。
 
 固定依据为 SDK 2.51.0 / `ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b` 和 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322` 的 [process.proto](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/spec/process/process.proto)、[filesystem.proto](https://github.com/e2b-dev/runtime/blob/f455fd58fa3f289e78ce1de690c35968d8d29322/packages/envd/spec/filesystem/filesystem.proto)。[共享协议样例](../tests/compat/guest-service-contract.json)由固定 SDK 的生成类型读取并往返编码；同一文件也由 [Rust 命令协议](../sandbox-guest-runtime/tests/protocol.rs)、[文件协议](../sandbox-guest-runtime/tests/file_protocol.rs)和[初始化组件](../sandbox-guest-service/tests/session.rs)消费；共享样例不是另一份能力矩阵，也不代表完整协议对照已通过。
 
@@ -384,19 +384,19 @@ Rust 来宾配置版本 3 的 `input_chunk_bytes` 只限定一次内部 pipe/PTY
 
 [持久 PID 集](../sandbox-guest-runtime/src/pid_claims.rs)已实现独立文件端口，调用方显式提供原 VM 的受信任绑定摘要、私有目录 FD、预期 UID 和包含上界的 PID 范围 1..=max_pid，表示上限为 4,194,304，没有生产默认值。首次 create 仅供可信的新 VM 制备，采用排他创建；正常重启必须 open 已存在且完整的同绑定/范围文件，缺失/损坏时不新建、修复或清空。固定版本头、PID 0 保留位、尾部未用位及 SHA-256 校验覆盖整个位图；最大持久图像 524,373 字节，校验读取另有同尺寸副本，哈希/文件系统分配另计。文件为预期 UID 的私有普通单链接文件，NOFOLLOW/NONBLOCK 打开并持有单写者锁；通过同一目录 FD 核对名称/inode。claim 在原写者上置位并同步后才返回绑定完整 CommandIdentity 的不可克隆回执；写入/校验失败或 panic 毒化当前写者。重开只接受完整有效图像并重新确认同步，不修复中断状态；没有发布回执的写前失败可仍为旧图像，已完整保存的新位继续拒绝复用。目录来源/祖先、VM 绑定生产、首次制备唯一性及真实持久存储由调用方保证；不能抵抗来宾 root、同 UID 篡改、有效旧图像回滚或虚假 fsync。
 
-[服务会话分配](../sandbox-guest-runtime/src/pid_claims/session.rs)在同一单写者文件的 44..52 字节保存 little-endian u64 高水位。可信新 VM create 初始为 0；allocate_session 校验原图像后递增，写计数与摘要、fsync 并复核后才返回非零编号。回复丢失或后续启动失败不回收已持久编号，u64 耗尽拒绝且不回绕，不新增随历史增长的文件或日志。会话写与 PID 写共用毒化状态，写入未知或 panic 后两类操作都拒绝；重开只接受完整图像并重新确认同步。此编号只供同一次启动的原活跃表和命令装配，不是访问令牌，也不接管旧进程。格式从 v1 变为 v2；原 v1 文件即使校验正确也原样拒绝，不自动迁移、清空或在同一 VM 重建。当前未部署的基础模块只允许可信的新 VM 制备 v2；需要保留既有 v1 VM 时应继续使用相配旧实现，后续迁移须另行复核，不能删除文件绕过拒绝。VM 绑定摘要仍采用原 v1 域，格式升级不改变 VM 身份。
+[服务会话分配](../sandbox-guest-runtime/src/pid_claims/session.rs)在同一单写者文件的 44..52 字节保存 little-endian u64 高水位。可信新 VM create 初始为 0；allocate_session 校验原图像后递增，写计数与摘要、fsync 并复核后才返回非零编号。回复丢失或后续启动失败不回收已持久编号，u64 耗尽拒绝且不回绕，不新增随历史增长的文件或日志。会话写与 PID 写共用毒化状态，写入未知或 panic 后两类操作都拒绝；重开只接受完整图像并重新确认同步。此编号只供同一次启动的原活跃表和命令装配，不是访问令牌，也不接管旧进程。格式从 v1 变为 v2；原 v1 文件即使校验正确也原样拒绝，不自动迁移、清空或在同一 VM 重建。新模板只允许可信的新 VM 制备 v2；需要保留既有 v1 VM 时应继续使用相配旧实现，后续迁移须另行复核，不能删除文件绕过拒绝。VM 绑定摘要仍采用原 v1 域，格式升级不改变 VM 身份。
 
 [正常启动状态装配](../sandbox-guest-service/src/startup.rs)在 Unix 将同一可信元数据源、原 Session 和已存在 PID 集连接起来。先验证启动/初始化/PID 范围配置，无队列占用一个共享启动名额；在同一绝对期限内读取元数据，再将原目录 FD 交给阻塞任务调用 PidClaims::open。正常入口没有 create、修复、迁移或空表回退；缺失、损坏、绑定/范围不符及另一写者按原有类型拒绝。打开后在同一原期限/阻塞任务内持久分配服务会话；成功返回该非零编号、未初始化 Session 和仍锁定的原 PID 集，供 daemon 共同装配，不认领旧活跃进程。
 
 VmIdentity 的稳定绑定为 SHA-256：域字节 `sandproof/guest/pid-binding/v1` 加 NUL，然后依次加入 instanceID、templateID 的 u64 小端 UTF-8 字节长度和原字节。两个 ID 须非空、无 NUL，合计字节不超过显式上限；访问令牌、默认上下文和服务重启不参与摘要。可信新 VM 制备可调用同一派生函数再显式 create；旧任意绑定格式不自动转换。前提是受控 MMDS 的 instanceID 永远对应原 VM 创建身份且模板身份不变，不以摘要本身证明身份真实性，也不抵抗旧有效盘回滚或来宾 root。
 
-返回 Session 的 PinnedMetadata 保留同一元数据源和不可变 ID，每次原 Session 需要新的元数据交换时，先拒绝 ID 改变，再允许原令牌验证/轮换；原同 token 重复初始化行为保持。启动读取的令牌 hash 不预先授权客户端，不保存在身份对象里。目录祖先/预期 UID、元数据响应与先行分配、阻塞线程数仍由可信装配约束。排队/运行中的文件打开不能被超时中断，原名额保留到任务和遗留结果实际退出；取消后结果持有的锁定 FD 先释放，再归还启动名额。排队任务在开始及 open 返回后检查等待者是否已取消；已进入的计数写入不能中断，取消/超时仍可能烧掉编号，绝不自动回收。启动取消或故障不会重放用户命令。下述正式入口消费该组件；不可变模板安装和 E04/E06/E09 整体验收仍待完成。
+返回 Session 的 PinnedMetadata 保留同一元数据源和不可变 ID，每次原 Session 需要新的元数据交换时，先拒绝 ID 改变，再允许原令牌验证/轮换；原同 token 重复初始化行为保持。启动读取的令牌 hash 不预先授权客户端，不保存在身份对象里。目录祖先/预期 UID、元数据响应与先行分配、阻塞线程数仍由可信装配约束。排队/运行中的文件打开不能被超时中断，原名额保留到任务和遗留结果实际退出；取消后结果持有的锁定 FD 先释放，再归还启动名额。排队任务在开始及 open 返回后检查等待者是否已取消；已进入的计数写入不能中断，取消/超时仍可能烧掉编号，绝不自动回收。启动取消或故障不会重放用户命令。下述正式入口消费该组件；不可变模板安装和 E04/E06/E09 整体验收按[验收清单](testing-plan.md)独立核对，版本证据在[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311)记录。
 
 [来宾正式入口](../sandbox-guest-service/src/daemon/entry.rs)实现 Linux 二进制 `sandproof-guest-service check|initialize|serve --config /absolute/config.json`。只接受一个显式配置路径，不读取生产预算、PATH、账户或 MMDS 地址的环境变量替代值。配置文件最多 1 MiB，在同一 FD 上以固定缓冲读取并检查实际字节，再按[唯一结构](../sandbox-guest-service/src/daemon/config.rs)解码；版本为 3，全部字段必需，未知/重复/错类型字段拒绝，时长采用 Serde 的 secs/nanos 表示。字段直接复用原组件预算类型；进程配置、响应、登记、文件和时区校验也复用原规则，不把 JSON 解码成功当成可启动许可。[测试配置](../sandbox-guest-service/src/daemon/tests/configuration.json)只为可执行回归材料，worker 指纹是三个字节 abc 的测试摘要，不是可执行文件、生产默认或已复核的部署预算。
 
 两个 Linux 二进制另接受唯一参数 `--version`，输出[服务](../sandbox-guest-service/src/build_info.rs)/[worker](../sandbox-guest-runtime/src/build_info.rs) 的紧凑 JSON，不读取配置、打开 gate、连接 MMDS 或创建运行时。字段区分自身包版本、配置版本、私有 worker 协议与 PID 存储格式，并报告编译目标 OS/架构；与[输入锁](../references/v1-baseline.json)逐项回归核对，不冒用 Go envd 0.9.0，也不改变 SDK 协商字段或健康响应。包版本不是精确源码或二进制身份；这些输出不宣称已安装、就绪、协议完全兼容或已证明。
 
-配置 v3 必须显式给出 worker 的 package_version、protocol_version 和 artifact.bytes/sha256；静态阶段拒绝与本服务所链接 runtime 的包/协议版本不一致，以及零/不可表示长度、非 64 位小写十六进制摘要。旧 v1/v2 配置原样拒绝，没有缺省指纹或自动迁移；未部署的安装材料应按精确构建产物重制 v3，不能只更改版本号。initialize/serve 在原受信任 worker FD 上[核对指纹](../sandbox-guest-runtime/src/artifact.rs)，从偏移零用固定 8 KiB 缓冲及一字节超长探针读取，前后核对普通文件类型/长度，比较实际完整内容的 SHA-256；每段及完成前检查原启动期限。错长度/摘要或 I/O 失败在 MMDS、PID 文件访问与监听之前拒绝，不执行候选文件来相信它的自报版本。配置中的版本与摘要由可信制备者共同登记；校验不是签名、ELF 适配或源码出处证明。下述准备入口登记源码与双二进制摘要；配置与受保护不可变模板描述的消费、实际构建/安装仍须完成 E09。
+配置 v3 必须显式给出 worker 的 package_version、protocol_version 和 artifact.bytes/sha256；静态阶段拒绝与本服务所链接 runtime 的包/协议版本不一致，以及零/不可表示长度、非 64 位小写十六进制摘要。旧 v1/v2 配置原样拒绝，没有缺省指纹或自动迁移；旧版安装材料须按精确构建产物重新制备 v3，不能只更改版本号或改写旧运行实例。initialize/serve 在原受信任 worker FD 上[核对指纹](../sandbox-guest-runtime/src/artifact.rs)，从偏移零用固定 8 KiB 缓冲及一字节超长探针读取，前后核对普通文件类型/长度，比较实际完整内容的 SHA-256；每段及完成前检查原启动期限。错长度/摘要或 I/O 失败在 MMDS、PID 文件访问与监听之前拒绝，不执行候选文件来相信它的自报版本。配置中的版本与摘要由可信制备者共同登记；校验不是签名、ELF 适配或源码出处证明。下述准备入口登记源码与双二进制摘要；配置与受保护不可变模板描述的消费、实际构建/安装仍须按[验收清单](testing-plan.md)的 E09 核对。
 
 [来宾产物准备](../tools/prepare_guest.py)提供 `scripts/python-entry.sh -m tools.prepare_guest --config /absolute/private.json`，只在受控、可回收的 Linux x86_64 构建环境运行，不启动 VM 或安装模板。配置精确包含 candidate（40 位 Git 提交）、checkout、output、cargo_home、toolchain_bin、timeout_seconds（1..3600）和 max_log_bytes（1..16 MiB）。已有输入目录及输出父目录须为调用者的规范私有目录，output 须为与检出、缓存、编译器分离的新目录；失败后也不复用原目录。工具链目录提供固定原生 cargo/rustc，不使用 rustup 代理或联网补料；缓存与构建镜像须预先审核，编译脚本不是租户输入。构建临时盘、内核、链接器、动态库/编译器后端及残留回收由该隔离环境负责，工具自身的日志/产物字节界不冒充整个构建的内存或磁盘界。
 
@@ -413,7 +413,12 @@ VmIdentity 的稳定绑定为 SHA-256：域字节 `sandproof/guest/pid-binding/v
 
 安装器写入私有 new-vm 标记；原 BusyBox boot 在网络与新 `/run` tmpfs 建立后，创建私有 gate 目录，先把 new-vm 重命名为 initialization-attempted 并调用 sync，再执行一次 `initialize`。无新标记时绝不执行 initialize，重复/符号链接标记拒绝；首次初始化即使在创建 PID 文件前失败，也已消耗自动制备资格。成功后才写原 boot-ready 标记，原 agent gate 保持并改为只执行 `serve --config`；respawn 不跑 initialize。整 VM 再启动也只打开原 PID 状态，缺失/损坏不补表，仍由原宿主责任路径处理失败和销毁。这是已确认 PID 政策的安装连接，不抵抗来宾 root、有效旧盘回滚或虚假持久化；尚无真实断电/文件系统故障证据。
 
-候选状态包含安装时的 guest 身份。原[暂存入口](../tools/template_stage.py)同样接受独立的 `--rust-guest-profile`，只读取受保护材料，不在宿主执行二进制、解包或挂载镜像；状态中的 guest 必须与独立 profile 相同，不能自行选择信任 pin。新建与原编号恢复均将完整身份绑定到原 manifest，下载文件名消失后的交接恢复也不得丢失或更换它；没有受保护 profile 时拒绝带 Rust 身份的状态。暂存仍不是 Ready，后续登记/真实启动/精确收尾门保持。自助监督的显式接线见下文，真实 builder/运行 VM 的 E06/E09 仍待实测。
+**不可变模板与迁移：**Rust 服务作为新模板修订发布，受保护 profile 将源码清单、service/worker、配置版本、worker 协议、PID 格式及各实际摘要绑定到同一产物。制备、安装、模板验证和实际运行身份分别核对，不接受把已有 Go rootfs 重标为 Rust，或只改版本号而沿用旧字节。Rust 初始化/验证失败保留原失败和精确资源责任，不回退另一实现来生成成功结果。
+
+既有 Go 模板及其运行实例按原不可变修订继续使用原服务；新 Rust 修订不改写其运行盘、命令登记或句柄。旧 Rust 配置/PID 格式同样按上文版本合同保留或拒绝，不对原实例自动迁移、补表或清空。原模板与别名机制保持；改变默认 `base` 是另一次显式别名发布，须先完成对应新修订的同提交验收，不能由安装器或 CI 选项静默切换。旧修订的退休沿原模板管理和引用规则处理，不因新实现验收通过便删除仍使用的旧材料。
+
+
+候选状态包含安装时的 guest 身份。原[暂存入口](../tools/template_stage.py)同样接受独立的 `--rust-guest-profile`，只读取受保护材料，不在宿主执行二进制、解包或挂载镜像；状态中的 guest 必须与独立 profile 相同，不能自行选择信任 pin。新建与原编号恢复均将完整身份绑定到原 manifest，下载文件名消失后的交接恢复也不得丢失或更换它；没有受保护 profile 时拒绝带 Rust 身份的状态。暂存仍不是 Ready，后续登记/真实启动/精确收尾门保持。自助监督的显式接线见下文；真实 builder/运行 VM 的 E06/E09 使用[验收清单](testing-plan.md)中的独立实机入口，具体版本结果只在[#311](https://github.com/VeriInfra-Lab/sandproof/issues/311)记录。
 
 [自助监督器](../tools/template_build_service.py)接受可选受保护配置 `rust_guest_profile`，值为上述私有 profile 的绝对路径；租户请求不能选择或替换它。完整 profile 与派生 guest 身份共同进入原 BuildStore 不可变配置摘要，同一路径换 pin 也不能重开旧库。创建私有窗口/VM 前重新审计并与原配置比对；构建 VM 仅收到 `/input/rust-guest/release` 下的清单/双产物，以及固定 config.json/profile.json，原源码归档留在宿主。额外 helper、配置和产物纳入上传大小与构建盘必要空间检查；worker 在上传后仍检查实际可用空间，不把必要条件视为可构建保证。
 
@@ -429,13 +434,13 @@ Rust 模式下全部准备上传由[有界上传适配器](../tools/template_bui
 
 [受信任启动路径](../sandbox-guest-runtime/src/startup_files.rs)从 `/` 的原目录 FD 逐层 openat，不跟随任何配置/状态/gate/worker 路径中的符号链接；祖先须为 root 或当前 daemon owner 且不可被组/其他用户写入。最终目录为原 owner 的私有目录，配置为私有普通单链接文件，worker 为不可被组/其他用户写入的可执行普通单链接文件；非阻塞打开后先检查类型，FIFO 不进入读取。时区仍按原专用 loader 允许受信任的 `/etc/localtime` 链接。路径及启动摘要观察不抵抗 root/同 owner 篡改、挂载替换或旧有效盘回滚，也不把随后按路径 exec 绑定到已关闭的原 FD；可信安装必须在服务生命周期内保持 worker 及祖先不变，来源与版本仍须绑定不可变模板。
 
-上述正式入口已有实现，但尚未安装或替换现役模板。tag 已接通下述共用 HTTP 分派；剩余错误映射及完整 SDK 双端、真实 MMDS/daemon 故障、资源峰值和 KVM 验收仍按原待办执行；配置预算和静态 check 不批准这些未决行为，也不使全部 E01–E10 自动成立。
+上述正式入口由受保护模板配置接入，tag 使用下述共用 HTTP 分派。组件、静态 check、Go/Rust 双端、真实 MMDS/daemon 故障及资源/KVM 结果各自按[验收清单](testing-plan.md)核对；配置预算或某一层通过不使全部 E01–E10 自动成立，具体交付状态归 #311。
 
 [命令准备所有者](../sandbox-guest-service/src/command/preparation/owner.rs)将原目录/socket/管道/PTY/worker spawn 放入一次阻塞任务，避免这些同步操作占用异步执行线程。进入队列前已持有原命令记录，排队和运行期间继续持有同一授权、请求及准备参数；不新增重试队列或刷新期限。阻塞任务实际开始时重新核对原绝对期限、请求/等待者是否仍在和是否已有撤回决定，已撤回或到期不调用 spawn。开始后取消不能中断 syscall 或提前归还额度；正常错误确认未创建 child 后，将失败通知与原记录随阻塞结果保留到异步准备任务消费或丢弃该结果，再按原顺序先归还记录、后报告 Stopped；尚未继续轮询的准备任务不能在原记录已复用后积累。成功则连同原 child 移交至既有异步握手/登记/清理。若等待者已丢失而返回可能已有 child，析构仅请求停止并隔离原记录，不能伪造实际 wait；panic 同样保留未知责任。队列项数由原命令记录额度约束，线程数由原 daemon 阻塞线程配置约束，不等于内核 I/O 可中断、系统调度实时性或整机内存峰值已验收。
 
-[准备到 PID 登记连接](../sandbox-guest-service/src/command/registration.rs)通过 PendingCommand::register_pid 等待原 gated worker，将同一票据移入阻塞持久化任务。PidRegistrar 克隆共享独立的单写入名额，进入等待/阻塞队列前预留，原进程即使已到期并收尾，存储名额仍保留到实际文件任务退出；繁忙直接拒绝，不用进程名额代替磁盘任务预算。排队取消在写入前检查，执行中取消可保守烧掉 PID，但不会自动放行代码。返回的 PidRegisteredCommand 固定原票据和实际持久回执，仍须由调用方先安装同一身份的活跃选择器预留，再消费 commit；原执行/准入期限不刷新。失败/丢弃沿原准备所有者停止和 wait，容量只在实际收尾后释放。持久位图本身不是活跃登记表；下述组件连接内存 PID 记录与终局保留，PID/tag 查询已接入共用命令 HTTP 装配；正式 daemon/config 已由上文入口装配，不恢复跨服务活跃进程，实际部署和重启故障验收仍待完成。
+[准备到 PID 登记连接](../sandbox-guest-service/src/command/registration.rs)通过 PendingCommand::register_pid 等待原 gated worker，将同一票据移入阻塞持久化任务。PidRegistrar 克隆共享独立的单写入名额，进入等待/阻塞队列前预留，原进程即使已到期并收尾，存储名额仍保留到实际文件任务退出；繁忙直接拒绝，不用进程名额代替磁盘任务预算。排队取消在写入前检查，执行中取消可保守烧掉 PID，但不会自动放行代码。返回的 PidRegisteredCommand 固定原票据和实际持久回执，仍须由调用方先安装同一身份的活跃选择器预留，再消费 commit；原执行/准入期限不刷新。失败/丢弃沿原准备所有者停止和 wait，容量只在实际收尾后释放。持久位图本身不是活跃登记表；下述组件连接内存 PID 记录与终局保留，PID/tag 查询已接入共用命令 HTTP 装配；正式 daemon/config 由上文入口装配，不恢复跨服务活跃进程；实际部署和重启故障须使用同提交产物，按[组合验收](testing-plan.md#rust-envd-的组合验收311)分别核对。
 
-[有界 PID 登记](../sandbox-guest-service/src/command/registry.rs)已连接持久回执和原命令 owner，并供共用命令 HTTP 装配使用；该 Linux 组件已接入上文正式 daemon 装配，尚未部署到不可变来宾模板。调用方显式配置 VM 绑定、服务会话、登记条数、逐记录编码字节与终局保留时长；固定 Go 和已确认的公开规则均为 30 秒；底层组件仍接受显式正时长；CommandHttp 构造及正式 daemon 静态配置只接受精确 30 秒，其他值在 MMDS/PID 工作前拒绝。prepare 前预留登记名额并按最大 PID 检查整条 List 元数据编码，保存调用方原配置的副本；编码字节不冒充容器/分配器或整个进程 RAM 上界。publish 拒绝错 VM/会话和已有 PID，先装入精确记录再派发原票据。独立登记任务在 HTTP 等待者之外保留 commit、控制句柄和原始订阅：受理前取消停止原 gated worker，受理后丢失 Start 回复只丢失该回复/订阅，不丢失登记、不重执行。准备清理未知或 owner 丢失保持 unavailable 并继续占额。
+[有界 PID 登记](../sandbox-guest-service/src/command/registry.rs)已连接持久回执和原命令 owner，并供共用命令 HTTP 装配使用；该 Linux 组件通过上文正式 daemon 装配进入显式 Rust 不可变模板，不单独形成另一部署入口。调用方显式配置 VM 绑定、服务会话、登记条数、逐记录编码字节与终局保留时长；固定 Go 和已确认的公开规则均为 30 秒；底层组件仍接受显式正时长；CommandHttp 构造及正式 daemon 静态配置只接受精确 30 秒，其他值在 MMDS/PID 工作前拒绝。prepare 前预留登记名额并按最大 PID 检查整条 List 元数据编码，保存调用方原配置的副本；编码字节不冒充容器/分配器或整个进程 RAM 上界。publish 拒绝错 VM/会话和已有 PID，先装入精确记录再派发原票据。独立登记任务在 HTTP 等待者之外保留 commit、控制句柄和原始订阅：受理前取消停止原 gated worker，受理后丢失 Start 回复只丢失该回复/订阅，不丢失登记、不重执行。准备清理未知或 owner 丢失保持 unavailable 并继续占额。
 
 live 只取已启动未终结的原控制句柄，connectable 另允许保留期内的原终局订阅；都不凭数值 PID 接管进程，正式分派仍须每请求重新鉴权。List 只编码当前已观察活跃项，完整回复有独立预算。真实 wait 与对应输出收尾完成时由命令 owner 保存 completed_at；终局到期从此时计算，重连、延迟唤醒或 Start 回复丢失均不刷新。读取路径即使早于定时器清理也拒绝到期项；删除只匹配原记录，未知责任不按 TTL 释放，失败不能缓存成成功 End。登记元数据到期后可归还自身名额；仍持有命令/订阅/输出的外部使用者继续占原 CommandOwners 记录名额。登记组件已实现下述 tag 仲裁/查询，并由公开 Start、Connect 和控制分派调用，不恢复跨服务活跃进程。
 
@@ -443,7 +448,7 @@ live 只取已启动未终结的原控制句柄，connectable 另允许保留期
 
 登记组件在同一表锁内检查原记录和准备中的 tag 预约，再占用原登记名额；两个并发 Start 不能同时取得同 tag，空字符串是有效 tag，与缺失字段不同。逐记录 List 编码界仍先检查；每个预约最多另持有一份不超过该界的 tag 字节及有限集合/引用开销，预约集合条数不超过原 records 额度，不新增历史表。已存在的存活/准备记录返回 AlreadyExists，未知/失败但未清理责任返回 Unavailable，不能把未知当作已退出。查询跳过所有非匹配项，只取唯一匹配的原记录；重复内部记录视为异常，拒绝任意选一个。live_tag/connectable_tag 与 PID 查询共用状态、原完成时刻和期限判断；查询不刷新保留。
 
-取消预约或 publish 的 VM/会话/PID 检查失败只释放新预约，旧结束记录仍可查询。持久 PID 票据成功装入新记录时，在同一锁内清除该 tag 的旧成功终局记录，然后放行原 worker；清除同时影响旧 PID 与 tag 查询，已取得的旧命令/订阅仍绑定原进程并持有自己的额度。旧定时任务被单次通知唤醒、实际退出后释放其登记名额；迟到删除仍比较原 PID 与记录指针，不触及新记录。新启动随后失败不恢复旧结果，不重放命令；登记满额仍可拒绝复用，不提前虚报旧任务容量已释放。tag 表示当前名称绑定，不能提供旧 tag 请求与新绑定的区分；永久 PID 拒绝复用规则保持。公开 tag Start/Connect/控制和对应重复/缺失错误映射、正式 30 秒装配已接通；固定 SDK、真实双端及重启差异验收仍待补。
+取消预约或 publish 的 VM/会话/PID 检查失败只释放新预约，旧结束记录仍可查询。持久 PID 票据成功装入新记录时，在同一锁内清除该 tag 的旧成功终局记录，然后放行原 worker；清除同时影响旧 PID 与 tag 查询，已取得的旧命令/订阅仍绑定原进程并持有自己的额度。旧定时任务被单次通知唤醒、实际退出后释放其登记名额；迟到删除仍比较原 PID 与记录指针，不触及新记录。新启动随后失败不恢复旧结果，不重放命令；登记满额仍可拒绝复用，不提前虚报旧任务容量已释放。tag 表示当前名称绑定，不能提供旧 tag 请求与新绑定的区分；永久 PID 拒绝复用规则保持。公开 tag Start/Connect/控制和对应重复/缺失错误映射、正式 30 秒装配已接通；固定 SDK、真实双端及重启差异须分别按原验收入口核对，不从登记组件测试推断整体验收通过。
 
 已加入的 [sandproof-guest-core](../sandbox-guest-core/src/lib.rs) 只承担两个有限局部决定，不依赖 HTTP、Tokio、文件系统或宿主控制器：
 

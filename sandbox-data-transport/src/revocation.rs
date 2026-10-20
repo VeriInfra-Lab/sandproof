@@ -17,6 +17,10 @@ pub async fn until_revoked<T>(
 }
 
 #[cfg(test)]
+#[path = "revocation/contract_tests.rs"]
+mod contract_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{

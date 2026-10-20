@@ -3,6 +3,7 @@
 use super::*;
 use sandproof_controller_service::MaintenanceConfig;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicI64;
 
 #[derive(Clone)]
 struct FleetHost {
@@ -151,11 +152,11 @@ fn maintenance_config() -> MaintenanceConfig {
     policy
 }
 
-fn open_maintained(path: &Path, host: FleetHost) -> ManagedPort<FleetHost> {
+fn maintained_application(path: &Path, host: FleetHost) -> ControllerApplication<FleetHost> {
     let mut limits = config();
     limits.limits.max_active_per_tenant = 2;
     limits.limits.max_disk_bytes_per_tenant = 2_000;
-    new_port(
+    ControllerApplication::new(
         ControllerJournal::open_complete(
             path,
             NAMESPACE,
@@ -169,6 +170,28 @@ fn open_maintained(path: &Path, host: FleetHost) -> ManagedPort<FleetHost> {
     )
 }
 
+fn open_maintained(path: &Path, host: FleetHost) -> ManagedPort<FleetHost> {
+    ManagedPort::new(Arc::new(maintained_application(path, host)))
+}
+
+struct MaintenanceClock(AtomicI64);
+
+impl sandproof_controller_service::application::Clock for MaintenanceClock {
+    fn now_ms(&self) -> Result<i64, sandproof_controller_service::application::ApplicationError> {
+        Ok(self.0.load(Ordering::SeqCst))
+    }
+}
+
+fn open_with_clock(
+    path: &Path,
+    host: FleetHost,
+    clock: Arc<MaintenanceClock>,
+) -> ManagedPort<FleetHost> {
+    ManagedPort::new(Arc::new(
+        maintained_application(path, host).with_clock(clock),
+    ))
+}
+
 fn journal(path: &Path) -> ControllerJournal {
     ControllerJournal::open_complete(path, NAMESPACE, host_config(path), maintenance_config(), 0)
         .unwrap()
@@ -180,7 +203,10 @@ fn production_tick_retires_newer_objects_while_old_live_or_unknown_object_stays_
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("controller.db");
         let host = FleetHost::new(dir.path());
-        let port = open_maintained(&path, host.clone());
+        // This checks retirement while the old instance remains live, not
+        // wall-clock expiry during slow durable SQLite I/O.
+        let clock = Arc::new(MaintenanceClock(AtomicI64::new(1_000_000)));
+        let port = open_with_clock(&path, host.clone(), clock);
         let old = port.create("1", request()).unwrap();
         if unknown {
             host.sandbox(core::SandboxId(1))
@@ -223,6 +249,27 @@ fn production_tick_retires_newer_objects_while_old_live_or_unknown_object_stays_
         assert_eq!(world.maintenance_state().unwrap().retained_count(), 16);
         assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(10));
     }
+}
+
+#[test]
+fn controlled_maintenance_clock_still_refuses_an_actually_expired_instance() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("controller.db");
+    let host = FleetHost::new(dir.path());
+    let clock = Arc::new(MaintenanceClock(AtomicI64::new(1_000_000)));
+    let port = open_with_clock(&path, host, clock.clone());
+    let created = port.create("1", request()).unwrap();
+    assert_eq!(
+        port.get("1", &created.sandbox_id)
+            .unwrap()
+            .envd_access_token,
+        created.envd_access_token
+    );
+    clock.0.store(1_300_001, Ordering::SeqCst);
+    assert!(matches!(
+        port.get("1", &created.sandbox_id),
+        Err(PortError::NotFound)
+    ));
 }
 
 #[test]

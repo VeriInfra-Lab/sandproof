@@ -1,5 +1,5 @@
 // No tonumber(revision): Redis Lua numbers cannot exactly represent all u64.
-// All type/format/revision/size checks precede the only write (one HSET).
+// All type/format/revision/size checks precede one HSET on each accepted path.
 // No EXPIRE, secondary authoritative index, or post-write state mutation.
 pub(crate) const READ: &str = r"
 local kind = redis.call('TYPE', KEYS[1]).ok
@@ -31,7 +31,14 @@ else
   if redis.call('HGET', KEYS[1], 'payload') ~= ARGV[7] then return 3 end
   if redis.call('PTTL', KEYS[1]) ~= -1 then return 3 end
 end
-redis.call('HSET', KEYS[1], 'deployment', ARGV[1], 'format', ARGV[2],
-  'revision', ARGV[4], 'payload', ARGV[5])
+if ARGV[3] ~= '' and ARGV[5] == ARGV[7] then
+  -- The full old payload and metadata were checked above. A NEW revision is
+  -- still written and durably acknowledged; do not append the unchanged
+  -- envelope to the AOF on every authorization/recovery confirmation.
+  redis.call('HSET', KEYS[1], 'revision', ARGV[4])
+else
+  redis.call('HSET', KEYS[1], 'deployment', ARGV[1], 'format', ARGV[2],
+    'revision', ARGV[4], 'payload', ARGV[5])
+end
 return 0
 ";

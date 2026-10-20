@@ -22,6 +22,7 @@ LINUX_GROUPS = {
     'test_template_handoff.DownloadHandoffTests': 'Linux private inode handoff and sparse extent copy',
     'test_template_stage.StagingTests': 'Linux sendfile/extent-based publication staging',
     'test_template_sparse.SparseArtifactTests': 'Linux sendfile semantics and allocated-block guarantees',
+    'test_sparse_artifact_hash.LinuxSparseArtifactHashTests': 'real Linux sparse extent queries and positioned reads',
     'test_template_physical_storage.PhysicalProfileTests': 'Linux shared-filesystem lease and block rounding',
 }
 

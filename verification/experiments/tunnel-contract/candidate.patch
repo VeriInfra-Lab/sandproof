@@ -1,0 +1,59 @@
+--- a/sandbox-data-transport/src/tunnel.rs
++++ b/sandbox-data-transport/src/tunnel.rs
+@@ -3,6 +3,8 @@
+ use std::io;
+ 
+ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
++
++mod control;
+ 
+ const BUFFER_BYTES: usize = 64 * 1024;
+ 
+@@ -46,14 +48,13 @@
+     // Revocation/disconnect remains the supervising gateway's responsibility:
+     // it terminates/reaps the exact child rather than treating EOF as cleanup.
+     tokio::pin!(upstream, downstream);
+-    tokio::select! {
+-        result = &mut upstream => {
+-            downstream.await?;
+-            result
+-        }
+-        result = &mut downstream => {
+-            result
+-        }
++    let first = tokio::select! {
++        result = &mut upstream => control::First::Upload(result),
++        result = &mut downstream => control::First::Download(result),
++    };
++    match control::decide(first) {
++        control::Action::AwaitDownload(upload) => control::finish_upload(upload, downstream.await),
++        control::Action::Finish(result) => result,
+     }
+ }
+ 
+--- /dev/null
++++ b/sandbox-data-transport/src/tunnel/control.rs
+@@ -0,0 +1,23 @@
++//! Synchronous decisions used by the original one-shot byte relay.
++//! A successful relay result is not a complete HTTP or subprocess receipt.
++pub(super) enum First<E> {
++    Upload(Result<(), E>),
++    Download(Result<(), E>),
++}
++
++pub(super) enum Action<E> {
++    AwaitDownload(Result<(), E>),
++    Finish(Result<(), E>),
++}
++
++pub(super) fn decide<E>(first: First<E>) -> Action<E> {
++    match first {
++        First::Upload(result) => Action::AwaitDownload(result),
++        First::Download(result) => Action::Finish(result),
++    }
++}
++
++pub(super) fn finish_upload<E>(upload: Result<(), E>, download: Result<(), E>) -> Result<(), E> {
++    download?;
++    upload
++}

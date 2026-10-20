@@ -18,6 +18,7 @@
 
 - [数据许可隔离试点](experiments/data-permit/README.md)：冻结真实基线的许可登记与重新派发同步守卫、正负例证明和复现入口；生产未接入，不属于默认全项目验收的已证覆盖；
 - [重新派发授权隔离试点](experiments/data-authority/README.md)：实际凭据、寿命原始行和 Access 核心、条件组合与同性质错误版；依赖前一冻结试点，生产未接入；
+- [Redis 调用与结果隔离候选](experiments/redis-result/README.md)：真实泛型提交/重申核心、完整参数与围栏结果定理；自有 codec、具体调用连接及正式验收仍有独立义务，不表示生产存储已验证；
 - `aeneas/llbc/`：从实际 Rust 编译器中间表示抽出的输入；
 - `extract-foundations/`：仅调用生产函数的公共基础抽取根，不复制业务算法；
 - `aeneas/foundations/`：公共基础的生成语义和独立命名空间的最小库模型；
@@ -47,6 +48,8 @@ scripts/verify-controller.sh
 
 完整入口包含真实 Redis 用例，须按[开发指南](../CONTRIBUTING.md#3-测试规则)设置经固定版本校验的 `SANDPROOF_REDIS_SERVER`，不能缺失后跳过。内存受限环境可用 `OCAMLRUNPARAM=o=20 scripts/verify-controller.sh` 降低固定 OCaml 运行时的堆空间冗余；这是运行资源调优，不改变工具版本、抽取根或检查内容，也不保证任意源码都能在该内存中完成。完整验收的实际结果仍以覆盖记录和关联 PR 为准。
 
+完整 Rust 检查会在 `TMPDIR` 下继续建立 `gates/guest-gate-…/launch` 等 Unix socket 路径。运行前使用较短、当前用户独占且权限为 0700 的临时根，并用相同嵌套形状实际绑定一次 socket；Linux 路径连同结尾字节须满足原内核上限。超长目录引发的 `SUN_LEN` 错误是环境失败，不能跳过相关测试或放宽安全检查；日志与失败目录先保留，修正环境后重新执行原完整入口。
+
 公共基础可独立执行 `bash scripts/verify-foundations.sh`：检查输入指纹、固定工具与平台、重新抽取一致性、真实入口/全部自有函数体、库模型范围、定理编译和实际依赖。冻结环境见 [foundations-environment.json](foundations-environment.json)，源码/模型/脚本/生成输入摘要见 [foundations-inputs.sha256](foundations-inputs.sha256)。独立模块检查不替代完整验收；完整入口保留全部当前模块检查；旧全量控制器生成链已删除，不再作为这些模块的前置。独立工作区可用 `SANDPROOF_PROOF_TOOL_ROOT` 指向已有固定工具，修订和二进制摘要仍需匹配，不改变工具版本。
 
 公共基础及共享状态的 Charon 输出参数使用抽取 crate 内的固定相对路径 `../aeneas/llbc/...`，因为 Cargo 的编译进程在 crate 目录执行；脚本随后从项目根读取同一输出。每次保留旧产物并要求本次实际生成，规则见[证明工作流](../docs/proof-workflow.md#翻译障碍的识别与处理)。该参数仍在完整 LLBC 摘要中检查，源码位置仍由原 `--remap-path-prefix` 绑定。换工作目录不应只因输出路径而产生差异，错误或绝对输出参数仍拒绝。摘要仅规范化无序 `short_names` 表，不删除路径或其它有序输入字段。
@@ -55,17 +58,35 @@ JSON 非零计数器叶子另执行 `bash scripts/verify-json-counter.sh`，检�
 
 八类字符串编号叶子执行 `bash scripts/verify-json-identifiers.sh`，冻结[真实调用根](extract-foundations/src/json_ids.rs)、[环境](json-identifiers-environment.json)及[输入](json-identifiers-inputs.sha256)，与原 V0/计数器共用生成类型并审计 18 条新定理。提交本批源码后执行 `bash scripts/python-entry.sh tools/check_json_identifiers_negative.py --output artifacts/json-identifiers-negative-run`：输出目录必须不存在；正确版和移除真实校验的错误版从同一个 Git 提交归档创建，分别使用新 Cargo 构建目录，错误版须先编译/抽取成功，再由同一 Rust 安全断言和同一 `IdentifierSafe` 反例拒绝。库默认方法、标准 String 释放、有限格式化及 parser/schema/调用者剩余条件见[接口合同](../docs/formal/dependencies.md#a6-json-字符串编号叶子接口)。值读取器是非空见证，不是真实 JSON parser；同一安全性定理不证明完整请求绑定或授权。
 
+SQLite 提交回执与缓存发布的隔离候选执行 `bash scripts/verify-sqlite.sh`；[实验说明](experiments/sqlite-commit/README.md)给出固定输入与复现。它从原事务文件的小范围隔离重构提取真实同步决定，核对完整核心/包装/析构中间表示，保留外部 A4、RefCell B2 和参数/回调 B4 条件；同一接口分别检查确认成功、两种提交未知及 rollback。它不证明整个 SQL、验证器、恢复或生产外壳，不能关闭 T7/V0。此入口附加到原完整验收，不替换已有模块。
+
 模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；退役旧生成链不消除当前生命周期等业务的实现证明义务，也不使其成为 V0 的关单前置。完整入口按保留集合执行，局部/当前集合验收/全系统完成分别登记。
+
+完整生命周期请求执行 `bash scripts/verify-json-request.sh`。入口冻结[实际调用与字段/字典登记](json-request-binding.json)、原生产协议与服务器/客户端调用、完整公共生成物以及 `verification/json-request-inputs.sha256`；先按原工具重抽取并比对，再检查两个直接库调用的完整 LLBC 和 AST、全部请求定理及其真实依赖。原 `LifecycleRequest::validate`、编号/计数器校验和转换保留生成体；固定 Serde/serde_json 引擎、标准派生及单次参数/结果接线采用明确 A6/B4 条件，不能称整个 async 服务已自动证明。具体输入/错误/解析位置/正常分配和有界合法接受条件见[唯一依赖合同](../docs/formal/dependencies.md#a6-json-与标准派生的最小合同)。
+
+本入口还在新私有副本中运行 `tools/check_json_request_negative.py`，先编译移除原身份守卫的错误 Rust，再实际重抽取；原 Rust 错误顺序断言须失败，Lean 须证明同一 `GuardContract` 的否定。可独立用 `bash scripts/python-entry.sh tools/check_json_request_negative.py --output artifacts/json-request-negative-run` 复现，输出目录必须不存在，必须使用已提交源码和原固定工具/服务；构建失败不算性质反例。完整验收仍执行 `bash scripts/verify-controller.sh` 和 `bash scripts/check-function.sh`；局部接口通过不关闭 V0/T0–T8。
 
 共享当前状态的局部集合可独立执行 `bash scripts/verify-network.sh`：检查真实查询/名单循环、平台常量及初始化体、固定两版 Rust 标准库源码、最小外部接口，以及 Network、Access、Local 三个证明审计。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，并继续编译全部保留证明；局部准入/位置证明不等于统一控制器分派、可达状态围栏、物理清理或宿主防火墙已验证。冻结的 V0/共享状态验收目标为 x86_64 Linux；目标、工具二进制或 cfg 不匹配即拒绝，不静默按本机平台重写清单。
 
 DataLease 的只读接口执行 `bash scripts/verify-data-drain.sh`：直接引用原生产文件抽取两个读方法与两个转调入口，核对三项读原语、Acquire 排序、两版标准库、输入摘要和全 LLBC 再生一致性，再编译独立策略／表示关系／对应定理并审计依赖。正式库为 `SandboxModel.Boundaries.DataDrain`；接口条件见[依赖登记](../docs/formal/dependencies.md#a6-datalease-只读观察接口)。这是单次观察下的判定证明，不提供真实退出或释放许可。
 
-Host 公共任务／许可合同执行 `bash scripts/verify-task-contract.sh`：核对冻结来源、固定 Tokio 的 `.crate` 和完整解包源码、定理清单与实际依赖，编译 `SandboxModel.Boundaries.Task.Audit`，随后在私有副本重放正确和三个错误版本。也可单独用 `bash scripts/python-entry.sh tools/check_task_contract_components.py --output artifacts/task-contract-check` 重放组件，输出目录必须不存在；每副本独立 Cargo 目标目录，确认编译成功并取得新二进制后才运行同一资源断言。仅在隔离副本追加测试模块和受控宿主夹具屏障，正式生产文件保持不变。入口要求当前输入与 HEAD 冻结一致，不能用旧提交的副本测试当前代码。
+Host 公共任务／许可合同执行 `bash scripts/verify-task-contract.sh`：核对冻结来源、固定 Tokio 的 `.crate` 和完整解包源码、定理清单与实际依赖，编译 `SandboxModel.Boundaries.Task.Audit`，随后核对 ning 私有副本中正确和三个错误版本的成功记录。也可单独用 `bash scripts/python-entry.sh tools/check_task_contract_components.py --output artifacts/task-contract-check` 重放组件，输出目录必须不存在；每副本独立 Cargo 目标目录，确认编译成功并取得新二进制后才运行同一资源断言。仅在隔离副本追加测试模块和受控宿主夹具屏障，正式生产文件保持不变。入口要求当前输入与 HEAD 冻结一致，不能用旧提交的副本测试当前代码。
 
-环境和调用登记见 [task-contract-environment.json](task-contract-environment.json)、[task-contract-inputs.sha256](task-contract-inputs.sha256)和[B1 条款](../docs/formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)。这些是条件接口模型及适配工程核对，**不是实际 async Rust 的自动抽取证明**。模型不承诺任务终止、物理退出或回调的业务不变量；错误副本被组件断言拒绝与 Lean 模型反例分别报告。所有这些入口按当前批次约定在 a6000 运行。
+环境和调用登记见 [task-contract-environment.json](task-contract-environment.json)、[task-contract-inputs.sha256](task-contract-inputs.sha256)和[B1 条款](../docs/formal/dependencies.md#b1-host-任务与原许可池的逐符号可信适配)。这些是条件接口模型及适配工程核对，**不是实际 async Rust 的自动抽取证明**。模型不承诺任务终止、物理退出或回调的业务不变量；错误副本被组件断言拒绝与 Lean 模型反例分别报告。原生组件在 ning 运行；a6000 的模块入口只消费完整成功回执，并检查条件模型及依赖。
+
+撤销等待执行 `bash scripts/verify-revocation-contract.sh`：核对 [B3 环境](revocation-contract-environment.json)、输入、实际调用范围、固定 Tokio 源码、24 条条件模型定理及依赖审计，再核对 ning 独立副本中正确版和交换分支错误版的记录。每版须新编译；错误版必须被原同一断言拒绝。单独复现入口为 `bash scripts/python-entry.sh tools/check_revocation_components.py --output artifacts/revocation-check`，输出目录必须不存在。原固定 Charon 不支持该 async 入口，实际接线以[逐符号 B3 条款](../docs/formal/dependencies.md#b3-撤销等待的逐符号可信适配)为条件，不声明自动抽取、回滚或外部任务退出。完整证明入口追加此门槛，保留其余全部模块检查。
 
 缺失 unknown 检查的错误版可在同一固定 Linux 环境用 `bash scripts/python-entry.sh tools/check_data_drain_negative.py --output artifacts/data-drain-negative-check` 复现，输出目录必须不存在。入口在私有副本修改真实表达式、编译／抽取错误版，运行原 Rust 回归，并通过同一真实 Lean 服务和内核证明错误版不满足正确版相同的 `RustReadSafe` 性质；失败日志保留，只有全部步骤通过才生成成功收据。服务使用项目 `.tools/lean-mcp` 和原标准客户端；不修改生产文件或正式生成体。
+
+TLS 首叶指纹接口执行 `bash scripts/verify-tls-pin.sh`，独立入口为：
+
+```sh
+bash scripts/python-entry.sh tools/check_tls_pin_contract.py --check-only
+bash scripts/python-entry.sh tools/check_tls_pin_contract.py \
+  --tool-root /prepared/fixed-tools --output artifacts/tls-pin-reproduction
+```
+
+输出目录必须全新；先提交本批冻结输入再复现。入口在独立 Git 副本应用[固定补丁](fixtures/tls-pin-candidate.patch)，只调用原 Charon/Aeneas，实际重抽取两个同步入口，比较完整规范化 LLBC 和原样生成文件，再核对真实 Rust/SHA-256、实际 TLS 回环及同性质错误版。Lean 使用原库和同一标准服务客户端，外部模板只保留为未编译证据；不把模板公理导入项目。工具目录结构与其他模块一致，版本及二进制仍按共享冻结环境核对。接口保证、候选适用范围、快照/摘要/外层可信条件和未验证的生产连接只见[依赖登记](../docs/formal/dependencies.md#a6b4-tls-叶证书指纹接口)，不能把包通过称为原生产 TLS 或整个部署已验证。
 
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
 见证明覆盖记录。已有纯核心定理不自动覆盖新增服务或真实持久化与执行。
@@ -132,3 +153,19 @@ python3 tools/coverage.py --write
 固定源码出处与版本见[证据索引](../references/code-evidence.md)及 `references/source-manifest.json`。取得对应 research-sources 后可用 `scripts/check_references.py` 复核版本、哈希和本地链接；没有本地源码时不要把检查未运行说成已通过。
 
 `tools/issues/` 的旧语料处理和 `tools/mapping/` 的校准仍是辅助研究工具，不是另一份产品规格。它们的输出与一次性实验记录放 artifacts 或任务附件，不在 docs 中持续追加报告。
+
+双向字节中继的隔离候选使用 [verify-tunnel.sh](../scripts/verify-tunnel.sh)：原工具抽取真实同步决定，复用 StreamHistory 并核对完整源码/AST/析构及原错误断言。其 [A6/B3/B4 条件](../docs/formal/dependencies.md)和原对象、正常值域见[候选说明](experiments/tunnel-contract/README.md)；Raw 中继返回不表示 HTTP/Connect 成功或真实排空，正式状态见覆盖记录与 #575。该专用阶段不替代原完整证明和 Linux 基础入口。
+
+
+Guest 持额消息的条件模型执行 `bash scripts/verify-owned-message.sh`，全批入口同样包含它和新增真实文件诊断。先在 ning 的完整原生批次中运行 `check_owned_message_components.py`，再向 a6000 交接成功记录；单独组件命令为 `bash scripts/python-entry.sh tools/check_owned_message_components.py --output artifacts/owned-message-check`，输出目录必须不存在。它只在隔离副本追加测试，正确版使用真实 `CommandOutput`、`Producer::frame`、`Frame`、Tokio 和 Bytes；提前丢弃 output 的错误版先新编译，再被正确版同一持额断言拒绝。共用一个注册 Rust 缓存，各版原始二进制和日志另存。关闭相关用例还核对空 oneshot 关闭时 sender 仍活着，以及 mpsc 已有预留但尚未发布时 close 不等于 None；其中公开 reserve 仅用作受控测试屏障，不扩展生产 API 支持范围。另以真实 Arc/许可和受控析构屏障核对“强引用已为零但许可尚未归还”，不把引用计数读数当作资源完成。原 helper 在消息测试前已明确 abort/reap，不执行命令业务或假造物理退出证明。
+
+接口、条件与未覆盖项见[依赖登记](../docs/formal/dependencies.md#a6b3b4-guest-持额消息)和[调用表](owned-message-environment.json)。正式模型 `SandboxModel.Boundaries.OwnedMessage` 不是 Aeneas 生成的 async Rust。实际原工具预检在 a6000 执行 `python3 verification/experiments/owned-message/preflight.py --output artifacts/owned-message-preflight`，须使用现有形式编译缓存及固定工具；保留未支持诊断和部分 LLBC，不能算成业务错误版反例。实际局部/完整验收状态只见覆盖记录及 PR 回执。
+
+
+Notify 条件接口执行 `bash scripts/verify-notify.sh`，完整形式入口包括该模块及实际 Audit 文件诊断。先在 ning 执行完整 `proof_native_suite.py run`；其 `check_notify_components.py` 在隔离原源码副本追加 9 项确定性用例，并严格检查广播错误版新编译后由同一原等待者断言拒绝。单独原生命令是 `bash scripts/python-entry.sh tools/check_notify_components.py --output artifacts/notify-check`，目录必须不存在，沿用现有 `CARGO_HOME/CARGO_TARGET_DIR`。a6000 只消费封口原生证据，再运行原工具预检、Lean 与审计；不在证明机重跑这些 Rust 测试。预检保留真实 `PtyMaster::read` 的 coroutine 不支持诊断，不把抽取失败算成业务反例。
+
+范围和前提见[Notify 合同](../docs/formal/dependencies.md#a6b2b3-notify关闭广播与单接收者通知)及[逐点登记](notify-environment.json)。广播与单通知分开，通知不是计数信号量、业务成功或物理退出证据；Record 的原许可复用已有共享引用模型。它不覆盖 reaper 的标准库 Condvar，也不证明整个 PTY/命令业务或完整 async Rust。实际完成状态见覆盖记录及 #333 的本批 PR 回执。
+
+JoinSet 的条件模型执行 `bash scripts/verify-joinset.sh`，全批入口包含本模块和实际 Audit 文件诊断。先在 ning 完整原生批次运行 `check_joinset_components.py`；单独复现用 `bash scripts/python-entry.sh tools/check_joinset_components.py --output artifacts/joinset-check`，目录须不存在。组件只给原模块追加显式测试，中心/Guest 错误版只删除原收齐循环；正确与错误版必须新编译，错误版由同一即时断言拒绝，不用超时或编译失败充当反例。共享注册 Cargo target，原二进制、源码、变更及日志另存。
+
+向 a6000 只交接完整成功记录。模块入口还对真实 `Listener::serve` 执行固定原 Charon 预检：不支持 Coroutine 的失败原文和部分 LLBC 保留，不能据此运行 Aeneas 或称异步抽取成功。接口与条件见[依赖登记](../docs/formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[逐点登记](joinset-environment.json)。两个模型分别描述组历史与任意原任务，使用者提供同一真实执行的相容投影；它们不是完整 async Rust 语义。收齐保留正常值和原 JoinError 的所有权；panic 载荷也可以持有许可，需等这份错误值实际丢弃后才能观察其归还。模型保留 α/ρ 两类原值表示，不据此承诺独立阻塞工作或业务外部资源已经退出。实际完成状态仍由覆盖记录和 #333 精确回执说明。

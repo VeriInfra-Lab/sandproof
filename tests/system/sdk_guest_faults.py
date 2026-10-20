@@ -26,6 +26,7 @@ from e2b.exceptions import SandboxNotFoundException, RateLimitException, Sandbox
 from sdk_command_input import call
 from sdk_data_contract import guest_arguments, guest_candidate, observe_candidate
 from sdk_server_smoke import options
+from sdk_guest_environment import mutate, pristine_control
 
 
 def python(program):
@@ -353,7 +354,7 @@ def exercise(args):
                 else:
                     vm = Sandbox.create(template=template, timeout=300, allow_internet_access=False, **owner)
                 row['sandbox_id'] = vm.sandbox_id
-                asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
+                before = asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
                 if name in ('restart-old-pid','unavailable-expiry'):
                     control=Sandbox.create(template=template,timeout=300,allow_internet_access=False,**owner)
                     row['control_sandbox_id'] = control.sandbox_id
@@ -366,7 +367,19 @@ def exercise(args):
                     elif name == 'full-filesystem': details = full_filesystem(vm, directory)
                     elif name == 'slow-output': details = slow_output(vm, directory, client)
                     elif name == 'registry-reclaim': details = registry_reclaim(vm,directory,candidate,settings)
-                    elif name == 'lifecycle': details = lifecycle(vm, owner, client)
+                    elif name == 'lifecycle':
+                        details = lifecycle(vm, owner, client)
+                        details['environment'] = mutate(vm, directory)
+                        # A NEW VM created after mutation exercises the original
+                        # immutable cache, not a second already-open filesystem.
+                        control = Sandbox.create(template=template, timeout=300, allow_internet_access=False, **owner)
+                        assert control.sandbox_id != vm.sandbox_id
+                        row['control_sandbox_id'] = control.sandbox_id
+                        asyncio.run(observe_candidate(control, candidate, asynchronous=False))
+                        details['environment']['fresh_control_pristine'] = pristine_control(control, details['environment']['nonce'])
+                        after = asyncio.run(observe_candidate(vm, candidate, asynchronous=False))
+                        assert after == before, 'S03 changed the original daemon identity'
+                        details['environment']['daemon_unchanged'] = True
                     else: details = unavailable_expiry(vm, owner, client, candidate)
                 if control is not None:
                     assert control.commands.run('printf unaffected',timeout=15).stdout=='unaffected'

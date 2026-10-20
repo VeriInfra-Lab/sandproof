@@ -396,6 +396,59 @@ class BenchmarkCITests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.batch_result(self.root, **dict(self.prepared_args(), exit_code=1))
 
+    def test_prepared_ci_create_unknown_keeps_failed_execution_and_checked_cleanup(self):
+        report = self.prepared_report()
+        row = report['tasks'][0]
+        row.update(status='create_unknown', oracle='not_run', verifier='not_run',
+                   guest_preflight='not_run', stage='initialization')
+        for field in ('rewards', 'verifier_mode', 'verifier_variant'):
+            row.pop(field, None)
+        (self.root / 'report.json').write_text(json.dumps(report))
+        result = self.batch_result(self.root, **dict(self.prepared_args(), exit_code=1))
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['cleanup'], 'passed')
+        failed = result['tasks'][0]
+        self.assertEqual(failed['status'], 'create_unknown')
+        self.assertEqual(failed['guest_preflight'], 'not_run')
+        self.assertEqual(failed['verifier_mode'], 'not_run')
+        self.assertIsNone(failed['verifier_variant'])
+        self.assertIsNone(failed['rewards'])
+        names = self.names[:4]
+        reduced = bench.aggregate('a'*40, [result], names, all_tasks=names,
+                                  dataset='terminal-bench@2.0')
+        self.assertFalse(reduced['passed'])
+        self.assertFalse(reduced['full_suite_passed'])
+        # A stale/forged durable batch flag cannot turn unexecuted work green.
+        forged = copy.deepcopy(result)
+        forged.update(passed=True, exit_code=0)
+        self.assertFalse(bench.aggregate('a'*40, [forged], names,
+                                        dataset='terminal-bench@2.0')['passed'])
+        forged['tasks'][0]['status'] = 'passed'
+        with self.assertRaises(ValueError):
+            bench.aggregate('a'*40, [forged], names, dataset='terminal-bench@2.0')
+
+    def test_unrun_prepared_create_cannot_hide_scores_provenance_or_cleanup(self):
+        original = self.prepared_report()
+        row = original['tasks'][0]
+        row.update(status='create_unknown', guest_preflight='not_run', oracle='not_run', verifier='not_run')
+        for field in ('rewards', 'verifier_mode', 'verifier_variant'):
+            row.pop(field, None)
+        args = dict(self.prepared_args(), exit_code=1)
+        for field, value in (('status', 'passed'), ('oracle', 'passed'), ('verifier', 'failed'),
+                             ('guest_preflight', 'passed'), ('rewards', {'reward':1}),
+                             ('verifier_mode', bench.CI_VERIFIER_MODE), ('verifier_variant', {}),
+                             ('exact_cleanup', 'unknown'), ('template', None)):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(original)
+                changed['tasks'][0][field] = value
+                (self.root / 'report.json').write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    self.batch_result(self.root, **args)
+        (self.root / 'report.json').write_text(json.dumps(original))
+        (self.root / 'service-cleanup.json').write_text('{"removed":false}')
+        with self.assertRaises(ValueError):
+            self.batch_result(self.root, **args)
+
     def test_matching_incoming_cohort_cannot_replace_original_supervisor_identity(self):
         # Both incoming copies agree, and the candidate, binaries, role facts,
         # DK and task/cleanup evidence are otherwise unchanged. They still
@@ -713,6 +766,94 @@ class BenchmarkCITests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'original 2.0'):
                 supervisor.begin('a'*40, 'b'*40)
 
+    def prepared_failed_supervisor(self):
+        report = self.prepared_report()
+        row = report['tasks'][0]
+        row.update(status='create_unknown', guest_preflight='not_run', oracle='not_run', verifier='not_run')
+        for field in ('rewards', 'verifier_mode', 'verifier_variant'):
+            row.pop(field, None)
+        (self.root / 'report.json').write_text(json.dumps(report))
+        result = self.batch_result(self.root, **dict(self.prepared_args(), exit_code=1))
+        supervisor = self.supervisor()
+        config = self.host_config()
+        config['host_assets'][config['ci_fixtures']] = 'e'*64
+        supervisor.config = config
+        supervisor.state.update(dataset='terminal-bench@2.0', configuration=config,
+                                expected=self.names[:4], all_tasks=self.names[:4])
+        manifest = self.root / 'candidate-artifacts.json'
+        manifest.write_text(json.dumps(self.services_manifest))
+        manifest.chmod(0o600)
+        supervisor.state['candidate_manifest'] = str(manifest)
+        batch = supervisor.state['batches'][0]
+        batch['services'] = service_artifacts.public_identity(self.services_manifest)
+        root = Path(batch['root'])
+        root.mkdir(mode=0o700)
+        for name in ('report.json', 'execution-manifest.json'):
+            (root / name).write_bytes((self.root / name).read_bytes())
+            (root / name).chmod(0o600)
+        lease = ci.HostLease(Path(config['ci_state_root']), supervisor.state['id'])
+        lease.pause()
+        (lease.root / 'exclusive-host').write_text(json.dumps({'e2e':supervisor.state['id']}))
+        return supervisor, result, root, lease
+
+    def test_prepared_failed_batch_keeps_raw_evidence_and_finishes_failed_after_restart(self):
+        supervisor, result, root, lease = self.prepared_failed_supervisor()
+        before = (root / 'report.json').read_bytes()
+        fields = dict(LoadState='loaded', ActiveState='failed', ExecMainCode='1', ExecMainStatus='1')
+        with patch.object(ci, 'unit_state', return_value=fields), \
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch.object(ci, 'batch_result', return_value=result), \
+                patch.object(ci, 'remove_private_tree') as remove, patch.object(ci.subprocess, 'run'):
+            supervisor.tick()
+        remove.assert_not_called()
+        self.assertTrue(supervisor.state['batches'][0]['failed_evidence_retained'])
+        self.assertEqual(supervisor.state['batches'][0]['phase'], 'done')
+        self.assertEqual((root / 'report.json').read_bytes(), before)
+        restarted = ci.Supervisor(supervisor.config)
+        with patch.object(ci, 'launch') as launch, patch.object(ci, 'batch_result') as reduce:
+            restarted.tick()
+            restarted.tick()
+        launch.assert_not_called()
+        reduce.assert_not_called()
+        self.assertEqual(restarted.state['phase'], 'done')
+        self.assertFalse(restarted.state['result']['passed'])
+        self.assertEqual(restarted.state['result']['tasks'][0]['status'], 'create_unknown')
+        self.assertFalse((lease.root / 'paused').exists())
+        self.assertFalse((lease.root / 'exclusive-host').exists())
+        self.assertEqual((root / 'report.json').read_bytes(), before)
+
+    def test_failed_evidence_intent_survives_crash_and_rejects_changed_report(self):
+        supervisor, result, root, lease = self.prepared_failed_supervisor()
+        real_save = supervisor.save
+        def crash_after_intent():
+            real_save()
+            raise KeyboardInterrupt('simulated manager exit after durable result')
+        fields = dict(LoadState='loaded', ActiveState='failed', ExecMainCode='1', ExecMainStatus='1')
+        with patch.object(ci, 'unit_state', return_value=fields), \
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch.object(ci, 'batch_result', return_value=result), \
+                patch.object(supervisor, 'save', side_effect=crash_after_intent), \
+                self.assertRaises(KeyboardInterrupt):
+            supervisor.tick()
+        restarted = ci.Supervisor(supervisor.config)
+        self.assertEqual(restarted.state['batches'][0]['phase'], 'reclaiming')
+        self.assertTrue(restarted.state['batches'][0]['failed_evidence_retained'])
+        with (root / 'report.json').open('ab') as output:
+            output.write(b'\n')
+        with patch.object(ci, 'unit_state', return_value=fields), \
+                patch.object(ci, 'launch') as launch, patch.object(ci, 'batch_result') as reduce, \
+                patch.object(ci, 'remove_private_tree') as remove, patch.object(ci.subprocess, 'run') as stop:
+            restarted.tick()
+        launch.assert_not_called()
+        reduce.assert_not_called()
+        remove.assert_not_called()
+        stop.assert_not_called()
+        self.assertEqual(restarted.state['phase'], 'blocked')
+        self.assertFalse(restarted.state['result']['passed'])
+        self.assertTrue((lease.root / 'paused').exists())
+        self.assertTrue((lease.root / 'exclusive-host').exists())
+        self.assertTrue(root.exists())
+
     def test_prepared_supervisor_reduces_with_original_fixture_pin_then_reclaims(self):
         self.prepared_report()
         result = self.batch_result(self.root, **self.prepared_args())
@@ -840,7 +981,7 @@ class BenchmarkCITests(unittest.TestCase):
 
     def test_only_complete_full_selection_can_claim_full_suite(self):
         names = [t['name'] for t in self.lock['tasks']]
-        batch = dict(candidate='a'*40, tasks=[{'name':n} for n in names], passed=True, cleanup='passed',
+        batch = dict(candidate='a'*40, tasks=[dict(name=n, status='passed', oracle='passed', verifier='passed', rewards={'reward':1}) for n in names], passed=True, cleanup='passed',
                      dk=self.dk,execution_manifest_sha256='b'*64,service_storage=observation(),
                      service_data=declaration(),
                      services=service_artifacts.public_identity(self.services_manifest),
@@ -848,6 +989,8 @@ class BenchmarkCITests(unittest.TestCase):
                          center_unprivileged=True, redis_authority='validated',
                          host_transport='mutual-tls', host_public_management=False)))
         self.assertTrue(bench.aggregate('a'*40, [batch], names, all_tasks=names)['full_suite_passed'])
+        unexecuted = dict(batch, tasks=[{'name':n} for n in names])
+        self.assertFalse(bench.aggregate('a'*40, [unexecuted], names, all_tasks=names)['passed'])
         self.assertFalse(bench.aggregate('a'*40, [dict(batch, passed=False)], names,
                                         all_tasks=names)['full_suite_passed'])
         self.assertFalse(bench.aggregate('a'*40, [batch], names[:-1], all_tasks=names)['passed'])
@@ -1191,6 +1334,53 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(supervisor.state['phase'], 'blocked')
         self.assertFalse(supervisor.state['result']['passed'])
         self.assertTrue((self.root / 'exclusive-host').exists())
+
+    def test_new_failed_reclamation_resumes_same_kept_root_without_reducing_again(self):
+        supervisor, result, root, lease = self.prepared_failed_supervisor()
+        batch = supervisor.state['batches'][0]
+        batch.update(result=result, phase='reclaiming', failed_evidence_retained=True,
+                     root_identity=[root.stat().st_dev, root.stat().st_ino])
+        supervisor.save()
+        before = (root / 'report.json').read_bytes()
+        restarted = ci.Supervisor(supervisor.config)
+        fields = dict(LoadState='loaded', ActiveState='failed', ExecMainCode='1', ExecMainStatus='1')
+        with patch.object(ci, 'unit_state', return_value=fields), \
+                patch.object(ci, 'batch_result') as reduce, patch.object(ci, 'launch') as launch, \
+                patch.object(ci, 'remove_private_tree') as remove, patch.object(ci.subprocess, 'run'):
+            restarted.tick()
+            restarted.tick()
+        reduce.assert_not_called()
+        launch.assert_not_called()
+        remove.assert_not_called()
+        self.assertEqual(restarted.state['phase'], 'done')
+        self.assertFalse(restarted.state['result']['passed'])
+        self.assertEqual((root / 'report.json').read_bytes(), before)
+        self.assertFalse((lease.root / 'paused').exists())
+        self.assertFalse((lease.root / 'exclusive-host').exists())
+
+    def test_new_failed_reclamation_missing_evidence_root_stays_blocked(self):
+        supervisor, result, root, lease = self.prepared_failed_supervisor()
+        batch = supervisor.state['batches'][0]
+        batch.update(result=result, phase='reclaiming', failed_evidence_retained=True,
+                     root_identity=[root.stat().st_dev, root.stat().st_ino])
+        supervisor.save()
+        for name in ('report.json', 'execution-manifest.json'):
+            (root / name).unlink()
+        root.rmdir()
+        restarted = ci.Supervisor(supervisor.config)
+        fields = dict(LoadState='loaded', ActiveState='failed', ExecMainCode='1', ExecMainStatus='1')
+        with patch.object(ci, 'unit_state', return_value=fields), \
+                patch.object(ci, 'batch_result') as reduce, patch.object(ci, 'launch') as launch, \
+                patch.object(ci, 'remove_private_tree') as remove, patch.object(ci.subprocess, 'run') as stop:
+            restarted.tick()
+        reduce.assert_not_called()
+        launch.assert_not_called()
+        remove.assert_not_called()
+        stop.assert_not_called()
+        self.assertEqual(restarted.state['phase'], 'blocked')
+        self.assertFalse(restarted.state['result']['passed'])
+        self.assertTrue((lease.root / 'paused').exists())
+        self.assertTrue((lease.root / 'exclusive-host').exists())
 
     def test_reclamation_restart_after_exact_root_removed_uses_durable_result(self):
         supervisor = self.supervisor(batch_phase='reclaiming')

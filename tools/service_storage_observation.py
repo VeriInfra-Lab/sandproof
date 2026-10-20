@@ -135,7 +135,10 @@ def inventory(record, expected, deadline):
             raise ObservationUnknown('service inventory file unlinked during observation')
         _check(before, record, expected[0])
         if _identity(before) in seen:
-            raise ValueError('service inventory contains an inode alias')
+            # Actual hard links were rejected by _check. Atomic rename can
+            # make two single-link descriptors refer to the same inode while
+            # enumerating changing names. This scan cannot seal an inventory.
+            raise ObservationUnknown('service inventory name reused an observed inode')
         seen.add(_identity(before))
         usage['entries'] += 1
         if usage['entries'] > record['inode_budget']:

@@ -18,6 +18,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod diagnostics;
+use diagnostics::{Failure as DiagnosticFailure, Stage as DiagnosticStage};
+
 pub struct CenterApplication<A: AuthorityPort, H: HostPort, T: TemplateProvider> {
     pub(crate) authority: Mutex<A>,
     pub(crate) hosts: H,
@@ -113,7 +116,15 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             return Err(PortError::Invalid);
         }
         let timeout = normalized_duration(command.timeout, &self.config)?;
-        let template = self.templates.resolve(&tenant, &command.template_id)?;
+        let template = self
+            .templates
+            .resolve(&tenant, &command.template_id)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::TemplateResolve,
+                    DiagnosticFailure::Port(*error),
+                );
+            })?;
         if !template.is_valid() {
             return Err(PortError::Busy);
         }
@@ -136,12 +147,19 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             now,
             (&self.config).into(),
         )?;
-        let request = self
+        let admitted = self
             .authority
             .lock()
             .map_err(|_| PortError::Busy)?
-            .create(&tenant, binding, now)
-            .map_err(authority_error)?;
+            .create(&tenant, binding, now);
+        // Drop the decision guard before diagnostic output, as for host I/O.
+        let request = admitted.map_err(|error| {
+            diagnostics::emit(
+                DiagnosticStage::CreateAdmission,
+                DiagnosticFailure::Authority(error),
+            );
+            authority_error(error)
+        })?;
         self.wait_session(&request)
     }
     /// # Errors
@@ -234,6 +252,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         self.wait_until(request, deadline)?;
         loop {
             if remaining(deadline).is_none() {
+                diagnostics::emit(
+                    DiagnosticStage::ReplyDeadline,
+                    DiagnosticFailure::Port(PortError::OutcomeUnknown),
+                );
                 return Err(PortError::OutcomeUnknown);
             }
             // Ready is not a fresh host observation. Only the original health
@@ -245,7 +267,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     request.identity.tenant_id.as_str(),
                     request.identity.sandbox_id.as_str(),
                 )
-                .map_err(|_| PortError::OutcomeUnknown)?
+                .map_err(|error| {
+                    diagnostics::emit(
+                        DiagnosticStage::SessionProjection,
+                        DiagnosticFailure::Port(error),
+                    );
+                    PortError::OutcomeUnknown
+                })?
             {
                 // A valid projection may itself block on the bounded external
                 // authority/provider. Its completion cannot reset or cross the
@@ -264,6 +292,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     ) -> Result<LifecycleResponse, PortError> {
         loop {
             if remaining(deadline).is_none() {
+                diagnostics::emit(
+                    DiagnosticStage::ReplyDeadline,
+                    DiagnosticFailure::Port(PortError::OutcomeUnknown),
+                );
                 return Err(PortError::OutcomeUnknown);
             }
             match self.send_current(request, deadline) {
@@ -308,7 +340,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         request: &LifecycleRequest,
         deadline: Instant,
     ) -> Result<LifecycleResponse, PortError> {
-        let state = self.snapshot().map_err(|_| PortError::OutcomeUnknown)?;
+        let state = self.snapshot().map_err(|error| {
+            diagnostics::emit(
+                DiagnosticStage::RetiredSnapshot,
+                DiagnosticFailure::Port(error),
+            );
+            PortError::OutcomeUnknown
+        })?;
         remaining(deadline).ok_or(PortError::OutcomeUnknown)?;
         let result = state
             .lane(&request.identity.node, request.identity.retention_slot)
@@ -334,7 +372,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         request: &LifecycleRequest,
         deadline: Instant,
     ) -> Result<LifecycleResponse, AttemptError> {
-        let state = self.snapshot().map_err(|_| AttemptError::SharedAuthority)?;
+        let state = self.snapshot().map_err(|error| {
+            diagnostics::emit(
+                DiagnosticStage::SendSnapshot,
+                DiagnosticFailure::Port(error),
+            );
+            AttemptError::SharedAuthority
+        })?;
         let record = find(
             &state,
             &request.identity.tenant_id,
@@ -370,7 +414,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 // A detached reply can lag a background observation of the
                 // SAME request. Reconfirm the original authority after releasing
                 // the apply lock; do not accept the old packet or a cached view.
-                let state = self.snapshot().map_err(|_| AttemptError::SharedAuthority)?;
+                let state = self.snapshot().map_err(|error| {
+                    diagnostics::emit(
+                        DiagnosticStage::StaleSnapshot,
+                        DiagnosticFailure::Port(error),
+                    );
+                    AttemptError::SharedAuthority
+                })?;
                 let current = find(
                     &state,
                     &request.identity.tenant_id,
@@ -396,7 +446,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             Err(AuthorityError::Decision(DecisionError::NotFound)) => {
                 return Err(AttemptError::Superseded);
             }
-            Err(_) => return Err(AttemptError::SharedAuthority),
+            Err(error) => {
+                diagnostics::emit(
+                    DiagnosticStage::ApplyResponse,
+                    DiagnosticFailure::Authority(error),
+                );
+                return Err(AttemptError::SharedAuthority);
+            }
         }
         if !matches!(
             response.fact,
@@ -413,7 +469,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         result: &LifecycleResponse,
         deadline: Instant,
     ) -> Result<(), AttemptError> {
-        let state = self.snapshot().map_err(|_| AttemptError::SharedAuthority)?;
+        let state = self.snapshot().map_err(|error| {
+            diagnostics::emit(
+                DiagnosticStage::ConfirmSnapshot,
+                DiagnosticFailure::Port(error),
+            );
+            AttemptError::SharedAuthority
+        })?;
         let record = find(
             &state,
             &result.identity.tenant_id,
