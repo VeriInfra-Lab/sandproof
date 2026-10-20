@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
@@ -43,19 +44,22 @@ def frozen_head(root, contract):
     return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
 
 
-def prepare(root, archive, destination):
+def prepare(root, archive, destination, tools):
     destination.mkdir()
     with tarfile.open(fileobj=io.BytesIO(archive)) as tree:
         tree.extractall(destination, filter="data")
-    (destination / ".tools").symlink_to((root / ".tools").resolve(), target_is_directory=True)
+    (destination / ".tools").symlink_to(tools.resolve(), target_is_directory=True)
     (destination / ".lake").mkdir()
     (destination / ".lake/packages").symlink_to((root / ".lake/packages").resolve(),
                                                target_is_directory=True)
     # Private output view only: never edit any tracked shared Lake configuration.
     parent = (root / "lakefile.toml").read_text()
-    if 'name = "SandproofBtreeSetProbe"' in parent:
-        raise ValueError("Parent already registers BTreeSet: integration must reconcile the local view")
-    (destination / "lakefile.toml").write_text(parent + EXTENSION)
+    registered = [entry for entry in tomllib.loads(parent).get("lean_lib", [])
+                  if entry.get("name") == "SandproofBtreeSetProbe"]
+    exact = {"name": "SandproofBtreeSetProbe", "srcDir": GENERATED}
+    if registered and registered != [exact]:
+        raise ValueError("Ambiguous or changed BTreeSet library registration")
+    (destination / "lakefile.toml").write_text(parent if registered else parent + EXTENSION)
     return destination
 
 
@@ -132,6 +136,8 @@ def service(project, files, audits, out, env):
 
 def reproduce(root, tools, output):
     root, tools, output = root.resolve(), tools.resolve(), output.resolve()
+    if os.environ.get("RUSTFLAGS") or os.environ.get("CARGO_ENCODED_RUSTFLAGS"):
+        raise ValueError("Formal replay requires clean Rust compiler flags")
     contract = check(root)
     commit = frozen_head(root, contract)
     check_tools(root, tools)
@@ -143,7 +149,8 @@ def reproduce(root, tools, output):
     started = time.monotonic()
     archive = subprocess.check_output(["git", "archive", "HEAD"], cwd=root)
     (output / "source.tar").write_bytes(archive)
-    env = os.environ | {"SANDPROOF_PROOF_TOOL_ROOT": str(tools)}
+    env = os.environ | {"SANDPROOF_PROOF_TOOL_ROOT": str(tools),
+                       "CARGO_TARGET_DIR": str(output / "target-formal"), "CARGO_INCREMENTAL": "0"}
     receipt = {"kind": "actual-Std-BTreeSet-formal-component", "complete": False,
                "commit": commit, "library_sources": libraries,
                "source_archive_sha256": sha(output / "source.tar"), "variants": {}}
@@ -151,7 +158,7 @@ def reproduce(root, tools, output):
         begin = time.monotonic()
         out = output / variant
         out.mkdir()
-        project = prepare(root, archive, out / "source")
+        project = prepare(root, archive, out / "source", tools)
         path = project / SOURCE
         path.write_text(mutate(path.read_text(), variant))
         expected = contract if variant == "correct" else contract["wrong_variant"]
