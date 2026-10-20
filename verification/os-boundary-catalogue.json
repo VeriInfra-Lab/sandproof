@@ -1,0 +1,1428 @@
+{
+  "schema": 1,
+  "review_baseline": "e576a8475043c2d21b68231b7f6b1ead09be1952",
+  "claim_kind": "finite-source-and-contract-review",
+  "new_program_theorems": 0,
+  "new_trusted_guarantees": 0,
+  "native_inputs_sha256": "c9db369b04a1c3dc129734bb1865e1af2712d226ac649d6b45a64e3cc70e3cee",
+  "scope": {
+    "roots": [
+      "center",
+      "host",
+      "window-reducer",
+      "guest",
+      "vm-cli"
+    ],
+    "profiles": [
+      "dev",
+      "release"
+    ],
+    "target": "x86_64-unknown-linux-gnu",
+    "limits": [
+      "5根/60编译变体的已有捕获，不重采；不是语义调用图闭合。",
+      "cfg(test)/examples/sdk-contract-tests等额外feature未编译；相关测试只作现有回归出处。",
+      "模板实现与T9只排除对应证明责任，不从来源清单删代码；Guest安全保留。",
+      "动态实现/外部脚本/依赖内部Drop和future取消不能由本目录补成已证。"
+    ],
+    "source_binding_granularity": "25类底层接口合同及已核对函数入口；不是所有编译调用的闭合分派图。表中source-review状态不得自动升级为逐实际调用已证。"
+  },
+  "families": [
+    {
+      "id": "redis-session",
+      "title": "Redis 原连接、超时和诊断",
+      "contracts": [
+        "A6",
+        "A8",
+        "A11",
+        "B4"
+      ],
+      "business_owners": [
+        "V2"
+      ],
+      "public_status": "registered_contract",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-center-store/src/store.rs",
+          "symbol": "fn reconnect(",
+          "line": 207,
+          "end_line": 218,
+          "file_sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116",
+          "fragment_sha256": "0bc7d703caf13624f3f6eea3810e5680e7ac0e094eb35bf267e1a0d10b842f6f"
+        },
+        {
+          "path": "sandbox-center-store/src/store.rs",
+          "symbol": "fn query<R:",
+          "line": 386,
+          "end_line": 397,
+          "file_sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116",
+          "fragment_sha256": "c9168497975aea62b887e3b5680dc272f7707adfbe96f427d6a9e15960185fc1"
+        },
+        {
+          "path": "sandbox-center-store/src/store/diagnostics.rs",
+          "symbol": "pub(super) fn emit(",
+          "line": 86,
+          "end_line": 97,
+          "file_sha256": "490f06cb67378f6a7d7529d7da6cbcab18b8686f68655ea83ae23726c0bf02b0",
+          "fragment_sha256": "d12c8bfc1eb86cc1101ba45c84655bc174fbe918517fbcf65b9a8dc6e1bb5c17"
+        }
+      ],
+      "original_object_and_config": "受保护部署目录取得的WriterLease、固定字面loopback端点和同一Option<Connection>；总deadline分摊每次read/write剩余时间。",
+      "normal_result": "connect/timeout/query只提供原连接上的该次返回；协议失败后原连接置None。诊断正常返回仅输出接线，不改变账本或围栏。",
+      "failure_and_partial_effects": "断线/超时可已有服务端效果和待收回执；连接丢弃不证明未执行。诊断可失败、抑制、阻塞或不返回，不承诺异常后态。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V2验证端点、部署及租约对应；query结果类型/错误类别不得错用。",
+        "不复用可能有迟到回执的连接；正常重连不得解除未知围栏。"
+      ],
+      "existing_evidence": [
+        {
+          "path": "verification/aeneas/storage/SandproofStorage/Caller.lean",
+          "kind": "candidate-machine-proof",
+          "limit": "具体commit/reaffirm候选调用与诊断绑定；不是生产整个query/驱动一般精化。"
+        }
+      ],
+      "new_trust_requested": false
+    },
+    {
+      "id": "redis-result",
+      "title": "Redis 提交、重确认和未知围栏",
+      "contracts": [
+        "A6",
+        "A8",
+        "A11",
+        "B4"
+      ],
+      "business_owners": [
+        "V2"
+      ],
+      "public_status": "integrated_representative",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-center-store/src/store.rs",
+          "symbol": "fn write(",
+          "line": 331,
+          "end_line": 342,
+          "file_sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116",
+          "fragment_sha256": "8c7d70aebcd0a0cc2c966e5a18204f6f11dfc9cad58785e640b21ac8da050ed8"
+        },
+        {
+          "path": "sandbox-center-store/src/store.rs",
+          "symbol": "fn fence_unknown<",
+          "line": 376,
+          "end_line": 387,
+          "file_sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116",
+          "fragment_sha256": "a6dc424cdeeac76abc3157c8b1114e70feb6c9cd2bb5ea32bf9a4633a46262ae"
+        },
+        {
+          "path": "sandbox-center-store/src/store.rs",
+          "symbol": "fn check_health(",
+          "line": 429,
+          "end_line": 440,
+          "file_sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116",
+          "fragment_sha256": "9508fba389f4fa315fb7806cb4d50bbd1ab9d77047a98a83d8e65ecd14b420b7"
+        }
+      ],
+      "original_object_and_config": "原deployment/key、FORMAT_VERSION、完整old/new payload、修订和max_block；INFO server、CONFIG GET、INFO persistence的原参数和顺序。",
+      "normal_result": "仅EVAL返回0且后置health通过才构造Committed并解除本围栏；1/2/3/4保留各拒绝，其它或后置失败归未知。",
+      "failure_and_partial_effects": "SQL/Lua执行返回不等于耐久；这里成功还依AOF always/noeviction等冻结合同和可靠存储。未知保留可能已生效；health观察不是所有未来磁盘状态证明。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V2证明全体Lua/codec、CAS前提、原状态与缓存/outbox/恢复/派发。",
+        "不能用read/reconnect或未知错误获得新操作/重放资格。"
+      ],
+      "existing_evidence": [
+        {
+          "path": "verification/aeneas/storage/SandproofStorage/Results.lean",
+          "kind": "candidate-machine-proof",
+          "limit": "代表commit/reaffirm和同性质提前解围栏反例；不是Redis/所有脚本的形式化证明。"
+        }
+      ],
+      "new_trust_requested": false
+    },
+    {
+      "id": "redis-scripts-codec",
+      "title": "Redis READ/CAS 文本、编码与业务顺序",
+      "contracts": [
+        "A6",
+        "A11"
+      ],
+      "business_owners": [
+        "V2"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-center-store/src/scripts.rs",
+          "symbol": "const READ:",
+          "line": 4,
+          "end_line": 15,
+          "file_sha256": "a77affdf90496ab9d0e4115ff50c0c68ab0a633281355bd5c04fc059c612813f",
+          "fragment_sha256": "bc9cecade62806916350fb04d94000057a2a0b8de6e4df260fc4fe4cb065c7e5"
+        },
+        {
+          "path": "sandbox-center-store/src/scripts.rs",
+          "symbol": "const CAS:",
+          "line": 19,
+          "end_line": 30,
+          "file_sha256": "a77affdf90496ab9d0e4115ff50c0c68ab0a633281355bd5c04fc059c612813f",
+          "fragment_sha256": "3c9c51a5617451edefb0aebf51b485bc86027fcb0ae50e104e271ccb3fbb164f"
+        },
+        {
+          "path": "sandbox-center-store/src/store.rs",
+          "symbol": "pub fn read(",
+          "line": 244,
+          "end_line": 255,
+          "file_sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116",
+          "fragment_sha256": "b92b316a2d798026be9f40e7acd468e3e2d787b31ac4e4244a2beb279be0d02e"
+        }
+      ],
+      "original_object_and_config": "精确脚本bytes、KEYS/ARGV位置、codec格式/大小/完整payload；自有写前检查与HSET选择保留业务义务。",
+      "normal_result": "只复用引擎原子执行/原回复合同；READ返回的记录经过本地解码，CAS调用含KEYS=1和七个原ARGV。",
+      "failure_and_partial_effects": "Lua报错不自动回滚先前写入；不得因为脚本当前只有一次HSET，就假定所有未来脚本同样安全。读取值不提供持久派发资格。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V2证明READ/CAS脚本及codec符合模型、所有写前拒绝与重确认分支。",
+        "不得将自有脚本正确性升级成A11的引擎保证。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "writer-file-lock",
+      "title": "原 open-file-description 的单写者锁",
+      "contracts": [
+        "A3",
+        "A6"
+      ],
+      "business_owners": [
+        "V2",
+        "V5",
+        "V6",
+        "V8"
+      ],
+      "public_status": "registered_contract",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-center-store/src/writer.rs",
+          "symbol": "pub fn acquire(",
+          "line": 22,
+          "end_line": 33,
+          "file_sha256": "b1fda10ba15c52ce349222d88e1e5b51e9632ef20dce8aa73fa78ced30f121e9",
+          "fragment_sha256": "0f214373b7de3b32155dc10d2c7c8cbc48877bd0f4fc40b1cee1fca8bb7f4793"
+        },
+        {
+          "path": "sandbox-node/src/host_lease.rs",
+          "symbol": "pub fn acquire(",
+          "line": 34,
+          "end_line": 45,
+          "file_sha256": "a9568dbb5d1ce2c6c2ebe794a75fc5ab9daacf538502e6890d0d35ba75a53132",
+          "fragment_sha256": "458ecc918fb3a2e301333cd854ff1c5225748b8825a2afe549c761cd40d8d29f"
+        },
+        {
+          "path": "controller-service/src/controller/mod.rs",
+          "symbol": "fn lease_controller_store(",
+          "line": 75,
+          "end_line": 86,
+          "file_sha256": "eb0e7ac2ed93711069932618997ec8ca591c93a9eb43ebf7a18c74f45762cce1",
+          "fragment_sha256": "d133fffe91b9673450881d3eb16ca602b08bb8c34317fb4aef6ef4f38ecf583b"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/pid_claims.rs",
+          "symbol": "pub fn create(",
+          "line": 130,
+          "end_line": 141,
+          "file_sha256": "2ebda57ac4e026e1cd675c1b14fb2580c1e061f21306060ca5fd1374115bb2ae",
+          "fragment_sha256": "d8168047a1bb0a9136584f3035ff28aeb44147716546bd6900f401e233fe62cf"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/pid_claims.rs",
+          "symbol": "pub fn open(",
+          "line": 191,
+          "end_line": 202,
+          "file_sha256": "2ebda57ac4e026e1cd675c1b14fb2580c1e061f21306060ca5fd1374115bb2ae",
+          "fragment_sha256": "d0aa4a418c75f7a9f1a39f6a3ec443dff29aff1d4931ff3cfb5684286faf9402"
+        }
+      ],
+      "original_object_and_config": "同一受保护根目录、dev/inode、uid/mode/nlink、原File和部署/HostLease标记；两个源Drop的显式unlock与helper gate不能混用。",
+      "normal_result": "try_lock只排斥同一锁对象；正常unlock结束该open description的锁。没有跨机器、跨目录或跨部署的自动单写者保证。",
+      "failure_and_partial_effects": "open/create和写标记可先有部分效果；Drop忽略unlock错误，错误时不能据此宣称原锁已释放。CLOEXEC不关闭fork到exec间的继承描述符。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V2/V6维持同目录所有写者的排他纪律与原FD绑定；不得把本地锁当分布式租约。",
+        "文件槽/helper继承锁是否应随父退出释放由其业务寿命决定。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "sqlite-config",
+      "title": "SQLite 原数据库、格式与有效设置",
+      "contracts": [
+        "A3",
+        "A4",
+        "A6"
+      ],
+      "business_owners": [
+        "V5"
+      ],
+      "public_status": "registered_contract",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "controller-service/src/journal.rs",
+          "symbol": "fn open_inner(",
+          "line": 284,
+          "end_line": 295,
+          "file_sha256": "3d1f13327a5dd9c4966357359f95d060214c96f20daf060bd1821ec4582952d6",
+          "fragment_sha256": "38ecf64e4bf94c142568ac4ff23f7a66e14229a81f3b1f7deeadaf7d1698fdb5"
+        },
+        {
+          "path": "controller-service/src/journal.rs",
+          "symbol": "pub fn storage_settings(",
+          "line": 372,
+          "end_line": 383,
+          "file_sha256": "3d1f13327a5dd9c4966357359f95d060214c96f20daf060bd1821ec4582952d6",
+          "fragment_sha256": "517e3501af037471911af581055b89994d38fc3760ad2e1b0e9e728b2cd27211"
+        }
+      ],
+      "original_object_and_config": "受保护原数据库和外层排他控制租约；rusqlite/libsqlite固定版本、bundled SQLite及可靠同步/故障域。",
+      "normal_result": "连接成功不等于有效控制数据库；代码检查application_id/user_version、有效WAL、synchronous=2、foreign_keys=1、trusted_schema=0。",
+      "failure_and_partial_effects": "初始化可已创建表；PRAGMA/打开失败不证明零文件效果或数据库不存在。busy_timeout=5s只约束引擎等待，不提供整个业务时限。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V5证明控制器与generic journal的格式分支、外写者检测、模式/恢复选择及所有同事务约束。",
+        "原配置观察不能证明未来磁盘永不失败。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "sqlite-update",
+      "title": "固定五参数 UPDATE 与计数解释",
+      "contracts": [
+        "A4",
+        "A6",
+        "B4"
+      ],
+      "business_owners": [
+        "V5"
+      ],
+      "public_status": "integrated_representative",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "controller-service/src/journal.rs",
+          "symbol": "pub(crate) fn write_accepted_with_ids",
+          "line": 115,
+          "end_line": 126,
+          "file_sha256": "3d1f13327a5dd9c4966357359f95d060214c96f20daf060bd1821ec4582952d6",
+          "fragment_sha256": "8ccaed1635ce9800b5dcc667dde4e18ce2b0c7c21186c4d9f0fc58dca75d09e8"
+        }
+      ],
+      "original_object_and_config": "原连接/事务、精确SQL全文、原owner/sandbox及全部参数；原行/版本/值的对应由调用者供给。",
+      "normal_result": "代表核心把完整next/revision/state/sandbox/owner五值交同一execute；实际step/reset计数恰为1才接受。",
+      "failure_and_partial_effects": "参数编码成功不等于绑定成功；保留prepare/raw_bind/step/reset原错误和部分影响，不以错误断言所有行未变。UPDATE成功不等于事务commit或持久确认。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V5实例化真实行集与SQL/值映射，并证明事务内动作/outbox/额度的关系。",
+        "本例不支持任意SQL生成器、查询回调或新自定义Params实现。"
+      ],
+      "existing_evidence": [
+        {
+          "path": "SandboxModel/Boundaries/SqliteStatements/Bridge.lean",
+          "kind": "candidate-machine-proof",
+          "limit": "固定SQL及五参数代表候选，正常计数与同性质错误版；其余SQL/事务仍未覆盖。"
+        }
+      ],
+      "new_trust_requested": false
+    },
+    {
+      "id": "sqlite-commit-cache",
+      "title": "原事务提交回执与缓存发布",
+      "contracts": [
+        "A4",
+        "B2",
+        "B4"
+      ],
+      "business_owners": [
+        "V5"
+      ],
+      "public_status": "integrated_representative",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "controller-service/src/controller/transaction.rs",
+          "symbol": "fn commit_with(",
+          "line": 125,
+          "end_line": 136,
+          "file_sha256": "3e1d283d410accdb745fb378963f52b98c72c173ed0108471ff9b6b260b7c0e9",
+          "fragment_sha256": "639974cceda64e958d70839df18150e7d19eeadd8a19a273935dd9839deb6639"
+        },
+        {
+          "path": "controller-service/src/controller/transaction.rs",
+          "symbol": "impl Drop for WorldTransaction",
+          "line": 147,
+          "end_line": 158,
+          "file_sha256": "3e1d283d410accdb745fb378963f52b98c72c173ed0108471ff9b6b260b7c0e9",
+          "fragment_sha256": "4bd4ed3625e3d7dbb641f8d84f04f36c1d9af532d501f53d87c7406e94f10946"
+        }
+      ],
+      "original_object_and_config": "原Transaction槽、原committed与candidate两个RefCell；回调和捕获析构不得改写这些缓存单元；不覆盖任意自有FnOnce或资源Drop。",
+      "normal_result": "隔离候选先清空committed、取原transaction调用原commit；只有正常Ok才取原candidate发布。",
+      "failure_and_partial_effects": "Commit Err可能耐久前/后；rollback/Drop只是原引擎接口尝试，错误不能推出回滚完成或连接已autocommit。cache=None不是恢复完成。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V5提供候选完整性、验证器、全部SQL/动作、data_version/autocommit与恢复/派发。",
+        "一般旧新等价及整个commit()仍不能由commit_with子图代替。"
+      ],
+      "existing_evidence": [
+        {
+          "path": "verification/aeneas/sqlite/SandproofSqlite/Results.lean",
+          "kind": "candidate-machine-proof",
+          "limit": "有限提交/rollback缓存核心方程；外层/引擎依A4/B2/B4。"
+        }
+      ],
+      "new_trust_requested": false
+    },
+    {
+      "id": "sqlite-ledger-recovery",
+      "title": "SQLite 完整账本、checkpoint 和恢复",
+      "contracts": [
+        "A3",
+        "A4",
+        "A6"
+      ],
+      "business_owners": [
+        "V5"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "controller-service/src/controller/storage.rs",
+          "symbol": "pub(super) fn apply(",
+          "line": 34,
+          "end_line": 45,
+          "file_sha256": "d709039037a7b250348bd328ecdcb63b84c32fdacba7c70c20933be2ab1e7727",
+          "fragment_sha256": "27433876e3940a59a4d32df546c128689b489320f867b9fad753f78223adf9e1"
+        },
+        {
+          "path": "controller-service/src/controller/capacity.rs",
+          "symbol": "PRAGMA wal_checkpoint(TRUNCATE)",
+          "line": 257,
+          "end_line": 268,
+          "file_sha256": "f4657af91872fd3253d2b7c08af64313cb0fd17de8589a019ba3ba7db91a67d6",
+          "fragment_sha256": "0859cfebb7b43031253f2f3b7b1157975cc6362497454040af67f3b12be3f1ea"
+        }
+      ],
+      "original_object_and_config": "同一受保护连接、事务视图、checkpoint代次、完整输入/行映射与实际磁盘预算。",
+      "normal_result": "仅复用原数据库接口结果；行变化、检查点和历史压缩各有独立条件。",
+      "failure_and_partial_effects": "跨VM、文件、网络无共同SQL事务；checkpoint成功不自动提供业务安全退休或过期数据可丢弃资格。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V5证明同事务记录、检查点验证、候选缓存、恢复映射及资源预算；属于业务而非新SQL平台前置。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "protected-fd",
+      "title": "受保护路径到原 FD 的读取",
+      "contracts": [
+        "A3",
+        "A6"
+      ],
+      "business_owners": [
+        "V3",
+        "V5",
+        "V6",
+        "V8"
+      ],
+      "public_status": "registered_contract",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-internal/src/protected_files.rs",
+          "symbol": "fn open_checked(",
+          "line": 47,
+          "end_line": 58,
+          "file_sha256": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
+          "fragment_sha256": "663a2f39df62dca40a030a49a321058cc58e639072714a980e96b927d77eb2c7"
+        },
+        {
+          "path": "sandbox-internal/src/protected_files.rs",
+          "symbol": "pub fn read_protected(",
+          "line": 121,
+          "end_line": 132,
+          "file_sha256": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
+          "fragment_sha256": "e854b96c54758be0a5c9cc8ed5e2eb2d21191136b673303d776261ef1dc41b46"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "pub fn check_trusted_path_for_owner",
+          "line": 1298,
+          "end_line": 1309,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "e03b60683bb3637c783703edeae3e726e430d28923ffd3c1941e62e8d259c91a"
+        }
+      ],
+      "original_object_and_config": "root/current目录FD、dev/inode、文件类型/uid/mode/nlink；Linux目录O_PATH与末端RDONLY/NONBLOCK；max≤16MiB。",
+      "normal_result": "open/openat/metadata作用于该次原句柄；受检read_protected逐级NOFOLLOW、原owner及nlink检查后读max+1识别增长。",
+      "failure_and_partial_effects": "路径/PID名称不提供永久身份；不同读不是一个快照。读取错误可有已消费前缀；metadata/race失败不等于目标不存在。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "调用者选对服务owner和对象/权限上下文，保持受保护祖先及查验至使用期间的控制权。",
+        "凭据/证书/账本内容的语义、授权与完整快照由所属V3/V5/V6/V8提供。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "file-staging-sync",
+      "title": "暂存、短写、rename 和目录同步",
+      "contracts": [
+        "A3",
+        "A6"
+      ],
+      "business_owners": [
+        "V5",
+        "V6"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/staging.rs",
+          "symbol": "fn write_staged_record<",
+          "line": 74,
+          "end_line": 85,
+          "file_sha256": "596e5df004db46766fdc2733aa1d021c07dae2c0cf7080c8e1e7978d9274046c",
+          "fragment_sha256": "65a889d794efae97faecfc0cf8867a0a2bb3848a536ac2979e409bc33aff41e1"
+        },
+        {
+          "path": "sandbox-node/src/node_staging.rs",
+          "symbol": "fn write_",
+          "line": 181,
+          "end_line": 192,
+          "file_sha256": "791dcf34e4c5c39cc57f701bc9f78fef1b70cb187274169e6d6607ec23c3b630",
+          "fragment_sha256": "e874d3d366d0c67567fd81ac338deca4b104d3291278524f1da79b19d7de0359"
+        }
+      ],
+      "original_object_and_config": "原受保护parent、stage/目标名、owner/dev/inode/nlink及完整预期前缀；原同步/rename顺序不擦除。",
+      "normal_result": "write_all只完成该次输入的正常写入；file.sync_all与parent.sync_all分别按A3解释；renameat NOREPLACE仅保证原命名操作未覆盖已有目标。",
+      "failure_and_partial_effects": "失败可能留下部分stage/完整stage/已rename但回执丢失；rename本身不等于目录耐久，sync文件不等于同步父目录。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V5/V6证明前缀恢复、完整记录/身份、命名上限、同一意图、归属及未知时不重建/释放。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "exact-cleanup",
+      "title": "原目录/对象的删除与退休证据",
+      "contracts": [
+        "A2",
+        "A3",
+        "A6"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/jail.rs",
+          "symbol": "fn cleanup_jail_with_probe(",
+          "line": 396,
+          "end_line": 407,
+          "file_sha256": "e7ee1089a91859a9d61a3abedec0005aac2cfa6f1067cbd60f39e1a324301419",
+          "fragment_sha256": "48fa6d819fd86765b0fdd453039c8576e4637a72b9d697c519112986522bd56c"
+        },
+        {
+          "path": "sandbox-runtime/src/retirement.rs",
+          "symbol": "pub fn retire(",
+          "line": 300,
+          "end_line": 311,
+          "file_sha256": "60b30167c536e72945282fed89e823e4f31295357c138018b9de127e1fe4cf0f",
+          "fragment_sha256": "4da102fb8c52563852f2d4af5aca6a742f3f07d20a68dec7a7565ebaeb4f1f79"
+        }
+      ],
+      "original_object_and_config": "原claim/jail/root目录FD及dev/inode、受保护原manifest、深度/对象范围；原锁/见证保留。",
+      "normal_result": "unlinkat/rmdir只删除原目录FD下指定项；观察缺失或成功各是其对应时点的局部事实。",
+      "failure_and_partial_effects": "部分删除可保留剩余对象和见证；ENOENT不能自动解释成原整体资源已清理；未知兄弟/替换inode不得接管。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6证明先停止、原对象匹配、全部受管辅助进程/FD/网络/cgroup/磁盘归属、重试及释放条件。",
+        "整个cleanup/retire决定不是B4机械适配，不能整段信任。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "disk-copy-space",
+      "title": "私有磁盘、稀疏复制与空间观察",
+      "contracts": [
+        "A3",
+        "A6",
+        "A10"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn copy_private_kernel(",
+          "line": 1327,
+          "end_line": 1338,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "dc1101d350bedfddd191679aa94082755fcf1e5218de54cf74f3b17f00e60594"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn copy_private_disk(",
+          "line": 1386,
+          "end_line": 1397,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "8890ccab21cbe33935e48c576cd592c2802528079d4d6da4689f59a4856ba0b5"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn copy_sparse_range(",
+          "line": 1432,
+          "end_line": 1443,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "370710d6a17e1d808517ebfc92514d34a63d5f00255fc0adc896f67dc4e31745"
+        },
+        {
+          "path": "sandbox-node/src/disk_space.rs",
+          "symbol": "pub fn disk_space(",
+          "line": 14,
+          "end_line": 25,
+          "file_sha256": "5e30aa3d2e9e512a64d22cdfd6e7d252a5ee7b4e986393eff308a4e1c6ab16a0",
+          "fragment_sha256": "1bd47b7c855bc6518ac1765886785040905f750613754a55890ba99cc0b55c76"
+        }
+      ],
+      "original_object_and_config": "授权固定模板的原source、目标create_new FD、owner/dev/inode/长度/摘要、磁盘设备和预算单位。",
+      "normal_result": "一次copy/read/write/seek/statvfs只提供该次字节/偏移/空间观察；源映像只读与目标私有性需单独校验。",
+      "failure_and_partial_effects": "短复制或错误允许目标已有前缀/分配；statvfs不是预留或未来可写承诺；逻辑长度不等于物理稀疏占用。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6证明所有复制分支、holes/zero语义、源不可改写、目标权限、同步和物理/逻辑预算。",
+        "A10排除模板生产子系统，但使用时的授权/修订/形状/清理仍需证明。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "helper-child",
+      "title": "helper Child 与原 Slot 的停止观察",
+      "contracts": [
+        "A2",
+        "A3",
+        "A6",
+        "A8",
+        "B2",
+        "B4"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "pending_617",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/child_process.rs",
+          "symbol": "fn stop_and_reap(",
+          "line": 79,
+          "end_line": 90,
+          "file_sha256": "6931563682fb6e35213a905290d03fce3c87bd1628be30c300ffe04b3005fc2e",
+          "fragment_sha256": "329504add85ca6d3c8667c87abf9e40261c17b8618367cf34247869b25ae09af"
+        },
+        {
+          "path": "sandbox-runtime/src/child_process/reaper.rs",
+          "symbol": "fn retain(",
+          "line": 50,
+          "end_line": 61,
+          "file_sha256": "a50a5049809a21b0180c3cad384cbee2c1bb6ee088205b854d6beb417e9698a8",
+          "fragment_sha256": "3445fa3ee1a2c8f516b6b700482fe9b67b92e2f63abcc1acb074833c444454cd"
+        }
+      ],
+      "original_object_and_config": "原Child创建身份/回收权、原helper池Slot、stdin/out/err及REAP_GRACE/POLL_SLICE；无永久信任可复用PID。",
+      "normal_result": "Some(status)才有原退出观察；未知结果应先历史性交接原Child/Slot。kill Ok、关管道或截止都不是回收。",
+      "failure_and_partial_effects": "None/Err保留未知；交接正常返回时worker可能已完成回收，不承诺仍在pending；取消等待/Drop不保证工作退出。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6证明原对象与动作/预算对应、reaper策略、全部子进程、异常/取消与最终释放。",
+        "原into_child为另一路径，会交出Child并释放helper槽，不能套用本正常返回定理。"
+      ],
+      "existing_evidence": [
+        {
+          "url": "https://github.com/VeriInfra-Lab/sandproof/pull/617",
+          "commit": "e50f6b5b56392ec5e6cee5abc4587693e47642af",
+          "kind": "pending-candidate-machine-proof",
+          "limit": "未进入本基线。真实隔离候选正常返回+同性质错误版；不是原生产整个OwnedChild或reaper机器精化。"
+        }
+      ],
+      "new_trust_requested": false
+    },
+    {
+      "id": "pidfd",
+      "title": "首次身份选择、pidfd 与退出观察",
+      "contracts": [
+        "A2",
+        "A3",
+        "A6",
+        "A8"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn verified_process(",
+          "line": 1578,
+          "end_line": 1589,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "9d0d30d54f719b88b52341ab266bb91e3684068daa7e4bbb699daf26bbd327f9"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn wait_pidfd_exit(",
+          "line": 1618,
+          "end_line": 1629,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "dc868f19cd66282212cf1a33f89723328837f0bc8c91ab20155af1c203115bf7"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "pub fn stop(",
+          "line": 581,
+          "end_line": 592,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "83d5af275ad98189350690812b15f08e9d0eac86d2b5dc4a0deb0ad39dd0b7d8"
+        }
+      ],
+      "original_object_and_config": "原ProcessRecord的pid/start_time_ticks/resource_id、pidfd、/proc cmdline与记录/权限；TERM/KILL及每次STOP_TIMEOUT。",
+      "normal_result": "打开后的pidfd不随PID复用改指向；signal成功只是该原句柄动作，poll退出事件是该次原进程的退出观察。",
+      "failure_and_partial_effects": "pidfd_open前可能选错对象；读取/proc错误/未知不能当不存在。记录PID/start_time变化只说明原记录与当前观测不匹配，不能信号新对象。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6证明开句柄前后原身份核对、所有受管子进程、僵尸/回收、停止阶段和资源清理/发布关系。",
+        "协议Identity相等的已有定理不证明物理/proc/pidfd对象选择。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "firecracker-api",
+      "title": "Firecracker/jailer 配置、启动与 API",
+      "contracts": [
+        "A1",
+        "A2",
+        "A3",
+        "A6",
+        "A8"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn spawn_jailer(",
+          "line": 422,
+          "end_line": 433,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "142888e276e421b8d3c3230599143fb24e9213df43f580de3e1fa6d74571f10f"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn stage_and_boot(",
+          "line": 495,
+          "end_line": 506,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "8c2a24f930e48a0db2313453bcbd4c1767a6a4e87bbaea6e399979da724a942f"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn api(",
+          "line": 1180,
+          "end_line": 1191,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "c02ca62a6c0127dcca5e4ea9dbc7414a93d4315d87c58f3435f89e0b6236faf3"
+        }
+      ],
+      "original_object_and_config": "固定1.16.1配套jailer/firecracker、原claim/Unix socket、降权uid/gid、原kernel/rootfs/netns。2s是每次read/write超时；chunk4096、声明body≤1MiB；header检测顺序/额外chunk不算已证明的精确内存界。",
+      "normal_result": "2xx仅表示对应配置/启动API接受；主进程启动、envd就绪、业务Ready发布是三个不同阶段。",
+      "failure_and_partial_effects": "写请求/收错回执/超时可能已经启动；helper命令退出不等于VM停止。连接关闭或read超时不撤销原动作。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6建立SafeLaunch、授权配置/单位、真实进程/cgroup/网络、MMDS与envd就绪证据。",
+        "自有HTTP framing/响应解释、全部缓冲和恢复是自有业务，A1不保证它们正确。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "cgroup",
+      "title": "原 cgroup 身份、成员和有效限制",
+      "contracts": [
+        "A1",
+        "A2",
+        "A3"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/cgroup.rs",
+          "symbol": "pub(super) fn verify_cgroup(",
+          "line": 230,
+          "end_line": 241,
+          "file_sha256": "9e713cc9bbf36ed4ffa3dec023e8bfccd444f66194507655a2427cf082e723e7",
+          "fragment_sha256": "25d12410c1f1f602b098180fb7d1a0055763d42725dc523cd3fc2db296cff759"
+        },
+        {
+          "path": "sandbox-runtime/src/cgroup.rs",
+          "symbol": "pub fn require_cgroup_absent(",
+          "line": 258,
+          "end_line": 269,
+          "file_sha256": "9e713cc9bbf36ed4ffa3dec023e8bfccd444f66194507655a2427cf082e723e7",
+          "fragment_sha256": "e51613e420f85035eb7f42b3c5ed175c25b67a108f1a0be3758e63ea4872eb28"
+        }
+      ],
+      "original_object_and_config": "原cgroup父路径/dev/inode、记录intent、控制器值和/proc原PID成员；固定CPU/内存/PID限制及host headroom。",
+      "normal_result": "读取原cgroup文件给该次设置/成员观察；jailer接受参数不替代有效限制和实际成员核对。",
+      "failure_and_partial_effects": "路径配置变动/读取失败不等于不存在；删除失败可能已部分清理。memory.max数值不证明整个宿主物理内存有界。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6证明真实成员/五项限制核对、暂停窗口、恢复、原对象删除及内存/CPU/辅助开销。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "network-rules",
+      "title": "netns、tap、nft 与所有出口路径",
+      "contracts": [
+        "A2",
+        "A3",
+        "A5",
+        "A6"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn prepare_private_network(",
+          "line": 628,
+          "end_line": 639,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "49b5a3c09cb5564aa7c9df963f89b46a098e18140a1ba735ed1f53f30eb7a9b8"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "pub(crate) fn run_nft_in_namespace(",
+          "line": 1507,
+          "end_line": 1518,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "c61771dfbfdc099b9b312c795afe5ede83c56202ec47c5d6a12ef6dda3b70557"
+        },
+        {
+          "path": "sandbox-runtime/src/uplink.rs",
+          "symbol": "fn gate_is_active(",
+          "line": 472,
+          "end_line": 483,
+          "file_sha256": "374e9809771b835dcaa8c13d9626833e921cd194b45525efa68c0aa5bf0ee4e6",
+          "fragment_sha256": "c06ab1f1e1046fb1e628c307cbdc4d2f9e3c9b506dbf5106953705b5b04db394"
+        }
+      ],
+      "original_object_and_config": "原netns inode/tap/ifindex/地址、固定命令/完整参数、原策略和deny gate、原uplink路径。",
+      "normal_result": "nft/ip正常退出仅是原命令结果；A5仅约束实际经过指定已安装规则路径的包。",
+      "failure_and_partial_effects": "错误可留下namespace/interface/已安装规则；未观察到/JSON解析失败不等于没有资源。一次成功不保证所有出口都走原路径。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6证明对象/策略到命令的对应、无放行窗口、所有出口覆盖、conntrack/重试/精确清理。",
+        "IPv4允许判断的纯Rust定理不证明真实nft规则或内核已安装。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "tls-config",
+      "title": "TLS 版本、双向身份与 pin 判定",
+      "contracts": [
+        "A3",
+        "A6",
+        "A9",
+        "A12",
+        "B4"
+      ],
+      "business_owners": [
+        "V3",
+        "V7",
+        "V8"
+      ],
+      "public_status": "integrated_representative",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-internal/src/tls.rs",
+          "symbol": "fn with_pin_limit(",
+          "line": 56,
+          "end_line": 67,
+          "file_sha256": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
+          "fragment_sha256": "9522f161933025a595774de64334abda5682e63c43710afd577569772df4321d"
+        },
+        {
+          "path": "sandbox-internal/src/tls.rs",
+          "symbol": "fn verify_pin(",
+          "line": 177,
+          "end_line": 188,
+          "file_sha256": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
+          "fragment_sha256": "2937e4a46683c55f43fd838623e0021e0ce88fe6941632655401a69d039982e7"
+        },
+        {
+          "path": "sandbox-internal/src/tls.rs",
+          "symbol": "fn validate_material(",
+          "line": 145,
+          "end_line": 156,
+          "file_sha256": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
+          "fragment_sha256": "b3ec404cc623c334c10f7177b32902174c0e3a9168f0708f92df457a51020eba"
+        }
+      ],
+      "original_object_and_config": "原Client/ServerConfig、roots/identity/secretkey和pin家族；客户端/普通server至多2 pins，artifact server最多512；本地identity链8张/单张64KiB限制不能套给peer链。",
+      "normal_result": "固定rustls TLS1.3验证配置的链/时钟/用途/名称；另取peer首叶SHA256与原pins比较；ALPN需原http/1.1。",
+      "failure_and_partial_effects": "握手/认证拒绝前可能已有网络字节。摘要相等依A9抗碰撞，pin匹配不授予租户/节点权限。",
+      "cancel_panic_crash": "握手/HTTP future丢弃不回滚已发字节或远端已接受工作；不承诺Drop完成响应、排空或退出。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V3/V7/V8证明配置来源、部署/角色/节点映射、轮换/撤销、端点/请求完整绑定。",
+        "原TLS借用入口和完整连接预算仍见下一项，不把隔离核心推成生产全路径对应。"
+      ],
+      "existing_evidence": [
+        {
+          "path": "SandboxModel/Boundaries/TlsPin/Refinement.lean",
+          "kind": "candidate-machine-proof",
+          "limit": "原工具的owned-snapshot候选及首叶/末叶错误版；生产借用入口尚未机器精化。"
+        }
+      ],
+      "new_trust_requested": false
+    },
+    {
+      "id": "tls-original-provenance",
+      "title": "原 TLS 借用连接到候选核心的来源连接",
+      "contracts": [
+        "A6",
+        "A9",
+        "A12",
+        "B4"
+      ],
+      "business_owners": [
+        "V0",
+        "V3",
+        "V8"
+      ],
+      "public_status": "missing_public_binding",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-internal/src/client.rs",
+          "symbol": ".verify_peer(stream.get_ref().1.peer_certificates())?;",
+          "line": 258,
+          "end_line": 269,
+          "file_sha256": "4a6fbc333dbe328e0cbfeb8277e22602081b34c60f30d8807c581be7b6bf7f73",
+          "fragment_sha256": "e02238bb33efe48e853939ac3c577b91ea90d3c48dc38d9da7f1727289642fbb"
+        },
+        {
+          "path": "sandbox-internal/src/client/data.rs",
+          "symbol": ".verify_peer(stream.get_ref().1.peer_certificates())?;",
+          "line": 210,
+          "end_line": 221,
+          "file_sha256": "ac3d888bfce52d4f9978ca79f58d1f8477c1e2640379529f1e56e6936eec7a16",
+          "fragment_sha256": "6ff6fc2113158290b637443c65ccd17a67ad1ee598d377551a4a5c8d7573c0ff"
+        },
+        {
+          "path": "sandbox-internal/src/protected_server.rs",
+          "symbol": "let peer = tls.peer_pin(",
+          "line": 101,
+          "end_line": 112,
+          "file_sha256": "385cd30615731a7c452d26c999fb72c4caad5275f09696d4fe3f3f9d584e8225",
+          "fragment_sha256": "f52a27594985799a67bcb3b8c4678e9171306b6adfd67a83ffdc0a0af0380f9d"
+        }
+      ],
+      "original_object_and_config": "同一握手后stream.get_ref().1、同一次peer_certificates视图、首叶次序、原pins及SHA256输入bytes；不从另条连接或全局cache取值。",
+      "normal_result": "只能复用已证明候选的首叶/原pins判定；当前生产借用入口没有该候选的机器对应，有限handshake测试不是一般等价。",
+      "failure_and_partial_effects": "复制证书/Vec/pins引入分配；OOM/abort不算认证拒绝。rustls单个载荷界不替代并发连接/容器/复制的整体内存预算。",
+      "cancel_panic_crash": "peer视图借用期间无await并不自动证明候选复制/转交来源；外层取消/握手消息/分配失败仍分别建模。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "公共下一步仅限原借用根/输入视图的源连接预检及对应，不opaque首叶选择/比较/业务判定。",
+        "采用同一候选核心或补另一条真实连接；V3/V8/V9落实正常分配、并发与实际堆预算。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "byte-stream",
+      "title": "短读短写、半关闭和双向中继",
+      "contracts": [
+        "A6",
+        "B1",
+        "B3",
+        "B4"
+      ],
+      "business_owners": [
+        "V8"
+      ],
+      "public_status": "integrated_representative",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-data-transport/src/tunnel.rs",
+          "symbol": "pub async fn relay<",
+          "line": 14,
+          "end_line": 25,
+          "file_sha256": "3ad1086c8774d777778a6f7e38c00c4336e83fae02251550c2eb6e47eea09c43",
+          "fragment_sha256": "ce9ea71db38ce4de82132c87e182e56178c213efd3758c3e84743df161c8b8f7"
+        },
+        {
+          "path": "sandbox-data-transport/src/idle.rs",
+          "symbol": "pub struct WriteIdle",
+          "line": 124,
+          "end_line": 135,
+          "file_sha256": "a61a716050092501130a9f5403d4923df08efab7908b464eca24fa90a529a1bc",
+          "fragment_sha256": "30bc4bdce91088787521258a9615d6529dbbe4a3f8ab3cec0a1faa53e4561487"
+        },
+        {
+          "path": "sandbox-host-service/src/data_gateway/relay_stdio.rs",
+          "symbol": "pub(super) fn pipes(",
+          "line": 5,
+          "end_line": 16,
+          "file_sha256": "7c68e02a4a8e70234831ad1a78779073ed319d2fd5b0c98bf5232d8d9159f34f",
+          "fragment_sha256": "6a0994ce43b9342e73647efe19d03db1136d8763b47c2e0aa154c544c699a8b1"
+        }
+      ],
+      "original_object_and_config": "原TCP/pipe读写端/消息方向、BUFFER_BYTES、所有在途缓冲和原许可；WriteIdle不能被推成累计输出或全连接内存上限。",
+      "normal_result": "每次正常n只表示原方向前n字节被接受；公共StreamHistory区分累计/驻留、前缀/完成、半关闭/终态；中继候选决定保留原错误。",
+      "failure_and_partial_effects": "flush/HTTP200/EOF不等于业务完成或对端排空；关闭pipe不等于EOF（还可能有其他writer）。Err/超时可在前缀后发生。",
+      "cancel_panic_crash": "按原Body/channel/IO future分别采用B3；可已有被接受字节。Drop不提供错误响应送达、完整排空或后台退出。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V8实例化全部poll/await历史、buffer/背压、关闭/撤销、允许的错误载荷/析构和外层协议完成。",
+        "V6提供子进程/VM真实退出；取消等待不等于停止后台同步工作。"
+      ],
+      "existing_evidence": [
+        {
+          "path": "SandboxModel/Foundations/StreamHistory.lean",
+          "kind": "conditional-model",
+          "limit": "有限流/预算/合法结束合同，未赋予任意实际IO对象语义。"
+        },
+        {
+          "path": "verification/aeneas/tunnel/SandproofTunnel/Results.lean",
+          "kind": "candidate-machine-proof",
+          "limit": "两个同步决定及条件流连接，不是完整async relay机器精化。"
+        }
+      ],
+      "new_trust_requested": false
+    },
+    {
+      "id": "guest-command-pty",
+      "title": "Guest 命令、原管道/PTY 与真实退出",
+      "contracts": [
+        "A2",
+        "A3",
+        "A6",
+        "A7",
+        "B1",
+        "B2",
+        "B3"
+      ],
+      "business_owners": [
+        "V8"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-guest-runtime/src/process.rs",
+          "symbol": "pub async fn wait_main(",
+          "line": 412,
+          "end_line": 423,
+          "file_sha256": "556f6e8843c9428463f654c3554381d7c8a3aa298cff7e6ea5b2001ee084449a",
+          "fragment_sha256": "013f7062166fa474b10951e322e2104e1962a1f9774fdef296eb5a38b60a8d83"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/process.rs",
+          "symbol": "pub async fn release(",
+          "line": 273,
+          "end_line": 284,
+          "file_sha256": "556f6e8843c9428463f654c3554381d7c8a3aa298cff7e6ea5b2001ee084449a",
+          "fragment_sha256": "60b53d363239cbb71071e94e3bc1d706df38dacc0960641cd1b7212bdcac5478"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/pty.rs",
+          "symbol": "pub(crate) async fn write_all(",
+          "line": 113,
+          "end_line": 124,
+          "file_sha256": "b8f12a189800df6f9cd06a30fbfec160e51d6bc9a04182c48f90823907b41388",
+          "fragment_sha256": "458449ed3efd81a9cf71fed1102137c12ed5d016d34a1a8e2c0e0f672874d9f2"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/worker.rs",
+          "symbol": "fn switch_account(",
+          "line": 137,
+          "end_line": 148,
+          "file_sha256": "c1c7446b5d0dcc0c6681cebce901f8c34c4cc4d92f1b68965a9e82b7b85f91c4",
+          "fragment_sha256": "744e76c9f6f68f5f673495171f042cc58547c65c725d012ba72222c64ecf86c6"
+        }
+      ],
+      "original_object_and_config": "原CommandIdentity/PID/start ticks、launch gate、Child/pipes/PTY FD、uid/gid/accounts及Winsize。",
+      "normal_result": "主Child wait只观察主进程；管道/PTY的单次返回依具体IO/终端接口。release消息/信号/关闭stdin不是用户命令完成。",
+      "failure_and_partial_effects": "启动、身份切换、输入/窗口/信号失败可有部分效果；PTY line discipline不应简单当完全透明TCP；readiness不是读/写必成功。",
+      "cancel_panic_crash": "取消写入/监听可留已写前缀；未来被取消或handle丢弃不代表所有进程/PTY FD已退出；保持原owner与回收责任。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V8证明原账户/完整命令环境、start登记交接、会话/订阅/所有缓冲、主退出与全部输出/后代/额度关系。",
+        "T9排除浮点兼容算法，不排除Guest启动/鉴权/命令/文件安全。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "guest-files",
+      "title": "Guest 文件路径、账号和部分文件效果",
+      "contracts": [
+        "A3",
+        "A6",
+        "A7"
+      ],
+      "business_owners": [
+        "V8"
+      ],
+      "public_status": "business_proof",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-guest-runtime/src/filesystem/path.rs",
+          "symbol": "fn resolve_with(",
+          "line": 52,
+          "end_line": 63,
+          "file_sha256": "040e77a08e5d8906dbe97cdcd66974f61fac25f6a81f80c77287bd11f14265e0",
+          "fragment_sha256": "21920ae211c888d7974fe2686918681f4f7581d01945cc8481f2a581402c6344"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/filesystem/transfer/upload.rs",
+          "symbol": "pub fn open_detailed(",
+          "line": 117,
+          "end_line": 128,
+          "file_sha256": "ad024a225ea0f52c855efd10d79c4928fc88fce2ea653c3b9c3c5375a5bb6cb4",
+          "fragment_sha256": "765529128024ce8e922ab0761c394c5bed37bdf83095b4aca944d1b50aba9585"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/filesystem/transfer/upload.rs",
+          "symbol": "pub fn write_chunk_detailed(",
+          "line": 201,
+          "end_line": 212,
+          "file_sha256": "ad024a225ea0f52c855efd10d79c4928fc88fce2ea653c3b9c3c5375a5bb6cb4",
+          "fragment_sha256": "c6ce1f9f56b014bb93b28ac4eecdad859822ee21e43f2b35a4db321d942fc15d"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/filesystem/transfer.rs",
+          "symbol": "pub fn open_with_stat(",
+          "line": 87,
+          "end_line": 98,
+          "file_sha256": "8815a49804ac5670e468452e8d9ab7c48cdb26ce1e94d8a06a1c1ce1e3b35bad",
+          "fragment_sha256": "db871b7840033d224c6fde878c54214c35f849bd59c1e4f4a4b463cdf0797666"
+        },
+        {
+          "path": "sandbox-guest-runtime/src/filesystem/transfer.rs",
+          "symbol": "pub fn read_chunk(",
+          "line": 218,
+          "end_line": 229,
+          "file_sha256": "8815a49804ac5670e468452e8d9ab7c48cdb26ce1e94d8a06a1c1ce1e3b35bad",
+          "fragment_sha256": "03c340f58b3b7e569fbb75c215f9a42ac5394c21739c09914dd93de8263e268e"
+        }
+      ],
+      "original_object_and_config": "原身份/账户、原cwd/root与解析路径/FD、length/encoding/multipart/gzip配置及具体文件协议。",
+      "normal_result": "仅使用该原FD/实际账户下的read/write/stat/rename等结果；用户路径解析与操作协议仍是自有代码。",
+      "failure_and_partial_effects": "路径解析/文件操作不是一笔事务；失败可已创建、截断、写部分批次或消费正文，回执丢失不自动重放。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V8证明权限/路径含义、symlink/替换处理、编码/批次顺序、正文完整和首个错误。",
+        "不把Guest root或可信envd功能协议当作宿主物理安全证据。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "clock-deadlines",
+      "title": "时钟值、deadline 与进展条件",
+      "contracts": [
+        "A6",
+        "A8"
+      ],
+      "business_owners": [
+        "V2",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "public_status": "registered_contract",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-center-store/src/store.rs",
+          "symbol": "fn deadline(",
+          "line": 382,
+          "end_line": 393,
+          "file_sha256": "b376b9dd41d70a86dab72483d12f514e460a0c3aa39be6746054709eedec3116",
+          "fragment_sha256": "efc3941ed0a2871f53fc4d4c228a2ef383b4ecdb2ad7091965cbb5b4dc9e54e5"
+        },
+        {
+          "path": "sandbox-runtime/src/linux.rs",
+          "symbol": "fn wait_pidfd_exit(",
+          "line": 1618,
+          "end_line": 1629,
+          "file_sha256": "406b3dbb90194b11b6ecf5aaacf6be44150013ba01dd670f5667c0fca068e579",
+          "fragment_sha256": "dc868f19cd66282212cf1a33f89723328837f0bc8c91ab20155af1c203115bf7"
+        },
+        {
+          "path": "sandbox-data-transport/src/idle.rs",
+          "symbol": "pub async fn stalled(",
+          "line": 42,
+          "end_line": 53,
+          "file_sha256": "a61a716050092501130a9f5403d4923df08efab7908b464eca24fa90a529a1bc",
+          "fragment_sha256": "2c0ef6265c2769f19119914d947094bd6243330f89d1883df249a57841d633e4"
+        }
+      ],
+      "original_object_and_config": "原时钟种类/单位/参考原点、冻结deadline和每次真实重读；无参now不得在Lean中当一次纯值重复使用。",
+      "normal_result": "now是该次读数，Duration换算/比较是值操作；重启后的持久时间下界与跨机漂移须显式建立。",
+      "failure_and_partial_effects": "读到deadline不证明工作结束；单次read/write超时不等于整个loop同一总时限；wall clock可错误/回退且与Instant不混用。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "安全后态不要求无条件时间进展；若证明最终完成，另列时钟推进、外部响应、调度公平及自有启用条件。",
+      "caller_obligations": [
+        "所属业务证明溢出/重启/期限竞争、检查到使用期间、预算和单调/漂移条件。",
+        "内部启用/出队/无环等待不能由A8或运行时公平替代。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "crypto-bootstrap",
+      "title": "密钥/随机值、摘要和受保护配置",
+      "contracts": [
+        "A3",
+        "A6",
+        "A9",
+        "A12"
+      ],
+      "business_owners": [
+        "V3",
+        "V6",
+        "V7",
+        "V8"
+      ],
+      "public_status": "registered_contract",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "sandbox-internal/src/tls.rs",
+          "symbol": "pub fn from_certificate(",
+          "line": 16,
+          "end_line": 27,
+          "file_sha256": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
+          "fragment_sha256": "909ff6297ede5122234e6bf5d8557936bcc30582918fce6b9e5e97f8da951992"
+        },
+        {
+          "path": "sandbox-node/src/launch_observation.rs",
+          "symbol": "pub(super) fn credential_status(",
+          "line": 46,
+          "end_line": 57,
+          "file_sha256": "4bb5dda5f33ff71a00d9046cea426e65ae7e55411ff11b29c21d2b5c7d84242b",
+          "fragment_sha256": "df756f12af18f8f89e3b6fb5c7ec1ab52aeae763706cd936be3f30a9c1c221e3"
+        },
+        {
+          "path": "controller-service/src/application/coordinator.rs",
+          "symbol": "fn token(",
+          "line": 142,
+          "end_line": 153,
+          "file_sha256": "e79926c4bd3bbd097503b40020afa49f1364d83e5130761f84751043bc9d70f1",
+          "fragment_sha256": "8c337961a0309ecbd4bae764a74958a216ee509333617da5fef8fdd3a0a6f061"
+        }
+      ],
+      "original_object_and_config": "原配置/secret文件FD及owner、原完整输入、原算法/版本与角色；只输出允许的诊断，不泄漏token。",
+      "normal_result": "固定SHA256只为原完整字节的摘要关系；随机/密钥接口依A9，不能给确定性无碰撞或被窃后仍识别真实持有人结论。",
+      "failure_and_partial_effects": "随机填充/文件读取错误不证明缓冲零变化；长度/摘要/格式错不提供授权或物理不存在证据。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V3/V6/V7/V8证明来源、长度、完整绑定、秘密处理及失效/撤销；不将整配置验证器opaque。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    },
+    {
+      "id": "template-boundary",
+      "title": "排除模板实现，保留核心使用义务",
+      "contracts": [
+        "A3",
+        "A6",
+        "A10"
+      ],
+      "business_owners": [
+        "V6"
+      ],
+      "public_status": "explicit_exclusion",
+      "use_binding": "source-review-not-whole-function-proof",
+      "locations": [
+        {
+          "path": "controller-service/src/templates.rs",
+          "symbol": "pub fn resolve(",
+          "line": 245,
+          "end_line": 256,
+          "file_sha256": "43dd7d2fa214bf2b5035d9de87e07b6656b3b364bf6226861d16b59c8c98e573",
+          "fragment_sha256": "15ff12c987e73586b04deb8546d1f331ada033b936f990b825d64379fb244583"
+        },
+        {
+          "path": "controller-service/src/template_registry/artifacts.rs",
+          "symbol": "pub struct CandidateStore",
+          "line": 15,
+          "end_line": 26,
+          "file_sha256": "fd5aa311f4d995e3dbccf78eb12dbcb0e631a245bb660d228f201dd38c005001",
+          "fragment_sha256": "fb2f8eb9008029fa0a91e9acf85c2032008348b93a06f79fea6abd44bb0835f0"
+        }
+      ],
+      "original_object_and_config": "获准修订/完整描述/产物/形状、受保护源和使用期间不可改写；不能恢复时重新解析可变别名。",
+      "normal_result": "本轮只使用不可变模板授权/描述/产物合同，不证明模板生产、登记、别名和发布整个子系统。",
+      "failure_and_partial_effects": "模板子系统工程测试不作为核心已验证证据；消费端复制失败仍可能有部分私有磁盘效果。",
+      "cancel_panic_crash": "同步接口不因外层停止等待就回滚；后台任务仍执行时继续持有资源。panic/unwind、abort和崩溃不提供正常后态或完整Drop证据。",
+      "progress_conditions": "只使用该次库/OS调用的结果；不保证最终成功或无条件结束。上层推进另需外部最终响应、调度和内部启用/无环等待条件。",
+      "caller_obligations": [
+        "V6仍证明使用授权、原修订/长度/摘要、资源准入与精确清理。",
+        "编译来源保留模板体；不以本边界删MIR来源或Guest安全。"
+      ],
+      "existing_evidence": [],
+      "new_trust_requested": false
+    }
+  ],
+  "compiled_source_evidence": {
+    "capture_commit": "a9ea9e3d974df1aaaf4b0118c0a0b31db937150e",
+    "capture_receipt_sha256": "5c96cc26ba4d4c285d6b98c988a4be1ee883bec4abde942ec5510928ea0e4bad",
+    "index_sha256": "f239bc54e698ce82441e9c3efdd90f528dce9a88a3a86a536b04e576091c5245",
+    "config_sha256": "d12f4cac13d42ebc86263d1057ffc75dbcc39eb10d2f0fdef2711c3842bf15b7",
+    "source_inputs": 818,
+    "units": 60,
+    "count_meaning": "818为原Rust/Cargo输入数，60为原编译变体数；都是来源记录，不是调用数、定理数或闭合语义调用图。"
+  },
+  "denied_inferences": {
+    "catalogue_is_program_proof": false,
+    "all_runtime_calls_resolved": false,
+    "sql_success_is_durable_commit": false,
+    "lua_error_rolls_back": false,
+    "kill_ack_is_exit": false,
+    "pipe_close_is_remote_eof": false,
+    "tls_candidate_is_production_refinement": false,
+    "time_budget_is_memory_budget": false
+  },
+  "public_completion": {
+    "directory_done_when": [
+      "原编译来源与当前输入/配置适用，并保留版本/排除/动态分派限制。",
+      "25类均有确切原函数、原对象/配置、正常/故障/取消/修改范围/进展和调用者责任。",
+      "已有合同/代表候选、待集成617和唯一TLS来源缺口分别标注，不把目录当新证明。",
+      "局部防漏检查拒绝缺项、过时输入/定位、未知A/B或越权已证明标签；统筹接入权威材料及公共验收。"
+    ],
+    "T7_public_representatives": "已有Redis结果/未知围栏、SQLite提交缓存和固定五参数UPDATE。完整脚本/codec/SQL/事务/恢复归V2/V5，不作为再建通用平台的公共前置。T7实际使用域登记仍需统筹据目录逐项确认。",
+    "T8_public_blockers": [
+      "617候选尚未在本基线正式集成；共享接线/完整门槛由统筹负责。",
+      "原TLS借用连接/首叶/原pins到已证核心的来源连接未闭合；不能由回归自动升级为生产实现证明。"
+    ],
+    "downstream_kept": [
+      "V2：全部脚本/codec/CAS/耐久恢复/派发；单写者部署条件。",
+      "V5：全部SQL、同事务投影/outbox/额度、cache/data_version/autocommit和恢复。",
+      "V6：SafeLaunch、首次原对象选择、真实成员/网络/进程/清理与物理预算。",
+      "V3/V7/V8/V9：TLS身份角色映射、完整请求、端点/会话/撤销、所有I/O与内存预算和组合。"
+    ],
+    "one_proposal": {
+      "id": "tls-borrowed-provenance",
+      "scope": "先预检固定原TLS借用根/输入视图，保留首叶选择、比较和错误为透明自有核心；用原stream、原peer_certificates、原pins和SHA字节建立来源连接。优先避免复制整条peer链。",
+      "contracts": [
+        "A6",
+        "A9",
+        "A12",
+        "B4"
+      ],
+      "new_trust": false,
+      "status": "proposal-only-not-implemented",
+      "limits": "正常分配/复制容量条件要能由下游预算实例化；不能把OOM改成认证拒绝，不能将verify_peer整个业务列为可信。若实际需要超出既有窄保证，先找人类确认，目录可独立交付。"
+    }
+  },
+  "source_policy": "此目录仅对review_baseline和精确native_inputs_sha256有效；任何Rust/Cargo输入或原编译配置变化都须复核，不自动外推。",
+  "versions": {
+    "rust": "1.97.0",
+    "redis_server": "7.2.16",
+    "redis_client": "1.7.1",
+    "rusqlite": "0.40.2",
+    "libsqlite3_sys": "0.38.2",
+    "bundled_sqlite": "3.53.2",
+    "rustix": "1.1.5",
+    "tokio": "1.49.0",
+    "rustls": "0.23.45",
+    "tokio_rustls": "0.26.6",
+    "sha2": "0.10.9",
+    "firecracker_and_jailer": "1.16.1",
+    "getrandom": "0.3.4"
+  },
+  "version_evidence": [
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "references/v1-baseline.json",
+    "verification/experiments/sqlite-commit/environment.json"
+  ],
+  "catalogue_authority": "现有A/B框架的使用解释和自有责任目录，不是新的可信保证批准文件；registered_contract不表示整个函数/所有使用点已经形式化绑定。",
+  "translation_limits": [
+    "query_row/query_map/Row.get、完整codec/Lua、驱动和Guest全部业务原式没有因本目录通过就获得可抽取或已证明结论。",
+    "业务实例先沿已有窄接口模式建立前提并做原工具预检；若遇到不能落入既有模式的实际签名，给具体最小入口后再归因，不能把未知冒称已经由公共库解决。"
+  ]
+}
