@@ -588,9 +588,10 @@ async fn probe(asynchronous: bool, mode: &str, tag: Option<&str>) {
         .expect("fixture HTTP connection leaked")
         .unwrap()
         .unwrap();
+    let status = status.expect("SDK probe timed out").unwrap();
     assert!(
-        status.expect("SDK probe timed out").unwrap().success(),
-        "{mode}, async={asynchronous}"
+        status.success(),
+        "{mode}, async={asynchronous}, status={status:?} ({status})"
     );
     assert!(fixture.started.load(Ordering::SeqCst));
     settled(&fixture, asynchronous, mode).await;
