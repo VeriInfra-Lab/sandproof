@@ -1315,5 +1315,53 @@
         "_1: Query"
       ]
     }
+  ],
+  "constants": [
+    {
+      "id": "action-version",
+      "path": "sandbox-protocol/src/lib.rs",
+      "name": "PROTOCOL_VERSION",
+      "rust_type": "u16",
+      "literal": "1",
+      "locations": [
+        "D7.action-check",
+        "D7.receipt-check"
+      ]
+    },
+    {
+      "id": "internal-version",
+      "path": "sandbox-protocol/src/internal.rs",
+      "name": "INTERNAL_PROTOCOL_VERSION",
+      "rust_type": "u16",
+      "literal": "2",
+      "locations": [
+        "D3.node-guard",
+        "D3.response-guard",
+        "D3.probe-request",
+        "D3.probe-response",
+        "D9.guard",
+        "D11.versions-current"
+      ]
+    },
+    {
+      "id": "center-store-version",
+      "path": "sandbox-protocol/src/internal.rs",
+      "name": "CENTER_STORE_FORMAT_VERSION",
+      "rust_type": "u32",
+      "literal": "6",
+      "locations": [
+        "D11.versions-current"
+      ]
+    },
+    {
+      "id": "host-store-version",
+      "path": "sandbox-protocol/src/internal.rs",
+      "name": "HOST_STORE_FORMAT_VERSION",
+      "rust_type": "i64",
+      "literal": "16",
+      "locations": [
+        "D11.versions-current"
+      ]
+    }
   ]
 }
