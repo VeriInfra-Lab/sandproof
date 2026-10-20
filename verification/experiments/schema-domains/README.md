@@ -40,11 +40,21 @@ StatusRequest、HostStatus、NodeIdentity、Resources 都没有默认/可选字�
 提供方，并分类其它内部 schema 的可复用部分和待连接部分。Status 是本批唯一实现家族；
 Probe、LifecycleResponse、WindowClose、模板/发布等不能据此自动认领已证。
 
+[有限源码分类](catalogue.json)另逐项记录六份接口文件中的 22 个可序列化主类型、
+完整字段/属性和十个实际字节位置；它是绑定源码的复用分类，不是编译器调用图或证明。
+特别区分：ContractVersions 只序列化且包含 i64；readiness 的响应实际是 Value；
+本地数值 ID 与协议字符串 ID 不同；artifact/readiness 的 node 绑定请求方身份，
+Status 的 node 则由原调用约定选择，字段相同不能替代端点角色和授权证明。
+
 验证 crate 的四个小函数直接调用原 `from_slice`/`to_vec`，使用真实生产类型。
 其中 `response_encode` 是普通 Vec 的参考渲染入口。原服务器 `json_response` 实际调用
 `evidence::encode_bounded`，其私有 Writer 的 checked_add、限额、分配失败、错误和部分
 输出另有自有连接义务。比较测试不替代该一般性对应证明，不能把它整体作为 B4 假设。
 这项待连接在环境登记和 #333 中保留。
+
+本批的字节定理只覆盖三个真实普通值调用位置：客户端请求 to_vec、服务器请求 from_slice、
+客户端响应 from_slice；另有 HostStatus 的参考 to_vec，不能作为服务器 Writer 的证明。
+服务器的有界输出是本线明确保留的 V0 公共缺口，未因本批范围转为下游业务已负责。
 
 本批只考虑固定 SliceRead/普通内存值及正常分配下的 Vec 渲染；任意 Serialize 回调、
 有状态设备、资源所有权/自定义 Drop、OOM/abort、unwind 和整个异步 shell 不被这些定理覆盖。

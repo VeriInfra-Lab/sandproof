@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 from tools.check_schema_domains import (GENERATED, GUARD_LLBC, check_guards,
-                                       check_sources, load_environment)
+                                       check_sources, load_environment, check_catalogue)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -83,6 +83,33 @@ class SchemaDomainsTests(unittest.TestCase):
         changed['source_files']['sandbox-internal/src/status.rs'] = '0' * 64
         with self.assertRaisesRegex(ValueError, 'production source changed'):
             check_sources(ROOT, changed)
+
+
+    def test_complete_finite_source_catalogue_is_bound(self):
+        self.assertEqual(check_catalogue(ROOT), 22)
+
+    def test_missing_schema_and_actual_byte_context_are_rejected(self):
+        original = json.loads((ROOT / 'verification/experiments/schema-domains/catalogue.json').read_text())
+        changed = copy.deepcopy(original)
+        changed['instances'] = [v for v in changed['instances'] if v['name'] != 'ReadinessRequest']
+        with self.assertRaisesRegex(ValueError, 'primary schema instance'):
+            check_catalogue(ROOT, changed)
+        changed = copy.deepcopy(original)
+        del changed['byte_contexts']['shared-control-header']
+        with self.assertRaisesRegex(ValueError, 'byte context inventory'):
+            check_catalogue(ROOT, changed)
+
+    def test_different_integer_width_or_old_definition_cannot_reuse_classification(self):
+        original = json.loads((ROOT / 'verification/experiments/schema-domains/catalogue.json').read_text())
+        changed = copy.deepcopy(original)
+        host = next(v for v in changed['instances'] if v['name'] == 'HostStatus')
+        next(f for f in host['fields'] if f['name'] == 'retention_slots')['rust_type'] = 'u64'
+        with self.assertRaisesRegex(ValueError, 'field type/order'):
+            check_catalogue(ROOT, changed)
+        changed = copy.deepcopy(original)
+        changed['instances'][0]['definition_sha256'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'definition snapshot'):
+            check_catalogue(ROOT, changed)
 
 
 if __name__ == '__main__':

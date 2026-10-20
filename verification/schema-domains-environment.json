@@ -359,7 +359,6 @@
     "SandboxModel.Boundaries.SchemaDomains.complete_status_view_injective"
   ],
   "inputs": [],
-  "delivery_status": "guard22 physical diagnostics/audits and CLI build passed; native15+3+2 and admission8 passed; byte preflight failed in original Charon trait transformation; negative and byte full gates pending",
   "guard_extraction": {
     "full_llbc_sha256": "4645a5858043e523557de898a24f5d6d6589d0be1ab85d2d07b227a6a956455d",
     "transparent_owned_functions": [
@@ -390,5 +389,7 @@
       "responsibility": "Calls actual serde_json::to_vec<HostStatus> for the ordinary-value schema; this is not the production server bounded Writer.",
       "state": "reference-renderer-wrapper, no server encoder refinement claim"
     }
-  ]
+  ],
+  "catalogue": "verification/experiments/schema-domains/catalogue.json",
+  "catalogue_sha256": "836e9bc07e9f2eb3673f28d1ddcb6053837bbc01cc2f91891c7866d89a64533d"
 }

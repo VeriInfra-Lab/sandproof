@@ -71,6 +71,64 @@ def check_sources(root, environment):
     return len(schemas)
 
 
+
+CATALOGUE = 'verification/experiments/schema-domains/catalogue.json'
+PRIMARY_SCHEMA_SOURCES = {
+    'sandbox-protocol/src/internal.rs',
+    'sandbox-protocol/src/internal/lifecycle.rs',
+    'sandbox-protocol/src/internal/window.rs',
+    'sandbox-internal/src/status.rs',
+    'sandbox-internal/src/cache.rs',
+    'sandbox-internal/src/template.rs',
+}
+
+
+def check_catalogue(root, catalogue=None):
+    """Source-bound finite classification; not a compiler census or a proof."""
+    catalogue = catalogue if catalogue is not None else json.loads((root / CATALOGUE).read_text())
+    instances = catalogue['instances']
+    if catalogue.get('schema') != 1 or catalogue.get('primary_schema_count') != 22:
+        raise ValueError('unreviewed finite schema classification')
+    observed = {(item['source'], item['name']) for item in instances}
+    if len(observed) != len(instances) or len(instances) != 22:
+        raise ValueError('missing or duplicated primary schema instance')
+    if {item['source'] for item in instances} != PRIMARY_SCHEMA_SOURCES:
+        raise ValueError('primary schema source inventory changed')
+    expected = set()
+    for relative in PRIMARY_SCHEMA_SOURCES:
+        source = (root / relative).read_text()
+        for declaration in re.finditer(r'pub (struct|enum) (\w+)\b', source):
+            prefix = source[:declaration.start()]
+            derives = list(re.finditer(r'#\[derive\(([^)]*)\)\]', prefix))
+            if derives and 'Serialize' in {v.strip() for v in derives[-1][1].split(',')}:
+                expected.add((relative, declaration[2]))
+    if observed != expected:
+        raise ValueError('classification omits a real serializable primary type')
+    for relative, expected_hash in catalogue['sources'].items():
+        if sha(root / relative) != expected_hash:
+            raise ValueError('catalogue source changed: ' + relative)
+    for item in instances:
+        definition = item['definition_source']
+        source = (root / item['source']).read_text()
+        if (source.count(definition) != 1
+                or hashlib.sha256(definition.encode()).hexdigest() != item['definition_sha256']):
+            raise ValueError('original schema definition snapshot changed')
+        if re.search(r'pub struct ' + item['name'] + r'\s*\{', definition):
+            body = definition[definition.index('{') + 1:definition.rindex('}')]
+            body = re.sub(r'//[^\n]*', '', body)
+            actual = [(name, re.sub(r'\s+', '', ty)) for name, ty in
+                      re.findall(r'pub\s+(\w+)\s*:\s*([^,\n]+)', body)]
+            wanted = [(f['name'], re.sub(r'\s+', '', f['rust_type'])) for f in item['fields']]
+            if actual != wanted:
+                raise ValueError('catalogue field type/order changed: ' + item['name'])
+    if set(catalogue['byte_contexts']) != {
+            'status', 'probe', 'shared-control-header', 'lifecycle-request',
+            'result-confirmation', 'window-close', 'template-cache',
+            'template-readiness', 'template-artifact', 'validation-evidence'}:
+        raise ValueError('actual byte context inventory incomplete')
+    return len(instances)
+
+
 def check_guards(root, llbc, inventory, environment=None):
     environment = load_environment(root) if environment is None else environment
     if llbc.get('has_errors') is not False:
@@ -133,6 +191,10 @@ def main():
     root = args.root.resolve()
     environment = load_environment(root)
     check_sources(root, environment)
+    if (environment.get('catalogue') != CATALOGUE
+            or sha(root / CATALOGUE) != environment.get('catalogue_sha256')):
+        raise ValueError('source classification is not the registered snapshot')
+    check_catalogue(root)
     llbc = json.loads((args.llbc or root / GUARD_LLBC).read_text())
     inventory = json.loads((args.inventory or root / GENERATED / 'translation.json').read_text())
     count = check_guards(root, llbc, inventory, environment)
