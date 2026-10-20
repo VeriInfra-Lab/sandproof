@@ -116,7 +116,15 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             return Err(PortError::Invalid);
         }
         let timeout = normalized_duration(command.timeout, &self.config)?;
-        let template = self.templates.resolve(&tenant, &command.template_id)?;
+        let template = self
+            .templates
+            .resolve(&tenant, &command.template_id)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::TemplateResolve,
+                    DiagnosticFailure::Port(*error),
+                );
+            })?;
         if !template.is_valid() {
             return Err(PortError::Busy);
         }
@@ -139,12 +147,19 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             now,
             (&self.config).into(),
         )?;
-        let request = self
+        let admitted = self
             .authority
             .lock()
             .map_err(|_| PortError::Busy)?
-            .create(&tenant, binding, now)
-            .map_err(authority_error)?;
+            .create(&tenant, binding, now);
+        // Drop the decision guard before diagnostic output, as for host I/O.
+        let request = admitted.map_err(|error| {
+            diagnostics::emit(
+                DiagnosticStage::CreateAdmission,
+                DiagnosticFailure::Authority(error),
+            );
+            authority_error(error)
+        })?;
         self.wait_session(&request)
     }
     /// # Errors

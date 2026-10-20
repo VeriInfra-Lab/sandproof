@@ -433,6 +433,12 @@ impl<T: ControlState> RedisLedger<T> {
             Phase::ServerHealth,
         )?;
         if info_field(&info, "redis_version") != Some(REDIS_VERSION) {
+            diagnostics::emit(
+                Phase::ServerHealth,
+                Failure::ConfigurationMismatch,
+                Duration::ZERO,
+                Duration::ZERO,
+            );
             return Err(StoreError::Configuration);
         }
         let settings: BTreeMap<String, String> = self.query(
@@ -457,6 +463,12 @@ impl<T: ControlState> RedisLedger<T> {
             ("maxmemory", memory.as_str()),
         ] {
             if settings.get(key).map(String::as_str) != Some(required) {
+                diagnostics::emit(
+                    Phase::SettingsHealth,
+                    Failure::ConfigurationMismatch,
+                    Duration::ZERO,
+                    Duration::ZERO,
+                );
                 return Err(StoreError::Configuration);
             }
         }
@@ -472,6 +484,12 @@ impl<T: ControlState> RedisLedger<T> {
             ("aof_last_bgrewrite_status", "ok"),
         ] {
             if info_field(&persistence, key) != Some(required) {
+                diagnostics::emit(
+                    Phase::PersistenceHealth,
+                    Failure::UnhealthyPersistence,
+                    Duration::ZERO,
+                    Duration::ZERO,
+                );
                 return Err(StoreError::Unavailable);
             }
         }

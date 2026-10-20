@@ -23,17 +23,34 @@ pub(super) enum Failure {
     ReadTimeoutSetup,
     WriteTimeoutSetup,
     TransportTimeout,
-    Transport,
-    Protocol,
+    Transport {
+        kind: std::io::ErrorKind,
+        errno: Option<i32>,
+    },
+    Protocol(redis::ErrorKind),
+    ConfigurationMismatch,
+    UnhealthyPersistence,
 }
 
 pub(super) fn classify(error: &redis::RedisError) -> Failure {
     if error.is_timeout() {
         Failure::TransportTimeout
     } else if error.is_io_error() {
-        Failure::Transport
+        let source = std::error::Error::source(error).and_then(|source| {
+            source.downcast_ref::<std::io::Error>().or_else(|| {
+                // The pinned Redis crate exposes its source through a public
+                // Arc<dyn Error>; never format the arbitrary inner error.
+                source
+                    .downcast_ref::<std::sync::Arc<dyn std::error::Error + Send + Sync>>()
+                    .and_then(|source| source.as_ref().downcast_ref::<std::io::Error>())
+            })
+        });
+        Failure::Transport {
+            kind: source.map_or(std::io::ErrorKind::Other, std::io::Error::kind),
+            errno: source.and_then(std::io::Error::raw_os_error),
+        }
     } else {
-        Failure::Protocol
+        Failure::Protocol(error.kind())
     }
 }
 
@@ -52,9 +69,14 @@ fn record(
     };
     // Consume failed writes too; fixed enums/numbers only, no Redis error text,
     // command arguments, payload, address, identity, credential or path.
+    let unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|value| value.as_millis());
+    let pid = std::process::id();
     let _ = writeln!(
         output,
-        "center_store_query phase={phase:?} failure={failure:?} elapsed_us={} remaining_at_start_us={} remaining={}",
+        "center_store_query unix_ms={unix_ms:?} pid={pid} phase={phase:?} failure={failure:?} elapsed_us={} remaining_at_start_us={} remaining={}",
         elapsed.as_micros(),
         budget.as_micros(),
         LIMIT - previous - 1
@@ -88,7 +110,10 @@ mod tests {
                     std::io::ErrorKind::ConnectionReset,
                     secret,
                 )),
-                Failure::Transport,
+                Failure::Transport {
+                    kind: std::io::ErrorKind::ConnectionReset,
+                    errno: None,
+                },
             ),
             (
                 redis::RedisError::from((
@@ -96,7 +121,7 @@ mod tests {
                     "private-detail",
                     secret.to_owned(),
                 )),
-                Failure::Protocol,
+                Failure::Protocol(redis::ErrorKind::UnexpectedReturnType),
             ),
         ];
         let mut bytes = vec![];
@@ -116,13 +141,26 @@ mod tests {
         assert!(!text.contains(secret) && !text.contains("private-detail"));
         assert_eq!(text.lines().count(), 3);
     }
+    #[cfg(unix)]
+    #[test]
+    fn numeric_os_error_survives_the_public_redis_error_source_wrapper() {
+        let error = redis::RedisError::from(std::io::Error::from_raw_os_error(13));
+        assert_eq!(
+            classify(&error),
+            Failure::Transport {
+                kind: std::io::ErrorKind::PermissionDenied,
+                errno: Some(13),
+            }
+        );
+    }
+
     #[test]
     fn failed_sink_consumes_the_finite_process_attempt_budget() {
         let count = AtomicUsize::new(0);
         let mut broken = std::io::Cursor::new([0_u8; 0]);
         record(
             Phase::Read,
-            Failure::Protocol,
+            Failure::Protocol(redis::ErrorKind::UnexpectedReturnType),
             Duration::MAX,
             Duration::MAX,
             &count,

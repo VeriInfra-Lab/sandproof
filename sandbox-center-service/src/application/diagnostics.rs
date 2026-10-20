@@ -9,6 +9,8 @@ const LIMIT: usize = 64;
 static EMITTED: AtomicUsize = AtomicUsize::new(0);
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Stage {
+    TemplateResolve,
+    CreateAdmission,
     SendSnapshot,
     ApplyResponse,
     StaleSnapshot,
@@ -31,15 +33,20 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
     };
     // Both errors are closed enums without arbitrary text or request data.
     // Match their contents explicitly so no stored payload can be introduced.
+    let unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|value| value.as_millis());
+    let pid = std::process::id();
     let _ = match failure {
         Failure::Authority(error) => writeln!(
             output,
-            "center_wait stage={stage:?} authority={error:?} remaining={}",
+            "center_wait unix_ms={unix_ms:?} pid={pid} stage={stage:?} authority={error:?} remaining={}",
             LIMIT - previous - 1
         ),
         Failure::Port(error) => writeln!(
             output,
-            "center_wait stage={stage:?} port={error:?} remaining={}",
+            "center_wait unix_ms={unix_ms:?} pid={pid} stage={stage:?} port={error:?} remaining={}",
             LIMIT - previous - 1
         ),
     };

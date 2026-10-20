@@ -2,6 +2,7 @@
 import argparse
 import copy
 from contextlib import contextmanager, ExitStack
+from http import HTTPStatus
 import json
 import http.server
 import threading
@@ -273,11 +274,12 @@ class CenterHostFaultsTests(unittest.TestCase):
         self.assertLess(len(raw),4096)
 
     def test_failure_diagnostics_keep_only_valid_numeric_http_status(self):
-        for status in (500, 503, 429):
+        for status in (500, 503, 429, HTTPStatus.INTERNAL_SERVER_ERROR, HTTPStatus.SERVICE_UNAVAILABLE):
             error=RuntimeError('secret-body-and-key')
             error.status_code=status
             value=runner.failure_summary(error)
             self.assertEqual(value['http_status'],status)
+            self.assertIs(type(value['http_status']),int)
             self.assertNotIn('secret-body-and-key',json.dumps(value))
         for status in (None, True, '500', 99, 600, {'secret':500}):
             error=RuntimeError('private')

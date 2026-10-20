@@ -15,6 +15,7 @@ _require_assertions()
 
 import argparse
 import importlib.metadata
+from http import HTTPStatus
 import json
 import os
 from pathlib import Path
@@ -209,6 +210,8 @@ def failure_summary(error):
     # The fixed SDK exposes a numeric HTTP status independently of arbitrary
     # exception messages. A bool, string, missing field or property is unknown.
     status=vars(error).get('status_code')
+    if type(status) is HTTPStatus:
+        status=status.value
     if type(status) is int and 100<=status<=599:
         result['http_status']=status
     return result
