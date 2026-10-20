@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "issue": 333,
+  "base": "501e79d85b4329f5f6a0bce17c640fb611547009",
+  "target": "x86_64-unknown-linux-gnu",
+  "crate": "sandproof-controller-service",
+  "features": [
+    "default",
+    "durable",
+    "host-artifacts"
+  ],
+  "source_files": {
+    "controller-service/src/journal.rs": "3d1f13327a5dd9c4966357359f95d060214c96f20daf060bd1821ec4582952d6",
+    "controller-service/src/lib.rs": "57100f1f9c71901fb182dc1cd30056698ef9315883901bafb5b3557612f8732b",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d"
+  },
+  "candidate_files": {
+    "controller-service/src/journal.rs": "2e0d6ec350f044c218647eb66cb7cf3efb5fe9734d9902c696f6fda72b8b9fac",
+    "controller-service/src/journal/statement_core.rs": "b453e5572242edcba8d01d4ebf6bff002387ce7d27eae4a50eb508544aacefab"
+  },
+  "patch": "candidate-core.patch",
+  "patch_sha256": "9543431088c2a1de3eabfdfe228bdfc8197b554a1fd001cc3a18efb7e0c6bf15",
+  "roots": [
+    "crate::journal::statement_core::next_revision",
+    "crate::journal::statement_core::update_existing"
+  ],
+  "production_unchanged": true,
+  "scope": "isolated original revision arithmetic and exact parameterized UPDATE/row-count branch; full write_accepted/outbox/recovery excluded",
+  "unproved": [
+    "original/candidate general behavioral equivalence and production deployment connection",
+    "fixed library/engine/standard-library conformance beyond explicit A4/A6/B4 dependencies",
+    "V5 full transaction/outbox/commit/recovery",
+    "panic/unwind/abort/crash poststates or termination"
+  ],
+  "parameter_binding": "Only the isolated candidate replaces params! with fixed rusqlite five-tuple Params: same five typed positions for this exact SQL; count-check order differs for arbitrary SQL/effectful ToSql. Exact evidence and progress live in #333/PR, not this source profile.",
+  "source_archive_sha256": "c872dffa1831db48d38e7b90649e65ee5e354ef69b73971061c8642a0b6e57c9"
+}

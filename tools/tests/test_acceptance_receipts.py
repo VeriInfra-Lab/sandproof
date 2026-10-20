@@ -3,6 +3,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -223,13 +224,57 @@ class ClosureTests(unittest.TestCase):
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
             'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','tunnel','data-drain','sqlite','foundations','network',
-            'first-chain-linux','first-chain','storage'})
+            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
         retained=(root/'scripts/verify-retained-proofs.sh').read_text()
         self.assertIn("rg --files SandboxModel -g '*.lean'",retained)
         self.assertIn('verification/ProofAudit.lean',retained)
         self.assertIn('tools/proof_services.py',retained)
+
+    def test_sqlite_view_retains_the_complete_parent_without_duplicate_libraries(self):
+        from tools.check_sqlite_extraction import audit_surface
+        repository=Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            shutil.copytree(repository/'verification/aeneas/sqlite',root/'verification/aeneas/sqlite')
+            base=(repository/'lake-first-chain.toml').read_text()
+            view=root/'lake-sqlite.toml'
+            (root/'lake-first-chain.toml').write_text(base)
+            view.write_text(base)
+            self.assertEqual(len(audit_surface(root)),18)
+            extension='\n[[lean_lib]]\nname = "SandproofSqlite"\nsrcDir = "verification/aeneas/sqlite"\n'
+            view.write_text(base.rstrip()+'\n'+extension)
+            with self.assertRaisesRegex(ValueError,'preserve the full'):
+                audit_surface(root)
+            view.write_text(base.replace('name = "SandproofSchemaDomains"','name = "WrongLibrary"'))
+            with self.assertRaisesRegex(ValueError,'preserve the full'):
+                audit_surface(root)
+            without=base.replace(extension,'')
+            self.assertNotEqual(without,base)
+            (root/'lake-first-chain.toml').write_text(without)
+            view.write_text(without.rstrip()+'\n'+extension)
+            self.assertEqual(len(audit_surface(root)),18)
+            invalid=base.replace('srcDir = "verification/aeneas/sqlite"','srcDir = "wrong-source"')
+            (root/'lake-first-chain.toml').write_text(invalid)
+            view.write_text(invalid)
+            with self.assertRaisesRegex(ValueError,'original unique source'):
+                audit_surface(root)
+
+    def test_audit_inventory_includes_separate_negative_roots_and_requires_their_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            fixtures={
+                'verification/ProofAudit.lean':'Root.accepts',
+                'SandboxModel/Actual/Audit.lean':'Actual.safe',
+                'verification/aeneas/Actual/Audit.lean':'Generated.refines',
+                proof_batch.EXTRA_AUDIT_FILES[0]:'Wrong.rejected'}
+            for name, declaration in fixtures.items():
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text('#audit_controller_proof '+declaration+'\n')
+            self.assertEqual(proof_batch.expected_audits(root),set(fixtures.values()))
+            (root/proof_batch.EXTRA_AUDIT_FILES[0]).unlink()
+            with self.assertRaises(OSError):proof_batch.expected_audits(root)
 
 
 class FormalReuseTests(unittest.TestCase):

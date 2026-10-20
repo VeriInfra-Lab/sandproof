@@ -1,0 +1,18 @@
+name = "sandproof-sqlite-statements-proof"
+version = "0.1.0"
+defaultTargets = ["SandboxModel.Boundaries.SqliteStatements.Audit"]
+[[lean_lib]]
+name = "SandboxModel"
+[[lean_lib]]
+name = "SandproofSqliteStatements"
+srcDir = "verification/aeneas/sqlite-statements"
+[[lean_lib]]
+name = "SandproofSqlite"
+srcDir = "verification/aeneas/sqlite"
+[[lean_lib]]
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/foundations"
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"

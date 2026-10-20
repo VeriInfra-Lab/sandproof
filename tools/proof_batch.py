@@ -16,7 +16,12 @@ from tools.check_foundations_extraction import llbc_digest
 
 MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-contract',
            'revocation-contract','owned-message','notify','joinset','std-mutex','tunnel','data-drain','sqlite','foundations','network',
-           'first-chain-linux','first-chain','storage')
+           'first-chain-linux','first-chain','storage',
+           'schema-domains','loop-callbacks','sqlite-statements')
+
+# SQLite emits its admitted kernel counterexamples as well as positive roots.
+# Include those actual audits in the complete inventory.
+EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counterexample.lean',)
 
 # These generators intentionally reuse a fixed workspace output location.
 # Keep immutable raw copies in the success entry, even when the directory
@@ -296,6 +301,15 @@ def runtime(force=False):
     return result
 
 
+def expected_audits(root=ROOT):
+    paths = [root/'verification/ProofAudit.lean']
+    paths += [p for directory in ('SandboxModel', 'verification/aeneas')
+              for p in (root/directory).rglob('*.lean')]
+    paths += [root/name for name in EXTRA_AUDIT_FILES]
+    return {name for path in paths
+            for name in re.findall(r'^#audit_controller_proof (\S+)$', path.read_text(), re.M)}
+
+
 def run_batch(cache, recompute=False):
     started=time.monotonic()
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE')!='formal':
@@ -331,18 +345,14 @@ def run_batch(cache, recompute=False):
             if tracked_inputs()!=inputs_before:
                 raise ValueError('tracked inputs changed between modules')
         results.append(step('retained',['bash','scripts/verify-retained-proofs.sh']))
-        expected=set()
-        for directory in ('SandboxModel','verification/aeneas'):
-            for path in (ROOT/directory).rglob('*.lean'):
-                expected.update(re.findall(r'^#audit_controller_proof (\S+)$',path.read_text(),re.M))
-        expected.update(re.findall(r'^#audit_controller_proof (\S+)$',
-                                   (ROOT/'verification/ProofAudit.lean').read_text(),re.M))
+        expected=expected_audits()
         observed=set()
         for row in results:
             text=(Path(row['receipt']).parent/'command.log').read_text()
             observed.update(re.findall(r'Checked ([\w.]+): \d+ standard logical dependencies',text))
-        if not expected <= observed:
-            raise ValueError('missing dependency audits: '+repr(sorted(expected-observed)))
+        if expected != observed:
+            raise ValueError('dependency audit inventory mismatch: '+repr(dict(
+                missing=sorted(expected-observed), additional=sorted(observed-expected))))
         if tracked_inputs()!=inputs_before or sha(native/'complete.json')!=native_before:
             raise ValueError('batch source or native evidence changed')
         validate_native(native)

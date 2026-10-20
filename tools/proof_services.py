@@ -14,6 +14,9 @@ FILES=('SandboxModel.lean','verification/ProofAudit.lean',
        'SandboxModel/Boundaries/Notify/Audit.lean',
        'SandboxModel/Boundaries/JoinSet/Audit.lean',
        'SandboxModel/Boundaries/StdMutex/Audit.lean',
+       'SandboxModel/Boundaries/SchemaDomains/Audit.lean',
+       'SandboxModel/Foundations/LoopCallbacks/Audit.lean',
+       'SandboxModel/Boundaries/SqliteStatements/Audit.lean',
        'SandboxModel/Boundaries/TlsPin/Audit.lean',
        'verification/aeneas/storage/SandproofStorage/Audit.lean',
        'verification/aeneas/sqlite/SandproofSqlite/Audit.lean',
@@ -35,6 +38,7 @@ def main():
         except ValueError: continue
         if row.get('request',{}).get('tool')=='lean_diagnostic_messages': records.append(row)
     if len(records)!=len(requests): raise ValueError('missing physical Lean request')
+    audited_messages=[]
     for request,row in zip(requests,records):
         if (row.get('request')!=request or row.get('stale') is not False
             or row['revision']['file_sha256']!=request['expected_sha256']):
@@ -54,9 +58,15 @@ def main():
         for item in result.get('items',[]):
             message=str(item.get('message',item.get('data','')))
             match=re.fullmatch(r'Checked ([\w.]+): \d+ standard logical dependencies',message)
-            if match:checked.add(match[1])
+            if match:
+                checked.add(match[1])
+                audited_messages.append(message)
         if expected and checked!=expected:
             raise ValueError('physical service did not report the actual complete dependency audit')
+    # Forward only actual messages after every original request was admitted.
+    # The batch must see these audits even when Lake reused compiled imports.
+    for message in audited_messages:
+        print(message,flush=True)
     print(f'{len(FILES)} complete, non-stale physical-file Lean service diagnostics:',out)
 
 

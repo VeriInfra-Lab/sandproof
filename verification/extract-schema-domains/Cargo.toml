@@ -1,0 +1,14 @@
+[package]
+name = "sandproof-schema-domains-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Verification-only call-throughs. Production continues using the original APIs.
+[workspace]
+
+[dependencies]
+sandproof-controller-service = { path = "../../controller-service", default-features = false }
+sandproof-internal = { path = "../../sandbox-internal" }
+sandproof-protocol = { path = "../../sandbox-protocol" }
+serde_json = "=1.0.142"

@@ -1,0 +1,838 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_controller_service",
+  "functions": [
+    {
+      "def_id": 31,
+      "lean_name": "I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "core::convert::num::{impl core::convert::TryFrom<u64, core::num::error::TryFromIntError> for i64}::try_from",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/convert/num.rs",
+        "begin_line": 302,
+        "end_line": 302
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 38,
+      "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2859,
+        "end_line": 2859
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 29,
+      "lean_name": "rusqlite.Connection.execute",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "rusqlite::{rusqlite::Connection}::execute",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/lib.rs",
+        "begin_line": 620,
+        "end_line": 620
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 39,
+      "lean_name": "TupleABCDE.Insts.RusqliteParamsParams.__bind_in",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "rusqlite::params::{impl rusqlite::params::Params for (A, B, C, D, E)}::__bind_in",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/params.rs",
+        "begin_line": 253,
+        "end_line": 253
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "rusqlite::transaction::{impl core::ops::deref::Deref<rusqlite::Connection> for rusqlite::transaction::Transaction<'_0>}::deref",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/transaction.rs",
+        "begin_line": 237,
+        "end_line": 237
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 40,
+      "lean_name": "I64.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for i64}::to_sql",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 204,
+        "end_line": 204
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 41,
+      "lean_name": "Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for &'_0 T}::to_sql",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 287,
+        "end_line": 287
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 43,
+      "lean_name": "Str.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for str}::to_sql",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 301,
+        "end_line": 301
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 42,
+      "lean_name": "alloc.vec.VecU8.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+      "lean_file": "SandproofSqliteStatements/FunsExternal_Template.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for alloc::vec::Vec<u8>}::to_sql",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 308,
+        "end_line": 308
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 27,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.SandboxId.as_str",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::SandboxId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 28,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.TenantId.as_str",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_protocol::{sandproof_protocol::TenantId}::as_str",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 45,
+      "lean_name": "SandproofSqliteStatementsRust.journal.as_sql_integer.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_controller_service::journal::as_sql_integer::{impl core::ops::function::FnOnce<(core::num::error::TryFromIntError,), sandproof_controller_service::JournalError> for sandproof_controller_service::journal::as_sql_integer::{closure}}::call_once",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/journal.rs",
+        "begin_line": 82,
+        "end_line": 82
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofSqliteStatementsRust.journal.as_sql_integer",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_controller_service::journal::as_sql_integer",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/journal.rs",
+        "begin_line": 81,
+        "end_line": 83
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofSqliteStatementsRust.journal.statement_core.next_revision",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_controller_service::journal::statement_core::next_revision",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/journal/statement_core.rs",
+        "begin_line": 4,
+        "end_line": 13
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 44,
+      "lean_name": "SandproofSqliteStatementsRust.JournalError.Insts.CoreConvertFromError.from",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_controller_service::{impl core::convert::From<rusqlite::error::Error> for sandproof_controller_service::JournalError}::from",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/lib.rs",
+        "begin_line": 216,
+        "end_line": 218
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofSqliteStatementsRust.journal.statement_core.update_existing",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_controller_service::journal::statement_core::update_existing",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/journal/statement_core.rs",
+        "begin_line": 15,
+        "end_line": 36
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 19,
+      "lean_name": "core.io.error.Error",
+      "lean_file": "SandproofSqliteStatements/TypesExternal_Template.lean",
+      "rust_name": "core::io::error::Error",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/io/error.rs",
+        "begin_line": 87,
+        "end_line": 87
+      }
+    },
+    {
+      "def_id": 9,
+      "lean_name": "rusqlite.error.Error",
+      "lean_file": "SandproofSqliteStatements/TypesExternal_Template.lean",
+      "rust_name": "rusqlite::error::Error",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/error.rs",
+        "begin_line": 34,
+        "end_line": 34
+      }
+    },
+    {
+      "def_id": 10,
+      "lean_name": "rusqlite.Connection",
+      "lean_file": "SandproofSqliteStatements/TypesExternal_Template.lean",
+      "rust_name": "rusqlite::Connection",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/lib.rs",
+        "begin_line": 357,
+        "end_line": 357
+      }
+    },
+    {
+      "def_id": 30,
+      "lean_name": "rusqlite.statement.Statement",
+      "lean_file": "SandproofSqliteStatements/TypesExternal_Template.lean",
+      "rust_name": "rusqlite::statement::Statement",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/statement.rs",
+        "begin_line": 14,
+        "end_line": 14
+      }
+    },
+    {
+      "def_id": 32,
+      "lean_name": "rusqlite.types.to_sql.ToSqlOutput",
+      "lean_file": "SandproofSqliteStatements/TypesExternal_Template.lean",
+      "rust_name": "rusqlite::types::to_sql::ToSqlOutput",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 11,
+        "end_line": 11
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "rusqlite.transaction.Transaction",
+      "lean_file": "SandproofSqliteStatements/TypesExternal_Template.lean",
+      "rust_name": "rusqlite::transaction::Transaction",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/transaction.rs",
+        "begin_line": 63,
+        "end_line": 63
+      }
+    },
+    {
+      "def_id": 20,
+      "lean_name": "serde_json.error.Error",
+      "lean_file": "SandproofSqliteStatements/TypesExternal_Template.lean",
+      "rust_name": "serde_json::error::Error",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.142/src/error.rs",
+        "begin_line": 17,
+        "end_line": 17
+      }
+    },
+    {
+      "def_id": 39,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.auxiliary.AuxiliaryReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::AuxiliaryReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/auxiliary.rs",
+        "begin_line": 26,
+        "end_line": 26
+      }
+    },
+    {
+      "def_id": 37,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.worker.WorkerReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::worker::WorkerReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 66,
+        "end_line": 66
+      }
+    },
+    {
+      "def_id": 36,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.scheduler.SchedulerReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::scheduler::SchedulerReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/scheduler.rs",
+        "begin_line": 20,
+        "end_line": 20
+      }
+    },
+    {
+      "def_id": 34,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.request.Reject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::request::Reject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/request.rs",
+        "begin_line": 13,
+        "end_line": 13
+      }
+    },
+    {
+      "def_id": 40,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.recovery_monitor.RuntimeReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::recovery_monitor::RuntimeReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/recovery_monitor.rs",
+        "begin_line": 23,
+        "end_line": 23
+      }
+    },
+    {
+      "def_id": 38,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.publication.PublicationReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::publication::PublicationReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/publication.rs",
+        "begin_line": 27,
+        "end_line": 27
+      }
+    },
+    {
+      "def_id": 47,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.maintenance.windows.WindowReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::WindowReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/maintenance/windows.rs",
+        "begin_line": 319,
+        "end_line": 319
+      }
+    },
+    {
+      "def_id": 46,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.maintenance.slots.SlotReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::SlotReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/maintenance/slots.rs",
+        "begin_line": 65,
+        "end_line": 65
+      }
+    },
+    {
+      "def_id": 45,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.maintenance.retirement.RetirementReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::retirement::RetirementReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/maintenance/retirement.rs",
+        "begin_line": 67,
+        "end_line": 67
+      }
+    },
+    {
+      "def_id": 33,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.maintenance.MaintenanceReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::MaintenanceReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/maintenance.rs",
+        "begin_line": 63,
+        "end_line": 63
+      }
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.effect.EffectReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::effect::EffectReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/effect.rs",
+        "begin_line": 21,
+        "end_line": 21
+      }
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofSqliteStatementsRust.sandbox_controller_core.controller.ControllerReject",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandbox_controller_core::controller::ControllerReject",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/controller.rs",
+        "begin_line": 44,
+        "end_line": 44
+      }
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.ContractError",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::ContractError",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 31,
+        "end_line": 31
+      }
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.SandboxId",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::SandboxId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 15,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.TenantId",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::TenantId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 26,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.OperationId",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::OperationId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 48,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.LogicalActionId",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::LogicalActionId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 51,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.ResourceId",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::ResourceId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 50,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.ResourceKind",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::ResourceKind",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 184,
+        "end_line": 184
+      }
+    },
+    {
+      "def_id": 49,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.ResourceRef",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::ResourceRef",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 194,
+        "end_line": 194
+      }
+    },
+    {
+      "def_id": 42,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.ActionIdentity",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::ActionIdentity",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 202,
+        "end_line": 202
+      }
+    },
+    {
+      "def_id": 27,
+      "lean_name": "SandproofSqliteStatementsRust.sandproof_protocol.WorkAction",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_protocol::WorkAction",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 233,
+        "end_line": 233
+      }
+    },
+    {
+      "def_id": 22,
+      "lean_name": "SandproofSqliteStatementsRust.CrashPoint",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_controller_service::CrashPoint",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/lib.rs",
+        "begin_line": 68,
+        "end_line": 75
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofSqliteStatementsRust.JournalError",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_controller_service::JournalError",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/lib.rs",
+        "begin_line": 93,
+        "end_line": 118
+      }
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofSqliteStatementsRust.journal.as_sql_integer.closure",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_controller_service::journal::as_sql_integer::{closure}",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/journal.rs",
+        "begin_line": 82,
+        "end_line": 82
+      }
+    },
+    {
+      "def_id": 8,
+      "lean_name": "SandproofSqliteStatementsRust.journal.AcceptedWrite",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "sandproof_controller_service::journal::AcceptedWrite",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/journal.rs",
+        "begin_line": 20,
+        "end_line": 28
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [
+    {
+      "def_id": 13,
+      "lean_name": "SandproofSqliteStatementsRust.rusqlite.params.sealed.Sealed",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "rusqlite::params::sealed::Sealed",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/params.rs",
+        "begin_line": 6,
+        "end_line": 6
+      }
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofSqliteStatementsRust.rusqlite.params.Params",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "rusqlite::params::Params",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/params.rs",
+        "begin_line": 178,
+        "end_line": 178
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "SandproofSqliteStatementsRust.rusqlite.types.to_sql.ToSql",
+      "lean_file": "SandproofSqliteStatements/Types.lean",
+      "rust_name": "rusqlite::types::to_sql::ToSql",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 155,
+        "end_line": 155
+      }
+    }
+  ],
+  "trait_impls": [
+    {
+      "def_id": 24,
+      "lean_name": "SandproofSqliteStatementsRust.TupleABCDE.Insts.RusqliteParamsSealedSealed",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "rusqlite::params::{impl rusqlite::params::sealed::Sealed for (A, B, C, D, E)}",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/params.rs",
+        "begin_line": 251,
+        "end_line": 251
+      },
+      "impl_trait_def_id": 13,
+      "impl_trait_rust_name": "rusqlite::params::sealed::Sealed",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofSqliteStatementsRust.TupleABCDE.Insts.RusqliteParamsParams",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "rusqlite::params::{impl rusqlite::params::Params for (A, B, C, D, E)}",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/params.rs",
+        "begin_line": 252,
+        "end_line": 252
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "rusqlite::params::Params",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofSqliteStatementsRust.I64.Insts.RusqliteTypesTo_sqlToSql",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for i64}",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 202,
+        "end_line": 202
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "rusqlite::types::to_sql::ToSql",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 15,
+      "lean_name": "SandproofSqliteStatementsRust.Shared0T.Insts.RusqliteTypesTo_sqlToSql",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for &'_0 T}",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 282,
+        "end_line": 284
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "rusqlite::types::to_sql::ToSql",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 17,
+      "lean_name": "SandproofSqliteStatementsRust.Str.Insts.RusqliteTypesTo_sqlToSql",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for str}",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 299,
+        "end_line": 299
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "rusqlite::types::to_sql::ToSql",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 16,
+      "lean_name": "SandproofSqliteStatementsRust.alloc.vec.VecU8.Insts.RusqliteTypesTo_sqlToSql",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for alloc::vec::Vec<u8>}",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/to_sql.rs",
+        "begin_line": 306,
+        "end_line": 306
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "rusqlite::types::to_sql::ToSql",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 19,
+      "lean_name": "SandproofSqliteStatementsRust.journal.as_sql_integer.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_controller_service::journal::as_sql_integer::{impl core::ops::function::FnOnce<(core::num::error::TryFromIntError,), sandproof_controller_service::JournalError> for sandproof_controller_service::journal::as_sql_integer::{closure}}",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/journal.rs",
+        "begin_line": 82,
+        "end_line": 82
+      },
+      "impl_trait_def_id": 8,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofSqliteStatementsRust.JournalError.Insts.CoreConvertFromError",
+      "lean_file": "SandproofSqliteStatements/Funs.lean",
+      "rust_name": "sandproof_controller_service::{impl core::convert::From<rusqlite::error::Error> for sandproof_controller_service::JournalError}",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/lib.rs",
+        "begin_line": 215,
+        "end_line": 219
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::convert::From",
+      "impl_trait_is_builtin": true
+    }
+  ]
+}
