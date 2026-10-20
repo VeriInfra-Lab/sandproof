@@ -23,8 +23,8 @@ NATIVE_INPUTS = [SOURCE, MANIFEST, CRATE + "/Cargo.lock", TEST,
                  "tools/check_btree_set_binding.py", "tools/check_btree_set_binding_components.py",
                  "tools/check_foundations_extraction.py", "tools/check_loop_callbacks_contract.py"]
 PRODUCTION_RUSTC = "rustc 1.97.0 (2d8144b78 2026-07-07)"
-CORRECT_SOURCE = "ae379c043d3247e47c261c684e5669a87c7313030be5f98a8a67a2d7722da8f7"
-WRONG_SOURCE = "958049b09a411d2c78c1836c68d2ffac17b8fb1c88d5b3e5ad01db3c1fda8043"
+CORRECT_SOURCE = "6a0fb1f7466e085314c51dd916d4cdcb537ee32f9fc1bcb905733bd6de67b16b"
+WRONG_SOURCE = "e43c42c728b065c0dfb40ceee795191ee8389e60e44c0ce66172229058ccaeda"
 
 
 def fresh_artifacts(log, target, source):

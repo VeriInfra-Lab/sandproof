@@ -12,11 +12,7 @@ pub fn insert_str<'a>(seen: &mut BTreeSet<&'a str>, value: &'a str) -> bool {
     seen.insert(value)
 }
 
-pub fn insert_lane<'a>(
-    seen: &mut BTreeSet<(&'a str, u16)>,
-    node: &'a str,
-    slot: u16,
-) -> bool {
+pub fn insert_lane<'a>(seen: &mut BTreeSet<(&'a str, u16)>, node: &'a str, slot: u16) -> bool {
     seen.insert((node, slot))
 }
 
