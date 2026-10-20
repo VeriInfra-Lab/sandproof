@@ -708,7 +708,7 @@
     "verification/experiments/tls-certificate-binding/collect.py": "d16626b69f64a6e9545882f3ed5912d4ceae6965c48f6d5fbf6647314c2c956d",
     "verification/experiments/tls-certificate-binding/native.py": "6bde05e17add35dd38aacbdf7af514f2aa3daf7d0b555dabe72901b84c0e0972",
     "verification/experiments/tls-certificate-binding/native.rs": "6919ef1f1d5ad212ea0bf2d161a27e1e1ba73a3f09b4aca1343c2264ee245cc2",
-    "verification/experiments/tls-certificate-binding/primitive-audit.json": "49d37c91984553b0b983d84b50bbfe7a300e0f3a5195519b7f14f81f01987468",
+    "verification/experiments/tls-certificate-binding/primitive-audit.json": "ab4ecb8f36072512547d93cb73e4c05bbcefd71695c33ed36127f83bcdce80e8",
     "verification/first-chain-linux-environment.json": "f0e7463b5c953afa3064cf14d6515026e2e90657f29a68433889e15cbd961496",
     "verification/fixtures/tls-pin-candidate.patch": "15c3fd86d6fff9710e7743ffd7fdf1feec0f80f532e94e3c9c0da73d45ada38d",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
