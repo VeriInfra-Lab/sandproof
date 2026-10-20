@@ -64,5 +64,33 @@
   "value_core": "reuse existing allow/peerReply and actual bytes-core conditional theorems via mathematical view/encode only; no production call to the owned candidate claimed",
   "digest_count": "two source-level digest invocations on peer_pin success; return-value theorems alone do not prove physical call count",
   "drop": "complete fixed normal/on_unwind tree retained; precise_drops=false/desugar_drops=false limits remain explicit; no physical cleanup conclusion",
-  "status": "admission/native component pending"
+  "status": "finite-source admission and native component evidenced; complete shared acceptance pending coordinator",
+  "connection_primitive_sources": [
+    {
+      "symbol": "tokio_rustls::client::TlsStream::get_ref",
+      "crate": "tokio-rustls 0.26.6",
+      "source": "src/client.rs:249",
+      "expression": "(&self.io, &self.session)",
+      "normal": "same stream original IO/session shared borrows; not the Connect future Option-returning get_ref",
+      "source_file_sha256": "99c21fc31cd2a7e9b10e6802a41598a3e42bf1b17e6007c4c7f59257e1e77293"
+    },
+    {
+      "symbol": "tokio_rustls::server::TlsStream::get_ref",
+      "crate": "tokio-rustls 0.26.6",
+      "source": "src/server.rs:377",
+      "expression": "(&self.io, &self.session)",
+      "normal": "same accepted stream original IO/session shared borrows",
+      "source_file_sha256": "c1c3e997c730c0ed0e9825b2043aff241f8e5680e29b7ce57a9a07ce5e483a57"
+    },
+    {
+      "symbol": "rustls::CommonState::peer_certificates",
+      "crate": "rustls 0.23.45",
+      "source": "src/common_state.rs:139",
+      "signature": "&self → Option<&[CertificateDer<'static>]>",
+      "expression": "self.peer_certificates.as_deref()",
+      "normal": "same original ordered optional chain; outer borrow remains bounded by this call",
+      "source_file_sha256": "6b784b195653cefe0eb42e9e1beb7bf25b35991c1da484a57c1549dd2237072b"
+    }
+  ],
+  "native_coverage_note": "New direct native cases exercise all four sync entries. Existing secure_probe loopback provides representative production TLS evidence. data_connection is source-bound here; its full async/data flow was not separately accepted by this component."
 }

@@ -1,0 +1,78 @@
+{
+  "scope": "finite source/AST/native engineering connection; no original function machine refinement",
+  "base_commit": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "rust_tests_executed_at": "d588611dde7d4dd13be6e75a1ea8f1bde16d695e",
+  "native_seconds": 33.51045756798703,
+  "native_host_seconds": 33.56810895598028,
+  "variants": {
+    "original": {
+      "prefix_sha256": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
+      "unit_binary_sha256": "52ed54cc36f3dc8d9727a2dc41ba3e969d786a2b69e766aface75a31de2c5a10",
+      "test_package_manifest_src_and_fresh_false_checked": true,
+      "new_unit_passed": 7,
+      "real_tls_passed": 16,
+      "tls_binary_sha256": "e7e2d557ada6caecf40b47666b6996c13d8388ebf772f38b9b4695a7304db38a",
+      "library_sha256": "dde89d2b92b4d5d95de03d3c435a4cf860554f8f503edb7291834ad5fe0f84b2",
+      "business_library_fresh_false_checked": true
+    },
+    "owned-candidate": {
+      "prefix_sha256": "34d26a1817c4c0a68a1b569f716bc906ea3f0a5ae26e4efb2d636ff2f31d1354",
+      "unit_binary_sha256": "21c16939f2e10a718c5c35e274253c535bbc55c26d4429fbba9dcd6c347a89ae",
+      "test_package_manifest_src_and_fresh_false_checked": true,
+      "new_unit_passed": 7,
+      "real_tls_passed": 16,
+      "tls_binary_sha256": "530df9d2506be59a1cc27283de4c6d90d6d15ee392119b022414cf5fccea14bd",
+      "library_sha256": "0a414af06d7b3ad8c6675d23262d04b57d39d0a14ba36e9a13f825939949aca9",
+      "business_library_fresh_false_checked": true
+    },
+    "wrong-first-leaf": {
+      "prefix_sha256": "e0c7c7dc7c1a95a92385368f280ecae41a355311a8a11dd73e0b8462f2416c0e",
+      "unit_binary_sha256": "d555cb1c5e1e0b2bc671d7ec25389d9347082499df1d4f7c80b4969e2ae45f06",
+      "test_package_manifest_src_and_fresh_false_checked": true,
+      "negative_kind": "actual Rust native assertion only; no Lean rejection claimed",
+      "expected_assertion_exit": 101
+    },
+    "wrong-return-leaf": {
+      "prefix_sha256": "75afe6a3d269d78106028adf734d1b72197cd4a34777b22d35c8894ba5b2c8e3",
+      "unit_binary_sha256": "e8a773ea9369d847944393d358984a3894f95144b0721427e72f89b1bad3c487",
+      "test_package_manifest_src_and_fresh_false_checked": true,
+      "negative_kind": "actual Rust native assertion only; no Lean rejection claimed",
+      "expected_assertion_exit": 101
+    }
+  },
+  "python_admission_groups": 10,
+  "raw_source_cache_checks_at_native_run": 13,
+  "supplemental_layout_head": "72d8064fa5b343df1de5d3ef5d543b5c289d0395",
+  "layout_source_files_checked": 18,
+  "supplemental_ning_seconds": 1.1751593590015545,
+  "supplemental_formal_seconds": 0.8113164249807596,
+  "unchanged_rust_evidence_reused": true,
+  "whole_native_entry_reexecuted_after_metadata_update": false,
+  "charon_replay_seconds": 7.035425467416644,
+  "charon_replay_host_seconds": 8.141491737216711,
+  "charon_has_errors": false,
+  "local_transparent_bodies": 14,
+  "production_decision_entries": 4,
+  "charon_replay_llbc_sha256": "26ee89998c7d7e8c79a3d6a461e1cc3fa23191a17d8c7a721dca46024773b592",
+  "full_ir_digest": "089bea3282465d93db7447724f096c412d4d9ea46b5555ccbad9549b25ab420d",
+  "new_lean_checks": 0,
+  "new_theorems": 0,
+  "production_changed": false,
+  "charon_aeneas_changed": false,
+  "full_shared_acceptance": "pending coordinator wiring and combination gate; not executed by this component",
+  "native_review_packet_sha256": "18843e2e562b697b91c18e390ae7a64f2ff07e71e0f789c1da2b4a4a84904346",
+  "formal_review_packet_sha256": "33dac5efdd02046b713f41f872730170831f8d7af509f39b14c173b7856908f4",
+  "native_result_sha256": "cd8286460a77fa9313e04ce3ac97443529f671f5cdfbf33397003bc17863ee50",
+  "formal_result_sha256": "9e744a1bc431e181c12ca909b50819589c4601ef31822f0481d49643fb9b437d",
+  "retained_failures": [
+    "initial overbroad unsafe classification of compiler DropGlue, before Rust tests",
+    "missing local .cargo-checksum.json assumption, replaced by locked archive-member byte validation",
+    "AppleDouble overlay members rejected before extraction, replaced by exact plain-file USTAR"
+  ],
+  "limits": [
+    "original from_certificate not machine-proved",
+    "verify_pin/verify_peer/peer_pin not machine-refined",
+    "Rust negative tests are native assertions only",
+    "general Rust equivalence, async cancellation, resources and full authorization not proved"
+  ]
+}
