@@ -222,7 +222,7 @@ class ClosureTests(unittest.TestCase):
 
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
-            'task-contract','revocation-contract','owned-message','tunnel','data-drain','sqlite','foundations','network',
+            'task-contract','revocation-contract','owned-message','notify','joinset','tunnel','data-drain','sqlite','foundations','network',
             'first-chain-linux','first-chain','storage'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]

@@ -806,9 +806,32 @@ class Supervisor:
                     batch['result'] = result
                     batch['root_identity'] = [root.stat().st_dev, root.stat().st_ino]
                     batch['phase'] = 'reclaiming'
+                    if result['passed'] is False:
+                        batch['failed_evidence_retained'] = True
                     self.save()  # Evidence BEFORE reclamation; restart resumes original cleanup.
-                if root.exists():
-                    remove_private_tree(root, batch['root_identity'])
+                if batch['result']['passed'] is False and (
+                        batch.get('failed_evidence_retained') is True or root.exists() or root.is_symlink()):
+                    # Preserve the original failed task/logs after verified
+                    # physical cleanup. Restart rechecks this SAME root and
+                    # receipt, never repeats its Create or invents a score.
+                    root = private_path(root, directory=True)
+                    if [root.stat().st_dev, root.stat().st_ino] != batch['root_identity']:
+                        raise ValueError('failed batch evidence root identity changed')
+                    from tools.system_acceptance import digest as file_digest
+                    for name, field in (('report.json', 'report_sha256'),
+                                        ('execution-manifest.json', 'execution_manifest_sha256')):
+                        path = private_path(root / name)
+                        if path.stat().st_size > 4 * 1024**2 or file_digest(path) != batch['result'][field]:
+                            raise ValueError('failed batch original evidence changed')
+                    batch['failed_evidence_retained'] = True
+                elif batch['result']['passed'] is True:
+                    if root.exists():
+                        remove_private_tree(root, batch['root_identity'])
+                elif batch['result']['passed'] is not False:
+                    raise ValueError('batch execution result is unknown')
+                # Prior installed code could already have reclaimed a failed
+                # root after saving its result. Resume that exact old receipt
+                # without claiming evidence retention or rerunning work.
                 subprocess.run(['systemctl', 'stop', batch['unit']], check=True, capture_output=True, timeout=20)
                 batch['phase'] = 'done'
                 self.save()

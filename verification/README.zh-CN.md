@@ -160,3 +160,12 @@ python3 tools/coverage.py --write
 Guest 持额消息的条件模型执行 `bash scripts/verify-owned-message.sh`，全批入口同样包含它和新增真实文件诊断。先在 ning 的完整原生批次中运行 `check_owned_message_components.py`，再向 a6000 交接成功记录；单独组件命令为 `bash scripts/python-entry.sh tools/check_owned_message_components.py --output artifacts/owned-message-check`，输出目录必须不存在。它只在隔离副本追加测试，正确版使用真实 `CommandOutput`、`Producer::frame`、`Frame`、Tokio 和 Bytes；提前丢弃 output 的错误版先新编译，再被正确版同一持额断言拒绝。共用一个注册 Rust 缓存，各版原始二进制和日志另存。关闭相关用例还核对空 oneshot 关闭时 sender 仍活着，以及 mpsc 已有预留但尚未发布时 close 不等于 None；其中公开 reserve 仅用作受控测试屏障，不扩展生产 API 支持范围。另以真实 Arc/许可和受控析构屏障核对“强引用已为零但许可尚未归还”，不把引用计数读数当作资源完成。原 helper 在消息测试前已明确 abort/reap，不执行命令业务或假造物理退出证明。
 
 接口、条件与未覆盖项见[依赖登记](../docs/formal/dependencies.md#a6b3b4-guest-持额消息)和[调用表](owned-message-environment.json)。正式模型 `SandboxModel.Boundaries.OwnedMessage` 不是 Aeneas 生成的 async Rust。实际原工具预检在 a6000 执行 `python3 verification/experiments/owned-message/preflight.py --output artifacts/owned-message-preflight`，须使用现有形式编译缓存及固定工具；保留未支持诊断和部分 LLBC，不能算成业务错误版反例。实际局部/完整验收状态只见覆盖记录及 PR 回执。
+
+
+Notify 条件接口执行 `bash scripts/verify-notify.sh`，完整形式入口包括该模块及实际 Audit 文件诊断。先在 ning 执行完整 `proof_native_suite.py run`；其 `check_notify_components.py` 在隔离原源码副本追加 9 项确定性用例，并严格检查广播错误版新编译后由同一原等待者断言拒绝。单独原生命令是 `bash scripts/python-entry.sh tools/check_notify_components.py --output artifacts/notify-check`，目录必须不存在，沿用现有 `CARGO_HOME/CARGO_TARGET_DIR`。a6000 只消费封口原生证据，再运行原工具预检、Lean 与审计；不在证明机重跑这些 Rust 测试。预检保留真实 `PtyMaster::read` 的 coroutine 不支持诊断，不把抽取失败算成业务反例。
+
+范围和前提见[Notify 合同](../docs/formal/dependencies.md#a6b2b3-notify关闭广播与单接收者通知)及[逐点登记](notify-environment.json)。广播与单通知分开，通知不是计数信号量、业务成功或物理退出证据；Record 的原许可复用已有共享引用模型。它不覆盖 reaper 的标准库 Condvar，也不证明整个 PTY/命令业务或完整 async Rust。实际完成状态见覆盖记录及 #333 的本批 PR 回执。
+
+JoinSet 的条件模型执行 `bash scripts/verify-joinset.sh`，全批入口包含本模块和实际 Audit 文件诊断。先在 ning 完整原生批次运行 `check_joinset_components.py`；单独复现用 `bash scripts/python-entry.sh tools/check_joinset_components.py --output artifacts/joinset-check`，目录须不存在。组件只给原模块追加显式测试，中心/Guest 错误版只删除原收齐循环；正确与错误版必须新编译，错误版由同一即时断言拒绝，不用超时或编译失败充当反例。共享注册 Cargo target，原二进制、源码、变更及日志另存。
+
+向 a6000 只交接完整成功记录。模块入口还对真实 `Listener::serve` 执行固定原 Charon 预检：不支持 Coroutine 的失败原文和部分 LLBC 保留，不能据此运行 Aeneas 或称异步抽取成功。接口与条件见[依赖登记](../docs/formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[逐点登记](joinset-environment.json)。两个模型分别描述组历史与任意原任务，使用者提供同一真实执行的相容投影；它们不是完整 async Rust 语义。收齐保留正常值和原 JoinError 的所有权；panic 载荷也可以持有许可，需等这份错误值实际丢弃后才能观察其归还。模型保留 α/ρ 两类原值表示，不据此承诺独立阻塞工作或业务外部资源已经退出。实际完成状态仍由覆盖记录和 #333 精确回执说明。

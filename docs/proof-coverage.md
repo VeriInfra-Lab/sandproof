@@ -2,6 +2,22 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## T5/T6 JoinSet：原任务组收齐
+
+来源为 integration `886f2dd6`，生产 Rust 与固定 Charon/Aeneas 未改。[两个条件模型](../SandboxModel/Boundaries/JoinSet.lean)以 36 条声明为审计目标，覆盖组历史守恒、已完成未取出仍计数、原任务/正常值/完整原错误表示与至多一次交付、取消等待和 abort/Drop 的区别、逐 spawn 检查的容量与正常收齐。合法非空执行、提前 Drop 和只 abort 的同性质反例一并保留；[依赖合同](formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[十五组操作/责任登记](../verification/joinset-environment.json)限定范围。
+
+本批代表连接是中心 `supervise`、受保护 HTTP 连接组与 Guest `Listener::serve`。隔离测试追加到原模块，使用原函数/类型；正确用例覆盖原回调收尾、正常返回值及原 JoinError panic 载荷中的许可、取消等待期间完成、abort 后新 spawn、析构 panic 与独立阻塞工作。两个错误版仅在私有副本去掉中心或 Guest 原收齐循环，须先新编译，再被正确版同一即时原任务断言拒绝。固定原工具对真实 Guest 异步入口的预检与部分 LLBC 单独保留，不交给 Aeneas 当成成功生成物。
+
+局部候选已通过 a6000 原服务检查及 ning 原生试验；正式提交、完整模块/项目检查、实际文件诊断、完整双机入口与 CI 的状态以 #333 本批 PR 精确回执为准。当前不是 async Rust 的机器精化；机械接线仍依赖 A6/B1/B2/B3。中心错误策略、handler 业务、Guest Report、原许可全部别名及真实工作退出仍由 V2/V6/V8/V9 提供。空组或 JoinError 不证明外部进程结束，提前丢弃组也不满足收齐性质；T0/T5/T6/V0 保持开放。
+
+## T5/T6 Notify：PTY 广播与原 Record 通知
+
+本批来源 integration `70d08fd0`，生产 Rust 与 Charon/Aeneas 未改。[模型](../SandboxModel/Boundaries/Notify.lean)以 30 条条件声明为审计目标，分别覆盖单消费者通知合并、分配/消费/取消与数量上界，及先登记后检查的关闭广播、原身份和正常完成后的无漏通知。合法初态、非空成功、迟到拒绝和错误替换反例一起保留；[依赖合同](formal/dependencies.md#a6b2b3-notify关闭广播与单接收者通知)与[七组接线及两项责任登记](../verification/notify-environment.json)约束范围。
+
+隔离 Lean 候选已在 a6000 原服务检查通过；ning 的 9 个确定性原生用例及严格 Clippy 已通过，其中原 `PtyMaster::close/read/write_all` 的广播错误版新编译后，被正确版同一即时 poll 断言拒绝。原 Record 类型/原 reserve 许可的测试只核对通知不直接归还原许可，不执行或证明 `publish/run` 的业务决定。原 Charon 预检在实际 `PtyMaster::read` 报告 coroutine 不支持；失败原文及部分 LLBC 保留，不作为语义反例，也不交给 Aeneas 当成功产物。
+
+正式组合提交、模块构建、实际文件诊断、完整双机验收与 CI 的完成结果，以 #333 对应 PR 的精确回执为准，未完成阶段不由隔离成功代替。当前结论是条件模型及原源码工程证据，未形成 async Rust 机器精化；T0/T5/T6/V0 仍开放。关闭/退休资格、真实终态、字节/部分 I/O、保留期限、旧记录删除与原资源归还归 V8/V6。标准库 Condvar 的公共合同仍是 V0 缺口，JoinSet 和其他锁/任务接口未随本批完成。
+
 ## T5/T6 Guest 持额消息
 
 从 integration `81885df6` 开展，未修改生产 Rust 或 Charon/Aeneas。有限范围为真实 `CommandOutput` 的 mpsc/oneshot 交接、许可/引用随对象持有，以及 `Producer::frame` 到最后一个 Bytes 所有者正常析构的接线；[依赖合同](formal/dependencies.md#a6b3b4-guest-持额消息)、[逐操作登记](../verification/owned-message-environment.json)和复现入口共同约束范围。
@@ -519,6 +535,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 节点的值判断现集中于 `sandbox-node/src/linux/decisions.rs`（动作字段、资源映射、围栏、槽位坐标、进程身份及命令证据），现场读取在 `identity`/`observation`，执行和补偿在 `execution`/`recovery`，位置退休与精确释放仍由 `host_slots.rs` 负责。纯比较不是授权证书：操作/owner/物理位置核验和原锁内的现场读取顺序仍须连接证明。同步子进程统一使用 `sandbox-runtime::OwnedChild`，异步中继仍独立承担持久身份与排空责任；本次整理未运行抽取或新增 Lean 证明。
 
 ## 中心与系统组合：工程实现与待证明连接
+
+`a45f490` 之后的创建故障诊断候选修改原[中心等待](../sandbox-center-service/src/application.rs)和[Redis 查询适配](../sandbox-center-store/src/store.rs)，仅增加失败阶段、封闭错误类别及有限数值输出；每进程最多各 64 次写入尝试，输出失败不重试。原返回、期限、写围栏、未知语义和身份检查保持；这些诊断副作用及服务连接尚未证明，旧指定版本定理不覆盖新增代码。纯核心、抽取输入、Lean 和工具版本未修改。
 
 私有构建数据路由在原节点新鲜度检查拒绝时，补充与公开路由相同的固定 `CenterNodeFreshness` 诊断；不输出令牌、路径或请求内容，不改变原 Busy 返回、健康期限或授权条件。适用差异为 `29ee414` 之后的该诊断候选；[私有入口](../sandbox-center-service/src/private_gate.rs)及诊断副作用连接尚未证明，旧局部定理不覆盖它。中心纯核心、已抽取根和 Lean 均未修改。实际 Redis 回归检查重复拒绝不变更权威状态、其他租户仍拒绝、原健康观察恢复后保持同一实例路由；它不证明宿主健康持续可用，也不解释尚无具体诊断的实机 503。
 

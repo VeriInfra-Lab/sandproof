@@ -546,3 +546,45 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 [OwnedMessage](../../SandboxModel/Boundaries/OwnedMessage.lean)提供原载荷/资源身份保持、持额、共享引用与单张分配、FIFO 观察、oneshot 值/传输错误及 Frame 通知顺序的条件模型。公共历史由实际 A6/B3/B4 操作提供，业务仍证明自己何时使用它们；源码摘要和确定性回归不是一般性的 async Rust 精化。`recv` 等待取消、整个 receiver/body 被丢弃、panic/unwind 的可见前缀与已完成析构分别保留；abort/崩溃不承诺执行 Drop，也不提供后续恢复或资源归还。没有无条件调度、公平或最终消费保证。
 
 本批只登记有界 mpsc 的 `try_send/recv/close/Drop` 与上述 oneshot/Bytes 用法；不把异步 `send` 取消、公开 `reserve/Permit`、Notify、JoinSet、broadcast 或 watch 一并纳入。完整命令协议、授权、进程/FD/输入输出归还及系统容量由 V8/V6/V9 提供，其他公共机制仍在 V0 #333 开放。
+
+
+## A6/B2/B3 Notify：关闭广播与单接收者通知
+
+来源为 integration `70d08fd0`，固定 Tokio 1.49.0。范围是原 [PtyMaster](../../sandbox-guest-runtime/src/pty.rs) 的关闭信号，以及原 [Record.retired](../../sandbox-guest-service/src/command/registry.rs) 的单个保留任务；逐点条件和业务提供方见[登记](../../verification/notify-environment.json)，源码、库和验收绑定见[摘要](../../verification/notify-inputs.sha256)。这不是整个函数、服务或通用 Future 的可信白名单。
+
+| 提供方与实际操作 | 可以依赖的保证 | 仍需使用方证明 |
+| --- | --- | --- |
+| A6：原 `Notify::new`、`notify_one` 与同一信号的 `notified/enable/poll`；本条单接收者域 | 初始无通知；无已登记接收者时最多保存一个待取通知，多次早到通知会合并。已有等待者可获分配；该已分配通知与另外一个保存通知可以并存。Ready 表示本次通知被消费，不表示业务成功 | V8：同一原 Record、同一信号、至多一个当前接收者，没有混入广播或其他接收者；退休资格、真实结束、期限与下一步动作。通知不是计数信号量，不能按发送次数推算容量 |
+| A6：取消原 `Notified`；单通知与广播分别处理 | 已分配但未消费的单通知，在正常 Drop 时交还给下一等待者或合并到保存位；`enable` 也可能已消费通知，返回 Ready 后 Drop 不再补发该通知。广播等待者取消不产生一个新的单通知 | V8：区分取消一个借用等待、丢弃整个任务、正常析构完成和未知中断；不能假造一次 Ready 或归还许可。丢失队列位置不承诺公平进展 |
+| A6：`notify_waiters`，仅使用本次广播前已经 `enable` 的原等待者保证 | 正常广播完成后，这些原等待者的通知可被观察；它不是为后来的新等待者保存一张单通知。多个等待者可以同时被通知 | V8/V6：原对象绑定和关闭资格；通知后是否继续调度、I/O 结果、错误及真实退出另证。收到通知不是外部进程/FD/全部引用已退出 |
+| B2/B3：原 PTY 的 `close` 清空原锁保护的 Option 后广播；`read/write_all` 先创建、pin、enable，再检查原 descriptor | 仅对应这些原字段、锁和信号操作的顺序与结果。登记先于谓词读取；已看到 Open 的原等待者不会因“先检查、后登记”漏掉一次正常关闭广播。关闭后新调用由原 descriptor 检查拒绝，不等待未来通知；锁中毒的原错误或恢复取值语义不抹去 | V8/V6：原关闭调用的资格、所有访问者及不重新打开同一逻辑谓词；原描述符别名与读写在途效果、字节及首错误仍须处理。这是条件接线，不是该 async Rust 的机器精化 |
+| B3：`previous.retired.notify_one()` 与原 `guard.record.retired.notified()` 的机械身份 | 原通知不会被替换成另一 Record 的通知，早于等待的单通知可以保存；只传递通知事件，不执行或授权业务删除 | V8：`finished` 的真实性、tag/原记录选择、表中替换与 `Arc::ptr_eq` 的旧记录保护、原保留期限及 `Guard::remove`。这些判断不进入可信适配 |
+
+[Notify](../../SandboxModel/Boundaries/Notify.lean)分别提供有限单消费者历史和单调关闭谓词下一个任意观察者的模型。单通知模型记录幽灵发送/消费数量，证明消费不会凭空超过实际通知；它不是实现内部的机器计数器。广播模型证明登记后看到 Open、且仍活跃的原等待者，在正常关闭完成后已被通知，并有合法迟到拒绝、非空成功历史及单通知替代广播的同性质反例。每个使用方仍须提供自己的状态表示和真实 A6/B2/B3 事件投影，不能只凭模型定理声称 Rust 已机器证明。
+
+通知方法可在返回前唤醒其他任务，故不承诺它返回时整个业务状态或资源账本未变。已有 I/O 可能在关闭被观察前产生效果；本次 close 清除访问入口，也不会立刻销毁其他 Arc 持有的 FD。原 Record 的 `_slot: Arc<OwnedSemaphorePermit>` 复用已有 [OwnedMessage](../../SandboxModel/Boundaries/OwnedMessage/SharedLease.lean) 的原许可/最后引用规则；通知本身不提供真实归还凭证。Record 工程夹具使用原类型及 reserve 得到的许可，只核对这个持有关系，不冒充 `publish/run` 的业务证明。
+
+panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返回就不补造广播完成、析构完成、退出或恢复。安全模型不承诺最终再次 poll、最终删除或调度公平。模型之外的真实 I/O、锁顺序和内部推进仍按所属 V8/V6/V9 义务完成。
+
+本条不覆盖 `notify_last`、多接收者单通知队列或任意混用单通知/广播。源码中 [reaper.wake](../../sandbox-runtime/src/child_process/reaper.rs) 的同名 `notify_one` 实为标准库 **Condvar**，由已有 typed MIR 定位确认；其公共合同仍归 V0，队列谓词/回收策略归 V6，明确作为未完成项登记，不借本条认领。当前源码定位、原工具不支持诊断和确定性原生回归只支持所列可信条件，未证明全部 Rust 并发。
+
+
+## A6/B2/B3 JoinSet：收齐原任务与返回值
+
+固定 Tokio 1.49.0，生产来源为 integration `886f2dd6`。范围限于原 [中心监督](../../sandbox-center/src/runtime.rs)、[受保护连接组](../../sandbox-internal/src/protected_server.rs)和 [Guest 连接组](../../sandbox-guest-service/src/listener.rs)使用的 `new/spawn/len/is_empty/join_next/abort_all` 与正常组析构。三处源码、四份库实现、十二组机械操作和三项业务责任见[逐点登记](../../verification/joinset-environment.json)；[摘要](../../verification/joinset-inputs.sha256)固定实际输入。本条是既有 A6/B2/B3 的窄接法，不将整个服务、TLS 或业务回调列为可信。
+
+| 提供方与实际操作 | 可以依赖的保证 | 使用方仍须证明 |
+| --- | --- | --- |
+| A6：原组的构造、spawn、len/is_empty | 新组为空；成功 spawn 加入这一次原任务。完成但尚未 join 的任务仍计入组长；返回的 AbortHandle 被丢弃不等于取消任务 | 原组和逻辑 spawn 次序、完整参数/回调及有限合法输入；分配失败或进程中止不造正常返回。逻辑任务键不是永不复用的 Tokio 原始 ID |
+| A6：借用原组的 join_next | Some 取出一个原任务的原值或原 JoinError，至多交付一次；None 表示观察时组内已无任务。T 本身可以是 Result，业务 Err 仍是正常返回值。JoinError 的 panic 载荷也可能持有资源，错误值尚未丢弃时不归还这份责任 | 结果表示关系、错误解释、后续动作和每次取出值的所有者；取消这次等待不移除成员，但任务可以同时完成，不能推导整个组状态不变 |
+| A6：abort_all 与组 Drop | abort_all 只向当时组内任务请求取消，不移除它们，也不影响后来 spawn 的任务；已完成任务仍可返回原值。正常 Drop 请求取消并移除组的持有关系，不等待任务退出 | 原对象、正常返回/取消/实际 unwind/abort/崩溃的区别。Drop 中 panic 可以成为 JoinError::panic；没有返回就不补造取消完成。仍存活的工作和部分效果继续保留 |
+| B2/B3：中心通知后收齐、受保护连接 abort 后收齐、Guest 正常关闭后收齐 | 只连接登记的原 group、spawn 参数、结果和调用次序。保留组至 join_next 返回 None，可由历史守恒推出每次加入的任务都已被取出；中心不额外请求 abort，Guest 保留原连接期限 | V2/V6/V8/V9：为何关门、通知谁、全部 worker/handler 行为、何时不再加入任务、逐结果处理和进展。中心保留首个观察到的错误，不自动等于物理上最早的失败 |
+| B1 与已有持额合同：捕获值、返回值及独立工作 | 原许可沿实际对象移动；取出任务结果可以把仍持额的返回值交给调用者。空组不自动增加原池容量，取消 wrapper 不停止已开始的 spawn_blocking | V6/V8/V9：原许可/全部别名、真实资源归还、进程/文件/网络工作退出，以及未知时保持责任；不把处理函数或释放决定整体设为可信 |
+
+[JoinSet](../../SandboxModel/Boundaries/JoinSet.lean)提供两个条件模型：组历史记录仍运行、已完成待取出、已取出和随组移除的数量；任意原任务的投影保留逻辑身份与原结果。两者必须由同一实际 A6/B2/B3 执行提供相容的投影，不是两套可任选的业务事实。结果字段分别保存正常值的表示 α 和原 JoinError 的表示 ρ；ρ 保留原错误身份与 panic 载荷的持有关系，不能只用 panic/cancel 标签替代。它们不复制 Rust 资源所有权，也不把别名指向的可变堆冻结成快照。`forgotten` 只表示组 API 不再持有该任务，不表示析构、许可归还或外部效果已经完成。
+
+容量定理检查每次 spawn 前的原长度，再逐步推出上界，不把正确容量当作后置假设。Guest 的原 `len < limits.connections` 可用该接口；受保护服务的许可只约束持额连接，不能仅凭许可推导全部已完成待收齐的组成员数量。模型的 `accepting` 是调用者停止新增任务的逻辑决定，不是 JoinSet 自带 close 方法，必须由真实控制流建立。
+
+这 36 条声明证明所列模型的历史守恒、原身份/值和单次交付、受检容量与完整收齐；另保留合法非空成功，以及提前 drop/只 abort 不能满足同一收齐性质的反例。原 Charon 的实际异步入口预检、逐符号源码核对和确定性原生回归支持可信接线的采用，不提供完整 async Rust 机器精化。原生错误版分别去掉中心/Guest 原收齐循环，必须先新编译，再被正确版相同的即时断言拒绝；编译失败或超时不算反例。
+
+本条不覆盖 join_all、shutdown 便利方法、detach_all、JoinSet::spawn_blocking 或任务 ID 接口。没有无条件最终调度、终止或清理保证；不返回、panic/abort/崩溃只保留已观察前缀。业务回调、首次拒绝/错误、持久提交、真实 I/O/命令退出、Report 语义与授权仍归原 V2/V6/V8/V9，Mutex/RwLock、Condvar 及其它通道的公共缺口继续归 V0。
