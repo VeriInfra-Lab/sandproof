@@ -19,7 +19,6 @@ import SandboxModel.Foundations.LoopCallbacks.Audit
 import SandboxModel.Boundaries.ChildObservation.Audit
 import SandboxModel.Foundations.CallbackState.Audit
 
-import SandboxModel.Boundaries.BoundedWriter.Audit
 
 /-! Audit actual theorem dependencies, including imported libraries.  Source
 text scanning alone cannot detect an unproved assumption hidden in an import.
