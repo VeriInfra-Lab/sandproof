@@ -3,6 +3,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -231,6 +232,18 @@ class ClosureTests(unittest.TestCase):
         self.assertIn("rg --files SandboxModel -g '*.lean'",retained)
         self.assertIn('verification/ProofAudit.lean',retained)
         self.assertIn('tools/proof_services.py',retained)
+
+    def test_every_formal_component_requirement_is_reachable_through_cli(self):
+        root = Path(__file__).resolve().parents[2]
+        required = set()
+        for entry in (root / 'scripts').glob('verify-*.sh'):
+            required.update(re.findall(r'tools/proof_native_suite\.py require ([a-z][a-z0-9-]*)',
+                                       entry.read_text()))
+        self.assertIn('condvar', required)
+        for case in sorted(required):
+            with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
+                proof_native_suite.main(['require', case])
+                admit.assert_called_once_with(case, proof_native_suite.ROOT, None)
 
     def test_sqlite_view_retains_the_complete_parent_without_duplicate_libraries(self):
         from tools.check_sqlite_extraction import audit_surface
