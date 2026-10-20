@@ -1,0 +1,143 @@
+{
+  "kind": "finite-reviewed-source-neighborhoods-not-complete-call-graph",
+  "base": "501e79d85b4329f5f6a0bce17c640fb611547009",
+  "production_sources": {
+    "controller-core/src/checkpoint.rs": "9e789994d07dfd40f6778311c7a7a8c052024b89db6ae71806093e9759af1f42",
+    "controller-core/src/model.rs": "6378e009fe4a0f738bddad759b18786a36bc403a0c70f0dc21879a2d86284e51",
+    "controller-core/src/recovery_monitor.rs": "de372b099fdf31c818c6d2e4ec7da15fddf74871ee37e5b093067761d80fcb47",
+    "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3"
+  },
+  "use_points": [
+    {
+      "id": "store.shared-query",
+      "file": "controller-core/src/store.rs",
+      "range": [
+        "    pub fn get(&self",
+        "    pub fn contains_key"
+      ],
+      "anchors": [
+        "let mut index = 0;",
+        "while index < self.entries.len() {",
+        "if &self.entries[index].0 == key {",
+        "return Some(&self.entries[index].1);"
+      ],
+      "status": "original-core-in-this-batch",
+      "provider": "V0",
+      "conditions": "Finite original entries under valid safe shared borrows; duplicate keys are allowed. Real lawful comparison dictionary and faithful value view; payload view does not freeze aliased heaps. No hidden interior-state comparator effects are justified by trait naming."
+    },
+    {
+      "id": "store.presence-after-query",
+      "file": "controller-core/src/store.rs",
+      "range": [
+        "    pub fn contains_key",
+        "    pub fn put"
+      ],
+      "anchors": [
+        "self.get(key).is_some()"
+      ],
+      "status": "original-core-in-this-batch",
+      "provider": "V0",
+      "conditions": "Uses this same store/key and the original get result exactly once. Presence does not establish authorization, freshness or resource readiness."
+    },
+    {
+      "id": "world.sandbox-shared-view",
+      "file": "controller-core/src/model.rs",
+      "range": [
+        "    pub fn sandbox_record(&self",
+        "    pub fn vm_record"
+      ],
+      "anchors": [
+        "self.sandboxes.get(&sandbox)"
+      ],
+      "status": "source-binding-not-whole-caller-proof",
+      "provider": "V4",
+      "conditions": "Caller selects original World/table/sandbox and supplies actual SandboxId comparison law and record representation; broader state validity/authorization remains V4/V7."
+    },
+    {
+      "id": "checkpoint.duplicate-row-decision",
+      "file": "controller-core/src/checkpoint.rs",
+      "range": [
+        "fn restore_store<K: PartialEq, V>",
+        "impl CheckpointWire {"
+      ],
+      "anchors": [
+        "if store.contains_key(&key) {",
+        "return Err(CheckpointReject::DuplicateKey);",
+        "store.put(key, value);"
+      ],
+      "status": "business-loop-not-proved-by-this-batch",
+      "provider": "V4",
+      "conditions": "Real row decoding and comparison, processed-prefix invariant and first error. Reuse membership/insert contracts, but this batch does not prove whole restoration or assume uniqueness of arbitrary Store values."
+    },
+    {
+      "id": "runtime.effect-presence-decision",
+      "file": "controller-core/src/recovery_monitor.rs",
+      "range": [
+        "pub fn handle_duplicate_or_late_delivery",
+        "pub fn handle_runtime("
+      ],
+      "anchors": [
+        "if !world.effects.contains_key(&effect) {",
+        "return Err(RuntimeReject::EffectNotFound);"
+      ],
+      "status": "business-decision-not-proved-by-this-batch",
+      "provider": "V4/V9",
+      "conditions": "Original exact effect/attempt table and equality, durable receipt and clone/update meaning; key presence alone is no execution or cleanup receipt."
+    }
+  ],
+  "shape_classes": [
+    {
+      "shape": "finite-first-match-shared-borrow",
+      "actual": "Store::get",
+      "scope": "this batch",
+      "reuse": [
+        "Access.borrow_copy_loop_agree",
+        "Access.store_get_refines",
+        "Foundations.table_get_copy_loop_refines",
+        "Foundations.table_lookup_view"
+      ]
+    },
+    {
+      "shape": "presence-of-the-original-query",
+      "actual": "Store::contains_key",
+      "scope": "this batch",
+      "reuse": [
+        "Foundations.table_query_presence_preserved"
+      ]
+    },
+    {
+      "shape": "first-replacement-and-absent-append",
+      "actual": "Store::put",
+      "scope": "already delivered; no reimplementation",
+      "reuse": [
+        "Foundations.FiniteInsert",
+        "Foundations.TableWrites"
+      ]
+    },
+    {
+      "shape": "pure-owned-query",
+      "actual": "Store::get_copy",
+      "scope": "already delivered; no reimplementation",
+      "reuse": [
+        "Foundations.table_get_copy_refines"
+      ]
+    },
+    {
+      "shape": "retention-with-stateful-step",
+      "actual": "Store::retain",
+      "scope": "next batch only; existing theory is not full external captured-state correspondence",
+      "reuse": [
+        "Foundations.tableRetainState",
+        "Foundations.table_retain_refines_state"
+      ]
+    }
+  ],
+  "excluded": [
+    "All World/caller business correctness",
+    "T0 complete call graph",
+    "Arbitrary side-effectful PartialEq",
+    "External captured-state FnMut final state",
+    "Physical pointer/Drop/resource release proof",
+    "Production code restructuring"
+  ]
+}
