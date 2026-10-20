@@ -1,0 +1,992 @@
+{
+  "schema": 1,
+  "purpose": "finite reviewed source classification and reuse conditions; not a compiler census, theorem or additional trusted business specification",
+  "source_baseline": "501e79d85b4329f5f6a0bce17c640fb611547009",
+  "primary_schema_count": 22,
+  "sources": {
+    "controller-service/src/template_registry.rs": "6d539de49cb0507b89018bff44abd65a2443e2ec45f36882fa044d8a2c70d9a8",
+    "controller-service/src/template_registry/validation.rs": "77d54b0ec543380e1c5b0c0a17937d8769dd508f88b0164e2860f1d69bc019c6",
+    "controller-service/src/templates.rs": "43dd7d2fa214bf2b5035d9de87e07b6656b3b364bf6226861d16b59c8c98e573",
+    "sandbox-center/src/artifacts/http.rs": "72c5fa32d809eea216354adebf8d044751c34b6e9f17102ea8c80a79f5767dba",
+    "sandbox-internal/src/artifact_client.rs": "3f230a7d9322460c7789356ad5c133112661b934f9bcbabd1f85c3ca2e32940f",
+    "sandbox-internal/src/cache.rs": "ef33d3adb64712ab41c4f63f7f9076547f5825db61b6f0b90fb2a02f09111595",
+    "sandbox-internal/src/client.rs": "4a6fbc333dbe328e0cbfeb8277e22602081b34c60f30d8807c581be7b6bf7f73",
+    "sandbox-internal/src/client/cache.rs": "13bf98b196e388503200d6011d3d45398e1cbaa28344afddf50f5243012689ae",
+    "sandbox-internal/src/client/status.rs": "e2723a4476eb7ff0502948bae62ea5d0fbaaa7c7a0c12ff0120bed8b7eef5c9a",
+    "sandbox-internal/src/server.rs": "4e76dec6c5b6ef06e3eecba819e551b4bef7ce5c369195efc5fa13f7cba9c9cc",
+    "sandbox-internal/src/status.rs": "5a39f5480ebf16ac403393cca5f64a7cd31d91eae4711ab0e6e9df21b16a1542",
+    "sandbox-internal/src/template.rs": "c952bc986488730ab51525951ddf9e4625b401d96b33eb43bd5d8386542c1b95",
+    "sandbox-protocol/src/internal.rs": "bdbfd2c89b17d0f16758359d9fd0ad7e129c09e5c024f20bff119fa2449c93ed",
+    "sandbox-protocol/src/internal/lifecycle.rs": "6fdb8f860c2288a8d0117ccec0746fed4fba6415f05c494f00722278afd651fb",
+    "sandbox-protocol/src/internal/window.rs": "55d6aa5ccc8c7cda685d7e15f2f03e1d613641e2ded9dfa644539a597d60decc"
+  },
+  "instances": [
+    {
+      "name": "ContractVersions",
+      "source": "sandbox-protocol/src/internal.rs",
+      "line": 17,
+      "family": "format-report",
+      "direction": "serialize-only",
+      "definition_source": "#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]\npub struct ContractVersions {\n    pub internal_protocol: u16,\n    pub center_store: u32,\n    pub host_store: i64,\n}",
+      "definition_sha256": "15b478cdadfe1e7e8423be8702dee8ea61a49e00fe6a26591c47eb7767cd987d",
+      "attributes": [
+        "derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)"
+      ],
+      "fields": [
+        {
+          "name": "internal_protocol",
+          "rust_type": "u16",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "center_store",
+          "rust_type": "u32",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "host_store",
+          "rust_type": "i64",
+          "leaf_or_shape": "machine signed"
+        }
+      ],
+      "wire": "object in declaration order; no Deserialize or deny_unknown_fields promise",
+      "own_checks_or_callers": [
+        "ContractVersions::current selects constants 2/6/16; actual CLI/audit output, not a bidirectional request schema"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "PositiveCounter",
+      "source": "sandbox-protocol/src/internal.rs",
+      "line": 49,
+      "family": "positive-counter",
+      "direction": "standard Serialize via into(u64), own Deserialize",
+      "definition_source": "#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]\n#[serde(into = \"u64\")]\n// The field remains private: every public construction and deserialization\n// goes through TryFrom. A plain integer avoids the fixed extractor's unsupported\n// NonZero associated-type representation without changing the wire contract.\npub struct PositiveCounter(u64);",
+      "definition_sha256": "db24933ac580d009368efb6512220a0130d21eedc2f24f461a76f8ae776d5b05",
+      "attributes": [
+        "derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)",
+        "serde(into = \"u64\")"
+      ],
+      "fields": [
+        {
+          "name": "0",
+          "rust_type": "u64",
+          "leaf_or_shape": "private machine unsigned backing value"
+        }
+      ],
+      "wire": "JSON u64; successful own input domain is 1..=u64::MAX",
+      "own_checks_or_callers": [
+        "original custom Deserialize calls u64 primitive then original TryFrom; reject zero; checked_next never wraps"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "NodeIdentity",
+      "source": "sandbox-protocol/src/internal.rs",
+      "line": 103,
+      "family": "shared-node",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct NodeIdentity {\n    pub deployment_id: DeploymentId,\n    pub node_id: NodeId,\n    pub node_generation: PositiveCounter,\n}",
+      "definition_sha256": "396d01a56e5273571e03f36b1d73a38d95a61b291bd65ab1ff3fb5197df152ae",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "deployment_id",
+          "rust_type": "DeploymentId",
+          "leaf_or_shape": "opaque ID: deployment"
+        },
+        {
+          "name": "node_id",
+          "rust_type": "NodeId",
+          "leaf_or_shape": "opaque ID: node"
+        },
+        {
+          "name": "node_generation",
+          "rust_type": "PositiveCounter",
+          "leaf_or_shape": "positive counter"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "leaves establish domains; expected node role and authorization remain caller obligations"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "ControlIdentity",
+      "source": "sandbox-protocol/src/internal.rs",
+      "line": 114,
+      "family": "shared-control",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct ControlIdentity {\n    pub protocol_version: u16,\n    pub node: NodeIdentity,\n    pub tenant_id: TenantId,\n    pub sandbox_id: SandboxId,\n    pub operation_id: OperationId,\n    pub intent_version: PositiveCounter,\n    /// A bounded protected inbox position, not a native VM or public identifier.\n    pub retention_slot: u16,\n    /// Incarnation of this ONE retention slot, never a node-wide window.\n    pub request_window: PositiveCounter,\n}",
+      "definition_sha256": "8dd84d8ba9299ab24b1ab1401e15bb4b1773b5912555241b3b961217054ab326",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "protocol_version",
+          "rust_type": "u16",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "nested shared-node"
+        },
+        {
+          "name": "tenant_id",
+          "rust_type": "TenantId",
+          "leaf_or_shape": "opaque ID: tenant"
+        },
+        {
+          "name": "sandbox_id",
+          "rust_type": "SandboxId",
+          "leaf_or_shape": "opaque ID: protocol sandbox"
+        },
+        {
+          "name": "operation_id",
+          "rust_type": "OperationId",
+          "leaf_or_shape": "opaque ID: protocol operation"
+        },
+        {
+          "name": "intent_version",
+          "rust_type": "PositiveCounter",
+          "leaf_or_shape": "positive counter"
+        },
+        {
+          "name": "retention_slot",
+          "rust_type": "u16",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "request_window",
+          "rust_type": "PositiveCounter",
+          "leaf_or_shape": "positive counter"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate_node: version then complete node then nonzero slot; validate_response additionally validates expected binding then compares complete identity"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "ProbeRequest",
+      "source": "sandbox-protocol/src/internal.rs",
+      "line": 154,
+      "family": "probe",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct ProbeRequest {\n    pub protocol_version: u16,\n    pub node: NodeIdentity,\n    /// Correlates this read-only call; not a persisted lifecycle operation.\n    pub request_id: OperationId,\n}",
+      "definition_sha256": "c80ad92e0ce3653569efd33f2bef945b4daf162404e68be31d631098d89f3351",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "protocol_version",
+          "rust_type": "u16",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "nested shared-node"
+        },
+        {
+          "name": "request_id",
+          "rust_type": "OperationId",
+          "leaf_or_shape": "opaque ID: read-only call correlation"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate: version then full target node"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "ProbeResponse",
+      "source": "sandbox-protocol/src/internal.rs",
+      "line": 172,
+      "family": "probe",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct ProbeResponse {\n    pub protocol_version: u16,\n    pub node: NodeIdentity,\n    pub request_id: OperationId,\n}",
+      "definition_sha256": "8e746b0c9d98d6d6a9076e1ff5d2877043323d1fc77e5bbcb649488ecb469c79",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "protocol_version",
+          "rust_type": "u16",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "nested shared-node"
+        },
+        {
+          "name": "request_id",
+          "rust_type": "OperationId",
+          "leaf_or_shape": "opaque ID: read-only call correlation"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "for_request validates request; validate_for checks request against response node, response version, exact request_id"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "Resources",
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "line": 18,
+      "family": "shared-resources",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct Resources {\n    pub instances: u64,\n    pub cpu: u64,\n    pub memory_bytes: u64,\n    pub disk_bytes: u64,\n}",
+      "definition_sha256": "f7fd6b845f4a1ae179fdc97ebd556aa8d40e07df848ed05424a4570b29977f3a",
+      "attributes": [
+        "derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "instances",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "cpu",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "memory_bytes",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned"
+        },
+        {
+          "name": "disk_bytes",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "all zero values are valid observations; positivity and capacity are caller predicates, not automatic JSON domains"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "CreateBinding",
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "line": 63,
+      "family": "lifecycle-request",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct CreateBinding {\n    pub template_revision: ResourceId,\n    pub template_digest: [u8; 32],\n    pub resources: Resources,\n    pub options: Vec<u8>,\n    pub startup_deadline_ms: u64,\n    pub timeout_ms: u64,\n    pub max_lifetime_ms: u64,\n}",
+      "definition_sha256": "df0baba777a84cfed493692e2ddcde395716c8e1cdc507e1f4e32a7e8f6e6384",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "template_revision",
+          "rust_type": "ResourceId",
+          "leaf_or_shape": "opaque ID: resource"
+        },
+        {
+          "name": "template_digest",
+          "rust_type": "[u8; 32]",
+          "leaf_or_shape": "fixed byte array"
+        },
+        {
+          "name": "resources",
+          "rust_type": "Resources",
+          "leaf_or_shape": "nested shared-resources"
+        },
+        {
+          "name": "options",
+          "rust_type": "Vec<u8>",
+          "leaf_or_shape": "byte array vector"
+        },
+        {
+          "name": "startup_deadline_ms",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned milliseconds"
+        },
+        {
+          "name": "timeout_ms",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned milliseconds"
+        },
+        {
+          "name": "max_lifetime_ms",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned milliseconds"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "is_valid enforces positive resources, instances=1, options nonempty and <=65536, positive times, timeout<=lifetime, checked deadline+lifetime"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "Intent",
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "line": 91,
+      "family": "lifecycle-request",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(tag = \"kind\", rename_all = \"snake_case\", deny_unknown_fields)]\npub enum Intent {\n    Create,\n    /// Already normalized against the ORIGINAL lifetime, never retry-now + duration.\n    Renew {\n        end_at_ms: u64,\n    },\n    Destroy,\n}",
+      "definition_sha256": "f4ed453928c3c33ba1ef5870d932865d12c4316f9c8c35d9f4a3ba34fae94bc5",
+      "attributes": [
+        "derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(tag = \"kind\", rename_all = \"snake_case\", deny_unknown_fields)"
+      ],
+      "fields": [],
+      "wire": "internally tagged kind/snake_case; Create/Destroy unit and Renew struct branches require separate unknown-field treatment",
+      "own_checks_or_callers": [
+        "Renew end_at_ms=0 is refused by LifecycleRequest::validate, not by enum decoding"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification",
+      "variants": {
+        "Create": [],
+        "Renew": [
+          {
+            "name": "end_at_ms",
+            "rust_type": "u64",
+            "leaf_or_shape": "machine unsigned milliseconds"
+          }
+        ],
+        "Destroy": []
+      }
+    },
+    {
+      "name": "LifecycleRequest",
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "line": 102,
+      "family": "lifecycle-request",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct LifecycleRequest {\n    pub identity: ControlIdentity,\n    /// Every operation carries the original binding, including destroy-first.\n    pub create: CreateBinding,\n    pub intent: Intent,\n}",
+      "definition_sha256": "d65714040b4f9965d18cf41351dd63578be231a8cca26887bcdeb99eff84aed0",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "identity",
+          "rust_type": "ControlIdentity",
+          "leaf_or_shape": "nested shared-control"
+        },
+        {
+          "name": "create",
+          "rust_type": "CreateBinding",
+          "leaf_or_shape": "nested create shape"
+        },
+        {
+          "name": "intent",
+          "rust_type": "Intent",
+          "leaf_or_shape": "tagged enum"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate identity against original node, then create shape, then reject zero renewal time"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "LifecycleFact",
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "line": 122,
+      "family": "lifecycle-response",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(tag = \"kind\", rename_all = \"snake_case\", deny_unknown_fields)]\npub enum LifecycleFact {\n    /// Durable inbox only; neither VM admission nor success.\n    Recorded,\n    Ready {\n        started_at_ms: u64,\n        end_at_ms: u64,\n        max_end_at_ms: u64,\n    },\n    Renewed {\n        end_at_ms: u64,\n    },\n    /// Original VM stopped, but quota is still held until exact cleanup.\n    Stopped,\n    Cleaned,\n    /// ONLY before local admission, with no local effects/responsibility.\n    NotAccepted,\n}",
+      "definition_sha256": "b3029941cd3ab45129e58070984bf7c6f2758553809af993a6abe8ac1258542b",
+      "attributes": [
+        "derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(tag = \"kind\", rename_all = \"snake_case\", deny_unknown_fields)"
+      ],
+      "fields": [],
+      "wire": "internally tagged kind/snake_case; inspect each unit/struct variant, no blanket unknown-field claim",
+      "own_checks_or_callers": [
+        "fact meaning and actual VM/commit/cleanup truth are business obligations; typed enum is not evidence by itself"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification",
+      "variants": {
+        "Recorded": [],
+        "Ready": [
+          {
+            "name": "started_at_ms",
+            "rust_type": "u64",
+            "leaf_or_shape": "machine unsigned milliseconds"
+          },
+          {
+            "name": "end_at_ms",
+            "rust_type": "u64",
+            "leaf_or_shape": "machine unsigned milliseconds"
+          },
+          {
+            "name": "max_end_at_ms",
+            "rust_type": "u64",
+            "leaf_or_shape": "machine unsigned milliseconds"
+          }
+        ],
+        "Renewed": [
+          {
+            "name": "end_at_ms",
+            "rust_type": "u64",
+            "leaf_or_shape": "machine unsigned milliseconds"
+          }
+        ],
+        "Stopped": [],
+        "Cleaned": [],
+        "NotAccepted": []
+      }
+    },
+    {
+      "name": "LifecycleResponse",
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "line": 141,
+      "family": "lifecycle-response",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct LifecycleResponse {\n    pub identity: ControlIdentity,\n    pub observation_version: PositiveCounter,\n    pub fact: LifecycleFact,\n}",
+      "definition_sha256": "888e0bf9520f18748e3d441b50fc95427acf1f6ce98a9c2a4c48d670a14ab480",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "identity",
+          "rust_type": "ControlIdentity",
+          "leaf_or_shape": "nested shared-control"
+        },
+        {
+          "name": "observation_version",
+          "rust_type": "PositiveCounter",
+          "leaf_or_shape": "positive counter"
+        },
+        {
+          "name": "fact",
+          "rust_type": "LifecycleFact",
+          "leaf_or_shape": "tagged enum"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate_for first validates full identity; then original intent/fact compatibility and exact checked lifetime arithmetic"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "WindowCloseRequest",
+      "source": "sandbox-protocol/src/internal/window.rs",
+      "line": 16,
+      "family": "window-close",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct WindowCloseRequest {\n    pub terminal: LifecycleResponse,\n}",
+      "definition_sha256": "3be13cff7b45750bed0dd4c310727ad501af75d1b2dfcecc7f8467ad5855354b",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "terminal",
+          "rust_type": "LifecycleResponse",
+          "leaf_or_shape": "full nested response, including observation and fact"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate_node then require Cleaned/NotAccepted and actual nested terminal serialization <=8192 bytes; not only outer wrapper budget"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "WindowCloseAck",
+      "source": "sandbox-protocol/src/internal/window.rs",
+      "line": 45,
+      "family": "window-close",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct WindowCloseAck {\n    pub terminal: LifecycleResponse,\n}",
+      "definition_sha256": "349bc8b4aac046615f788bb9e2a45cb00b69a4cd1e1034b6f0ef75e9b9375884",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "terminal",
+          "rust_type": "LifecycleResponse",
+          "leaf_or_shape": "full nested response"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate original request and response-terminal request against opposite original nodes; compare full terminal including observation/fact"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "StatusRequest",
+      "source": "sandbox-internal/src/status.rs",
+      "line": 12,
+      "family": "status",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct StatusRequest {\n    pub node: NodeIdentity,\n}",
+      "definition_sha256": "afbc619017e8d8cec5b55650c121ceb5f0c343c89b1f138a3bf580313537e316",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "nested shared-node"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "original validate iff complete deployment/node/generation binding"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "HostStatus",
+      "source": "sandbox-internal/src/status.rs",
+      "line": 28,
+      "family": "status",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct HostStatus {\n    pub node: NodeIdentity,\n    /// Protected inbox capacity, not inferred from native IDs or physical slots.\n    pub retention_slots: u16,\n    pub observed_at_ms: u64,\n    /// Conservative physical/local free capacity. It can only veto admission;\n    /// center reservations are still counted separately by the pure core.\n    pub free: Resources,\n}",
+      "definition_sha256": "b9f587d28e80a9fb826259ccbac760da8413cfb47a85bdacf2945312ca502eee",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "nested shared-node"
+        },
+        {
+          "name": "retention_slots",
+          "rust_type": "u16",
+          "leaf_or_shape": "machine unsigned; separate guard 1..=4096"
+        },
+        {
+          "name": "observed_at_ms",
+          "rust_type": "u64",
+          "leaf_or_shape": "machine unsigned milliseconds; no freshness supplied"
+        },
+        {
+          "name": "free",
+          "rust_type": "Resources",
+          "leaf_or_shape": "all four machine unsigned values; zero allowed"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "original validate_for checks complete node then zero slots then upper bound; no physical truth or admission authorization"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "ReadinessRequest",
+      "source": "sandbox-internal/src/cache.rs",
+      "line": 18,
+      "family": "template-artifact-and-readiness",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct ReadinessRequest {\n    pub node: NodeIdentity,\n}",
+      "definition_sha256": "2ec0cd9575aca986c65d76e12ed8ac70c87e032c0f5a5429399c5d343df9fb0e",
+      "attributes": [
+        "derive(Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "authenticated requesting host, not automatically destination server"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "no type-level validate method; center ArtifactsHttp::readiness checks against pin-selected known.node; do not borrow Status guard without this actual call binding"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "CacheRequest",
+      "source": "sandbox-internal/src/cache.rs",
+      "line": 24,
+      "family": "template-cache",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct CacheRequest {\n    pub node: NodeIdentity,\n    pub revision: ResourceId,\n    pub digest: [u8; 32],\n    /// Original global descriptor only. The receiver derives local cache paths\n    /// from its protected root; these descriptor paths are NEVER write targets.\n    pub descriptor: TemplateBinding,\n}",
+      "definition_sha256": "3ba0868108186f20986a35a72fbcd2c9331bce2dd2c9182382ec2002a581f2ae",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "nested target host"
+        },
+        {
+          "name": "revision",
+          "rust_type": "ResourceId",
+          "leaf_or_shape": "opaque ID: resource"
+        },
+        {
+          "name": "digest",
+          "rust_type": "[u8; 32]",
+          "leaf_or_shape": "fixed byte array"
+        },
+        {
+          "name": "descriptor",
+          "rust_type": "TemplateBinding",
+          "leaf_or_shape": "referenced descriptor schema; not established by Status"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate complete host and exact descriptor.canonical_digest; dependency SHA engine does not prove own descriptor selection or encoding"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "CacheAvailability",
+      "source": "sandbox-internal/src/cache.rs",
+      "line": 44,
+      "family": "template-cache",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct CacheAvailability {\n    pub node: NodeIdentity,\n    pub revision: ResourceId,\n    pub digest: [u8; 32],\n}",
+      "definition_sha256": "495ec241aa891ee7f0b59b4b4f62a9cc5d678766e1e51e69b291839d3737a33c",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "nested shared-node"
+        },
+        {
+          "name": "revision",
+          "rust_type": "ResourceId",
+          "leaf_or_shape": "opaque ID: resource"
+        },
+        {
+          "name": "digest",
+          "rust_type": "[u8; 32]",
+          "leaf_or_shape": "fixed byte array"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate request then complete node/revision/digest correspondence"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "ArtifactPart",
+      "source": "sandbox-internal/src/cache.rs",
+      "line": 72,
+      "family": "template-artifact-and-readiness",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(rename_all = \"snake_case\")]\npub enum ArtifactPart {\n    Kernel,\n    Rootfs,\n}",
+      "definition_sha256": "619fd67830fc6887d615146f7b3e50e66d5c59fc0dab2be2f8e77f989b73f0d1",
+      "attributes": [
+        "derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(rename_all = \"snake_case\")"
+      ],
+      "fields": [],
+      "wire": "externally tagged unit enum with snake_case; no deny_unknown_fields attribute",
+      "own_checks_or_callers": [
+        "output unit strings kernel/rootfs; fixed externally-tagged input needs separate review, not string-only or internally-tagged assumptions"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification",
+      "variants": {
+        "Kernel": [],
+        "Rootfs": []
+      }
+    },
+    {
+      "name": "ArtifactRequest",
+      "source": "sandbox-internal/src/cache.rs",
+      "line": 79,
+      "family": "template-artifact-and-readiness",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct ArtifactRequest {\n    pub node: NodeIdentity,\n    pub revision: ResourceId,\n    pub digest: [u8; 32],\n    pub part: ArtifactPart,\n}",
+      "definition_sha256": "b561b850d254f18e14ee2780331a049b14b8161b36fc21b08427e77fa7ef8682",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "leaf_or_shape": "authenticated requesting host selected by peer pin on center"
+        },
+        {
+          "name": "revision",
+          "rust_type": "ResourceId",
+          "leaf_or_shape": "opaque ID: resource"
+        },
+        {
+          "name": "digest",
+          "rust_type": "[u8; 32]",
+          "leaf_or_shape": "fixed byte array"
+        },
+        {
+          "name": "part",
+          "rust_type": "ArtifactPart",
+          "leaf_or_shape": "external unit enum"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "from_cache clones exact original fields; center artifact handler binds full node to peer; download_to preserves actual file/stream/partial-error responsibilities outside schema proof"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    },
+    {
+      "name": "ValidationRequest",
+      "source": "sandbox-internal/src/template.rs",
+      "line": 29,
+      "family": "validation-evidence",
+      "direction": "serialize+deserialize",
+      "definition_source": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct ValidationRequest {\n    pub create: ControlIdentity,\n    pub terminal: ControlIdentity,\n    pub revision: ResourceId,\n    /// Initial center-accepted build metadata. No caller local IDs, checked\n    /// flag or certificate may be supplied, and its paths are never executed.\n    pub publication: Publication,\n}",
+      "definition_sha256": "60860b43398f7036f43bb4cb4b45939d3d528506d6a53d4c18b8096e86f6d554",
+      "attributes": [
+        "derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)",
+        "serde(deny_unknown_fields)"
+      ],
+      "fields": [
+        {
+          "name": "create",
+          "rust_type": "ControlIdentity",
+          "leaf_or_shape": "nested shared-control"
+        },
+        {
+          "name": "terminal",
+          "rust_type": "ControlIdentity",
+          "leaf_or_shape": "nested shared-control"
+        },
+        {
+          "name": "revision",
+          "rust_type": "ResourceId",
+          "leaf_or_shape": "opaque ID: resource"
+        },
+        {
+          "name": "publication",
+          "rust_type": "Publication",
+          "leaf_or_shape": "referenced publication schema"
+        }
+      ],
+      "wire": "standard struct object/declared-order sequence",
+      "own_checks_or_callers": [
+        "validate complete create/terminal pair, intent/order/op/window/slot, publication numeric owner converted to canonical tenant text, original validate_begin and canonical digest; encoded additionally uses own bounded writer"
+      ],
+      "proof_status": "only Status guards and existing explicitly referenced common leaves are proved; other entries are source classification"
+    }
+  ],
+  "byte_contexts": {
+    "status": {
+      "path": "/internal/v2/node-status",
+      "request_bytes": 1024,
+      "response_bytes": 2048,
+      "sources": [
+        "sandbox-internal/src/client/status.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "encoding": "client plain to_vec; original server evidence::encode_bounded is separate custom-writer obligation"
+    },
+    "probe": {
+      "path": "/internal/v2/probe",
+      "request_bytes": 4096,
+      "response_bytes": 4096,
+      "sources": [
+        "sandbox-internal/src/client.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "own_guards": "request version/node, response version/request_id; not durable lifecycle proof"
+    },
+    "shared-control-header": {
+      "path_prefix": "/internal/v2/data",
+      "header": "x-sandproof-control-identity",
+      "header_bytes": 2048,
+      "sources": [
+        "sandbox-internal/src/server.rs"
+      ],
+      "own_guards": "one original header only; full identity/current authorization supplied by V3/V7/V8; not automatically covered by nested LifecycleRequest codec"
+    },
+    "lifecycle-request": {
+      "path": "/internal/v2/lifecycle",
+      "request_bytes": 270336,
+      "response_bytes": 270336,
+      "sources": [
+        "sandbox-internal/src/client.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "own_guards": "original request/response intent and lifetime checks; physical actions and authority remain V3/V5/V6"
+    },
+    "result-confirmation": {
+      "path": "/internal/v2/result-confirmation",
+      "request_bytes": 8192,
+      "response_bytes": 8192,
+      "sources": [
+        "sandbox-internal/src/client.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "own_guards": "send exact durably committed result; exact echoed answer, not just same node"
+    },
+    "window-close": {
+      "path": "/internal/v2/window-close",
+      "request_bytes": 8224,
+      "response_bytes": 8224,
+      "sources": [
+        "sandbox-internal/src/client.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "own_guards": "nested terminal <=8192 and complete terminal equality; cleanup/retirement truth not provided by schema"
+    },
+    "template-cache": {
+      "path": "/internal/v2/template-cache",
+      "request_bytes": 69632,
+      "response_bytes": 4096,
+      "sources": [
+        "sandbox-internal/src/client/cache.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "own_guards": "complete original descriptor/digest/revision binding; original cache provider supplies actual availability"
+    },
+    "template-readiness": {
+      "path": "/internal/v2/template-readiness",
+      "request_bytes": 4096,
+      "response_bytes": 262144,
+      "sources": [
+        "sandbox-internal/src/client/cache.rs",
+        "sandbox-center/src/artifacts/http.rs"
+      ],
+      "response_shape": "actual serde_json::Value, not fixed HostStatus/deny-unknown-fields struct",
+      "own_guards": "center binds requesting node to peer pin; client schema_version=1 and exact /node/identity to_value(request.node)"
+    },
+    "template-artifact": {
+      "path": "/internal/v2/template-artifact",
+      "request_bytes": 4096,
+      "response": "actual binary/file stream; not fixed JSON response schema",
+      "sources": [
+        "sandbox-internal/src/artifact_client.rs",
+        "sandbox-center/src/artifacts/http.rs"
+      ],
+      "own_guards": "exact peer/request/immutable artifact and fresh output inode; bytes/digest/partial file/cancel remain outside fixed Vec schema"
+    },
+    "validation-evidence": {
+      "path": "/internal/v2/template-validation-evidence",
+      "request_bytes": 270336,
+      "response_budget": "MAX_VALIDATION_CERTIFICATE_BYTES + CreateOptions::MAX_ENCODED_BYTES +8192 +8192",
+      "sources": [
+        "sandbox-internal/src/client.rs",
+        "sandbox-internal/src/server.rs",
+        "sandbox-internal/src/template.rs"
+      ],
+      "own_guards": "publication and original create/terminal/local validation/certificate; source-defined bounded encoder is separate"
+    }
+  },
+  "reuse_classes": {
+    "opaque_ids": {
+      "domain": "nonempty ASCII alphanumeric/dot/dash/underscore; <=128 UTF8 bytes; no normalization",
+      "provider": "original eight protocol ID constructors/Deserialize and existing JsonIdentifiers proofs; concrete input/cursor/dictionary still bound per caller"
+    },
+    "positive_counters": {
+      "domain": "1..=u64::MAX after own custom Deserialize/TryFrom; persistence monotonicity is separate",
+      "provider": "original counter proof and JsonCounter; machine type alone also admits erased zero"
+    },
+    "machine_unsigned": {
+      "domain": "full u8/u16/u32/u64 range including zero, usize tied to target; no positivity/time truth implicit",
+      "provider": "fixed integer/Serde library, own narrowing/checked arithmetic where called"
+    },
+    "machine_signed": {
+      "domain": "i64 full signed range; ContractVersions is serialize-only; do not apply unsigned Nat domain wholesale",
+      "provider": "fixed signed primitive model; new concrete output instances separately registered"
+    },
+    "fixed_array_and_vec_bytes": {
+      "domain": "u8 range and fixed length/finite Vec; Vec maximum comes from caller, not Rust type",
+      "provider": "fixed standard derive plus own original limits; options nonempty/<=65536 belongs CreateBinding validator"
+    },
+    "standard_struct": {
+      "domain": "complete fields, real attrs, objects and declared-order sequence; optional/default rules only when actual attrs/types provide them",
+      "provider": "fixed A6 standard derive and B4 field/input binding; Status is this batch representative"
+    },
+    "tagged_enums": {
+      "domain": "Intent/LifecycleFact/ValidationOutcome tag kind, snake_case; unit/struct branches separate",
+      "provider": "fixed derive source and concrete branch registration, not a uniform deny-unknown promise"
+    },
+    "external_unit_enum": {
+      "domain": "ArtifactPart output kernel/rootfs; its input forms require fixed deserialize_enum review",
+      "provider": "standard derive instance not inherited from internally-tagged Intent"
+    },
+    "untyped_value": {
+      "domain": "readiness returns serde_json::Value with own pointer/as_u64 checks, not a deny-unknown struct",
+      "provider": "fixed Value operations plus actual caller guard proof; Status acceptance does not cover it"
+    },
+    "plain_text_paths_nested": {
+      "domain": "descriptor/publication/certificate may contain plain text/paths/Box/Vec/Option; not automatically opaque IDs or one-byte-per-character JSON",
+      "provider": "A10/V5 referenced schema and explicit field conversion/UTF8/budgets; custom/stateful IO remains separate"
+    }
+  },
+  "nested_references": [
+    {
+      "qualified_type": "sandproof_controller_service::templates::TemplateBinding",
+      "source": "controller-service/src/templates.rs",
+      "scope": "referenced descriptor schema not proved by this Status batch"
+    },
+    {
+      "qualified_type": "sandproof_controller_service::template_registry::Publication",
+      "source": "controller-service/src/template_registry.rs",
+      "scope": "publication/state/owner/canonical digest remains actual business obligation"
+    },
+    {
+      "qualified_type": "sandproof_controller_service::template_registry::ValidationEvidence/ValidationOutcome/LocalValidationBinding",
+      "source": "controller-service/src/template_registry/validation.rs",
+      "fields": "Evidence create:ControlIdentity, cleaned:LifecycleResponse, outcome:ValidationOutcome; Admitted carries boxed local/certificate; NotAdmitted is unit",
+      "scope": "numeric local owner/sandbox/create_operation differ from protocol opaque ID wrappers"
+    },
+    {
+      "qualified_type": "sandbox_controller_core::SandboxId/OperationId",
+      "scope": "numeric core IDs in LocalValidationBinding; not sandproof_protocol string-backed SandboxId/OperationId; original local projection rejects zero"
+    },
+    {
+      "qualified_type": "sandproof_controller_service::template_registry::ValidationCertificate",
+      "source": "controller-service/src/template_registry.rs",
+      "scope": "full certificate schema and native/command truth remain A10/V5/V6; successful JSON is not physical evidence"
+    }
+  ],
+  "coverage": "only previously recorded common leaves/LifecycleRequest and this Status guard/ordinary byte family have their respective evidence; all other instances remain pending concrete connection",
+  "critical_distinctions": [
+    "node can mean target host or authenticated requesting host depending on actual endpoint; expected-node choice is a caller obligation",
+    "same spelling of numeric core and opaque protocol IDs does not make their domains equal",
+    "ContractVersions is serialize-only and includes signed i64",
+    "readiness response is Value with own guards, not a fixed struct",
+    "ArtifactPart external enum and internally-tagged enum unit branches must be reviewed separately",
+    "custom bounded server writer is not plain to_vec and stays an explicit V0 connection obligation"
+  ]
+}
