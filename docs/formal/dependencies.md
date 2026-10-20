@@ -573,7 +573,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返回就不补造广播完成、析构完成、退出或恢复。安全模型不承诺最终再次 poll、最终删除或调度公平。模型之外的真实 I/O、锁顺序和内部推进仍按所属 V8/V6/V9 义务完成。
 
-本条不覆盖 `notify_last`、多接收者单通知队列或任意混用单通知/广播。源码中 [reaper.wake](../../sandbox-runtime/src/child_process/reaper.rs) 的同名 `notify_one` 实为标准库 **Condvar**，由已有 typed MIR 定位确认；其公共合同仍归 V0，队列谓词/回收策略归 V6，明确作为未完成项登记，不借本条认领。当前源码定位、原工具不支持诊断和确定性原生回归只支持所列可信条件，未证明全部 Rust 并发。
+本条不覆盖 `notify_last`、多接收者单通知队列或任意混用单通知/广播。源码中 [reaper.wake](../../sandbox-runtime/src/child_process/reaper.rs) 的同名 `notify_one` 实为标准库 **Condvar**，由已有 typed MIR 定位确认；其窄接口和未覆盖项见本页独立 Condvar 合同；队列谓词/回收策略归 V6，不借本 Notify 条款认领。当前源码定位、原工具不支持诊断和确定性原生回归只支持所列可信条件，未证明全部 Rust 并发。
 
 
 ## A6/B2/B3 JoinSet：收齐原任务与返回值
