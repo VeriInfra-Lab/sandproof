@@ -33,3 +33,7 @@ srcDir = "verification/aeneas/first-chain"
 [[lean_lib]]
 name = "SandproofStorage"
 srcDir = "verification/aeneas/storage"
+
+[[lean_lib]]
+name = "SandproofStdMutex"
+srcDir = "verification/aeneas/std-mutex"

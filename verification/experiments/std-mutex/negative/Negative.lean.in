@@ -1,0 +1,22 @@
+import SandboxModel.Boundaries.StdMutex.BorrowModel
+import StdMutexWrong.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std
+open SandboxModel.Boundaries.StdMutexContract.Borrow
+
+namespace SandboxModel.Boundaries.StdMutexContract.Negative
+theorem swallowing_original_poison_is_not_get_mut_contract :
+    ¬ GetMutContract (T := Nat)
+      StdMutexWrongRust.application.diagnostics.SerialMutex.get_mut := by
+  intro contract
+  obtain ⟨v, back, returned, view, _⟩ := contract ⟨7, 19, true, true⟩
+  cases v with
+  | Ok value => simp [BorrowView] at view
+  | Err error =>
+    simp [StdMutexWrongRust.application.diagnostics.SerialMutex.get_mut,
+      std.sync.poison.mutex.Mutex.get_mut, StdMutexExternal.view,
+      std.sync.poison.PoisonError.into_inner] at returned
+
+end SandboxModel.Boundaries.StdMutexContract.Negative
+
+#audit_controller_proof SandboxModel.Boundaries.StdMutexContract.Negative.swallowing_original_poison_is_not_get_mut_contract

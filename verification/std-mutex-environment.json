@@ -1,0 +1,452 @@
+{
+  "contract_id": "std-mutex-original-guard-and-exclusive-borrow-v0",
+  "base_commit": "489f1ed5838a95b17d64b0ff60a23ab10d13400e",
+  "proof_kind": "conditional-guard-model-plus-original-synchronous-get-mut",
+  "production_sources": {
+    "controller-service/src/application/diagnostics.rs": "6b70c84fafc7933323edbadfdd95695c08cef1ebd9253c3d861748aa7b559046",
+    "sandbox-guest-service/src/task_accounting.rs": "9d5359b85757243ea7eb491b1b4fb3f99ef3e1df84c0e5a2a5e1da64d4e1d0d2",
+    "sandbox-guest-runtime/src/pty.rs": "b8f12a189800df6f9cd06a30fbfec160e51d6bc9a04182c48f90823907b41388"
+  },
+  "standard_library": {
+    "production": {
+      "toolchain": "1.97.0",
+      "sources": {
+        "std/src/sync/poison/mutex.rs": "5e45f2804aaee6b2dd24af91b471757cd15010058b03b39b4cbba90809e3fb8c",
+        "std/src/sync/poison.rs": "540646690dc3bffebb4bfcb412b07020a2e13c0312a5fd6f46c2b72ed565fba1",
+        "std/src/sys/sync/mutex/futex.rs": "bb566c9097ec2c4478427de576e5335b7dfb60a2ff41f24beae2eea99d3209bf"
+      }
+    },
+    "frontend": {
+      "toolchain": "nightly-2026-08-18",
+      "sources": {
+        "std/src/sync/poison/mutex.rs": "5e45f2804aaee6b2dd24af91b471757cd15010058b03b39b4cbba90809e3fb8c",
+        "std/src/sync/poison.rs": "4a66d88019ac53f7930459910b803f7195c02a1e05df147d4da51bdb8d4ca2b2",
+        "std/src/sys/sync/mutex/futex.rs": "ad217728f14b7385f923f6471336ee772ea739baa78f7633a9d564433227b20c"
+      }
+    }
+  },
+  "model_modules": [
+    "Guard",
+    "BorrowModel",
+    "GetMut",
+    "Bridge"
+  ],
+  "theorems": [
+    "SandboxModel.Boundaries.StdMutexContract.initial_safe",
+    "SandboxModel.Boundaries.StdMutexContract.acquisition_safe",
+    "SandboxModel.Boundaries.StdMutexContract.try_acquisition_safe",
+    "SandboxModel.Boundaries.StdMutexContract.normal_guard_release_safe",
+    "SandboxModel.Boundaries.StdMutexContract.forgotten_state_safe",
+    "SandboxModel.Boundaries.StdMutexContract.try_acquisition_keeps_original_mutex",
+    "SandboxModel.Boundaries.StdMutexContract.try_acquisition_keeps_payload",
+    "SandboxModel.Boundaries.StdMutexContract.step_safe",
+    "SandboxModel.Boundaries.StdMutexContract.history_safe",
+    "SandboxModel.Boundaries.StdMutexContract.two_live_guards_are_the_same",
+    "SandboxModel.Boundaries.StdMutexContract.owned_guard_matches_original_mutex",
+    "SandboxModel.Boundaries.StdMutexContract.other_mutex_guard_cannot_own",
+    "SandboxModel.Boundaries.StdMutexContract.unreached_ticket_cannot_own",
+    "SandboxModel.Boundaries.StdMutexContract.busy_keeps_original_state",
+    "SandboxModel.Boundaries.StdMutexContract.busy_has_no_guard",
+    "SandboxModel.Boundaries.StdMutexContract.free_acquisition_keeps_payload_and_poison",
+    "SandboxModel.Boundaries.StdMutexContract.free_acquisition_returns_original_guard",
+    "SandboxModel.Boundaries.StdMutexContract.poisoned_result_still_holds_original_guard",
+    "SandboxModel.Boundaries.StdMutexContract.poison_error_recovery_returns_same_guard",
+    "SandboxModel.Boundaries.StdMutexContract.recovery_does_not_repair_payload_or_clear_poison",
+    "SandboxModel.Boundaries.StdMutexContract.guard_drop_keeps_original_payload",
+    "SandboxModel.Boundaries.StdMutexContract.normal_drop_keeps_existing_poison",
+    "SandboxModel.Boundaries.StdMutexContract.existing_poison_remains_after_drop",
+    "SandboxModel.Boundaries.StdMutexContract.newly_observed_unwind_sets_poison",
+    "SandboxModel.Boundaries.StdMutexContract.already_unwinding_acquisition_need_not_set_poison",
+    "SandboxModel.Boundaries.StdMutexContract.ended_guard_cannot_be_used_again",
+    "SandboxModel.Boundaries.StdMutexContract.forgotten_guard_does_not_unlock",
+    "SandboxModel.Boundaries.StdMutexContract.forgotten_guard_cannot_be_used",
+    "SandboxModel.Boundaries.StdMutexContract.forgotten_guard_still_makes_try_lock_busy",
+    "SandboxModel.Boundaries.StdMutexContract.step_keeps_original_mutex",
+    "SandboxModel.Boundaries.StdMutexContract.step_preserves_payload_invariant",
+    "SandboxModel.Boundaries.StdMutexContract.history_preserves_payload_invariant",
+    "SandboxModel.Boundaries.StdMutexContract.correct_release_before_diagnostic_failure",
+    "SandboxModel.Boundaries.StdMutexContract.late_release_after_diagnostic_failure_rejected",
+    "SandboxModel.Boundaries.StdMutexContract.unique_write_does_not_clear_abandoned_lock",
+    "SandboxModel.Boundaries.StdMutexContract.Borrow.original_serial_wrapper_is_original_call",
+    "SandboxModel.Boundaries.StdMutexContract.Borrow.original_serial_get_mut_contract",
+    "SandboxModel.Boundaries.StdMutexContract.Borrow.unchanged_borrow_returns_original_cell",
+    "SandboxModel.Boundaries.StdMutexContract.Borrow.updated_borrow_returns_updated_value",
+    "SandboxModel.Boundaries.StdMutexContract.Borrow.write_back_keeps_original_identity_poison_and_lock",
+    "SandboxModel.Boundaries.StdMutexContract.Borrow.poisoned_call_keeps_original_payload",
+    "SandboxModel.Boundaries.StdMutexContract.Borrow.nonempty_poisoned_abandoned_lock_witness",
+    "SandboxModel.Boundaries.StdMutexContract.Bridge.original_state_projection",
+    "SandboxModel.Boundaries.StdMutexContract.Bridge.back_view_respects_same_borrow_arm",
+    "SandboxModel.Boundaries.StdMutexContract.Bridge.original_get_mut_back_obeys_guard_model",
+    "SandboxModel.Boundaries.StdMutexContract.Bridge.restored_value_retains_same_guard_owner"
+  ],
+  "use_points": [
+    {
+      "id": "serial.new",
+      "file": "controller-service/src/application/diagnostics.rs",
+      "range": [
+        "    pub(super) fn new(value: T)",
+        "    pub(super) fn get_mut"
+      ],
+      "anchors": [
+        "Self(Mutex::new(value))"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.initial_safe"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V5: original protected Inner and diagnostic cfg, valid original payload. Allocation/abort is not normal construction."
+    },
+    {
+      "id": "serial.get-mut",
+      "file": "controller-service/src/application/diagnostics.rs",
+      "range": [
+        "    pub(super) fn get_mut",
+        "    pub(super) fn lock"
+      ],
+      "anchors": [
+        "self.0.get_mut()"
+      ],
+      "ordered": true,
+      "status": "extracted-synchronous",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.Borrow.original_serial_get_mut_contract",
+        "SandboxModel.Boundaries.StdMutexContract.Bridge.original_get_mut_back_obeys_guard_model",
+        "SandboxModel.Boundaries.StdMutexContract.unique_write_does_not_clear_abandoned_lock"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V5: actual unique Rust loan of this SerialMutex, business update relation, compatible return arm and preserved business invariant. No silent recovery or poison repair. This one original method is extracted, not the shared lock body."
+    },
+    {
+      "id": "serial.lock",
+      "file": "controller-service/src/application/diagnostics.rs",
+      "range": [
+        "    pub(super) fn lock",
+        "pub(super) struct SerialGuard"
+      ],
+      "anchors": [
+        "let _ = notice.try_send(());",
+        "let guard = self.0.lock()?;",
+        "guard: Some(guard),"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.free_acquisition_returns_original_guard",
+        "SandboxModel.Boundaries.StdMutexContract.poisoned_result_still_holds_original_guard"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V5: caller chooses exact original mutex, handles original PoisonError, proves protected business invariant and lock order. The notice precedes the attempt and proves no acquisition; timing/diagnostic operations may panic."
+    },
+    {
+      "id": "serial.deref",
+      "file": "controller-service/src/application/diagnostics.rs",
+      "range": [
+        "impl<T> Deref for SerialGuard<'_, T>",
+        "impl<T> DerefMut for SerialGuard"
+      ],
+      "anchors": [
+        "self.guard.as_ref().expect(\"guard is present until drop\")"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.owned_guard_matches_original_mutex",
+        "SandboxModel.Boundaries.StdMutexContract.two_live_guards_are_the_same"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V5: valid live original Rust guard/loan, read actual inline fields/handles; no unrelated lock or snapshot."
+    },
+    {
+      "id": "serial.deref-mut",
+      "file": "controller-service/src/application/diagnostics.rs",
+      "range": [
+        "impl<T> DerefMut for SerialGuard<'_, T>",
+        "impl<T> Drop for SerialGuard"
+      ],
+      "anchors": [
+        "self.guard.as_mut().expect(\"guard is present until drop\")"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.step_preserves_payload_invariant"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V5: live original unique guard loan and actual business writes preserve the claimed invariant; the invariant is not supplied by the wrapper."
+    },
+    {
+      "id": "serial.drop",
+      "file": "controller-service/src/application/diagnostics.rs",
+      "range": [
+        "impl<T> Drop for SerialGuard<'_, T>",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        "let timing = self",
+        "drop(self.guard.take());",
+        "CURRENT.with(|current|"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.normal_guard_release_safe",
+        "SandboxModel.Boundaries.StdMutexContract.guard_drop_keeps_original_payload",
+        "SandboxModel.Boundaries.StdMutexContract.correct_release_before_diagnostic_failure",
+        "SandboxModel.Boundaries.StdMutexContract.late_release_after_diagnostic_failure_rejected"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V5: exact original guard; timing expression completed before release event. Later diagnostic panic does not undo the already executed unlock. Panic before unlock is only a prefix, and abort/crash does not guarantee Drop. Unlock does not drop protected payload/permit."
+    },
+    {
+      "id": "serial.business-callback",
+      "file": "controller-service/src/application/diagnostics.rs",
+      "range": [
+        "pub fn measure_with_lock_notice<T>",
+        "/// Time an explicitly selected"
+      ],
+      "anchors": [
+        "let result = operation();"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V5/V6: actual callback, error, diagnostic restore and elapsed/count arithmetic. Neither operation nor global controller safety is a trusted callback."
+    },
+    {
+      "id": "meter.lock",
+      "file": "sandbox-guest-service/src/task_accounting.rs",
+      "range": [
+        "    fn lock(&self)",
+        "    fn change(&self"
+      ],
+      "anchors": [
+        "self.0.lock().unwrap_or_else(|poisoned| {",
+        "let mut state = poisoned.into_inner();",
+        "state.exact = false;",
+        "            state\n"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.poison_error_recovery_returns_same_guard",
+        "SandboxModel.Boundaries.StdMutexContract.recovery_does_not_repair_payload_or_clear_poison"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V8: exact original Arc<Mutex<Snapshot>>, returned guard remains live; business handling below is separate. Original backend cannot yet end this shared-borrow abstraction; native source binding is not machine refinement."
+    },
+    {
+      "id": "meter.business-policy",
+      "file": "sandbox-guest-service/src/task_accounting.rs",
+      "range": [
+        "    fn lock(&self)",
+        "    fn begin(&self"
+      ],
+      "anchors": [
+        "state.exact = false;",
+        "state.exact &= valid & total_valid;"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V8: sticky exact=false, all counter writers, overflow/underflow and one coherent snapshot. A recovered lock is not a successful resource receipt."
+    },
+    {
+      "id": "pty.new",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    pub(crate) fn open_observed",
+        "    pub(crate) fn resize"
+      ],
+      "anchors": [
+        "descriptor: Mutex::new(Some(Arc::new(AsyncFd::new(master)?))),"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.initial_safe"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V8/V6: actual original FD, valid original AsyncFd, setup/partial-effect/cleanup policy; the mutex does not prove OS opening."
+    },
+    {
+      "id": "pty.descriptor",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    fn descriptor(&self)",
+        "    /// Revoke every clone"
+      ],
+      "anchors": [
+        "self.descriptor\n            .lock()",
+        "            .map_err(|_| io::Error::other(\"terminal owner poisoned\"))?",
+        "            .as_ref()",
+        "            .cloned()"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.poisoned_result_still_holds_original_guard",
+        "SandboxModel.Boundaries.StdMutexContract.guard_drop_keeps_original_payload"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V8: original Option<Arc<AsyncFd<OwnedFd>>> and returned Arc retains original FD; poison refusal/None error and value selection remain business. Original backend dynamic I/O error type is an open connection limitation, not a proof failure."
+    },
+    {
+      "id": "pty.close",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    pub(crate) fn close(&self)",
+        "    pub(crate) async fn read"
+      ],
+      "anchors": [
+        "self.descriptor\n            .lock()",
+        "            .unwrap_or_else(PoisonError::into_inner)",
+        "            .take();",
+        "self.closed.notify_waiters();"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.StdMutexContract.poison_error_recovery_returns_same_guard",
+        "SandboxModel.Boundaries.StdMutexContract.guard_drop_keeps_original_payload"
+      ],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V8: original cell/guard and Option take; prior FD clones stay live, notify only follows this update and does not prove I/O completion. Close eligibility is business."
+    },
+    {
+      "id": "pty.business-policy",
+      "file": "sandbox-guest-runtime/src/pty.rs",
+      "range": [
+        "    fn descriptor(&self)",
+        "    pub(crate) async fn read"
+      ],
+      "anchors": [
+        "            .map_err(|_| io::Error::other(\"terminal owner poisoned\"))?",
+        "            .unwrap_or_else(PoisonError::into_inner)",
+        "            .take();"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "original_object": "same original mutex and this acquisition occurrence",
+      "preconditions": "Fixed Rust/stdlib and original safe Rust borrows; approved A6 and only the named B2 mechanical wrapper. Model payload retains inline fields/original handles, not immutable snapshots of aliased mutable heaps. Only normally completed operations are projected; interrupted calls retain their actual prefix.",
+      "caller_obligations": "V8/V6: why descriptor rejects poison while close recovers, authorization/revocation, original returned clone, partial I/O/real exit and actual last resource return. No whole PtyMaster body is trusted."
+    }
+  ],
+  "target": "x86_64-unknown-linux-gnu",
+  "features": [
+    "contention-diagnostics"
+  ],
+  "tools": {
+    "charon": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+    "aeneas": "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+  },
+  "api_scope": [
+    "new",
+    "normally returned lock",
+    "try_lock Busy/Poisoned/acquired",
+    "original guard borrow/read/write",
+    "PoisonError recovery preserving guard",
+    "normal guard Drop",
+    "advisory poisoning",
+    "forgotten guard boundary",
+    "exclusive get_mut"
+  ],
+  "excluded": [
+    "Condvar atomic unlock/relock",
+    "Tokio Mutex/RwLock",
+    "fairness or deadlock freedom",
+    "arbitrary poison repair",
+    "whole business callbacks",
+    "full shared-lock Rust refinement",
+    "arbitrary owned PoisonError::into_inner CPS binding",
+    "full-project Mutex caller coverage"
+  ],
+  "extraction": {
+    "llbc": "verification/aeneas/llbc/sandproof_std_mutex.llbc",
+    "normalized_sha256": "0e980c380a95af7292458eeb5e0fdfcbf366861f73521d6c7bebcb395c75745d",
+    "inventory": "verification/aeneas/std-mutex/translation.json",
+    "owned_root_id": 11,
+    "library_root_id": 20,
+    "library_type_ids": [
+      3,
+      5
+    ],
+    "generated": [
+      "SandproofStdMutex/Types.lean",
+      "SandproofStdMutex/Funs.lean",
+      "translation.json"
+    ]
+  },
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel/Boundaries/StdMutex.lean",
+    "SandboxModel/Boundaries/StdMutex/Audit.lean",
+    "SandboxModel/Boundaries/StdMutex/BorrowModel.lean",
+    "SandboxModel/Boundaries/StdMutex/Bridge.lean",
+    "SandboxModel/Boundaries/StdMutex/GetMut.lean",
+    "SandboxModel/Boundaries/StdMutex/Guard.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "controller-service/src/application/diagnostics.rs",
+    "docs/formal/dependencies.md",
+    "docs/proof-workflow.md",
+    "lake-first-chain.toml",
+    "lake-manifest.json",
+    "lake-sqlite.toml",
+    "lake-storage.toml",
+    "lake-tunnel.toml",
+    "lakefile.toml",
+    "lean-toolchain",
+    "rust-toolchain.toml",
+    "sandbox-guest-runtime/src/pty.rs",
+    "sandbox-guest-service/src/task_accounting.rs",
+    "scripts/lean-mcp-server.sh",
+    "scripts/regenerate-std-mutex-lean.sh",
+    "scripts/verify-std-mutex.sh",
+    "tools/check_first_chain_extraction.py",
+    "tools/check_foundations_extraction.py",
+    "tools/check_owned_message_components.py",
+    "tools/check_std_mutex_components.py",
+    "tools/check_std_mutex_contract.py",
+    "tools/check_task_contract.py",
+    "tools/lean_session.py",
+    "tools/tests/test_std_mutex_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/acceptance-inputs.sha256",
+    "verification/aeneas/llbc/sandproof_std_mutex.llbc",
+    "verification/aeneas/std-mutex/SandproofStdMutex/Funs.lean",
+    "verification/aeneas/std-mutex/SandproofStdMutex/FunsExternal.lean",
+    "verification/aeneas/std-mutex/SandproofStdMutex/Types.lean",
+    "verification/aeneas/std-mutex/SandproofStdMutex/TypesExternal.lean",
+    "verification/aeneas/std-mutex/translation.json",
+    "verification/experiments/std-mutex/README.md",
+    "verification/experiments/std-mutex/diagnostics-tests.rs",
+    "verification/experiments/std-mutex/meter-tests.rs",
+    "verification/experiments/std-mutex/negative.py",
+    "verification/experiments/std-mutex/negative/FunsExternal.lean.in",
+    "verification/experiments/std-mutex/negative/Negative.lean.in",
+    "verification/experiments/std-mutex/negative/TypesExternal.lean.in",
+    "verification/experiments/std-mutex/preflight.py",
+    "verification/experiments/std-mutex/pty-tests.rs",
+    "verification/first-chain-linux-environment.json",
+    "verification/std-mutex-environment.json"
+  ],
+  "integration_source_commit": "501e79d85b4329f5f6a0bce17c640fb611547009"
+}

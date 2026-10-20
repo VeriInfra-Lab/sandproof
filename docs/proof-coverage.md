@@ -2,6 +2,17 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+
+## T5/T6 标准 Mutex：原守卫与真实唯一借用
+
+本批从 integration `489f1ed5` 开始，集成来源更新到 `501e79d8`；三份代表生产源码未改变，生产 Rust 和 Charon/Aeneas 均未修改。正式范围见[依赖合同](formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)和[十三组来源/责任登记](../verification/std-mutex-environment.json)。[公共模块](../SandboxModel/Boundaries/StdMutex.lean)包含 35 条条件守卫声明、7 条真实 get_mut/借用声明及 4 条连接声明，共 46 个正式审计目标。
+
+原守卫模型区分忙碌与持有原守卫的中毒错误、恢复不回滚/清除、正常 Drop 不析构原 payload、取得时已 unwind 的建议性中毒、遗忘守卫仍锁住及独立的唯一借用条件。原 SerialMutex::get_mut 保留透明 Rust 函数体，由固定原工具生成 Types/Funs 并证明原调用、正常/中毒分支和回写保持；库模型仍依 A6。实际吞错版先编译抽取，再由同一 GetMutContract 的否定定理反驳；专用 into_inner 绑定只准入实际 PoisonError<&mut T> 调用。
+
+ning 隔离试验已通过十一项原源码正确用例、严格 Clippy 和两份新编译的同断言错误版：延后 SerialGuard 解锁、吞掉 get_mut 中毒错误。a6000 已通过独立模块构建和原服务实际 Audit 文件的完整、非陈旧 46 项审计；早期启动命名错误及结果解包错误的原始记录保留，后者经严格核对原服务的嵌套成功结果，不称重新执行。正式可复现入口、最新候选的完整双机验收/CI 与最终合入适用性尚待本批 PR 精确回执，不能由这些局部结果替代。
+
+共享锁实际接线仍依 A6/B2。原 Meter::lock 和 PTY descriptor 的预检分别受非可结束共享借用、动态 I/O 错误类型限制；其测试不是机器证明。业务中毒策略、Snapshot/FD/许可真实所有者、授权、资源归还和无死锁/进展仍由所属业务提供。Condvar、Tokio Mutex/RwLock、其他通道及 T0 全量使用点仍归 V0；T0/T5/T6/V0 保持开放，T9 排除。
+
 ## T5/T6 JoinSet：原任务组收齐
 
 来源为 integration `886f2dd6`，生产 Rust 与固定 Charon/Aeneas 未改。[两个条件模型](../SandboxModel/Boundaries/JoinSet.lean)以 36 条声明为审计目标，覆盖组历史守恒、已完成未取出仍计数、原任务/正常值/完整原错误表示与至多一次交付、取消等待和 abort/Drop 的区别、逐 spawn 检查的容量与正常收齐。合法非空执行、提前 Drop 和只 abort 的同性质反例一并保留；[依赖合同](formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[十五组操作/责任登记](../verification/joinset-environment.json)限定范围。

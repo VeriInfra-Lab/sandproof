@@ -25,3 +25,7 @@ rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
 [[lean_lib]]
 name = "SandproofTls"
 srcDir = "verification/aeneas/tls"
+
+[[lean_lib]]
+name = "SandproofStdMutex"
+srcDir = "verification/aeneas/std-mutex"
