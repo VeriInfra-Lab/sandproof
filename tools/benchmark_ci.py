@@ -21,7 +21,15 @@ CHECK_NAME = 'E2E / terminal-bench-2.1'
 
 
 def ci_verifier_evidence(row):
-    """Require the reviewed local bootstrap, export no sidecar paths or inventories."""
+    """Validate grading provenance or explicit unrun failure; export no private paths."""
+    # An unknown Create may have taken effect, but neither this guest preflight
+    # nor its verifier ran. Independently checked cleanup remains valid; never
+    # invent provenance or execution success for work that did not run.
+    if (row.get('status') == 'create_unknown'
+            and row.get('guest_preflight') == row.get('oracle') == row.get('verifier') == 'not_run'
+            and row.get('verifier_mode') in (None, 'not_run')
+            and row.get('verifier_variant') is None and row.get('rewards') is None):
+        return dict(guest_preflight='not_run', verifier_mode='not_run', verifier_variant=None)
     expected = dict(mode=CI_VERIFIER_MODE, source_launcher_sha256=BOOTSTRAP_SHA256,
         launcher_sha256=hashlib.sha256(LAUNCHER.encode()).hexdigest(), requirements_sha256=REQUIREMENTS_SHA256)
     variant = row.get('verifier_variant')
@@ -235,7 +243,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
                                                     for key, value in expected_hashes.items()))):
         raise ValueError('batch artifacts differ from the prepared host inputs')
     # Construct an allowlist. Never copy config, paths, raw logs or exceptions.
-    statuses = {'passed', 'failed', 'timeout', 'interrupted', 'cleanup_unknown', 'runner_error', 'not_run'}
+    statuses = {'passed', 'failed', 'timeout', 'interrupted', 'create_unknown', 'cleanup_unknown', 'runner_error', 'not_run'}
     safe = []
     for row in rows:
         item = dict(name=row['name'], status=row.get('status') if row.get('status') in statuses else 'unknown',
@@ -345,8 +353,10 @@ def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal
             ci_verifier_evidence(row)  # Recheck durable batch evidence before terminal publication.
     names = [row['name'] for row in rows]
     complete = len(names) == len(expected) and len(set(names)) == len(expected) and set(names) == set(expected)
-    passed = bool(expected) and complete and all(
-        batch['passed'] is True and batch['cleanup'] == 'passed' for batch in batches)
+    passed = (bool(expected) and complete
+        and all(batch['passed'] is True and batch['cleanup'] == 'passed' for batch in batches)
+        and all(row.get('status') == row.get('oracle') == row.get('verifier') == 'passed'
+                and row.get('rewards') == {'reward': 1} for row in rows))
     full = (all_tasks is not None and len(expected) == len(all_tasks)
             and len(set(all_tasks)) == len(all_tasks) and set(expected) == set(all_tasks))
     result = dict(schema_version=1, candidate=candidate, dataset=dataset,
