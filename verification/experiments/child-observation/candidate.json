@@ -1,0 +1,26 @@
+{
+  "base": "646fc2c8569083cf4f03554f9acb2ca67bf22e6e",
+  "source_archive_sha256": "92ab8a056c5549f62c26e53f70cd386b72460db3a780be5ed004f5b9ff609a57",
+  "patch": "candidate-core.patch",
+  "patch_sha256": "92423bc872e7b2dafe0e2986b3f1d40fab69f1d904d59ea7c702fec47957a1b7",
+  "source_files": {
+    "sandbox-runtime/src/child_process.rs": "6931563682fb6e35213a905290d03fce3c87bd1628be30c300ffe04b3005fc2e",
+    "sandbox-runtime/src/child_process/reaper.rs": "a50a5049809a21b0180c3cad384cbee2c1bb6ee088205b854d6beb417e9698a8",
+    "sandbox-runtime/src/lib.rs": "fe280be7eaf1a75b8129692bd0af2508a75057539f820c01797c2f3aefec3f09",
+    "sandbox-runtime/Cargo.toml": "0ce3258968ab94268049724badd16aafd6f15cc9acda37f3f920950c811b4a73",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95"
+  },
+  "candidate_files": {
+    "sandbox-runtime/src/child_process.rs": "3bbeacf6edd265585685bb7da241ff723911bd18598e6c091bc20cab9ef926e4",
+    "sandbox-runtime/src/child_process/observation_core.rs": "7362fdd7facc9eab08ebc68a1c1a33fe6c11295baa3da0bf5b9c25dd179c1101",
+    "sandbox-runtime/src/child_process/observation_io.rs": "0a15bc1065dc2f1c92ad90a83f47697d7b27c0d8b0b223ee7b47b7986f88fc32"
+  },
+  "roots": [
+    "crate::child_process::observation_core::stop",
+    "crate::child_process::_::stop_and_reap"
+  ],
+  "scope": "actual caller delegates the original control flow to a generic synchronous core; mutable primitive state preserves repeated OS/time/ownership effects",
+  "normal_domain_note": "child and slot present on entry; explicit Some matching replaces Option::expect to avoid stock toStr native length certificates; missing-value panic diagnostics and exceptional cleanup are outside the normal-return equivalence claim"
+}

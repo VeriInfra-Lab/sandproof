@@ -1,0 +1,12 @@
+name = "sandproof-child-observation-proof"
+version = "0.1.0"
+defaultTargets = ["SandboxModel.Boundaries.ChildObservation.Audit"]
+[[lean_lib]]
+name = "SandboxModel"
+[[lean_lib]]
+name = "SandproofChildObservation"
+srcDir = "verification/aeneas/child-observation"
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
