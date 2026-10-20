@@ -31,14 +31,6 @@ name = "SandproofStdMutex"
 srcDir = "verification/aeneas/std-mutex"
 
 [[lean_lib]]
-name = "SandproofFirstChain"
-srcDir = "verification/aeneas/first-chain"
-
-[[lean_lib]]
-name = "SandproofStorage"
-srcDir = "verification/aeneas/storage"
-
-[[lean_lib]]
 name = "SandproofSchemaDomains"
 srcDir = "verification/aeneas/schema-domains"
 
@@ -53,3 +45,11 @@ srcDir = "verification/aeneas/sqlite-statements"
 [[lean_lib]]
 name = "SandproofSqlite"
 srcDir = "verification/aeneas/sqlite"
+
+[[lean_lib]]
+name = "SandproofFirstChain"
+srcDir = "verification/aeneas/first-chain"
+
+[[lean_lib]]
+name = "SandproofStorage"
+srcDir = "verification/aeneas/storage"

@@ -231,6 +231,35 @@ class ClosureTests(unittest.TestCase):
         self.assertIn('verification/ProofAudit.lean',retained)
         self.assertIn('tools/proof_services.py',retained)
 
+    def test_sqlite_view_retains_the_complete_parent_without_duplicate_libraries(self):
+        from tools.check_sqlite_extraction import audit_surface
+        repository=Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            shutil.copytree(repository/'verification/aeneas/sqlite',root/'verification/aeneas/sqlite')
+            base=(repository/'lake-first-chain.toml').read_text()
+            view=root/'lake-sqlite.toml'
+            (root/'lake-first-chain.toml').write_text(base)
+            view.write_text(base)
+            self.assertEqual(len(audit_surface(root)),18)
+            extension='\n[[lean_lib]]\nname = "SandproofSqlite"\nsrcDir = "verification/aeneas/sqlite"\n'
+            view.write_text(base.rstrip()+'\n'+extension)
+            with self.assertRaisesRegex(ValueError,'preserve the full'):
+                audit_surface(root)
+            view.write_text(base.replace('name = "SandproofSchemaDomains"','name = "WrongLibrary"'))
+            with self.assertRaisesRegex(ValueError,'preserve the full'):
+                audit_surface(root)
+            without=base.replace(extension,'')
+            self.assertNotEqual(without,base)
+            (root/'lake-first-chain.toml').write_text(without)
+            view.write_text(without.rstrip()+'\n'+extension)
+            self.assertEqual(len(audit_surface(root)),18)
+            invalid=base.replace('srcDir = "verification/aeneas/sqlite"','srcDir = "wrong-source"')
+            (root/'lake-first-chain.toml').write_text(invalid)
+            view.write_text(invalid)
+            with self.assertRaisesRegex(ValueError,'original unique source'):
+                audit_surface(root)
+
     def test_audit_inventory_includes_separate_negative_roots_and_requires_their_source(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

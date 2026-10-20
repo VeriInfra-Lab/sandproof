@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tomllib
 import sys
 
 try:
@@ -110,8 +111,13 @@ def audit_surface(root):
     if not expected or len(actual) != len(set(actual)) or set(actual) != expected:
         raise ValueError("missing, duplicate or extra SQLite theorem audit")
     extension = '\n[[lean_lib]]\nname = "SandproofSqlite"\nsrcDir = "verification/aeneas/sqlite"\n'
-    if (root / "lake-sqlite.toml").read_text().rstrip() != (
-            (root / "lake-first-chain.toml").read_text().rstrip() + "\n" + extension).rstrip():
+    base = (root / "lake-first-chain.toml").read_text().rstrip()
+    inherited = [lib for lib in tomllib.loads(base).get('lean_lib', [])
+                 if lib['name'] == 'SandproofSqlite']
+    if inherited and inherited != [dict(name='SandproofSqlite', srcDir=str(LIBRARY))]:
+        raise ValueError("SQLite parent library must have its original unique source directory")
+    expected_view = base if inherited else (base + "\n" + extension).rstrip()
+    if (root / "lake-sqlite.toml").read_text().rstrip() != expected_view:
         raise ValueError("SQLite Lake view must preserve the full Linux/base configuration")
     return expected
 
