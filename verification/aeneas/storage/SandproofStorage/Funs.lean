@@ -253,14 +253,14 @@ def sandproof_protocol.DeploymentId.as_str
   alloc.string.String.Insts.CoreOpsDerefDerefStr.deref self
 
 /-- [sandproof_storage_extract::scripts::CAS]
-    Source: 'src/../../../sandbox-center-store/src/scripts.rs', lines 19:0-37:2 -/
+    Source: 'src/../../../sandbox-center-store/src/scripts.rs', lines 19:0-44:2 -/
 @[global_simps, irreducible]
 def scripts.CAS : Str :=
   toStr
-    "\nlocal kind = redis.call(\'TYPE\', KEYS[1]).ok\nif string.len(ARGV[5]) == 0 or string.len(ARGV[5]) > tonumber(ARGV[6]) then return 3 end\nif ARGV[3] == \'\' then\n  if kind ~= \'none\' then return 2 end\nelse\n  if kind == \'none\' then return 1 end\n  if kind ~= \'hash\' or redis.call(\'HLEN\', KEYS[1]) ~= 4 then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'deployment\') ~= ARGV[1] then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'format\') ~= ARGV[2] then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'revision\') ~= ARGV[3] then return 4 end\n  if redis.call(\'HSTRLEN\', KEYS[1], \'payload\') > tonumber(ARGV[6]) then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'payload\') ~= ARGV[7] then return 3 end\n  if redis.call(\'PTTL\', KEYS[1]) ~= -1 then return 3 end\nend\nredis.call(\'HSET\', KEYS[1], \'deployment\', ARGV[1], \'format\', ARGV[2],\n  \'revision\', ARGV[4], \'payload\', ARGV[5])\nreturn 0\n"
+    "\nlocal kind = redis.call(\'TYPE\', KEYS[1]).ok\nif string.len(ARGV[5]) == 0 or string.len(ARGV[5]) > tonumber(ARGV[6]) then return 3 end\nif ARGV[3] == \'\' then\n  if kind ~= \'none\' then return 2 end\nelse\n  if kind == \'none\' then return 1 end\n  if kind ~= \'hash\' or redis.call(\'HLEN\', KEYS[1]) ~= 4 then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'deployment\') ~= ARGV[1] then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'format\') ~= ARGV[2] then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'revision\') ~= ARGV[3] then return 4 end\n  if redis.call(\'HSTRLEN\', KEYS[1], \'payload\') > tonumber(ARGV[6]) then return 3 end\n  if redis.call(\'HGET\', KEYS[1], \'payload\') ~= ARGV[7] then return 3 end\n  if redis.call(\'PTTL\', KEYS[1]) ~= -1 then return 3 end\nend\nif ARGV[3] ~= \'\' and ARGV[5] == ARGV[7] then\n  -- The full old payload and metadata were checked above. A NEW revision is\n  -- still written and durably acknowledged; do not append the unchanged\n  -- envelope to the AOF on every authorization/recovery confirmation.\n  redis.call(\'HSET\', KEYS[1], \'revision\', ARGV[4])\nelse\n  redis.call(\'HSET\', KEYS[1], \'deployment\', ARGV[1], \'format\', ARGV[2],\n    \'revision\', ARGV[4], \'payload\', ARGV[5])\nend\nreturn 0\n"
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::StoreConfig}::key]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 85:4-87:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 89:4-91:5 -/
 def store.StoreConfig.key (self : store.StoreConfig) : Result String := do
   let args ← sandproof_protocol.DeploymentId.as_str self.deployment
   let a ←
@@ -276,8 +276,33 @@ def store.StoreConfig.key (self : store.StoreConfig) : Result String := do
   let s ← alloc.fmt.format a1
   core.hint.must_use s
 
+/-- [sandproof_storage_extract::store::configuration_error]:
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 356:0-365:1 -/
+def store.configuration_error
+  (diagnostics : store.storage_io.Diagnostics)
+  (phase : store.diagnostics.Phase) :
+  Result (sandproof_center_store.StoreError × store.storage_io.Diagnostics)
+  := do
+  let d ← core.time.Duration.ZERO
+  let diagnostics1 ←
+    store.storage_io.emit diagnostics phase
+      store.diagnostics.Failure.ConfigurationMismatch d d
+  ok (sandproof_center_store.StoreError.Configuration, diagnostics1)
+
+/-- [sandproof_storage_extract::store::persistence_error]:
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 367:0-376:1 -/
+def store.persistence_error
+  (diagnostics : store.storage_io.Diagnostics) :
+  Result (sandproof_center_store.StoreError × store.storage_io.Diagnostics)
+  := do
+  let d ← core.time.Duration.ZERO
+  let diagnostics1 ←
+    store.storage_io.emit diagnostics store.diagnostics.Phase.PersistenceHealth
+      store.diagnostics.Failure.UnhealthyPersistence d d
+  ok (sandproof_center_store.StoreError.Unavailable, diagnostics1)
+
 /-- [sandproof_storage_extract::store::setting_matches]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 346:0-351:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 378:0-383:1 -/
 def store.setting_matches
   (settings : alloc.collections.btree.map.BTreeMap String String Global)
   (key : Str) (expected : Str) :
@@ -294,7 +319,7 @@ def store.setting_matches
     Str.Insts.CoreCmpPartialEqStr.eq s expected
 
 /-- [sandproof_storage_extract::store::remaining_info_key]: loop body 0:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 354:4-362:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 386:4-394:1 -/
 @[rust_loop_body]
 def store.remaining_info_key_loop.body
   (key : Str) (iter : core.str.iter.Lines) :
@@ -317,7 +342,7 @@ def store.remaining_info_key_loop.body
       else ok (cont iter1)
 
 /-- [sandproof_storage_extract::store::remaining_info_key]: loop 0:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 354:4-362:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 386:4-394:1 -/
 @[rust_loop]
 def store.remaining_info_key_loop
   (iter : core.str.iter.Lines) (key : Str) : Result Bool := do
@@ -326,14 +351,14 @@ def store.remaining_info_key_loop
     iter
 
 /-- [sandproof_storage_extract::store::remaining_info_key]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 353:0-362:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 385:0-394:1 -/
 @[reducible]
 def store.remaining_info_key
   (lines : core.str.iter.Lines) (key : Str) : Result Bool := do
   store.remaining_info_key_loop lines key
 
 /-- [sandproof_storage_extract::store::info_field]: loop body 0:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 366:4-379:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 398:4-411:1 -/
 @[rust_loop_body]
 def store.info_field_loop.body
   (key : Str) (lines : core.str.iter.Lines) :
@@ -361,7 +386,7 @@ def store.info_field_loop.body
       else ok (cont lines1)
 
 /-- [sandproof_storage_extract::store::info_field]: loop 0:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 366:4-379:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 398:4-411:1 -/
 @[rust_loop]
 def store.info_field_loop
   (lines : core.str.iter.Lines) (key : Str) : Result (Option Str) := do
@@ -370,13 +395,13 @@ def store.info_field_loop
     lines
 
 /-- [sandproof_storage_extract::store::info_field]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 364:0-379:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 396:0-411:1 -/
 def store.info_field (info : Str) (key : Str) : Result (Option Str) := do
   let lines ← core.str.Str.lines info
   store.info_field_loop lines key
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::check_health]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 462:4-512:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 494:4-576:5 -/
 def store.RedisLedger.check_health
   {T : Type} (self : store.RedisLedger T) (deadline : std.time.Instant) :
   Result ((core.result.Result Unit sandproof_center_store.StoreError) ×
@@ -384,6 +409,7 @@ def store.RedisLedger.check_health
   := do
   let (r, o) ←
     store.storage_io.info self.connection (toStr "server") deadline
+      store.diagnostics.Phase.ServerHealth
   let cf ← core.result.Result.Insts.CoreOpsTry.branch r
   match cf with
   | core.ops.control_flow.ControlFlow.Continue val =>
@@ -396,9 +422,11 @@ def store.RedisLedger.check_health
         sandproof_center_store.REDIS_VERSION)
     if b
     then
-      ok (core.result.Result.Err
-        sandproof_center_store.StoreError.Configuration,
-        { self with connection := o })
+      let (se, d) ←
+        store.configuration_error self.diagnostics
+          store.diagnostics.Phase.ServerHealth
+      ok (core.result.Result.Err se,
+        { self with connection := o, diagnostics := d })
     else
       let s1 ←
         lift (Array.to_slice
@@ -407,7 +435,9 @@ def store.RedisLedger.check_health
             toStr "no-appendfsync-on-rewrite", toStr "aof-load-truncated",
             toStr "maxmemory"
             ]))
-      let (r1, o2) ← store.storage_io.settings o s1 deadline
+      let (r1, o2) ←
+        store.storage_io.settings o s1 deadline
+          store.diagnostics.Phase.SettingsHealth
       let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
       match cf1 with
       | core.ops.control_flow.ControlFlow.Continue val1 =>
@@ -443,6 +473,7 @@ def store.RedisLedger.check_health
                   then
                     let (r2, o3) ←
                       store.storage_io.info o2 (toStr "persistence") deadline
+                        store.diagnostics.Phase.PersistenceHealth
                     let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
                     match cf2 with
                     | core.ops.control_flow.ControlFlow.Continue val2 =>
@@ -457,9 +488,10 @@ def store.RedisLedger.check_health
                           Str.Insts.CoreCmpPartialEqStr)) o4 (some (toStr "0"))
                       if b7
                       then
-                        ok (core.result.Result.Err
-                          sandproof_center_store.StoreError.Unavailable,
-                          { self with connection := o3 })
+                        let (se, d) ←
+                          store.persistence_error self.diagnostics
+                        ok (core.result.Result.Err se,
+                          { self with connection := o3, diagnostics := d })
                       else
                         let o5 ← store.info_field s3 (toStr "aof_enabled")
                         let b8 ←
@@ -470,9 +502,10 @@ def store.RedisLedger.check_health
                             "1"))
                         if b8
                         then
-                          ok (core.result.Result.Err
-                            sandproof_center_store.StoreError.Unavailable,
-                            { self with connection := o3 })
+                          let (se, d) ←
+                            store.persistence_error self.diagnostics
+                          ok (core.result.Result.Err se,
+                            { self with connection := o3, diagnostics := d })
                         else
                           let o6 ←
                             store.info_field s3 (toStr "aof_last_write_status")
@@ -484,9 +517,10 @@ def store.RedisLedger.check_health
                               "ok"))
                           if b9
                           then
-                            ok (core.result.Result.Err
-                              sandproof_center_store.StoreError.Unavailable,
-                              { self with connection := o3 })
+                            let (se, d) ←
+                              store.persistence_error self.diagnostics
+                            ok (core.result.Result.Err se,
+                              { self with connection := o3, diagnostics := d })
                           else
                             let o7 ←
                               store.info_field s3 (toStr
@@ -499,9 +533,11 @@ def store.RedisLedger.check_health
                                 "ok"))
                             if b10
                             then
-                              ok (core.result.Result.Err
-                                sandproof_center_store.StoreError.Unavailable,
-                                { self with connection := o3 })
+                              let (se, d) ←
+                                store.persistence_error self.diagnostics
+                              ok (core.result.Result.Err se,
+                                { self with connection := o3, diagnostics := d
+                                })
                             else
                               ok (core.result.Result.Ok (),
                                 { self with connection := o3 })
@@ -512,29 +548,41 @@ def store.RedisLedger.check_health
                           sandproof_center_store.StoreError) residual
                       ok (r3, { self with connection := o3 })
                   else
-                    ok (core.result.Result.Err
-                      sandproof_center_store.StoreError.Configuration,
-                      { self with connection := o2 })
+                    let (se, d) ←
+                      store.configuration_error self.diagnostics
+                        store.diagnostics.Phase.SettingsHealth
+                    ok (core.result.Result.Err se,
+                      { self with connection := o2, diagnostics := d })
                 else
-                  ok (core.result.Result.Err
-                    sandproof_center_store.StoreError.Configuration,
-                    { self with connection := o2 })
+                  let (se, d) ←
+                    store.configuration_error self.diagnostics
+                      store.diagnostics.Phase.SettingsHealth
+                  ok (core.result.Result.Err se,
+                    { self with connection := o2, diagnostics := d })
               else
-                ok (core.result.Result.Err
-                  sandproof_center_store.StoreError.Configuration,
-                  { self with connection := o2 })
+                let (se, d) ←
+                  store.configuration_error self.diagnostics
+                    store.diagnostics.Phase.SettingsHealth
+                ok (core.result.Result.Err se,
+                  { self with connection := o2, diagnostics := d })
             else
-              ok (core.result.Result.Err
-                sandproof_center_store.StoreError.Configuration,
-                { self with connection := o2 })
+              let (se, d) ←
+                store.configuration_error self.diagnostics
+                  store.diagnostics.Phase.SettingsHealth
+              ok (core.result.Result.Err se,
+                { self with connection := o2, diagnostics := d })
           else
-            ok (core.result.Result.Err
-              sandproof_center_store.StoreError.Configuration,
-              { self with connection := o2 })
+            let (se, d) ←
+              store.configuration_error self.diagnostics
+                store.diagnostics.Phase.SettingsHealth
+            ok (core.result.Result.Err se,
+              { self with connection := o2, diagnostics := d })
         else
-          ok (core.result.Result.Err
-            sandproof_center_store.StoreError.Configuration,
-            { self with connection := o2 })
+          let (se, d) ←
+            store.configuration_error self.diagnostics
+              store.diagnostics.Phase.SettingsHealth
+          ok (core.result.Result.Err se,
+            { self with connection := o2, diagnostics := d })
       | core.ops.control_flow.ControlFlow.Break residual =>
         let r2 ←
           core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
@@ -548,7 +596,7 @@ def store.RedisLedger.check_health
     ok (r1, { self with connection := o })
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::fence_unknown]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 456:4-460:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 488:4-492:5 -/
 def store.RedisLedger.fence_unknown
   {T : Type} (R : Type) (self : store.RedisLedger T) :
   Result ((core.result.Result R sandproof_center_store.StoreError) ×
@@ -558,7 +606,7 @@ def store.RedisLedger.fence_unknown
     { self with connection := none, write_fenced := true })
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::write_normalized]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 407:4-454:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 439:4-486:5 -/
 def store.RedisLedger.write_normalized
   {T : Type} (self : store.RedisLedger T) (prior : String)
   (expected_payload : Slice Std.U8) (input : store.DecodedWrite T) :
@@ -625,7 +673,7 @@ def store.RedisLedger.write_normalized
       { self with connection := o }
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::write_decoded]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 392:4-405:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 424:4-437:5 -/
 def store.RedisLedger.write_decoded
   {T : Type} (self : store.RedisLedger T)
   (expected : Option (store.Observed T)) (input : store.DecodedWrite T) :
@@ -645,7 +693,7 @@ def store.RedisLedger.write_decoded
     store.RedisLedger.write_normalized self s s1 input
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::write_using]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 591:4-611:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 655:4-675:5 -/
 def store.RedisLedger.write_using
   {T : Type} {C : Type} (ValueCodecInst : store.ValueCodec C T)
   (self : store.RedisLedger T) (expected : Option (store.Observed T))
@@ -672,7 +720,7 @@ def store.RedisLedger.write_using
     ok (r1, self, codec1)
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), sandproof_center_store::StoreError> for sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{closure}<T, C>}::call_once]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 586:21-586:54 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 650:21-650:54 -/
 def
   store.RedisLedger.replace_using.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorStoreError.call_once
   {T : Type} {C : Type} (ValueCodecInst : store.ValueCodec C T)
@@ -683,7 +731,7 @@ def
   ok sandproof_center_store.StoreError.RevisionExhausted
 
 /-- Trait implementation: [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{impl core::ops::function::FnOnce<(sandproof_protocol::internal::InternalError,), sandproof_center_store::StoreError> for sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{closure}<T, C>}]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 586:21-586:54 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 650:21-650:54 -/
 @[reducible]
 def
   store.RedisLedger.replace_using.closure.Insts.CoreOpsFunctionFnOnceTupleInternalErrorStoreError
@@ -697,7 +745,7 @@ def
 }
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 572:4-589:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 636:4-653:5 -/
 def store.RedisLedger.replace_using
   {T : Type} {C : Type} (ValueCodecInst : store.ValueCodec C T)
   (self : store.RedisLedger T) (expected : store.Observed T)
@@ -745,7 +793,7 @@ def store.RedisLedger.replace_using
       ok (r2, self, codec)
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::commit_using]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 543:4-557:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 607:4-621:5 -/
 def store.RedisLedger.commit_using
   {T : Type} {C : Type} {D : Type} (ValueCodecInst : store.ValueCodec C T)
   (OperationClockInst : store.OperationClock D) (self : store.RedisLedger T)
@@ -778,7 +826,7 @@ def store.RedisLedger.commit_using
       ok (r1, self, codec1, clock1)
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::reaffirm_using]:
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 559:4-570:5 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 623:4-634:5 -/
 def store.RedisLedger.reaffirm_using
   {T : Type} {C : Type} {D : Type} (ValueCodecInst : store.ValueCodec C T)
   (OperationClockInst : store.OperationClock D) (self : store.RedisLedger T)

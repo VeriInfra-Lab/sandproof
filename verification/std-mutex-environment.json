@@ -448,5 +448,5 @@
     "verification/first-chain-linux-environment.json",
     "verification/std-mutex-environment.json"
   ],
-  "integration_source_commit": "18906900324d77f8ef5537afa719a4928949998c"
+  "integration_source_commit": "b973b40b8541e068f5ac3effeff2a6d2bc73d61d"
 }

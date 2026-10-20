@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "capture_commit": "9426c635d131d8db10ebf26cf521d616ca4a97e7",
+  "capture_commit": "a9ea9e3d974df1aaaf4b0118c0a0b31db937150e",
   "config_sha256": "d12f4cac13d42ebc86263d1057ffc75dbcc39eb10d2f0fdef2711c3842bf15b7",
   "source_inputs": 818,
   "packages": [
@@ -506,8 +506,8 @@
         "metadata=5b1521e0f8ed374e",
         "extra-filename=-299b52860c9fc823"
       ],
-      "sha256": "ce998d03e41a8e9093b812ae57721e23cfef3ac47cb493b1040a0f95a0c5c3f9",
-      "bytes": 389191,
+      "sha256": "8673ac56163ca0e7692daaf68a2b5f2b3a9712f50f4819edde0c642f4c997ca5",
+      "bytes": 389528,
       "lines": 12178,
       "functions": 159,
       "declarations": 267,
@@ -530,8 +530,8 @@
         "extra-filename=-cbe92fc8b2d93897",
         "strip=debuginfo"
       ],
-      "sha256": "47222189a07de9f87b082dab0f205c341464b046dc8920e18f70e17bae6bdbad",
-      "bytes": 951822,
+      "sha256": "e7e9035d5364c893a76a2977329f1c47233481aa2256b75a88c8f6b8b45788b2",
+      "bytes": 952159,
       "lines": 23676,
       "functions": 159,
       "declarations": 310,
@@ -1415,8 +1415,8 @@
   ],
   "custom_drop_implementations": 27,
   "evidence": {
-    "receipt_sha256": "2ed8ceb24f53ebb0556bbda240480d2e15df3349483e102d2f4a6a97202d924c",
-    "index_sha256": "bd69ad1dba4d001c38d2ca6247172c88fa86973c60f44235aaf128e8f08c66b3"
+    "receipt_sha256": "5c96cc26ba4d4c285d6b98c988a4be1ee883bec4abde942ec5510928ea0e4bad",
+    "index_sha256": "f239bc54e698ce82441e9c3efdd90f528dce9a88a3a86a536b04e576091c5245"
   },
   "scope": "compiled source census; no semantic coverage or call-graph completeness claim"
 }
