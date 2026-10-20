@@ -141,7 +141,8 @@ def run_locked_suite(output):
                            ('owned-message','check_owned_message_components.py'),
                            ('notify','check_notify_components.py'),
                            ('joinset','check_joinset_components.py'),
-                           ('std-mutex','check_std_mutex_components.py')]:
+                           ('std-mutex','check_std_mutex_components.py'),
+                           ('condvar','check_condvar_components.py')]:
         target = work / name
         native_case(name, ROOT, target, lambda n=filename, p=target:
                     call(['tools/' + n, '--output', p]))

@@ -171,3 +171,5 @@ JoinSet 的条件模型执行 `bash scripts/verify-joinset.sh`，全批入口包
 向 a6000 只交接完整成功记录。模块入口还对真实 `Listener::serve` 执行固定原 Charon 预检：不支持 Coroutine 的失败原文和部分 LLBC 保留，不能据此运行 Aeneas 或称异步抽取成功。接口与条件见[依赖登记](../docs/formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[逐点登记](joinset-environment.json)。两个模型分别描述组历史与任意原任务，使用者提供同一真实执行的相容投影；它们不是完整 async Rust 语义。收齐保留正常值和原 JoinError 的所有权；panic 载荷也可以持有许可，需等这份错误值实际丢弃后才能观察其归还。模型保留 α/ρ 两类原值表示，不据此承诺独立阻塞工作或业务外部资源已经退出。实际完成状态仍由覆盖记录和 #333 精确回执说明。
 
 标准 Mutex 的条件守卫、真实 get_mut 与错误版复现见 [专用说明](experiments/std-mutex/README.md)，实际支持域和业务责任以[依赖合同](../docs/formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)为准；完整验收仍按原证明工作流执行。
+
+Condvar 的单次原等待、原守卫/中毒/超时协议和真实 Reaper 接线见[专用说明](experiments/condvar/README.md)及[接口登记](condvar-environment.json)。执行 `bash scripts/verify-condvar.sh`，普通组件由 ning 的完整原生入口提供；原 `run` 的后端限制、模型反例和原生夹具错误版分别报告，不称整个 Reaper Rust 已机器精化。
