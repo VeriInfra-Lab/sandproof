@@ -1,0 +1,1416 @@
+{
+  "schema": 1,
+  "kind": "existing-t0-literal-header-locations-not-a-new-proof-or-extraction",
+  "baseline": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "receipt_sha256": "5c96cc26ba4d4c285d6b98c988a4be1ee883bec4abde942ec5510928ea0e4bad",
+  "index_sha256": "f239bc54e698ce82441e9c3efdd90f528dce9a88a3a86a536b04e576091c5245",
+  "source_commit": "a9ea9e3d974df1aaaf4b0118c0a0b31db937150e",
+  "source_count": 818,
+  "all_units": 60,
+  "original_stages": [
+    "dev-center",
+    "dev-host",
+    "dev-window-reducer",
+    "dev-guest",
+    "dev-vm-cli",
+    "release-center",
+    "release-host",
+    "release-window-reducer",
+    "release-guest",
+    "release-vm-cli"
+  ],
+  "selected_source_sha256": {
+    "sandbox-protocol/src/lib.rs": "eac6d277cd77b680f554f318ad5a2cb5e9ba40f09172486c8ba62d656fdabb0d",
+    "sandbox-protocol/src/internal.rs": "bdbfd2c89b17d0f16758359d9fd0ad7e129c09e5c024f20bff119fa2449c93ed",
+    "sandbox-protocol/src/internal/lifecycle.rs": "6fdb8f860c2288a8d0117ccec0746fed4fba6415f05c494f00722278afd651fb",
+    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94",
+    "controller-service/src/controller/admission.rs": "9dc21102d73fe147cee66cb84771950a848bc413fab356dcd78a420214e1b88d",
+    "controller-service/src/application/coordinator/internal_health.rs": "4b67c862c1c5f993eb5029714ae7d9fd96bfd4d4411a24acdf5e419049ccd7b6",
+    "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+    "sandbox-center-core/src/validation.rs": "9687cb21810ff049c739df89fbffd57f6b6d3fe8e7791463e95e501750da021e",
+    "sandbox-center-core/src/model.rs": "5879bd2c1296c159030eca3ab253af844b1eec120fac60ad5522251cdf352a3b",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "controller-service/src/template_registry/validation.rs": "77d54b0ec543380e1c5b0c0a17937d8769dd508f88b0164e2860f1d69bc019c6",
+    "sandbox-internal/src/status.rs": "5a39f5480ebf16ac403393cca5f64a7cd31d91eae4711ab0e6e9df21b16a1542",
+    "controller-service/src/templates.rs": "43dd7d2fa214bf2b5035d9de87e07b6656b3b364bf6226861d16b59c8c98e573",
+    "sandbox-guest-runtime/src/file_query.rs": "e9a5cb02aba2bb9a5f69d8613cc08a2b466d8b9d91a390e1697cea44b360819c",
+    "sandbox-guest-service/src/files.rs": "ddcf987746ca772d250f1f9841ad32975ae8967cf836096b750ef52a5a5e884a"
+  },
+  "units": [
+    {
+      "receipt_unit": 0,
+      "crate": "sandbox_controller_core",
+      "source": "controller-core/src/lib.rs",
+      "cfg": [
+        "feature=\"serde\""
+      ],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=7134454ba2f2cd14",
+        "extra-filename=-56e8c735889bf267"
+      ],
+      "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad",
+      "command_sha256": "4913b4c872a6a0cc491f86433880405c28abfe91f1a345ebaa58273054522e05"
+    },
+    {
+      "receipt_unit": 1,
+      "crate": "sandbox_controller_core",
+      "source": "controller-core/src/lib.rs",
+      "cfg": [
+        "feature=\"serde\""
+      ],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=e4cc681021791337",
+        "extra-filename=-5229636c57bc945e",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a",
+      "command_sha256": "da9ce5d50505e89a9d7ef507d581981016d0bd055210ee516150079c34b4113e"
+    },
+    {
+      "receipt_unit": 2,
+      "crate": "sandbox_controller_core",
+      "source": "controller-core/src/lib.rs",
+      "cfg": [
+        "feature=\"serde\""
+      ],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=7b006d12c8a8072b",
+        "extra-filename=-6610208c9758f376"
+      ],
+      "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad",
+      "command_sha256": "a0f0da8b96416bf66042d6a004aafcb0e8cabcb6eea34bb29e9d90dd50d6d216"
+    },
+    {
+      "receipt_unit": 3,
+      "crate": "sandbox_controller_core",
+      "source": "controller-core/src/lib.rs",
+      "cfg": [
+        "feature=\"serde\""
+      ],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=e5122381f9dcbc49",
+        "extra-filename=-ed5f27c74cef2528",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a",
+      "command_sha256": "3042dea782c7318ede3e9851c3ac8cc2c674587434b0b8462b39b668eaeb44bb"
+    },
+    {
+      "receipt_unit": 20,
+      "crate": "sandproof_controller_service",
+      "source": "controller-service/src/lib.rs",
+      "cfg": [
+        "feature=\"default\"",
+        "feature=\"durable\"",
+        "feature=\"host-artifacts\""
+      ],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=e65970d5f48a1bb8",
+        "extra-filename=-71fadbf4868fa1fd",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "b056274742153b11daa14e7f6307000ea5348cca1332a715b4c1ce38a4e2d72f",
+      "command_sha256": "5c38c7f88a3a65c0e7fd1076055e934a3135afae066567a9968e29a3383d2fc2"
+    },
+    {
+      "receipt_unit": 21,
+      "crate": "sandproof_controller_service",
+      "source": "controller-service/src/lib.rs",
+      "cfg": [
+        "feature=\"host-artifacts\""
+      ],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=a303b555d6a335f3",
+        "extra-filename=-a9c6f3b0b4d53523",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "2088c3e26ebb53904245d541d710cb111d4f6d8c6b003711a556cdf7327ed74f",
+      "command_sha256": "15b23097be56abd3ce0e42c7c1fe3ce2ae13df076fc4facefc2e379090da938b"
+    },
+    {
+      "receipt_unit": 22,
+      "crate": "sandproof_controller_service",
+      "source": "controller-service/src/lib.rs",
+      "cfg": [
+        "feature=\"default\"",
+        "feature=\"durable\"",
+        "feature=\"host-artifacts\""
+      ],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=e46acc90abfacc3e",
+        "extra-filename=-c8456c4cf849a224"
+      ],
+      "mir_sha256": "d33d5fcc06cb799885c6593ecd7d38d6819dd3b53e534919e0a1387e9893ae8e",
+      "command_sha256": "06b4fdeeb6b3c2b44476771dd3ebbbe19cb0b1a9db433abd4299b9c6d4e57efd"
+    },
+    {
+      "receipt_unit": 23,
+      "crate": "sandproof_controller_service",
+      "source": "controller-service/src/lib.rs",
+      "cfg": [
+        "feature=\"host-artifacts\""
+      ],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=d99e3d1e27bfeea9",
+        "extra-filename=-51a2ed673b3e827f"
+      ],
+      "mir_sha256": "19c30b129e4f77b9029e4444b4f4c144f64eaa2b0bf263b8b58d01137aede805",
+      "command_sha256": "2283f29be7c365cd7902541119270a555bab00986741e2c972a5fb75e499c82d"
+    },
+    {
+      "receipt_unit": 24,
+      "crate": "sandproof_controller_service",
+      "source": "controller-service/src/lib.rs",
+      "cfg": [
+        "feature=\"default\"",
+        "feature=\"durable\"",
+        "feature=\"host-artifacts\""
+      ],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=c86fdd51e4aeaba4",
+        "extra-filename=-74fa3a35c367a5a9"
+      ],
+      "mir_sha256": "3ed2bae0bb20cf9d8abdeac8037ebc7cc641acb228cdf33e23e6cc30f2dfeac7",
+      "command_sha256": "47f0ccf703d9e675658aea9dbbbdf2b0f8837476ff603076d90e9e1a68048a23"
+    },
+    {
+      "receipt_unit": 25,
+      "crate": "sandproof_controller_service",
+      "source": "controller-service/src/lib.rs",
+      "cfg": [
+        "feature=\"default\"",
+        "feature=\"durable\"",
+        "feature=\"host-artifacts\""
+      ],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=cdc3c998fdb620f3",
+        "extra-filename=-9a459290e83d49fb",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "dd9a042cee291c52684ad102949eaf21bde24f66d94e9cb15c3c0e1197fb7acb",
+      "command_sha256": "33c05e234d8cab5d1f2f3a594df2674ac85171e5e48c0867fd37505c557bdb25"
+    },
+    {
+      "receipt_unit": 32,
+      "crate": "sandproof_guest_runtime",
+      "source": "sandbox-guest-runtime/src/lib.rs",
+      "cfg": [],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=9a8925e4d2a95418",
+        "extra-filename=-c7d60ff8471636cb",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "1f7231ad0b691b86ce8a578e71d02c40a9e4aaed890ad796ae8e77e039e7b292",
+      "command_sha256": "24a44e4f3667b0c0d842531ab77c37e1b89493acfa8239368ff44e340bdaf558"
+    },
+    {
+      "receipt_unit": 33,
+      "crate": "sandproof_guest_runtime",
+      "source": "sandbox-guest-runtime/src/lib.rs",
+      "cfg": [],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=beb9d3d091a96fac",
+        "extra-filename=-5a147aa6feaeafe4"
+      ],
+      "mir_sha256": "ff16d7c0f3c1bf0f352f14a6c349dfd367f319bf232402c3cf3555737dfc777a",
+      "command_sha256": "0256ab25ade746ddbb29d3e0c101b9a8d120d461d8bb37a3e4654dc8f7715f61"
+    },
+    {
+      "receipt_unit": 50,
+      "crate": "sandproof_protocol",
+      "source": "sandbox-protocol/src/lib.rs",
+      "cfg": [],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=e3062e2991b357c0",
+        "extra-filename=-47c636acdeef620e"
+      ],
+      "mir_sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72",
+      "command_sha256": "ab0d1e594709c2cf8062e66c6ace070dd291b784e64d90270329d11fb4bba966"
+    },
+    {
+      "receipt_unit": 51,
+      "crate": "sandproof_protocol",
+      "source": "sandbox-protocol/src/lib.rs",
+      "cfg": [],
+      "codegen": [
+        "embed-bitcode=no",
+        "debuginfo=2",
+        "metadata=d076dc3cc489904e",
+        "extra-filename=-1ccb5d52f95527ea"
+      ],
+      "mir_sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72",
+      "command_sha256": "c55ea073f75ebb4ed11d44783e74613416df0c8d3e34b21f92654424fa519c49"
+    },
+    {
+      "receipt_unit": 52,
+      "crate": "sandproof_protocol",
+      "source": "sandbox-protocol/src/lib.rs",
+      "cfg": [],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=ecda51efa5acf474",
+        "extra-filename=-37b0d17a2dc23d56",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "47151b2a3f24254004a0b61d6c1d27ed43e540f0e5f3e12349c125dd6a32b07f",
+      "command_sha256": "74f78d4d277627fda689b9953526efd9bfe8336319fe25226a737981e68a0486"
+    },
+    {
+      "receipt_unit": 53,
+      "crate": "sandproof_protocol",
+      "source": "sandbox-protocol/src/lib.rs",
+      "cfg": [],
+      "codegen": [
+        "opt-level=3",
+        "embed-bitcode=no",
+        "overflow-checks=on",
+        "metadata=c4cc348af1346546",
+        "extra-filename=-a83f942c41cbafd0",
+        "strip=debuginfo"
+      ],
+      "mir_sha256": "d851afebd9e446c2d6d01527dfe6363dbeafc680a7641a0ecb2ed3694daf824b",
+      "command_sha256": "cca48317fb56cbcbe3621b5ffa922f5daccaab09f0703cd5fb776828f95a78d2"
+    }
+  ],
+  "queries": [
+    {
+      "id": "D8.new",
+      "crate": "sandbox_controller_core",
+      "tokens": [
+        "fn ids::<impl at controller-core/src/ids.rs:",
+        ">::new("
+      ]
+    },
+    {
+      "id": "D8.value",
+      "crate": "sandbox_controller_core",
+      "tokens": [
+        "fn ids::<impl at controller-core/src/ids.rs:",
+        ">::value("
+      ]
+    },
+    {
+      "id": "D11.versions-current",
+      "crate": "sandproof_protocol",
+      "tokens": [
+        "fn internal::<impl at sandbox-protocol/src/internal.rs:22:",
+        ">::current("
+      ]
+    },
+    {
+      "id": "D4.deadline-caller",
+      "crate": "sandproof_controller_service",
+      "tokens": [
+        "fn checked_deadline(",
+        "_1: i64",
+        "_2: u64"
+      ]
+    },
+    {
+      "id": "D11.query-text",
+      "crate": "sandproof_guest_runtime",
+      "tokens": [
+        "fn file_query::<impl at sandbox-guest-runtime/src/file_query.rs:",
+        ">::into_text(",
+        "_1: Query"
+      ]
+    }
+  ],
+  "observations": {
+    "D8.new": [
+      {
+        "receipt_unit": 0,
+        "line": 52707,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 52718,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53091,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53102,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53474,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53485,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53857,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53868,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54241,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54252,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54625,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54636,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55009,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55020,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55393,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55404,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55777,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55788,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 56161,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 56172,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96300,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96311,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96803,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96814,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97305,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97316,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97807,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97818,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98310,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98321,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98813,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98824,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99316,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99327,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99819,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99830,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100322,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100333,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100825,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100836,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 52707,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 52718,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53091,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53102,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53474,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53485,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53857,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53868,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54241,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54252,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54625,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54636,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55009,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55020,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55393,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55404,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55777,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55788,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 56161,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 56172,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96300,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96311,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::TenantId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96803,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96814,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SandboxId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97305,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97316,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::VmId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97807,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97818,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::FsId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98310,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98321,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::SnapshotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98813,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98824,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::NetSlotId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99316,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99327,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::OperationId {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99819,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99830,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> PolicyDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100322,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100333,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ids::ManifestDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100825,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100836,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::new(_1: u64) -> ResultDigest {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      }
+    ],
+    "D8.value": [
+      {
+        "receipt_unit": 0,
+        "line": 52732,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 52743,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53116,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53127,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53499,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53510,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53882,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 53893,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54266,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54277,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54650,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 54661,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55034,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55045,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55418,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55429,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55802,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 55813,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 56186,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 0,
+        "line": 56197,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96325,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96336,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96828,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 96839,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97330,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97341,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97832,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 97843,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98335,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98346,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98838,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 98849,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99341,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99352,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99844,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 99855,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100347,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100358,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100850,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 1,
+        "line": 100861,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 52732,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 52743,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53116,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53127,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53499,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53510,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53882,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 53893,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54266,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54277,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54650,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 54661,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55034,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55045,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55418,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55429,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55802,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 55813,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 56186,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 2,
+        "line": 56197,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "0d593d1b39553efe8ad30fe21cc81570a2be137899324d9659a96b0baec13aad"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96325,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96336,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::TenantId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96828,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 96839,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SandboxId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97330,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97341,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::VmId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97832,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 97843,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::FsId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98335,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98346,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::SnapshotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98838,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 98849,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::NetSlotId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99341,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99352,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::OperationId) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99844,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 99855,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: PolicyDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100347,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100358,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ids::ManifestDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100850,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      },
+      {
+        "receipt_unit": 3,
+        "line": 100861,
+        "header": "fn ids::<impl at controller-core/src/ids.rs:7:9: 7:19>::value(_1: ResultDigest) -> u64 {",
+        "mir_sha256": "b515539a1b892b800f1993c6a5082623b6e76880fd0c9ed8fd9fc951f508599a"
+      }
+    ],
+    "D11.versions-current": [
+      {
+        "receipt_unit": 50,
+        "line": 576,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72"
+      },
+      {
+        "receipt_unit": 50,
+        "line": 586,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72"
+      },
+      {
+        "receipt_unit": 51,
+        "line": 576,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72"
+      },
+      {
+        "receipt_unit": 51,
+        "line": 586,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "e0032eb3270913acce75a4a000f4da40adbd4480bb1c2a9f0988256903afae72"
+      },
+      {
+        "receipt_unit": 52,
+        "line": 1287,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "47151b2a3f24254004a0b61d6c1d27ed43e540f0e5f3e12349c125dd6a32b07f"
+      },
+      {
+        "receipt_unit": 52,
+        "line": 1297,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "47151b2a3f24254004a0b61d6c1d27ed43e540f0e5f3e12349c125dd6a32b07f"
+      },
+      {
+        "receipt_unit": 53,
+        "line": 1287,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "d851afebd9e446c2d6d01527dfe6363dbeafc680a7641a0ecb2ed3694daf824b"
+      },
+      {
+        "receipt_unit": 53,
+        "line": 1297,
+        "header": "fn internal::<impl at sandbox-protocol/src/internal.rs:22:1: 22:22>::current() -> ContractVersions {",
+        "mir_sha256": "d851afebd9e446c2d6d01527dfe6363dbeafc680a7641a0ecb2ed3694daf824b"
+      }
+    ],
+    "D4.deadline-caller": [
+      {
+        "receipt_unit": 20,
+        "line": 148422,
+        "header": "fn checked_deadline(_1: i64, _2: u64) -> Result<i64, host_contract::AdmissionError> {",
+        "mir_sha256": "b056274742153b11daa14e7f6307000ea5348cca1332a715b4c1ce38a4e2d72f"
+      },
+      {
+        "receipt_unit": 22,
+        "line": 68436,
+        "header": "fn checked_deadline(_1: i64, _2: u64) -> Result<i64, host_contract::AdmissionError> {",
+        "mir_sha256": "d33d5fcc06cb799885c6593ecd7d38d6819dd3b53e534919e0a1387e9893ae8e"
+      },
+      {
+        "receipt_unit": 24,
+        "line": 68436,
+        "header": "fn checked_deadline(_1: i64, _2: u64) -> Result<i64, host_contract::AdmissionError> {",
+        "mir_sha256": "3ed2bae0bb20cf9d8abdeac8037ebc7cc641acb228cdf33e23e6cc30f2dfeac7"
+      },
+      {
+        "receipt_unit": 25,
+        "line": 148422,
+        "header": "fn checked_deadline(_1: i64, _2: u64) -> Result<i64, host_contract::AdmissionError> {",
+        "mir_sha256": "dd9a042cee291c52684ad102949eaf21bde24f66d94e9cb15c3c0e1197fb7acb"
+      }
+    ],
+    "D11.query-text": [
+      {
+        "receipt_unit": 32,
+        "line": 161709,
+        "header": "fn file_query::<impl at sandbox-guest-runtime/src/file_query.rs:68:1: 68:11>::into_text(_1: Query) -> Result<TextQuery, file_query::Error> {",
+        "mir_sha256": "1f7231ad0b691b86ce8a578e71d02c40a9e4aaed890ad796ae8e77e039e7b292"
+      },
+      {
+        "receipt_unit": 33,
+        "line": 78938,
+        "header": "fn file_query::<impl at sandbox-guest-runtime/src/file_query.rs:68:1: 68:11>::into_text(_1: Query) -> Result<TextQuery, file_query::Error> {",
+        "mir_sha256": "ff16d7c0f3c1bf0f352f14a6c349dfd367f319bf232402c3cf3555737dfc777a"
+      }
+    ]
+  },
+  "seconds": 2.413705173879862,
+  "limits": [
+    "Original T0 check-published remains the full admission gate.",
+    "Headers are locations into raw compiler output, not resolved runtime calls.",
+    "Duplicate const/runtime headers are preserved, not silently merged.",
+    "MIR presence does not establish Charon/Aeneas support or any safety theorem."
+  ]
+}
