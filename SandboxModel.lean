@@ -25,9 +25,10 @@ import SandboxModel.PersistenceShell
 import SandboxModel.AllocationProofs
 import SandboxModel.Foundations
 
-/-! Retained mathematical models and source-bound public foundations.
-The historical whole-controller Rust refinement is retired; importing this
-module does not establish a refinement of the current deployed controller. -/
 import SandboxModel.Boundaries.SchemaDomains
 import SandboxModel.Foundations.LoopCallbacks
 import SandboxModel.Boundaries.SqliteStatements.Model
+
+/-! Retained mathematical models and source-bound public foundations.
+The historical whole-controller Rust refinement is retired; importing this
+module does not establish a refinement of the current deployed controller. -/
