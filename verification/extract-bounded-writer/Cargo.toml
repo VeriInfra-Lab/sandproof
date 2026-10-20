@@ -1,0 +1,19 @@
+[package]
+name = "sandproof-bounded-writer-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Concrete call-throughs only. Production continues calling the original API.
+[workspace]
+
+[features]
+candidate = []
+
+[dependencies]
+http-body-util = "=0.1.5"
+sandproof-controller-service = { path = "../../controller-service" }
+sandproof-internal = { path = "../../sandbox-internal" }
+sandproof-protocol = { path = "../../sandbox-protocol" }
+serde = "=1.0.228"
+serde_json = "=1.0.142"

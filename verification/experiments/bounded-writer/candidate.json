@@ -1,0 +1,29 @@
+{
+  "kind": "isolated-source-candidate-not-general-equivalence-proof",
+  "baseline": "e576a8475043c2d21b68231b7f6b1ead09be1952",
+  "archive_sha256": "a96634e94e39f0e3377fa422283f018a4eb84f983a753eaacee2005b98d91a83",
+  "evidence_before_sha256": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+  "evidence_after_sha256": "e2bcc9f58e1100c08d34a02fead88e47718c79e863e67a4e20911a715b59e28c",
+  "server_before_sha256": "4e76dec6c5b6ef06e3eecba819e551b4bef7ce5c369195efc5fa13f7cba9c9cc",
+  "server_after_sha256": "8d93b9974895fa588cab79330bd96e992af0d81e4e7963d281b7fe6b6e2cda23",
+  "original_write_body": "\n            let Some(length) = self.bytes.len().checked_add(bytes.len()) else {\n                self.exceeded = true;\n                return Err(io::Error::other(\"bounded evidence exceeded\"));\n            };\n            if length > self.limit {\n                self.exceeded = true;\n                return Err(io::Error::other(\"bounded evidence exceeded\"));\n            }\n            if self.bytes.capacity() < length {\n                self.bytes\n                    .try_reserve_exact(bytes.len())\n                    .map_err(|_| io::Error::other(\"bounded evidence allocation failed\"))?;\n            }\n            self.bytes.extend_from_slice(bytes);\n            Ok(bytes.len())\n        ",
+  "candidate_write_body": "\n            let Some(length) = writer.bytes.len().checked_add(bytes.len()) else {\n                writer.exceeded = true;\n                return Err(B::capacity_error());\n            };\n            if length > writer.limit {\n                writer.exceeded = true;\n                return Err(B::capacity_error());\n            }\n            if writer.bytes.capacity() < length {\n                writer.bytes\n                    .try_reserve_exact(bytes.len())\n                    .map_err(|_| B::allocation_error())?;\n            }\n            writer.bytes.extend_from_slice(bytes);\n            Ok(bytes.len())\n        ",
+  "original_finish_body": "    if writer.exceeded {\n        return Err(JournalError::MaintenanceCapacity);\n    }\n    result?;\n    Ok(writer.bytes)\n",
+  "candidate_finish_body": "    if writer.exceeded {\n        return Err(JournalError::MaintenanceCapacity);\n    }\n    result?;\n    Ok(writer.bytes.into_bytes())\n",
+  "original_response_body": "\n    let Ok(encoded) =\n        sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit)\n    else {\n        return response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new());\n    };\n    let mut answer = response(StatusCode::OK, Bytes::from(encoded));\n    answer.headers_mut().insert(\n        hyper::header::CONTENT_TYPE,\n        hyper::header::HeaderValue::from_static(\"application/json\"),\n    );\n    answer\n",
+  "candidate_response_body": "\n    let Ok(encoded) =\n        result\n    else {\n        return response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new());\n    };\n    let mut answer = response(StatusCode::OK, Bytes::from(encoded));\n    answer.headers_mut().insert(\n        hyper::header::CONTENT_TYPE,\n        hyper::header::HeaderValue::from_static(\"application/json\"),\n    );\n    answer\n",
+  "actual_response_candidate": "pub trait ProofJsonResponseBuilder {\n    type Response;\n    fn empty_error() -> Self::Response;\n    fn json_ok(encoded: Vec<u8>) -> Self::Response;\n}\n\npub struct ProofHttpJsonResponseBuilder;\nimpl ProofJsonResponseBuilder for ProofHttpJsonResponseBuilder {\n    type Response = Response<Full<Bytes>>;\n    fn empty_error() -> Self::Response {\n        response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new())\n    }\n    fn json_ok(encoded: Vec<u8>) -> Self::Response {\n        let mut answer = response(StatusCode::OK, Bytes::from(encoded));\n        answer.headers_mut().insert(\n            hyper::header::CONTENT_TYPE,\n            hyper::header::HeaderValue::from_static(\"application/json\"),\n        );\n        answer\n    }\n}\n\nfn json_response(answer: &impl serde::Serialize, limit: usize) -> Response<Full<Bytes>> {\n    proof_json_response_result::<ProofHttpJsonResponseBuilder>(sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit))\n}\n\n/// The original result-selection body, separated from the library call.\npub fn proof_json_response_result<P: ProofJsonResponseBuilder>(result: Result<Vec<u8>, sandproof_controller_service::JournalError>) -> P::Response {\n    match result {\n        Ok(encoded) => P::json_ok(encoded),\n        Err(_error) => P::empty_error(),\n    }\n}\n",
+  "internal_lib_before_sha256": "d681f6005233368b5f306dc6eed4a75686f992ce6e4ff658cca465349b8b5e28",
+  "internal_lib_after_sha256": "1f3cbb3b3354b9af3573605baa1d86e926fc0d7971f62470c66707accdf00928",
+  "unmodified_remainder": true,
+  "library_operations": [
+    "Vec::new/len/capacity/try_reserve_exact/extend_from_slice",
+    "identity into_bytes",
+    "two original io::Error::other literal constructors"
+  ],
+  "connection_status": "Existing B4 source factorization condition, supported by exact diff and native regression; not a general machine equivalence proof.",
+  "review_diff": "candidate-diff.json",
+  "review_diff_sha256": "ae9f396c7ad71fb1489928658bde711517aae0dd04d5679fb8bdb809192930eb",
+  "raw_diff_sha256": "1f42ed1dfa715f3ff088186020ff0412ee7495e84aabb6a741ee3b0823d89d55",
+  "drop_scope": "Vec<u8>, TryReserveError and fixed literal IO errors, ordinary serde_json errors; no custom observable Drop, panic/unwind or abort completion."
+}
