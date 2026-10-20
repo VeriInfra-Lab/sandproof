@@ -1,0 +1,1319 @@
+{
+  "schema": 1,
+  "baseline": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "meaning": "reviewed finite locations; not a complete call graph or semantic coverage claim",
+  "families": {
+    "D1": "八类不透明协议字符串编号",
+    "D2": "协议非零计数器",
+    "D3": "完整节点和控制身份",
+    "D4": "资源分量及受检查单位换算",
+    "D5": "中心规范已分配编号",
+    "D6": "位置与窗口后继",
+    "D7": "动作、资源和工作回执",
+    "D8": "本地数值编号和原投影",
+    "D9": "Lifecycle请求字段与守卫",
+    "D10": "Status请求与报告字段",
+    "D11": "有符号版本、机器字和原字节/文本"
+  },
+  "locations": [
+    {
+      "id": "D1.validator",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "fn valid_identifier(",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "opaque-id"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "id-check",
+        "id-accept"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_mut",
+          "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_once",
+          "sandproof_protocol::valid_identifier"
+        ]
+      }
+    },
+    {
+      "id": "D1.owned",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "fn try_from(value: String)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "opaque-id"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "id-owned",
+        "id-exact"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::TenantId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::OperationId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::LogicalActionId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::ResourceId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::ClientRequestId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::DeploymentId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::NodeId}::try_from"
+        ]
+      }
+    },
+    {
+      "id": "D1.borrowed",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "fn try_from(value: &str)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "opaque-id"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "id-borrowed"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::TenantId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::OperationId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::LogicalActionId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::ResourceId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::ClientRequestId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::DeploymentId}::try_from",
+          "sandproof_protocol::{impl core::convert::TryFrom<&'_0 str, sandproof_protocol::ContractError> for sandproof_protocol::NodeId}::try_from"
+        ]
+      }
+    },
+    {
+      "id": "D1.as-str",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "pub fn as_str(&self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "opaque-id"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "id-str"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::{sandproof_protocol::TenantId}::as_str",
+          "sandproof_protocol::{sandproof_protocol::SandboxId}::as_str",
+          "sandproof_protocol::{sandproof_protocol::OperationId}::as_str",
+          "sandproof_protocol::{sandproof_protocol::LogicalActionId}::as_str",
+          "sandproof_protocol::{sandproof_protocol::ResourceId}::as_str",
+          "sandproof_protocol::{sandproof_protocol::ClientRequestId}::as_str",
+          "sandproof_protocol::{sandproof_protocol::DeploymentId}::as_str",
+          "sandproof_protocol::{sandproof_protocol::NodeId}::as_str"
+        ]
+      }
+    },
+    {
+      "id": "D1.into-string",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "fn from(value: $name)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "opaque-id"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "id-value"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::TenantId> for alloc::string::String}::from",
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::SandboxId> for alloc::string::String}::from",
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::OperationId> for alloc::string::String}::from",
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::LogicalActionId> for alloc::string::String}::from",
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ResourceId> for alloc::string::String}::from",
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::ClientRequestId> for alloc::string::String}::from",
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::DeploymentId> for alloc::string::String}::from",
+          "sandproof_protocol::{impl core::convert::From<sandproof_protocol::NodeId> for alloc::string::String}::from"
+        ]
+      }
+    },
+    {
+      "id": "D1.deserialize",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "fn deserialize<D>",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "opaque-id"
+      ],
+      "allowed_state": "conditional-existing-leaf-binding",
+      "proof_refs": [
+        "id-owned"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D2.make",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "fn try_from(value: u64)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "counter-make"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from"
+        ]
+      }
+    },
+    {
+      "id": "D2.get",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub const fn get(self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "counter-get"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get"
+        ]
+      }
+    },
+    {
+      "id": "D2.next",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub fn checked_next(self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "counter-next"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::checked_next"
+        ]
+      }
+    },
+    {
+      "id": "D2.into",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "fn from(value: PositiveCounter)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "counter-into"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::{impl core::convert::From<sandproof_protocol::internal::PositiveCounter> for u64}::from"
+        ]
+      }
+    },
+    {
+      "id": "D2.deserialize",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "fn deserialize<D>",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "positive-u64"
+      ],
+      "allowed_state": "conditional-existing-leaf-binding",
+      "proof_refs": [
+        "counter-make"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D3.node",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub struct NodeIdentity {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "positive-u64",
+        "opaque-id"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "node-eq"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D3.control",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub struct ControlIdentity {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "positive-u64",
+        "opaque-id",
+        "wire-u16"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "identity-response"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D3.node-guard",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub fn validate_node(&self",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "wire-u16",
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "identity-node"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_node"
+        ]
+      }
+    },
+    {
+      "id": "D3.response-guard",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub fn validate_response(&self",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "wire-u16",
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "identity-response"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_response"
+        ]
+      }
+    },
+    {
+      "id": "D3.probe-request",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub fn validate(&self, expected: &NodeIdentity)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "wire-u16"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "identity-node"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D3.probe-response",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub fn validate_for(&self, request: &ProbeRequest)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "wire-u16"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "identity-response"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D4.values",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "pub const fn values(self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "resources"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "resource-values"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::values"
+        ]
+      }
+    },
+    {
+      "id": "D4.positive",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "pub fn positive(self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "resources"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "resource-positive"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive"
+        ]
+      }
+    },
+    {
+      "id": "D4.add",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "pub fn checked_add(self",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "resources"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "resource-add"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::checked_add"
+        ]
+      }
+    },
+    {
+      "id": "D4.fits",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "pub fn fits(self",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "resources"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "resource-fits"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::fits"
+        ]
+      }
+    },
+    {
+      "id": "D4.seconds",
+      "path": "sandbox-protocol/src/numeric.rs",
+      "marker": "pub fn seconds_to_milliseconds",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "ordinary-u64",
+        "time"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "seconds",
+        "seconds-accept"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::numeric::seconds_to_milliseconds"
+        ]
+      }
+    },
+    {
+      "id": "D4.mib",
+      "path": "sandbox-protocol/src/numeric.rs",
+      "marker": "pub fn bytes_to_mebibytes",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "ordinary-u64",
+        "u32"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "mib",
+        "mib-accept"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::numeric::bytes_to_mebibytes"
+        ]
+      }
+    },
+    {
+      "id": "D4.available",
+      "path": "sandbox-protocol/src/numeric.rs",
+      "marker": "pub fn available_resource",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "ordinary-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "availability"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::numeric::available_resource"
+        ]
+      }
+    },
+    {
+      "id": "D4.deadline-caller",
+      "path": "controller-service/src/controller/admission.rs",
+      "marker": "fn checked_deadline(",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "i64",
+        "ordinary-u64",
+        "time"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "seconds",
+        "seconds-accept"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D4.health-caller",
+      "path": "controller-service/src/application/coordinator/internal_health.rs",
+      "marker": "    pub fn internal_free_resources(",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "resources",
+        "time",
+        "i64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "availability"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D5.parser",
+      "path": "sandbox-protocol/src/identifiers.rs",
+      "marker": "pub fn parse_allocated_number(",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "canonical-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "allocated",
+        "allocated-accept"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::identifiers::parse_allocated_number"
+        ]
+      }
+    },
+    {
+      "id": "D5.center-wrapper",
+      "path": "sandbox-center-core/src/validation.rs",
+      "marker": "pub fn number(",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "canonical-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "center-number",
+        "allocated-accept"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_center_core::validation::number"
+        ]
+      }
+    },
+    {
+      "id": "D6.current",
+      "path": "sandbox-center-core/src/model.rs",
+      "marker": "    pub fn current(&self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "ordinary-u64",
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "window-current",
+        "window-exhausted"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_center_core::model::{sandproof_center_core::model::RetentionLane}::current"
+        ]
+      }
+    },
+    {
+      "id": "D7.action",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "pub struct ActionIdentity {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "ordinary-u64",
+        "wire-u16",
+        "opaque-id"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "action-check",
+        "action-zero"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D7.resource",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "pub struct ResourceRef {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "opaque-id"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "receipt-check"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D7.action-check",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "pub const fn validate_version(&self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "ordinary-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "action-check"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::{sandproof_protocol::ActionIdentity}::validate_version"
+        ]
+      }
+    },
+    {
+      "id": "D7.receipt-check",
+      "path": "sandbox-protocol/src/lib.rs",
+      "marker": "pub fn validate_for<C>",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "ordinary-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "receipt-check",
+        "receipt-accept"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{impl core::ops::function::FnOnce<(&'_ E,), bool> for sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for::{closure}<'_0, E, C>}::call_once",
+          "sandproof_protocol::{sandproof_protocol::WorkReceipt<E>}::validate_for"
+        ]
+      }
+    },
+    {
+      "id": "D8.new",
+      "path": "controller-core/src/ids.rs",
+      "marker": "pub const fn new(value: u64)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "ordinary-u64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D8.value",
+      "path": "controller-core/src/ids.rs",
+      "marker": "pub const fn value(self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "ordinary-u64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D8.local-binding",
+      "path": "controller-service/src/template_registry/validation.rs",
+      "marker": "pub struct LocalValidationBinding {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "ordinary-u64",
+        "binding"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D8.local-projection",
+      "path": "controller-service/src/template_registry/validation.rs",
+      "marker": "    pub fn is_projection_of(",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "ordinary-u64",
+        "binding",
+        "usize"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D9.create",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "pub struct CreateBinding {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "resources",
+        "bytes",
+        "time"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "create-valid"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D9.request",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "pub struct LifecycleRequest {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "resources",
+        "bytes",
+        "time"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "request-guard"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D9.create-guard",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "    pub fn is_valid(&self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "resources",
+        "bytes",
+        "time"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "create-valid"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::CreateBinding}::is_valid"
+        ]
+      }
+    },
+    {
+      "id": "D9.guard",
+      "path": "sandbox-protocol/src/internal/lifecycle.rs",
+      "marker": "pub fn validate(&self, node:",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "resources",
+        "time"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "request-guard",
+        "request-accept"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/foundations/translation.json",
+        "functions": [
+          "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::LifecycleRequest}::validate"
+        ]
+      }
+    },
+    {
+      "id": "D10.request",
+      "path": "sandbox-internal/src/status.rs",
+      "marker": "pub struct StatusRequest {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "opaque-id",
+        "positive-u64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "status-request"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D10.response",
+      "path": "sandbox-internal/src/status.rs",
+      "marker": "pub struct HostStatus {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "binding",
+        "slots",
+        "time",
+        "resources"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [
+        "status-fields"
+      ],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D10.request-guard",
+      "path": "sandbox-internal/src/status.rs",
+      "marker": "pub fn validate(&self",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "opaque-id",
+        "positive-u64"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "status-request"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/schema-domains/translation.json",
+        "functions": [
+          "sandproof_internal::status::{sandproof_internal::status::StatusRequest}::validate"
+        ]
+      }
+    },
+    {
+      "id": "D10.response-guard",
+      "path": "sandbox-internal/src/status.rs",
+      "marker": "pub fn validate_for(&self",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "binding",
+        "slots",
+        "time",
+        "resources"
+      ],
+      "allowed_state": "existing-implementation-theorem",
+      "proof_refs": [
+        "status-response",
+        "status-observation"
+      ],
+      "extraction": {
+        "state": "existing-transparent-generated-reference",
+        "registry": "verification/aeneas/schema-domains/translation.json",
+        "functions": [
+          "sandproof_internal::status::{sandproof_internal::status::HostStatus}::validate_for"
+        ]
+      }
+    },
+    {
+      "id": "D11.versions-fields",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "pub struct ContractVersions {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "wire-u16",
+        "u32",
+        "i64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D11.versions-current",
+      "path": "sandbox-protocol/src/internal.rs",
+      "marker": "    pub const fn current()",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "wire-u16",
+        "u32",
+        "i64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D11.template-fields",
+      "path": "controller-service/src/templates.rs",
+      "marker": "pub struct TemplateBinding {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "text",
+        "binding",
+        "ordinary-u64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D11.startup",
+      "path": "controller-service/src/templates.rs",
+      "marker": "    pub fn is_valid(&self)",
+      "occurrence": 0,
+      "within": "impl TemplateStartup {",
+      "kind": "method",
+      "domains": [
+        "text",
+        "usize"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D11.query-fields",
+      "path": "sandbox-guest-runtime/src/file_query.rs",
+      "marker": "pub struct Query {",
+      "occurrence": 0,
+      "within": null,
+      "kind": "struct",
+      "domains": [
+        "bytes",
+        "i64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D11.query-text",
+      "path": "sandbox-guest-runtime/src/file_query.rs",
+      "marker": "    pub fn into_text(self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "bytes",
+        "text",
+        "i64"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    },
+    {
+      "id": "D11.file-settings",
+      "path": "sandbox-guest-service/src/files.rs",
+      "marker": "    pub(crate) fn validate(&self)",
+      "occurrence": 0,
+      "within": null,
+      "kind": "method",
+      "domains": [
+        "text",
+        "usize"
+      ],
+      "allowed_state": "source-reviewed-signature-not-preflighted",
+      "proof_refs": [],
+      "extraction": {
+        "state": "unknown-not-preflighted-for-this-location",
+        "registry": null,
+        "functions": []
+      }
+    }
+  ],
+  "macro_sets": {
+    "protocol-ids": {
+      "path": "sandbox-protocol/src/lib.rs",
+      "pattern": "^opaque_id!\\((\\w+)\\);$",
+      "expected": [
+        "TenantId",
+        "SandboxId",
+        "OperationId",
+        "LogicalActionId",
+        "ResourceId",
+        "ClientRequestId",
+        "DeploymentId",
+        "NodeId"
+      ]
+    },
+    "local-ids": {
+      "path": "controller-core/src/ids.rs",
+      "pattern": "^identifier!\\((\\w+)\\);$",
+      "expected": [
+        "TenantId",
+        "SandboxId",
+        "VmId",
+        "FsId",
+        "SnapshotId",
+        "NetSlotId",
+        "OperationId",
+        "PolicyDigest",
+        "ManifestDigest",
+        "ResultDigest"
+      ]
+    }
+  },
+  "lexical_rules": [
+    {
+      "id": "explicit-id-constructor",
+      "pattern": "\\b(?:TenantId|SandboxId|OperationId|LogicalActionId|ResourceId|ClientRequestId|DeploymentId|NodeId|VmId|FsId|SnapshotId|NetSlotId|PositiveCounter)::(?:new|try_from|from)\\s*\\(",
+      "note": "词法候选，协议/本地同名与别名尚未由此解析"
+    },
+    {
+      "id": "shared-numeric-helper",
+      "pattern": "\\b(?:seconds_to_milliseconds|bytes_to_mebibytes|available_resource|parse_allocated_number)\\s*\\(",
+      "note": "包括定义/调用/测试，需结合原编译来源判断生产实例"
+    },
+    {
+      "id": "checked-integer-bridge",
+      "pattern": "\\b(?:u16|u32|u64|usize|i64)::try_from\\s*\\(",
+      "note": "受检查转换的词法候选，不等于其前提或整个caller已证"
+    }
+  ],
+  "required_gaps": [
+    {
+      "id": "G1-local-id-binding",
+      "entries": [
+        "D8.new",
+        "D8.value"
+      ],
+      "classification": "candidate-public-implementation-connection"
+    },
+    {
+      "id": "G2-signed-version-view",
+      "entries": [
+        "D11.versions-fields",
+        "D11.versions-current"
+      ],
+      "classification": "candidate-public-representation-connection"
+    },
+    {
+      "id": "G3-raw-byte-text-bridge",
+      "entries": [
+        "D11.query-fields",
+        "D11.query-text"
+      ],
+      "classification": "candidate-public-primitive-instance"
+    },
+    {
+      "id": "G4-deadline-caller",
+      "entries": [
+        "D4.deadline-caller"
+      ],
+      "classification": "caller-binding-pending-not-a-new-library-defect"
+    }
+  ],
+  "mir_queries": [
+    {
+      "id": "D8.new",
+      "crate": "sandbox_controller_core",
+      "tokens": [
+        "fn ids::<impl at controller-core/src/ids.rs:",
+        ">::new("
+      ]
+    },
+    {
+      "id": "D8.value",
+      "crate": "sandbox_controller_core",
+      "tokens": [
+        "fn ids::<impl at controller-core/src/ids.rs:",
+        ">::value("
+      ]
+    },
+    {
+      "id": "D11.versions-current",
+      "crate": "sandproof_protocol",
+      "tokens": [
+        "fn internal::<impl at sandbox-protocol/src/internal.rs:22:",
+        ">::current("
+      ]
+    },
+    {
+      "id": "D4.deadline-caller",
+      "crate": "sandproof_controller_service",
+      "tokens": [
+        "fn checked_deadline(",
+        "_1: i64",
+        "_2: u64"
+      ]
+    },
+    {
+      "id": "D11.query-text",
+      "crate": "sandproof_guest_runtime",
+      "tokens": [
+        "fn file_query::<impl at sandbox-guest-runtime/src/file_query.rs:",
+        ">::into_text(",
+        "_1: Query"
+      ]
+    }
+  ]
+}
