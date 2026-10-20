@@ -1,5 +1,9 @@
 """Admission regression tests; synthetic receipts here are not Lean proof evidence."""
 import copy
+import importlib.util
+import io
+import tarfile
+import tomllib
 import json
 from pathlib import Path
 import tempfile
@@ -131,6 +135,40 @@ class BtreeSetAdmissionTests(unittest.TestCase):
         for changed in [rows[:1], rows[1:], rows + [rows[0]]]:
             with self.assertRaises(ValueError):
                 self.check_artifacts(changed, source, target)
+
+
+class BtreeSetReplayViewTests(unittest.TestCase):
+    def test_private_views_accept_exact_registered_library_and_reject_duplicates(self):
+        file = binding.ROOT / binding.EXPERIMENT / "replay.py"
+        spec = importlib.util.spec_from_file_location("btree_set_component_replay", file)
+        replay = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(replay)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".lake/packages").mkdir(parents=True)
+            (root / "fixed-tools").mkdir()
+            (root / "lakefile.toml").write_text('name = "fixture"\n')
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode="w"):
+                pass
+            archive = stream.getvalue()
+            first = replay.prepare(root, archive, root / "first", root / "fixed-tools")
+            config = tomllib.loads((first / "lakefile.toml").read_text())
+            self.assertEqual(config["lean_lib"],
+                             [{"name": "SandproofBtreeSetProbe", "srcDir": binding.GENERATED}])
+            (root / "lakefile.toml").write_bytes((first / "lakefile.toml").read_bytes())
+            second = replay.prepare(root, archive, root / "second", root / "fixed-tools")
+            self.assertEqual((first / "lakefile.toml").read_bytes(),
+                             (second / "lakefile.toml").read_bytes())
+            self.assertEqual((second / ".tools").resolve(), (root / "fixed-tools").resolve())
+            (root / "lakefile.toml").write_text(
+                (first / "lakefile.toml").read_text() + replay.EXTENSION)
+            with self.assertRaises(ValueError):
+                replay.prepare(root, archive, root / "duplicate", root / "fixed-tools")
+            (root / "lakefile.toml").write_text(
+                (first / "lakefile.toml").read_text().replace(binding.GENERATED, "wrong/source"))
+            with self.assertRaises(ValueError):
+                replay.prepare(root, archive, root / "wrong", root / "fixed-tools")
 
 
 if __name__ == "__main__":
