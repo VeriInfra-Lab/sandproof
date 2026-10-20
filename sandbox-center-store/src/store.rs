@@ -7,6 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod diagnostics;
+use diagnostics::{Failure, Phase};
+
 const MAX_BLOCK_BYTES: usize = 16 * 1024 * 1024;
 
 /// Supplied only by protected center assembly. Remote Redis is not supported by
@@ -250,6 +253,7 @@ impl<T: ControlState> RedisLedger<T> {
                 .arg(T::FORMAT_VERSION)
                 .arg(self.config.max_block_bytes),
             deadline,
+            Phase::Read,
         )?;
         let length = response.len();
         let mut response = response.into_iter();
@@ -345,7 +349,7 @@ impl<T: ControlState> RedisLedger<T> {
             .arg(&encoded)
             .arg(self.config.max_block_bytes)
             .arg(expected.map_or(&[][..], |value| value.encoded.as_slice()));
-        let result: i64 = match self.query(&mut command, deadline) {
+        let result: i64 = match self.query(&mut command, deadline, Phase::Cas) {
             Ok(value) => value,
             Err(_) => return self.fence_unknown(),
         };
@@ -383,32 +387,51 @@ impl<T: ControlState> RedisLedger<T> {
         &mut self,
         command: &mut redis::Cmd,
         deadline: Instant,
+        phase: Phase,
     ) -> Result<R, StoreError> {
+        let started = Instant::now();
         let remaining = deadline
-            .checked_duration_since(Instant::now())
+            .checked_duration_since(started)
             .filter(|value| !value.is_zero())
-            .ok_or(StoreError::Unavailable)?;
+            .ok_or_else(|| {
+                diagnostics::emit(
+                    phase,
+                    Failure::BudgetExpired,
+                    Duration::ZERO,
+                    Duration::ZERO,
+                );
+                StoreError::Unavailable
+            })?;
+        let mut failure = Failure::MissingConnection;
         let result = (|| {
             let connection = self.connection.as_mut().ok_or(StoreError::Unavailable)?;
+            failure = Failure::ReadTimeoutSetup;
             connection
                 .set_read_timeout(Some(remaining))
                 .map_err(|_| StoreError::Unavailable)?;
+            failure = Failure::WriteTimeoutSetup;
             connection
                 .set_write_timeout(Some(remaining))
                 .map_err(|_| StoreError::Unavailable)?;
-            command
-                .query(connection)
-                .map_err(|_| StoreError::Unavailable)
+            command.query(connection).map_err(|error| {
+                failure = diagnostics::classify(&error);
+                StoreError::Unavailable
+            })
         })();
         // Never reuse a timed-out protocol stream with a possibly pending reply.
         if result.is_err() {
             self.connection = None;
+            diagnostics::emit(phase, failure, started.elapsed(), remaining);
         }
         result
     }
 
     fn check_health(&mut self, deadline: Instant) -> Result<(), StoreError> {
-        let info: String = self.query(redis::cmd("INFO").arg("server"), deadline)?;
+        let info: String = self.query(
+            redis::cmd("INFO").arg("server"),
+            deadline,
+            Phase::ServerHealth,
+        )?;
         if info_field(&info, "redis_version") != Some(REDIS_VERSION) {
             return Err(StoreError::Configuration);
         }
@@ -422,6 +445,7 @@ impl<T: ControlState> RedisLedger<T> {
                 .arg("aof-load-truncated")
                 .arg("maxmemory"),
             deadline,
+            Phase::SettingsHealth,
         )?;
         let memory = self.config.redis_memory_bytes.to_string();
         for (key, required) in [
@@ -436,7 +460,11 @@ impl<T: ControlState> RedisLedger<T> {
                 return Err(StoreError::Configuration);
             }
         }
-        let persistence: String = self.query(redis::cmd("INFO").arg("persistence"), deadline)?;
+        let persistence: String = self.query(
+            redis::cmd("INFO").arg("persistence"),
+            deadline,
+            Phase::PersistenceHealth,
+        )?;
         for (key, required) in [
             ("loading", "0"),
             ("aof_enabled", "1"),

@@ -1,0 +1,81 @@
+//! Finite failure metadata from the existing original wait, never a decision.
+use super::{AuthorityError, PortError};
+use std::{
+    io::Write,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+const LIMIT: usize = 64;
+static EMITTED: AtomicUsize = AtomicUsize::new(0);
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Stage {
+    SendSnapshot,
+    ApplyResponse,
+    StaleSnapshot,
+    ConfirmSnapshot,
+    SessionProjection,
+    ReplyDeadline,
+    RetiredSnapshot,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Failure {
+    Authority(AuthorityError),
+    Port(PortError),
+}
+
+fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl Write) {
+    let Ok(previous) = count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+        (value < LIMIT).then(|| value + 1)
+    }) else {
+        return;
+    };
+    // Both errors are closed enums without arbitrary text or request data.
+    // Match their contents explicitly so no stored payload can be introduced.
+    let _ = match failure {
+        Failure::Authority(error) => writeln!(
+            output,
+            "center_wait stage={stage:?} authority={error:?} remaining={}",
+            LIMIT - previous - 1
+        ),
+        Failure::Port(error) => writeln!(
+            output,
+            "center_wait stage={stage:?} port={error:?} remaining={}",
+            LIMIT - previous - 1
+        ),
+    };
+}
+pub(super) fn emit(stage: Stage, failure: Failure) {
+    record(stage, failure, &EMITTED, &mut std::io::stderr().lock());
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn authority_cause_is_preserved_without_retrying_failed_output() {
+        let count = AtomicUsize::new(0);
+        let mut broken = std::io::Cursor::new([0_u8; 0]);
+        record(
+            Stage::SendSnapshot,
+            Failure::Port(PortError::OutcomeUnknown),
+            &count,
+            &mut broken,
+        );
+        let mut bytes = vec![];
+        for _ in 0..1000 {
+            record(
+                Stage::ApplyResponse,
+                Failure::Authority(AuthorityError::RecoveryRequired),
+                &count,
+                &mut bytes,
+            );
+        }
+        let text = String::from_utf8(bytes).unwrap();
+        assert_eq!(text.lines().count(), LIMIT - 1);
+        assert!(
+            text.lines()
+                .all(|line| line.contains("authority=RecoveryRequired") && line.len() < 160)
+        );
+        assert!(text.ends_with("remaining=0\n"));
+        assert_eq!(count.load(Ordering::Relaxed), LIMIT);
+    }
+}

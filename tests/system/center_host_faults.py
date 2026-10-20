@@ -205,7 +205,13 @@ def failure_summary(error):
             frames.append(dict(file=path.name,line=traceback.tb_lineno,function=code.co_name))
             frames=frames[-12:]
         traceback=traceback.tb_next
-    return dict(status='failed',failure_type=type(error).__name__,frames=frames)
+    result=dict(status='failed',failure_type=type(error).__name__,frames=frames)
+    # The fixed SDK exposes a numeric HTTP status independently of arbitrary
+    # exception messages. A bool, string, missing field or property is unknown.
+    status=vars(error).get('status_code')
+    if type(status) is int and 100<=status<=599:
+        result['http_status']=status
+    return result
 
 
 if __name__=='__main__':
