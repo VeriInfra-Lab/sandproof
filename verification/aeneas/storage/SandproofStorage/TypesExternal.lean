@@ -51,4 +51,24 @@ structure redis.connection.Connection where
   replies : List LibraryReply
   requests : List LibraryRequest
 
+/- A zero-sized process-stderr endpoint in the isolated Rust candidate. Its
+logical state describes possible output outcomes, not owned OS resources. -/
+inductive DiagnosticReply where
+  | written
+  | writeFailed
+  | suppressed
+  | panicked
+  | nonReturning
+
+structure DiagnosticCall where
+  phase : Nat
+  failure : Nat
+  elapsed : core.time.Duration
+  budget : core.time.Duration
+
+structure store.storage_io.Diagnostics where
+  identity : Nat
+  replies : List DiagnosticReply
+  calls : List DiagnosticCall
+
 end SandproofStorageRust

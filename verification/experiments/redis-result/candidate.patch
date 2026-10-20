@@ -1,5 +1,5 @@
 diff --git a/sandbox-center-store/src/store.rs b/sandbox-center-store/src/store.rs
-index 31100dd7..4f170b85 100644
+index 574f8d5d..0e728fef 100644
 --- a/sandbox-center-store/src/store.rs
 +++ b/sandbox-center-store/src/store.rs
 @@ -1,3 +1,6 @@
@@ -9,7 +9,31 @@ index 31100dd7..4f170b85 100644
  use crate::{ControlState, REDIS_VERSION, Revision, StoreError, WriterLease, codec, scripts};
  use redis::{Connection, ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo};
  use sandproof_protocol::DeploymentId;
-@@ -287,14 +290,12 @@ impl<T: ControlState> RedisLedger<T> {
+@@ -7,6 +10,7 @@ use std::{
+     time::{Duration, Instant},
+ };
+ 
++#[path = "store/diagnostics.rs"]
+ mod diagnostics;
+ use diagnostics::{Failure, Phase};
+ 
+@@ -135,6 +139,7 @@ pub struct RedisLedger<T> {
+     _lease: WriterLease,
+     connection: Option<Connection>,
+     write_fenced: bool,
++    diagnostics: storage_io::Diagnostics,
+     _state: std::marker::PhantomData<T>,
+ }
+ 
+@@ -195,6 +200,7 @@ impl<T: ControlState> RedisLedger<T> {
+             _lease: lease,
+             connection: None,
+             write_fenced: false,
++            diagnostics: storage_io::Diagnostics,
+             _state: std::marker::PhantomData,
+         };
+         ledger.reconnect()?;
+@@ -291,14 +297,12 @@ impl<T: ControlState> RedisLedger<T> {
      /// Refuses while write-fenced; CAS conflicts do not mutate the record.
      /// Any write transport/error/late health failure is `OutcomeUnknown`.
      pub fn commit(&mut self, expected: &Observed<T>, next: &T) -> Result<Committed<T>, StoreError> {
@@ -28,8 +52,8 @@ index 31100dd7..4f170b85 100644
 +            &mut SystemClock,
          )
      }
-
-@@ -304,48 +305,131 @@ impl<T: ControlState> RedisLedger<T> {
+ 
+@@ -308,48 +312,156 @@ impl<T: ControlState> RedisLedger<T> {
      /// # Errors
      /// CAS/health/capacity/identity/exhaustion or an unknown recommit outcome.
      pub fn reaffirm(&mut self, expected: &Observed<T>) -> Result<Committed<T>, StoreError> {
@@ -41,7 +65,7 @@ index 31100dd7..4f170b85 100644
 +            &mut SystemClock,
 +        )
      }
-
+ 
 -    fn replace(
 +    fn write(
          &mut self,
@@ -71,9 +95,34 @@ index 31100dd7..4f170b85 100644
 +        &mut self,
 +        command: &mut redis::Cmd,
 +        deadline: Instant,
++        phase: Phase,
 +    ) -> Result<R, StoreError> {
-+        storage_io::query(&mut self.connection, command, deadline)
++        storage_io::query(&mut self.connection, command, deadline, phase)
 +    }
++}
++
++// Preserve failure-only diagnostics at the original rejection sites. These
++// small own helpers remain transparent, including the actual emit call.
++fn configuration_error(diagnostics: &mut storage_io::Diagnostics, phase: Phase) -> StoreError {
++    storage_io::emit(
++        diagnostics,
++        phase,
++        Failure::ConfigurationMismatch,
++        Duration::ZERO,
++        Duration::ZERO,
++    );
++    StoreError::Configuration
++}
++
++fn persistence_error(diagnostics: &mut storage_io::Diagnostics) -> StoreError {
++    storage_io::emit(
++        diagnostics,
++        Phase::PersistenceHealth,
++        Failure::UnhealthyPersistence,
++        Duration::ZERO,
++        Duration::ZERO,
++    );
++    StoreError::Unavailable
 +}
 +
 +fn setting_matches(settings: &BTreeMap<String, String>, key: &str, expected: &str) -> bool {
@@ -99,7 +148,7 @@ index 31100dd7..4f170b85 100644
      }
 +    false
 +}
-
+ 
 -    fn write(
 +fn info_field<'a>(info: &'a str, key: &str) -> Option<&'a str> {
 +    let mut lines = info.lines();
@@ -151,7 +200,7 @@ index 31100dd7..4f170b85 100644
 -            .arg(&encoded)
 -            .arg(self.config.max_block_bytes)
 -            .arg(expected.map_or(&[][..], |value| value.encoded.as_slice()));
--        let result: i64 = match self.query(&mut command, deadline) {
+-        let result: i64 = match self.query(&mut command, deadline, Phase::Cas) {
 +        match expected {
 +            Some(value) => self.write_normalized(
 +                value.revision.get().to_string(),
@@ -191,10 +240,10 @@ index 31100dd7..4f170b85 100644
              Ok(value) => value,
              Err(_) => return self.fence_unknown(),
          };
-@@ -375,92 +459,308 @@ impl<T: ControlState> RedisLedger<T> {
+@@ -379,134 +491,341 @@ impl<T: ControlState> RedisLedger<T> {
          Err(StoreError::OutcomeUnknown)
      }
-
+ 
 -    fn deadline(&self) -> Instant {
 -        Instant::now() + self.config.operation_timeout
 -    }
@@ -203,35 +252,65 @@ index 31100dd7..4f170b85 100644
 -        &mut self,
 -        command: &mut redis::Cmd,
 -        deadline: Instant,
+-        phase: Phase,
 -    ) -> Result<R, StoreError> {
+-        let started = Instant::now();
 -        let remaining = deadline
--            .checked_duration_since(Instant::now())
+-            .checked_duration_since(started)
 -            .filter(|value| !value.is_zero())
--            .ok_or(StoreError::Unavailable)?;
+-            .ok_or_else(|| {
+-                diagnostics::emit(
+-                    phase,
+-                    Failure::BudgetExpired,
+-                    Duration::ZERO,
+-                    Duration::ZERO,
+-                );
+-                StoreError::Unavailable
+-            })?;
+-        let mut failure = Failure::MissingConnection;
 -        let result = (|| {
 -            let connection = self.connection.as_mut().ok_or(StoreError::Unavailable)?;
+-            failure = Failure::ReadTimeoutSetup;
 -            connection
 -                .set_read_timeout(Some(remaining))
 -                .map_err(|_| StoreError::Unavailable)?;
+-            failure = Failure::WriteTimeoutSetup;
 -            connection
 -                .set_write_timeout(Some(remaining))
 -                .map_err(|_| StoreError::Unavailable)?;
--            command
--                .query(connection)
--                .map_err(|_| StoreError::Unavailable)
+-            command.query(connection).map_err(|error| {
+-                failure = diagnostics::classify(&error);
+-                StoreError::Unavailable
+-            })
 -        })();
 -        // Never reuse a timed-out protocol stream with a possibly pending reply.
 -        if result.is_err() {
 -            self.connection = None;
+-            diagnostics::emit(phase, failure, started.elapsed(), remaining);
 -        }
 -        result
 -    }
 -
      fn check_health(&mut self, deadline: Instant) -> Result<(), StoreError> {
--        let info: String = self.query(redis::cmd("INFO").arg("server"), deadline)?;
-+        let info: String = storage_io::info(&mut self.connection, "server", deadline)?;
+-        let info: String = self.query(
+-            redis::cmd("INFO").arg("server"),
++        let info: String = storage_io::info(
++            &mut self.connection,
++            "server",
+             deadline,
+             Phase::ServerHealth,
+         )?;
          if info_field(&info, "redis_version") != Some(REDIS_VERSION) {
-             return Err(StoreError::Configuration);
+-            diagnostics::emit(
++            return Err(configuration_error(
++                &mut self.diagnostics,
+                 Phase::ServerHealth,
+-                Failure::ConfigurationMismatch,
+-                Duration::ZERO,
+-                Duration::ZERO,
+-            );
+-            return Err(StoreError::Configuration);
++            ));
          }
 -        let settings: BTreeMap<String, String> = self.query(
 -            redis::cmd("CONFIG")
@@ -253,6 +332,7 @@ index 31100dd7..4f170b85 100644
 +                "maxmemory",
 +            ],
              deadline,
+             Phase::SettingsHealth,
          )?;
          let memory = self.config.redis_memory_bytes.to_string();
 -        for (key, required) in [
@@ -264,12 +344,58 @@ index 31100dd7..4f170b85 100644
 -            ("maxmemory", memory.as_str()),
 -        ] {
 -            if settings.get(key).map(String::as_str) != Some(required) {
+-                diagnostics::emit(
+-                    Phase::SettingsHealth,
+-                    Failure::ConfigurationMismatch,
+-                    Duration::ZERO,
+-                    Duration::ZERO,
+-                );
 -                return Err(StoreError::Configuration);
 -            }
 +        if !setting_matches(&settings, "appendonly", "yes") {
-+            return Err(StoreError::Configuration);
++            return Err(configuration_error(
++                &mut self.diagnostics,
++                Phase::SettingsHealth,
++            ));
          }
--        let persistence: String = self.query(redis::cmd("INFO").arg("persistence"), deadline)?;
+-        let persistence: String = self.query(
+-            redis::cmd("INFO").arg("persistence"),
++        if !setting_matches(&settings, "appendfsync", "always") {
++            return Err(configuration_error(
++                &mut self.diagnostics,
++                Phase::SettingsHealth,
++            ));
++        }
++        if !setting_matches(&settings, "maxmemory-policy", "noeviction") {
++            return Err(configuration_error(
++                &mut self.diagnostics,
++                Phase::SettingsHealth,
++            ));
++        }
++        if !setting_matches(&settings, "no-appendfsync-on-rewrite", "no") {
++            return Err(configuration_error(
++                &mut self.diagnostics,
++                Phase::SettingsHealth,
++            ));
++        }
++        if !setting_matches(&settings, "aof-load-truncated", "no") {
++            return Err(configuration_error(
++                &mut self.diagnostics,
++                Phase::SettingsHealth,
++            ));
++        }
++        if !setting_matches(&settings, "maxmemory", memory.as_str()) {
++            return Err(configuration_error(
++                &mut self.diagnostics,
++                Phase::SettingsHealth,
++            ));
++        }
++        let persistence: String = storage_io::info(
++            &mut self.connection,
++            "persistence",
+             deadline,
+             Phase::PersistenceHealth,
+         )?;
 -        for (key, required) in [
 -            ("loading", "0"),
 -            ("aof_enabled", "1"),
@@ -277,40 +403,30 @@ index 31100dd7..4f170b85 100644
 -            ("aof_last_bgrewrite_status", "ok"),
 -        ] {
 -            if info_field(&persistence, key) != Some(required) {
+-                diagnostics::emit(
+-                    Phase::PersistenceHealth,
+-                    Failure::UnhealthyPersistence,
+-                    Duration::ZERO,
+-                    Duration::ZERO,
+-                );
 -                return Err(StoreError::Unavailable);
 -            }
-+        if !setting_matches(&settings, "appendfsync", "always") {
-+            return Err(StoreError::Configuration);
-+        }
-+        if !setting_matches(&settings, "maxmemory-policy", "noeviction") {
-+            return Err(StoreError::Configuration);
-+        }
-+        if !setting_matches(&settings, "no-appendfsync-on-rewrite", "no") {
-+            return Err(StoreError::Configuration);
-+        }
-+        if !setting_matches(&settings, "aof-load-truncated", "no") {
-+            return Err(StoreError::Configuration);
-+        }
-+        if !setting_matches(&settings, "maxmemory", memory.as_str()) {
-+            return Err(StoreError::Configuration);
-+        }
-+        let persistence: String = storage_io::info(&mut self.connection, "persistence", deadline)?;
 +        if info_field(&persistence, "loading") != Some("0") {
-+            return Err(StoreError::Unavailable);
++            return Err(persistence_error(&mut self.diagnostics));
 +        }
 +        if info_field(&persistence, "aof_enabled") != Some("1") {
-+            return Err(StoreError::Unavailable);
++            return Err(persistence_error(&mut self.diagnostics));
 +        }
 +        if info_field(&persistence, "aof_last_write_status") != Some("ok") {
-+            return Err(StoreError::Unavailable);
++            return Err(persistence_error(&mut self.diagnostics));
 +        }
 +        if info_field(&persistence, "aof_last_bgrewrite_status") != Some("ok") {
-+            return Err(StoreError::Unavailable);
++            return Err(persistence_error(&mut self.diagnostics));
          }
          Ok(())
      }
  }
-
+ 
 -fn info_field<'a>(info: &'a str, key: &str) -> Option<&'a str> {
 -    let mut matching = info
 -        .lines()
@@ -515,6 +631,7 @@ index 31100dd7..4f170b85 100644
 +            _lease: lease,
 +            connection: None,
 +            write_fenced: false,
++            diagnostics: super::storage_io::Diagnostics,
 +            _state: std::marker::PhantomData,
 +        };
 +        let observed = super::Observed {
@@ -576,13 +693,32 @@ index 31100dd7..4f170b85 100644
  }
 diff --git a/sandbox-center-store/src/store/storage_io.rs b/sandbox-center-store/src/store/storage_io.rs
 new file mode 100644
+index 00000000..d000fa47
 --- /dev/null
 +++ b/sandbox-center-store/src/store/storage_io.rs
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,131 @@
 +//! Concrete library calls only; no health/result/fence policy lives here.
++use super::diagnostics::{self, Failure, Phase};
 +use crate::StoreError;
 +use redis::Connection;
-+use std::{collections::BTreeMap, time::Instant};
++use std::{
++    collections::BTreeMap,
++    time::{Duration, Instant},
++};
++
++// Process stderr endpoint only: zero-sized in Rust, no ledger/connection or
++// resource ownership. The proof representation records allowed output outcomes.
++pub(super) struct Diagnostics;
++
++pub(super) fn emit(
++    _output: &mut Diagnostics,
++    phase: Phase,
++    failure: Failure,
++    elapsed: Duration,
++    budget: Duration,
++) {
++    diagnostics::emit(phase, failure, elapsed, budget);
++}
 +
 +pub(super) struct Cas<'a> {
 +    pub script: &'a str,
@@ -615,6 +751,7 @@ new file mode 100644
 +            .arg(input.limit)
 +            .arg(input.expected),
 +        deadline,
++        Phase::Cas,
 +    )
 +}
 +
@@ -622,19 +759,22 @@ new file mode 100644
 +    connection: &mut Option<Connection>,
 +    section: &str,
 +    deadline: Instant,
++    phase: Phase,
 +) -> Result<String, StoreError> {
-+    query(connection, redis::cmd("INFO").arg(section), deadline)
++    query(connection, redis::cmd("INFO").arg(section), deadline, phase)
 +}
 +
 +pub(super) fn settings(
 +    connection: &mut Option<Connection>,
 +    keys: &[&str],
 +    deadline: Instant,
++    phase: Phase,
 +) -> Result<BTreeMap<String, String>, StoreError> {
 +    query(
 +        connection,
 +        redis::cmd("CONFIG").arg("GET").arg(keys),
 +        deadline,
++        phase,
 +    )
 +}
 +
@@ -646,26 +786,41 @@ new file mode 100644
 +    connection: &mut Option<Connection>,
 +    command: &mut redis::Cmd,
 +    deadline: Instant,
++    phase: Phase,
 +) -> Result<R, StoreError> {
++    let started = Instant::now();
 +    let remaining = deadline
-+        .checked_duration_since(Instant::now())
++        .checked_duration_since(started)
 +        .filter(|value| !value.is_zero())
-+        .ok_or(StoreError::Unavailable)?;
++        .ok_or_else(|| {
++            diagnostics::emit(
++                phase,
++                Failure::BudgetExpired,
++                Duration::ZERO,
++                Duration::ZERO,
++            );
++            StoreError::Unavailable
++        })?;
++    let mut failure = Failure::MissingConnection;
 +    let result = (|| {
 +        let connection = connection.as_mut().ok_or(StoreError::Unavailable)?;
++        failure = Failure::ReadTimeoutSetup;
 +        connection
 +            .set_read_timeout(Some(remaining))
 +            .map_err(|_| StoreError::Unavailable)?;
++        failure = Failure::WriteTimeoutSetup;
 +        connection
 +            .set_write_timeout(Some(remaining))
 +            .map_err(|_| StoreError::Unavailable)?;
-+        command
-+            .query(connection)
-+            .map_err(|_| StoreError::Unavailable)
++        command.query(connection).map_err(|error| {
++            failure = diagnostics::classify(&error);
++            StoreError::Unavailable
++        })
 +    })();
 +    // Never reuse a timed-out protocol stream with a possibly pending reply.
 +    if result.is_err() {
 +        *connection = None;
++        diagnostics::emit(phase, failure, started.elapsed(), remaining);
 +    }
 +    result
 +}

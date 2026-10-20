@@ -14,6 +14,14 @@
 
 后两项抽取的是公开方法实际调用的泛型业务体。具体 `JsonCodec` 的正确性与原版本的一般等价，不由抽取成功自动得到，也不因此成为可信库前提。`src/bindings.rs` 另从真实公开方法生成完整 Charon AST；`check_storage_binding.py` 检查四个薄转调中的原输入、完整结果、关联格式常量、具体 codec/clock 顺序和异常清理。这个机械准入不是具体 codec 的 Lean 证明。
 
+## 新诊断与日志边界
+
+候选基于 `f60e81f81629b23a512da52e6511b5f46699535f`，保留 #604 的诊断，生产文件未改。查询错误先清空原连接再记录诊断；健康配置/持久化不匹配先调用日志，再按原首次拒绝返回。日志输出只经零资源 `storage_io::Diagnostics` 端点转交原 `diagnostics::emit`；它不持有账本、连接、载荷、租约或用户回调。该窄输出合同已经 owner 采纳，规范及限制只见[依赖保证](../../../docs/formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)。
+
+空端点的 Lean 表示保存可能的输出结果与调用历史；这不是给真实 Rust 新增日志队列或文件所有权。written、writeFailed 和 suppressed 都可正常返回，panic 与 nonReturning 不产生正常后态；调用正常返回不能证明已写日志，更不能证明完成业务或资源释放。模型没有总成功空桩，未给物理时间、日志隐私/限额或异常恢复提供新定理。三类健康拒绝的实际状态/元数据和配置仍透明抽取，日志内部锁/原子计数没有机器证明。
+
+[来源检查器](../../../tools/check_redis_diagnostics_binding.py)在候选重建后、抽取前执行；新查询、日志调用和拒绝顺序不符即拒绝。12 项回归覆盖漏日志、改参数、引入业务对象、改 phase、反转清连接顺序及改围栏；这些是准入检查，真实提前解除围栏错误版仍需独立编译/原工具抽取并由同一性质拒绝。
+
 ## 重建与编译
 
 在批准的 Linux x86_64 验证环境中，从包含冻结基线的仓库重建；目标目录必须不存在：
@@ -68,7 +76,7 @@ bash scripts/verify-storage.sh
 
 [Results](../../aeneas/storage/SandproofStorage/Results.lean) 直接使用未修改的生成函数：未知结果必须保持写围栏并弃用连接；已围栏的普通提交保持账本和回调状态；成功结果需要完整 CAS 调用及后置检查证据，并保留修订、状态和完整载荷。四个已知拒绝码的定理只解释返回值及本地状态，不从 `Err` 推出 Redis 没有写入或已经回滚。[Key](../../aeneas/storage/SandproofStorage/Key.lean) 复用既有字符串往返证明，保持完整部署字符串。
 
-[Health](../../aeneas/storage/SandproofStorage/Health.lean) 证明健康检查只回写连接、保持配置及围栏，正常错误只可能是 Configuration/Unavailable；这不是 INFO 解析和物理耐久条件的完整证明。[Caller](../../aeneas/storage/SandproofStorage/Caller.lean) 把未知围栏性质接到真实泛型提交/重确认调用链，显式要求自有 codec 的正常错误范围；[Success](../../aeneas/storage/SandproofStorage/Success.lean) 保留匹配部署、完整旧载荷、新修订及实际编码/解码证据。`commit_success_state` 还要求同一 codec 状态链上的往返性质。两个 codec 条件都归自有 V2，不是外部库或机械适配的保证；尚未实例化就不能声称具体生产类型已闭合。
+[Health](../../aeneas/storage/SandproofStorage/Health.lean) 证明健康检查只回写连接和逻辑日志历史、保持所有原账本业务字段及围栏，正常错误只可能是 Configuration/Unavailable；这不是 INFO 解析和物理耐久条件的完整证明。[Caller](../../aeneas/storage/SandproofStorage/Caller.lean) 把未知围栏性质接到真实泛型提交/重确认调用链，显式要求自有 codec 的正常错误范围；[Success](../../aeneas/storage/SandproofStorage/Success.lean) 保留匹配部署、完整旧载荷、新修订及实际编码/解码证据。`commit_success_state` 还要求同一 codec 状态链上的往返性质。两个 codec 条件都归自有 V2，不是外部库或机械适配的保证；尚未实例化就不能声称具体生产类型已闭合。
 
 [Examples](../../aeneas/storage/SandproofStorage/Examples.lean) 在原生成循环与提交调用链上提供具体正常见证：固定合法版本、全部六项配置和四项持久化字段，加上 CAS 成功回复，可通过完整泛型 commit。示例 codec 有容量不足和非法字节拒绝，并满足自己的错误范围/往返条件；另有已围栏拒绝及送达未知的执行见证。它说明接口条件可以实现，不代替实际生产 JsonCodec、租约或部署前提的实例证明，也不以有限样例代替通用围栏定理。
 
