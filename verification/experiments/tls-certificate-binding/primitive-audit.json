@@ -1232,7 +1232,7 @@
       "failure": "no typed business rejection; exceptional/invalid-borrow behavior is not granted a cleanup claim"
     },
     {
-      "symbol": "stock IntoFrom.into → GenericArray<U8,U32> From<[u8;32]> and CertificatePin field construction",
+      "symbol": "[u8;32]::from(GenericArray<u8,U32>)（由原 IntoFrom.into 字典调用）及 CertificatePin 字段封装",
       "provider": "A6/A9/B4 fixed plain-byte result composition",
       "input": "the exact preceding 32-byte SHA result and original concrete From dictionary",
       "normal": "all 32 output bytes in the same order; no truncation, padding, alternate result or policy selection",
