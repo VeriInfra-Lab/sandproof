@@ -1,0 +1,243 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_internal",
+  "functions": [
+    {
+      "def_id": 27,
+      "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+      "lean_file": "SandproofSchemaDomains/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq",
+      "lean_file": "SandproofSchemaDomains/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/internal.rs",
+        "begin_line": 44,
+        "end_line": 44
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq",
+      "lean_file": "SandproofSchemaDomains/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq",
+      "lean_file": "SandproofSchemaDomains/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq",
+      "lean_file": "SandproofSchemaDomains/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/internal.rs",
+        "begin_line": 101,
+        "end_line": 101
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofSchemaDomainsRust.status.StatusRequest.validate",
+      "lean_file": "SandproofSchemaDomains/Funs.lean",
+      "rust_name": "sandproof_internal::status::{sandproof_internal::status::StatusRequest}::validate",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-internal/src/status.rs",
+        "begin_line": 18,
+        "end_line": 23
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofSchemaDomainsRust.status.HostStatus.validate_for",
+      "lean_file": "SandproofSchemaDomains/Funs.lean",
+      "rust_name": "sandproof_internal::status::{sandproof_internal::status::HostStatus}::validate_for",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-internal/src/status.rs",
+        "begin_line": 40,
+        "end_line": 45
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 7,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.internal.lifecycle.Resources",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_protocol::internal::lifecycle::Resources",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 18,
+        "end_line": 18
+      }
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.internal.PositiveCounter",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_protocol::internal::PositiveCounter",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/internal.rs",
+        "begin_line": 49,
+        "end_line": 49
+      }
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.NodeId",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_protocol::NodeId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.DeploymentId",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_protocol::DeploymentId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.internal.NodeIdentity",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_protocol::internal::NodeIdentity",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/internal.rs",
+        "begin_line": 103,
+        "end_line": 103
+      }
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofSchemaDomainsRust.TransportError",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_internal::TransportError",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-internal/src/lib.rs",
+        "begin_line": 76,
+        "end_line": 84
+      }
+    },
+    {
+      "def_id": 1,
+      "lean_name": "SandproofSchemaDomainsRust.status.StatusRequest",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_internal::status::StatusRequest",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-internal/src/status.rs",
+        "begin_line": 12,
+        "end_line": 14
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofSchemaDomainsRust.status.HostStatus",
+      "lean_file": "SandproofSchemaDomains/Types.lean",
+      "rust_name": "sandproof_internal::status::HostStatus",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-internal/src/status.rs",
+        "begin_line": 28,
+        "end_line": 36
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": [
+    {
+      "def_id": 6,
+      "lean_name": "SandproofSchemaDomainsRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity",
+      "lean_file": "SandproofSchemaDomains/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/internal.rs",
+        "begin_line": 101,
+        "end_line": 101
+      },
+      "impl_trait_def_id": 4,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["SandboxModel"]
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/foundations"
+
+[[lean_lib]]
+name = "SandproofNetwork"
+srcDir = "verification/aeneas/network"
+
+[[lean_lib]]
+name = "SandproofDataDrain"
+srcDir = "verification/aeneas/data-drain"
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+
+[[lean_lib]]
+name = "SandproofTls"
+srcDir = "verification/aeneas/tls"
+
+[[lean_lib]]
+name = "SandproofSchemaDomains"
+srcDir = "verification/aeneas/schema-domains"

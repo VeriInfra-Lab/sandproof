@@ -1,0 +1,394 @@
+{
+  "schema": 1,
+  "contract_id": "status-schema-domains-v0",
+  "base_commit": "501e79d85b4329f5f6a0bce17c640fb611547009",
+  "proof_kind": "original-synchronous-guards-plus-conditional-fixed-json-derive-binding",
+  "target": "x86_64-unknown-linux-gnu",
+  "source_files": {
+    "sandbox-internal/src/status.rs": "5a39f5480ebf16ac403393cca5f64a7cd31d91eae4711ab0e6e9df21b16a1542",
+    "sandbox-internal/src/server.rs": "4e76dec6c5b6ef06e3eecba819e551b4bef7ce5c369195efc5fa13f7cba9c9cc",
+    "sandbox-internal/src/client/status.rs": "e2723a4476eb7ff0502948bae62ea5d0fbaaa7c7a0c12ff0120bed8b7eef5c9a",
+    "sandbox-internal/src/client.rs": "4a6fbc333dbe328e0cbfeb8277e22602081b34c60f30d8807c581be7b6bf7f73",
+    "sandbox-internal/src/lib.rs": "d681f6005233368b5f306dc6eed4a75686f992ce6e4ff658cca465349b8b5e28",
+    "sandbox-internal/src/cache.rs": "ef33d3adb64712ab41c4f63f7f9076547f5825db61b6f0b90fb2a02f09111595",
+    "sandbox-internal/src/template.rs": "c952bc986488730ab51525951ddf9e4625b401d96b33eb43bd5d8386542c1b95",
+    "sandbox-protocol/src/internal.rs": "bdbfd2c89b17d0f16758359d9fd0ad7e129c09e5c024f20bff119fa2449c93ed",
+    "sandbox-protocol/src/internal/lifecycle.rs": "6fdb8f860c2288a8d0117ccec0746fed4fba6415f05c494f00722278afd651fb",
+    "sandbox-protocol/src/internal/window.rs": "55d6aa5ccc8c7cda685d7e15f2f03e1d613641e2ded9dfa644539a597d60decc",
+    "sandbox-protocol/src/lib.rs": "eac6d277cd77b680f554f318ad5a2cb5e9ba40f09172486c8ba62d656fdabb0d",
+    "controller-service/src/template_registry/evidence.rs": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4"
+  },
+  "versions": {
+    "rust": "1.97.0",
+    "frontend": "nightly-2026-08-18",
+    "lean": "4.31.0",
+    "charon": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+    "aeneas": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+    "serde": "1.0.228",
+    "serde_json": "1.0.142"
+  },
+  "schemas": [
+    {
+      "name": "StatusRequest",
+      "file": "sandbox-internal/src/status.rs",
+      "attributes": [
+        "standard Serialize/Deserialize",
+        "deny_unknown_fields"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "domain": "complete identity"
+        }
+      ]
+    },
+    {
+      "name": "HostStatus",
+      "file": "sandbox-internal/src/status.rs",
+      "attributes": [
+        "standard Serialize/Deserialize",
+        "deny_unknown_fields"
+      ],
+      "fields": [
+        {
+          "name": "node",
+          "rust_type": "NodeIdentity",
+          "domain": "complete original identity; no field dropped"
+        },
+        {
+          "name": "retention_slots",
+          "rust_type": "u16",
+          "domain": "JSON 0..=65535; actual guard accepts only 1..=4096"
+        },
+        {
+          "name": "observed_at_ms",
+          "rust_type": "u64",
+          "domain": "0..=u64::MAX; guard gives no freshness or clock truth"
+        },
+        {
+          "name": "free",
+          "rust_type": "Resources",
+          "domain": "all four u64 fields, including zero; guard gives no physical truth or admission authorization"
+        }
+      ]
+    },
+    {
+      "name": "NodeIdentity",
+      "file": "sandbox-protocol/src/internal.rs",
+      "attributes": [
+        "standard Serialize/Deserialize",
+        "deny_unknown_fields"
+      ],
+      "fields": [
+        {
+          "name": "deployment_id",
+          "rust_type": "DeploymentId",
+          "domain": "nonempty ASCII [A-Za-z0-9._-], at most 128 UTF-8 bytes; preserve parsed value"
+        },
+        {
+          "name": "node_id",
+          "rust_type": "NodeId",
+          "domain": "same original identifier leaf domain; different logical type"
+        },
+        {
+          "name": "node_generation",
+          "rust_type": "PositiveCounter",
+          "domain": "1..=u64::MAX supplied by original custom Deserialize/TryFrom, not the later Status guard"
+        }
+      ]
+    },
+    {
+      "name": "Resources",
+      "file": "sandbox-protocol/src/internal/lifecycle.rs",
+      "attributes": [
+        "standard Serialize/Deserialize",
+        "deny_unknown_fields"
+      ],
+      "fields": [
+        {
+          "name": "instances",
+          "rust_type": "u64",
+          "domain": "0..=u64::MAX; zero allowed here"
+        },
+        {
+          "name": "cpu",
+          "rust_type": "u64",
+          "domain": "0..=u64::MAX; zero allowed here"
+        },
+        {
+          "name": "memory_bytes",
+          "rust_type": "u64",
+          "domain": "0..=u64::MAX; zero allowed here"
+        },
+        {
+          "name": "disk_bytes",
+          "rust_type": "u64",
+          "domain": "0..=u64::MAX; zero allowed here"
+        }
+      ]
+    }
+  ],
+  "common_shape": {
+    "objects": "All declared fields required, no defaults/Option here; object field order is arbitrary, duplicate/unknown fields are errors.",
+    "sequences": "The fixed standard struct derive also accepts arrays in exact declared field order; incomplete/extra elements are errors.",
+    "leaf_errors": "Original custom ID and positive-counter error dictionaries; field error precedes later document end, with original parser consumption/position conditions.",
+    "normal_domain": "Original immutable SliceRead and private Vec, valid UTF-8, fixed standard derives, normal allocation; not arbitrary Deserialize/Serialize callbacks.",
+    "excluded": [
+      "stateful I/O",
+      "resource-bearing values/custom Drop",
+      "panic/unwind completion",
+      "OOM/abort",
+      "whole async transport refinement"
+    ]
+  },
+  "byte_call_sites": [
+    {
+      "id": "server.status",
+      "file": "sandbox-internal/src/server.rs",
+      "entry": "node_status",
+      "steps": [
+        "serde_json::from_slice::<StatusRequest>(bytes)",
+        "request.validate(node)",
+        "handler.status(request.clone()).await",
+        "answer.validate_for(&request)",
+        "json_response -> original evidence::encode_bounded(&answer, STATUS_RESPONSE_BYTES); custom bounded Writer, not to_vec"
+      ],
+      "providers": "A6 fixed scanner/derive and B4 mechanical call; V3/V7/V6 provide authenticated node, actual handler, original limits/connection and observation truth.",
+      "status": "source-binding-review-not-async-machine-refinement"
+    },
+    {
+      "id": "client.status",
+      "file": "sandbox-internal/src/client/status.rs",
+      "entry": "InternalClient::status",
+      "steps": [
+        "StatusRequest { node: self.endpoint.node.clone() }",
+        "serde_json::to_vec(&request)",
+        "exchange_bytes(STATUS_PATH, encoded, STATUS_REQUEST_BYTES, STATUS_RESPONSE_BYTES)",
+        "serde_json::from_slice(&bytes)",
+        "result.validate_for(&request)"
+      ],
+      "providers": "A6/B4 fixed byte interface; original call permit/deadline/endpoint and TLS conditions are outside this pure schema batch.",
+      "status": "source-binding-review-not-async-machine-refinement"
+    }
+  ],
+  "limits": {
+    "path": "/internal/v2/node-status",
+    "request_bytes": 1024,
+    "response_bytes": 2048,
+    "budget_owner": "server management_route and client exchange_bytes; from_slice itself has no transport size check"
+  },
+  "families": [
+    {
+      "id": "shared-node",
+      "types": [
+        "NodeIdentity"
+      ],
+      "file": "sandbox-protocol/src/internal.rs",
+      "reuse": [
+        "two original opaque identifier leaves",
+        "PositiveCounter leaf",
+        "complete NodeBinding projection/equality"
+      ],
+      "status": "existing-leaves-plus-this-batch-field-binding",
+      "remaining": "Existing leaf proofs do not identify an arbitrary parser occurrence; each actual byte caller needs original dictionary/input/cursor binding."
+    },
+    {
+      "id": "shared-control",
+      "types": [
+        "ControlIdentity"
+      ],
+      "file": "sandbox-protocol/src/internal.rs",
+      "reuse": [
+        "LifecycleRequest complete identity fields",
+        "identifier/counter leaves",
+        "original validate_node"
+      ],
+      "status": "existing-representative-and-other-input-contexts-pending",
+      "remaining": "Data identity header and other byte/schema callers need their own budget, original input, derive and guard binding; no automatic authorization."
+    },
+    {
+      "id": "shared-resources",
+      "types": [
+        "Resources"
+      ],
+      "file": "sandbox-protocol/src/internal/lifecycle.rs",
+      "reuse": [
+        "full ResourceVector projection",
+        "u64 domains",
+        "existing JSON output recipe"
+      ],
+      "status": "existing-fields-plus-this-batch-field-binding",
+      "remaining": "Zero resources are valid Status observations. Create positive/capacity policy is a separate caller predicate."
+    },
+    {
+      "id": "status",
+      "types": [
+        "StatusRequest",
+        "HostStatus"
+      ],
+      "file": "sandbox-internal/src/status.rs",
+      "reuse": [
+        "existing NodeIdentity/Resources/leaf proofs",
+        "fixed SliceRead/Vec derive method"
+      ],
+      "status": "this-batch-in-progress",
+      "remaining": "Full byte contract/AST source binding, formal mutants, admission tests and final module/full gates are not yet complete."
+    },
+    {
+      "id": "probe",
+      "types": [
+        "ProbeRequest",
+        "ProbeResponse"
+      ],
+      "file": "sandbox-protocol/src/internal.rs",
+      "reuse": [
+        "ordinary standard struct derive",
+        "node/operation/counter fields"
+      ],
+      "status": "needs-narrow-instance",
+      "remaining": "Bind protocol version, exact request_id and rejection order to actual validators and byte routes; not proved by Status."
+    },
+    {
+      "id": "lifecycle-request",
+      "types": [
+        "CreateBinding",
+        "Intent",
+        "LifecycleRequest"
+      ],
+      "file": "sandbox-protocol/src/internal/lifecycle.rs",
+      "reuse": [
+        "delivered lifecycle byte/field/guard representative"
+      ],
+      "status": "existing-representative",
+      "remaining": "Reuse only frozen SliceRead/Vec normal-value contract; other I/O, allocation/Drop and actual caller conditions remain explicit."
+    },
+    {
+      "id": "lifecycle-response",
+      "types": [
+        "LifecycleFact",
+        "LifecycleResponse"
+      ],
+      "file": "sandbox-protocol/src/internal/lifecycle.rs",
+      "reuse": [
+        "identity/counter fields",
+        "standard derive methods"
+      ],
+      "status": "requires-enum-branch-and-narrow-instance",
+      "remaining": "Tagged fact branches and actual validation/complete response binding need explicit review. deny_unknown_fields cannot be generalized from struct to every tagged unit variant."
+    },
+    {
+      "id": "window-close",
+      "types": [
+        "WindowCloseRequest",
+        "WindowCloseAck"
+      ],
+      "file": "sandbox-protocol/src/internal/window.rs",
+      "reuse": [
+        "standard struct wrapper",
+        "existing complete identity/response fields"
+      ],
+      "status": "needs-nested-response-and-narrow-instance",
+      "remaining": "Needs the full nested LifecycleResponse/fact domain and original terminal/request binding. Retiring/closing authorization stays V3/V5."
+    },
+    {
+      "id": "template-cache",
+      "types": [
+        "CacheRequest",
+        "CacheAvailability"
+      ],
+      "file": "sandbox-internal/src/cache.rs",
+      "reuse": [
+        "node/resource-id leaves",
+        "fixed byte-array/struct derive method"
+      ],
+      "status": "requires-descriptor-domain-and-narrow-instance",
+      "remaining": "TemplateBinding schema/limits and original request/digest/descriptor checks are not inferred from Status. Template service contract remains external; core use and authorization cannot be omitted."
+    },
+    {
+      "id": "validation-evidence",
+      "types": [
+        "ValidationRequest",
+        "ValidationEvidence"
+      ],
+      "file": "sandbox-internal/src/template.rs",
+      "reuse": [
+        "complete identities",
+        "resource-id/counter/array leaf methods"
+      ],
+      "status": "requires-publication-domain-and-narrow-instance",
+      "remaining": "Publication/certificate aliases, full byte limits and actual self validator/return handling need their own bounded registration; not generic parser coverage."
+    },
+    {
+      "id": "template-artifact-and-readiness",
+      "types": [
+        "ReadinessRequest",
+        "ArtifactPart",
+        "ArtifactRequest"
+      ],
+      "file": "sandbox-internal/src/cache.rs",
+      "reuse": [
+        "node/resource-id/array fields"
+      ],
+      "status": "recorded-template-interface-with-core-use-retained",
+      "remaining": "Template management itself is owner-excluded, but any safety-relevant core consumption must retain the approved A10 contract and exact input binding; no blanket removal of mixed-crate code."
+    }
+  ],
+  "theorems": [
+    "SandboxModel.Boundaries.SchemaDomains.original_node_equality_reuses_foundations",
+    "SandboxModel.Boundaries.SchemaDomains.original_node_equality_refines",
+    "SandboxModel.Boundaries.SchemaDomains.original_request_result",
+    "SandboxModel.Boundaries.SchemaDomains.original_request_guard_contract",
+    "SandboxModel.Boundaries.SchemaDomains.original_response_result",
+    "SandboxModel.Boundaries.SchemaDomains.original_response_guard_contract",
+    "SandboxModel.Boundaries.SchemaDomains.request_binding_refusal",
+    "SandboxModel.Boundaries.SchemaDomains.response_binding_refusal",
+    "SandboxModel.Boundaries.SchemaDomains.zero_slots_refusal",
+    "SandboxModel.Boundaries.SchemaDomains.excessive_slots_refusal",
+    "SandboxModel.Boundaries.SchemaDomains.nonempty_request_success",
+    "SandboxModel.Boundaries.SchemaDomains.nonempty_response_success",
+    "SandboxModel.Boundaries.SchemaDomains.maximum_allowed_slots_success",
+    "SandboxModel.Boundaries.SchemaDomains.observing_zero_free_is_not_rejected",
+    "SandboxModel.Boundaries.SchemaDomains.response_guard_does_not_check_observation",
+    "SandboxModel.Boundaries.SchemaDomains.original_node_inequality_refines",
+    "SandboxModel.Boundaries.SchemaDomains.foundation_node_bridge_injective",
+    "SandboxModel.Boundaries.SchemaDomains.complete_node_view_injective",
+    "SandboxModel.Boundaries.SchemaDomains.foundation_resource_bridge_injective",
+    "SandboxModel.Boundaries.SchemaDomains.complete_resource_view_injective",
+    "SandboxModel.Boundaries.SchemaDomains.complete_request_view_injective",
+    "SandboxModel.Boundaries.SchemaDomains.complete_status_view_injective"
+  ],
+  "inputs": [],
+  "delivery_status": "guard22 physical diagnostics/audits and CLI build passed; native15+3+2 and admission8 passed; byte preflight failed in original Charon trait transformation; negative and byte full gates pending",
+  "guard_extraction": {
+    "full_llbc_sha256": "4645a5858043e523557de898a24f5d6d6589d0be1ab85d2d07b227a6a956455d",
+    "transparent_owned_functions": [
+      "sandproof_internal::status::{sandproof_internal::status::HostStatus}::validate_for",
+      "sandproof_internal::status::{sandproof_internal::status::StatusRequest}::validate",
+      "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
+      "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
+      "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
+      "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq"
+    ],
+    "generated_sha256": {
+      "SandproofSchemaDomains/Funs.lean": "07aa54e2e64e9a035e2523317df125b8d9f8637878bee6c3875c9b7b675de7a7",
+      "SandproofSchemaDomains/FunsExternal.lean": "13958d4d6301b1842c0ecf3b1d434832abd14477b6cf8ad4b945afbcfdfbed17",
+      "SandproofSchemaDomains/Types.lean": "9a9264796b3437579a5bf7688f26c1ccdaabd4a3dc053a8d8c8e6567c0129add",
+      "translation.json": "380d87d2e4f48e8addf1c559c9776cdba89f301c3dcdc5f4ba2cea3eb769ffdd"
+    }
+  },
+  "known_pending_bindings": [
+    {
+      "entry": "server status response encoding",
+      "symbol": "sandproof_controller_service::template_registry::evidence::encode_bounded",
+      "source": "controller-service/src/template_registry/evidence.rs",
+      "responsibility": "Original private Writer limit/checked_add/allocation and partial output must be connected separately; not covered by the plain Vec renderer law or silently added to B4.",
+      "state": "not-yet-connected; keep explicit in the final batch obligations"
+    },
+    {
+      "entry": "response_encode verification wrapper",
+      "responsibility": "Calls actual serde_json::to_vec<HostStatus> for the ordinary-value schema; this is not the production server bounded Writer.",
+      "state": "reference-renderer-wrapper, no server encoder refinement claim"
+    }
+  ]
+}
