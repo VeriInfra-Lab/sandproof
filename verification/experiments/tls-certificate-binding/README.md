@@ -6,7 +6,7 @@
 
 ## 证据层次
 
-- [原完整 Charon IR](original.llbc)保留四个入口、原摘要包装及其闭包、派生相等和 DropGlue 的 14 个本地透明体。原源码、类型、具体 trait 实例、参数、捕获、正常/展开分支及 Drop 内容均在有限冻结中；未知结构不能靠忽略字段通过。
+- [原完整 Charon IR](original.llbc)保留四个入口、原摘要包装及其闭包、派生相等和 DropGlue 的 14 个本地透明体。四个编译器生成的 DropGlue 带有原 unsafe 标记，按准确声明、类型和完整空效果树单独登记；其余自有体新增 unsafe 仍拒绝。原源码、类型、具体 trait 实例、参数、捕获、正常/展开分支及 Drop 内容均在有限冻结中；未知结构不能靠忽略字段通过。
 - [有限检查器](../../../tools/check_tls_certificate_binding.py)只接受本次审查的固定树，另核对两处 `verify_peer` 的原字段/完整参数转调。它不是任意 Rust 的解释器、转换器或等价证明。
 - [窄原语审查](primitive-audit.json)区分实际摘要动作、字典成员和关联常量；没有把未实现外部模板作为公理导入。
 - [对应表](correspondence.json)及[冻结输入](environment.json)连接原调用点、完整输入视图和既有值策略。沿用已有 `allow`、`peerReply`、实际 bytes 核心与条件组合定理，不声称生产调用了 owned 候选。

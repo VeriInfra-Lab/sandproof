@@ -699,8 +699,8 @@
     "sandbox-internal/tests/support/python_relay.rs": "1929bf5f3ae0bbbed26f7afd2f15dd29c233650abf194fd4b3880ad8e1f23847",
     "sandbox-internal/tests/support/status_cases.rs": "a16305785317c190cd73885c8c4ea3bd06efd503a457460f11f0ec9786bb9646",
     "sandbox-internal/tests/support/tls.rs": "9d2eeced4593eeeeca9d704a1dc0ef768b1d300e07a95aec99ad0d65c6c8b072",
-    "tools/check_tls_certificate_binding.py": "d30c0a604f877171b9022dc0f36af3d8325eac9b32b8b742db1cf82cf4b391f0",
-    "tools/tests/test_tls_certificate_binding.py": "976b8c89c0a5e8d8d6c95b21e10f64af0c337e7d0dd7df2a75ecddf0fb26c8fe",
+    "tools/check_tls_certificate_binding.py": "da88571966cae489d9d47f8e620f0ad11f00c9c784a9a75104280cc3b83b540c",
+    "tools/tests/test_tls_certificate_binding.py": "a0c9ffe49925c1c0ddc70c62188113aecf604f3174f4241e03269426956635d6",
     "verification/aeneas/llbc/sandproof_tls.llbc": "f8870ea741b20c4d7c8184d773e129f0cfe68d463b20abfdf2fe1349915f8ee8",
     "verification/aeneas/tls/SandproofTls/Funs.lean": "b84067f5174a1582ded9e37f5b9c5d22cb2d5593a5378682147027954b9a08e1",
     "verification/aeneas/tls/SandproofTls/FunsExternal.lean": "fc7824bbf555939ba63d05f72c8a0f9bcea4fbdd4f15419c8c06b055a9971ae8",
@@ -723,5 +723,11 @@
     "future cancellation/physical exit",
     "full allocation budget",
     "whole authorization/revocation/deployment"
+  ],
+  "compiler_generated_unsafe_drop_glue": [
+    34,
+    40,
+    43,
+    44
   ]
 }

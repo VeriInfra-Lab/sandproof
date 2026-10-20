@@ -11,6 +11,7 @@ except ModuleNotFoundError:
 
 REL = Path('verification/experiments/tls-certificate-binding')
 EXPECTED_LOCAL = {11, 12, 13, 23, 27, 32, 34, 38, 40, 41, 42, 43, 44, 143}
+COMPILER_DROP_GLUE = {34, 40, 43, 44}
 EXPECTED_CALLS = {
     11: [('alloc', 'vec', 'deref'), ('sandproof_internal', 'tls', 'verify_pin')],
     12: [('alloc', 'vec', 'deref'), ('sandproof_internal', 'tls', 'verify_pin')],
@@ -134,8 +135,13 @@ def check_shape(tree, frozen):
     for key, function in owned.items():
         if (function['item_meta']['opacity'] != 'Transparent'
                 or not isinstance(function['body'], dict) or set(function['body']) != {'Structured'}
-                or function['signature']['is_unsafe'] or function['signature']['is_variadic']):
+                or function['signature']['is_unsafe'] is not (key in COMPILER_DROP_GLUE)
+                or function['signature']['is_variadic']):
             raise ValueError('owned body is opaque, missing or changed')
+        if key in COMPILER_DROP_GLUE:
+            if (function['item_meta']['name'][-1] != {'Builtin': ['DropGlue', 0]}
+                    or function['src']['TraitImpl']['trait_ref']['id'] != 5):
+                raise ValueError('not the frozen compiler-generated DropGlue')
         observed = []
         for call in calls(function):
             if (set(call['func']) != {'Regular'}
