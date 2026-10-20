@@ -22,23 +22,43 @@ theorem invocation_error_unavailable {T : Type} (project : LibraryReply → Opti
   exact read_reply_error_unavailable _ _ _ _ _ run
 
 theorem info_error_unavailable (connection next : Option redis.connection.Connection)
-    (sectionName : Str) (deadline : std.time.Instant)
+    (sectionName : Str) (deadline : std.time.Instant) (phase : store.diagnostics.Phase)
     (error : sandproof_center_store.StoreError)
-    (run : store.storage_io.info connection sectionName deadline = .ok (.Err error, next)) :
+    (run : store.storage_io.info connection sectionName deadline phase = .ok (.Err error, next)) :
     error = .Unavailable := by
   exact invocation_error_unavailable _ _ _ _ _ run
 
 theorem settings_error_unavailable (connection next : Option redis.connection.Connection)
-    (keys : Slice Str) (deadline : std.time.Instant)
+    (keys : Slice Str) (deadline : std.time.Instant) (phase : store.diagnostics.Phase)
     (error : sandproof_center_store.StoreError)
-    (run : store.storage_io.settings connection keys deadline = .ok (.Err error, next)) :
+    (run : store.storage_io.settings connection keys deadline phase = .ok (.Err error, next)) :
     error = .Unavailable := by
   exact invocation_error_unavailable _ _ _ _ _ run
+
+theorem configuration_error_kind (output next : store.storage_io.Diagnostics)
+    (phase : store.diagnostics.Phase) (error : sandproof_center_store.StoreError)
+    (run : store.configuration_error output phase = .ok (error, next)) :
+    error = .Configuration := by
+  unfold store.configuration_error at run
+  simp only [core.time.Duration.ZERO, bind_tc_ok] at run
+  obtain ⟨updated, _emit, run⟩ := bind_returns _ _ run
+  simp only [Result.ok.injEq, Prod.mk.injEq] at run
+  exact run.1.symm
+
+theorem persistence_error_kind (output next : store.storage_io.Diagnostics)
+    (error : sandproof_center_store.StoreError)
+    (run : store.persistence_error output = .ok (error, next)) :
+    error = .Unavailable := by
+  unfold store.persistence_error at run
+  simp only [core.time.Duration.ZERO, bind_tc_ok] at run
+  obtain ⟨updated, _emit, run⟩ := bind_returns _ _ run
+  simp only [Result.ok.injEq, Prod.mk.injEq] at run
+  exact run.1.symm
 
 def HealthShape {T : Type} (before : store.RedisLedger T)
     (result : core.result.Result Unit sandproof_center_store.StoreError)
     (after : store.RedisLedger T) : Prop :=
-  after = { before with connection := after.connection } ∧
+  after = { before with connection := after.connection, diagnostics := after.diagnostics } ∧
   match result with
   | .Ok _ => True
   | .Err error => error = .Configuration ∨ error = .Unavailable
@@ -53,7 +73,7 @@ theorem health_shape {T : Type} (ledger after : store.RedisLedger T)
   simp only [uncurry] at run
   cases server with
   | Err error =>
-    have same := info_error_unavailable _ _ _ _ _ serverResult
+    have same := info_error_unavailable _ _ _ _ _ _ serverResult
     subst error
     simp [core.result.Result.Insts.CoreOpsTry.branch,
       core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at run
@@ -66,8 +86,10 @@ theorem health_shape {T : Type} (ledger after : store.RedisLedger T)
     obtain ⟨badVersion, _versionCheck, run⟩ := bind_returns _ _ run
     by_cases guard0 : badVersion = true
     · rw [if_pos guard0] at run
-      simp only [Result.ok.injEq, Prod.mk.injEq] at run
-      rcases run with ⟨rfl, rfl⟩
+      obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+      have kind := configuration_error_kind _ _ _ _ emitted
+      subst error
+      rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
       simp [HealthShape]
     · rw [if_neg guard0] at run
       obtain ⟨keys, _keysResult, run⟩ := bind_returns _ _ run
@@ -75,7 +97,7 @@ theorem health_shape {T : Type} (ledger after : store.RedisLedger T)
       simp only [uncurry] at run
       cases settings with
       | Err error =>
-        have same := settings_error_unavailable _ _ _ _ _ settingsResult
+        have same := settings_error_unavailable _ _ _ _ _ _ settingsResult
         subst error
         simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at run
         rcases run with ⟨rfl, rfl⟩
@@ -106,7 +128,7 @@ theorem health_shape {T : Type} (ledger after : store.RedisLedger T)
                     simp only [uncurry] at run
                     cases persistence with
                     | Err error =>
-                      have same := info_error_unavailable _ _ _ _ _ persistenceResult
+                      have same := info_error_unavailable _ _ _ _ _ _ persistenceResult
                       subst error
                       simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at run
                       rcases run with ⟨rfl, rfl⟩
@@ -118,59 +140,80 @@ theorem health_shape {T : Type} (ledger after : store.RedisLedger T)
                       obtain ⟨b7, _check7, run⟩ := bind_returns _ _ run
                       by_cases guard7 : b7 = true
                       · rw [if_pos guard7] at run
-                        simp only [Result.ok.injEq, Prod.mk.injEq] at run
-                        rcases run with ⟨rfl, rfl⟩
+                        obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+                        have kind := persistence_error_kind _ _ _ emitted
+                        subst error
+                        rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
                         simp [HealthShape]
                       · rw [if_neg guard7] at run
                         obtain ⟨enabled, _enabledResult, run⟩ := bind_returns _ _ run
                         obtain ⟨b8, _check8, run⟩ := bind_returns _ _ run
                         by_cases guard8 : b8 = true
                         · rw [if_pos guard8] at run
-                          simp only [Result.ok.injEq, Prod.mk.injEq] at run
-                          rcases run with ⟨rfl, rfl⟩
+                          obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+                          have kind := persistence_error_kind _ _ _ emitted
+                          subst error
+                          rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
                           simp [HealthShape]
                         · rw [if_neg guard8] at run
                           obtain ⟨writeStatus, _writeResult, run⟩ := bind_returns _ _ run
                           obtain ⟨b9, _check9, run⟩ := bind_returns _ _ run
                           by_cases guard9 : b9 = true
                           · rw [if_pos guard9] at run
-                            simp only [Result.ok.injEq, Prod.mk.injEq] at run
-                            rcases run with ⟨rfl, rfl⟩
+                            obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+                            have kind := persistence_error_kind _ _ _ emitted
+                            subst error
+                            rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
                             simp [HealthShape]
                           · rw [if_neg guard9] at run
                             obtain ⟨rewrite, _rewriteResult, run⟩ := bind_returns _ _ run
                             obtain ⟨b10, _check10, run⟩ := bind_returns _ _ run
                             by_cases finalGuard : b10 = true
-                            all_goals
-                              first
-                                | rw [if_pos finalGuard] at run
-                                | rw [if_neg finalGuard] at run
+                            · rw [if_pos finalGuard] at run
+                              obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+                              have kind := persistence_error_kind _ _ _ emitted
+                              subst error
+                              rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
+                              simp [HealthShape]
+                            · rw [if_neg finalGuard] at run
                               simp only [Result.ok.injEq, Prod.mk.injEq] at run
                               rcases run with ⟨rfl, rfl⟩
                               simp [HealthShape]
                   · rw [if_neg guard6] at run
-                    simp only [Result.ok.injEq, Prod.mk.injEq] at run
-                    rcases run with ⟨rfl, rfl⟩
+                    obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+                    have kind := configuration_error_kind _ _ _ _ emitted
+                    subst error
+                    rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
                     simp [HealthShape]
                 · rw [if_neg guard5] at run
-                  simp only [Result.ok.injEq, Prod.mk.injEq] at run
-                  rcases run with ⟨rfl, rfl⟩
+                  obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+                  have kind := configuration_error_kind _ _ _ _ emitted
+                  subst error
+                  rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
                   simp [HealthShape]
               · rw [if_neg guard4] at run
-                simp only [Result.ok.injEq, Prod.mk.injEq] at run
-                rcases run with ⟨rfl, rfl⟩
+                obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+                have kind := configuration_error_kind _ _ _ _ emitted
+                subst error
+                rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
                 simp [HealthShape]
             · rw [if_neg guard3] at run
-              simp only [Result.ok.injEq, Prod.mk.injEq] at run
-              rcases run with ⟨rfl, rfl⟩
+              obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+              have kind := configuration_error_kind _ _ _ _ emitted
+              subst error
+              rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
               simp [HealthShape]
           · rw [if_neg guard2] at run
-            simp only [Result.ok.injEq, Prod.mk.injEq] at run
-            rcases run with ⟨rfl, rfl⟩
+            obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+            have kind := configuration_error_kind _ _ _ _ emitted
+            subst error
+            rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
             simp [HealthShape]
         · rw [if_neg guard1] at run
-          simp only [Result.ok.injEq, Prod.mk.injEq] at run
-          rcases run with ⟨rfl, rfl⟩
+          obtain ⟨⟨error, diagnostics⟩, emitted, run⟩ := bind_returns _ _ run
+          have kind := configuration_error_kind _ _ _ _ emitted
+          subst error
+          rcases Prod.mk.inj (Result.ok_injective run) with ⟨rfl, rfl⟩
           simp [HealthShape]
 
 theorem health_preserves_config {T : Type} (ledger after : store.RedisLedger T)
@@ -195,6 +238,23 @@ theorem health_cannot_report_unknown {T : Type} (ledger after : store.RedisLedge
     False := by
   have kinds := (health_shape ledger after deadline (.Err .OutcomeUnknown) run).2
   rcases kinds with same | same <;> cases same
+
+/- diagnostics is proof-side output history for a zero-sized Rust endpoint;
+all five original non-connection business fields remain exactly unchanged. -/
+theorem health_preserves_business_fields {T : Type} (ledger after : store.RedisLedger T)
+    (deadline : std.time.Instant)
+    (result : core.result.Result Unit sandproof_center_store.StoreError)
+    (run : store.RedisLedger.check_health ledger deadline = .ok (result, after)) :
+    after.endpoint = ledger.endpoint ∧ after.config = ledger.config ∧
+      after._lease = ledger._lease ∧ after.write_fenced = ledger.write_fenced ∧
+      after._state = ledger._state := by
+  have frame := (health_shape ledger after deadline result run).1
+  have endpoint := congrArg store.RedisLedger.endpoint frame
+  have config := congrArg store.RedisLedger.config frame
+  have lease := congrArg store.RedisLedger._lease frame
+  have fence := congrArg store.RedisLedger.write_fenced frame
+  have state := congrArg store.RedisLedger._state frame
+  exact ⟨endpoint, config, lease, fence, state⟩
 
 #print axioms health_shape
 #print axioms health_cannot_report_unknown

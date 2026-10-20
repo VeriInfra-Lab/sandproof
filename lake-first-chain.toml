@@ -27,5 +27,9 @@ name = "SandproofTls"
 srcDir = "verification/aeneas/tls"
 
 [[lean_lib]]
+name = "SandproofStdMutex"
+srcDir = "verification/aeneas/std-mutex"
+
+[[lean_lib]]
 name = "SandproofFirstChain"
 srcDir = "verification/aeneas/first-chain"

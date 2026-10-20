@@ -137,9 +137,16 @@ Redis 脚本原子执行指不被其他请求插入，不保证任意多写脚�
 | A11：Redis 7.2.16 与 redis-rs 1.7.1 | 原受保护 IPv4 回环、ACL、单有效写者及冻结持久化/内存配置下，采用该版本命令和回复的合同。EVAL 执行期间不插入其它命令 | 不承诺外部调用总返回；错误不保证无写入或回滚。实际 Lua 的检查、参数和唯一写入顺序仍由 V2 提供；磁盘/文件系统及机器故障范围必须另有部署条件 |
 | B4：候选 `storage_io::eval` | 将原 CAS 文本、单个 key、部署、格式、旧修订、新修订、完整新旧 payload 和限额按实际 KEYS/ARGV 顺序传给原连接；保留实际数字或错误 | `LibraryRequest` 只记录传给适配的参数，不表示发包、执行或落盘。选择文本/对象/字段、解释返回码以及确认/未知决定不属于机械适配 |
 | B4：候选 `storage_io::info/settings/query` | 把实际 section、完整有序配置键和原绝对 deadline 交给同一连接；按原调用设置剩余读写超时，忠实传递回复/错误及连接回写 | 多次检查不是原子快照；超时设置不是整个调用的严格墙钟上界。失去响应、协议/类型转换错误或读取失败都可能在命令已执行之后发生；不能因本地连接被清空推导数据库没变或物理连接已经关闭 |
+| B4：原 `diagnostics::emit` 经候选 `storage_io::emit` | 仅把原 Phase、Failure 和两个时长交给同一进程的原日志函数；正常返回不改写账本业务字段、连接或围栏。参数中没有账本、连接、载荷、租约或用户回调 | 允许写入失败、记录被抑制、阻塞、panic 或不返回；不保证日志写入成功、64 次内一定结束，亦不保证异常后已设置围栏。健康判断、拒绝先后和返回码仍是透明自有代码 |
 | A6：候选 `trim_cr/split_colon` 与固定字符串/表操作 | 固定标准库的 UTF-8/字节接口；按第一个冒号分割、按原规则去掉末尾 CR，Lines 保留原 LF/CRLF 行语义；仅采用纯 String/str 比较和借用、唯一键字典及纯字节克隆 | 自有 INFO 扫描、重复键拒绝及配置选择仍抽取；任意自定义比较器、Borrow、Clone、格式回调或有状态两次编码不在本范围 |
 | A8/B4：候选 `OperationClock/SystemClock` | 本次原超时配置传给原时钟，产生的 deadline 原样交给后续调用；回调状态在抽取结果中保留 | 不假设跨机时钟一致，也不从一个 deadline 推出调用一定结束；单位、溢出和更高层寿命仍由调用者负责 |
 | B4：公开 `commit/reaffirm` 到泛型核心 | 实际薄转调传递原账本、原观察、原 next、`T::FORMAT_VERSION`、原 `JsonCodec` 和 `SystemClock`；完整返回与异常路径保留 | 完整公开 Charon AST 的源码/参数准入是审查和检查证据，不是具体 Serde 回调图的 Lean 精化；改变回调、参数、分支或字典必须重查 |
+
+此日志合同由 owner 于 2026-10-20 采纳，见[具体提案](https://github.com/VeriInfra-Lab/sandproof/issues/333#issuecomment-6288404741)与[采纳记录](https://github.com/VeriInfra-Lab/sandproof/issues/333#issuecomment-6289377201)。候选增加的 `storage_io::Diagnostics` 在真实 Rust 中是空结构，不拥有文件、锁或连接；其模型中的后续结果和调用历史是对输出行为的逻辑表示，不是新增的 Rust 存储。健康检查允许推进这一逻辑历史，原 endpoint、config、租约、围栏及载荷标记保持不变。它不能证明日志内部原子计数、stderr 锁或输出格式正确。
+
+[输出模型](../../verification/aeneas/storage/SandproofStorage/FunsExternal.lean)保留正常写入、写入失败但调用正常返回、抑制、panic 和不返回；历史只记录接口调用，不作为实际写入证据。本批透明健康拒绝只传 ConfigurationMismatch/UnhealthyPersistence 两种 Failure；其它查询诊断仍在原 `query` 适配内，沿用其可能失败或不返回的合同，不新增任意日志器的通用模型。`Duration::ZERO` 另按 A6 表示零秒、零纳秒，源码仍由原两版 `core/src/time.rs` 摘要核对。输出的失败和发散不会被换成业务成功。
+
+[来源检查](../../tools/check_redis_diagnostics_binding.py)同时核对当前生产诊断文件原字节、完整移出的查询体、先清空连接再日志、CAS 的原 phase、三类健康调用的元数据与第一次拒绝顺序。它支持 B4 的采用，不是一般旧新等价证明。隔离候选、模型或任何实际调用发生变化时，重新核对这些连接与完整 LLBC/Drop/审计；不能只刷新原文件摘要。
 
 原 LLBC 的析构逐位置登记在候选 `environment.json`：普通 String/Vec、已登记字典和自有载荷容器，仅在普通值域中忽略其内存释放；泛型 T 不得含可观察自定义 Drop 或共享资源。`fence_unknown` 对原 Option<Connection> 的替换另按外部 A6/B4 处理，**不把 TCP 连接析构说成纯内存操作**：实际关闭可能让对端继续处理已发请求或产生其它网络结果，物理效果仍未知。此域只允许原受控非 PubSub TCP 连接，不安装用户 push sender，不据模型中的 None 证明物理关闭、退出或回滚。写者文件租约及 codec/clock 原所有者均为借用，不在这组调用中释放。异常清理位置同样冻结，但正常后态定理不覆盖 panic/unwind/abort；若将来引入资源载荷、PubSub、用户析构或新关闭行为，须重审该域。
 
@@ -571,7 +578,7 @@ panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返�
 
 ## A6/B2/B3 JoinSet：收齐原任务与返回值
 
-固定 Tokio 1.49.0，生产来源为 integration `886f2dd6`。范围限于原 [中心监督](../../sandbox-center/src/runtime.rs)、[受保护连接组](../../sandbox-internal/src/protected_server.rs)和 [Guest 连接组](../../sandbox-guest-service/src/listener.rs)使用的 `new/spawn/len/is_empty/join_next/abort_all` 与正常组析构。三处源码、四份库实现、十二组机械操作和三项业务责任见[逐点登记](../../verification/joinset-environment.json)；[摘要](../../verification/joinset-inputs.sha256)固定实际输入。本条是既有 A6/B2/B3 的窄接法，不将整个服务、TLS 或业务回调列为可信。
+固定 Tokio 1.49.0，生产来源为 integration `886f2dd6`。范围限于原 [中心监督](../../sandbox-center/src/runtime.rs)、[受保护连接组](../../sandbox-internal/src/protected_server.rs)和 [Guest 连接组](../../sandbox-guest-service/src/listener.rs)使用的 `new/spawn/len/is_empty/join_next/abort_all` 与正常组析构。三处源码、五份库实现、十二组机械操作和三项业务责任见[逐点登记](../../verification/joinset-environment.json)；[摘要](../../verification/joinset-inputs.sha256)固定实际输入。本条是既有 A6/B2/B3 的窄接法，不将整个服务、TLS 或业务回调列为可信。
 
 | 提供方与实际操作 | 可以依赖的保证 | 使用方仍须证明 |
 | --- | --- | --- |
@@ -588,3 +595,24 @@ panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返�
 这 36 条声明证明所列模型的历史守恒、原身份/值和单次交付、受检容量与完整收齐；另保留合法非空成功，以及提前 drop/只 abort 不能满足同一收齐性质的反例。原 Charon 的实际异步入口预检、逐符号源码核对和确定性原生回归支持可信接线的采用，不提供完整 async Rust 机器精化。原生错误版分别去掉中心/Guest 原收齐循环，必须先新编译，再被正确版相同的即时断言拒绝；编译失败或超时不算反例。
 
 本条不覆盖 join_all、shutdown 便利方法、detach_all、JoinSet::spawn_blocking 或任务 ID 接口。没有无条件最终调度、终止或清理保证；不返回、panic/abort/崩溃只保留已观察前缀。业务回调、首次拒绝/错误、持久提交、真实 I/O/命令退出、Report 语义与授权仍归原 V2/V6/V8/V9，Mutex/RwLock、Condvar 及其它通道的公共缺口继续归 V0。
+
+
+## A6/B2 标准 Mutex：原守卫、中毒与唯一借用
+
+范围为固定 Rust 1.97.0 与前端 nightly-2026-08-18 标准库的 `Mutex::new/lock/try_lock/get_mut`、原守卫的借用/正常析构和 `PoisonError` 恢复。两版标准库的 mutex、poison 与 Linux futex 实现、三份代表生产源码和十三组操作/责任见[登记](../../verification/std-mutex-environment.json)及[冻结输入](../../verification/std-mutex-inputs.sha256)。本条细化既有 A6/B2，不增加整个业务正确的可信条件。
+
+| 提供方与接口 | 可依赖的窄保证 | 使用者仍须提供 |
+| --- | --- | --- |
+| A6：同一原 Mutex 的 lock/try_lock | 正常取得返回原守卫；中毒错误也已经取得并持有原守卫。try_lock 先尝试原底层锁，忙时返回 WouldBlock，即使中毒也不返回一个可用守卫 | 原对象/有效 Rust 借用和守卫所有权，哪些字段由该锁保护；阻塞、重复领取、锁顺序与无死锁另证。逻辑领取序号不是指针、线程 ID 或公平队列 |
+| A6：PoisonError 恢复与守卫读写 | 恢复返回原载荷/原守卫；不回滚已写数据，不清除 poison。持锁期间的写入须由调用者自己的关系描述 | 选择拒绝还是恢复、修复哪个业务不变量、原返回值及错误解释。中毒只是建议性观察，不是内存安全/完整业务状态的凭证 |
+| A6：正常守卫 Drop | 在原锁上结束该次持有并按实际 panic 状态更新中毒；不析构 Mutex 内的 T。若取得时已经处于 unwind，后续释放可以不设置新的 poison | 区分正常返回、实际 unwind、Drop 自身 panic、abort/崩溃。forget 不解锁；外部进程、FD、许可等真实归还按原载荷全部所有者及业务证据处理 |
+| A6：get_mut 的真实唯一借用 | 由实际 &mut Mutex 排除新的共享领取，不需要取得底层锁；返回原正常/中毒分支的可变借用，写回只修改原 payload | 独立的唯一 Rust loan 条件，不能从“当前没有活跃守卫”推出唯一访问。此前 forget 留下的底层锁可以仍锁住，get_mut 不修复它 |
+| B2：SerialMutex/SerialGuard 诊断薄层 | 构造/lock 使用原 Mutex；lock 的诊断通知先于真正尝试，不证明取得。正常执行到 drop(self.guard.take()) 后，原解锁先于后续 CURRENT 诊断修改 | 此适配只在 contention-diagnostics 特性启用；计时表达式先完成才观察到该释放事件。measure/host_call 的业务回调、诊断状态恢复及计数不整体可信 |
+
+[守卫模型](../../SandboxModel/Boundaries/StdMutex/Guard.lean)证明逐步/有限历史的互斥、原身份、守卫失效、忙碌/中毒、正常释放和调用者给定写关系下的不变量保持。payload 仅投影原内联字段及句柄，不把别名可变堆冻结成快照，不复制 Rust 资源所有权。守卫被遗忘时原底层锁仍忙；停止使用该守卫也不授予唯一借用。
+
+实际 [SerialMutex::get_mut](../../controller-service/src/application/diagnostics.rs) 由原 Charon/Aeneas 透明抽取，[借用合同](../../SandboxModel/Boundaries/StdMutex/BorrowModel.lean)、[实现对应](../../SandboxModel/Boundaries/StdMutex/GetMut.lean)和[模型连接](../../SandboxModel/Boundaries/StdMutex/Bridge.lean)固定正常/中毒分支、原字段和回写。标准 Mutex 的独占借用库模型仍依 A6 符合性，不是标准库机器证明。吞中毒错误的实际 Rust 版本重新编译抽取后，被正确版同一 GetMutContract 内核反驳；它使用的 PoisonError<&mut T>::into_inner 专用绑定先核对实际 LLBC 借用实例，不适用于任意拥有值的 PoisonError<T>。
+
+真实 Guest Meter::lock 和 PtyMaster::descriptor/close 分别登记原 Snapshot 和 Option<Arc<AsyncFd<OwnedFd>>>。Meter 的 exact=false、PTY 的中毒拒绝/恢复及 close 资格属于 V8/V6 业务；原句柄克隆仍可持有 FD，清空 Option/通知不提供物理退出或最后归还证据。两处共享借用入口的原工具预检保留后端非可结束借用、动态 I/O 错误类型障碍；条件模型、原源码审查和原生回归不冒充这两个入口已机器精化。
+
+本条不覆盖 Condvar 原子解锁/重锁、Tokio Mutex/RwLock、所有生产 Mutex 使用点、全业务不变量或无条件进展。它们的公共缺口继续归 V0，实际业务守卫、恢复、授权与释放条件归 V1–V9，不能由 A6/B2 整体代替。

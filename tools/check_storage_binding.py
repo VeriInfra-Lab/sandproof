@@ -18,7 +18,7 @@ except ModuleNotFoundError:
 
 CRATE = 'sandproof_storage_extract'
 OPAQUE = [CRATE + '::store::storage_io::' + name
-          for name in ('eval', 'info', 'settings', 'trim_cr', 'split_colon')]
+          for name in ('eval', 'info', 'settings', 'trim_cr', 'split_colon', 'emit', 'Diagnostics')]
 
 
 def identifiers(item):

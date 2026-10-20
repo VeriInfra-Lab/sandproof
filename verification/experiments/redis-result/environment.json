@@ -28,7 +28,9 @@
       "sandproof_storage_extract::store::storage_io::info",
       "sandproof_storage_extract::store::storage_io::settings",
       "sandproof_storage_extract::store::storage_io::trim_cr",
-      "sandproof_storage_extract::store::storage_io::split_colon"
+      "sandproof_storage_extract::store::storage_io::split_colon",
+      "sandproof_storage_extract::store::storage_io::emit",
+      "sandproof_storage_extract::store::storage_io::Diagnostics"
     ],
     "exclude": [],
     "extract_opaque_bodies": false,
@@ -74,7 +76,7 @@
   },
   "opaque_functions": {
     "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt": {
-      "def_id": 80,
+      "def_id": 82,
       "lean_name": "Shared0T.Insts.CoreFmtDisplay.fmt",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
@@ -92,7 +94,7 @@
       "contract": "A6: fixed single-prefix format/display and bounded value decimal/string rendering"
     },
     "core::fmt::{impl core::fmt::Display for str}::fmt": {
-      "def_id": 81,
+      "def_id": 83,
       "lean_name": "Str.Insts.CoreFmtDisplay.fmt",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::fmt::{impl core::fmt::Display for str}::fmt",
@@ -128,7 +130,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq": {
-      "def_id": 90,
+      "def_id": 92,
       "lean_name": "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
@@ -164,7 +166,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "core::str::iter::{impl core::iter::traits::iterator::Iterator<&'a str> for core::str::iter::Lines<'a>}::next": {
-      "def_id": 84,
+      "def_id": 86,
       "lean_name": "core.str.iter.Lines.Insts.CoreIterTraitsIteratorIteratorSharedAStr.next",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::str::iter::{impl core::iter::traits::iterator::Iterator<&'a str> for core::str::iter::Lines<'a>}::next",
@@ -182,7 +184,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "core::str::{str}::lines": {
-      "def_id": 83,
+      "def_id": 85,
       "lean_name": "core.str.Str.lines",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::str::{str}::lines",
@@ -200,7 +202,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "core::str::traits::{impl core::cmp::PartialOrd<str> for str}::partial_cmp": {
-      "def_id": 212,
+      "def_id": 216,
       "lean_name": "Str.Insts.CoreCmpPartialOrdStr.partial_cmp",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::str::traits::{impl core::cmp::PartialOrd<str> for str}::partial_cmp",
@@ -218,7 +220,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "core::str::traits::{impl core::cmp::PartialEq<str> for str}::eq": {
-      "def_id": 92,
+      "def_id": 94,
       "lean_name": "Str.Insts.CoreCmpPartialEqStr.eq",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::str::traits::{impl core::cmp::PartialEq<str> for str}::eq",
@@ -236,7 +238,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "core::str::traits::{impl core::cmp::Ord for str}::cmp": {
-      "def_id": 186,
+      "def_id": 190,
       "lean_name": "Str.Insts.CoreCmpOrd.cmp",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "core::str::traits::{impl core::cmp::Ord for str}::cmp",
@@ -254,7 +256,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "alloc::collections::btree::map::{alloc::collections::btree::map::BTreeMap<K, V, A>}::get": {
-      "def_id": 95,
+      "def_id": 98,
       "lean_name": "alloc.collections.btree.map.BTreeMap.get",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "alloc::collections::btree::map::{alloc::collections::btree::map::BTreeMap<K, V, A>}::get",
@@ -290,7 +292,7 @@
       "contract": "A6: fixed single-prefix format/display and bounded value decimal/string rendering"
     },
     "alloc::str::{impl core::borrow::Borrow<str> for alloc::string::String}::borrow": {
-      "def_id": 181,
+      "def_id": 185,
       "lean_name": "alloc.string.String.Insts.CoreBorrowBorrowStr.borrow",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "alloc::str::{impl core::borrow::Borrow<str> for alloc::string::String}::borrow",
@@ -308,7 +310,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq": {
-      "def_id": 101,
+      "def_id": 104,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
@@ -326,7 +328,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "alloc::string::{impl core::cmp::PartialOrd<alloc::string::String> for alloc::string::String}::partial_cmp": {
-      "def_id": 211,
+      "def_id": 215,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialOrdString.partial_cmp",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::PartialOrd<alloc::string::String> for alloc::string::String}::partial_cmp",
@@ -344,7 +346,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "alloc::string::{impl core::cmp::Ord for alloc::string::String}::cmp": {
-      "def_id": 185,
+      "def_id": 189,
       "lean_name": "alloc.string.String.Insts.CoreCmpOrd.cmp",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::Ord for alloc::string::String}::cmp",
@@ -380,7 +382,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "alloc::string::{alloc::string::String}::as_str": {
-      "def_id": 70,
+      "def_id": 71,
       "lean_name": "alloc.string.String.as_str",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{alloc::string::String}::as_str",
@@ -398,7 +400,7 @@
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
     "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone": {
-      "def_id": 71,
+      "def_id": 73,
       "lean_name": "alloc.string.String.Insts.CoreCloneClone.clone",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone",
@@ -469,6 +471,24 @@
       "reducible": false,
       "contract": "A6: registered finite plain UTF-8/byte/value operation, normal allocation only"
     },
+    "sandproof_storage_extract::store::storage_io::emit": {
+      "def_id": 95,
+      "lean_name": "store.storage_io.emit",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::emit",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 14,
+        "end_line": 22
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false,
+      "contract": "A6/B4: owner-approved original diagnostic output forwarding only; normal return preserves business state, permits write failure/suppression, panic/abort/non-return; zero-resource endpoint has only logical schedule/history; ConfigurationMismatch and UnhealthyPersistence at transparent health sites only"
+    },
     "sandproof_storage_extract::store::storage_io::eval": {
       "def_id": 40,
       "lean_name": "store.storage_io.eval",
@@ -477,8 +497,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
-        "begin_line": 18,
-        "end_line": 38
+        "begin_line": 36,
+        "end_line": 57
       },
       "is_opaque": true,
       "can_fail": true,
@@ -495,8 +515,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
-        "begin_line": 40,
-        "end_line": 46
+        "begin_line": 59,
+        "end_line": 66
       },
       "is_opaque": true,
       "can_fail": true,
@@ -506,15 +526,15 @@
       "contract": "B4: original command/argument/result/connection/deadline forwarding only"
     },
     "sandproof_storage_extract::store::storage_io::settings": {
-      "def_id": 68,
+      "def_id": 69,
       "lean_name": "store.storage_io.settings",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "sandproof_storage_extract::store::storage_io::settings",
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
-        "begin_line": 48,
-        "end_line": 58
+        "begin_line": 68,
+        "end_line": 80
       },
       "is_opaque": true,
       "can_fail": true,
@@ -524,15 +544,15 @@
       "contract": "B4: original command/argument/result/connection/deadline forwarding only"
     },
     "sandproof_storage_extract::store::storage_io::trim_cr": {
-      "def_id": 87,
+      "def_id": 89,
       "lean_name": "store.storage_io.trim_cr",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "sandproof_storage_extract::store::storage_io::trim_cr",
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
-        "begin_line": 60,
-        "end_line": 62
+        "begin_line": 82,
+        "end_line": 84
       },
       "is_opaque": true,
       "can_fail": true,
@@ -542,15 +562,15 @@
       "contract": "A6: one-call standard string operation"
     },
     "sandproof_storage_extract::store::storage_io::split_colon": {
-      "def_id": 85,
+      "def_id": 87,
       "lean_name": "store.storage_io.split_colon",
       "lean_file": "SandproofStorage/FunsExternal_Template.lean",
       "rust_name": "sandproof_storage_extract::store::storage_io::split_colon",
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
-        "begin_line": 92,
-        "end_line": 94
+        "begin_line": 129,
+        "end_line": 131
       },
       "is_opaque": true,
       "can_fail": true,
@@ -565,7 +585,8 @@
     "sandproof_storage_extract::store::storage_io::info",
     "sandproof_storage_extract::store::storage_io::settings",
     "sandproof_storage_extract::store::storage_io::split_colon",
-    "sandproof_storage_extract::store::storage_io::trim_cr"
+    "sandproof_storage_extract::store::storage_io::trim_cr",
+    "sandproof_storage_extract::store::storage_io::emit"
   ],
   "builtin_or_drop_declarations": [
     {
@@ -747,13 +768,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [
@@ -779,13 +800,13 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 42
+                                "Deduplicated": 48
                               },
                               {
-                                "Deduplicated": 29
+                                "Deduplicated": 31
                               },
                               {
-                                "Deduplicated": 45
+                                "Deduplicated": 51
                               }
                             ],
                             "const_generics": [],
@@ -805,13 +826,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 40
+                  "Deduplicated": 46
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -866,13 +887,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -894,13 +915,13 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 29
+                                "Deduplicated": 31
                               },
                               {
-                                "Deduplicated": 42
+                                "Deduplicated": 48
                               },
                               {
-                                "Deduplicated": 45
+                                "Deduplicated": 51
                               }
                             ],
                             "const_generics": [],
@@ -920,13 +941,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -975,13 +996,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [
@@ -1007,13 +1028,13 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 42
+                                "Deduplicated": 48
                               },
                               {
-                                "Deduplicated": 29
+                                "Deduplicated": 31
                               },
                               {
-                                "Deduplicated": 45
+                                "Deduplicated": 51
                               }
                             ],
                             "const_generics": [],
@@ -1033,13 +1054,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 40
+                  "Deduplicated": 46
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -1094,13 +1115,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -1117,13 +1138,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -1178,7 +1199,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1194,10 +1215,10 @@
                   "Deduplicated": 0
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1252,7 +1273,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1268,10 +1289,10 @@
                   "Deduplicated": 0
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1326,7 +1347,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1339,13 +1360,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 50
+                  "Deduplicated": 56
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 }
               ],
               "const_generics": [],
@@ -1400,7 +1421,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1413,13 +1434,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 50
+                  "Deduplicated": 56
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 }
               ],
               "const_generics": [],
@@ -1474,7 +1495,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1490,10 +1511,10 @@
                   "Deduplicated": 0
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1548,7 +1569,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1564,10 +1585,10 @@
                   "Deduplicated": 0
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1622,7 +1643,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1638,10 +1659,10 @@
                   "Deduplicated": 0
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1696,7 +1717,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1712,10 +1733,10 @@
                   "Deduplicated": 0
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1770,7 +1791,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1783,13 +1804,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 50
+                  "Deduplicated": 56
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 }
               ],
               "const_generics": [],
@@ -1844,7 +1865,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1857,13 +1878,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 50
+                  "Deduplicated": 56
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 }
               ],
               "const_generics": [],
@@ -1918,7 +1939,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -1931,13 +1952,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 50
+                  "Deduplicated": 56
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 }
               ],
               "const_generics": [],
@@ -1992,7 +2013,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -2005,13 +2026,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 50
+                  "Deduplicated": 56
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 }
               ],
               "const_generics": [],
@@ -2066,7 +2087,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -2079,7 +2100,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 55
+                  "Deduplicated": 61
                 }
               ],
               "const_generics": [],
@@ -2090,7 +2111,7 @@
           "reuses_default": false
         }
       },
-      "body_sha256": "bc50f10a05c97876bcd003aa1428a21161519ce37f7086d85a13df34a2b18992",
+      "body_sha256": "b1b5195ba0c568c6e0f0426c61f41b871c38532b573a8043115497412fd6af59",
       "class": "reviewed Drop"
     },
     {
@@ -2128,10 +2149,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -2144,7 +2165,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 152
+                  "Deduplicated": 158
                 }
               ],
               "const_generics": [],
@@ -2193,13 +2214,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -2221,10 +2242,10 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 45
+                                "Deduplicated": 51
                               },
                               {
-                                "Deduplicated": 29
+                                "Deduplicated": 31
                               }
                             ],
                             "const_generics": [],
@@ -2244,10 +2265,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 155
+                  "Deduplicated": 161
                 },
                 {
-                  "Deduplicated": 154
+                  "Deduplicated": 160
                 }
               ],
               "const_generics": [],
@@ -2296,10 +2317,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -2321,7 +2342,7 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 18
+                                "Deduplicated": 19
                               }
                             ],
                             "const_generics": [],
@@ -2349,7 +2370,7 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 29
+                                "Deduplicated": 31
                               }
                             ],
                             "const_generics": [],
@@ -2369,7 +2390,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 149
+                  "Deduplicated": 155
                 }
               ],
               "const_generics": [],
@@ -2418,10 +2439,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -2434,10 +2455,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 149
+                  "Deduplicated": 155
                 },
                 {
-                  "Deduplicated": 42
+                  "Deduplicated": 48
                 }
               ],
               "const_generics": [],
@@ -2620,10 +2641,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -2636,7 +2657,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 152
+                  "Deduplicated": 158
                 }
               ],
               "const_generics": [],
@@ -2691,10 +2712,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -2707,7 +2728,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 152
+                  "Deduplicated": 158
                 }
               ],
               "const_generics": [],
@@ -2762,10 +2783,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -2778,7 +2799,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 149
+                  "Deduplicated": 155
                 }
               ],
               "const_generics": [],
@@ -2839,10 +2860,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -2855,7 +2876,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 498
+                  "Deduplicated": 527
                 }
               ],
               "const_generics": [],
@@ -2904,7 +2925,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -2917,10 +2938,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -2970,10 +2991,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -3092,7 +3113,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 26
+                  "Deduplicated": 28
                 }
               ],
               "const_generics": [],
@@ -3150,7 +3171,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 109
+                  "Deduplicated": 115
                 }
               ],
               "const_generics": [],
@@ -3197,7 +3218,7 @@
           }
         }
       },
-      "body_sha256": "9425c8c98e2cf15323c3c25c68cf0b4dfd09594110ade3daa8fd788df75f275a",
+      "body_sha256": "3dbd84dfb6ed01624e96ae43c35a7f14ed34a3fe344d15aa499000dde7f051c7",
       "class": "global initializer"
     },
     {
@@ -3372,7 +3393,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 523
+                  "Deduplicated": 552
                 }
               ],
               "const_generics": [],
@@ -3383,11 +3404,11 @@
           "reuses_default": false
         }
       },
-      "body_sha256": "08bd3451668c48482023e7c8ab6e3cd9a5715d60fa21adbd131bde831af34a66",
+      "body_sha256": "676be1d5aac60c501a4369ffd401f205ee7777604417234fe02917622e135606",
       "class": "reviewed Drop"
     },
     {
-      "def_id": 72,
+      "def_id": 74,
       "name": [
         {
           "Ident": [
@@ -3441,11 +3462,11 @@
           "reuses_default": false
         }
       },
-      "body_sha256": "067fa7d06a5195bbc16a6d77ec7ff8e1f17a4f22a2868b8d4d0f2fdfb67566d1",
+      "body_sha256": "34d3342daf0983d6d5182d1306dff819c39499c9250958c49d52ec569c1b7cb3",
       "class": "reviewed Drop"
     },
     {
-      "def_id": 73,
+      "def_id": 75,
       "name": [
         {
           "Ident": [
@@ -3485,7 +3506,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -3498,7 +3519,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 30
+                  "Deduplicated": 32
                 }
               ],
               "const_generics": [],
@@ -3509,11 +3530,11 @@
           "reuses_default": false
         }
       },
-      "body_sha256": "9aca022812e5c9979ee03e8b81ed28ca4551acee9276cb1c60d285aa43e628e7",
+      "body_sha256": "ff5a6b4d2c10b12bcca944a1482c6490a610628edc0dccecf8d67d69e52c6ec5",
       "class": "reviewed Drop"
     },
     {
-      "def_id": 74,
+      "def_id": 76,
       "name": [
         {
           "Ident": [
@@ -3553,7 +3574,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -3566,7 +3587,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 57
+                  "Deduplicated": 63
                 }
               ],
               "const_generics": [],
@@ -3577,11 +3598,11 @@
           "reuses_default": false
         }
       },
-      "body_sha256": "ea9a4fb399958b782ce9d9c676f28daa7fb86227e6e5fa529627d7edeba9f862",
+      "body_sha256": "5b479402f893046f82c7027ef15198a0d7db269f655426b2b1ca280da8c2fe26",
       "class": "reviewed Drop"
     },
     {
-      "def_id": 77,
+      "def_id": 79,
       "name": [
         {
           "Ident": [
@@ -3626,7 +3647,7 @@
       "class": "original Aeneas builtin"
     },
     {
-      "def_id": 79,
+      "def_id": 81,
       "name": [
         {
           "Ident": [
@@ -3697,10 +3718,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -3717,7 +3738,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 161
+                  "Deduplicated": 167
                 }
               ],
               "const_generics": [],
@@ -3728,11 +3749,11 @@
           "reuses_default": false
         }
       },
-      "body_sha256": "7d36b26d9b400a116670cd401f26a332bcc0007e17d8049fd4c911fcdf08a5e2",
+      "body_sha256": "d50149056b8a37e6bea3abab1c4c3f5842bf125f6d787526b83777629966465b",
       "class": "reviewed Drop"
     },
     {
-      "def_id": 82,
+      "def_id": 84,
       "name": [
         {
           "Ident": [
@@ -3772,7 +3793,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -3785,7 +3806,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 581
+                  "Deduplicated": 618
                 }
               ],
               "const_generics": [],
@@ -3800,7 +3821,7 @@
       "class": "reviewed Drop"
     },
     {
-      "def_id": 86,
+      "def_id": 88,
       "name": [
         {
           "Ident": [
@@ -3851,10 +3872,10 @@
               ],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -3876,10 +3897,10 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 18
+                                "Deduplicated": 19
                               },
                               {
-                                "Deduplicated": 29
+                                "Deduplicated": 31
                               }
                             ],
                             "const_generics": [],
@@ -3899,10 +3920,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 513
+                  "Deduplicated": 542
                 },
                 {
-                  "Deduplicated": 588
+                  "Deduplicated": 625
                 }
               ],
               "const_generics": [],
@@ -3917,7 +3938,7 @@
       "class": "original Aeneas builtin"
     },
     {
-      "def_id": 91,
+      "def_id": 93,
       "name": [
         {
           "Ident": [
@@ -3968,10 +3989,10 @@
               ],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -3988,10 +4009,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 513
+                  "Deduplicated": 542
                 },
                 {
-                  "Deduplicated": 588
+                  "Deduplicated": 625
                 }
               ],
               "const_generics": [],
@@ -4006,7 +4027,7 @@
       "class": "original Aeneas builtin"
     },
     {
-      "def_id": 94,
+      "def_id": 97,
       "name": [
         {
           "Ident": [
@@ -4058,13 +4079,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 45
+                  "Deduplicated": 51
                 }
               ],
               "const_generics": [],
@@ -4086,7 +4107,7 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 45
+                                "Deduplicated": 51
                               }
                             ],
                             "const_generics": [],
@@ -4106,7 +4127,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 607
+                  "Deduplicated": 644
                 }
               ],
               "const_generics": [],
@@ -4121,7 +4142,7 @@
       "class": "reviewed Drop"
     },
     {
-      "def_id": 180,
+      "def_id": 183,
       "name": [
         {
           "Ident": [
@@ -4167,10 +4188,10 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 }
               ],
               "const_generics": [],
@@ -4192,10 +4213,10 @@
                             "regions": [],
                             "types": [
                               {
-                                "Deduplicated": 18
+                                "Deduplicated": 19
                               },
                               {
-                                "Deduplicated": 29
+                                "Deduplicated": 31
                               }
                             ],
                             "const_generics": [],
@@ -4215,13 +4236,13 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 },
                 {
-                  "Deduplicated": 29
+                  "Deduplicated": 31
                 },
                 {
-                  "Deduplicated": 18
+                  "Deduplicated": 19
                 }
               ],
               "const_generics": [],
@@ -4236,7 +4257,62 @@
       "class": "original Aeneas builtin"
     },
     {
-      "def_id": 207,
+      "def_id": 184,
+      "name": [
+        {
+          "Ident": [
+            "core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "time",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 15
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "ZERO",
+            0
+          ]
+        }
+      ],
+      "src": {
+        "GlobalInitializer": {
+          "id": 25,
+          "generics": {
+            "regions": [],
+            "types": [],
+            "const_generics": [],
+            "trait_refs": []
+          }
+        }
+      },
+      "body_sha256": "b7f7e6dd45056dade06dc7d99eaaef5fbb386c3dd8cbd7f4a3669a1ef87545d0",
+      "class": "global initializer"
+    },
+    {
+      "def_id": 211,
       "name": [
         {
           "Ident": [
@@ -4253,7 +4329,7 @@
       ],
       "src": {
         "GlobalInitializer": {
-          "id": 26,
+          "id": 27,
           "generics": {
             "regions": [],
             "types": [],
@@ -4262,11 +4338,11 @@
           }
         }
       },
-      "body_sha256": "176a28a533aed98ceff50e840fc3ea8d1157ef679e79dd094baaad13753f926f",
+      "body_sha256": "9c3a964b3d6f2c3a3c656d8207a04d29df97e4a289aa0110e13ccf5c6ac4ed7b",
       "class": "global initializer"
     },
     {
-      "def_id": 213,
+      "def_id": 217,
       "name": [
         {
           "Ident": [
@@ -4330,7 +4406,7 @@
       "class": "original Aeneas builtin"
     },
     {
-      "def_id": 214,
+      "def_id": 218,
       "name": [
         {
           "Ident": [
@@ -4379,7 +4455,7 @@
               "regions": [],
               "types": [
                 {
-                  "Deduplicated": 617
+                  "Deduplicated": 654
                 }
               ],
               "const_generics": [],
@@ -4396,7 +4472,7 @@
   ],
   "types": [
     {
-      "def_id": 28,
+      "def_id": 29,
       "lean_name": "core.net.socket_addr.SocketAddrV4",
       "lean_file": "SandproofStorage/TypesExternal_Template.lean",
       "rust_name": "core::net::socket_addr::SocketAddrV4",
@@ -4408,7 +4484,7 @@
       }
     },
     {
-      "def_id": 44,
+      "def_id": 46,
       "lean_name": "core.str.iter.Lines",
       "lean_file": "SandproofStorage/TypesExternal_Template.lean",
       "rust_name": "core::str::iter::Lines",
@@ -4420,7 +4496,7 @@
       }
     },
     {
-      "def_id": 25,
+      "def_id": 26,
       "lean_name": "core.time.Duration",
       "lean_file": "SandproofStorage/TypesExternal_Template.lean",
       "rust_name": "core::time::Duration",
@@ -4432,7 +4508,7 @@
       }
     },
     {
-      "def_id": 29,
+      "def_id": 30,
       "lean_name": "std.fs.File",
       "lean_file": "SandproofStorage/TypesExternal_Template.lean",
       "rust_name": "std::fs::File",
@@ -4444,7 +4520,7 @@
       }
     },
     {
-      "def_id": 21,
+      "def_id": 22,
       "lean_name": "std.time.Instant",
       "lean_file": "SandproofStorage/TypesExternal_Template.lean",
       "rust_name": "std::time::Instant",
@@ -4456,7 +4532,7 @@
       }
     },
     {
-      "def_id": 39,
+      "def_id": 41,
       "lean_name": "alloc.collections.btree.map.BTreeMap",
       "lean_file": "SandproofStorage/TypesExternal_Template.lean",
       "rust_name": "alloc::collections::btree::map::BTreeMap",
@@ -4481,6 +4557,30 @@
     },
     {
       "def_id": 16,
+      "lean_name": "store.storage_io.Diagnostics",
+      "lean_file": "SandproofStorage/TypesExternal_Template.lean",
+      "rust_name": "sandproof_storage_extract::store::storage_io::Diagnostics",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
+        "begin_line": 12,
+        "end_line": 12
+      }
+    },
+    {
+      "def_id": 78,
+      "lean_name": "SandproofStorageRust.core.io.error.ErrorKind",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "core::io::error::ErrorKind",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/io/error.rs",
+        "begin_line": 770,
+        "end_line": 770
+      }
+    },
+    {
+      "def_id": 17,
       "lean_name": "SandproofStorageRust.core.marker.PhantomData",
       "lean_file": "SandproofStorage/Types.lean",
       "rust_name": "core::marker::PhantomData",
@@ -4489,6 +4589,30 @@
         "file": "/rustc/library/core/src/marker.rs",
         "begin_line": 811,
         "end_line": 811
+      }
+    },
+    {
+      "def_id": 87,
+      "lean_name": "SandproofStorageRust.redis.errors.server_error.ServerErrorKind",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "redis::errors::server_error::ServerErrorKind",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redis-1.7.1/src/errors/server_error.rs",
+        "begin_line": 9,
+        "end_line": 9
+      }
+    },
+    {
+      "def_id": 79,
+      "lean_name": "SandproofStorageRust.redis.errors.redis_error.ErrorKind",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "redis::errors::redis_error::ErrorKind",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redis-1.7.1/src/errors/redis_error.rs",
+        "begin_line": 13,
+        "end_line": 13
       }
     },
     {
@@ -4504,7 +4628,7 @@
       }
     },
     {
-      "def_id": 18,
+      "def_id": 19,
       "lean_name": "SandproofStorageRust.sandproof_protocol.internal.PositiveCounter",
       "lean_file": "SandproofStorage/Types.lean",
       "rust_name": "sandproof_protocol::internal::PositiveCounter",
@@ -4516,7 +4640,7 @@
       }
     },
     {
-      "def_id": 35,
+      "def_id": 36,
       "lean_name": "SandproofStorageRust.sandproof_protocol.internal.InternalError",
       "lean_file": "SandproofStorage/Types.lean",
       "rust_name": "sandproof_protocol::internal::InternalError",
@@ -4528,7 +4652,7 @@
       }
     },
     {
-      "def_id": 17,
+      "def_id": 18,
       "lean_name": "SandproofStorageRust.sandproof_protocol.DeploymentId",
       "lean_file": "SandproofStorage/Types.lean",
       "rust_name": "sandproof_protocol::DeploymentId",
@@ -4540,15 +4664,39 @@
       }
     },
     {
-      "def_id": 30,
+      "def_id": 40,
+      "lean_name": "SandproofStorageRust.store.diagnostics.Phase",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::diagnostics::Phase",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/diagnostics.rs",
+        "begin_line": 12,
+        "end_line": 18
+      }
+    },
+    {
+      "def_id": 47,
+      "lean_name": "SandproofStorageRust.store.diagnostics.Failure",
+      "lean_file": "SandproofStorage/Types.lean",
+      "rust_name": "sandproof_storage_extract::store::diagnostics::Failure",
+      "is_local": true,
+      "source": {
+        "file": "src/../../../sandbox-center-store/src/store/diagnostics.rs",
+        "begin_line": 20,
+        "end_line": 33
+      }
+    },
+    {
+      "def_id": 31,
       "lean_name": "SandproofStorageRust.store.storage_io.Cas",
       "lean_file": "SandproofStorage/Types.lean",
       "rust_name": "sandproof_storage_extract::store::storage_io::Cas",
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store/storage_io.rs",
-        "begin_line": 6,
-        "end_line": 16
+        "begin_line": 24,
+        "end_line": 34
       }
     },
     {
@@ -4559,8 +4707,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 18,
-        "end_line": 22
+        "begin_line": 22,
+        "end_line": 26
       }
     },
     {
@@ -4571,8 +4719,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 50,
-        "end_line": 55
+        "begin_line": 54,
+        "end_line": 59
       }
     },
     {
@@ -4583,8 +4731,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 92,
-        "end_line": 97
+        "begin_line": 96,
+        "end_line": 101
       }
     },
     {
@@ -4595,8 +4743,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 112,
-        "end_line": 112
+        "begin_line": 116,
+        "end_line": 116
       }
     },
     {
@@ -4619,8 +4767,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 132,
-        "end_line": 139
+        "begin_line": 136,
+        "end_line": 144
       }
     },
     {
@@ -4631,26 +4779,39 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 382,
-        "end_line": 388
+        "begin_line": 414,
+        "end_line": 420
       }
     },
     {
-      "def_id": 36,
+      "def_id": 37,
       "lean_name": "SandproofStorageRust.store.RedisLedger.replace_using.closure",
       "lean_file": "SandproofStorage/Types.lean",
       "rust_name": "sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{closure}",
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 586,
-        "end_line": 586
+        "begin_line": 650,
+        "end_line": 650
       }
     }
   ],
   "globals": [
     {
-      "def_id": 26,
+      "def_id": 25,
+      "lean_name": "core.time.Duration.ZERO",
+      "lean_file": "SandproofStorage/FunsExternal_Template.lean",
+      "rust_name": "core::time::{core::time::Duration}::ZERO",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/time.rs",
+        "begin_line": 151,
+        "end_line": 151
+      },
+      "can_fail": true
+    },
+    {
+      "def_id": 27,
       "lean_name": "SandproofStorageRust.sandproof_center_store.REDIS_VERSION",
       "lean_file": "SandproofStorage/Funs.lean",
       "rust_name": "sandproof_center_store::REDIS_VERSION",
@@ -4671,7 +4832,7 @@
       "source": {
         "file": "src/../../../sandbox-center-store/src/scripts.rs",
         "begin_line": 19,
-        "end_line": 37
+        "end_line": 44
       },
       "can_fail": false
     }
@@ -4697,8 +4858,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 517,
-        "end_line": 520
+        "begin_line": 581,
+        "end_line": 584
       }
     },
     {
@@ -4709,8 +4870,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 532,
-        "end_line": 534
+        "begin_line": 596,
+        "end_line": 598
       }
     }
   ],
@@ -4933,8 +5094,8 @@
       "is_local": true,
       "source": {
         "file": "src/../../../sandbox-center-store/src/store.rs",
-        "begin_line": 586,
-        "end_line": 586
+        "begin_line": 650,
+        "end_line": 650
       },
       "impl_trait_def_id": 14,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
@@ -4963,7 +5124,8 @@
       "std/src/os/fd/owned.rs": "7dfc471fedb90c0ac426845f2fe584216b5d1af27bc846d05fc5631d93f8319d",
       "std/src/sys/net/connection/socket/mod.rs": "603be0288ac6a1dae023bb5cc8a2c466f61e501ee926242b028b8604d251ed20",
       "std/src/sys/net/connection/socket/unix.rs": "a3b2e9018050f18bf42f8a7a6b7227011a994798b1a8b75225d73cf41ad7aa5a",
-      "std/src/time.rs": "42eaa9d6a1a4c9ea37a9156f629ad2935e368a12c3ab29ff1d33ef6618484da0"
+      "std/src/time.rs": "42eaa9d6a1a4c9ea37a9156f629ad2935e368a12c3ab29ff1d33ef6618484da0",
+      "core/src/io/error.rs": "e578e242633e4bc4fb102d1080ab655a23f8823fa6b9985fe4482db70456ae38"
     },
     "extraction": {
       "alloc/src/collections/btree/map.rs": "67b794871d39e6c6e7dbd3e3cb4d6b7fadc9a534d13a52a054b9c03bd62abf78",
@@ -4986,25 +5148,29 @@
       "std/src/os/fd/owned.rs": "baea17171eb861778e6b00c6998a16682449c9122f403401a39e1a6d1f6cfedc",
       "std/src/sys/net/connection/socket/mod.rs": "cbb416659032845b685544ac570000483708afe5df5591fba2731e539dd5089c",
       "std/src/sys/net/connection/socket/unix.rs": "c9997415bf1c89a9deb3d6f12840abfd58dc91b6e43c8a16095fc34dd216072c",
-      "std/src/time.rs": "dbf93afc64e22548a08fbcfa68290a63b657933eb006ee6670270f6eddc0f9c3"
+      "std/src/time.rs": "dbf93afc64e22548a08fbcfa68290a63b657933eb006ee6670270f6eddc0f9c3",
+      "core/src/io/error.rs": "f61c893fce373f4234a7a304ec1314984857189040431ff9a415b6a55b9fe8dc"
     }
   },
   "registry_sources": {
     "redis-1.7.1/src/connection.rs": "8fa2c40f0081f0d5762a2e75cca7856be91dcc66b8af7be5f9e3060233fd143a",
     "redis-1.7.1/src/cmd.rs": "03db93dfbfe877bbb3e03b29f06c86a945d91f21701c8f997e3d812a9a5fa5b1",
     "redis-1.7.1/src/types.rs": "e7ba285cb8f24c9ea2685b270d72e3eb23e6fe7c148f3deebcfca33d8a4f8d0b",
-    "redis-1.7.1/src/parser.rs": "068137b284c45b03604b1963406d90d138eacae07f91fcd321d289bff0e0acde"
+    "redis-1.7.1/src/parser.rs": "068137b284c45b03604b1963406d90d138eacae07f91fcd321d289bff0e0acde",
+    "redis-1.7.1/src/errors/server_error.rs": "fd2a9b35f352fcada976631323282a106b087c43b62b457534b1f2589e5a4b69",
+    "redis-1.7.1/src/errors/redis_error.rs": "25a7da335d92d2842349a01ad9491885b50fbbb242e51968c004f8dbe02fd1f3"
   },
   "domain": {
     "payload": "plain values without observable custom Drop/shared resources",
     "connection": "original controlled non-PubSub TCP connection, no user push sender",
     "normal": "normal-return logical state only, does not prove physical close/durability",
     "unwind": "positions preserved for admission; panic/unwind/abort/crash have no normal post-state theorem",
-    "borrowed": "writer lease, callback and clock owners are borrowed; not disposed by these roots"
+    "borrowed": "writer lease, callback and clock owners are borrowed; not disposed by these roots",
+    "diagnostics": "Zero-sized owned output endpoint, no custom Drop or business resources; opaque representation carries ghost output schedule/call history only. Normal written/writeFailed/suppressed, panic, and non-return are distinguished; the history records calls, not physical writes. Normal frame only; no exceptional fence or progress theorem."
   },
   "drop_review": {
-    "count": 363,
-    "all_sites_sha256": "070414b7701e7b2a7681b216f94c4b5efcb1606162a0749ae1d61e004b2ad248",
+    "count": 398,
+    "all_sites_sha256": "af4fcd21e26f69d555976816ae1926cedd5ac0f5603042045447f46224756f18",
     "groups": [
       {
         "function": 11,
@@ -5012,7 +5178,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 2,
-        "sites_sha256": "89ffd367758a8496728edd39fc216545b25d8151de2a92e2e28f6fb47d3e1a4e"
+        "sites_sha256": "936b1433d5967f94ddd006e4fa2e400d01dcad7dd943514b085f1f34f528da9a"
       },
       {
         "function": 11,
@@ -5020,7 +5186,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "4bf6051f665a84c96d04b0b4bc5f1105d287f227c959fba2d2cf45e292df7a95"
+        "sites_sha256": "4ecee084871b0311da48ee8da8cd2e947ac9a755629dfef0aae655bf23a9d839"
       },
       {
         "function": 22,
@@ -5028,7 +5194,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 8,
-        "sites_sha256": "508a0c04a8814b6fbcb2de21b1a15e99c217155d09125b1d616d86e5e70bd73a"
+        "sites_sha256": "841a64fdf03b061995db6ad92f59a958880b3d0c378ed22d8620bee381fbd2ec"
       },
       {
         "function": 22,
@@ -5036,7 +5202,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 3,
-        "sites_sha256": "6f1e8171d44f10c0e42abe87ce40a3ce47aed2c22ab59806377f0b2ed494ca7f"
+        "sites_sha256": "dada82c01656f9ca0c187177345ab5a8d4ffcc35133c5cdf1d3f8095566915a6"
       },
       {
         "function": 22,
@@ -5044,7 +5210,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "1624be1a850aef3c544fbd956b1d5a332f0e1f449d240eb888880550fe0c7f0b"
+        "sites_sha256": "1eb381e3c7f4bf3afe86e57a0a5e60235f3d12e2fbb220ff0825d4c590062220"
       },
       {
         "function": 23,
@@ -5052,7 +5218,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "0b9a80b42966d37371e3958e30e34354ea2388004f5d2d99f50daecbbebe39c2"
+        "sites_sha256": "b8d35b932ddc9b63caa5b1eb1de1597d121c6ec14fb40fc35b2111f1d1267aa5"
       },
       {
         "function": 23,
@@ -5060,7 +5226,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 2,
-        "sites_sha256": "3a2fbdfb05bdaee11a1c02e7215b215121663c4764eb531faba2dec27a849eb0"
+        "sites_sha256": "0654d61c8a7e6a204b6e33a9b6fedb8da83f559448aaa1d94e1eb37c82a8c023"
       },
       {
         "function": 23,
@@ -5068,7 +5234,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "1e2de0f21b10687d3495f64fb6680fe2b16b4ee07b2a263c3dd905b3a4413cb7"
+        "sites_sha256": "84b13148f0f48324dc98cf896dcd3f2d14b57960f34802ee3f1c5083fa24d46d"
       },
       {
         "function": 23,
@@ -5076,7 +5242,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "735789f1e7295ae8ef4f2fc22d7c95ce93214ebf1c2b7a0f279df26eee82e552"
+        "sites_sha256": "6cb53351f11fd459c558ee4bffa66ca11eaacb121eb51ac5830933848521d743"
       },
       {
         "function": 23,
@@ -5084,7 +5250,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 3,
-        "sites_sha256": "9768f3958956b4466759d583035c10eeb9086fc90b2e1b9f528f8ee838a34497"
+        "sites_sha256": "1f088096476d62e92220e009773136fff327efed183c9b45d7094cf886bcc564"
       },
       {
         "function": 24,
@@ -5092,7 +5258,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 3,
-        "sites_sha256": "c02421cf0c088305932e47808e02a6d7f2cca52aaef6e5b9f2a565806ef24e4c"
+        "sites_sha256": "2964f981a5b13369f616ec25b0cd82eae6939166d22349b0340e103441865159"
       },
       {
         "function": 24,
@@ -5100,7 +5266,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "2aee13cabeff990babd3ed7b093ff8f1e2b3b6447fc823b1cf0a19766e5a3232"
+        "sites_sha256": "129626924d81532c146008edb8aeb2c76a5dfd64077ce461bd5a7404fa76618f"
       },
       {
         "function": 27,
@@ -5108,7 +5274,7 @@
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": true,
         "count": 21,
-        "sites_sha256": "fbb793b129fa4dbfc615904a96eaa1e7917c9fc28a2e230b5eea7b4646c80a1a"
+        "sites_sha256": "144f79aa7923b0ff3b9eb631ba5a8bc9ff3dfaeb336f6fc87b39ab0f81753653"
       },
       {
         "function": 27,
@@ -5116,7 +5282,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 22,
-        "sites_sha256": "a2816451f5ae2c141a08544760c769f9fdcbc52211925c4b8abe2146f974c2fb"
+        "sites_sha256": "a886670f53324c597cc939236b5e95f846ed00368c6357293d752cfb7c6343e6"
       },
       {
         "function": 27,
@@ -5124,7 +5290,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 24,
-        "sites_sha256": "bcd4f30ff6db5b0c2f56b7eefe265a6108d8d0230acbba02125b89aa1e12a3b1"
+        "sites_sha256": "194d3b8f5feaf48ad2438bc30e76e377f800b1aed1ee5841de3f67194c61e33c"
       },
       {
         "function": 27,
@@ -5140,7 +5306,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 4,
-        "sites_sha256": "ddcaccc7d34500be4e9a711095e7e3d95290bb437d2c84fd5d7e3853c9b42cd5"
+        "sites_sha256": "15501d1ea10df1db9a0dda5d53cde7111460f68f5725c83d68bcbba827c2cf09"
       },
       {
         "function": 27,
@@ -5148,7 +5314,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 13,
-        "sites_sha256": "fad07c4c4d02e46c1c2d46d305832b57d54bc6819de14d52961ae265576e8f7f"
+        "sites_sha256": "0fd5d5b67992406cccc538bb834dacbee98172db19ac391f0338c67d5fc91836"
       },
       {
         "function": 27,
@@ -5156,7 +5322,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 3,
-        "sites_sha256": "645b4fd7093f9f113c5229afb0b322b82f6901dcd1501c6f7deefb67a5f5b340"
+        "sites_sha256": "8cc8d0652e0e5ed41f634c427a9efdfcdd1f30f67b2f94e8895c3dfd109dfc04"
       },
       {
         "function": 27,
@@ -5164,7 +5330,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 2,
-        "sites_sha256": "e9242564729003a6f257cb39e43cf74026e05ebcc3cd6cd537aae84bf40d1858"
+        "sites_sha256": "7849d578b8550a11144b5aeaff3a76338e302329fa401f9cb75926cb2bd31509"
       },
       {
         "function": 27,
@@ -5172,7 +5338,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 3,
-        "sites_sha256": "54edd777cf05a97dacf53b2d37a515545006d0e506dce19321b6e2fbe5ee2cb0"
+        "sites_sha256": "40a92913bcd92d22cc10a06b7c74fc16199c0d15e6b1c68c8f787fd32c32d755"
       },
       {
         "function": 27,
@@ -5180,7 +5346,7 @@
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": false,
         "count": 3,
-        "sites_sha256": "7a7bd970a6b7cfb950c09d95b5cab758b060e60414083fa81451419a85162281"
+        "sites_sha256": "6db4b930bc97426c4644c5c7c4fc4c2ead14316ea2dcd16ce197b52bfc40c484"
       },
       {
         "function": 27,
@@ -5188,7 +5354,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "a6788659ab196ba4053dea4808a4786fe486ed562912be0be2676828a76f18b5"
+        "sites_sha256": "56350ae8bbe903fe0b803de2ae74f8f44114db28d4d30bc77ca9c52af4bfea7b"
       },
       {
         "function": 27,
@@ -5196,7 +5362,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "a7ff0ae9af68a1930428ac73a21bae613b8dc0eed7698e607d512eb988f4405c"
+        "sites_sha256": "340d276eb6f262646f05c6d11c6b3fe814aee18cf9dbe70949883818e063c280"
       },
       {
         "function": 27,
@@ -5204,7 +5370,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "b0e8f53f5e3d2655fe43c45b9267fe51d4ae6b959b8359e7907a81e6b14a91ef"
+        "sites_sha256": "7406289de1cc0bdfd9eda428b564d01280f02ae4cdb165d179fdba7f4f0922f8"
       },
       {
         "function": 27,
@@ -5212,7 +5378,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "8954da86d3d00f4898f17b05cdde793a6e9bc4819e98467571d6989d50405d8c"
+        "sites_sha256": "fec8ebd8a624c5c833df00616b36e6f1b49830cc2b969386e7475fe51142f124"
       },
       {
         "function": 27,
@@ -5220,7 +5386,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "b1f5eb7ad6581196350bd22f0c58f32771c6ab5976637c6576a86ebf2fbfd31c"
+        "sites_sha256": "9b05f4438dd3368019a0048991b839b6b51e06edbceb8625a5d4ad90fe91a3a5"
       },
       {
         "function": 27,
@@ -5228,7 +5394,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "1f05338dfede9ffe9a298bdf55c8189698a6c6d9fb54223534cc1ae33b0f21f8"
+        "sites_sha256": "4178658d1b6cf886ff57f994d3316efa3bac4ca57b65f6cdf9fbda04ae405369"
       },
       {
         "function": 31,
@@ -5236,7 +5402,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "773e18f59cbe83955fd0c4eff0fdfa20bbc6157135fd972aa8e27debe3330571"
+        "sites_sha256": "c5744c472206b96df508b1d6c04d1f23cb7a4f2d408b4455a5116afe0b161f6a"
       },
       {
         "function": 31,
@@ -5244,7 +5410,7 @@
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "f8c7d7c37e2747d18dff905e8d0331b77cac1936926414511e893aa0bf48c282"
+        "sites_sha256": "981099fe6b05c3242e7cab29086f87319b499fe0165fef373bd495c3baa9b3c4"
       },
       {
         "function": 31,
@@ -5252,7 +5418,7 @@
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "d360551ebb9cefffe8145b524aa182a07074592838e4959f9f050e83442ed7e4"
+        "sites_sha256": "93eb9d5ef60197ce5eddf2faf49bbe7c2978cba2f23d73c8ce1a477e69d82c3d"
       },
       {
         "function": 34,
@@ -5260,7 +5426,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 10,
-        "sites_sha256": "bc2b95e25e208e595faf59a449bc530ab3ddeb44ee9ea86c0d178fc14283ec5c"
+        "sites_sha256": "eed1f6e6915c0167804c0385fcb23ec6c682bd101fcc2a4c4f3b151703742080"
       },
       {
         "function": 34,
@@ -5268,7 +5434,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "100f4bfe1f1deeb56949509e5ab302b390022a82cf9b001f959ec5df19cf0b58"
+        "sites_sha256": "bde240822ff2539d418aa622996cc3f966d8ebd53ecb846fbda18baee63f2dfd"
       },
       {
         "function": 37,
@@ -5276,7 +5442,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "41bf639d51e54a769091d16c0b9648261ab20c6dac6f56125cc01dc0ff958717"
+        "sites_sha256": "bdb76b29cf5e6ec450429e56eed41f711256197d604098716692d1108f96d676"
       },
       {
         "function": 41,
@@ -5284,7 +5450,7 @@
         "category": "A6/B4: original non-PubSub TCP connection disposal; no physical-close claim",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "9aaa07a0742832a8096a9b989333ec822f5d2b336fe2c1e3aad57acd2fb3a5b3"
+        "sites_sha256": "939637e540eb27989f16d2f39ac640bb8a41a7889d731aedd3fdfc285fc19e90"
       },
       {
         "function": 41,
@@ -5292,7 +5458,7 @@
         "category": "A6/B4: original non-PubSub TCP connection disposal; no physical-close claim",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "d8c94bf07c444c7fc7fb35f349ba094bb48c00015652681675f3014355acc4d8"
+        "sites_sha256": "e707283cf3d17c32480435b665a41c0a48927ae2fd151f38ca77f729bbba15f2"
       },
       {
         "function": 42,
@@ -5300,7 +5466,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 3,
-        "sites_sha256": "8859c030f0cc819317d0360bfe936e88419d1316f3670cee616af5dcbce3be93"
+        "sites_sha256": "26903f1ee1548d2e83382d4923cf6d6e531947f22f0fd39a55a4bde41288abf1"
       },
       {
         "function": 42,
@@ -5308,7 +5474,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 8,
-        "sites_sha256": "ddada1f03178f7d028c4aa644d150aa8d073729ff538731fc473696018cf4584"
+        "sites_sha256": "778b38738cc63b512dd952178f246dd5aa438576931b7661a201d5337bc5caf2"
       },
       {
         "function": 42,
@@ -5316,7 +5482,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 6,
-        "sites_sha256": "e3cc6076706f1c7a57484231040a87821d8578a46d1ebb7bcbf2c95c18372f75"
+        "sites_sha256": "e9e9aba453a6246af2f5a035879f397923b94fe48836da1a32b3ab9faad6d5ce"
       },
       {
         "function": 42,
@@ -5324,15 +5490,15 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 6,
-        "sites_sha256": "de07198b512470c4976698ecda63709c3400fb0481d30e69874a994e753b9bfc"
+        "sites_sha256": "0a88f704d73c9011e39c8b2b66537a86c2ebfbe3878dff99fe5ac4231d8b4821"
       },
       {
         "function": 42,
         "target": "alloc::string::String",
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
-        "count": 82,
-        "sites_sha256": "298c4581b0677eab23615b9b1555173d1083410da3bfd969b1630189d0935e91"
+        "count": 107,
+        "sites_sha256": "ceba292c2bab3b686bb4d44793635dafdc5c929c42594e01407058f75be4e8c8"
       },
       {
         "function": 42,
@@ -5340,15 +5506,15 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 3,
-        "sites_sha256": "e5c1fa7472ca87ef5ff733a2bcf78dff3270fb2749866dbc7c5b93866d8aee38"
+        "sites_sha256": "d61a74856490ed4be1062a2aedf59d59f519963b0d10b65c95c006a93cff2f44"
       },
       {
         "function": 42,
         "target": "alloc::collections::btree::map::BTreeMap",
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
-        "count": 31,
-        "sites_sha256": "4e5d24564f8c5f4ee1678d574e9dba385c49950ff5e5b1cc83d481aba9a7c291"
+        "count": 41,
+        "sites_sha256": "4d7c28d44ae216d4e0d1d36334d0565fe0130924fa7a5a49ee697a79bcb54982"
       },
       {
         "function": 55,
@@ -5356,7 +5522,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 12,
-        "sites_sha256": "8f1d3c97542bcba264b81f5fc18761f565460a40bc3c595ceee53e9ad5b3a5f8"
+        "sites_sha256": "5aa719e7245869e3d09f67d50f71a0e91b414e104d8051977f21c37077b314f6"
       },
       {
         "function": 55,
@@ -5364,7 +5530,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "9b394271b105eb84a1e58bd979c4b2edccb520a4da89ad2ad451d746725de4ea"
+        "sites_sha256": "541f79bc50c2d446842e6d228895f14d92ea8d69b3c45d61deba5f1b54317999"
       },
       {
         "function": 55,
@@ -5372,7 +5538,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 2,
-        "sites_sha256": "e3ba1946f732380f837b6c3083f082c2d95914e75fa7243f9cfea73445b1ca5b"
+        "sites_sha256": "f694532c313f4c9d36b38b64c343c676514ee3b75cd92b2ae0eb82d82f262024"
       },
       {
         "function": 55,
@@ -5380,7 +5546,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "bd58b9fa10ef766ba75c8e4bef9fa6c33b3e4b91568e5309ecdd8b997aac4c18"
+        "sites_sha256": "4f7232a3f069743db4175d4980969a60329780db717875d3f9786161bf77cea8"
       },
       {
         "function": 55,
@@ -5388,7 +5554,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 3,
-        "sites_sha256": "c73141ceb16f7046b413a61a0c76a22018886c7f05ae9db84a3bb3c0c08def0a"
+        "sites_sha256": "0eaf5335becd7defd15394d9658b0aa02ec144852879275d3285dd10c11f96d1"
       },
       {
         "function": 55,
@@ -5396,7 +5562,7 @@
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": false,
         "count": 3,
-        "sites_sha256": "e4862b13d965c02c7419c9a3a8d4379fa61e963e0e937c40e97ee06e259b28f6"
+        "sites_sha256": "9bf78ba26a497b16b9c65bce871d34ea8c48e458bff59204c2a4585a65b08c11"
       },
       {
         "function": 55,
@@ -5404,7 +5570,7 @@
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": true,
         "count": 4,
-        "sites_sha256": "eccac7fdec3b76becdec430a9e0bad86f8c5bd67a467cad92a5fbf05a68bfc9c"
+        "sites_sha256": "1c263eaaeec741b647bbc3632e013ede60d48a0ca88d12d86df3e884787fdefe"
       },
       {
         "function": 55,
@@ -5412,7 +5578,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 3,
-        "sites_sha256": "bb07a8ed1b6ed70ad32cedc6984f371aeedeaffe4968fb0978b7537fb8f87f21"
+        "sites_sha256": "57b4a7ba29871cbbd45d954b48de19446de20d68a324d7ee704193916dabaa9d"
       },
       {
         "function": 65,
@@ -5420,7 +5586,7 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 2,
-        "sites_sha256": "9a745ecc40e0b9ab17ef64ee37e420ea0f519f519ec1d2fab3892df5f338b87e"
+        "sites_sha256": "8e1f3aadcf6b23971858e2fdb1ad254f14fcd9166055d2014b79d74f25ccdd96"
       },
       {
         "function": 65,
@@ -5428,63 +5594,63 @@
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "13859c8da4888208120b8059e2ac6fd80659b66b36be915b6dbf3c4e9fa0497d"
+        "sites_sha256": "1ee0ca21525ab536c745a572a7f162655f89c80d4ca7bdc6e8b95384efa5ae28"
       },
       {
-        "function": 72,
+        "function": 74,
         "target": "alloc::string::String",
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "873c3cf6408a819e103c79f2cdbfd0ec52505850c2c85a2642fbf2e3cfa100dc"
+        "sites_sha256": "47c6e0d9f3ddf680092425c8f614367304141b0fb2023781344417d2c278f0b7"
       },
       {
-        "function": 73,
+        "function": 75,
         "target": "sandproof_protocol::DeploymentId",
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "a1673deffd7c15785ac0cedf5bb83535cd2c365b39aed760193eae65a9157467"
+        "sites_sha256": "c9e6aabcdeb977e22eb743ba3d463aed1efba4fe2a76ec67d397a5b3013a1105"
       },
       {
-        "function": 73,
+        "function": 75,
         "target": "core::marker::Destruct on plain payload T",
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": true,
         "count": 1,
-        "sites_sha256": "4acc14489e26fd4c26a53bfa461cabbf8f7f08b8b6b45064371bfce14f5c8c98"
+        "sites_sha256": "4c16d2b5df8dab792a6b35f9cf7f6e3bcac209e6f5cd82edf2426435cf74ff9f"
       },
       {
-        "function": 73,
+        "function": 75,
         "target": "alloc::vec::Vec",
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": true,
         "count": 2,
-        "sites_sha256": "337ad5170f8d21a3d9dc352510aa1f1de361129cf7be0e682d0927b0f93d4f53"
+        "sites_sha256": "f01d3e59f9ac18e69ce98e18e01775a32fc3b27cb922864efdd52e7539fa4d5b"
       },
       {
-        "function": 73,
+        "function": 75,
         "target": "core::marker::Destruct on plain payload T",
         "category": "caller must instantiate T without observable Drop/shared mutable resources",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "c6b5120ee1383a60ee4fc1f93ae7a1c4b8c2b0962d5c7b54960fd3e338acc3b9"
+        "sites_sha256": "934d2cf20ff6ab1a43228101fdf9b1e1eb9be5f183cf679a24170f3f7b505a27"
       },
       {
-        "function": 73,
+        "function": 75,
         "target": "alloc::vec::Vec",
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "6cfc767d04afb188451a6217a840d5d9735063c3c84f5163849a342b73d60769"
+        "sites_sha256": "4a0feeed7fab85b08689d33b329b960c67a85300d9b0bee6c6edbb91ea01ec10"
       },
       {
-        "function": 74,
+        "function": 76,
         "target": "sandproof_storage_extract::store::Observed",
         "category": "plain value/container, fixed String/str/byte dictionaries and plain T",
         "unwind": false,
         "count": 1,
-        "sites_sha256": "64c042a78386e6313dbf228032b260409e72f2eac8f05dcf3ceec9dfdc4238f4"
+        "sites_sha256": "f5c413fe5048da460c68b9f8751aeac8e83e29b5d8dffba9281dfe3cc1b24225"
       }
     ]
   }

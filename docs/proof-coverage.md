@@ -2,6 +2,17 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+
+## T5/T6 标准 Mutex：原守卫与真实唯一借用
+
+本批从 integration `489f1ed5` 开始，集成来源更新到 `b973b40b`（含 #604 诊断、#610 Redis 重确认与 #612 测试失败诊断）；三份代表生产源码未改变，生产 Rust 和 Charon/Aeneas 均未修改。正式范围见[依赖合同](formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)和[十三组来源/责任登记](../verification/std-mutex-environment.json)。[公共模块](../SandboxModel/Boundaries/StdMutex.lean)包含 35 条条件守卫声明、7 条真实 get_mut/借用声明及 4 条连接声明，共 46 个正式审计目标。
+
+原守卫模型区分忙碌与持有原守卫的中毒错误、恢复不回滚/清除、正常 Drop 不析构原 payload、取得时已 unwind 的建议性中毒、遗忘守卫仍锁住及独立的唯一借用条件。原 SerialMutex::get_mut 保留透明 Rust 函数体，由固定原工具生成 Types/Funs 并证明原调用、正常/中毒分支和回写保持；库模型仍依 A6。实际吞错版先编译抽取，再由同一 GetMutContract 的否定定理反驳；专用 into_inner 绑定只准入实际 PoisonError<&mut T> 调用。
+
+ning 隔离试验已通过十一项原源码正确用例、严格 Clippy 和两份新编译的同断言错误版：延后 SerialGuard 解锁、吞掉 get_mut 中毒错误。a6000 已通过独立模块构建和原服务实际 Audit 文件的完整、非陈旧 46 项审计；早期启动命名错误及结果解包错误的原始记录保留，后者经严格核对原服务的嵌套成功结果，不称重新执行。正式可复现入口、最新候选的完整双机验收/CI 与最终合入适用性，以 #333 本批 PR 的精确回执为准；这些局部结果不能替代完整验收。
+
+共享锁实际接线仍依 A6/B2。原 Meter::lock 和 PTY descriptor 的预检分别受非可结束共享借用、动态 I/O 错误类型限制；其测试不是机器证明。业务中毒策略、Snapshot/FD/许可真实所有者、授权、资源归还和无死锁/进展仍由所属业务提供。Condvar、Tokio Mutex/RwLock、其他通道及 T0 全量使用点仍归 V0；T0/T5/T6/V0 保持开放，T9 排除。
+
 ## T5/T6 JoinSet：原任务组收齐
 
 来源为 integration `886f2dd6`，生产 Rust 与固定 Charon/Aeneas 未改。[两个条件模型](../SandboxModel/Boundaries/JoinSet.lean)以 36 条声明为审计目标，覆盖组历史守恒、已完成未取出仍计数、原任务/正常值/完整原错误表示与至多一次交付、取消等待和 abort/Drop 的区别、逐 spawn 检查的容量与正常收齐。合法非空执行、提前 Drop 和只 abort 的同性质反例一并保留；[依赖合同](formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[十五组操作/责任登记](../verification/joinset-environment.json)限定范围。
@@ -42,7 +53,11 @@ Data-before-End、授权、消费者掉线策略、全部字节副本/引用的�
 
 ## Redis 提交结果：隔离候选与完整验收（#564）
 
-[冻结候选](../verification/experiments/redis-result/candidate.json)以生产基线 `824abe2b6285774ef8983fbe02db3a6509c9b5fb` 加固定补丁构建，生产文件未改。[生成核心](../verification/aeneas/storage/SandproofStorage/Funs.lean)来自固定原 Charon/Aeneas。公开 commit/reaffirm 的四个薄转调另经完整 Charon AST 核对参数、结果、关联常量、codec/clock 字典和 unwind 路径；该机械准入不等于具体 Serde 回调图已由 Lean 闭合。[依赖明细](formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)区分外部 A6/A8/A11、获批 B4 与仍由调用者提供的自有条件。
+[冻结候选](../verification/experiments/redis-result/candidate.json)更新到生产基线 `f60e81f81629b23a512da52e6511b5f46699535f`，保留 #604 新增诊断；生产 Rust 和原 Charon/Aeneas 未改。隔离候选中的日志仅经已获批的窄输出接口调用，健康判断、返回码、配置与围栏仍由原工具抽取。接口模型保留写失败、抑制、panic 和不返回；不能据正常后态保证异常后围栏、物理日志写入或进展。精确合同见[依赖明细](formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)。
+
+审计入口保留原 131 项，另登记日志效果 13 项、错误助手 2 项和原业务字段保持 1 项，共 147 项；正常健康回写仅额外允许零资源日志端点的逻辑历史变化，原五项非连接字段仍不变。新生成物、完整 AST/Drop、来源回归、实际错误版及两个完整入口的最终适用提交与回执以 #333 和本次 PR 验收记录为准；这里不将局部抽取或旧组合结果当成当前完整通过。具体 codec/schema、Lua、一般旧新等价和部署闭合仍未因此完成。
+
+以下保留旧 `824abe2b` 候选在 `dfaf79a7` 上的历史结论与原始证据；它们不背书 #604 后的新组合。
 
 正式库包含[结果与写围栏](../verification/aeneas/storage/SandproofStorage/Results.lean)、[健康检查回写范围](../verification/aeneas/storage/SandproofStorage/Health.lean)、[泛型调用链的未知围栏](../verification/aeneas/storage/SandproofStorage/Caller.lean)及[原完整载荷和新修订来源](../verification/aeneas/storage/SandproofStorage/Success.lean)，共 40 项核心与辅助声明；[具体见证](../verification/aeneas/storage/SandproofStorage/Examples.lean)另有 91 项见证及辅助声明。中央 Audit 逐项审计全部 131 项，只依赖标准逻辑。成功性质显式要求同一 codec 状态链的往返，正常错误范围由自有 codec 提供，未把这些业务义务移入外部边界。示例 codec 会拒绝超容量和非法字节，并证明自己的条件；完整成功见证经过实际生成的写前健康、修订推进、CAS、写后健康和 Committed 构造，不实例化生产 JsonCodec/schema、物理租约或部署条件。
 

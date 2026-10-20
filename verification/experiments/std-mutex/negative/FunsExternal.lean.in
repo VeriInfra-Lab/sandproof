@@ -1,0 +1,14 @@
+import SandproofStdMutex.FunsExternal
+import StdMutexWrong.Types
+open Aeneas Aeneas.Std
+
+/-- Restricted to the actual LLBC call at PoisonError<&mut T>::into_inner.
+The original generic template does not describe this borrowed instantiation.
+Its generated caller requires the borrowed value and a backward continuation;
+this binding returns the original loan and writes back to that same error.
+It is not a binding for arbitrary owned PoisonError<T> calls. -/
+@[rust_fun "std::sync::poison::{std::sync::poison::PoisonError<@T>}::into_inner"]
+def std.sync.poison.PoisonError.into_inner {T : Type}
+    (error : std.sync.poison.PoisonError T) :
+    Result (T × (T → std.sync.poison.PoisonError T)) :=
+  .ok (error.data, fun updated => ⟨updated⟩)

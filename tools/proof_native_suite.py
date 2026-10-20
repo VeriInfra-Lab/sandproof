@@ -140,7 +140,8 @@ def run_locked_suite(output):
                            ('revocation','check_revocation_components.py'),
                            ('owned-message','check_owned_message_components.py'),
                            ('notify','check_notify_components.py'),
-                           ('joinset','check_joinset_components.py')]:
+                           ('joinset','check_joinset_components.py'),
+                           ('std-mutex','check_std_mutex_components.py')]:
         target = work / name
         native_case(name, ROOT, target, lambda n=filename, p=target:
                     call(['tools/' + n, '--output', p]))
@@ -200,7 +201,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','sqlite-correct'])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','sqlite-correct'])
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':
