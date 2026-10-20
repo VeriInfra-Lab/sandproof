@@ -567,3 +567,24 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返回就不补造广播完成、析构完成、退出或恢复。安全模型不承诺最终再次 poll、最终删除或调度公平。模型之外的真实 I/O、锁顺序和内部推进仍按所属 V8/V6/V9 义务完成。
 
 本条不覆盖 `notify_last`、多接收者单通知队列或任意混用单通知/广播。源码中 [reaper.wake](../../sandbox-runtime/src/child_process/reaper.rs) 的同名 `notify_one` 实为标准库 **Condvar**，由已有 typed MIR 定位确认；其公共合同仍归 V0，队列谓词/回收策略归 V6，明确作为未完成项登记，不借本条认领。当前源码定位、原工具不支持诊断和确定性原生回归只支持所列可信条件，未证明全部 Rust 并发。
+
+
+## A6/B2/B3 JoinSet：收齐原任务与返回值
+
+固定 Tokio 1.49.0，生产来源为 integration `886f2dd6`。范围限于原 [中心监督](../../sandbox-center/src/runtime.rs)、[受保护连接组](../../sandbox-internal/src/protected_server.rs)和 [Guest 连接组](../../sandbox-guest-service/src/listener.rs)使用的 `new/spawn/len/is_empty/join_next/abort_all` 与正常组析构。三处源码、四份库实现、十二组机械操作和三项业务责任见[逐点登记](../../verification/joinset-environment.json)；[摘要](../../verification/joinset-inputs.sha256)固定实际输入。本条是既有 A6/B2/B3 的窄接法，不将整个服务、TLS 或业务回调列为可信。
+
+| 提供方与实际操作 | 可以依赖的保证 | 使用方仍须证明 |
+| --- | --- | --- |
+| A6：原组的构造、spawn、len/is_empty | 新组为空；成功 spawn 加入这一次原任务。完成但尚未 join 的任务仍计入组长；返回的 AbortHandle 被丢弃不等于取消任务 | 原组和逻辑 spawn 次序、完整参数/回调及有限合法输入；分配失败或进程中止不造正常返回。逻辑任务键不是永不复用的 Tokio 原始 ID |
+| A6：借用原组的 join_next | Some 取出一个原任务的原值或原 JoinError，至多交付一次；None 表示观察时组内已无任务。T 本身可以是 Result，业务 Err 仍是正常返回值。JoinError 的 panic 载荷也可能持有资源，错误值尚未丢弃时不归还这份责任 | 结果表示关系、错误解释、后续动作和每次取出值的所有者；取消这次等待不移除成员，但任务可以同时完成，不能推导整个组状态不变 |
+| A6：abort_all 与组 Drop | abort_all 只向当时组内任务请求取消，不移除它们，也不影响后来 spawn 的任务；已完成任务仍可返回原值。正常 Drop 请求取消并移除组的持有关系，不等待任务退出 | 原对象、正常返回/取消/实际 unwind/abort/崩溃的区别。Drop 中 panic 可以成为 JoinError::panic；没有返回就不补造取消完成。仍存活的工作和部分效果继续保留 |
+| B2/B3：中心通知后收齐、受保护连接 abort 后收齐、Guest 正常关闭后收齐 | 只连接登记的原 group、spawn 参数、结果和调用次序。保留组至 join_next 返回 None，可由历史守恒推出每次加入的任务都已被取出；中心不额外请求 abort，Guest 保留原连接期限 | V2/V6/V8/V9：为何关门、通知谁、全部 worker/handler 行为、何时不再加入任务、逐结果处理和进展。中心保留首个观察到的错误，不自动等于物理上最早的失败 |
+| B1 与已有持额合同：捕获值、返回值及独立工作 | 原许可沿实际对象移动；取出任务结果可以把仍持额的返回值交给调用者。空组不自动增加原池容量，取消 wrapper 不停止已开始的 spawn_blocking | V6/V8/V9：原许可/全部别名、真实资源归还、进程/文件/网络工作退出，以及未知时保持责任；不把处理函数或释放决定整体设为可信 |
+
+[JoinSet](../../SandboxModel/Boundaries/JoinSet.lean)提供两个条件模型：组历史记录仍运行、已完成待取出、已取出和随组移除的数量；任意原任务的投影保留逻辑身份与原结果。两者必须由同一实际 A6/B2/B3 执行提供相容的投影，不是两套可任选的业务事实。结果字段分别保存正常值的表示 α 和原 JoinError 的表示 ρ；ρ 保留原错误身份与 panic 载荷的持有关系，不能只用 panic/cancel 标签替代。它们不复制 Rust 资源所有权，也不把别名指向的可变堆冻结成快照。`forgotten` 只表示组 API 不再持有该任务，不表示析构、许可归还或外部效果已经完成。
+
+容量定理检查每次 spawn 前的原长度，再逐步推出上界，不把正确容量当作后置假设。Guest 的原 `len < limits.connections` 可用该接口；受保护服务的许可只约束持额连接，不能仅凭许可推导全部已完成待收齐的组成员数量。模型的 `accepting` 是调用者停止新增任务的逻辑决定，不是 JoinSet 自带 close 方法，必须由真实控制流建立。
+
+这 36 条声明证明所列模型的历史守恒、原身份/值和单次交付、受检容量与完整收齐；另保留合法非空成功，以及提前 drop/只 abort 不能满足同一收齐性质的反例。原 Charon 的实际异步入口预检、逐符号源码核对和确定性原生回归支持可信接线的采用，不提供完整 async Rust 机器精化。原生错误版分别去掉中心/Guest 原收齐循环，必须先新编译，再被正确版相同的即时断言拒绝；编译失败或超时不算反例。
+
+本条不覆盖 join_all、shutdown 便利方法、detach_all、JoinSet::spawn_blocking 或任务 ID 接口。没有无条件最终调度、终止或清理保证；不返回、panic/abort/崩溃只保留已观察前缀。业务回调、首次拒绝/错误、持久提交、真实 I/O/命令退出、Report 语义与授权仍归原 V2/V6/V8/V9，Mutex/RwLock、Condvar 及其它通道的公共缺口继续归 V0。

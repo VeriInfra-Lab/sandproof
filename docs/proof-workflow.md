@@ -140,7 +140,7 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 ```
 
 这个入口包含完整 Linux `check-function.sh`，并运行原证明入口中的独立抽取
-crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JSON、TLS、relay、SQLite 和 Redis 候选回归。
+crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、JSON、TLS、relay、SQLite 和 Redis 候选回归。
 保留原测试数量、拒绝断言、正确/错误版和新编译二进制检查。它不运行 Lean
 或翻译器。原生错误版仍须确实编译并触发原断言；构建失败不能写入成功记录。
 SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这份证明批次记录替代。
