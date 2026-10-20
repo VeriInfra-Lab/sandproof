@@ -544,7 +544,7 @@
         "HostStatus::validate_for"
       ],
       "proof": "SandboxModel/Boundaries/SchemaDomains/Audit.lean",
-      "condition": "A6/B4 fixed standard derive, original SliceRead/Vec and exact byte bindings; server Writer pending",
+      "condition": "A6/B4 fixed standard derive, original SliceRead/Vec and exact byte bindings; server bounded Writer has a separate conditional component; full schema/caller connection remains explicit",
       "business_provider": [
         "V3",
         "V6",

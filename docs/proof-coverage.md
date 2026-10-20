@@ -53,7 +53,7 @@ a6000 的原完整 `verify-controller.sh` 退出 0（入口 1480.961 秒，批�
 
 本批在 integration `2165f57f` 上保留 #609（`5b176a31`）、#611（`fb13711e`）、#613（`8320e736`）原封口提交的来源；共享接线与验收代码冻结于 `4302cc59ed70e2d664bf1359dd71ccc43a271a82`，统一交付见 [PR #615](https://github.com/VeriInfra-Lab/sandproof/pull/615)。生产 Rust、Charon/Aeneas 和工具版本未改。下面记录该精确候选已完成的验收；最终报告提交、当前 CI、正式合入及实际合入适用性由该 PR 和 #333 绑定，不能沿用上一批 1216 项审计背书新增模块。
 
-- [Status 模块](../SandboxModel/Boundaries/SchemaDomains.lean)：22 项真实同步守卫对应和 24 项条件字节声明；两个实际错误版先编译抽取，再由同合同反驳。标准引擎/派生/原对象接线仍依 A6/B4；服务器有界 Writer 尚未证明，普通 Vec 响应编码只为参考。
+- [Status 模块](../SandboxModel/Boundaries/SchemaDomains.lean)：22 项真实同步守卫对应和 24 项条件字节声明；两个实际错误版先编译抽取，再由同合同反驳。标准引擎/派生/原对象接线仍依 A6/B4；服务器有界 Writer 另见本页独立接口候选与验收范围，普通 Vec 响应编码只为参考。
 - [共享查询模块](../SandboxModel/Foundations/LoopCallbacks.lean)：21 项原 Store::get/contains_key 及四个真实委托的对应；两种实际错误版分别由同一 QueryContract/MembershipContract 反驳。普通值共享借用、lawful 比较和单射投影条件保留；有状态回调和全部调用者业务不由本模块证明，源码邻域不等于完整调用图。
 - [SQLite 模块](../SandboxModel/Boundaries/SqliteStatements/Model.lean)：隔离候选条件 UPDATE/修订计算的 38 项正例与 7 项错误版审计；固定五参数执行联合合同包含 raw_bind 失败和 step/reset 原次序，不把编码成功当绑定成功。保持独立完整生成视图，公共根只导入纯行模型；一般候选等价、完整事务/恢复和生产部署未闭合。
 
