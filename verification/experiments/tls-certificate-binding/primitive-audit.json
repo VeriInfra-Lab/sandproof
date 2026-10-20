@@ -1,0 +1,1114 @@
+{
+  "source_commit": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "scope": "A6/A9/B4 finite primitive composition and engineering binding, not machine refinement",
+  "generated_funs_sha256": "b047e7bca6ddd2ae6e78e3a90290e5b19dc07be8d43635655d412589c1715b3c",
+  "generated_types_sha256": "ad5dae76988d797c029139e0ca2cda18ef4d19cfc0092c910493d35bbdc4bb0d",
+  "external_template_sha256": {
+    "TypesExternal_Template.lean": "0df36ff25cd448dab9d548d5500368598618ed74974fcd805e9de3ef0f9bd657",
+    "FunsExternal_Template.lean": "cd5333837fde21d1f3780108abc0f40d8d7366c26debd0e2ba4a7b95b15541bf"
+  },
+  "external_types": {
+    "generic_array.GenericArray": "(T : Type) (U : Type) (Clause0_ArrayType :\n  Type) : Type",
+    "block_buffer.BlockBuffer": "(BlockSize : Type) (Kind : Type)\n  (Clause0_ArrayType : Type) (Clause1_Output : Type) : Type",
+    "digest.core_api.ct_variable.CtVariableCoreWrapper": "(T : Type) (OutSize :\n  Type) (O : Type) (Clause0_Clause0_Clause0_BlockSize : Type)\n  (Clause0_Clause0_Clause0_Clause0_ArrayType : Type)\n  (Clause0_Clause1_OutputSize : Type) (Clause0_Clause1_Clause0_ArrayType :\n  Type) (Clause0_Clause2_BufferKind : Type) (Clause0_Clause2_Clause0_BlockSize\n  : Type) (Clause0_Clause2_Clause0_Clause0_ArrayType : Type)\n  (Clause0_Clause3_Output : Type) (Clause1_ArrayType : Type) (Clause2_Output :\n  Type) (Clause4_Output : Type) : Type",
+    "typenum.uint.UInt": "(U : Type) (B : Type) : Type",
+    "typenum.uint.UTerm": ": Type",
+    "typenum.bit.B1": ": Type",
+    "typenum.bit.B0": ": Type",
+    "digest.InvalidOutputSize": ": Type",
+    "digest.core_api.TruncSide": ": Type",
+    "sha2.OidSha256": ": Type",
+    "digest.core_api.wrapper.CoreWrapper": "(T : Type) (Clause0_BufferKind :\n  Type) (Clause0_Clause0_BlockSize : Type) (Clause0_Clause0_Clause0_ArrayType :\n  Type) (Clause1_Output : Type) : Type",
+    "generic_array.GenericArrayImplOdd": "(T : Type) (U : Type) : Type",
+    "generic_array.GenericArrayImplEven": "(T : Type) (U : Type) : Type",
+    "rustls_pki_types.CertificateDer": ": Type",
+    "sha2.core_api.Sha256VarCore": ": Type",
+    "typenum.Less": ": Type",
+    "typenum.Greater": ": Type",
+    "typenum.Equal": ": Type"
+  },
+  "external_function_count": 63,
+  "external_global_count": 25,
+  "backend_reported_opaque_count": 89,
+  "count_note": "backend progress and postprocessed inventory use different populations; 89 is not 89 new APIs",
+  "library_sources": {
+    "block-buffer-0.10.4/src/lib.rs": "b437252d389042d894b1ef17859b043e827d2bd2a1bca4b5311c67dff565274d",
+    "block-buffer-0.10.4/src/sealed.rs": "9327ee3e567ae779b83c2b7f4f3ff56fcb2117163e023e7b0e37759e7e8d1f5c",
+    "digest-0.10.7/src/core_api/ct_variable.rs": "703bd62fb693a437e319d1192988bd674f9127a6b76f73b4c58c71afc79bc013",
+    "digest-0.10.7/src/core_api/wrapper.rs": "033777bed7d140b158e15d50fda8a6e06557ce89bd0738fcca692be2c39e8b8a",
+    "digest-0.10.7/src/digest.rs": "8beab74640774c9f6811daa6dac9b5a8867f5beeb0b552a9b5ddbc5cfc196ed0",
+    "generic-array-0.14.7/src/impls.rs": "18b285821421eea0cdbbcfcc896eef67bd55d72f8d85b5827cca6687e9c0fc27",
+    "typenum-1.20.1/src/uint.rs": "525f229da5bd7cbef775b478821b5422497ed3eea319b712fee137a6ad84dd40",
+    "typenum-1.20.1/src/bit.rs": "1d2a81b9dcc3fbaaad0df29e5cbd4595b02fdc3efbc08ec35932ea521ac6619c",
+    "rustls-pki-types-1.15.1/src/lib.rs": "02a4b87a92ec8b12a329d5e90128d01c2a216cfdf8134a4ec634347220c62088",
+    "sha2-0.10.9/src/core_api.rs": "73b160d98bfa6737688875ad73da5e3c2c93582604dc313d208200e12fdab676",
+    "typenum-1.20.1/src/type_operators.rs": "c3ea12ffc00d1d438db095d48abae94af9dd46adf0b25c90871c1c4d6f15ae7b",
+    "typenum-1.20.1/src/private.rs": "c7008d1cd4215e0fc58897ea885058879e0c700a2fe0be46784f20d612753a48",
+    "typenum-1.20.1/src/lib.rs": "0cf99cbd6f5597dd42618d603e1f453f6484e01e8f6e72d328ca5206191bc9f3"
+  },
+  "direct_actions": [
+    "original CertificateDer::as_ref",
+    "fixed SHA256 Digest::digest with closed stock dictionaries",
+    "stock IntoFrom.into invoking the fixed GenericArray<U8,U32>→[u8;32] From member"
+  ],
+  "dictionary_note": "Only 3 let-binds in the original generated body. Other fields/constants appear in fixed dictionaries; actual SHA internals stay A9. No unreachable fields are filled with fake failure models.",
+  "declarations": [
+    {
+      "kind": "function",
+      "rust_name": "core::convert::{impl core::convert::AsRef<U> for &'_0 T}::as_ref",
+      "lean_name": "Shared0T.Insts.CoreConvertAsRef.as_ref",
+      "source": {
+        "file": "/rustc/library/core/src/convert/mod.rs",
+        "begin_line": 720,
+        "end_line": 720
+      },
+      "lean_signature": "{T : Type} {U : Type} (AsRefInst : core.convert.AsRef T U) : T → Result U",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "core::convert::{impl core::convert::AsRef<[T]> for [T]}::as_ref",
+      "lean_name": "Slice.Insts.CoreConvertAsRefSlice.as_ref",
+      "source": {
+        "file": "/rustc/library/core/src/convert/mod.rs",
+        "begin_line": 850,
+        "end_line": 850
+      },
+      "lean_signature": "{T : Type} : Slice T → Result (Slice T)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "block_buffer::{impl core::default::Default for block_buffer::Eager}::default",
+      "lean_name": "block_buffer.Eager.Insts.CoreDefaultDefault.default",
+      "source": {
+        "file": "block-buffer-0.10.4/src/lib.rs",
+        "begin_line": 27,
+        "end_line": 27
+      },
+      "lean_signature": ": Result block_buffer.Eager",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "block_buffer::sealed::{impl block_buffer::sealed::Sealed for block_buffer::Eager}::split_blocks",
+      "lean_name": "block_buffer.Eager.Insts.Block_bufferSealedSealed.split_blocks",
+      "source": {
+        "file": "block-buffer-0.10.4/src/sealed.rs",
+        "begin_line": 21,
+        "end_line": 21
+      },
+      "lean_signature": "{N : Type} {Clause0_ArrayType : Type}\n  (generic_arrayArrayLengthNU8Clause0_ArrayTypeInst : generic_array.ArrayLength\n  N Std.U8 Clause0_ArrayType) :\n  Slice Std.U8 → Result ((Slice (generic_array.GenericArray Std.U8 N\n    Clause0_ArrayType)) × (Slice Std.U8))",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "block_buffer::sealed::{impl block_buffer::sealed::Sealed for block_buffer::Eager}::invariant",
+      "lean_name": "block_buffer.Eager.Insts.Block_bufferSealedSealed.invariant",
+      "source": {
+        "file": "block-buffer-0.10.4/src/sealed.rs",
+        "begin_line": 16,
+        "end_line": 16
+      },
+      "lean_signature": ": Std.Usize → Std.Usize → Result Bool",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "digest::core_api::ct_variable::{impl digest::core_api::UpdateCore<Clause0_Clause0_Clause0_BlockSize, Clause0_Clause0_Clause0_Clause0_ArrayType> for digest::core_api::ct_variable::CtVariableCoreWrapper<T, OutSize, O, Clause0_Clause0_Clause0_BlockSize, Clause0_Clause0_Clause0_Clause0_ArrayType, Clause0_Clause1_OutputSize, Clause0_Clause1_Clause0_ArrayType, Clause0_Clause2_BufferKind, Clause0_Clause2_Clause0_BlockSize, Clause0_Clause2_Clause0_Clause0_ArrayType, Clause0_Clause3_Output, Clause1_ArrayType, Clause2_Output, Clause4_Output>}::update_blocks",
+      "lean_name": "digest.core_api.ct_variable.CtVariableCoreWrapper.Insts.DigestCore_apiUpdateCore.update_blocks",
+      "source": {
+        "file": "digest-0.10.7/src/core_api/ct_variable.rs",
+        "begin_line": 78,
+        "end_line": 78
+      },
+      "lean_signature": "{T : Type} {OutSize : Type} {O : Type} {Clause0_Clause0_Clause0_BlockSize :\n  Type} {Clause0_Clause0_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause1_OutputSize : Type} {Clause0_Clause1_Clause0_ArrayType :\n  Type} {Clause0_Clause2_BufferKind : Type} {Clause0_Clause2_Clause0_BlockSize\n  : Type} {Clause0_Clause2_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause3_Output : Type} {Clause1_ArrayType : Type} {Clause2_Output :\n  Type} {Clause4_Output : Type} (VariableOutputCoreInst :\n  digest.core_api.VariableOutputCore T Clause0_Clause0_Clause0_BlockSize\n  Clause0_Clause0_Clause0_Clause0_ArrayType Clause0_Clause1_OutputSize\n  Clause0_Clause1_Clause0_ArrayType Clause0_Clause2_BufferKind\n  Clause0_Clause2_Clause0_BlockSize Clause0_Clause2_Clause0_Clause0_ArrayType\n  Clause0_Clause3_Output)\n  (generic_arrayArrayLengthOutSizeU8Clause1_ArrayTypeInst :\n  generic_array.ArrayLength OutSize Std.U8 Clause1_ArrayType)\n  (typenumtype_operatorsIsLessOrEqualInst :\n  typenum.type_operators.IsLessOrEqual OutSize Clause0_Clause1_OutputSize\n  Clause2_Output) (typenummarker_traitsNonZeroInst :\n  typenum.marker_traits.NonZero Clause2_Output)\n  (typenumtype_operatorsIsLessClause0_Clause0_Clause0_BlockSizeUIntUIntUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0B0B0Clause4_OutputInst\n  : typenum.type_operators.IsLess Clause0_Clause0_Clause0_BlockSize\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) Clause4_Output)\n  (typenummarker_traitsNonZeroInst1 : typenum.marker_traits.NonZero\n  Clause4_Output) :\n  digest.core_api.ct_variable.CtVariableCoreWrapper T OutSize O\n    Clause0_Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_Clause0_ArrayType\n    Clause0_Clause1_OutputSize Clause0_Clause1_Clause0_ArrayType\n    Clause0_Clause2_BufferKind Clause0_Clause2_Clause0_BlockSize\n    Clause0_Clause2_Clause0_Clause0_ArrayType Clause0_Clause3_Output\n    Clause1_ArrayType Clause2_Output Clause4_Output → Slice\n    (generic_array.GenericArray Std.U8 Clause0_Clause0_Clause0_BlockSize\n    Clause0_Clause0_Clause0_Clause0_ArrayType) → Result\n    (digest.core_api.ct_variable.CtVariableCoreWrapper T OutSize O\n    Clause0_Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_Clause0_ArrayType\n    Clause0_Clause1_OutputSize Clause0_Clause1_Clause0_ArrayType\n    Clause0_Clause2_BufferKind Clause0_Clause2_Clause0_BlockSize\n    Clause0_Clause2_Clause0_Clause0_ArrayType Clause0_Clause3_Output\n    Clause1_ArrayType Clause2_Output Clause4_Output)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "digest::core_api::ct_variable::{impl digest::core_api::FixedOutputCore<Clause0_Clause0_Clause0_BlockSize, Clause0_Clause0_Clause0_Clause0_ArrayType, Clause0_Clause2_BufferKind, Clause0_Clause0_Clause0_BlockSize, Clause0_Clause0_Clause0_Clause0_ArrayType, OutSize, Clause1_ArrayType, Clause4_Output> for digest::core_api::ct_variable::CtVariableCoreWrapper<T, OutSize, O, Clause0_Clause0_Clause0_BlockSize, Clause0_Clause0_Clause0_Clause0_ArrayType, Clause0_Clause1_OutputSize, Clause0_Clause1_Clause0_ArrayType, Clause0_Clause2_BufferKind, Clause0_Clause2_Clause0_BlockSize, Clause0_Clause2_Clause0_Clause0_ArrayType, Clause0_Clause3_Output, Clause1_ArrayType, Clause2_Output, Clause4_Output>}::finalize_fixed_core",
+      "lean_name": "digest.core_api.ct_variable.CtVariableCoreWrapper.Insts.DigestCore_apiFixedOutputCore.finalize_fixed_core",
+      "source": {
+        "file": "digest-0.10.7/src/core_api/ct_variable.rs",
+        "begin_line": 114,
+        "end_line": 118
+      },
+      "lean_signature": "{T : Type} {OutSize : Type} {O : Type} {Clause0_Clause0_Clause0_BlockSize :\n  Type} {Clause0_Clause0_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause1_OutputSize : Type} {Clause0_Clause1_Clause0_ArrayType :\n  Type} {Clause0_Clause2_BufferKind : Type} {Clause0_Clause2_Clause0_BlockSize\n  : Type} {Clause0_Clause2_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause3_Output : Type} {Clause1_ArrayType : Type} {Clause2_Output :\n  Type} {Clause4_Output : Type} (VariableOutputCoreInst :\n  digest.core_api.VariableOutputCore T Clause0_Clause0_Clause0_BlockSize\n  Clause0_Clause0_Clause0_Clause0_ArrayType Clause0_Clause1_OutputSize\n  Clause0_Clause1_Clause0_ArrayType Clause0_Clause2_BufferKind\n  Clause0_Clause2_Clause0_BlockSize Clause0_Clause2_Clause0_Clause0_ArrayType\n  Clause0_Clause3_Output)\n  (generic_arrayArrayLengthOutSizeU8Clause1_ArrayTypeInst :\n  generic_array.ArrayLength OutSize Std.U8 Clause1_ArrayType)\n  (typenumtype_operatorsIsLessOrEqualInst :\n  typenum.type_operators.IsLessOrEqual OutSize Clause0_Clause1_OutputSize\n  Clause2_Output) (typenummarker_traitsNonZeroInst :\n  typenum.marker_traits.NonZero Clause2_Output)\n  (typenumtype_operatorsIsLessClause0_Clause0_Clause0_BlockSizeUIntUIntUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0B0B0Clause4_OutputInst\n  : typenum.type_operators.IsLess Clause0_Clause0_Clause0_BlockSize\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) Clause4_Output)\n  (typenummarker_traitsNonZeroInst1 : typenum.marker_traits.NonZero\n  Clause4_Output) :\n  digest.core_api.ct_variable.CtVariableCoreWrapper T OutSize O\n    Clause0_Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_Clause0_ArrayType\n    Clause0_Clause1_OutputSize Clause0_Clause1_Clause0_ArrayType\n    Clause0_Clause2_BufferKind Clause0_Clause2_Clause0_BlockSize\n    Clause0_Clause2_Clause0_Clause0_ArrayType Clause0_Clause3_Output\n    Clause1_ArrayType Clause2_Output Clause4_Output →\n    block_buffer.BlockBuffer Clause0_Clause0_Clause0_BlockSize\n    Clause0_Clause2_BufferKind Clause0_Clause0_Clause0_Clause0_ArrayType\n    Clause4_Output → generic_array.GenericArray Std.U8 OutSize\n    Clause1_ArrayType → Result\n    ((digest.core_api.ct_variable.CtVariableCoreWrapper T OutSize O\n    Clause0_Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_Clause0_ArrayType\n    Clause0_Clause1_OutputSize Clause0_Clause1_Clause0_ArrayType\n    Clause0_Clause2_BufferKind Clause0_Clause2_Clause0_BlockSize\n    Clause0_Clause2_Clause0_Clause0_ArrayType Clause0_Clause3_Output\n    Clause1_ArrayType Clause2_Output Clause4_Output) ×\n    (block_buffer.BlockBuffer Clause0_Clause0_Clause0_BlockSize\n    Clause0_Clause2_BufferKind Clause0_Clause0_Clause0_Clause0_ArrayType\n    Clause4_Output) × (generic_array.GenericArray Std.U8 OutSize\n    Clause1_ArrayType))",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "digest::core_api::ct_variable::{impl core::default::Default for digest::core_api::ct_variable::CtVariableCoreWrapper<T, OutSize, O, Clause0_Clause0_Clause0_BlockSize, Clause0_Clause0_Clause0_Clause0_ArrayType, Clause0_Clause1_OutputSize, Clause0_Clause1_Clause0_ArrayType, Clause0_Clause2_BufferKind, Clause0_Clause2_Clause0_BlockSize, Clause0_Clause2_Clause0_Clause0_ArrayType, Clause0_Clause3_Output, Clause1_ArrayType, Clause2_Output, Clause4_Output>}::default",
+      "lean_name": "digest.core_api.ct_variable.CtVariableCoreWrapper.Insts.CoreDefaultDefault.default",
+      "source": {
+        "file": "digest-0.10.7/src/core_api/ct_variable.rs",
+        "begin_line": 139,
+        "end_line": 139
+      },
+      "lean_signature": "{T : Type} {OutSize : Type} (O : Type) {Clause0_Clause0_Clause0_BlockSize :\n  Type} {Clause0_Clause0_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause1_OutputSize : Type} {Clause0_Clause1_Clause0_ArrayType :\n  Type} {Clause0_Clause2_BufferKind : Type} {Clause0_Clause2_Clause0_BlockSize\n  : Type} {Clause0_Clause2_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause3_Output : Type} {Clause1_ArrayType : Type} {Clause2_Output :\n  Type} {Clause4_Output : Type} (VariableOutputCoreInst :\n  digest.core_api.VariableOutputCore T Clause0_Clause0_Clause0_BlockSize\n  Clause0_Clause0_Clause0_Clause0_ArrayType Clause0_Clause1_OutputSize\n  Clause0_Clause1_Clause0_ArrayType Clause0_Clause2_BufferKind\n  Clause0_Clause2_Clause0_BlockSize Clause0_Clause2_Clause0_Clause0_ArrayType\n  Clause0_Clause3_Output)\n  (generic_arrayArrayLengthOutSizeU8Clause1_ArrayTypeInst :\n  generic_array.ArrayLength OutSize Std.U8 Clause1_ArrayType)\n  (typenumtype_operatorsIsLessOrEqualInst :\n  typenum.type_operators.IsLessOrEqual OutSize Clause0_Clause1_OutputSize\n  Clause2_Output) (typenummarker_traitsNonZeroInst :\n  typenum.marker_traits.NonZero Clause2_Output)\n  (typenumtype_operatorsIsLessClause0_Clause0_Clause0_BlockSizeUIntUIntUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0B0B0Clause4_OutputInst\n  : typenum.type_operators.IsLess Clause0_Clause0_Clause0_BlockSize\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) Clause4_Output)\n  (typenummarker_traitsNonZeroInst1 : typenum.marker_traits.NonZero\n  Clause4_Output) :\n  Result (digest.core_api.ct_variable.CtVariableCoreWrapper T OutSize O\n    Clause0_Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_Clause0_ArrayType\n    Clause0_Clause1_OutputSize Clause0_Clause1_Clause0_ArrayType\n    Clause0_Clause2_BufferKind Clause0_Clause2_Clause0_BlockSize\n    Clause0_Clause2_Clause0_Clause0_ArrayType Clause0_Clause3_Output\n    Clause1_ArrayType Clause2_Output Clause4_Output)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "digest::core_api::wrapper::{impl core::default::Default for digest::core_api::wrapper::CoreWrapper<T, Clause1_BufferKind, Clause1_Clause0_BlockSize, Clause1_Clause0_Clause0_ArrayType, Clause2_Output>}::default",
+      "lean_name": "digest.core_api.wrapper.CoreWrapper.Insts.CoreDefaultDefault.default",
+      "source": {
+        "file": "digest-0.10.7/src/core_api/wrapper.rs",
+        "begin_line": 23,
+        "end_line": 23
+      },
+      "lean_signature": "{T : Type} {Clause1_BufferKind : Type} {Clause1_Clause0_BlockSize : Type}\n  {Clause1_Clause0_Clause0_ArrayType : Type} {Clause2_Output : Type}\n  (coredefaultDefaultInst : core.default.Default T) (BufferKindUserInst :\n  digest.core_api.BufferKindUser T Clause1_BufferKind Clause1_Clause0_BlockSize\n  Clause1_Clause0_Clause0_ArrayType)\n  (typenumtype_operatorsIsLessClause1_Clause0_BlockSizeUIntUIntUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0B0B0Clause2_OutputInst\n  : typenum.type_operators.IsLess Clause1_Clause0_BlockSize (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) Clause2_Output)\n  (typenummarker_traitsNonZeroInst : typenum.marker_traits.NonZero\n  Clause2_Output) (coredefaultDefaultInst1 : core.default.Default\n  Clause1_Clause0_BlockSize) (coredefaultDefaultInst2 : core.default.Default\n  Clause1_BufferKind) :\n  Result (digest.core_api.wrapper.CoreWrapper T Clause1_BufferKind\n    Clause1_Clause0_BlockSize Clause1_Clause0_Clause0_ArrayType Clause2_Output)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "digest::core_api::wrapper::{impl digest::Update for digest::core_api::wrapper::CoreWrapper<T, Clause0_BufferKind, Clause0_Clause0_BlockSize, Clause0_Clause0_Clause0_ArrayType, Clause2_Output>}::update",
+      "lean_name": "digest.core_api.wrapper.CoreWrapper.Insts.DigestUpdate.update",
+      "source": {
+        "file": "digest-0.10.7/src/core_api/wrapper.rs",
+        "begin_line": 148,
+        "end_line": 148
+      },
+      "lean_signature": "{T : Type} {Clause0_BufferKind : Type} {Clause0_Clause0_BlockSize : Type}\n  {Clause0_Clause0_Clause0_ArrayType : Type} {Clause1_Clause0_BlockSize : Type}\n  {Clause1_Clause0_Clause0_ArrayType : Type} {Clause2_Output : Type}\n  (BufferKindUserInst : digest.core_api.BufferKindUser T Clause0_BufferKind\n  Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_ArrayType) (UpdateCoreInst\n  : digest.core_api.UpdateCore T Clause1_Clause0_BlockSize\n  Clause1_Clause0_Clause0_ArrayType)\n  (typenumtype_operatorsIsLessClause0_Clause0_BlockSizeUIntUIntUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0B0B0Clause2_OutputInst\n  : typenum.type_operators.IsLess Clause0_Clause0_BlockSize (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) Clause2_Output)\n  (typenummarker_traitsNonZeroInst : typenum.marker_traits.NonZero\n  Clause2_Output) :\n  digest.core_api.wrapper.CoreWrapper T Clause0_BufferKind\n    Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_ArrayType Clause2_Output\n    → Slice Std.U8 → Result (digest.core_api.wrapper.CoreWrapper T\n    Clause0_BufferKind Clause0_Clause0_BlockSize\n    Clause0_Clause0_Clause0_ArrayType Clause2_Output)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "digest::core_api::wrapper::{impl digest::FixedOutput<Clause0_Clause2_OutputSize, Clause0_Clause2_Clause0_ArrayType> for digest::core_api::wrapper::CoreWrapper<T, Clause0_Clause1_BufferKind, Clause0_Clause1_Clause0_BlockSize, Clause0_Clause1_Clause0_Clause0_ArrayType, Clause1_Output>}::finalize_into",
+      "lean_name": "digest.core_api.wrapper.CoreWrapper.Insts.DigestFixedOutput.finalize_into",
+      "source": {
+        "file": "digest-0.10.7/src/core_api/wrapper.rs",
+        "begin_line": 170,
+        "end_line": 170
+      },
+      "lean_signature": "{T : Type} {Clause0_Clause0_Clause0_BlockSize : Type}\n  {Clause0_Clause0_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause1_BufferKind : Type} {Clause0_Clause1_Clause0_BlockSize :\n  Type} {Clause0_Clause1_Clause0_Clause0_ArrayType : Type}\n  {Clause0_Clause2_OutputSize : Type} {Clause0_Clause2_Clause0_ArrayType :\n  Type} {Clause0_Clause3_Output : Type} {Clause1_Output : Type}\n  (FixedOutputCoreInst : digest.core_api.FixedOutputCore T\n  Clause0_Clause0_Clause0_BlockSize Clause0_Clause0_Clause0_Clause0_ArrayType\n  Clause0_Clause1_BufferKind Clause0_Clause1_Clause0_BlockSize\n  Clause0_Clause1_Clause0_Clause0_ArrayType Clause0_Clause2_OutputSize\n  Clause0_Clause2_Clause0_ArrayType Clause0_Clause3_Output)\n  (typenumtype_operatorsIsLessClause0_Clause0_Clause0_BlockSizeUIntUIntUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0B0B0Clause1_OutputInst\n  : typenum.type_operators.IsLess Clause0_Clause0_Clause0_BlockSize\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n  (typenum.uint.UInt typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) Clause1_Output)\n  (typenummarker_traitsNonZeroInst : typenum.marker_traits.NonZero\n  Clause1_Output) :\n  digest.core_api.wrapper.CoreWrapper T Clause0_Clause1_BufferKind\n    Clause0_Clause1_Clause0_BlockSize Clause0_Clause1_Clause0_Clause0_ArrayType\n    Clause1_Output → generic_array.GenericArray Std.U8\n    Clause0_Clause2_OutputSize Clause0_Clause2_Clause0_ArrayType → Result\n    (generic_array.GenericArray Std.U8 Clause0_Clause2_OutputSize\n    Clause0_Clause2_Clause0_ArrayType)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "digest::digest::{impl digest::digest::Digest<Clause0_Clause1_OutputSize, Clause0_Clause1_Clause0_ArrayType> for D}::digest",
+      "lean_name": "digest.digest.Digest.Blanket.digest",
+      "source": {
+        "file": "digest-0.10.7/src/digest.rs",
+        "begin_line": 124,
+        "end_line": 124
+      },
+      "lean_signature": "{D : Type} {T1 : Type} {Clause0_Clause1_OutputSize : Type}\n  {Clause0_Clause1_Clause0_ArrayType : Type} (FixedOutputInst :\n  digest.FixedOutput D Clause0_Clause1_OutputSize\n  Clause0_Clause1_Clause0_ArrayType) (coredefaultDefaultInst :\n  core.default.Default D) (UpdateInst : digest.Update D) (HashMarkerInst :\n  digest.digest.HashMarker D) (coreconvertAsRefT1SliceU8Inst :\n  core.convert.AsRef T1 (Slice Std.U8)) :\n  T1 → Result (generic_array.GenericArray Std.U8 Clause0_Clause1_OutputSize\n    Clause0_Clause1_Clause0_ArrayType)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "generic_array::impls::{impl core::convert::From<generic_array::GenericArray<T, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<T, generic_array::GenericArrayImplEven<T, generic_array::GenericArrayImplEven<T, generic_array::GenericArrayImplEven<T, generic_array::GenericArrayImplEven<T, generic_array::GenericArrayImplOdd<T, [T; 0usize]>>>>>>>> for [T; 32usize]}::from",
+      "lean_name": "ArrayT32.Insts.CoreConvertFromGenericArrayTUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0GenericArrayImplEvenTGenericArrayImplEvenTGenericArrayImplEvenTGenericArrayImplEvenTGenericArrayImplEvenTGenericArrayImplOddTArrayT0.from",
+      "source": {
+        "file": "generic-array-0.14.7/src/impls.rs",
+        "begin_line": 139,
+        "end_line": 139
+      },
+      "lean_signature": "{T : Type} :\n  generic_array.GenericArray T (typenum.uint.UInt (typenum.uint.UInt\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n    typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0) typenum.bit.B0)\n    typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n    (generic_array.GenericArrayImplEven T (generic_array.GenericArrayImplEven T\n    (generic_array.GenericArrayImplEven T (generic_array.GenericArrayImplEven T\n    (generic_array.GenericArrayImplEven T (generic_array.GenericArrayImplOdd T\n    (Array T 0#usize))))))) → Result (Array T 32#usize)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_isize",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_isize",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 125,
+        "end_line": 125
+      },
+      "lean_signature": ": Result Std.Isize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_i64",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_i64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 116,
+        "end_line": 116
+      },
+      "lean_signature": ": Result Std.I64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_i32",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_i32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 112,
+        "end_line": 112
+      },
+      "lean_signature": ": Result Std.I32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_i16",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_i16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 108,
+        "end_line": 108
+      },
+      "lean_signature": ": Result Std.I16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_i8",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_i8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 104,
+        "end_line": 104
+      },
+      "lean_signature": ": Result Std.I8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_usize",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_usize",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 99,
+        "end_line": 99
+      },
+      "lean_signature": ": Result Std.Usize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_u64",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_u64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 90,
+        "end_line": 90
+      },
+      "lean_signature": ": Result Std.U64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_u32",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_u32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 86,
+        "end_line": 86
+      },
+      "lean_signature": ": Result Std.U32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_u16",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_u16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 82,
+        "end_line": 82
+      },
+      "lean_signature": ": Result Std.U16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::to_u8",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.to_u8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 78,
+        "end_line": 78
+      },
+      "lean_signature": ": Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl core::default::Default for typenum::uint::UTerm}::default",
+      "lean_name": "typenum.uint.UTerm.Insts.CoreDefaultDefault.default",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 48,
+        "end_line": 48
+      },
+      "lean_signature": ": Result typenum.uint.UTerm",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl core::clone::Clone for typenum::uint::UTerm}::clone",
+      "lean_name": "typenum.uint.UTerm.Insts.CoreCloneClone.clone",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 48,
+        "end_line": 48
+      },
+      "lean_signature": ": typenum.uint.UTerm → Result typenum.uint.UTerm",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_isize",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_isize",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 228,
+        "end_line": 228
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.Isize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_i64",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_i64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 219,
+        "end_line": 219
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.I64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_i32",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_i32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 215,
+        "end_line": 215
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.I32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_i16",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_i16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 211,
+        "end_line": 211
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.I16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_i8",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_i8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 207,
+        "end_line": 207
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.I8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_usize",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_usize",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 202,
+        "end_line": 202
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.Usize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_u64",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_u64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 193,
+        "end_line": 193
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.U64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_u32",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_u32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 189,
+        "end_line": 189
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.U32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_u16",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_u16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 185,
+        "end_line": 185
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.U16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::to_u8",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.to_u8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 181,
+        "end_line": 181
+      },
+      "lean_signature": "{U : Type} {B : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) :\n  Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl core::default::Default for typenum::uint::UInt<U, B>}::default",
+      "lean_name": "typenum.uint.UInt.Insts.CoreDefaultDefault.default",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 146,
+        "end_line": 146
+      },
+      "lean_signature": "{U : Type} {B : Type} (coredefaultDefaultInst : core.default.Default U)\n  (coredefaultDefaultInst1 : core.default.Default B) :\n  Result (typenum.uint.UInt U B)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl core::clone::Clone for typenum::uint::UInt<U, B>}::clone",
+      "lean_name": "typenum.uint.UInt.Insts.CoreCloneClone.clone",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 146,
+        "end_line": 146
+      },
+      "lean_signature": "{U : Type} {B : Type} (corecloneCloneInst : core.clone.Clone U)\n  (corecloneCloneInst1 : core.clone.Clone B) :\n  typenum.uint.UInt U B → Result (typenum.uint.UInt U B)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B0}::to_bool",
+      "lean_name": "typenum.bit.B0.Insts.TypenumMarker_traitsBit.to_bool",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 56,
+        "end_line": 56
+      },
+      "lean_signature": ": Result Bool",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B0}::to_u8",
+      "lean_name": "typenum.bit.B0.Insts.TypenumMarker_traitsBit.to_u8",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 52,
+        "end_line": 52
+      },
+      "lean_signature": ": Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B0}::new",
+      "lean_name": "typenum.bit.B0.Insts.TypenumMarker_traitsBit.new",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 48,
+        "end_line": 48
+      },
+      "lean_signature": ": Result typenum.bit.B0",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl core::default::Default for typenum::bit::B0}::default",
+      "lean_name": "typenum.bit.B0.Insts.CoreDefaultDefault.default",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 18,
+        "end_line": 18
+      },
+      "lean_signature": ": Result typenum.bit.B0",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl core::clone::Clone for typenum::bit::B0}::clone",
+      "lean_name": "typenum.bit.B0.Insts.CoreCloneClone.clone",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 18,
+        "end_line": 18
+      },
+      "lean_signature": ": typenum.bit.B0 → Result typenum.bit.B0",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B1}::to_bool",
+      "lean_name": "typenum.bit.B1.Insts.TypenumMarker_traitsBit.to_bool",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "lean_signature": ": Result Bool",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B1}::to_u8",
+      "lean_name": "typenum.bit.B1.Insts.TypenumMarker_traitsBit.to_u8",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 70,
+        "end_line": 70
+      },
+      "lean_signature": ": Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B1}::new",
+      "lean_name": "typenum.bit.B1.Insts.TypenumMarker_traitsBit.new",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 66,
+        "end_line": 66
+      },
+      "lean_signature": ": Result typenum.bit.B1",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl core::default::Default for typenum::bit::B1}::default",
+      "lean_name": "typenum.bit.B1.Insts.CoreDefaultDefault.default",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 31,
+        "end_line": 31
+      },
+      "lean_signature": ": Result typenum.bit.B1",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::bit::{impl core::clone::Clone for typenum::bit::B1}::clone",
+      "lean_name": "typenum.bit.B1.Insts.CoreCloneClone.clone",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 31,
+        "end_line": 31
+      },
+      "lean_signature": ": typenum.bit.B1 → Result typenum.bit.B1",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "rustls_pki_types::{impl core::convert::AsRef<[u8]> for rustls_pki_types::CertificateDer<'_0>}::as_ref",
+      "lean_name": "rustls_pki_types.CertificateDer.Insts.CoreConvertAsRefSliceU8.as_ref",
+      "source": {
+        "file": "rustls-pki-types-1.15.1/src/lib.rs",
+        "begin_line": 691,
+        "end_line": 691
+      },
+      "lean_signature": ": rustls_pki_types.CertificateDer → Result (Slice Std.U8)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "sha2::core_api::{impl digest::core_api::UpdateCore<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>>> for sha2::core_api::Sha256VarCore}::update_blocks",
+      "lean_name": "sha2.core_api.Sha256VarCore.Insts.DigestCore_apiUpdateCoreUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80.update_blocks",
+      "source": {
+        "file": "sha2-0.10.9/src/core_api.rs",
+        "begin_line": 35,
+        "end_line": 35
+      },
+      "lean_signature": ":\n  sha2.core_api.Sha256VarCore → Slice (generic_array.GenericArray Std.U8\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt typenum.uint.UTerm\n    typenum.bit.B1) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n    typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplOdd Std.U8 (Array Std.U8 0#usize)))))))))\n    → Result sha2.core_api.Sha256VarCore",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::private::PrivateCmp<typenum::uint::UInt<U, B>, SoFar, typenum::Less> for typenum::uint::UTerm}::private_cmp",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumPrivatePrivateCmpUIntSoFarLess.private_cmp",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 1335,
+        "end_line": 1335
+      },
+      "lean_signature": "{U : Type} {B : Type} {SoFar : Type} (marker_traitsUnsignedInst :\n  typenum.marker_traits.Unsigned U) (marker_traitsBitInst :\n  typenum.marker_traits.Bit B) (marker_traitsOrdInst :\n  typenum.marker_traits.Ord SoFar) :\n  typenum.uint.UTerm → typenum.uint.UInt U B → SoFar → Result\n    typenum.Less",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::private::PrivateCmp<typenum::uint::UInt<Ur, typenum::bit::B0>, SoFar, Clause3_Output> for typenum::uint::UInt<Ul, typenum::bit::B1>}::private_cmp",
+      "lean_name": "typenum.uint.UIntUlB1.Insts.TypenumPrivatePrivateCmpUIntUrB0SoFarClause3_Output.private_cmp",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 1325,
+        "end_line": 1325
+      },
+      "lean_signature": "{Ul : Type} {Ur : Type} {SoFar : Type} {Clause3_Output : Type}\n  (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned Ul)\n  (marker_traitsUnsignedInst1 : typenum.marker_traits.Unsigned Ur)\n  (marker_traitsOrdInst : typenum.marker_traits.Ord SoFar)\n  (privatePrivateCmpUlUrGreaterClause3_OutputInst : typenum.private.PrivateCmp\n  Ul Ur typenum.Greater Clause3_Output) :\n  typenum.uint.UInt Ul typenum.bit.B1 → typenum.uint.UInt Ur typenum.bit.B0\n    → SoFar → Result Clause3_Output",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::private::PrivateCmp<typenum::uint::UInt<Ur, typenum::bit::B0>, SoFar, Clause3_Output> for typenum::uint::UInt<Ul, typenum::bit::B0>}::private_cmp",
+      "lean_name": "typenum.uint.UIntUlB0.Insts.TypenumPrivatePrivateCmpUIntUrB0SoFarClause3_Output.private_cmp",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 1274,
+        "end_line": 1274
+      },
+      "lean_signature": "{Ul : Type} {Ur : Type} {SoFar : Type} {Clause3_Output : Type}\n  (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned Ul)\n  (marker_traitsUnsignedInst1 : typenum.marker_traits.Unsigned Ur)\n  (marker_traitsOrdInst : typenum.marker_traits.Ord SoFar)\n  (privatePrivateCmpInst : typenum.private.PrivateCmp Ul Ur SoFar\n  Clause3_Output) :\n  typenum.uint.UInt Ul typenum.bit.B0 → typenum.uint.UInt Ur typenum.bit.B0\n    → SoFar → Result Clause3_Output",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::type_operators::Cmp<typenum::uint::UInt<Ur, typenum::bit::B0>, Clause2_Output> for typenum::uint::UInt<Ul, typenum::bit::B0>}::compare",
+      "lean_name": "typenum.uint.UIntUlB0.Insts.TypenumType_operatorsCmpUIntUrB0Clause2_Output.compare",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 1218,
+        "end_line": 1218
+      },
+      "lean_signature": "{Ul : Type} {Ur : Type} {IM : Type} {Clause2_Output : Type}\n  (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned Ul)\n  (marker_traitsUnsignedInst1 : typenum.marker_traits.Unsigned Ur)\n  (privatePrivateCmpUlUrEqualClause2_OutputInst : typenum.private.PrivateCmp Ul\n  Ur typenum.Equal Clause2_Output) (privateInternalMarkerInst :\n  typenum.private.InternalMarker IM) :\n  typenum.uint.UInt Ul typenum.bit.B0 → typenum.uint.UInt Ur typenum.bit.B0\n    → Result Clause2_Output",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::type_operators::{impl typenum::type_operators::IsLess<B, Clause1_Output> for A}::is_less",
+      "lean_name": "typenum.type_operators.IsLess.Blanket.is_less",
+      "source": {
+        "file": "typenum-1.20.1/src/type_operators.rs",
+        "begin_line": 390,
+        "end_line": 390
+      },
+      "lean_signature": "{A : Type} {B : Type} {Clause0_Output : Type} {Clause1_Output : Type}\n  (CmpInst : typenum.type_operators.Cmp A B Clause0_Output)\n  (privateIsLessPrivateInst : typenum.private.IsLessPrivate A B Clause0_Output\n  Clause1_Output) :\n  A → B → Result Clause1_Output",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::private::{impl typenum::private::IsLessPrivate<B, typenum::Less, typenum::bit::B1> for A}::is_less_private",
+      "lean_name": "typenum.private.IsLessPrivateABLessB1.Blanket.is_less_private",
+      "source": {
+        "file": "typenum-1.20.1/src/private.rs",
+        "begin_line": 405,
+        "end_line": 405
+      },
+      "lean_signature": "{A : Type} {B : Type} : A → B → typenum.Less → Result typenum.bit.B1",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::{impl typenum::marker_traits::Ord for typenum::Equal}::to_ordering",
+      "lean_name": "typenum.Equal.Insts.TypenumMarker_traitsOrd.to_ordering",
+      "source": {
+        "file": "typenum-1.20.1/src/lib.rs",
+        "begin_line": 126,
+        "end_line": 126
+      },
+      "lean_signature": ": Result Ordering",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::{impl typenum::marker_traits::Ord for typenum::Greater}::to_ordering",
+      "lean_name": "typenum.Greater.Insts.TypenumMarker_traitsOrd.to_ordering",
+      "source": {
+        "file": "typenum-1.20.1/src/lib.rs",
+        "begin_line": 110,
+        "end_line": 110
+      },
+      "lean_signature": ": Result Ordering",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "sha2::core_api::{impl digest::core_api::VariableOutputCore<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>>, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>, block_buffer::Eager, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>>, typenum::bit::B1> for sha2::core_api::Sha256VarCore}::finalize_variable_core",
+      "lean_name": "sha2.core_api.Sha256VarCore.Insts.DigestCore_apiVariableOutputCoreUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80UIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80EagerUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80B1.finalize_variable_core",
+      "source": {
+        "file": "sha2-0.10.9/src/core_api.rs",
+        "begin_line": 60,
+        "end_line": 60
+      },
+      "lean_signature": ":\n  sha2.core_api.Sha256VarCore → block_buffer.BlockBuffer (typenum.uint.UInt\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n    (typenum.uint.UInt (typenum.uint.UInt typenum.uint.UTerm typenum.bit.B1)\n    typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n    typenum.bit.B0) typenum.bit.B0) block_buffer.Eager\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplOdd Std.U8 (Array Std.U8 0#usize))))))))\n    typenum.bit.B1 → generic_array.GenericArray Std.U8 (typenum.uint.UInt\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n    (typenum.uint.UInt typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0)\n    typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplOdd Std.U8 (Array Std.U8 0#usize))))))) →\n    Result (sha2.core_api.Sha256VarCore × (block_buffer.BlockBuffer\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt typenum.uint.UTerm\n    typenum.bit.B1) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n    typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) block_buffer.Eager\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplOdd Std.U8 (Array Std.U8 0#usize))))))))\n    typenum.bit.B1) × (generic_array.GenericArray Std.U8 (typenum.uint.UInt\n    (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt\n    (typenum.uint.UInt typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0)\n    typenum.bit.B0) typenum.bit.B0) typenum.bit.B0) typenum.bit.B0)\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplEven Std.U8\n    (generic_array.GenericArrayImplOdd Std.U8 (Array Std.U8 0#usize)))))))))",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "sha2::core_api::{impl digest::core_api::VariableOutputCore<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>>, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>, block_buffer::Eager, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>>, typenum::bit::B1> for sha2::core_api::Sha256VarCore}::new",
+      "lean_name": "sha2.core_api.Sha256VarCore.Insts.DigestCore_apiVariableOutputCoreUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80UIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80EagerUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80B1.new",
+      "source": {
+        "file": "sha2-0.10.9/src/core_api.rs",
+        "begin_line": 49,
+        "end_line": 49
+      },
+      "lean_signature": ":\n  Std.Usize → Result (core.result.Result sha2.core_api.Sha256VarCore\n    digest.InvalidOutputSize)",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::private::{impl typenum::private::IsLessOrEqualPrivate<B, typenum::Equal, typenum::bit::B1> for A}::is_less_or_equal_private",
+      "lean_name": "typenum.private.IsLessOrEqualPrivateABEqualB1.Blanket.is_less_or_equal_private",
+      "source": {
+        "file": "typenum-1.20.1/src/private.rs",
+        "begin_line": 509,
+        "end_line": 509
+      },
+      "lean_signature": "{A : Type} {B : Type} : A → B → typenum.Equal → Result typenum.bit.B1",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::type_operators::{impl typenum::type_operators::IsLessOrEqual<B, Clause1_Output> for A}::is_less_or_equal",
+      "lean_name": "typenum.type_operators.IsLessOrEqual.Blanket.is_less_or_equal",
+      "source": {
+        "file": "typenum-1.20.1/src/type_operators.rs",
+        "begin_line": 459,
+        "end_line": 459
+      },
+      "lean_signature": "{A : Type} {B : Type} {Clause0_Output : Type} {Clause1_Output : Type}\n  (CmpInst : typenum.type_operators.Cmp A B Clause0_Output)\n  (privateIsLessOrEqualPrivateInst : typenum.private.IsLessOrEqualPrivate A B\n  Clause0_Output Clause1_Output) :\n  A → B → Result Clause1_Output",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::private::PrivateCmp<typenum::uint::UInt<Ur, typenum::bit::B1>, SoFar, Clause3_Output> for typenum::uint::UInt<Ul, typenum::bit::B1>}::private_cmp",
+      "lean_name": "typenum.uint.UIntUlB1.Insts.TypenumPrivatePrivateCmpUIntUrB1SoFarClause3_Output.private_cmp",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 1291,
+        "end_line": 1291
+      },
+      "lean_signature": "{Ul : Type} {Ur : Type} {SoFar : Type} {Clause3_Output : Type}\n  (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned Ul)\n  (marker_traitsUnsignedInst1 : typenum.marker_traits.Unsigned Ur)\n  (marker_traitsOrdInst : typenum.marker_traits.Ord SoFar)\n  (privatePrivateCmpInst : typenum.private.PrivateCmp Ul Ur SoFar\n  Clause3_Output) :\n  typenum.uint.UInt Ul typenum.bit.B1 → typenum.uint.UInt Ur typenum.bit.B1\n    → SoFar → Result Clause3_Output",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "function",
+      "rust_name": "typenum::uint::{impl typenum::private::PrivateCmp<typenum::uint::UTerm, SoFar, SoFar> for typenum::uint::UTerm}::private_cmp",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumPrivatePrivateCmpUTermSoFarSoFar.private_cmp",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 1355,
+        "end_line": 1355
+      },
+      "lean_signature": "{SoFar : Type} (marker_traitsOrdInst : typenum.marker_traits.Ord SoFar) :\n  typenum.uint.UTerm → typenum.uint.UTerm → SoFar → Result SoFar",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::ISIZE",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.ISIZE",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 75,
+        "end_line": 75
+      },
+      "lean_signature": ": Result Std.Isize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::I64",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.I64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 72,
+        "end_line": 72
+      },
+      "lean_signature": ": Result Std.I64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::I32",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.I32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "lean_signature": ": Result Std.I32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::I16",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.I16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 70,
+        "end_line": 70
+      },
+      "lean_signature": ": Result Std.I16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::I8",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.I8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 69,
+        "end_line": 69
+      },
+      "lean_signature": ": Result Std.I8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::USIZE",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.USIZE",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "lean_signature": ": Result Std.Usize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::U64",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.U64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 64,
+        "end_line": 64
+      },
+      "lean_signature": ": Result Std.U64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::U32",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.U32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 63,
+        "end_line": 63
+      },
+      "lean_signature": ": Result Std.U32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::U16",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.U16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 62,
+        "end_line": 62
+      },
+      "lean_signature": ": Result Std.U16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UTerm}::U8",
+      "lean_name": "typenum.uint.UTerm.Insts.TypenumMarker_traitsUnsigned.U8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 61,
+        "end_line": 61
+      },
+      "lean_signature": ": Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::ISIZE",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.ISIZE",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 178,
+        "end_line": 178
+      },
+      "lean_signature": "{U : Type} {B\n  : Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.Isize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::I64",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.I64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 175,
+        "end_line": 175
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.I64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::I32",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.I32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 174,
+        "end_line": 174
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.I32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::I16",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.I16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 173,
+        "end_line": 173
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.I16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::I8",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.I8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 172,
+        "end_line": 172
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.I8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::USIZE",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.USIZE",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 170,
+        "end_line": 170
+      },
+      "lean_signature": "{U : Type} {B\n  : Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.Usize",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::U64",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.U64",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 167,
+        "end_line": 167
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.U64",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::U32",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.U32",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 166,
+        "end_line": 166
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.U32",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::U16",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.U16",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 165,
+        "end_line": 165
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.U16",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::uint::{impl typenum::marker_traits::Unsigned for typenum::uint::UInt<U, B>}::U8",
+      "lean_name": "typenum.uint.UInt.Insts.TypenumMarker_traitsUnsigned.U8",
+      "source": {
+        "file": "typenum-1.20.1/src/uint.rs",
+        "begin_line": 164,
+        "end_line": 164
+      },
+      "lean_signature": "{U : Type} {B :\n  Type} (marker_traitsUnsignedInst : typenum.marker_traits.Unsigned U)\n  (marker_traitsBitInst : typenum.marker_traits.Bit B) : Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B0}::BOOL",
+      "lean_name": "typenum.bit.B0.Insts.TypenumMarker_traitsBit.BOOL",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 45,
+        "end_line": 45
+      },
+      "lean_signature": ": Result Bool",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B0}::U8",
+      "lean_name": "typenum.bit.B0.Insts.TypenumMarker_traitsBit.U8",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 44,
+        "end_line": 44
+      },
+      "lean_signature": ": Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B1}::BOOL",
+      "lean_name": "typenum.bit.B1.Insts.TypenumMarker_traitsBit.BOOL",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 63,
+        "end_line": 63
+      },
+      "lean_signature": ": Result Bool",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "typenum::bit::{impl typenum::marker_traits::Bit for typenum::bit::B1}::U8",
+      "lean_name": "typenum.bit.B1.Insts.TypenumMarker_traitsBit.U8",
+      "source": {
+        "file": "typenum-1.20.1/src/bit.rs",
+        "begin_line": 62,
+        "end_line": 62
+      },
+      "lean_signature": ": Result Std.U8",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    },
+    {
+      "kind": "associated-constant-initializer",
+      "rust_name": "sha2::core_api::{impl digest::core_api::VariableOutputCore<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>>, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>, block_buffer::Eager, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplEven<u8, generic_array::GenericArrayImplOdd<u8, [u8; 0usize]>>>>>>>, typenum::bit::B1> for sha2::core_api::Sha256VarCore}::TRUNC_SIDE",
+      "lean_name": "sha2.core_api.Sha256VarCore.Insts.DigestCore_apiVariableOutputCoreUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80UIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80EagerUIntUIntUIntUIntUIntUIntUIntUTermB1B0B0B0B0B0B0GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplEvenU8GenericArrayImplOddU8ArrayU80B1.TRUNC_SIDE",
+      "source": {
+        "file": "sha2-0.10.9/src/core_api.rs",
+        "begin_line": 46,
+        "end_line": 46
+      },
+      "lean_signature": ": Result digest.core_api.TruncSide",
+      "scope": "fixed library/dictionary source audit; no new Lean model instantiated"
+    }
+  ],
+  "machine_status": "not instantiated; original borrowed roots remain unsupported by the frozen backend; previous preflight evidence preserved"
+}

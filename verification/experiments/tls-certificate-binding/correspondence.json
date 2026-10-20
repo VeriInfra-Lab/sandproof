@@ -1,0 +1,68 @@
+{
+  "scope": "manually reviewed finite source/AST connection, not a semantics certificate",
+  "roots": {
+    "server_verify_peer": 11,
+    "client_verify_peer": 12,
+    "peer_pin": 13,
+    "verify_pin": 23
+  },
+  "dependent_local_bodies": [
+    11,
+    12,
+    13,
+    23,
+    27,
+    32,
+    34,
+    38,
+    40,
+    41,
+    42,
+    43,
+    44,
+    143
+  ],
+  "cases": [
+    {
+      "input": "None",
+      "guard": "Authentication, no digest"
+    },
+    {
+      "input": "Some []",
+      "guard": "Authentication, no digest"
+    },
+    {
+      "input": "Some (leaf::tail), mismatch",
+      "guard": "digest(full original leaf), contains(full original pins), Authentication"
+    },
+    {
+      "input": "Some (leaf::tail), match",
+      "guard": "digest(full original leaf), contains(full original pins), Ok; peer_pin then reads same first leaf and hashes again"
+    }
+  ],
+  "callers": [
+    {
+      "file": "sandbox-internal/src/client.rs",
+      "function": "exchange_bytes",
+      "source": "self.tls.verify_peer(stream.get_ref().1.peer_certificates())",
+      "scope": "after original handshake await, before ALPN/HTTP await"
+    },
+    {
+      "file": "sandbox-internal/src/client/data.rs",
+      "function": "data_connection",
+      "source": "self.tls.verify_peer(stream.get_ref().1.peer_certificates())",
+      "scope": "same original connection/config/pins; no new snapshot allocation"
+    },
+    {
+      "file": "sandbox-internal/src/protected_server.rs",
+      "function": "serve",
+      "source": "tls.peer_pin(stream.get_ref().1.peer_certificates())",
+      "scope": "same accepted connection and per-connection tls clone, then pin passed to handler; historical identity only"
+    }
+  ],
+  "borrow": "CertificateDer static payload parameter does not extend the outer shared slice/stream lifetime; no stability assumed across later await",
+  "value_core": "reuse existing allow/peerReply and actual bytes-core conditional theorems via mathematical view/encode only; no production call to the owned candidate claimed",
+  "digest_count": "two source-level digest invocations on peer_pin success; return-value theorems alone do not prove physical call count",
+  "drop": "complete fixed normal/on_unwind tree retained; precise_drops=false/desugar_drops=false limits remain explicit; no physical cleanup conclusion",
+  "status": "admission/native component pending"
+}
