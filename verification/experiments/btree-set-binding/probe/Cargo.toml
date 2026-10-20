@@ -1,0 +1,13 @@
+[package]
+name = "sandproof-btree-set-binding-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true
