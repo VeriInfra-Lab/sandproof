@@ -17,14 +17,15 @@ from tools.check_foundations_extraction import llbc_digest
 MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-contract',
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
-           'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state')
+           'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
 EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counterexample.lean',
     'verification/experiments/child-observation/negative/Counterexample.lean',
     'verification/experiments/callback-state/NoWriteToggle.lean',
-    'verification/experiments/callback-state/DoubleRecord.lean')
+    'verification/experiments/callback-state/DoubleRecord.lean',
+    'verification/experiments/bounded-writer/negative/Counterexample.lean')
 
 # These generators intentionally reuse a fixed workspace output location.
 # Keep immutable raw copies in the success entry, even when the directory
@@ -118,21 +119,45 @@ def native_dependencies(cache):
     return dict(rules=seal.get('rules'),rust=seal.get('rust'),runtime=seal.get('runtime'),commands=commands)
 
 
-def evidence_files(directory):
+def evidence_files(directory, include_sources=False):
     result = {}
     for parent, dirs, files in os.walk(directory):
         dirs[:] = [n for n in dirs if not ('target' in n or n in ('.git','.lake','.tools','node_modules'))]
         for name in files:
             path = Path(parent)/name
-            if path.is_symlink() or path.suffix not in ('.log','.json','.jsonl','.llbc','.lean','.sha256'):
+            suffixes=('.log','.json','.jsonl','.llbc','.lean','.sha256')
+            if include_sources:
+                suffixes += ('.rs','.toml','.lock','.patch','.txt','.py','.sh','.gz','.tar')
+            if path.is_symlink() or path.suffix not in suffixes:
                 continue
             result[str(path.resolve())] = sha(path)
     return result
 
 
+def external_component_paths(name, root=ROOT):
+    if name != 'bounded-writer':
+        return [], {}
+    import importlib.util
+    assets=root/'verification/experiments/bounded-writer'
+    spec=importlib.util.spec_from_file_location('_writer_lease_admission',assets/'lease.py')
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    paths=module.admit(Path(os.environ['SANDPROOF_WRITER_LEASE']),
+                       Path(os.environ['SANDPROOF_PROOF_BWRAP']))
+    if paths['source'] != root.resolve():
+        raise ValueError('Writer execution lease belongs to another source tree')
+    archive=Path(os.environ['SANDPROOF_WRITER_SOURCE_ARCHIVE']).resolve(strict=True)
+    if not any(p in archive.parents for p in (paths['source'],paths['work'])):
+        raise ValueError('Writer original archive is outside admitted source/work')
+    expected=json.loads((root/'verification/bounded-writer-environment.json').read_text())['source_archive_sha256']
+    if sha(archive) != expected:
+        raise ValueError('Writer original archive differs from frozen source')
+    return [paths['work']], {str(archive):expected}
+
+
 def step(name, command, root=ROOT):
     step_started=time.monotonic()
     cache = Path(os.environ['SANDPROOF_FORMAL_CACHE']).resolve()
+    external_roots,external_files=external_component_paths(name,root)
     key = module_key(name, command, root)
     entry = cache / 'modules' / name / digest(key)
     with locked(entry):
@@ -153,6 +178,7 @@ def step(name, command, root=ROOT):
         print(f'RUN {name} {entry}',flush=True)
         artifacts = root/'artifacts'; artifacts.mkdir(exist_ok=True)
         before_dirs = {p.resolve() for p in artifacts.iterdir()}
+        before_external={p:{c.resolve() for c in p.iterdir()} for p in external_roots}
         temp_root = Path(os.environ.get('TMPDIR','/tmp'))
         before_tmp = {p.resolve() for p in temp_root.iterdir()}
         llbc = {p:p.read_bytes() for p in (root/'verification/aeneas/llbc').glob('*.llbc')}
@@ -180,6 +206,11 @@ def step(name, command, root=ROOT):
             evidence.update(evidence_files(directory))
         for directory in [p for p in temp_root.iterdir() if p.resolve() not in before_tmp and p.name.startswith('sandproof-')]:
             evidence.update(evidence_files(directory))
+        for parent,prior_paths in before_external.items():
+            for directory in parent.iterdir():
+                if directory.resolve() not in prior_paths:
+                    evidence.update(evidence_files(directory,include_sources=True))
+        evidence.update(external_files)
         files={'command.log':sha(log)}
         files.update({str(p.relative_to(entry)):sha(p) for p in (entry/'raw-generated').glob('*')})
         for relative in FIXED_EVIDENCE.get(name, ()):
@@ -230,6 +261,27 @@ def fixed_runtime_sha(path, cached, new_hashes, allow_metadata=False):
     new_hashes[str(path)]=dict(identity=identity,sha256=value,verified_started_ns=started)
     return value
 
+def execution_runtime_inputs():
+    """Content-bind the narrow Writer namespace, without caching config metadata.
+
+    The lease binds stable parent directories, not per-run output names or Git
+    commit labels. Its actual directory identities are checked by the module.
+    Missing mappings cannot reuse an old namespace/tool success.
+    """
+    if 'bounded-writer' not in MODULES:
+        return {}
+    names = {'outer_wrapper':'SANDPROOF_FORMAL_WRAPPER',
+             'directory_lease':'SANDPROOF_WRITER_LEASE',
+             'namespace_binary':'SANDPROOF_PROOF_BWRAP'}
+    result = {}
+    for role, name in names.items():
+        path = Path(os.environ[name])
+        if not path.is_absolute() or not path.is_file() or path.is_symlink():
+            raise ValueError('missing exact formal execution mapping: ' + name)
+        result[role] = sha(path)
+    return result
+
+
 def runtime(force=False):
     """Hash actual tool binaries, installed Lean library and all package files.
 
@@ -252,7 +304,7 @@ def runtime(force=False):
             probe=subprocess.run(['stat','-f','-c','%T',str(path)],capture_output=True,text=True)
             filesystems[device]=(probe.returncode==0 and probe.stdout.strip() in ('ext2/ext3','ext4'))
         return fixed_runtime_sha(path,cached,new_hashes,allow_metadata=filesystems[device])
-    result={'tools':{},'libraries':{},'environment':{k:v for k,v in os.environ.items()
+    result={'tools':{},'libraries':{},'execution_mapping':execution_runtime_inputs(),'environment':{k:v for k,v in os.environ.items()
         if k.startswith(('RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','CARGO_PROFILE_',
                          'CARGO_BUILD_TARGET','LEAN_','LAKE_','OCAMLRUNPARAM',
                          'CC','CXX','AR','LD','CFLAGS','CPPFLAGS','PKG_CONFIG','SQLITE3','LIBSQLITE3'))

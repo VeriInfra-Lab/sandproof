@@ -718,3 +718,14 @@ A6 仅提供普通值 Vec::retain 的正常有限遍历：对原每一行按原�
 [OS/存储目录](../../verification/os-boundary-catalogue.json)在固定五根、60 个编译变体之上核对 25 类接口、71 个代表源码位置；它没有新增可信保证或程序定理。每行说明原对象/配置、正常结果、错误和部分效果、未知/取消、进展和业务提供方。其 public_status 与待办是 review_baseline 的历史审查快照，当前交付状态见 #333 与覆盖记录；business_obligation 表示仍待业务证明。
 
 本页 A/B 是依赖合同的权威位置。目录中对源码行为的解释仍需其自有前提和业务证明，不能把该行整函数变成可信依赖，也不能把有代表例子理解为所有 SQL/Lua、驱动、Guest 或 Firecracker 调用已抽取。尚未接通的具体签名须给最小预检，不提前保证工具支持。有限目录不提供完整调用图、依赖析构或 Future 取消胶水语义。TLS 原借用输入连接仍是公开缺口，不由现有首叶候选或来源定位自动完成。
+
+
+## A6/B4 有界 Writer：真实写入、结束和响应选择
+
+[BoundedWriter](../../SandboxModel/Boundaries/BoundedWriter.lean)连接原私有 Writer 的隔离同步候选：`checked_add → limit → capacity → reserve → append`，以及 `exceeded → serializer result → bytes` 的结束顺序。原 `json_response` 的成功/失败选择另行抽取，HTTP 构造只机械转交原字节。[候选来源](../../verification/experiments/bounded-writer/candidate.json)、[完整差异](../../verification/experiments/bounded-writer/candidate-diff.json)和[原语登记](../../verification/bounded-writer-environment.json)固定原 e576a847 源码与具体实现；生产未采用拆分，一般旧新等价未机器证明。
+
+A6 仅提供固定普通 Vec 的长度、capacity、正常 reserve 不改内容、append 原字节及移出原字节；两个固定 IO 错误工厂保留原类别/文本。B4 只连接原 Writer/限额/块/serializer 结果与实际 HTTP builder，不担保限额判断、错误解释或任意 Serialize 正确。实际生成函数证明正常写入的全部字节与计数、历史中已接受块的精确连接、逻辑字节界、原超限优先级和 200 响应的原完整字节。
+
+拒绝不追加本次字节，但不撤销此前私有前缀，回调也可继续写较小/空块。大小加法溢出或超限才置 exceeded；reserve 失败保留原标记，不能统一叫超限。Writer 没有保存任意 IO 错误的全局首错；单次检查顺序、serializer 最终错误和超限优先级分别保留。自定义 Serialize 可以吞掉分配错误再正常返回，此时 finish 可以接受不完整前缀；完整 JSON 仍要求固定派生/实际回调正确传播错误与轨迹条件，由实际 schema/V3/V7/V8 提供。
+
+初始字节界由调用方建立；原入口从空 Vec 开始，预填充调用不自动满足。普通值、有效借用、有限可表示输入与正常分配是适用域，逻辑输出字节界不控制 Vec capacity、分配器、临时数据或整个服务 RAM。panic/unwind、OOM/abort、资源载荷的可观察 Drop、取消和网络最终交付不由正常后态定理提供。真实错误 Rust 删除限额拒绝后成功抽取，由同一 WriteContract 拒绝；库条件有合法非空接受与分配拒绝见证，不以不可满足条件获证。

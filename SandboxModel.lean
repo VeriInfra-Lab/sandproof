@@ -34,6 +34,8 @@ import SandboxModel.Boundaries.TokioRwLock
 import SandboxModel.Boundaries.ChildObservation
 import SandboxModel.Foundations.CallbackState
 
+import SandboxModel.Boundaries.BoundedWriter
+
 /-! Retained mathematical models and source-bound public foundations.
 The historical whole-controller Rust refinement is retired; importing this
 module does not establish a refinement of the current deployed controller. -/

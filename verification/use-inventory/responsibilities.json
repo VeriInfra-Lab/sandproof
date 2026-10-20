@@ -683,6 +683,29 @@
         "V9"
       ],
       "meaning": "finite checked source/contract review, not all-call completeness or new program proof; current public completion tracked in333/coverage"
+    },
+    {
+      "id": "bounded-writer-original-output",
+      "source_registry": "verification/experiments/bounded-writer/candidate.json",
+      "production_sources": [
+        "controller-service/src/template_registry/evidence.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "roots": [
+        "original private Writer::write/flush and encode_bounded finish -> isolated write_bounded/finish_bounded",
+        "original json_response -> isolated result selection and original HTTP builder"
+      ],
+      "proof": "SandboxModel/Boundaries/BoundedWriter/Audit.lean",
+      "condition": "A6 ordinary Vec/Serde/HTTP primitives and B4 source factorization/complete state/bytes/result forwarding; initial bound, callback error propagation and normal allocation explicit",
+      "business_provider": [
+        "V3",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "meaning": "actual isolated generated write/finish/response proofs with exact successful bytes and logical limit; source/native production connection, not arbitrary Serialize equivalence or RAM/async proof"
     }
   ]
 }

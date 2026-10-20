@@ -24,3 +24,7 @@ srcDir = "verification/aeneas/child-observation/concrete"
 [[lean_lib]]
 name = "SandproofCallbackState"
 srcDir = "verification/aeneas/callback-state"
+
+[[lean_lib]]
+name = "SandproofBoundedWriter"
+srcDir = "verification/aeneas/bounded-writer"
