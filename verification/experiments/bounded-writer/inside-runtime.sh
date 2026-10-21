@@ -4,6 +4,11 @@ set -euo pipefail
 writer_variant="$(realpath -- "$1")"
 shift
 writer_target="$(realpath -- "${SANDPROOF_WRITER_TARGET:?leased target required}")"
+# Inherit the measured outer runtime limit; do not restore a machine-specific cap.
+if [[ "$(ulimit -v)" == unlimited ]]; then
+  echo "A finite virtual-address limit from the registered outer runtime is required." >&2
+  exit 2
+fi
 exec env -u CI -u LD_LIBRARY_PATH -u LD_PRELOAD -u RUSTFLAGS -u CARGO_ENCODED_RUSTFLAGS \
  "${SANDPROOF_PROOF_BWRAP:?measured existing proof-bwrap alias required}" \
  --unshare-user --uid 1062 --gid 1062 --unshare-pid --unshare-ipc \
@@ -21,4 +26,4 @@ exec env -u CI -u LD_LIBRARY_PATH -u LD_PRELOAD -u RUSTFLAGS -u CARGO_ENCODED_RU
  --setenv TMPDIR /tmp/bounded-writer/tmp --setenv OCAMLRUNPARAM o=20 \
  --setenv SANDPROOF_PROOF_TOOL_ROOT /home/ning/sandproof-proof-337.eZkayQFZ/src/.tools \
  --chdir /tmp/bounded-writer/source \
- /bin/bash -c 'umask 077; ulimit -v 67108864; exec proof-taskset -c 0-7 "$@"' bash "$@"
+ /bin/bash -c 'umask 077; exec proof-taskset -c 0-7 "$@"' bash "$@"
