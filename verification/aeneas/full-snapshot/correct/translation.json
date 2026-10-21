@@ -1,0 +1,41 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandbox_runtime",
+  "functions": [
+    {
+      "def_id": 11,
+      "lean_name": "SandproofSnapshotPolicyRust.snapshot_policy.accepts",
+      "lean_file": "SandproofSnapshotPolicy/Funs.lean",
+      "rust_name": "sandbox_runtime::snapshot_policy::accepts",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/snapshot_policy.rs",
+        "begin_line": 14,
+        "end_line": 23
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 2,
+      "lean_name": "SandproofSnapshotPolicyRust.snapshot_policy.SnapshotFileFacts",
+      "lean_file": "SandproofSnapshotPolicy/Types.lean",
+      "rust_name": "sandbox_runtime::snapshot_policy::SnapshotFileFacts",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/snapshot_policy.rs",
+        "begin_line": 6,
+        "end_line": 12
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}

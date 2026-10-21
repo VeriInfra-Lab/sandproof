@@ -162,7 +162,7 @@ fn trusted_directory(metadata: &Metadata, owner: u32, private: bool) -> bool {
         && (!private || (metadata.uid() == owner && group_other_permissions == 0))
 }
 
-fn open_store(path: &Path, owner: u32) -> Result<File, RuntimeError> {
+pub(crate) fn open_store(path: &Path, owner: u32) -> Result<File, RuntimeError> {
     if !path.is_absolute() || path.as_os_str().len() > 4096 {
         return Err(invalid("snapshot store path"));
     }
@@ -197,7 +197,11 @@ fn open_store(path: &Path, owner: u32) -> Result<File, RuntimeError> {
     Ok(current)
 }
 
-fn matches_entry(directory: &File, name: &OsStr, file: &File) -> Result<(), RuntimeError> {
+pub(crate) fn matches_entry(
+    directory: &File,
+    name: &OsStr,
+    file: &File,
+) -> Result<(), RuntimeError> {
     let entry = statat(directory, name, AtFlags::SYMLINK_NOFOLLOW).map_err(os_error)?;
     let opened = file.metadata()?;
     if entry.st_dev != opened.dev() || entry.st_ino != opened.ino() {
@@ -216,6 +220,13 @@ fn key_name(prefix: &str, key: &[u8; 32]) -> String {
 }
 
 impl SnapshotStore {
+    pub(crate) fn from_layout(path: PathBuf, directory: File, owner: u32) -> Self {
+        Self {
+            path,
+            directory,
+            owner,
+        }
+    }
     /// Open a root-owned protected store through checked ancestor descriptors.
     /// # Errors
     /// Rejects non-root execution, symlinks, replaceable ancestors and loose modes.
@@ -235,7 +246,13 @@ impl SnapshotStore {
     }
 
     pub(crate) fn require_separate_from(&self, runtime_root: &Path) -> Result<(), RuntimeError> {
-        if self.path.starts_with(runtime_root) || runtime_root.starts_with(&self.path) {
+        if !runtime_root.is_absolute()
+            || runtime_root
+                .components()
+                .any(|part| matches!(part, Component::ParentDir | Component::Prefix(_)))
+            || self.path.starts_with(runtime_root)
+            || runtime_root.starts_with(&self.path)
+        {
             return Err(invalid("snapshot store overlaps reusable runtime tree"));
         }
         Ok(())

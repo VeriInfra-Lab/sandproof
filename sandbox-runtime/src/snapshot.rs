@@ -4,9 +4,11 @@
 //! handoff. V8 has closed new access and drained all writers. These physical
 //! operations neither grant that authority nor stop/resume a VM on failure.
 
-use super::{Runtime, RuntimeError, RuntimeProcessIdentity, validate_id, verified_process};
+use super::{
+    Runtime, RuntimeError, RuntimeProcessIdentity, SnapshotLayout, validate_id, verified_process,
+};
 use crate::snapshot_store::{
-    PublishedSnapshotFiles, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStage, SnapshotStore,
+    PublishedSnapshotFiles, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStage,
 };
 use rustix::{
     fs::{self, Mode, OFlags},
@@ -43,17 +45,23 @@ pub struct PausedOriginalVm {
 
 /// Produced only by the real Full-capture path, not by arbitrary file copying.
 pub struct CapturedFullSnapshot {
+    resource_id: String,
     stage: SnapshotStage,
     source: RuntimeProcessIdentity,
 }
 
 /// Physical Full-capture publication; no database handoff/stop authority.
 pub struct PublishedFullCapture {
+    resource_id: String,
     files: PublishedSnapshotFiles,
     source: RuntimeProcessIdentity,
 }
 
 impl CapturedFullSnapshot {
+    #[must_use]
+    pub fn resource_id(&self) -> &str {
+        &self.resource_id
+    }
     #[must_use]
     pub fn directory_key(&self) -> &[u8; 32] {
         self.stage.directory_key()
@@ -77,6 +85,7 @@ impl CapturedFullSnapshot {
         expected: &[SnapshotFileMeasurement],
     ) -> Result<PublishedFullCapture, RuntimeError> {
         Ok(PublishedFullCapture {
+            resource_id: self.resource_id,
             files: self.stage.publish(manifest, expected)?,
             source: self.source,
         })
@@ -84,6 +93,10 @@ impl CapturedFullSnapshot {
 }
 
 impl PublishedFullCapture {
+    #[must_use]
+    pub fn resource_id(&self) -> &str {
+        &self.resource_id
+    }
     #[must_use]
     pub fn files(&self) -> &PublishedSnapshotFiles {
         &self.files
@@ -183,6 +196,13 @@ impl Runtime {
         Ok(paused)
     }
 
+    /// Re-observe this original VM without issuing a pause/resume action.
+    /// # Errors
+    /// Rejects missing/replaced processes, jails or any state other than paused.
+    pub fn confirm_original_paused(&self, original: &PausedOriginalVm) -> Result<(), RuntimeError> {
+        self.verify_original_capture(original, true)
+    }
+
     fn verify_original_capture(
         &self,
         paused: &PausedOriginalVm,
@@ -229,7 +249,7 @@ impl Runtime {
     pub fn capture_full_into(
         &self,
         paused: &PausedOriginalVm,
-        store: &SnapshotStore,
+        layout: &SnapshotLayout,
         directory_key: [u8; 32],
         limits: FullCaptureLimits,
     ) -> Result<CapturedFullSnapshot, RuntimeError> {
@@ -240,7 +260,7 @@ impl Runtime {
         {
             return Err(error("full capture budgets or timeout"));
         }
-        store.require_separate_from(&self.config.chroot_base)?;
+        let store = layout.store_for_runtime(&self.config.chroot_base)?;
         self.verify_original_capture(paused, true)?;
         let mut stage = store.begin(directory_key)?;
         let mut capture_name = "full-".to_owned();
@@ -300,6 +320,7 @@ impl Runtime {
         )?;
         self.verify_original_capture(paused, true)?;
         Ok(CapturedFullSnapshot {
+            resource_id: paused.resource_id.clone(),
             stage,
             source: paused.identity.clone(),
         })

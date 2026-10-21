@@ -32,3 +32,6 @@ pub use linux::{
     CredentialFault, HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus,
     LinuxObservation, LinuxWorker, NodeConfig, ObservedSlot, RouteCapacityExceeded,
 };
+
+#[cfg(target_os = "linux")]
+pub mod full_snapshot;

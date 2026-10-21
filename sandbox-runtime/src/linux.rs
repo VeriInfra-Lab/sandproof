@@ -29,6 +29,9 @@ mod observation;
 mod retirement;
 #[path = "snapshot.rs"]
 mod snapshot;
+#[path = "snapshot_layout.rs"]
+mod snapshot_layout;
+pub use snapshot_layout::SnapshotLayout;
 #[path = "staging.rs"]
 mod staging;
 pub use cgroup::HostResources;

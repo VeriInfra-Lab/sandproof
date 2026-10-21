@@ -235,3 +235,26 @@ fn replacement_or_modification_of_copied_file_cannot_publish() {
         assert!(!fixture.store.join(key_name("capture-", &key)).exists());
     }
 }
+
+#[test]
+fn store_must_not_overlap_runtime_even_with_parent_components() {
+    let fixture = Fixture::new();
+    let store = fixture.open();
+    assert!(
+        store
+            .require_separate_from(&fixture.root.path().join("v"))
+            .is_ok()
+    );
+    assert!(store.require_separate_from(&fixture.store).is_err());
+    assert!(
+        store
+            .require_separate_from(&fixture.store.join("v"))
+            .is_err()
+    );
+    assert!(store.require_separate_from(fixture.root.path()).is_err());
+    assert!(
+        store
+            .require_separate_from(&fixture.store.join("subdir/.."))
+            .is_err()
+    );
+}

@@ -26,7 +26,7 @@ pub use linux::{
     PausedOriginalVm, PublishedFullCapture, RetirementManifest, Runtime, RuntimeConfig,
     RuntimeError, RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig,
     RuntimePhysicalObserver, RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState,
-    VmState, check_trusted_path, check_trusted_path_for_owner,
+    SnapshotLayout, VmState, check_trusted_path, check_trusted_path_for_owner,
 };
 
 #[cfg(target_os = "linux")]

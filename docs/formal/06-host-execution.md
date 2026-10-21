@@ -35,3 +35,19 @@
 同步守卫、参数、identity/path/manifest 校验、分类与精确清理决定经固定抽取；系统调用/FC/文件持久性用显式外部合同加实机证据。Rust 业务分支仍需机器对应，不能仅源码检查后称实现已证。
 
 真实 KVM 必须观察 RAM-only nonce、磁盘内容、长生命周期 guest 进程、旧 VMM 退出、新 VMM 身份以及后续修改；无旧 VM 留存占额。故障窗口覆盖捕获/发布/停止/加载/激活/删除；File backing 生命周期和磁盘释放单独观测。提供 LC-P4/5/6/7/9/10 的物理部分、LC-I6/7/8；结果绑定固定 CPU/内核/FC/文件系统。无 UFFD、增量链、迁移或任意设备组合支持承诺。
+
+### 捕获与封存部件的接口
+
+`Runtime::pause_original_vm` 绑定原进程的 PID、启动时间、boot 身份和原 jail，只有 API 确认为 paused 才产生 `PausedOriginalVm`。句柄只是观察结果，不授予当前操作资格；丢弃它不会停止或恢复原 VM。
+
+`capture_full_into` 发送固定 Full 请求，从原目录句柄打开 state/memory 和白名单 rootfs，保持暂停并复制到独立 store。首 profile 对应 `stage_and_boot` 的 rootfs→rootfs.ext4。调用方必须持续持有原工作/围栏及无写者条件，不能用过期观察代替它。
+
+`SnapshotStage` 检查原 FD 的类型、属主、权限、链接数及长度，逐块复制并计算真实 SHA-256。发布前核对保留的目标 FD、替换/修改及全部测量，随后同步文件、目录并执行不覆盖的同目录 rename。任何错误都保留材料；rename 后的同步错误可能已有可见效果。已有名字不自动判为同键成功，须查询原持久工作。
+
+`CapturedFullSnapshot` 与普通文件复制结果分型；节点 `full_snapshot::seal_full_capture` 再核对原 VM 身份、完整 capture 目录键和原 profile，并从实际测量构建完整 manifest。`PublishedFullCapture` 只表示文件与同步事实；V5 持久登记前没有 stop 许可。此模块无删除/kill/thaw 的失败补偿，尚未接入默认节点命令，不等于完整 pause/unload 已验收。具体提交和证据在 #638 记录。
+
+纯 `snapshot_policy::accepts` 是复制路径实际调用的 Metadata 接受检查；其局部证明不能替代原 FD 获取、冻结期间无写者、完整 manifest/事务连接或 S-C 文件持久性合同。
+
+`SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，通过同一个父 FD 创建、检查两原句柄，记录布局版本、原部署配置绑定及父目录/两子目录的设备、inode 和出生身份，先同步再发布。`reopen` 读取原持久记录，允许目录已有运行材料，逐一核对原身份与绑定；缺失、部分初始化、替换或版本不符均拒绝，不转为重新初始化或另建编号。Full 捕获消费这个私有构造的布局，并重查原 runtime root，任意两个 Path 不提供同等保证。这里仍采用受控静态挂载、无无关特权写者的部署条件；自有初始化/重开判断没有被整体列为可信依赖。
+
+运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。布局格式 1 是新 stage1 的有限布局，不收养或迁移旧 profile。此布局已接真实组件和故障回归；其完整 Rust 对应证明及与正式物理 profile 激活的连接仍须补齐。root/0400 封存文件供 jailer File 后端加载时的权限路径、是否需要私有 RAM 副本及相应峰值预算属于恢复批缺口，当前恢复仍不启用。
