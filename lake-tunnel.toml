@@ -59,14 +59,6 @@ name = "SandproofBoundedWriter"
 srcDir = "verification/aeneas/bounded-writer"
 
 [[lean_lib]]
-name = "SandproofFirstChain"
-srcDir = "verification/aeneas/first-chain"
-
-[[lean_lib]]
-name = "SandproofTunnel"
-srcDir = "verification/aeneas/tunnel"
-
-[[lean_lib]]
 name = "SandproofBtreeSetProbe"
 srcDir = "verification/aeneas/btree-set-binding"
 
@@ -77,3 +69,11 @@ srcDir = "verification/aeneas/protected-directory/correct"
 [[lean_lib]]
 name = "SandproofProtectedDirectoryBad"
 srcDir = "verification/aeneas/protected-directory/bypass-writes"
+
+[[lean_lib]]
+name = "SandproofFirstChain"
+srcDir = "verification/aeneas/first-chain"
+
+[[lean_lib]]
+name = "SandproofTunnel"
+srcDir = "verification/aeneas/tunnel"
