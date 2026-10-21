@@ -180,7 +180,7 @@
     "verification/json-counter-inputs.sha256": "ff32662c026e2c73411803d00e6bb24ef466fbf02bcdd99ca9e42ec9e560b97f",
     "verification/json-identifiers-inputs.sha256": "e34c816a958a2802fb3059252e52804a1c4f2f24c83c0648f24a0c9616170e4b",
     "verification/json-request-inputs.sha256": "7578893db0b1473d517952d66ff143cbc1b62156df2adce0ec7c5823812ac292",
-    "verification/schema-domains-inputs.sha256": "58875c9b91c702d55613db41df33155a584d8cee707b5dced0466ac22a69d927",
+    "verification/schema-domains-inputs.sha256": "ad2d8cd52c5c6e04ca28c5c81d9c734649f0a6911c0621ea4111dac927c9edc0",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/json-counter-environment.json": "a5e58edc18ec5b71b3d7779339afabce9c760a36536e70dc319bd125c711d980",
     "verification/json-identifiers-environment.json": "e8ff7192aec9aafd5adf58bcddcb13619c5f61d0d301351dffc869cebfaf1d14",

@@ -1,4 +1,4 @@
-ef8fae5fa9c31063db6530b42ee86e5c64d525adf3ca9582cde60a590c78fdde  docs/proof-workflow.md
+7309a1dc8596514d158d6e73d4cd55a34d98a4d0f8f0a1bff9c2cb2c54bcd978  docs/proof-workflow.md
 849b15aa6c4ca9f2b4c7443c8f3c866211780f705fc2fed2d2d9a3d0c1118810  scripts/acceptance-native.sh
 4e5682a59c2d0d3262dc4b24d286215fe300a21f183350affaf23b3b3b4e52f9  scripts/proof-cache-step.sh
 3cc9a66dc05eb3bb8e806b96fd6d4d886e474f1845c172279c4c7bd63c8837d2  scripts/verify-retained-proofs.sh

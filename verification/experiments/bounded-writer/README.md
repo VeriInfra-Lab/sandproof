@@ -120,8 +120,17 @@ python3 verification/experiments/bounded-writer/lease.py create \
   --output "$writer_lease_physical"
 ```
 
-凭据 schema 为 `sandproof-bounded-writer-runtime-lease-v1`，仅包含 schema、固定 bwrap
-摘要及 directories。directories 恰好 source/work/target；各项保存 physical_path、
+原机凭据 schema 为 `sandproof-bounded-writer-runtime-lease-v1`，仅包含 schema、固定 bwrap
+摘要及 directories。迁移到新证明机时，可在宿主添加 `--physical-root /实际私有工作根`
+创建 v2 凭据；不要求复刻旧机的 `/data1/zn` 布局，也不需要管理员权限。该根必须是
+当前操作者拥有、其他用户不可访问的真实目录，不能是符号链接；source/work/target
+必须在该根之下且互不包含。v2 额外记录 `physical_root`，仍逐次核对三个实际目录的
+设备与 inode、原 bwrap 摘要和凭据的只读挂载。旧 v1 的 data1 限制保持不变。
+新宿主应重新生成目录凭据和执行环境记录，不能复制旧 inode 或旧机器的成功收据。
+独立 `replay.py/runtime.sh` 仍是原 a6000 入口；新机使用上述 `inside.py` 配合登记过的
+外层 wrapper，固定虚拟抽取路径与原生成物比较不变。
+
+两版凭据的directories 恰好 source/work/target；各项保存 physical_path、
 runtime_path、st_dev、st_ino。宿主核对物理 realpath；原运行环境内核对目录的 dev/inode，
 拒绝同名替换目录、符号链接或相互嵌套。凭据必须由现有外层 wrapper 只读挂载，chmod
 不能代替只读挂载。这是可信操作者的执行记录，不是外部上传者的签名证书。
