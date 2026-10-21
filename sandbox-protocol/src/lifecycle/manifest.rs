@@ -3,6 +3,7 @@ use crate::ResourceId;
 use serde::{Deserialize, Serialize};
 
 pub const MANIFEST_FORMAT_VERSION: u16 = 1;
+/// This implementation's bounded device profile, not a Firecracker limit.
 pub const MAX_WRITABLE_DRIVES: usize = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,7 +81,27 @@ pub enum ManifestError {
 /// Fixed bundle names are generated from a bounded profile index, never a path.
 #[must_use]
 pub fn disk_bundle_path(index: usize) -> Option<String> {
-    (index < MAX_WRITABLE_DRIVES).then(|| format!("disk-{index}.img"))
+    // Closed names for this bounded profile avoid a dynamic formatting graph.
+    let name = match index {
+        0 => "disk-0.img",
+        1 => "disk-1.img",
+        2 => "disk-2.img",
+        3 => "disk-3.img",
+        4 => "disk-4.img",
+        5 => "disk-5.img",
+        6 => "disk-6.img",
+        7 => "disk-7.img",
+        8 => "disk-8.img",
+        9 => "disk-9.img",
+        10 => "disk-10.img",
+        11 => "disk-11.img",
+        12 => "disk-12.img",
+        13 => "disk-13.img",
+        14 => "disk-14.img",
+        15 => "disk-15.img",
+        _ => return None,
+    };
+    Some(name.to_owned())
 }
 
 fn valid_jail_relative_path(path: &str) -> bool {
@@ -89,22 +110,40 @@ fn valid_jail_relative_path(path: &str) -> bool {
     }
     let mut length = 0usize;
     let mut dots = true;
-    for byte in path.bytes() {
+    let bytes = path.as_bytes();
+    let mut index = 0usize;
+    let mut valid = true;
+    while index < bytes.len() && valid {
+        let byte = bytes[index];
         if byte == b'\0' || byte == b'\\' {
-            return false;
-        }
-        if byte == b'/' {
-            if length == 0 || (dots && length <= 2) {
-                return false;
+            valid = false;
+        } else if byte == b'/' {
+            valid = length > 0 && !(dots && length <= 2);
+            if valid {
+                length = 0;
+                dots = true;
             }
-            length = 0;
-            dots = true;
         } else {
             length += 1;
             dots &= byte == b'.';
         }
+        index += 1;
     }
-    length > 0 && !(dots && length <= 2)
+    valid && length > 0 && !(dots && length <= 2)
+}
+
+fn distinct_drive(drives: &[WritableDrive], index: usize) -> bool {
+    let mut earlier = 0usize;
+    let mut distinct = true;
+    while earlier < index && distinct {
+        distinct = different_drive(&drives[index], &drives[earlier]);
+        earlier += 1;
+    }
+    distinct
+}
+
+fn different_drive(drive: &WritableDrive, earlier: &WritableDrive) -> bool {
+    drive.drive_id != earlier.drive_id && drive.jail_relative_path != earlier.jail_relative_path
 }
 
 impl VmCompatibility {
@@ -117,27 +156,67 @@ impl VmCompatibility {
         {
             return Err(ManifestError::InvalidDriveProfile);
         }
-        for (index, drive) in self.writable_drives.iter().enumerate() {
-            if !valid_jail_relative_path(&drive.jail_relative_path) {
-                return Err(ManifestError::InvalidDriveProfile);
-            }
-            for earlier in &self.writable_drives[..index] {
-                if drive.drive_id == earlier.drive_id
-                    || drive.jail_relative_path == earlier.jail_relative_path
-                {
-                    return Err(ManifestError::InvalidDriveProfile);
-                }
-            }
+        let mut index = 0usize;
+        let mut valid = true;
+        while index < self.writable_drives.len() && valid {
+            valid = valid_jail_relative_path(&self.writable_drives[index].jail_relative_path)
+                && distinct_drive(&self.writable_drives, index);
+            index += 1;
         }
-        Ok(())
+        if valid {
+            Ok(())
+        } else {
+            Err(ManifestError::InvalidDriveProfile)
+        }
     }
+}
+
+fn file_length(
+    file: &SnapshotFile,
+    index: usize,
+    profile: &VmCompatibility,
+) -> Result<u64, ManifestError> {
+    let expected_path = match &file.kind {
+        SnapshotFileKind::State {} => {
+            if index != 0 {
+                return Err(ManifestError::FileSetMismatch);
+            }
+            "state.bin".to_owned()
+        }
+        SnapshotFileKind::Memory {} => {
+            if index != 1 {
+                return Err(ManifestError::FileSetMismatch);
+            }
+            "memory.bin".to_owned()
+        }
+        SnapshotFileKind::Disk { drive_id } => {
+            if index < 2 {
+                return Err(ManifestError::FileSetMismatch);
+            }
+            let drive = &profile.writable_drives[index - 2];
+            if *drive_id != drive.drive_id {
+                return Err(ManifestError::FileSetMismatch);
+            }
+            disk_bundle_path(index - 2).ok_or(ManifestError::FileSetMismatch)?
+        }
+    };
+    if file.relative_path != expected_path {
+        return Err(ManifestError::InvalidPath);
+    }
+    if file.length == 0 {
+        return Err(ManifestError::InvalidLength);
+    }
+    Ok(file.length)
 }
 
 impl SnapshotManifest {
     /// Compare against the original capture and protected device profile.
     ///
-    /// Caller obtains both expected values from its original accepted operation
-    /// and configuration, not by reading them back from this manifest.
+    /// Caller obtains both expected values from the original accepted capture
+    /// and protected configuration, not by reading them back from this manifest.
+    /// A later resume has its own operation key; it must not replace the capture
+    /// operation in `expected`. The profile's shape does not establish external
+    /// VMM compatibility, even when two arbitrary profiles compare equal.
     /// # Errors
     /// Preserves version, binding, profile, file-set, path and length order.
     pub fn validate(
@@ -165,30 +244,17 @@ impl SnapshotManifest {
         if self.files.len() != 2 + profile.writable_drives.len() {
             return Err(ManifestError::FileSetMismatch);
         }
-        let mut total = 0u64;
-        for (index, file) in self.files.iter().enumerate() {
-            let expected_path = match (&file.kind, index) {
-                (SnapshotFileKind::State {}, 0) => "state.bin".to_owned(),
-                (SnapshotFileKind::Memory {}, 1) => "memory.bin".to_owned(),
-                (SnapshotFileKind::Disk { drive_id }, index) if index >= 2 => {
-                    let drive = &profile.writable_drives[index - 2];
-                    if *drive_id != drive.drive_id {
-                        return Err(ManifestError::FileSetMismatch);
-                    }
-                    disk_bundle_path(index - 2).ok_or(ManifestError::FileSetMismatch)?
-                }
-                _ => return Err(ManifestError::FileSetMismatch),
+        let mut total = Ok(0u64);
+        let mut index = 0usize;
+        while index < self.files.len() && total.is_ok() {
+            total = match (total, file_length(&self.files[index], index, profile)) {
+                (Ok(current), Ok(length)) => current
+                    .checked_add(length)
+                    .ok_or(ManifestError::LengthOverflow),
+                (_, Err(error)) | (Err(error), _) => Err(error),
             };
-            if file.relative_path != expected_path {
-                return Err(ManifestError::InvalidPath);
-            }
-            if file.length == 0 {
-                return Err(ManifestError::InvalidLength);
-            }
-            total = total
-                .checked_add(file.length)
-                .ok_or(ManifestError::LengthOverflow)?;
+            index += 1;
         }
-        Ok(total)
+        total
     }
 }

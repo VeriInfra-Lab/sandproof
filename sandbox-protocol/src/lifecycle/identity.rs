@@ -42,7 +42,10 @@ macro_rules! counter_role {
             /// # Errors
             /// Exhaustion is refused; a role is never wrapped back to zero.
             pub fn checked_next(self) -> Result<Self, InternalError> {
-                self.0.checked_next().map(Self)
+                match self.0.checked_next() {
+                    Ok(value) => Ok(Self(value)),
+                    Err(error) => Err(error),
+                }
             }
         }
 
@@ -50,7 +53,10 @@ macro_rules! counter_role {
             type Error = InternalError;
 
             fn try_from(value: u64) -> Result<Self, Self::Error> {
-                PositiveCounter::try_from(value).map(Self)
+                match PositiveCounter::try_from(value) {
+                    Ok(value) => Ok(Self(value)),
+                    Err(error) => Err(error),
+                }
             }
         }
     };

@@ -361,3 +361,78 @@ fn lengths_are_positive_and_sum_never_wraps() {
         Err(ManifestError::LengthOverflow)
     );
 }
+
+#[test]
+fn resume_cannot_replace_the_original_capture_operation_key() {
+    let value = manifest();
+    let mut resume = unload();
+    resume.binding.key.sequence = RequestSequence::try_from(2).unwrap();
+    resume.operation = LifecycleOperation::Resume {
+        source_incarnation: value.binding.source_incarnation,
+        capture: value.binding.capture,
+        target_incarnation: IncarnationId::try_from(4).unwrap(),
+        manifest_digest: ContentDigest::from_sha256([0; 32]),
+    };
+    assert_eq!(resume.validate(&node()), Ok(()));
+    let resume_binding = CaptureBinding {
+        operation: resume.binding,
+        source_incarnation: value.binding.source_incarnation,
+        capture: value.binding.capture,
+    };
+    assert_eq!(
+        value.validate(&resume_binding, &value.compatibility),
+        Err(ManifestError::BindingMismatch)
+    );
+    assert_eq!(value.validate(&value.binding, &value.compatibility), Ok(6));
+}
+
+#[test]
+fn supported_profile_accepts_sixteen_disks_and_rejects_seventeen() {
+    let mut value = manifest();
+    for index in 1..16 {
+        let drive_id = ResourceId::try_from(format!("data-{index}").as_str()).unwrap();
+        value.compatibility.writable_drives.push(WritableDrive {
+            drive_id: drive_id.clone(),
+            jail_relative_path: format!("data-{index}.ext4"),
+        });
+        value.files.push(SnapshotFile {
+            kind: SnapshotFileKind::Disk { drive_id },
+            relative_path: format!("disk-{index}.img"),
+            length: 1,
+            digest: ContentDigest::from_sha256([0; 32]),
+        });
+    }
+    assert_eq!(value.validate(&value.binding, &value.compatibility), Ok(21));
+    value.compatibility.writable_drives.push(WritableDrive {
+        drive_id: ResourceId::try_from("seventeenth").unwrap(),
+        jail_relative_path: "seventeenth.ext4".into(),
+    });
+    assert_eq!(
+        value.compatibility.validate(),
+        Err(ManifestError::InvalidDriveProfile)
+    );
+}
+
+#[test]
+fn different_drive_names_cannot_alias_one_jail_path() {
+    let mut value = manifest();
+    value.compatibility.writable_drives.push(WritableDrive {
+        drive_id: ResourceId::try_from("different-drive").unwrap(),
+        jail_relative_path: "rootfs.ext4".into(),
+    });
+    assert_eq!(
+        value.compatibility.validate(),
+        Err(ManifestError::InvalidDriveProfile)
+    );
+}
+
+#[test]
+fn fixed_bundle_names_match_the_original_format_for_the_whole_supported_domain() {
+    for index in (0..=17).chain([usize::MAX]) {
+        let expected = (index < 16).then(|| format!("disk-{index}.img"));
+        assert_eq!(
+            sandproof_protocol::lifecycle::disk_bundle_path(index),
+            expected
+        );
+    }
+}
