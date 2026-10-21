@@ -137,6 +137,90 @@ class BtreeSetAdmissionTests(unittest.TestCase):
                 self.check_artifacts(changed, source, target)
 
 
+class BtreeSetFrozenContractTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.environment = json.loads((binding.ROOT / binding.ENVIRONMENT).read_text())
+        for name in self.environment["inputs"] + [binding.FREEZE]:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((binding.ROOT / name).read_bytes())
+
+    def reseal(self):
+        lines = [binding.sha(self.root / name) + "  " + name + "\n"
+                 for name in self.environment["inputs"]]
+        (self.root / binding.FREEZE).write_text("".join(lines))
+
+    def test_current_full_contract_is_admitted(self):
+        self.assertEqual(binding.check(self.root)["positive_audits"], binding.POSITIVE)
+
+    def test_new_allocator_promise_rejected_even_after_hash_refresh(self):
+        path = self.root / binding.ENVIRONMENT
+        data = json.loads(path.read_text())
+        data["scope"]["allocator"] = "arbitrary user allocator"
+        path.write_text(json.dumps(data))
+        self.reseal()
+        with self.assertRaises(ValueError):
+            binding.check(self.root)
+
+    def test_hidden_owned_body_or_frontend_error_rejected_after_hash_refresh(self):
+        path = self.root / binding.LLBC
+        original = path.read_bytes()
+        for variant in ["opaque", "error"]:
+            with self.subTest(variant=variant):
+                data = json.loads(original)
+                if variant == "error":
+                    data["has_errors"] = True
+                else:
+                    owned = [d for d in data["translated"]["fun_decls"] if d is not None
+                             and d["item_meta"]["name"][0].get("Ident", [""])[0]
+                             == "sandproof_btree_set_binding"]
+                    owned[0]["body"] = "Opaque"
+                path.write_text(json.dumps(data))
+                self.reseal()
+                with self.assertRaises(ValueError):
+                    binding.check(self.root)
+
+    def test_complete_unwind_metadata_and_generated_body_are_not_discarded(self):
+        path = self.root / binding.LLBC
+        original = path.read_bytes()
+        data = json.loads(original)
+        data["translated"]["unexpected_unwind_effect"] = {"discarded": True}
+        path.write_text(json.dumps(data))
+        self.reseal()
+        with self.assertRaises(ValueError):
+            binding.check(self.root)
+        path.write_bytes(original)
+        path = self.root / binding.GENERATED / "SandproofBtreeSetProbe/Funs.lean"
+        path.write_text(path.read_text() + "\n-- unreviewed body context\n")
+        self.reseal()
+        with self.assertRaises(ValueError):
+            binding.check(self.root)
+
+    def test_missing_audit_or_forged_assumption_rejected_after_hash_refresh(self):
+        path = self.root / binding.PROOFS / "Audit.lean"
+        original = path.read_bytes()
+        path.write_text("\n".join(path.read_text().splitlines()[:-1]) + "\n")
+        self.reseal()
+        with self.assertRaises(ValueError):
+            binding.check(self.root)
+        path.write_bytes(original)
+        path = self.root / binding.PROOFS / "Theory.lean"
+        path.write_text(path.read_text() + "\naxiom forged : True\n")
+        self.reseal()
+        with self.assertRaises(ValueError):
+            binding.check(self.root)
+
+    def test_actual_key_source_cannot_silently_change(self):
+        path = self.root / "sandbox-center-core/src/model.rs"
+        path.write_text(path.read_text() + "\n// changed key source\n")
+        self.reseal()
+        with self.assertRaises(ValueError):
+            binding.check(self.root)
+
+
 class BtreeSetReplayViewTests(unittest.TestCase):
     def test_private_views_accept_exact_registered_library_and_reject_duplicates(self):
         file = binding.ROOT / binding.EXPERIMENT / "replay.py"
