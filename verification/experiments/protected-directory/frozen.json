@@ -30,7 +30,7 @@
     "verification/experiments/protected-directory/native.py": "d15b74e07f6048520cdb2fa711e6a911beff0be05f4a4cc99b8adb73fcf3ab20",
     "verification/experiments/protected-directory/native.rs": "b14d11957b56681dc361a086237e76398c83d758080eb8d1550356aec9a4841e",
     "verification/experiments/protected-directory/prepare.py": "601610c1ff8a77cc122ccd7f0c88ffe52a75022ba20a5c2cb4ad3b6d545785cb",
-    "verification/experiments/protected-directory/proof.py": "8822a3b3958c0fdfd930aa9d09dbffdc3e743aaa2fa3e9393fd4d00db0c420f3",
+    "verification/experiments/protected-directory/proof.py": "fb9ff0417099d93b21e9f5cf7e72de2b5dce7e1a501828cc2285fd777b1d144f",
     "verification/experiments/protected-directory/std-sources.json": "c67cb6931995fad19a38546a3ccae41300997cb58d6c16a81161c89be36cddc2",
     "verification/experiments/protected-directory/test_checks.py": "caaa107fd444abb386d92c350931a31b8d26befb9d9bd0e7a7b2ca80cd5143f0"
   }

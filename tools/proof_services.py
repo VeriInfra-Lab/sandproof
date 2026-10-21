@@ -8,6 +8,13 @@ import tempfile
 
 ROOT=Path(__file__).resolve().parents[1]
 FILES=('SandboxModel.lean','verification/ProofAudit.lean',
+       'SandboxModel/Foundations/BtreeSetBinding/Audit.lean',
+       'SandboxModel/Boundaries/ProtectedDirectory/Audit.lean',
+       'SandboxModel/Boundaries/ProtectedDirectory/ElaborationScope.lean',
+       'SandboxModel/Boundaries/TokioMutex.lean',
+       'SandboxModel/Boundaries/TokioMutex/Core.lean',
+       'SandboxModel/Boundaries/TokioMutex/Examples.lean',
+       'SandboxModel/Boundaries/TokioMutex/Audit.lean',
        'SandboxModel/Boundaries/JsonRequest/Audit.lean',
        'SandboxModel/Boundaries/Revocation/Audit.lean',
        'SandboxModel/Boundaries/OwnedMessage/Audit.lean',

@@ -317,7 +317,7 @@ class ClosureTests(unittest.TestCase):
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
             'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
-            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer'})
+            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
         retained=(root/'scripts/verify-retained-proofs.sh').read_text()
@@ -472,6 +472,27 @@ class FormalReuseTests(unittest.TestCase):
             self.assertFalse(proof_batch.step('network',command,self.source)['reused'])
             archive.write_bytes(b'changed archive')
             self.assertFalse(proof_batch.step('network',command,self.source)['reused'])
+
+    def test_new_required_external_evidence_cannot_reuse_an_unbound_record(self):
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+        raw=self.base/'reviewed-stdlib.rs';raw.write_text('actual reviewed source')
+        required={str(raw):receipts.sha(raw)}
+        with mock.patch.object(proof_batch,'external_component_paths',return_value=([],required)):
+            current=proof_batch.step('network',self.command,self.source)
+            self.assertFalse(current['reused'])
+            self.assertEqual(json.loads(Path(current['receipt']).read_text())['evidence'][str(raw)],receipts.sha(raw))
+            self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_external_evidence_change_during_run_never_publishes_success(self):
+        raw=self.base/'reviewed-stdlib.rs';raw.write_text('before execution')
+        expected=receipts.sha(raw)
+        command=[sys.executable,'-c','from pathlib import Path;Path('+repr(str(raw))+').write_text("changed while running")']
+        with mock.patch.object(proof_batch,'external_component_paths',return_value=([],{str(raw):expected})):
+            with self.assertRaisesRegex(ValueError,'external raw evidence changed'):
+                proof_batch.step('network',command,self.source)
+            key=proof_batch.module_key('network',command,self.source)
+            entry=Path(os.environ['SANDPROOF_FORMAL_CACHE'])/'modules/network'/receipts.digest(key)
+            self.assertFalse((entry/'receipt.json').exists())
 
     def test_existing_fixed_output_is_snapshotted_and_required_for_reuse(self):
         relative='artifacts/existing/source.llbc'

@@ -65,3 +65,15 @@ srcDir = "verification/aeneas/first-chain"
 [[lean_lib]]
 name = "SandproofStorage"
 srcDir = "verification/aeneas/storage"
+
+[[lean_lib]]
+name = "SandproofBtreeSetProbe"
+srcDir = "verification/aeneas/btree-set-binding"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectory"
+srcDir = "verification/aeneas/protected-directory/correct"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectoryBad"
+srcDir = "verification/aeneas/protected-directory/bypass-writes"

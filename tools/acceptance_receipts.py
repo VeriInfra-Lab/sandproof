@@ -20,7 +20,8 @@ PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
-                   'SANDPROOF_WRITER_SOURCE_ARCHIVE')
+                   'SANDPROOF_WRITER_SOURCE_ARCHIVE',
+                   'SANDPROOF_LIBRARY_SOURCE_ARCHIVE')
 
 
 def sha(path):

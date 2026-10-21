@@ -98,6 +98,10 @@ def main():
         check_inputs()
         if any(sha(ROOT / item['file']) != item['source_sha256'] for item in record['files']):
             raise ValueError('actual source changed during component replay')
+        # Forward only the original messages admitted against all actual files.
+        # The shared batch must also see the separately checked wrong version.
+        for message in observed:
+            print(message, flush=True)
         record.update(success=True, audits=len(expected))
     except BaseException as error:
         record.update(success=False, error=repr(error), traceback=traceback.format_exc())

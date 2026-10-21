@@ -729,3 +729,40 @@ A6 仅提供固定普通 Vec 的长度、capacity、正常 reserve 不改内容�
 拒绝不追加本次字节，但不撤销此前私有前缀，回调也可继续写较小/空块。大小加法溢出或超限才置 exceeded；reserve 失败保留原标记，不能统一叫超限。Writer 没有保存任意 IO 错误的全局首错；单次检查顺序、serializer 最终错误和超限优先级分别保留。自定义 Serialize 可以吞掉分配错误再正常返回，此时 finish 可以接受不完整前缀；完整 JSON 仍要求固定派生/实际回调正确传播错误与轨迹条件，由实际 schema/V3/V7/V8 提供。
 
 初始字节界由调用方建立；原入口从空 Vec 开始，预填充调用不自动满足。普通值、有效借用、有限可表示输入与正常分配是适用域，逻辑输出字节界不控制 Vec capacity、分配器、临时数据或整个服务 RAM。panic/unwind、OOM/abort、资源载荷的可观察 Drop、取消和网络最终交付不由正常后态定理提供。真实错误 Rust 删除限额拒绝后成功抽取，由同一 WriteContract 拒绝；库条件有合法非空接受与分配拒绝见证，不以不可满足条件获证。
+
+
+## A6 BTreeSet 普通键插入
+
+[实际连接](../../SandboxModel/Foundations/BtreeSetBinding/Refinement.lean)和[使用范围](../../verification/experiments/btree-set-binding/model/README.md)限固定 Global 分配器及 `&str`、`(&str, u16)` 普通键，`u64` 只作对照。Rust 仍调用原 `BTreeSet::insert`；五个透明委托的实际生成体已连接集合值模型，不把生产集合替换成 Vec。
+
+| 接口条件或结论 | 提供方和准确范围 |
+|---|---|
+| 正常插入返回 true 恰好表示原集合没有此键；随后集合包含该键，重复插入返回 false | 固定 Std 的 A6 正常值合同；真实委托与此合同的组合由 Refinement 证明 |
+| 后一次调用读取前一次回写后的同一集合 | 原生成函数的移动/回写连接；不能把连续调用改成两份旧快照 |
+| 字符串按完整 UTF-8 字节比较，元组先比较字符串再比较 u16 | 固定字典符合性；借用必须有效稳定，元素和长度可表示，所需分配可用 |
+| 只允许普通键和 Global 的不可观察内存释放 | A6 使用域；自定义 Ord、allocator、资源键 Drop 和异常清理不在本合同内 |
+
+模型中的列表仅表示集合含有哪些值，不保证真实树形、地址、迭代顺序、比较调用轨迹或物理内存上界。正常返回的合同不承诺 OOM/panic/abort 回滚或无条件进展。`contains/len/collect/iter`、其它键类型及完整 validator 不由插入接口推出；V1/V6/V8 仍证明实际唯一性要求、字段选择、首错和业务状态。22 项正确/辅助目标与2项真实错误版目标分别审计；真实返回值取反版经原工具抽取后由同一 `InsertContract` 拒绝，不把 Std 树算法称为已机器证明。
+
+## A3/B4 Metadata 目录判断
+
+[原函数对应](../../SandboxModel/Boundaries/ProtectedDirectory/Refinement.lean)验证 `protected_files::directory(&Metadata, owner)`。A3/B4 只提供同一份已取得 Metadata 的 `is_dir/uid/mode` 三个 getter，按固定生产/抽取编译器的八份 Std 原文核对；getter 不再次查询文件系统。目录类型、属主比较、权限掩码、短路顺序与 Ok/Untrusted 选择保留原 Rust 生成体。
+
+正常返回 Ok 当且仅当快照表示目录、属主为 root 或指定 owner，且 group/other 不可写，或该目录同时属于 root 并设置 sticky 位。合法私有目录和 root sticky 目录有原函数接受见证；去掉写权限掩码的真实 Rust 副本由相同 `AcceptanceSafe` 性质拒绝。14 项正确/辅助与2项错误版目标使用各自实际生成环境；局部 elaboration 适配仅在两个具名命名空间启用现有标准逻辑实例，不修改生成物或加入业务公理。
+
+本合同不保证 owner 选择正确，也不保证路径解析、首次打开、返回的 FD 身份、查验到使用之间没有替换、读写/同步/关闭顺序或物理退出。V6/V8 提供这些业务和对象条件。后续 `open_checked` 试点的循环/借用翻译仍有阻断；目录快照证明不代替完整受保护读取。原源码归档和八份 Std 原文均是正式复现必需输入，缺失或内容变化不能复用旧结果。
+
+## A6/B2 Tokio Mutex 原借用守卫
+
+[公共模型](../../SandboxModel/Boundaries/TokioMutex.lean)复用 RwLock 的独占写者规则并限制为没有读者的状态。固定 Tokio 1.49.0 的 borrowed `Mutex` 操作仍按 A6/B2 信任，实际异步表达式没有由 Aeneas 机器证明。三份生产源码中的七组操作在[逐点登记](../../verification/experiments/tokio-mutex/environment.json)维护：Session 的 init 创建/使用，以及命令 input 的创建、写入、关闭、安装和完成处理。
+
+| 操作或观察 | 可依赖的保证 | 调用者仍须提供 |
+|---|---|---|
+| 取得并持续持有原守卫 | 同一锁的其它取得不能同时返回可用守卫；逻辑 ticket 相等不允许复制 Rust 守卫 | 原锁/原守卫/实际操作历史符合登记，各次写入和中间状态保持业务不变量 |
+| try_lock 返回 Busy | 没有取得新可用守卫；Busy 也可能来自等待者预留 | 不把 Busy 推成另一个业务任务正在执行或输入已经关闭 |
+| 取消尚未取得守卫的等待 | 不凭空释放别人的已返回守卫 | 只描述本等待的守卫投影；取消整个持有资源的业务 future 须核对真实 Drop、I/O 和其它资源 |
+| 正常归还或 forget | 归还使旧访问失效；forget 使可用访问消失但锁仍可能一直占用 | 原锁存活；释放事件本身不改 inline payload，不保证解锁后其它写者没有立即修改 |
+
+Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+
+21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。

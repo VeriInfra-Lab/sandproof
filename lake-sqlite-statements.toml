@@ -28,3 +28,15 @@ srcDir = "verification/aeneas/callback-state"
 [[lean_lib]]
 name = "SandproofBoundedWriter"
 srcDir = "verification/aeneas/bounded-writer"
+
+[[lean_lib]]
+name = "SandproofBtreeSetProbe"
+srcDir = "verification/aeneas/btree-set-binding"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectory"
+srcDir = "verification/aeneas/protected-directory/correct"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectoryBad"
+srcDir = "verification/aeneas/protected-directory/bypass-writes"

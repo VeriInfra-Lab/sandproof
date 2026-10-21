@@ -37,6 +37,10 @@ try:
     actual=re.findall(r'^Checked ([\w.]+): \d+ standard logical dependencies$',text,re.M)
     if sorted(actual)!=sorted(EXPECTED_AUDITS):raise ValueError('Actual file audit mismatch')
     if check_inputs()!=frozen:raise ValueError('Changed component during proof')
+    # Keep original service messages; names alone are not success evidence.
+    for message in text.splitlines():
+        if re.fullmatch(r'Checked [\w.]+: \d+ standard logical dependencies',message):
+            print(message,flush=True)
     record.update(complete=True,exit_code=0,audits=21,actual_files=4,inputs=frozen)
 except BaseException as error:
     record.update(exit_code=1,error=repr(error))

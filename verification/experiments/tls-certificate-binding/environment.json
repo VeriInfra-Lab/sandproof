@@ -714,7 +714,7 @@
     "verification/fixtures/tls-pin-candidate.patch": "15c3fd86d6fff9710e7743ffd7fdf1feec0f80f532e94e3c9c0da73d45ada38d",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/tls-pin-environment.json": "837f8c9611d076ce62b9f0ff00c25af3f8443977870215dfcf55ecc17f460f0a",
-    "verification/tls-pin-inputs.sha256": "bca9aed85253bf685b24d33fe2e54e22e5978362cd5a6343c20026563c90d46d"
+    "verification/tls-pin-inputs.sha256": "8c612fef0f3f80d2777b196b70dc40917b709b8cb3b4c4a93c993c1bff6a5fad"
   },
   "normal_domain": "valid shared borrow, complete finite DER bytes, fixed SHA and full 32-byte pin, normal call returns; no arbitrary custom Drop/callbacks",
   "not_proved": [

@@ -20,6 +20,9 @@ import SandboxModel.Boundaries.ChildObservation.Audit
 import SandboxModel.Foundations.CallbackState.Audit
 
 
+import SandboxModel.Foundations.BtreeSetBinding.Audit
+import SandboxModel.Boundaries.TokioMutex.Audit
+
 /-! Audit actual theorem dependencies, including imported libraries.  Source
 text scanning alone cannot detect an unproved assumption hidden in an import.
 The standard logical foundations are allowed; every other dependency fails

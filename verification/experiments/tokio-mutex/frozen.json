@@ -7,9 +7,9 @@
     "SandboxModel/Boundaries/TokioMutex.lean": "cf36f1835ac13589225afeb2e5c7e0df7016f52c19751b44e1c3368232522d3a",
     "verification/experiments/tokio-mutex/README.md": "759ef9c0bea6f925747fcbf58fda922152b6d28a5d9c49b336e6fa5bdb2e5bc4",
     "verification/experiments/tokio-mutex/check.py": "46cf54c40fb32f09e631d4505d98640588267ebc8767ce9c51242c87bbf5c842",
-    "verification/experiments/tokio-mutex/environment.json": "f57208b782c2e7043affcfbfd71f3e10e37d34d98e39d38629b1470937d39f07",
+    "verification/experiments/tokio-mutex/environment.json": "b00efae153350c3f2ca6388bfb59f994cb847280aadc5154b29ec0ad60f887fc",
     "verification/experiments/tokio-mutex/native.py": "57709a9376d302af6fc4a33f881f00504a519df106318584318657ca9b1d6086",
-    "verification/experiments/tokio-mutex/proof.py": "c3edc80d273b7d1e9a120f0dcb964c62a0c2b91e17adc90be46c5a136f5e5fae",
+    "verification/experiments/tokio-mutex/proof.py": "35e09df5bcae009a39102e75eaf7c19d3a66cad82004be2681e249f72a167e02",
     "verification/experiments/tokio-mutex/session-tests.rs": "72e275e415dd18fba316f9a23fc215c3a8cc4f2664bf67f1c49e787013f8119b",
     "verification/experiments/tokio-mutex/test_checks.py": "af481abdc723e0d6bc406c61c9eb0748a6f3f3598a9c4c5e7ddc6b53ac5c9bf9"
   }
