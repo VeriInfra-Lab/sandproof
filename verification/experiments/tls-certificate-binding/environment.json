@@ -699,8 +699,8 @@
     "sandbox-internal/tests/support/python_relay.rs": "1929bf5f3ae0bbbed26f7afd2f15dd29c233650abf194fd4b3880ad8e1f23847",
     "sandbox-internal/tests/support/status_cases.rs": "a16305785317c190cd73885c8c4ea3bd06efd503a457460f11f0ec9786bb9646",
     "sandbox-internal/tests/support/tls.rs": "9d2eeced4593eeeeca9d704a1dc0ef768b1d300e07a95aec99ad0d65c6c8b072",
-    "tools/check_tls_certificate_binding.py": "da88571966cae489d9d47f8e620f0ad11f00c9c784a9a75104280cc3b83b540c",
-    "tools/tests/test_tls_certificate_binding.py": "a0c9ffe49925c1c0ddc70c62188113aecf604f3174f4241e03269426956635d6",
+    "tools/check_tls_certificate_binding.py": "a375f50b6e85aa8b3fbe4c2ba77f2cf6e3b61476d0b64b47ac151b3710128bda",
+    "tools/tests/test_tls_certificate_binding.py": "10a50f3041df45f380e4d829c42a1964f9a6b59fe879da1672224173473436b6",
     "verification/aeneas/llbc/sandproof_tls.llbc": "f8870ea741b20c4d7c8184d773e129f0cfe68d463b20abfdf2fe1349915f8ee8",
     "verification/aeneas/tls/SandproofTls/Funs.lean": "b84067f5174a1582ded9e37f5b9c5d22cb2d5593a5378682147027954b9a08e1",
     "verification/aeneas/tls/SandproofTls/FunsExternal.lean": "fc7824bbf555939ba63d05f72c8a0f9bcea4fbdd4f15419c8c06b055a9971ae8",
@@ -714,7 +714,7 @@
     "verification/fixtures/tls-pin-candidate.patch": "15c3fd86d6fff9710e7743ffd7fdf1feec0f80f532e94e3c9c0da73d45ada38d",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/tls-pin-environment.json": "837f8c9611d076ce62b9f0ff00c25af3f8443977870215dfcf55ecc17f460f0a",
-    "verification/tls-pin-inputs.sha256": "75b99c592bedee7fe2ea2428c40b000f6436a627f015e8b32109bda38e0622ca"
+    "verification/tls-pin-inputs.sha256": "bca9aed85253bf685b24d33fe2e54e22e5978362cd5a6343c20026563c90d46d"
   },
   "normal_domain": "valid shared borrow, complete finite DER bytes, fixed SHA and full 32-byte pin, normal call returns; no arbitrary custom Drop/callbacks",
   "not_proved": [

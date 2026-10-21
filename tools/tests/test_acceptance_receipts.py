@@ -78,7 +78,8 @@ class ReceiptTests(unittest.TestCase):
     def test_missing_or_incomplete_seal_cannot_replay(self):
         command,_,_=self.publish();os.environ['SANDPROOF_ACCEPTANCE_ROLE']='formal'
         seal=json.loads((self.cache/'complete.json').read_text())
-        for field,value in [('complete',False),('exit_code',17),('rules',{})]:
+        for field,value in [('complete',False),('exit_code',17),('rules',{}),
+                            ('schema',1),('contracts',{}),('source_archives',{'changed':'0'*64})]:
             bad=copy.deepcopy(seal);bad[field]=value
             receipts.write_json(self.cache/'complete.json',bad)
             with self.subTest(field=field),self.assertRaises(ValueError):
@@ -503,6 +504,18 @@ class FormalReuseTests(unittest.TestCase):
         runtime=Path(os.environ['SANDPROOF_FORMAL_RUNTIME'])
         receipts.write_json(runtime,{'unit_test_fixture':'tool changed'})
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_sealed_contract_archive_and_schema_changes_reexecute_the_module(self):
+        # This fixture exercises the internal cache step, not native admission.
+        seal=dict(schema=2,rules={},rust={},runtime={},commands={},contracts={},source_archives={})
+        receipts.write_json(self.cache/'complete.json',seal)
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+        self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+        for field,value in [('contracts',{'verification/fixture.json':'1'*64}),
+                            ('source_archives',{'original':'2'*64}),('schema',3)]:
+            seal[field]=value;receipts.write_json(self.cache/'complete.json',seal)
+            with self.subTest(field=field):
+                self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
 
     def test_new_functional_document_check_does_not_discard_an_unchanged_proof(self):
         seal=dict(rules={},rust={},runtime={},commands={})
