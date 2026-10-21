@@ -12,6 +12,7 @@ use std::fmt::{self, Display};
 
 mod identifiers;
 pub mod internal;
+pub mod lifecycle;
 pub mod numeric;
 pub use identifiers::parse_allocated_number;
 
