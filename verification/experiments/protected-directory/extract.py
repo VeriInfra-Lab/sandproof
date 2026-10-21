@@ -28,6 +28,8 @@ def main():
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--tool-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--publish', action='store_true',
+                        help='initial development only: create previously absent generated files')
     args = parser.parse_args()
     if sys.platform != 'linux' or not os.environ.get('CARGO_TARGET_DIR'):
         raise ValueError('registered formal Linux runtime and private target required')
@@ -35,6 +37,7 @@ def main():
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     sys.path.insert(0, str(ROOT))
     from tools.check_first_chain_extraction import check_tools
+    from tools.check_foundations_extraction import llbc_digest
     check_tools(ROOT, tools)
     record = {'kind': 'real-directory-component-extraction', 'variants': {},
               'tool_registry_sha256': sha(ROOT / 'verification/first-chain-linux-environment.json')}
@@ -91,8 +94,16 @@ def main():
         if not entry['source_unchanged']:
             raise ValueError('real Rust inputs changed during extraction')
         destination = ROOT / LIBRARY / variant
-        destination.mkdir(parents=True, exist_ok=False)
-        shutil.copy2(llbc, destination / 'original.llbc')
+        if args.publish:
+            destination.mkdir(parents=True, exist_ok=False)
+            shutil.copy2(llbc, destination / 'original.llbc')
+        else:
+            if not destination.is_dir():
+                raise ValueError('frozen generated files missing; no silent publishing')
+            shutil.copytree(destination, case / 'previous-published')
+            if llbc_digest(json.loads(llbc.read_text())) != llbc_digest(
+                    json.loads((destination / 'original.llbc').read_text())):
+                raise ValueError('fresh complete IR differs; preserve both originals')
         generated = case / 'generated'
         entry['generated_files'] = {}
         for p in sorted(generated.rglob('*')):
@@ -103,8 +114,11 @@ def main():
                 if '_Template' in p.name:
                     continue
                 target = destination / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(p, target)
+                if args.publish:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(p, target)
+                elif not target.is_file() or sha(p) != sha(target):
+                    raise ValueError('unmodified generated file differs: ' + str(relative))
         record['variants'][variant] = entry
         (out / 'progress.json').write_text(json.dumps(record, indent=2) + '\n')
     record.update(success=True, seconds=time.monotonic() - start)
