@@ -16,6 +16,25 @@ pub const fn operation_key(sandbox: SandboxId, operation: crate::OperationId) ->
     OperationKey { sandbox, operation }
 }
 
+/// Projection from the original bound ledger, never an adapter-supplied flag.
+#[must_use]
+pub fn current_capture(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+) -> Option<crate::capture::CaptureHandoff> {
+    let operation = record.current_operation?;
+    if operation.kind != OperationKind::Pause || operation.epoch != record.epoch {
+        return None;
+    }
+    let key = operation_key(sandbox, operation.id);
+    let plan = world.operation_plans.get(&key)?;
+    if plan.key != key || plan.epoch != record.epoch || plan.generation != record.generation {
+        return None;
+    }
+    plan.capture
+}
+
 #[must_use]
 pub fn authorized(actor: &Actor, owner: TenantId) -> bool {
     actor == &Actor::Tenant(owner) || actor == &Actor::SystemController
@@ -70,6 +89,11 @@ pub fn initial_operation_plan(
         slot: None,
         restore_from,
         target_snapshot: None,
+        capture: if operation.kind == OperationKind::Pause {
+            Some(crate::capture::CaptureHandoff::accepted())
+        } else {
+            None
+        },
         stop_vms: index.vms,
         close_slots: index.slots,
         retry_limit: DEFAULT_RETRY_LIMIT,
@@ -361,6 +385,15 @@ pub fn begin_kill(
     epoch: crate::Epoch,
 ) -> World {
     let mut next = world.clone();
+    // Destroy revokes future recovery, including old sources, without
+    // releasing any capture/loader/running-backing material responsibility.
+    for (key, stored) in world.operation_plans.entries() {
+        if key.sandbox == sandbox && stored.capture.is_some() {
+            let mut plan = stored.clone();
+            plan.capture = plan.capture.map(crate::capture::CaptureHandoff::terminate);
+            next.operation_plans.put(*key, plan);
+        }
+    }
     let operation = Operation {
         id: operation_id,
         epoch,
@@ -395,8 +428,10 @@ pub fn begin_kill(
     next
 }
 
-/// Convert the current create/resume/pause operation into terminal
-/// compensation while retaining its operation identity and durable plan.
+/// Ordinary pause failure must preserve the original live/frozen VM. Only
+/// create/resume startup compensation uses the terminal cleanup path below.
+/// Pause recovery remains parked until its original commit/work is reconciled;
+/// it is never equivalent to owner destroy or expiry.
 #[must_use]
 pub fn begin_compensation(
     world: &World,
@@ -408,6 +443,28 @@ pub fn begin_compensation(
     let mut next = world.clone();
     let mut compensating = operation;
     compensating.status = OperationStatus::Compensating(failure);
+
+    if operation.kind == OperationKind::Pause {
+        let mut updated = record.clone();
+        updated.desired = Authority::Closed;
+        updated.effective = Authority::Closed;
+        updated.current_operation = Some(compensating);
+        next.sandboxes.put(sandbox, updated);
+        let key = operation_key(sandbox, operation.id);
+        if let Some(stored) = next.operations.get(&key) {
+            let mut ledger = stored.clone();
+            ledger.operation = compensating;
+            next.operations.put(key, ledger);
+        }
+        if let Some(stored) = next.operation_plans.get(&key) {
+            let mut plan = stored.clone();
+            plan.capture = plan
+                .capture
+                .map(crate::capture::CaptureHandoff::ordinary_failure);
+            next.operation_plans.put(key, plan);
+        }
+        return next;
+    }
 
     let mut updated = record.clone();
     updated.phase = Phase::Revoking;
@@ -534,6 +591,7 @@ mod tests {
             slot: None,
             restore_from: None,
             target_snapshot: None,
+            capture: Some(crate::capture::CaptureHandoff::accepted()),
             stop_vms: vec![VmId(8)],
             close_slots: vec![NetSlotId(9)],
             retry_limit: 3,

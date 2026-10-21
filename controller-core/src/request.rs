@@ -569,6 +569,11 @@ pub fn handle_compensation(world: &World, input: CompensationRequest) -> Result<
     if ledger.sandbox != sandbox || ledger.operation != operation || ledger.result.is_some() {
         return Err(Reject::LedgerMismatch);
     }
+    if operation.kind == OperationKind::Pause
+        && crate::transition::current_capture(world, sandbox, record).is_none()
+    {
+        return Err(Reject::LedgerMismatch);
+    }
     if !supplied_compensation_evidence(world, key, operation.epoch, failure, evidence) {
         return Err(Reject::FailureUnjustified);
     }

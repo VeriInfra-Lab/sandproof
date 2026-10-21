@@ -289,7 +289,32 @@ pub fn effect_outcome_valid(world: &World, command: &Command, outcome: EffectOut
 #[must_use]
 pub fn dispatch_effect(world: &World, id: EffectId) -> World {
     let mut next = world.clone();
+    let command = id.command().clone();
     next.effects.put(id, EffectStatus::Dispatched);
+    if let Command::CommitSnapshot {
+        sandbox,
+        epoch,
+        generation,
+        snapshot,
+        manifest,
+    } = command
+        && let Some(record) = world.sandboxes.get(&sandbox)
+        && record.epoch == epoch
+        && record.generation == generation
+        && let Some(operation) = record.current_operation
+    {
+        let key = crate::transition::operation_key(sandbox, operation.id);
+        if let Some(stored) = world.operation_plans.get(&key)
+            && stored.target_snapshot == Some(crate::RestoreSource { snapshot, manifest })
+            && crate::transition::current_capture(world, sandbox, record).is_some()
+        {
+            let mut plan = stored.clone();
+            plan.capture = plan
+                .capture
+                .map(crate::capture::CaptureHandoff::registration_dispatched);
+            next.operation_plans.put(key, plan);
+        }
+    }
     next
 }
 
@@ -398,10 +423,28 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
     }
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
-        Some(EffectStatus::Committed | EffectStatus::OutcomeUnknown) => Ok(EffectDecision {
-            event: Event::DispatchEffect(id.clone()),
-            next: dispatch_effect(world, id),
-        }),
+        Some(EffectStatus::Committed | EffectStatus::OutcomeUnknown) => {
+            if matches!(
+                id.command(),
+                Command::FreezeVm { .. }
+                    | Command::SealSnapshot { .. }
+                    | Command::CommitSnapshot { .. }
+            ) {
+                let sandbox = id.command().sandbox();
+                let Some(record) = world.sandboxes.get(&sandbox) else {
+                    return Err(EffectReject::NotDispatchable);
+                };
+                if !crate::transition::current_capture(world, sandbox, record)
+                    .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
+                {
+                    return Err(EffectReject::NotDispatchable);
+                }
+            }
+            Ok(EffectDecision {
+                event: Event::DispatchEffect(id.clone()),
+                next: dispatch_effect(world, id),
+            })
+        }
         Some(
             EffectStatus::Dispatched
             | EffectStatus::Acknowledged(_)

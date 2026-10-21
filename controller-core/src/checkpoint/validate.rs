@@ -400,7 +400,7 @@ fn plan_record(world: &World, key: OperationKey, plan: &OperationPlan) -> Result
     let ledger = world
         .operation_record(key)
         .ok_or(Reject::InvalidReference)?;
-    if plan.restore_from.is_some() || plan.target_snapshot.is_some() {
+    if plan.restore_from.is_some() || plan.target_snapshot.is_some() || plan.capture.is_some() {
         return Err(Reject::UnsupportedSnapshotHistory);
     }
     if plan.key != key

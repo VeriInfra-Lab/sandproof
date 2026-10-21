@@ -290,6 +290,12 @@ pub fn handle_reserve_pause_snapshot(
     if plan.target_snapshot.is_some() {
         return Err(SchedulerReject::PlanNotOpen);
     }
+    if !plan
+        .capture
+        .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
+    {
+        return Err(SchedulerReject::PlanNotOpen);
+    }
     let Some(vm) = record.current_vm else {
         return Err(SchedulerReject::VmNotFound);
     };
@@ -482,6 +488,12 @@ pub fn handle_schedule_seal_snapshot(
     if plan.target_snapshot != Some(RestoreSource { snapshot, manifest }) {
         return Err(SchedulerReject::PlanMismatch);
     }
+    if !plan
+        .capture
+        .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
+    {
+        return Err(SchedulerReject::PlanNotOpen);
+    }
     let Some(vm_id) = record.current_vm else {
         return Err(SchedulerReject::VmNotFound);
     };
@@ -564,6 +576,11 @@ pub fn handle_schedule_commit_snapshot(
     }
     if record.phase != Phase::Pausing {
         return Err(SchedulerReject::WrongPhase);
+    }
+    if !crate::transition::current_capture(world, sandbox, record)
+        .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
+    {
+        return Err(SchedulerReject::PlanNotOpen);
     }
     let Some(vm) = record.current_vm else {
         return Err(SchedulerReject::VmNotFound);
@@ -1008,6 +1025,7 @@ mod tests {
             slot: None,
             restore_from: None,
             target_snapshot: None,
+            capture: None,
             stop_vms: vec![VmId(8)],
             close_slots: vec![NetSlotId(9)],
             retry_limit: 3,
@@ -1039,7 +1057,9 @@ mod tests {
         world
             .sandboxes
             .put(SID, record(Phase::Pausing, OperationKind::Pause));
-        world.operation_plans.put(key, plan());
+        let mut capture_plan = plan();
+        capture_plan.capture = Some(crate::capture::CaptureHandoff::accepted());
+        world.operation_plans.put(key, capture_plan);
         world
     }
 

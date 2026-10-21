@@ -1,0 +1,16 @@
+[package]
+name = "sandproof-capture-handoff"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+sandbox-controller-core = { path = "../../controller-core" }
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true
