@@ -1,0 +1,198 @@
+{
+  "schema": 1,
+  "base": "646fc2c8569083cf4f03554f9acb2ca67bf22e6e",
+  "subject": "原Host helper Child的停止观察，及原Child/预占Slot的未知交接；不是VM/Guest命令/全部后代的停止",
+  "normal_domain": [
+    "入口持有有效原Child和已经预占、尚未归还的原helper Slot；两项均为Some。",
+    "Child的原对象/创建身份和回收权由V6/A2绑定；当前字段存在不自动证明业务对象选择正确。",
+    "正常返回路径上的外部调用按指定API/原参数/原对象返回；普通Result::Err仍是正常返回，必须保留。",
+    "Error/Status/Instant为已登记普通值；不允许额外许可、FD、锁或自定义可观察Drop藏在错误/比较对象/适配器中。"
+  ],
+  "model_state": [
+    "SystemIo在Rust中是空结构。形式字段是每次调用的外部响应/历史上下文，不是声称空结构实际存储世界。",
+    "每种API使用独立响应流；模型不预设正确业务顺序。同一输入应让正确版完成原pair交接、错误版正常返回后被同一性质拒绝。",
+    "handedOff是历史事实，不是当前pending成员关系；全局OS、时钟、队列及其它Slot没有被冻结。",
+    "正常后态定理不描述panic/unwind/abort的资源清理或完整故障前缀；没有该后态就不能引用它推出回滚、退出或释放。"
+  ],
+  "machine_checked_own_decisions": [
+    "原try_wait结果的分类和完整退出状态传递",
+    "先观察再kill，kill结果不当作回收",
+    "关闭原管道后按原顺序读取/比较截止",
+    "未知时先取原Child，再取原Slot，转交原pair后构造原错误"
+  ],
+  "symbols": [
+    {
+      "symbol": "child_process::observation_io::system",
+      "provider": "A6/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        45,
+        47
+      ],
+      "function_sha256": "b474651d220eaad790dc0692799dac46cc03c99c2fdf149a5c55324c94ea0b10",
+      "normal_guarantee": "仅构造空适配器；正常返回不调用OS、不修改原Child/Slot或全局世界。形式历史是逻辑上下文，不是Rust空结构字段。",
+      "fault_and_non_guarantee": "无业务分支，无额外资源或回调；进程在任意点崩溃不产生完成证据。"
+    },
+    {
+      "symbol": "child_process::observation_io::try_wait",
+      "provider": "A2/A6/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        15,
+        17
+      ],
+      "function_sha256": "f5609a19a97e52b75ff9d3089408ec82c3f713ee2fd49b2bc9ddfa75893b84d4",
+      "normal_guarantee": "对传入的同一Child调用原try_wait，保留该次完整Ok(Some(status))/Ok(None)/Err；Some中的完整退出状态值不改写。Some提供原对象的退出/回收观察，可来自原缓存；None/Err不提供退出证据，不声称Child全部字段或外部世界保持不变。",
+      "fault_and_non_guarantee": "错误后外部情况仍可能变化，不推出进程活着、没有副作用或回滚。单进程退出不等于后代、VM或Guest命令全部结束。"
+    },
+    {
+      "symbol": "child_process::observation_io::kill",
+      "provider": "A2/A6/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        18,
+        20
+      ],
+      "function_sha256": "fdaebc847a4ab3d4de11ab34a81598c731b5649327b0a5da3ee542647118c426",
+      "normal_guarantee": "仅对传入的同一Child调用原kill并保留完整返回值。已缓存退出时可以Ok且不发送新信号；其它Ok也只按标准库终止请求的含义解释，不等于已观察退出。",
+      "fault_and_non_guarantee": "Err不能推出外部情况未变；原生库可能使用pidfd，或在有效未回收生命周期中用原PID。调用者不得让其它方提前回收后仍把裸PID当原进程。"
+    },
+    {
+      "symbol": "child_process::observation_io::close_pipes",
+      "provider": "A3/A6/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        21,
+        25
+      ],
+      "function_sha256": "4fdf735cd45669263b5c789db8ee39c36031028f64e9c5fd59bd30f68ec8cff1",
+      "normal_guarantee": "依次取出并析构原stdin、stdout、stderr；正常完成后这三个本地字段为None。保留关闭可能造成的EOF、进程变化等外部效果。",
+      "fault_and_non_guarantee": "普通Drop不报告close错误；不保证所有重复描述符都关闭、全部缓冲排空或进程退出。异常/不返回可以发生在部分关闭之后，不承诺回滚。"
+    },
+    {
+      "symbol": "child_process::observation_io::now",
+      "provider": "A6/A8/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        26,
+        28
+      ],
+      "function_sha256": "4aff086560a5e5db325f5570bcdf67b9a6e95bb411e09a508ea67ab021d78a7e",
+      "normal_guarantee": "每次调用原Instant::now，按该次真实值推进调用历史。比较采用原Instant的顺序；本模型用声明的纳秒表示。",
+      "fault_and_non_guarantee": "不假定读数必在有限步骤内超过截止；不从时钟读数推导工作已退出。时钟和全局OS仍可并发变化。"
+    },
+    {
+      "symbol": "child_process::observation_io::add_grace",
+      "provider": "A6/A8/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        29,
+        31
+      ],
+      "function_sha256": "3939b00af237f99049c9bf17e78181e25cda7a8d442934ef6ca391043d1e293b",
+      "normal_guarantee": "把给定原Instant加上同一模块REAP_GRACE=2秒；本次候选不改变该常量。形式正常值参考增量为2000000000纳秒。",
+      "fault_and_non_guarantee": "保留不可表示加法的panic/不返回范围；不把数学Nat无界值当作实际Instant任意可表示，也不保证墙钟2秒内返回。"
+    },
+    {
+      "symbol": "child_process::observation_io::pause",
+      "provider": "A6/A8/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        32,
+        34
+      ],
+      "function_sha256": "ea176020a74fcb0246683cdab51e7e3e54d774cf9a4de0776ed2a1f24683ee68",
+      "normal_guarantee": "调用原thread::sleep(POLL_SLICE)，原常量为10毫秒；记录这一次调用，不自动制造时间进展或退出事实。",
+      "fault_and_non_guarantee": "允许调度延迟、阻塞或不返回；不保证整个收尾的严格墙钟上界。"
+    },
+    {
+      "symbol": "child_process::observation_io::retain",
+      "provider": "B2/B4 + A2/A6接口",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        35,
+        37
+      ],
+      "function_sha256": "c2d469ce87ecd6d2b90af8444833f26f447160e1bd3841b78479d7b7d5fcbbdb",
+      "normal_guarantee": "同一原Slot和Child按值传给该Slot的原reaper；正常返回只提供原pair曾进入原pending，并随后按原顺序调用notify_one的历史事实。",
+      "fault_and_non_guarantee": "不能保证返回时仍在队列里或名额仍未归还，worker可能已观察退出。中毒/分配/异常或不返回可能留下部分前缀；本批不证明异常资源计数、整个reaper或其释放策略。"
+    },
+    {
+      "symbol": "child_process::observation_io::unknown_exit",
+      "provider": "A6/B4",
+      "candidate_file": "sandbox-runtime/src/child_process/observation_io.rs",
+      "candidate_lines": [
+        38,
+        40
+      ],
+      "function_sha256": "c539be75b0d890adfae50b423b30ff20d635a77ab8f0c36a6ce0d62508e86d23",
+      "normal_guarantee": "仅构造原io::ErrorKind::TimedOut和原完整文本host helper exit remains unknown；不改原Child/Slot。",
+      "fault_and_non_guarantee": "正常构造属于普通值/分配范围；panic/OOM/abort不承诺完成构造、回滚、退出或释额。"
+    }
+  ],
+  "model_abi": [
+    {
+      "symbol": "core.cmp.PartialOrd.ge.default",
+      "scope": "本模块Lean字典参数到stock ge_body.partial_cmp的纯投影；不修改原生成体、工具或库。",
+      "required_check": "ge_dictionary_projection和具体字典精确相等均须经内核检查；不是新增Rust保证。"
+    }
+  ],
+  "caller_obligations": {
+    "V6": [
+      "原对象和原helper名额对应实际已登记动作、正确池及有效生命周期",
+      "原reaper的释额策略、整体容量、状态恢复和异常前缀",
+      "其它辅助进程、jailer/Firecracker和精确清理证据"
+    ],
+    "V8": [
+      "全部缓冲、完整协议、真实排空、Guest命令与会话寿命"
+    ],
+    "B1_and_callers": [
+      "取消等待不等于已运行的同步工作退出；保留后台工作和名额所有者关系"
+    ],
+    "candidate_adoption": [
+      "隔离候选未进入生产；采用同一核心或提供另一实现连接。有限旧新回归不等于一般等价证明。"
+    ]
+  },
+  "read_only_callers": {
+    "exchange_until": "收尾后仍可能返回原pump错误，不能由公共错误码反推没有业务效果。",
+    "pump": "前缀完成时须正常stop结果才返回Output；自然退出和全部管道EOF是另一条组合路径。",
+    "Drop": "仅在child仍存在时调用；本批不是所有异常析构路径的证明。",
+    "into_child": "另一个公开接口，会交出仍可能活着的Child并释放helper名额；须另有独立有界owner，本批不验证它。"
+  },
+  "scope_exclusions": [
+    "生产启用",
+    "一般旧新Rust等价",
+    "所有OwnedChild API和全部宿主",
+    "Rust/Linux/编译器本身",
+    "Tokio/异步取消/任意Drop的通用翻译",
+    "无条件终止或严格墙钟上界",
+    "T9和历史#337迁移"
+  ],
+  "snippet_hash_format": "UTF-8 exact complete registered lines, including trailing newline; full adapter file and patch frozen separately",
+  "pure_value_interfaces": [
+    {
+      "symbol": "std.time.Instant.Insts.CoreCloneClone.clone",
+      "provider": "A6/A8",
+      "normal_guarantee": "原Instant的Copy/Clone保留同一时点；模型返回同一Nat坐标。无IO历史事件；不从克隆推出时钟读取或进展。"
+    },
+    {
+      "symbol": "std.time.Instant.Insts.CoreCmpPartialEqInstant.eq",
+      "provider": "A6/A8",
+      "normal_guarantee": "仅比较两个原Instant；布尔结果与原相等关系一致，不修改时钟。模型采用同一固定纳秒坐标的相等。"
+    },
+    {
+      "symbol": "std.time.Instant.Insts.CoreCmpPartialOrdInstant.partial_cmp",
+      "provider": "A6/A8",
+      "normal_guarantee": "仅比较两个原Instant，保留原完整顺序；同一固定纳秒坐标下给出等价Ordering。坐标不是PID或真实结构字段，不保证读取推进、加法总可表示或函数终止。"
+    }
+  ],
+  "negative_drop_projection": {
+    "symbol": "core.mem.drop",
+    "instantiations": [
+      "Option<Child>",
+      "Option<Slot>"
+    ],
+    "guarantee": "仅冻结错误版这两处显式Drop的正常投影；保留可能发生的原Slot归还等外部效果，不把未建模的世界当未变。原Child的Drop不会替代wait/retain；原Slot Drop仅自己的计数归还，不调用本适配retain。",
+    "limitation": "泛型Lean签名不表示任意T均获准：完整AST与类型实例检查锁死两调用点。panic/unwind、异常资源回收和全局容量不在该反例模型的证明范围。真实Slot提前释额另由原生错误测试检查。"
+  }
+}

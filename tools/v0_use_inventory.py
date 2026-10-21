@@ -25,7 +25,23 @@ AUDIT_INPUTS = {
     "tools/v0_use_inventory.py", "tools/tests/test_v0_use_inventory.py",
     "scripts/v0-mir-wrapper.sh", "scripts/verify-use-inventory.sh",
     "docs/formal/dependencies.md", "docs/formal/00-foundations.md", "scripts/verify-controller.sh",
+    "verification/os-boundary-catalogue.json", "tools/check_os_boundary_catalogue.py",
+    "tools/tests/test_os_boundary_catalogue.py", "verification/experiments/os-boundary-catalogue/README.md",
 }
+# Every version/evidence file read by mandatory catalogue admission is frozen.
+AUDIT_INPUTS.update({
+    'Cargo.lock',
+    'SandboxModel/Boundaries/SqliteStatements/Bridge.lean',
+    'SandboxModel/Boundaries/TlsPin/Refinement.lean',
+    'SandboxModel/Foundations/StreamHistory.lean',
+    'references/v1-baseline.json',
+    'rust-toolchain.toml',
+    'verification/aeneas/sqlite/SandproofSqlite/Results.lean',
+    'verification/aeneas/storage/SandproofStorage/Caller.lean',
+    'verification/aeneas/storage/SandproofStorage/Results.lean',
+    'verification/aeneas/tunnel/SandproofTunnel/Results.lean',
+    'verification/experiments/sqlite-commit/environment.json',
+})
 
 
 def sha(path):

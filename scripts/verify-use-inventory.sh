@@ -5,3 +5,4 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 bash scripts/python-entry.sh tools/v0_use_inventory.py admit
+bash scripts/python-entry.sh -m tools.check_os_boundary_catalogue

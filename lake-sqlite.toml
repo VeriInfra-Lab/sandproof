@@ -47,5 +47,17 @@ name = "SandproofSqlite"
 srcDir = "verification/aeneas/sqlite"
 
 [[lean_lib]]
+name = "SandproofChildObservation"
+srcDir = "verification/aeneas/child-observation/concrete"
+
+[[lean_lib]]
+name = "SandproofCallbackState"
+srcDir = "verification/aeneas/callback-state"
+
+[[lean_lib]]
+name = "SandproofBoundedWriter"
+srcDir = "verification/aeneas/bounded-writer"
+
+[[lean_lib]]
 name = "SandproofFirstChain"
 srcDir = "verification/aeneas/first-chain"

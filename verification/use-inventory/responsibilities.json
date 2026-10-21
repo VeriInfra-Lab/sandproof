@@ -544,7 +544,7 @@
         "HostStatus::validate_for"
       ],
       "proof": "SandboxModel/Boundaries/SchemaDomains/Audit.lean",
-      "condition": "A6/B4 fixed standard derive, original SliceRead/Vec and exact byte bindings; server Writer pending",
+      "condition": "A6/B4 fixed standard derive, original SliceRead/Vec and exact byte bindings; server bounded Writer has a separate conditional component; full schema/caller connection remains explicit",
       "business_provider": [
         "V3",
         "V6",
@@ -622,6 +622,90 @@
         "V9"
       ],
       "meaning": "conditional read/write/map model plus finite source/native evidence, not full async Rust refinement or authentication correctness"
+    },
+    {
+      "id": "child-observation-original-pair",
+      "source_registry": "verification/experiments/child-observation/contracts.json",
+      "production_sources": [
+        "sandbox-runtime/src/child_process.rs",
+        "sandbox-runtime/src/child_process/reaper.rs"
+      ],
+      "roots": [
+        "OwnedChild::stop_and_reap -> isolated observation_core::stop and concrete SystemIo caller"
+      ],
+      "proof": "SandboxModel/Boundaries/ChildObservation/Audit.lean",
+      "condition": "A2/A3/A6/A8/B4 original Child/Slot/status/clock and per-call normal-result histories; no incomplete-call afterstate, no whole production equivalence",
+      "business_provider": [
+        "V6",
+        "V8"
+      ],
+      "meaning": "real isolated synchronous core/caller machine proofs under narrow API models; original production binding source/native evidence; reaper release and full lifecycle remain business obligations"
+    },
+    {
+      "id": "callback-external-state",
+      "source_registry": "verification/experiments/callback-state/source-map.json",
+      "production_sources": [
+        "controller-core/src/store.rs"
+      ],
+      "roots": [
+        "Store::retain -> isolated toggle_step/trace_step helpers and original external mutable state"
+      ],
+      "proof": "SandboxModel/Foundations/CallbackState/Audit.lean",
+      "condition": "A6 ordinary value traversal/normal allocation and B4 same helper/state/complete input/result forwarding; trace capacity/callback semantics supplied by caller",
+      "business_provider": [
+        "V4",
+        "V6",
+        "V9"
+      ],
+      "meaning": "actual helper machine proofs plus conditional sequential composition; toggle isolated example, trace/calls original test provenance; no whole FnMut or panic heap refinement"
+    },
+    {
+      "id": "os-storage-finite-catalogue",
+      "source_registry": "verification/os-boundary-catalogue.json",
+      "production_sources": [
+        "sandbox-runtime/src/linux.rs",
+        "sandbox-center-store/src/store.rs",
+        "controller-service/src/journal.rs",
+        "sandbox-internal/src/tls.rs"
+      ],
+      "roots": [
+        "five compiled production roots; 25 interface families and 71 representative source locations"
+      ],
+      "proof": "verification/experiments/os-boundary-catalogue/README.md",
+      "condition": "A1–A12/B1–B4 existing narrow guarantees only; historical review baseline statuses, not new trust or semantic theorem",
+      "business_provider": [
+        "V2",
+        "V3",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "meaning": "finite checked source/contract review, not all-call completeness or new program proof; current public completion tracked in333/coverage"
+    },
+    {
+      "id": "bounded-writer-original-output",
+      "source_registry": "verification/experiments/bounded-writer/candidate.json",
+      "production_sources": [
+        "controller-service/src/template_registry/evidence.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "roots": [
+        "original private Writer::write/flush and encode_bounded finish -> isolated write_bounded/finish_bounded",
+        "original json_response -> isolated result selection and original HTTP builder"
+      ],
+      "proof": "SandboxModel/Boundaries/BoundedWriter/Audit.lean",
+      "condition": "A6 ordinary Vec/Serde/HTTP primitives and B4 source factorization/complete state/bytes/result forwarding; initial bound, callback error propagation and normal allocation explicit",
+      "business_provider": [
+        "V3",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "meaning": "actual isolated generated write/finish/response proofs with exact successful bytes and logical limit; source/native production connection, not arbitrary Serialize equivalence or RAM/async proof"
     }
   ]
 }

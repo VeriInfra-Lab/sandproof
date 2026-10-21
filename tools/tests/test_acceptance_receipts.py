@@ -225,7 +225,7 @@ class ClosureTests(unittest.TestCase):
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
             'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
-            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements'})
+            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
         retained=(root/'scripts/verify-retained-proofs.sh').read_text()
@@ -241,6 +241,9 @@ class ClosureTests(unittest.TestCase):
                                        entry.read_text()))
         self.assertIn('condvar', required)
         self.assertIn('tokio-rwlock', required)
+        self.assertIn('child-observation', required)
+        self.assertIn('callback-state', required)
+        self.assertIn('bounded-writer', required)
         for case in sorted(required):
             with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
                 proof_native_suite.main(['require', case])
@@ -282,13 +285,39 @@ class ClosureTests(unittest.TestCase):
                 'verification/ProofAudit.lean':'Root.accepts',
                 'SandboxModel/Actual/Audit.lean':'Actual.safe',
                 'verification/aeneas/Actual/Audit.lean':'Generated.refines',
-                proof_batch.EXTRA_AUDIT_FILES[0]:'Wrong.rejected'}
+                **{name:'Wrong.rejected'+str(index) for index,name in enumerate(proof_batch.EXTRA_AUDIT_FILES)}}
             for name, declaration in fixtures.items():
                 path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text('#audit_controller_proof '+declaration+'\n')
             self.assertEqual(proof_batch.expected_audits(root),set(fixtures.values()))
             (root/proof_batch.EXTRA_AUDIT_FILES[0]).unlink()
             with self.assertRaises(OSError):proof_batch.expected_audits(root)
+
+
+class ExecutionMappingTests(unittest.TestCase):
+    def test_required_namespace_files_are_content_bound_and_cannot_be_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            environment={}
+            for name in ['SANDPROOF_FORMAL_WRAPPER','SANDPROOF_WRITER_LEASE','SANDPROOF_PROOF_BWRAP']:
+                path=root/name;path.write_text('fixture for '+name)
+                environment[name]=str(path)
+            with mock.patch.object(proof_batch,'MODULES',('bounded-writer',)), mock.patch.dict(os.environ,environment):
+                before=proof_batch.execution_runtime_inputs()
+                self.assertEqual(set(before),{'outer_wrapper','directory_lease','namespace_binary'})
+                for name in environment:
+                    path=Path(environment[name]);original=path.read_bytes()
+                    path.write_bytes(original+b' changed')
+                    self.assertNotEqual(before,proof_batch.execution_runtime_inputs())
+                    path.write_bytes(original)
+                    path.unlink()
+                    with self.assertRaises((OSError,ValueError)):
+                        proof_batch.execution_runtime_inputs()
+                    path.write_bytes(original)
+            with mock.patch.object(proof_batch,'MODULES',('bounded-writer',)), mock.patch.dict(os.environ,{},clear=True):
+                with self.assertRaises(KeyError):proof_batch.execution_runtime_inputs()
+            with mock.patch.object(proof_batch,'MODULES',('network',)):
+                self.assertEqual(proof_batch.execution_runtime_inputs(),{})
 
 
 class FormalReuseTests(unittest.TestCase):
@@ -329,6 +358,28 @@ class FormalReuseTests(unittest.TestCase):
         data['evidence']={str(self.base/'deleted-raw.llbc'):'0'*64}
         receipts.write_json(entry/'receipt.json',data)
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_external_raw_source_and_archive_are_required_for_reuse(self):
+        work=self.base/'external-module-work';work.mkdir()
+        archive=work/'baseline.tar.gz';archive.write_bytes(b'fixture source archive')
+        code=('from pathlib import Path; import tempfile; '
+              'p=Path(tempfile.mkdtemp(prefix="run-",dir='+repr(str(work))+')); '
+              '(p/"wrong.rs").write_text("pub fn wrong() {}\\n"); '
+              '(p/"original.llbc").write_text("actual raw fixture"); '
+              'print("external fixture executed")')
+        command=[sys.executable,'-c',code]
+        def inputs(*_):return [work],{str(archive):receipts.sha(archive)}
+        with mock.patch.object(proof_batch,'external_component_paths',side_effect=inputs):
+            first=proof_batch.step('network',command,self.source)
+            data=json.loads(Path(first['receipt']).read_text())
+            raws=[Path(n) for n in data['evidence'] if n.endswith('wrong.rs')]
+            self.assertEqual(len(raws),1)
+            self.assertIn(str(archive),data['evidence'])
+            self.assertTrue(proof_batch.step('network',command,self.source)['reused'])
+            raws[0].write_text('corrupt actual wrong source')
+            self.assertFalse(proof_batch.step('network',command,self.source)['reused'])
+            archive.write_bytes(b'changed archive')
+            self.assertFalse(proof_batch.step('network',command,self.source)['reused'])
 
     def test_existing_fixed_output_is_snapshotted_and_required_for_reuse(self):
         relative='artifacts/existing/source.llbc'

@@ -1,0 +1,152 @@
+--- a/sandbox-runtime/src/child_process.rs
++++ b/sandbox-runtime/src/child_process.rs
+@@ -8,11 +8,12 @@
+     ops::{Deref, DerefMut},
+     os::fd::AsFd,
+     process::{Child, Command, Output},
+-    thread,
+     time::{Duration, Instant},
+ };
+ 
+ mod reaper;
++mod observation_core;
++mod observation_io;
+ use reaper::Slot;
+ 
+ /// Trusted operation policy, not a client-selected guest command budget.
+@@ -77,30 +78,8 @@
+     }
+ 
+     fn stop_and_reap(&mut self) -> io::Result<std::process::ExitStatus> {
+-        let child = self.child.as_mut().expect("owned child");
+-        if let Ok(Some(status)) = child.try_wait() {
+-            return Ok(status);
+-        }
+-        // Child owns this unreaped PID; do not signal a numeric process group.
+-        let _ = child.kill();
+-        drop(child.stdin.take());
+-        drop(child.stdout.take());
+-        drop(child.stderr.take());
+-        let deadline = Instant::now() + REAP_GRACE;
+-        loop {
+-            if let Ok(Some(status)) = child.try_wait() {
+-                return Ok(status);
+-            }
+-            if Instant::now() >= deadline {
+-                let child = self.child.take().expect("owned child");
+-                self.slot.take().expect("helper admission").retain(child);
+-                return Err(io::Error::new(
+-                    io::ErrorKind::TimedOut,
+-                    "host helper exit remains unknown",
+-                ));
+-            }
+-            thread::sleep(POLL_SLICE);
+-        }
++        let mut io = observation_io::system();
++        observation_core::stop(&mut self.child, &mut self.slot, &mut io)
+     }
+     /// Simultaneously write finite input and drain both outputs. The deadline
+     /// includes blocked input, output EOF and process-exit observation.
+--- /dev/null
++++ b/sandbox-runtime/src/child_process/observation_core.rs
+@@ -0,0 +1,50 @@
++//! Original stop/reap control flow with explicit mutable OS observations.
++//! This is called by the isolated `OwnedChild` candidate, not a replacement VM.
++pub(super) trait Operations {
++    type Child;
++    type Slot;
++    type Status;
++    type Error;
++    type Instant: Copy + PartialOrd;
++    fn try_wait(&mut self, child: &mut Self::Child) -> Result<Option<Self::Status>, Self::Error>;
++    fn kill(&mut self, child: &mut Self::Child) -> Result<(), Self::Error>;
++    fn close_pipes(&mut self, child: &mut Self::Child);
++    fn now(&mut self) -> Self::Instant;
++    fn add_grace(&mut self, now: Self::Instant) -> Self::Instant;
++    fn pause(&mut self);
++    fn retain(&mut self, slot: Self::Slot, child: Self::Child);
++    fn unknown_exit(&mut self) -> Self::Error;
++}
++
++pub(super) fn stop<I: Operations>(
++    owned_child: &mut Option<I::Child>,
++    owned_slot: &mut Option<I::Slot>,
++    io: &mut I,
++) -> Result<I::Status, I::Error> {
++    let Some(child) = owned_child else {
++        panic!("owned child");
++    };
++    if let Ok(Some(status)) = io.try_wait(child) {
++        return Ok(status);
++    }
++    let _ = io.kill(child);
++    io.close_pipes(child);
++    let now = io.now();
++    let deadline = io.add_grace(now);
++    loop {
++        if let Ok(Some(status)) = io.try_wait(child) {
++            return Ok(status);
++        }
++        if io.now() >= deadline {
++            let Some(child) = owned_child.take() else {
++                panic!("owned child");
++            };
++            let Some(slot) = owned_slot.take() else {
++                panic!("helper admission");
++            };
++            io.retain(slot, child);
++            return Err(io.unknown_exit());
++        }
++        io.pause();
++    }
++}
+--- /dev/null
++++ b/sandbox-runtime/src/child_process/observation_io.rs
+@@ -0,0 +1,47 @@
++//! Mechanical calls for the original objects. Decisions stay in `observation_core`.
++use super::{POLL_SLICE, REAP_GRACE, observation_core::Operations, reaper::Slot};
++use std::{
++    io,
++    process::{Child, ExitStatus},
++    time::Instant,
++};
++pub(super) struct SystemIo;
++impl Operations for SystemIo {
++    type Child = Child;
++    type Slot = Slot;
++    type Status = ExitStatus;
++    type Error = io::Error;
++    type Instant = Instant;
++    fn try_wait(&mut self, child: &mut Child) -> io::Result<Option<ExitStatus>> {
++        child.try_wait()
++    }
++    fn kill(&mut self, child: &mut Child) -> io::Result<()> {
++        child.kill()
++    }
++    fn close_pipes(&mut self, child: &mut Child) {
++        drop(child.stdin.take());
++        drop(child.stdout.take());
++        drop(child.stderr.take());
++    }
++    fn now(&mut self) -> Instant {
++        Instant::now()
++    }
++    fn add_grace(&mut self, now: Instant) -> Instant {
++        now + REAP_GRACE
++    }
++    fn pause(&mut self) {
++        std::thread::sleep(POLL_SLICE);
++    }
++    fn retain(&mut self, slot: Slot, child: Child) {
++        slot.retain(child);
++    }
++    fn unknown_exit(&mut self) -> io::Error {
++        io::Error::new(io::ErrorKind::TimedOut, "host helper exit remains unknown")
++    }
++}
++
++/// Construct only the empty mechanical adapter; no OS operation occurs here.
++#[must_use]
++pub(super) fn system() -> SystemIo {
++    SystemIo
++}

@@ -626,7 +626,7 @@ panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返�
 
 A6 仍只提供固定 JSON 引擎、标准派生和普通值接口；B4 只连接登记的原对象、完整参数/结果及实际字节位置。正常分配的 SliceRead/Vec 合同保留字段次序、对象/声明顺序数组、缺失/重复/未知字段、原错误和结束检查；异常可能已有输入/输出前缀，不许假定回滚或两次有状态编码相等。自有 ID/非零计数器及守卫继续使用真实生成体定理。任意自有 Serialize/Deserialize 回调、资源载荷、可观察 Drop、panic/unwind/OOM/abort 不属于普通值合同。
 
-客户端请求编码、服务器请求解码、客户端响应解码有实际来源绑定；普通 Vec 的响应编码仅是参考。真实服务器的 encode_bounded 使用私有 Writer，不能用参考 to_vec 的定理代替；长度/分配失败/部分输出/错误优先级仍是 T2 公共缺口。22 类型/10 上下文的分类不表示它们已全部证明。V3/V7 提供端点/认证绑定，V6 提供观察真实性，V1/V4 提供实际容量使用。
+客户端请求编码、服务器请求解码、客户端响应解码有实际来源绑定；普通 Vec 的响应编码仅是参考。真实服务器的 encode_bounded 使用私有 Writer，不能用参考 to_vec 的定理代替；长度/分配失败/部分输出/错误优先级由独立 BoundedWriter 公共接口及其实际调用条件处理，见本页对应条目；其当前验收层次见覆盖记录。22 类型/10 上下文的分类不表示它们已全部证明。V3/V7 提供端点/认证绑定，V6 提供观察真实性，V1/V4 提供实际容量使用。
 
 Status 与 TLS 的独立生成根会产生同名的 TransportError 判别辅助声明，不能在同一个 Lean 环境直接混合导入。公共根提供[纯值词汇和接受条件](../../SandboxModel/Boundaries/SchemaDomains/Values.lean)；完整 Status Rust 对应与 46 项审计保持独立文件/模块检查，并进入全部保留文件构建、真实文件诊断和总清单。没有删除 TLS 或 Status 检查，也没有改写生成物。调用方须区分可共同导入的值合同和各生成根的实现对应；本接线不承诺所有独立生成根能直接共同导入。
 
@@ -684,3 +684,48 @@ B2 只连接原 `current`、原守卫、共享投影和调用次序：`authorize
 模型和有限非空历史证明读写排斥、原领取、映射及保留读者时的值保持，同一 `ProtectedRead` 拒绝提前释放模型。原 Rust 错误副本改持一个副本锁、提前释放原会话锁，由原轮换等待断言检查；这是原生回归证据。固定 Charon 对真实 async `Session::authorize` 的 coroutine/GAT 限制保留，未完成 async Rust 机器精化。源审查和测试仅支持所列 A6/B2 符合条件的采用。
 
 本条没有 FIFO、最大读者数、无条件最终取得或硬返回时限定理；不覆盖任意 `map` 回调、升级/降级、`write_owned`、`blocking_*`、任意其它 RwLock/Mutex 使用点或整个 Guest 业务。未被本条覆盖的公共接法仍归 V0，业务授权和真实资源/释放决定仍归所属模块。
+
+
+## A2/A3/A6/A8/B4 原 Child 的退出观察与未知交接
+
+[公共入口](../../SandboxModel/Boundaries/ChildObservation.lean)针对原 `OwnedChild::stop_and_reap` 的隔离同步候选。来源冻结于 integration `646fc2c8`，生产未采用该拆分；原实现和候选的有限对照是源码/测试证据，不是一般新旧 Rust 等价证明。[逐符号合同](../../verification/experiments/child-observation/contracts.json)保存九个机械函数的完整片段摘要、固定标准库版本、原对象和失败含义；核心、实际调用方及同性质错误版都使用固定原工具。
+
+入口由 V6 提供有效原 Child、已预占原 Slot、真实创建/回收身份及两项都存在的条件。A2 解释这一次原进程观察，A3 解释原管道关闭，A6/A8 解释正常值、时钟和暂停；B4 只连接 `system/try_wait/kill/close_pipes/now/add_grace/pause/retain/unknown_exit` 的原对象、完整参数及该次回复。它不担保整个停止函数、reaper 或释放决定正确。
+
+| 正常返回提供的窄保证 | 不提供的结论与调用者责任 |
+|---|---|
+| `try_wait` 的 Some 是原 Child 的同一完整退出状态，可来自其已缓存状态；None 与普通 io::Error 仍是合法回复 | None/Err 不说明进程仍活着或无效果；V6 防止提前回收后仍向复用 PID 发信号。一个进程退出不代表后代、VM 或全部 FD 已结束 |
+| `kill` 保留原终止请求及回复；已缓存退出时可不发新信号便成功。`close_pipes` 顺序取出并正常析构本地三个原管道 | kill 成功与管道为空均不是退出/排空证据；复制 FD、在途字节及全部后代由 V6/V8 处理。部分关闭不回滚 |
+| 每次 `now` 重新观察时钟，`add_grace` 使用原两秒常量，`pause` 是原十毫秒调用 | 不能推出两秒硬上界、时钟必然推进或最终回收；不可表示加法、panic、不返回没有正常后态 |
+| `retain` 正常返回表示原 Child/Slot 曾一并交给原 reaper，随后执行原通知；`unknown_exit` 保留原错误类别与全文 | 这是历史事实，worker 可能已经回收，不能断言当前队列成员关系；全局计费与原 reaper 释放政策归 V6。通知不提供退出证据 |
+
+机器证明的自有决定是：按原顺序观察/kill/关闭/比较截止；成功保留完整退出观察与本地原名额；未知返回前先取原 Child、再取原 Slot，转交原 pair 后构造原错误。实际生成调用方和具体接口字典另有检查。形式响应流与历史属于每次调用的逻辑上下文，不声称空 Rust SystemIo 物理存储这些字段，也不冻结外部 OS、时钟或其它队列。
+
+普通 Err 是正常回复，不能被删去。正常返回合同不为中断调用、panic/unwind、abort、崩溃或取消补造后态、清理或回滚。Error/Status/Instant 等表示限普通值，不允许把额外许可、FD 或自定义可观察析构藏在其中。缺值 panic 诊断、OwnedChild::Drop/into_child、整个 pump/exchange、SafeLaunch、全局容量和完整生命周期仍由 V6/V8 证明。原生错误版与形式错误版均检验原 pair 责任；编译失败不是反例。
+
+## A6/B4 有状态回调：原外部状态与访问顺序
+
+[CallbackState](../../SandboxModel/Foundations/CallbackState.lean)证明隔离 crate 内真实 `toggle_step/trace_step` 的生成体，再以逐次正常观察连接通用筛选理论。[来源登记](../../verification/experiments/callback-state/source-map.json)明确：trace/calls 来自原 Store 回归，toggle 是隔离代表，完整生产谓词没有因这两个例子完成证明。
+
+A6 仅提供普通值 Vec::retain 的正常有限遍历：对原每一行按原顺序调用一次，按该次 bool 保留原行；B4 只把同一个 helper、原外部可变状态、完整 key/value/配置及结果原样接上。自有比较、克隆、谓词、授权、退休与释放仍由 V4/V6/V9 证明，不能把整个 FnMut 或业务回调列可信。
+
+`Chain/Selected` 记录每次真实返回与原行选择；公共定理推出完整状态转移、次数、顺序、幸存行及 trace 的完整前缀追加。调用者须提供有效独占借用、普通值且无额外 Drop、每次对应及可表示 trace 容量；正常分配与模型容量不同，不保证物理内存足够。bool 回调没有 Result 错误短路；有业务 Result 的接口须另保留首错。中断只说明已完成调用的历史前缀，不声明当前外部堆/Store 回滚；受控 panic 仅为原生测试证据。
+
+两个真实错误 helper 均重新编译抽取，再由正确版同一 ToggleContract/TraceContract 拒绝。机械外壳的来源审查、原生测试与模型条件各自保留；未获得完整高阶闭包的机器精化。
+
+## T7/T8 有限依赖使用目录的读法
+
+[OS/存储目录](../../verification/os-boundary-catalogue.json)在固定五根、60 个编译变体之上核对 25 类接口、71 个代表源码位置；它没有新增可信保证或程序定理。每行说明原对象/配置、正常结果、错误和部分效果、未知/取消、进展和业务提供方。其 public_status 与待办是 review_baseline 的历史审查快照，当前交付状态见 #333 与覆盖记录；business_obligation 表示仍待业务证明。
+
+本页 A/B 是依赖合同的权威位置。目录中对源码行为的解释仍需其自有前提和业务证明，不能把该行整函数变成可信依赖，也不能把有代表例子理解为所有 SQL/Lua、驱动、Guest 或 Firecracker 调用已抽取。尚未接通的具体签名须给最小预检，不提前保证工具支持。有限目录不提供完整调用图、依赖析构或 Future 取消胶水语义。TLS 原借用输入连接仍是公开缺口，不由现有首叶候选或来源定位自动完成。
+
+
+## A6/B4 有界 Writer：真实写入、结束和响应选择
+
+[BoundedWriter](../../SandboxModel/Boundaries/BoundedWriter.lean)连接原私有 Writer 的隔离同步候选：`checked_add → limit → capacity → reserve → append`，以及 `exceeded → serializer result → bytes` 的结束顺序。原 `json_response` 的成功/失败选择另行抽取，HTTP 构造只机械转交原字节。[候选来源](../../verification/experiments/bounded-writer/candidate.json)、[完整差异](../../verification/experiments/bounded-writer/candidate-diff.json)和[原语登记](../../verification/bounded-writer-environment.json)固定原 e576a847 源码与具体实现；生产未采用拆分，一般旧新等价未机器证明。
+
+A6 仅提供固定普通 Vec 的长度、capacity、正常 reserve 不改内容、append 原字节及移出原字节；两个固定 IO 错误工厂保留原类别/文本。B4 只连接原 Writer/限额/块/serializer 结果与实际 HTTP builder，不担保限额判断、错误解释或任意 Serialize 正确。实际生成函数证明正常写入的全部字节与计数、历史中已接受块的精确连接、逻辑字节界、原超限优先级和 200 响应的原完整字节。
+
+拒绝不追加本次字节，但不撤销此前私有前缀，回调也可继续写较小/空块。大小加法溢出或超限才置 exceeded；reserve 失败保留原标记，不能统一叫超限。Writer 没有保存任意 IO 错误的全局首错；单次检查顺序、serializer 最终错误和超限优先级分别保留。自定义 Serialize 可以吞掉分配错误再正常返回，此时 finish 可以接受不完整前缀；完整 JSON 仍要求固定派生/实际回调正确传播错误与轨迹条件，由实际 schema/V3/V7/V8 提供。
+
+初始字节界由调用方建立；原入口从空 Vec 开始，预填充调用不自动满足。普通值、有效借用、有限可表示输入与正常分配是适用域，逻辑输出字节界不控制 Vec capacity、分配器、临时数据或整个服务 RAM。panic/unwind、OOM/abort、资源载荷的可观察 Drop、取消和网络最终交付不由正常后态定理提供。真实错误 Rust 删除限额拒绝后成功抽取，由同一 WriteContract 拒绝；库条件有合法非空接受与分配拒绝见证，不以不可满足条件获证。
