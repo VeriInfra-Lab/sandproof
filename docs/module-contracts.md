@@ -20,7 +20,7 @@
 ### 身份、请求和结果
 
 - `SessionId` 是稳定逻辑会话；`IncarnationId` 标识一次具体运行；`CaptureId` 标识一次捕获；`OperationKey` 标识一个客户端请求；`SlotId` 是可复用物理位置。owner 来自鉴权，不能由正文自报。身份不回绕，不用路径/PID/短摘要互相替代。
-- 本阶段计划增加受鉴权的请求窗口、create、unload、resume、destroy 和操作查询接口，使用正式中心链路。建议独立版本化路径 `/v1/lifecycle/request-windows`、`/v1/lifecycle/operations` 及 `/v1/lifecycle/operations/{window}/{sequence}`；确切 wire schema 在 V7/V3 首批实现前冻结。本节承诺的键、顺序与失败语义不能被路径选择改变。SDK 既有无键 create 保持原语义，不能声称它也支持安全自动重试。
+- 本阶段计划增加受鉴权的请求窗口、create、unload、resume、destroy 和操作查询接口，使用正式中心链路。建议独立版本化路径 `/v1/lifecycle/request-windows`、`/v1/lifecycle/operations` 及 `/v1/lifecycle/operations/{window}/{sequence}`；确切 wire schema 在 V7/V3 首批实现前冻结。本节承诺的键、顺序与失败语义不能被路径选择改变。SDK 既有无键 create 保持原语义，不能声称它也支持安全自动重试。若阶段部署仍开放该入口，必须把每次独立请求作为新会话输入纳入授权/资源证明，仅不对它承诺同键重放；否则由阶段配置关闭该写入口。不能从模型删除一个实际仍可改同一状态的入口。
 - 客户端发送操作前持有服务端签发的有界窗口，选择窗口内序号；键为 `(deployment, authenticated_owner, window, sequence)`，绑定操作种类、会话、期望版本和**完整规范化参数**。摘要只能加速比较，不能省略全文绑定。
 - 鉴权/结构检查后先查已有键：全文相同返回原进行中/终态，即使会话版本已前进；全文不同拒绝冲突。只有不存在的键才检查窗口准入、期望版本、当前状态和预算。重复结果不得重新触发副作用。
 - 窗口关闭后不接受新键；已接受未知工作保留。结果保留期结束且责任结算后才退休窗口，以持久单调拒绝前沿拒绝旧窗口，不无限保存所有键。有限窗口耗尽/未知长期占位允许拒绝新请求。终止/收尾所需内部标识和容量在接受时预留，不能依赖普通客户还有新窗口额度。

@@ -28,7 +28,7 @@
 
 完整 bundle 接管前不得停止原唯一状态；回滚暂停前先让迟到 capture 工作失效。LoadPaused 返回后，内存 backing 仍被 VMM 使用，文件不能改写或逐出。设置 MayHaveExecuted 后，即使后来看到 paused 或 stopped，也不能允许重载旧来源。
 
-停止/回收以原身份驱动且可重试。manager 重启保留运行 VMM，不能以服务停止代替 VM 清理。unexpected VMM death 后的状态保证按声明故障域报告失败，不以冷重启补成功。
+停止/回收以原身份驱动且可重试。manager 重启保留运行 VMM，不能以服务停止代替 VM 清理。实际进程父子关系、退出信号和 service/cgroup 配置必须核对：声明中的管理服务崩溃不能被自有停止钩子转换为未授权的 VMM 终止；对应故障注入需要真实验证。unexpected VMM death 后的状态保证按声明故障域报告失败，不以冷重启补成功。
 
 ## 4. 验收与边界
 
