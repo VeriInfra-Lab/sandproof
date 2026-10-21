@@ -1,131 +1,37 @@
-# V6 宿主执行：真实资源、围栏与精确清理
+# V6 真实捕获、装载、激活与精确回收
 
-[文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明工作流](../proof-workflow.md)
+[文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-状态：详细证明计划；拟定定理尚待建立。适用代码定位基线与实际证明状态分别见总览和[覆盖记录](../proof-coverage.md)，不因本页完成而新增已证明结论。
+任务：[#638](https://github.com/VeriInfra-Lab/sandproof/issues/638)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
-本模块证明“执行了哪个原对象、取得了什么真实证据”。本地核心里的 vm stopped 值不是 Linux 进程已停止的证明；独立执行计划把这种连接落实到实际文件、pidfd、网络和辅助进程调用。
+## 1. 实现范围
 
-## 1 实际入口和范围
+对应 [sandbox-node](../../sandbox-node/src/linux.rs)、[sandbox-runtime](../../sandbox-runtime/README.md)。当前 `sandbox-node/src/linux/execution.rs` 的 `PrepareVm` 明确拒绝 snapshot source，不能将历史 Freeze/Seal/Commit 命令或模型记为真实支持。本阶段新增固定 Firecracker/jailer 1.16.1 的完整路径，原身份/围栏/受保护目录及清理继续复用。
 
-| 代码 | 自有义务 |
-|---|---|
-| [NodeHost](../../sandbox-node/src/adapter.rs)、[LinuxWorker](../../sandbox-node/src/linux.rs) | execute/observe 连接原 WorkAction、身份和当前执行资格 |
-| [host_slots.rs](../../sandbox-node/src/host_slots.rs)、[host_lease.rs](../../sandbox-node/src/host_lease.rs) | bind/release_host_slot、原租约、数据 gate、位置复用；客户端不能指定宿主 UID/路径 |
-| [launch_observation.rs](../../sandbox-node/src/launch_observation.rs)、[startup.rs](../../sandbox-node/src/startup.rs) | 原模板/启动描述与就绪协议，明确启动接受与 envd就绪区别 |
-| [runtime linux](../../sandbox-runtime/src/linux.rs)、[observation](../../sandbox-runtime/src/observation.rs)、[jail](../../sandbox-runtime/src/jail.rs)、[retirement](../../sandbox-runtime/src/retirement.rs) | 准备、启动、观察、精确目录/进程清理和恢复 |
-| [egress.rs](../../sandbox-runtime/src/egress.rs)、[cgroup.rs](../../sandbox-runtime/src/cgroup.rs) | 实际网络规则与获批策略、cgroup成员和限制核对 |
-| [child_process.rs](../../sandbox-runtime/src/child_process.rs)及 [reaper](../../sandbox-runtime/src/child_process/reaper.rs) | 宿主辅助输入/输出/期限/回收，未知退出保留责任 |
-| [physical_profile.rs](../../sandbox-node/src/physical_profile.rs)、[storage_envelope.rs](../../sandbox-node/src/storage_envelope.rs) | 实际资源准入/峰值连接；稀疏空洞不消灭未来写满责任 |
+新增外部接口合同仅为[依赖登记 S-C1–6](dependencies.md#第一阶段新增依赖合同)。选择哪个 manifest、原 VM 是否允许停止、何时激活和哪些文件允许删除属于自有业务。外部工具可返回错误但留下部分效果。
 
-这里只执行产品启用的九类命令（下方 C6），未启用的 Freeze/Seal/CommitSnapshot 不纳入本批。模板制作/发布整体排除；对获批产物的使用、路径身份核验、启动资源和原实例清理不排除。
+## 2. 实际动作与证明接口
 
-## 2 物理状态和微步骤
-
-`Hi` 保存目录/文件对象身份、进程及稳定句柄、设备/网络命名空间、规则/cgroup、原位置占用及辅助进程。Observation 是对原对象的一次带身份事实，不能和真实状态变量合并；权限失败、身份不符和不可观察都不等于 Absent。
-
-每种命令枚举“读资格/原计划→登记→取得稳定对象→安装/调用→观察→回执”及可能部分效果。检查与使用间的对象替换、围栏变化需要稳定句柄或排他租约连接，不允许仅启动前检查一次。PrepareVm未知不能盲重做；Stop/AbortPrepare 覆盖原可能激活，RetiredByStop不补造过去的失败。
-
-启动满足 [SafeLaunch](dependencies.md#a1-firecracker-和-jailer-的具体边界)。网络安装/激活必须证明所有出口被约束且无临时放行；cgroup配置被接受不够，核对实际成员。来宾自改 DNS/路由不改变宿主规则；受限DNS地址不表示禁止查询内容外传，IPv6放行/域名策略仍范围外。
-
-## 3 拟定定理
-
-| 定理 | 义务 |
-|---|---|
-| `host_action_exact_binding` | 每次实际调用目标等于已提交原计划，实例/代次/轮次/尝试与位置匹配；修改范围限原对象 |
-| `safe_launch_refines` | 实际描述单位/路径/句柄/降权/规则符合获批描述及 SafeLaunch，且登记先于副作用 |
-| `observation_sound_scoped` | Ready/Stopped/Absent/Cleaned证据由原对象观察产生；Unknown不蕴含不存在 |
-| `fence_stop_covers_old_work` | 围栏生效后旧启动无新运行效果；停止证据覆盖原VM及规定受管执行，而非单PID退出 |
-| `cleanup_exact_and_reuse_safe` | 核验至删除/释放的竞争受约束；同名替换和新绑定不受影响，Quiescent证据保持至新绑定提交 |
-| `command_replay_safe_c` | **逐命令**证明可重放的范围/参数/效果，非幂等命令仅原观察/停止收尾；不推广到用户shell |
-| `helper_budget_exit_refines` | 输入/输出/驻留/并发及回收限额真实记账；未知退出保留许可和身份，不因超时直接 Free |
-| `host_microsteps_refine` | 在登记的原语和薄适配合同下，自有Rust决定、登记、Linux调用参数、错误/崩溃到回执对应上述模型；不声称任务/锁机制已机器证明 |
-
-主要 S4/S7/S8/S11/S14、DS5/DS6；L2 的外部可完成前提不包含“我们自己的清理代码已正确”。
-
-## 4 分批与验收
-
-首批：原身份稳定观察→准备/激活→丢回执观察→围栏/停止→精确清理，连接 V5；先选“已启动但缺回执”“同名目录被替换”“停止未知仍占额”样例审查模型。真机测试只核对 A1–A5 等原语合同与部署，不替代一般证明。
-
-扩展：逐个命令前置/错误/部分效果；网络策略与GLOBAL→LOCAL描述使用；辅助进程完整回收、位置复用及物理峰值。现有 [节点测试](../../sandbox-node/tests) 与 [运行时测试](../../sandbox-runtime/tests) 优先复用，不新增全量题集门槛。
-
-依赖 V0、V4 的执行资格、V5 的耐久计划、V8 的实际排空；A1/A2/A3/A5/A6/A10为细化外部条件。不能把 NodeHost 或 shell规则生成器整体假定正确；规则字符串亦需“实际文本/命令→受限语义→规则判定”对应，和 V2 的 Lua 一样登记未解桥接。开工/完成沿用 [V0](00-foundations.md#5-开工与完成条件)。
-
-固定原工具不能抽取的任务/锁/句柄移动与取消机械接线，可采用[依赖登记](dependencies.md)中逐符号的获批可信适配，不以通用异步翻译为前置。业务仍证明原对象身份、获批参数、先登记后副作用、部分效果及未知处理、取得哪种停止/清理证据和何时允许复用；适配只如实传递这些输入、观察及实际退出事件。发送终止、超时、取消 Future、JoinError 或释放 Rust 句柄均不自动给出 Quiescent。对辅助进程，重收与稳定身份的原语保证和进展条件分别登记；无法确认退出则保留资源责任，不以“适配正确”吞掉这一分支。
-
-## 精确条款
-
-以下条款为本模块的规范定义；跨模块条款通过前提提供方连接，不将下游自有义务假定为已证。
-
-### B6 宿主和观察状态
-
-对每个受管绑定 `b`，`H` 记录：
-
-- 原进程身份及稳定句柄、关联辅助进程、实际运行或退出状态。
-- 监狱目录、磁盘、内核副本、登记文件、控制套接字的原对象身份。
-- 网络空间、接口、规则、路由及实际生效策略。
-- 控制组成员与限制、运行位置、受保护模板引用。
-- 宿主侧已安装围栏、正在执行的工作及其完整尝试键。
-
-观察结果用三类表示：`Present(identity, facts)`、`Absent(scope)`、`Unknown(error)`。证据还绑定观察对象、操作或尝试、观察顺序和保护条件。`Absent` 只能覆盖真正检查过的资源范围；权限错误不能生成 `Absent`。
-
-目录的设备号和 inode、进程编号、网络接口名称都可能被复用。因此“同名”不等于“原对象”；原身份比较还需受保护生命周期或稳定句柄，不能假设有限编号永不重复。
-
-### C6 十二种命令中的九种产品命令
-
-[工作处理函数](../../controller-core/src/worker.rs)的命令集合有十二种。本功能子集启用以下九种；冻结、封存快照、提交快照三种不启用。
-
-| 命令 | 核心接受条件的关键字段 | 宿主侧必须建立的事实 |
+| 动作 | 真实输入/输出 | 必须对应的义务 |
 |---|---|---|
-| `InstallFence` | 沙箱、控制轮次、终止标记与合法操作相符 | 旧工作不能越过新围栏产生新的授权副作用；与已经开始的工作正确协调 |
-| `PrepareVm` | 启动且非终止；轮次和代次当前；计划封定且资源选择相同；非终止围栏已装；逻辑资源不存在 | 原身份目录、磁盘和启动登记成立；部分准备也可识别与清理；无快照来源 |
-| `ConfigureNetwork` | 当前启动；原虚拟机与网络位置完整绑定；完整策略相同；围栏匹配 | 原网络空间的实际规则等价于获批策略，失败不放宽网络 |
-| `ApplyFilePolicy` | 当前启动；工作区、代次和策略匹配；围栏匹配 | 实际工作区隔离与文件策略符合本功能子集定义，不能只写一个“已应用”标记 |
-| `ActivateVm` | 当前虚拟机已准备；网络已配置；当前非终止围栏；该沙箱没有其他执行中虚拟机 | 对原虚拟机完成启动及约定初始化，获得同身份就绪证据；不是只看进程存在 |
-| `StopVm` | 原资源绑定；本子集中为终止撤销状态；匹配终止围栏 | 精确进程及约定执行资源停止，原网络访问关闭；发送终止信号不等于已停止 |
-| `AbortPrepare` | 创建补偿；封定原计划含该虚拟机和网络资源；终止围栏；核心尚无对应资源记录 | 已检查并收尾可能存在的部分物理准备；核心“尚无记录”不等于物理上从未创建 |
-| `CleanupVm` | 原沙箱与代次匹配；状态已停止；不再是当前虚拟机 | 仅删除原对象；目录替换、观察错误或仍有使用者时不能宣告释放 |
-| `CleanupSlot` | 原沙箱与代次匹配；未激活、未回收、不再当前引用 | 原网络资源及关联引用排空后精确回收 |
+| PauseOriginal | 原 VMM/API/运行代/围栏，确认 paused 或未知 | 不操作同名新进程；暂停确认和当前停止意图分开 |
+| CaptureFull | 原 paused VMM、唯一 capture 目录、Full RAM/device 和所有匹配 disk | 整个截面无运行/宿主写者；不把内存文件等同完整恢复材料 |
+| SealBundle | 原文件句柄、长度/摘要/配置/manifest、sync 与受保护发布 | 短写/替换/同步失败不成功；逻辑计数器不能替代内容摘要 |
+| LoadPaused | 唯一 claim、新候选/私有盘、File backend、resume_vm=false、已取得 pin | 使用指定完整 bundle；新 jail 保持设备相对路径；不自动运行、不写坏来源 |
+| ActivateOriginal | 已持久 MayHaveExecuted、原 candidate、当前围栏/寿命/凭据 | 只激活该候选；重复投递不创建新候选；旧任务不能绕过终止 |
+| Observe/StopOriginal | 精确 VMM/辅助进程及工作身份 | Exit/Stopped/排空/Released 分开；PID/路径缺席不能证明无迟到作用 |
+| DeleteBundle | V5 删除许可、精确对象、无 pin/映射/可复活任务 | 只删授权原对象；部分删除保持原责任，实际释放后才退额度 |
 
-上述宿主事实不是现有纯核心更新能单独证明的。需要宿主模块定理将真实证据翻译为核心工作成功输入。
+物理效果必须接原日志/尝试/进程身份的持续观察。文件从路径取得原句柄到校验/使用是一个安全链；Metadata 条件证明不能代替 open_checked 的路径/FD/竞态证明。需先解决 V0 T8 的可抽取拆分或明确阻断，不能扩大可信业务层。
 
-对 `ApplyFilePolicy`，本子集是每实例私有可写系统环境和受控宿主路径，不额外承诺来宾 root 不能改自己的文件权限。策略编号是身份标签；若要证明任意目录级权限策略，必须另外定义其文件访问判定函数，不能从编号相等推出权限语义正确。
+## 3. 特殊失败规则
 
-### D3 地址策略是可执行判定函数
+完整 bundle 接管前不得停止原唯一状态；回滚暂停前先让迟到 capture 工作失效。LoadPaused 返回后，内存 backing 仍被 VMM 使用，文件不能改写或逐出。设置 MayHaveExecuted 后，即使后来看到 paused 或 stopped，也不能允许重载旧来源。
 
-对 IPv4 目的地址 `d`，定义平台禁止集合 `P`、用户允许集合 `A`、用户拒绝集合 `D`、默认公网开关 `I`：
+停止/回收以原身份驱动且可重试。manager 重启保留运行 VMM，不能以服务停止代替 VM 清理。unexpected VMM death 后的状态保证按声明故障域报告失败，不以冷重启补成功。
 
-```text
-AddressAllowed(d) := d ∉ P ∧ (d ∈ A ∨ (I ∧ d ∉ D))
-```
+## 4. 验收与边界
 
-这表达平台禁止优先，用户显式允许高于用户拒绝，显式禁网仍可配合允许项。网段匹配须证明规范化及边界位数正确。平台集合及控制通道例外按部署合同固定，不能由用户允许列表覆盖。
+同步守卫、参数、identity/path/manifest 校验、分类与精确清理决定经固定抽取；系统调用/FC/文件持久性用显式外部合同加实机证据。Rust 业务分支仍需机器对应，不能仅源码检查后称实现已证。
 
-真实网络定理不是“配置文本长得对”，而是：
-
-```text
-GuestEgress(packet,b) ⇒ 属于明确的控制通道例外
-                       或 AddressAllowed(packet.dst)
-```
-
-还需证明来源绑定、路由、地址转换、返回流量和规则安装时序不会绕过该判定。地址授权不等于协议内容授权：允许访问某个 DNS 解析地址，不能推出 DNS 查询中没有数据外传；允许加密网页访问，也不能推出其中没有承载其他协议。
-
-IPv6 放行和 DNS 查询内容策略不在本次功能范围，但“不支持”不能等于“留下不受控出口”。网络安全定理必须覆盖未启用协议被阻断、或该部署没有相应出口的条件；否则只能声称 IPv4 路径受限，不能声称整个沙箱无旁路联网。
-
-### F5 位置复用的前提
-
-定义原绑定 `b` 的释放条件：
-
-```text
-Quiescent(b) := 原虚拟机和受管辅助进程均停止
-  ∧ 无在途旧工作能重新创建原资源
-  ∧ 无已登记数据连接或许可使用原位置
-  ∧ 原网络与文件资源已精确清理
-  ∧ 无阻止释放的模板、验证或维护引用
-```
-
-位置从释放中变成可复用，要求 `Quiescent(b)` 的可靠证据；直到新绑定提交之前，还必须保持该条件。随后新虚拟机身份不同于原身份，并匹配该位置记录的上次绑定。
-
-`ConfirmRelease` 这样的纯输入本身不是物理释放证据。调用路径中的业务逻辑必须从原对象观察及登记合同建立上述前提，且处理核对与提交之间的竞争；薄适配只负责机械传递证据，不直接假设 Quiescent 或释放决定正确。
-
-阻止释放的引用也需要有无环的解除条件。例如验证或构建引用若依赖逻辑终态清理完成即可结算，就不能再要求先物理 `Free` 才解除，否则“引用阻止 Free，Free 又阻止解除引用”会使最终完成性为假。这里验证控制核心对引用的使用与释放顺序，不将整个模板管理子系统纳入证明范围。
+真实 KVM 必须观察 RAM-only nonce、磁盘内容、长生命周期 guest 进程、旧 VMM 退出、新 VMM 身份以及后续修改；无旧 VM 留存占额。故障窗口覆盖捕获/发布/停止/加载/激活/删除；File backing 生命周期和磁盘释放单独观测。提供 LC-P4/5/6/7/9/10 的物理部分、LC-I6/7/8；结果绑定固定 CPU/内核/FC/文件系统。无 UFFD、增量链、迁移或任意设备组合支持承诺。
