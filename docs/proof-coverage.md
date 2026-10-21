@@ -3,19 +3,19 @@
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
 
-## T3/T4/T8 接口组合候选：原 Child 责任与回调状态
+## T2/T3/T4/T8 接口组合已集成：原 Child、回调状态与有界 Writer
 
-来源 PR 为 [#617](https://github.com/VeriInfra-Lab/sandproof/pull/617)（封口 `e50f6b5b`）、[#619](https://github.com/VeriInfra-Lab/sandproof/pull/619)（`28facbba`）和 [#620](https://github.com/VeriInfra-Lab/sandproof/pull/620)（`74e9f53d`）。本节区分已交付组件证据与待统筹的正式组合验收；准确组合提交、双机完整入口、当前 CI 和合入后适用性见 #333 对应记录。生产 Rust、Charon/Aeneas 和固定工具版本均未改。
+来源 PR 为 [#617](https://github.com/VeriInfra-Lab/sandproof/pull/617)（封口 `e50f6b5b`）、[#619](https://github.com/VeriInfra-Lab/sandproof/pull/619)（`28facbba`）和 [#620](https://github.com/VeriInfra-Lab/sandproof/pull/620)（`74e9f53d`）。四个来源已由 [#622](https://github.com/VeriInfra-Lab/sandproof/pull/622) 正常 squash 合入 integration `139f4db6990f67c1ed9cd28c4ce28af707d469f9`，与完整验收候选 `22383847` 同树。ning 原入口 1914.273 秒、52份实际成功记录（58次使用含6次同批去重），a6000 原入口 2339.072 秒、27项全部 RUN；1506个唯一命名审计（含辅助/见证/错误版）与预期一致、27份全局实际文件服务诊断完整非陈旧，当前四项 CI 首次通过。实际合入后完整2138个跟踪文件、配置/工具及原始证据核对一致，ning2.631秒、a6000 29.885秒采用证据复用，没有重新测试、抽取或证明；详细摘要及失败见[最终验收](https://github.com/VeriInfra-Lab/sandproof/pull/622#issuecomment-6304788365)。生产 Rust、Charon/Aeneas 和固定工具版本均未改。
 
 - [ChildObservation](../SandboxModel/Boundaries/ChildObservation.lean)：正常返回下，真实隔离同步核心与具体调用方已由原生成函数证明；成功有原 Child 的完整同一退出观察，未知返回前交出原 Child/Slot。15 项核心、3 项具体调用方和4项同性质错误版审计共22个不同目标；重复视图不重复计数。九个机械 API 仍依 [A2/A3/A6/A8/B4](formal/dependencies.md#a2a3a6a8b4-原-child-的退出观察与未知交接)。生产未采用候选，一般新旧等价、异常后态、整个 reaper 和 V6 生命周期未完成。
 - [CallbackState](../SandboxModel/Foundations/CallbackState.lean)：真实 helper 生成体及有条件的状态/访问/幸存行组合，24 项正例与2/3项实际错误版审计共29个不同目标。原外部状态/参数接线依 A6/B4；toggle 是隔离代表，trace/calls 有原测试来源。不能据此声称所有生产闭包、panic 堆语义或完整 FnMut 机器精化。
 - [OS/存储目录](../verification/experiments/os-boundary-catalogue/README.md)：25类/71位置有限源码与合同审查，沿用原818项/60变体来源记录；未重新捕获 MIR，没有新增程序定理或信任。目录状态是审查基线快照，不能据其 pending_617 历史文字重新打开已交付接口，也不能把 business_obligation 读为已证。
 
-子进程原生驱动在共享接线中加强了同 crate 业务测试程序的 package/manifest/src/fresh 检查，逐变体只重建 sandbox-runtime 包，并在结束时收掉其错误版构建缓存；依赖、原二进制证据和 Lean 缓存保留。加强后的实际验收另按组合提交记录，不能沿用旧驱动结果背书新准入。
+子进程原生驱动在共享接线中加强了同 crate 业务测试程序的 package/manifest/src/fresh 检查，逐变体只重建 sandbox-runtime 包，并在结束时收掉其错误版构建缓存；依赖、原二进制证据和 Lean 缓存保留。加强后的驱动已包含在上述候选的本次完整实际验收中，没有沿用旧驱动结果背书新准入。
 
-[#621 有界 Writer](https://github.com/VeriInfra-Lab/sandproof/pull/621)的来源提交为 `1655c14e`，36 个正确声明和3个同性质实际错误版目标。真实隔离生成体覆盖写入、结束及响应选择；原生产连接仍依 A6/B4 的逐动作原语和精确来源/原生证据。宿主组件两版已通过原抽取与17份实际文件检查；当前共享 namespace 接入、完整验收和 CI 仍按精确组合提交另记，不能由宿主或环境探针成功推定。 公共总根复用纯 Model；生成 ContractError 同名声明与 Foundations 分开导入，实际对应及正反例审计未删除，仍进入独立模块、全部文件构建和实际文件诊断。普通值/初始界/正常分配、任意 Serialize 的错误传播以及逻辑字节界与 RAM 的区别见[依赖合同](formal/dependencies.md#a6b4-有界-writer真实写入结束和响应选择)。
+[#621 有界 Writer](https://github.com/VeriInfra-Lab/sandproof/pull/621)的来源提交为 `1655c14e`，36 个正确声明和3个同性质实际错误版目标。真实隔离生成体覆盖写入、结束及响应选择；原生产连接仍依 A6/B4 的逐动作原语和精确来源/原生证据。两版已在上述完整入口中通过原抽取、36/3审计和17份专属实际文件检查；namespace适配、完整验收及CI已按同一候选核对，不由宿主或环境探针成功推定。 公共总根复用纯 Model；生成 ContractError 同名声明与 Foundations 分开导入，实际对应及正反例审计未删除，仍进入独立模块、全部文件构建和实际文件诊断。普通值/初始界/正常分配、任意 Serialize 的错误传播以及逻辑字节界与 RAM 的区别见[依赖合同](formal/dependencies.md#a6b4-有界-writer真实写入结束和响应选择)。
 
-各组件局部通过不等于正式组合或 V0 完成。T0 全量连接、其余 JSON/schema、Tokio Mutex、TLS 原借用来源及剩余公共义务继续开放；V1–V9 的真实对象/授权/提交/生命周期/系统组合责任保留，T9 与 #337 历史迁移不作前置。
+本组合已通过完整验收，但不等于 V0 全部完成。T0原生缓存未绑定根级合同/配置JSON的缺口已复现并重新打开；本批52项均实际执行，合入后另以完整文件树和全证据核对，不依赖该缺陷命中。T0 全量连接、其余 JSON/schema、Tokio Mutex、TLS 原借用来源及剩余公共义务继续开放；V1–V9 的真实对象/授权/提交/生命周期/系统组合责任保留，T9 与 #337 历史迁移不作前置。
 
 ## T5/T6 Tokio RwLock：原读守卫与映射观察
 

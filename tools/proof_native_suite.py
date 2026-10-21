@@ -14,7 +14,8 @@ import stat
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
-    rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success)
+    rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
+    contract_inputs, source_archive_inputs, NATIVE_SCHEMA)
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
                          'check_json_identifiers_negative.py',
@@ -108,7 +109,8 @@ def run_locked_suite(output):
                                                mode=oct(private_tmp.stat().st_mode&0o777)))
     os.environ['SANDPROOF_NATIVE_EVIDENCE'] = str(output)
     os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'native'
-    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT))
+    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+                   contracts=contract_inputs(ROOT),source_archives=source_archive_inputs())
     write_json(output / 'runtime.json', initial['runtime'])
     started = time.monotonic()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=output))
@@ -188,7 +190,8 @@ def run_locked_suite(output):
             source, env=dict(os.environ, RUST_TEST_THREADS='1'))
     from tools.tls_pin_reproduction import reproduce
     reproduce(ROOT, ROOT / '.tools', work / 'tls', native_only=True)
-    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT)) != initial:
+    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+            contracts=contract_inputs(ROOT),source_archives=source_archive_inputs()) != initial:
         raise ValueError('source, rules or native tools changed during the suite')
     trusted_checkout(ROOT)
     commands={};uses=[]
@@ -202,8 +205,9 @@ def run_locked_suite(output):
         if sha(entry/'receipt.json')!=value or load_success(entry,receipt['key']) is None:
             raise ValueError('native evidence lost before complete publication')
         commands[identity]=value
-    result = dict(schema=1, complete=True, exit_code=0, rules=initial['rules'],
+    result = dict(schema=NATIVE_SCHEMA, complete=True, exit_code=0, rules=initial['rules'],
                   rust=initial['rust'], runtime=initial['runtime'], commands=commands,uses=uses,
+                  contracts=initial['contracts'],source_archives=initial['source_archives'],
                   repository_sha256=digest(initial['repository']))
     write_json(output / 'complete.json', result)
     print(json.dumps(dict(native_suite_complete=True, seconds=round(time.monotonic()-started,3),
