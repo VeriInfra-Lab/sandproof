@@ -156,7 +156,7 @@ def insert_str
     (Shared0A.Insts.CoreCmpOrd Str.Insts.CoreCmpOrd) seen value
 
 /-- [sandproof_btree_set_binding::insert_lane]:
-    Source: 'src/lib.rs', lines 15:0-21:1
+    Source: 'src/lib.rs', lines 15:0-17:1
     Visibility: public -/
 def insert_lane
   (seen : alloc.collections.btree.set.BTreeSet (Str × Std.U16) Global)
@@ -169,7 +169,7 @@ def insert_lane
     core.cmp.OrdU16) seen (node, slot)
 
 /-- [sandproof_btree_set_binding::repeat_str]:
-    Source: 'src/lib.rs', lines 23:0-27:1
+    Source: 'src/lib.rs', lines 19:0-23:1
     Visibility: public -/
 def repeat_str
   (seen : alloc.collections.btree.set.BTreeSet Str Global) (value : Str) :
@@ -184,7 +184,7 @@ def repeat_str
   ok ((first, second), seen2)
 
 /-- [sandproof_btree_set_binding::new_then_repeat_str]:
-    Source: 'src/lib.rs', lines 29:0-34:1
+    Source: 'src/lib.rs', lines 25:0-30:1
     Visibility: public -/
 def new_then_repeat_str (value : Str) : Result (Bool × Bool) := do
   let seen ← alloc.collections.btree.set.BTreeSetTGlobal.new Str

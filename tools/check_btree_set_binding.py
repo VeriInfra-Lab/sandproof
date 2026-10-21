@@ -84,7 +84,7 @@ def check(root=ROOT):
                  "verification/extract-btree-set-binding/Cargo.lock",
                  "verification/extract-btree-set-binding/tests/insert_contract.rs",
                  "tools/check_foundations_extraction.py", "tools/check_loop_callbacks_contract.py",
-                 "tools/check_first_chain_extraction.py", "verification/first-chain-environment.json",
+                 "tools/check_first_chain_extraction.py", "verification/first-chain-linux-environment.json",
                  "lakefile.toml", "tools/tests/test_btree_set_binding.py"}
     mandatory.update(str(p.relative_to(root)) for p in (root / PROOFS).glob("*.lean"))
     mandatory.update(str(p.relative_to(root)) for p in (root / GENERATED).rglob("*") if p.is_file())
