@@ -1,6 +1,6 @@
 name = "sandbox-model"
 version = "0.1.0"
-defaultTargets = ["SandboxModel.Boundaries.ProtectedDirectory.Audit"]
+defaultTargets = ["SandboxModel.Boundaries.ProtectedDirectory.Audit", "SandboxModel.Boundaries.ProtectedDirectory.BadAudit", "SandboxModel.Boundaries.ProtectedDirectory.ElaborationScope"]
 
 [[lean_lib]]
 name = "SandboxModel"
