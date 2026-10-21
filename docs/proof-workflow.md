@@ -135,6 +135,9 @@ a6000 仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、
 # 使用现有的固定 Rust、Python、离线 Cargo 和真实 Redis 环境。
 export CARGO_NET_OFFLINE=true
 export SANDPROOF_REDIS_SERVER=/path/to/fixed/redis-server
+export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
+export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
+export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --output /private/acceptance/native-evidence
 ```
@@ -163,12 +166,18 @@ SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这�
 
 ```sh
 export SANDPROOF_NATIVE_EVIDENCE=/private/acceptance/native-evidence
+# 指向证明机上同内容的三份原源码归档；不复制 Rust target。
+export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
+export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
+export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 export SANDPROOF_USE_CAPTURE=/private/acceptance/validated-mir-capture
 export SANDPROOF_FORMAL_CACHE=/private/acceptance/formal-cache
 bash scripts/verify-controller.sh
 # 有疑问或需要重新执行时：同批仍对相同公共步骤去重。
 bash scripts/verify-controller.sh --recompute
 ```
+
+有限 TLS 来源与共享字段目录由 `verify-use-inventory.sh` 强制核对各自源码、完整树或原捕获引用及独立冻结清单。两份清单引用已有父清单，因此作为必经准入叶子登记，不把它们或含父摘要的目录 JSON 反写入祖先，避免摘要循环。它们没有新增 Lean 定理，也不把有限目录当成全部生产调用覆盖。
 
 MIR 捕获须通过 `v0_use_inventory.py check-published`；已有捕获仍适用于当前输入时
 不重做十组编译。清单是防漏证据，不能解释成全部调用或异步行为已经证明。
@@ -190,6 +199,8 @@ foundations 检查只执行一次。原脚本的生成物比较、错误版、�
 编译资源同时包括 crate 内的非 Rust 文件、部署/参考/共享测试材料和继承配置，
 不能漏掉 `include_str!` 等输入。当前项目没有自有 `build.rs`；以后新增时，须先
 登记其生成输入，入口会拒绝未登记的自有构建脚本，不猜测其外部读取。
+
+原生组件还逐字节收录 `verification/` 根级 JSON 合同/环境配置：检查工具所在源码和候选源码分别登记，新增、删除、改动或非普通文件均不能沿用旧输入。三份 SQLite/Child/Writer 原源码归档按实际内容摘要收录；两机绝对路径可以不同，内容须相同，缺失、修改或改成符号链接即拒绝。归档内容每次读取，不使用固定工具的元数据摘要捷径。原生整批结束及证明机准入再次核对这些输入，形式模块键同时绑定其封口记录；旧版缺少这些字段的封口不能升级标签后沿用。未来检查器读取新的外部文件或不同配置格式时，先登记它的内容输入，不把本条理解成自动追踪任意文件读取。纯证明文件/根级冻结清单仍由形式闭包检查；未进入该组件规则或合同闭包的 docs/ 覆盖报告变化，不单独使原生组件失效。experiments/ 内的说明和检查规则仍在原生规则闭包中；完整功能入口始终按全部跟踪文件重新准入。
 
 仅复用先前完整成功、输入仍一致、日志和原始抽取/反例证据仍存在且摘要相符的
 模块记录。失败、中断、缺失、损坏和任何输入不符都不能命中；受影响模块重新

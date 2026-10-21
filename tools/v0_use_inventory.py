@@ -30,6 +30,10 @@ AUDIT_INPUTS = {
 }
 # Every version/evidence file read by mandatory catalogue admission is frozen.
 AUDIT_INPUTS.update({
+    'tools/check_tls_certificate_binding.py',
+    'tools/tests/test_tls_certificate_binding.py',
+    'tools/check_shared_field_bindings.py',
+    'tools/tests/test_shared_field_bindings.py',
     'Cargo.lock',
     'SandboxModel/Boundaries/SqliteStatements/Bridge.lean',
     'SandboxModel/Boundaries/TlsPin/Refinement.lean',
