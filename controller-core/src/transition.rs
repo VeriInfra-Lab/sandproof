@@ -447,7 +447,7 @@ pub fn begin_compensation(
     if operation.kind == OperationKind::Pause {
         let mut updated = record.clone();
         updated.desired = Authority::Closed;
-        updated.effective = Authority::Closed;
+        // Only the original InstallFence worker may change effective access.
         updated.current_operation = Some(compensating);
         next.sandboxes.put(sandbox, updated);
         let key = operation_key(sandbox, operation.id);

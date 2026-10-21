@@ -19,7 +19,7 @@ pub fn observe(state: CaptureHandoff) -> Option<CaptureHandoff> {
     state.observe_bundle()
 }
 
-pub fn fail(state: CaptureHandoff) -> CaptureHandoff {
+pub fn pause_failure(state: CaptureHandoff) -> CaptureHandoff {
     state.ordinary_failure()
 }
 

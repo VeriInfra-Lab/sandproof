@@ -8,7 +8,7 @@ AENEAS="$TOOLS/aeneas/bin/aeneas"
 variant=${1:-values}
 case "$variant" in
   values)
-    roots=(accepted dispatch register observe fail terminate stop_permit registration_allowed commit eligibility material_uses)
+    roots=(accepted dispatch register observe pause_failure terminate stop_permit registration_allowed commit eligibility material_uses)
     ;;
   handler) roots=(compensate) ;;
   *) echo 'expected values or handler' >&2; exit 2 ;;

@@ -198,6 +198,17 @@ fn assert_original_kept(before: &World, after: &World) {
     );
     assert_eq!(after.resource_index(SID), before.resource_index(SID));
     assert_eq!(
+        held.effective, original.effective,
+        "failure is not a physical fence receipt"
+    );
+    assert_eq!(
+        after.worker_fences.get(&SID),
+        before.worker_fences.get(&SID)
+    );
+    if let Some(slot) = original.net_slot {
+        assert_eq!(after.slot_record(slot), before.slot_record(slot));
+    }
+    assert_eq!(
         capture(after).has_capture_work(),
         capture(before).has_capture_work()
     );
@@ -223,6 +234,30 @@ fn ordinary_failure_keeps_live_original_and_invalidates_already_queued_freeze() 
         handle_effect_dispatch(&after, freeze),
         Err(EffectReject::NotDispatchable)
     );
+    let row = before.sandbox_record(SID).unwrap();
+    assert!(matches!(row.effective, Authority::Running { .. }));
+    let fence = effect(
+        &after,
+        |c| matches!(c, Command::InstallFence { epoch, terminal: false, .. } if *epoch == row.epoch),
+    );
+    let revoked = finish(&after, fence);
+    assert_eq!(
+        revoked.sandbox_record(SID).unwrap().effective,
+        Authority::Closed
+    );
+    assert_eq!(
+        revoked.worker_fences.get(&SID),
+        Some(&WorkerFence {
+            epoch: row.epoch,
+            terminal: false
+        })
+    );
+    assert!(!revoked.slot_record(row.net_slot.unwrap()).unwrap().active);
+    assert_eq!(
+        revoked.vm_record(row.current_vm.unwrap()),
+        before.vm_record(row.current_vm.unwrap())
+    );
+    assert_eq!(capture(&revoked).eligibility(), RestoreEligibility::Revoked);
 }
 
 #[test]
@@ -306,7 +341,10 @@ fn commit_dispatch_is_unknown_and_late_success_tracks_material_without_reviving_
             EffectOutcome::Succeeded(ResultDigest(1)),
         )),
     );
-    assert_eq!(replayed, received, "duplicate late success is exactly idempotent");
+    assert_eq!(
+        replayed, received,
+        "duplicate late success is exactly idempotent"
+    );
 }
 
 #[test]
@@ -538,4 +576,56 @@ fn finite_capture_state_space_preserves_uses_and_never_revives_failed_registrati
             }
         }
     }
+}
+
+#[test]
+fn resource_failure_from_original_work_is_nonterminal_after_bounded_retries() {
+    let mut world = pausing();
+    let epoch = world.sandbox_record(SID).unwrap().epoch;
+    let fence = effect(
+        &world,
+        |c| matches!(c, Command::InstallFence { epoch: e, terminal: false, .. } if *e == epoch),
+    );
+    world = finish(&world, fence);
+    let mut id = effect(&world, |c| matches!(c, Command::FreezeVm { .. }));
+    for attempt in 0..=crate::DEFAULT_RETRY_LIMIT {
+        world = step(
+            &world,
+            ControllerInput::Effect(EffectInput::Dispatch(id.clone())),
+        );
+        world = step(
+            &world,
+            ControllerInput::Effect(EffectInput::Receipt(
+                id.clone(),
+                EffectOutcome::Failed(FailureKind::ResourceFailure),
+            )),
+        );
+        if attempt < crate::DEFAULT_RETRY_LIMIT {
+            world = step(
+                &world,
+                ControllerInput::Effect(EffectInput::Retry(
+                    id.logical.clone(),
+                    FailureKind::ResourceFailure,
+                )),
+            );
+            id.attempt += 1;
+        }
+    }
+    world = step(
+        &world,
+        ControllerInput::Effect(EffectInput::FinalizeFailure(
+            id.logical.clone(),
+            FailureKind::ResourceFailure,
+        )),
+    );
+    let failed = step(
+        &world,
+        ControllerInput::Request(Request::Compensate(CompensationRequest {
+            sandbox: SID,
+            failure: FailureKind::ResourceFailure,
+            evidence: Some(id),
+        })),
+    );
+    assert_original_kept(&world, &failed);
+    assert_eq!(capture(&failed).eligibility(), RestoreEligibility::Revoked);
 }
