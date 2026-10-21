@@ -178,7 +178,7 @@ fn empty_directory(directory: &File, device: u64, depth: u16) -> Result<(), Runt
 }
 
 impl Runtime {
-    fn jail_path(&self, id: &str) -> PathBuf {
+    pub(super) fn jail_path(&self, id: &str) -> PathBuf {
         self.config
             .chroot_base
             .join(self.firecracker_name())

@@ -27,6 +27,8 @@ mod jail;
 mod observation;
 #[path = "retirement.rs"]
 mod retirement;
+#[path = "snapshot.rs"]
+mod snapshot;
 #[path = "staging.rs"]
 mod staging;
 pub use cgroup::HostResources;
@@ -38,6 +40,9 @@ pub use helper_gate::{
 pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
+pub use snapshot::{
+    CapturedFullSnapshot, FullCaptureLimits, PausedOriginalVm, PublishedFullCapture,
+};
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
 #[cfg(test)]
@@ -1184,9 +1189,20 @@ impl Runtime {
         path: &str,
         body: Option<&[u8]>,
     ) -> Result<Vec<u8>, RuntimeError> {
+        self.api_with_timeout(id, method, path, body, Duration::from_secs(2))
+    }
+
+    fn api_with_timeout(
+        &self,
+        id: &str,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, RuntimeError> {
         let mut stream = UnixStream::connect(self.socket_path(id))?;
-        stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(2)))?;
+        stream.set_read_timeout(Some(timeout))?;
+        stream.set_write_timeout(Some(timeout))?;
         let data = body.unwrap_or_default();
         write!(
             stream,
