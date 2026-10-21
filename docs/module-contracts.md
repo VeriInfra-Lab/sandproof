@@ -31,7 +31,7 @@
 
 稳定阶段为 Running、Unloaded、Terminal；Pausing、Resuming、Terminating 表示持久进行中操作。`Frozen` 是原 VMM 的物理观察，不等于已卸载；`LoadedPaused` 不是成功恢复。失败结果带原操作和保留责任；明确暴露 StateLost / 不可恢复，不伪造连续性。
 
-同时维护：会话期望版本/运行代/终止意图，操作完整输入与结果，capture 内容清单与提交状态，恢复资格，持久 pin 集合，执行尝试和原资源身份。物理状态与持久观察分开。`ManifestDigest(u64)` 的旧逻辑计数器不是密码学内容摘要；新 manifest 须含 owner/session/capture/源运行代、格式/工具/CPU/设备/镜像配置指纹、每个文件种类/长度/内容摘要/受保护相对路径。真实完整校验属于自有业务，哈希函数正确性是外部条件。
+同时维护：会话期望版本/运行代/终止意图，操作完整输入与结果，capture 内容清单与提交状态，恢复资格，持久 pin 集合，执行尝试和原资源身份。物理状态与持久观察分开。`ManifestDigest(u64)` 的旧逻辑计数器不是密码学内容摘要；快照只保存来宾及受支持 VM/设备状态与私有磁盘；不得恢复宿主控制数据库、身份分配器、撤销记忆、资源额度或权威时间。新 manifest 须含 owner/session/capture/源运行代、格式/工具/CPU/设备/镜像配置指纹、每个文件种类/长度/内容摘要/受保护相对路径。真实完整校验属于自有业务，哈希函数正确性是外部条件。
 
 ### 暂停：从活状态交接到完整材料
 
@@ -53,7 +53,7 @@
 
 ### 回收：恢复资格与文件使用分开
 
-capture 的 `RestoreEligibility`（可认领→认领→消费/撤销）和 `StoragePins`（仍可能使用文件的持久所有者集合）独立。最低限度 pin 种类：卸载来源、已接受恢复、可能进行中的加载/映射、运行 VMM backing、捕获与清理工作。pin 在外部效果前登记，不用进程内 Arc 数量或 manager Drop 代表它。
+capture 的 `RestoreEligibility`（可认领→认领→消费/撤销）和 `StoragePins`（仍可能使用文件的持久所有者集合）独立。最低限度 pin 种类：卸载来源、已接受恢复、可能进行中的加载/映射、运行 VMM backing、捕获与清理工作。这里的 pin 指“某个对象仍需要这些文件”的持久登记，不是 Rust 的 `Pin<T>`，不要求扩展 Future 翻译。pin 在外部效果前登记，不用进程内 Arc 数量或 manager Drop 代表它。
 
 File 内存后端允许 VMM 在加载返回后继续读取原文件；运行期 pin 持续到原 VMM 及相关 worker 确认退出。恢复资格已消费、状态文件已读完或路径已 unlink 均不意味着内存 backing 可回收。manager 重启重建 pin 与原尝试关系，不把丢失内存句柄当无引用。
 

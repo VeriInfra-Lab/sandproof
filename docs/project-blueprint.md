@@ -60,7 +60,7 @@ A/B/C 是职责占位符，实际认领在 issue；不宣称已分配给具体�
 
 现有工作提供不同基础：[Firecracker](https://www.usenix.org/conference/nsdi20/presentation/agache)提供专用 microVM 机制；[Catalyzer](https://ipads.sjtu.edu.cn/pub/projects/catalyzer)和[REAP](https://arxiv.org/abs/2101.09355)重点研究启动/恢复性能；[GoJournal/Perennial](https://www.usenix.org/conference/osdi21/presentation/chajed)研究并发崩溃安全存储验证；[Sabre](https://www.usenix.org/conference/osdi24/presentation/lazarev)及[Spice](https://www.usenix.org/conference/osdi26/presentation/holmes)提供快照实现/恢复优化的比较背景。这些来源用于定位研究问题，尚不能据此宣称首次解决或优于全部既有方案。
 
-论文至少给出：正常状态连续性实证、关键故障窗口与错误实现对照、实际资源释放/长期引用成本、端到端暂停恢复延迟及证明/可信代码规模。性能比较固定硬件/镜像/工作集，分冷/热缓存，不预设速度收益；不能仅比较一个纯控制函数。E2B 的固定源码缺陷、本地模拟候选和公开云服务分开；没有独立实证不声称在线服务存在漏洞。详细实验仅在[验收清单](testing-plan.md)维护。
+论文至少给出：正常状态连续性实证、关键故障窗口与错误实现对照、实际资源释放/长期引用成本、端到端暂停恢复延迟及证明/可信代码规模。性能比较固定硬件/镜像/工作集，分冷/热缓存，不预设速度收益；不能仅比较一个纯控制函数。如果最终只剩常见日志/代次机制加一组模型证明，系统贡献可能不足；应以跨层故障反例、真实代码连接、可检查的组合不变量以及资源可用性证据检验研究假设。E2B 的固定源码缺陷、本地模拟候选和公开云服务分开；没有独立实证不声称在线服务存在漏洞。详细实验仅在[验收清单](testing-plan.md)维护。
 
 ## 5. 完成含义与扩展
 
