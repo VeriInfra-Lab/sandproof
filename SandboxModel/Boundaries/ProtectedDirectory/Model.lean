@@ -25,4 +25,24 @@ def AcceptanceSafe {E : Type}
     (checker : std.fs.Metadata → U32 → Result (core.result.Result Unit E)) : Prop :=
   ∀ metadata owner, checker metadata owner = .ok (.Ok ()) → Allowed metadata owner
 
+theorem allow_iff (metadata : Snapshot) (owner : U32) :
+    allow metadata owner = true ↔ Allowed metadata owner := by
+  simp [allow, ownerAllowed, writesAllowed, Allowed, and_assoc]
+
+theorem private_owner_nonempty :
+    allow ⟨1001#u32, 16832#u32, true⟩ 1001#u32 = true := by decide
+
+theorem root_sticky_nonempty :
+    allow ⟨0#u32, 17407#u32, true⟩ 9000#u32 = true := by decide
+
+theorem group_writable_is_not_allowed :
+    ¬ Allowed ⟨1001#u32, 16888#u32, true⟩ 1001#u32 := by
+  unfold Allowed
+  decide
+
+theorem nonroot_sticky_is_not_allowed :
+    ¬ Allowed ⟨1001#u32, 17407#u32, true⟩ 1001#u32 := by
+  unfold Allowed
+  decide
+
 end SandboxModel.Boundaries.ProtectedDirectory

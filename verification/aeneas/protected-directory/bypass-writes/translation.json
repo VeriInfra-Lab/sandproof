@@ -1,0 +1,104 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_internal",
+  "functions": [
+    {
+      "def_id": 22,
+      "lean_name": "std.fs.Metadata.is_dir",
+      "lean_file": "SandproofProtectedDirectoryBad/FunsExternal_Template.lean",
+      "rust_name": "std::fs::{std::fs::Metadata}::is_dir",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/fs.rs",
+        "begin_line": 2041,
+        "end_line": 2041
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 21,
+      "lean_name": "std.fs.Metadata.Insts.StdOsUnixFsMetadataExt.mode",
+      "lean_file": "SandproofProtectedDirectoryBad/FunsExternal_Template.lean",
+      "rust_name": "std::os::unix::fs::{impl std::os::unix::fs::MetadataExt for std::fs::Metadata}::mode",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/os/unix/fs.rs",
+        "begin_line": 868,
+        "end_line": 868
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 20,
+      "lean_name": "std.fs.Metadata.Insts.StdOsUnixFsMetadataExt.uid",
+      "lean_file": "SandproofProtectedDirectoryBad/FunsExternal_Template.lean",
+      "rust_name": "std::os::unix::fs::{impl std::os::unix::fs::MetadataExt for std::fs::Metadata}::uid",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/os/unix/fs.rs",
+        "begin_line": 874,
+        "end_line": 874
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofProtectedDirectoryBadRust.protected_files.directory",
+      "lean_file": "SandproofProtectedDirectoryBad/Funs.lean",
+      "rust_name": "sandproof_internal::protected_files::directory",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-internal/src/protected_files.rs",
+        "begin_line": 35,
+        "end_line": 45
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 2,
+      "lean_name": "std.fs.Metadata",
+      "lean_file": "SandproofProtectedDirectoryBad/TypesExternal_Template.lean",
+      "rust_name": "std::fs::Metadata",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/fs.rs",
+        "begin_line": 200,
+        "end_line": 200
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofProtectedDirectoryBadRust.protected_files.ProtectedFileError",
+      "lean_file": "SandproofProtectedDirectoryBad/Types.lean",
+      "rust_name": "sandproof_internal::protected_files::ProtectedFileError",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-internal/src/protected_files.rs",
+        "begin_line": 16,
+        "end_line": 21
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}
