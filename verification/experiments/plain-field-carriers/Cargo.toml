@@ -1,0 +1,12 @@
+[package]
+name = "sandproof-plain-field-carriers-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Real call-through roots only; no alternate implementation or runtime service.
+[workspace]
+
+[dependencies]
+sandbox-controller-core = { path = "../../../controller-core", features = ["serde"] }
+sandproof-protocol = { path = "../../../sandbox-protocol" }
