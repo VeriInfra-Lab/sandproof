@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 try:
@@ -10,6 +11,7 @@ except ModuleNotFoundError:
     from check_foundations_extraction import llbc_digest
 
 REL = Path('verification/experiments/tls-certificate-binding')
+FROZEN = Path('verification/tls-certificate-binding-inputs.sha256')
 EXPECTED_LOCAL = {11, 12, 13, 23, 27, 32, 34, 38, 40, 41, 42, 43, 44, 143}
 COMPILER_DROP_GLUE = {34, 40, 43, 44}
 EXPECTED_CALLS = {
@@ -177,8 +179,34 @@ def check(root, tree=None):
             'new_machine_refinement_theorems': 0, 'kind': 'finite-source-AST-admission-only'}
 
 
+def check_frozen(root):
+    """Mandatory independent leaf: its source references include parent freezes."""
+    values = {}
+    for line in (root / FROZEN).read_text().splitlines():
+        match = re.fullmatch(r'([0-9a-f]{64})  (.+)', line)
+        if match is None or match[2] in values:
+            raise ValueError('malformed or duplicate TLS source freeze')
+        name = Path(match[2])
+        if name.is_absolute() or '..' in name.parts:
+            raise ValueError('escaping TLS source freeze')
+        path = root / name
+        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root.resolve()):
+            raise ValueError('missing or non-regular TLS source freeze input')
+        values[str(name)] = match[1]
+        if sha(path) != match[1]:
+            raise ValueError('changed TLS source freeze input: ' + str(name))
+    required = {'tools/check_tls_certificate_binding.py', 'tools/tests/test_tls_certificate_binding.py'}
+    required |= {str(REL / name) for name in ('README.md', 'collect.py', 'correspondence.json',
+        'environment.json', 'native.py', 'native.rs', 'original.llbc', 'primitive-audit.json', 'results.json')}
+    required |= set(json.loads((root / REL / 'environment.json').read_text())['sources'])
+    if not required <= set(values):
+        raise ValueError('incomplete TLS source freeze closure')
+    return values
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
+    check_frozen(args.root.resolve())
     print(json.dumps(check(args.root.resolve())))

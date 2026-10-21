@@ -17,6 +17,12 @@
 
 本组合已通过完整验收，但不等于 V0 全部完成。T0原生缓存未绑定根级合同/配置JSON的缺口已复现并重新打开；本批52项均实际执行，合入后另以完整文件树和全证据核对，不依赖该缺陷命中。T0 全量连接、其余 JSON/schema、Tokio Mutex、TLS 原借用来源及剩余公共义务继续开放；V1–V9 的真实对象/授权/提交/生命周期/系统组合责任保留，T9 与 #337 历史迁移不作前置。
 
+## T0/T1/T8 来源准入候选与缓存输入修复
+
+本批在上述 #622 实际合入基线继续，尚待本批完整验收与正式合入。原生记录改为逐字节绑定根级 JSON 合同/环境及候选对应配置，并绑定实际 SQLite/Child/Writer 原源码归档；旧版封口不沿用。根级配置失效缺口的原失败保留；ning 在首个修复提交 `225861bc` 上通过230项定向回归及文档/来源检查（13.613秒），不是整套验收。
+
+来源 [#623](https://github.com/VeriInfra-Lab/sandproof/pull/623) `d4caa358` 的14个原TLS本地体及四入口，以及 [#624](https://github.com/VeriInfra-Lab/sandproof/pull/624) `50690eb4` 的D1–D11/52个共享字段审查位置已纳入候选的必经来源准入和独立冻结叶子。两单原组件/原捕获引用及失败保留；本批只重新连接实际父元数据，不改原15份Rust、39条既有定理引用、TLS原IR或既有模型。#624的375个词法候选不是调用数；其27个已有实现连接、2个条件叶子、23个未预检位置均为原审查快照，后续G1/G2预检不在此冒充已证明。TLS原借用入口仍未机器精化，一般旧新等价未交付；窄A6/A9/A12/B4、原对象/原字节及业务授权/撤销条件保留。本候选新增Lean定理为0，不关闭全部T0/T1/T8或V0。
+
 ## T5/T6 Tokio RwLock：原读守卫与映射观察
 
 生产 Rust 来源为 integration `e576a8475043c2d21b68231b7f6b1ead09be1952`，两份原源码和固定 Tokio 1.49.0 摘要见[来源登记](../verification/tokio-rwlock-environment.json)。模型首次组件提交为 `924e06a9d2b63d1395cd1edd4189e2d496537d56`；[公共入口](../SandboxModel/Boundaries/TokioRwLock.lean)、[接口条件](formal/dependencies.md#a6b2-tokio-rwlock保留原读守卫的共享观察)和[复现说明](../verification/experiments/tokio-rwlock/README.md)分别提供复用入口、保证与检查方式。生产 Rust、Charon/Aeneas、依赖与固定工具均未改。

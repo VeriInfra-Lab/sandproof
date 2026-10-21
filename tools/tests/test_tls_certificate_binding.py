@@ -88,6 +88,32 @@ class TlsCertificateBindingTests(unittest.TestCase):
             with self.subTest(index=index):
                 self.rejected(lambda t: t['fun_decls'][index]['signature'].update(is_unsafe=unsafe))
 
+    def test_mandatory_source_freeze_is_complete_and_missing_freeze_refuses(self):
+        values = binding.check_frozen(ROOT)
+        self.assertIn(str(binding.REL/'original.llbc'), values)
+        self.assertIn('verification/tls-pin-inputs.sha256', values)
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaises(OSError):
+                binding.check_frozen(Path(temporary))
+
+    def test_source_freeze_cannot_hide_or_change_a_consumed_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            values=binding.check_frozen(ROOT)
+            for name in [*values, str(binding.FROZEN)]:
+                target=root/name;target.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(ROOT/name,target)
+            self.assertEqual(binding.check_frozen(root),values)
+            path=root/binding.REL/'primitive-audit.json';path.write_text('{}')
+            with self.assertRaisesRegex(ValueError,'changed TLS source freeze'):
+                binding.check_frozen(root)
+            shutil.copyfile(ROOT/binding.REL/'primitive-audit.json',path)
+            manifest=root/binding.FROZEN
+            manifest.write_text(''.join(line+'\n' for line in manifest.read_text().splitlines()
+                if not line.endswith('  '+str(binding.REL/'primitive-audit.json'))))
+            with self.assertRaisesRegex(ValueError,'incomplete TLS source freeze'):
+                binding.check_frozen(root)
+
     def test_source_and_candidate_drift_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

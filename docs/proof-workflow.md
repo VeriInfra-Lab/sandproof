@@ -135,6 +135,9 @@ a6000 仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、
 # 使用现有的固定 Rust、Python、离线 Cargo 和真实 Redis 环境。
 export CARGO_NET_OFFLINE=true
 export SANDPROOF_REDIS_SERVER=/path/to/fixed/redis-server
+export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
+export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
+export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --output /private/acceptance/native-evidence
 ```
@@ -163,12 +166,18 @@ SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这�
 
 ```sh
 export SANDPROOF_NATIVE_EVIDENCE=/private/acceptance/native-evidence
+# 指向证明机上同内容的三份原源码归档；不复制 Rust target。
+export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
+export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
+export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 export SANDPROOF_USE_CAPTURE=/private/acceptance/validated-mir-capture
 export SANDPROOF_FORMAL_CACHE=/private/acceptance/formal-cache
 bash scripts/verify-controller.sh
 # 有疑问或需要重新执行时：同批仍对相同公共步骤去重。
 bash scripts/verify-controller.sh --recompute
 ```
+
+有限 TLS 来源与共享字段目录由 `verify-use-inventory.sh` 强制核对各自源码、完整树或原捕获引用及独立冻结清单。两份清单引用已有父清单，因此作为必经准入叶子登记，不把它们或含父摘要的目录 JSON 反写入祖先，避免摘要循环。它们没有新增 Lean 定理，也不把有限目录当成全部生产调用覆盖。
 
 MIR 捕获须通过 `v0_use_inventory.py check-published`；已有捕获仍适用于当前输入时
 不重做十组编译。清单是防漏证据，不能解释成全部调用或异步行为已经证明。
