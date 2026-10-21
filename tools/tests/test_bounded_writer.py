@@ -304,6 +304,44 @@ class RuntimeDirectoryLease(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'schema/tool'):
             self.helper.validate(self.document)
 
+    def test_explicit_private_root_on_another_host_is_admitted(self):
+        document = self.helper.create(self.paths, self.paths, physical_root=self.root)
+        self.assertEqual(document['schema'], self.helper.PRIVATE_SCHEMA)
+        self.assertEqual(self.helper.validate(document), self.paths)
+
+    def test_private_root_rejects_outside_mapping_and_root_itself(self):
+        for name in (self.root, self.root.parent / 'outside'):
+            document = self.helper.create(self.paths, self.paths, physical_root=self.root)
+            document['directories']['source']['physical_path'] = str(name)
+            with self.assertRaises(ValueError):
+                self.helper.validate(document)
+
+    def test_private_root_rejects_symlinks_and_public_permissions(self):
+        alias = self.root / 'root-alias'
+        alias.symlink_to(self.root)
+        with self.assertRaisesRegex(ValueError, 'real private'):
+            self.helper.create(self.paths, self.paths, physical_root=alias)
+        self.root.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, 'owned by the operator and private'):
+            self.helper.create(self.paths, self.paths, physical_root=self.root)
+        self.root.chmod(0o700)
+
+    def test_private_root_still_binds_actual_directory_identity(self):
+        document = self.helper.create(self.paths, self.paths, physical_root=self.root)
+        self.paths['work'].rename(self.root / 'previous-work')
+        self.paths['work'].mkdir()
+        with self.assertRaisesRegex(ValueError, 'differs from host directory'):
+            self.helper.validate(document)
+
+    def test_new_schema_cannot_omit_root_or_admit_top_level(self):
+        document = self.helper.create(self.paths, self.paths, physical_root=self.root)
+        document.pop('physical_root')
+        with self.assertRaisesRegex(ValueError, 'schema/tool'):
+            self.helper.validate(document)
+        document['physical_root'] = '/'
+        with self.assertRaisesRegex(ValueError, 'private physical root'):
+            self.helper.validate(document)
+
     def test_chmod_is_not_a_read_only_mount(self):
         lease = self.root / 'lease.json'
         lease.write_text(json.dumps(self.document))

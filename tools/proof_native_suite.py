@@ -150,6 +150,17 @@ def run_locked_suite(output):
         target = work / name
         native_case(name, ROOT, target, lambda n=filename, p=target:
                     call(['tools/' + n, '--output', p]))
+    for name, driver in [('btree-set-binding','tools/check_btree_set_binding_components.py'),
+                         ('tokio-mutex','verification/experiments/tokio-mutex/native.py')]:
+        target=work/name
+        native_case(name, ROOT, target, lambda d=driver,p=target: call([d,'--output',p]))
+    target=work/'protected-directory'
+    library_archive=Path(os.environ['SANDPROOF_LIBRARY_SOURCE_ARCHIVE']).resolve(strict=True)
+    def protected_directory_native():
+        call(['verification/experiments/protected-directory/check.py'])
+        call(['verification/experiments/protected-directory/test_checks.py'])
+        call(['verification/experiments/protected-directory/native.py','--archive',library_archive,'--output',target])
+    native_case('protected-directory',ROOT,target,protected_directory_native)
     target = work / 'schema-domains'
     native_case('schema-domains', ROOT, target, lambda p=target:
         call(['verification/experiments/schema-domains/native.py', '--output', p]))
@@ -227,7 +238,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer'])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex'])
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':

@@ -1,0 +1,55 @@
+{
+  "kind": "finite-real-signature-source-map-not-whole-validator-proof",
+  "base": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "production_sources": {
+    "sandbox-center-core/src/validation.rs": "9687cb21810ff049c739df89fbffd57f6b6d3fe8e7791463e95e501750da021e",
+    "sandbox-center-core/src/window.rs": "ebc7858f6dc3ce04c7f4cda7b346efb40cea442ab6d394d85b1f0424944ded16",
+    "sandbox-center-core/src/model.rs": "5879bd2c1296c159030eca3ab253af844b1eec120fac60ad5522251cdf352a3b"
+  },
+  "instances": [
+    {
+      "source": "sandbox-center-core/src/validation.rs",
+      "function": "CenterState::valid_tenants",
+      "line": 138,
+      "key": "&str",
+      "operation": "BTreeSet::insert",
+      "result_use": "reject when original key already present",
+      "business_provider": "V1"
+    },
+    {
+      "source": "sandbox-center-core/src/validation.rs",
+      "function": "CenterState::valid_nodes",
+      "line": 109,
+      "key": "&str",
+      "operation": "BTreeSet::insert",
+      "result_use": "reject duplicate node identity",
+      "business_provider": "V1"
+    },
+    {
+      "source": "sandbox-center-core/src/window.rs",
+      "function": "CenterState::valid_lanes",
+      "line": 77,
+      "key": "(&str,u16)",
+      "operation": "BTreeSet::insert",
+      "result_use": "reject repeated node/slot tuple",
+      "business_provider": "V1/V6"
+    },
+    {
+      "source": "sandbox-center-core/src/model.rs",
+      "function": "RetentionLane",
+      "line": 377,
+      "field": "retention_slot",
+      "type": "u16"
+    }
+  ],
+  "probes": [
+    "insert_u64",
+    "insert_str",
+    "insert_lane",
+    "repeat_str",
+    "new_then_repeat_str"
+  ],
+  "generated_only": true,
+  "full_original_validation_translated": false,
+  "new_axioms_or_formal_models_added": false
+}

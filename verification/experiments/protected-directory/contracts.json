@@ -1,0 +1,74 @@
+{
+  "scope": "existing A3/B4 instance for one original Metadata snapshot; not a new trust grant",
+  "source": "sandbox-internal/src/protected_files.rs::directory",
+  "source_sha256": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
+  "base": "139f4db6990f67c1ed9cd28c4ce28af707d469f9",
+  "previous_preflight": "799d49e51dee9b2fdd9cd2434366ae6ba0788dfc",
+  "contracts": [
+    "A3",
+    "B4",
+    "fixed original Aeneas value models and translation trust"
+  ],
+  "new_trusted_conditions": false,
+  "domain": "valid Rust shared borrow of the same already obtained x86_64 Linux std::fs::Metadata; arbitrary u32 owner",
+  "representation": "three-getter projection Snapshot(uid:U32, mode:U32, isDirectory:Bool); not a new runtime layout or live filesystem",
+  "operations": [
+    {
+      "symbol": "std::os::unix::fs::{impl MetadataExt for Metadata}::uid",
+      "Lean_operation": "uid",
+      "contract": "A3 mechanical snapshot read, B4 original receiver binding",
+      "Pre": "valid original Metadata snapshot, fixed std version/target, matching three-field projection",
+      "Input": "the same original shared Metadata receiver; no path or new syscall",
+      "normal": "the uid field observed by this Metadata value; represented as Result.ok of the matching projection field",
+      "Frame": "does not mutate this Metadata or perform filesystem IO; no claim that external filesystem state is unchanged",
+      "Fault": "Rust getter has no io::Result error; invalid memory/UB outside domain; panic/unwind/abort/nonreturn do not establish a normal poststate or cleanup",
+      "Budget": "field/file-type read only, no new allocation or real-time scheduling guarantee",
+      "caller": "provide this original observation and expected owner; do not replace with client-supplied or another object snapshot",
+      "source_evidence": "both fixed production1.97 and extraction nightly std fs, os/unix, os/linux and sys/fs/unix sources",
+      "machine_proof_of_std": false
+    },
+    {
+      "symbol": "std::os::unix::fs::{impl MetadataExt for Metadata}::mode",
+      "Lean_operation": "mode",
+      "contract": "A3 mechanical snapshot read, B4 original receiver binding",
+      "Pre": "valid original Metadata snapshot, fixed std version/target, matching three-field projection",
+      "Input": "the same original shared Metadata receiver; no path or new syscall",
+      "normal": "the complete mode bits observed by this Metadata value; represented as Result.ok of the matching projection field",
+      "Frame": "does not mutate this Metadata or perform filesystem IO; no claim that external filesystem state is unchanged",
+      "Fault": "Rust getter has no io::Result error; invalid memory/UB outside domain; panic/unwind/abort/nonreturn do not establish a normal poststate or cleanup",
+      "Budget": "field/file-type read only, no new allocation or real-time scheduling guarantee",
+      "caller": "provide this original observation and expected owner; do not replace with client-supplied or another object snapshot",
+      "source_evidence": "both fixed production1.97 and extraction nightly std fs, os/unix, os/linux and sys/fs/unix sources",
+      "machine_proof_of_std": false
+    },
+    {
+      "symbol": "std::fs::Metadata::is_dir",
+      "Lean_operation": "is_dir",
+      "contract": "A3 mechanical snapshot read, B4 original receiver binding",
+      "Pre": "valid original Metadata snapshot, fixed std version/target, matching three-field projection",
+      "Input": "the same original shared Metadata receiver; no path or new syscall",
+      "normal": "the directory-kind test of the file type observed by this Metadata value; represented as Result.ok of the matching projection field",
+      "Frame": "does not mutate this Metadata or perform filesystem IO; no claim that external filesystem state is unchanged",
+      "Fault": "Rust getter has no io::Result error; invalid memory/UB outside domain; panic/unwind/abort/nonreturn do not establish a normal poststate or cleanup",
+      "Budget": "field/file-type read only, no new allocation or real-time scheduling guarantee",
+      "caller": "provide this original observation and expected owner; do not replace with client-supplied or another object snapshot",
+      "source_evidence": "both fixed production1.97 and extraction nightly std fs, os/unix, os/linux and sys/fs/unix sources",
+      "machine_proof_of_std": false
+    }
+  ],
+  "own_obligations": [
+    "all original owner/permission/type guards and masks",
+    "exact normal success and Untrusted rejection, accepted admissible inputs",
+    "original receiver and argument/branch/unwind binding",
+    "same AcceptanceSafe rejects the successfully extracted real mask-zero mutant"
+  ],
+  "not_provided": [
+    "origin or acquisition of Metadata/FD/path",
+    "race-free future filesystem or protected ancestors",
+    "correct owner selection by callers",
+    "open_checked/read_protected/check_protected_directory",
+    "FD Drop, cancellation, resource exit or physical cleanup",
+    "whole T8 or whole-system safety",
+    "general Rust equivalence or verified std/compiler implementation"
+  ]
+}

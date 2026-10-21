@@ -17,7 +17,8 @@ from tools.check_foundations_extraction import llbc_digest
 MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-contract',
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
-           'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer')
+           'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer',
+           'btree-set-binding','protected-directory','tokio-mutex')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
@@ -25,7 +26,8 @@ EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counte
     'verification/experiments/child-observation/negative/Counterexample.lean',
     'verification/experiments/callback-state/NoWriteToggle.lean',
     'verification/experiments/callback-state/DoubleRecord.lean',
-    'verification/experiments/bounded-writer/negative/Counterexample.lean')
+    'verification/experiments/bounded-writer/negative/Counterexample.lean',
+    'verification/experiments/btree-set-binding/model/InvertFlag.lean')
 
 # These generators intentionally reuse a fixed workspace output location.
 # Keep immutable raw copies in the success entry, even when the directory
@@ -137,6 +139,27 @@ def evidence_files(directory, include_sources=False):
 
 
 def external_component_paths(name, root=ROOT):
+    if name == 'protected-directory':
+        # The proof consumes eight reviewed Std source copies and the actual
+        # original source archive; preserve them as required raw evidence.
+        assets=root/'verification/experiments/protected-directory'
+        archive=Path(os.environ['SANDPROOF_LIBRARY_SOURCE_ARCHIVE'])
+        expected=json.loads((assets/'environment.json').read_text())['source_archive_sha256']
+        if archive.is_symlink() or not archive.is_file() or sha(archive)!=expected:
+            raise ValueError('Protected-directory original archive changed')
+        sources=json.loads((assets/'std-sources.json').read_text())
+        base=Path(os.environ['SANDPROOF_PROTECTED_DIRECTORY_STD_EVIDENCE'])
+        files={str(archive.resolve()):expected}
+        for version, entries in sources.items():
+            for relative, expected in entries.items():
+                name_path=Path(version)/relative
+                if name_path.is_absolute() or '..' in name_path.parts:
+                    raise ValueError('Invalid reviewed Std source path')
+                path=base/name_path
+                if path.is_symlink() or not path.is_file() or sha(path)!=expected:
+                    raise ValueError('Reviewed protected-directory Std source changed: '+str(name_path))
+                files[str(path.resolve())]=expected
+        return [], files
     if name != 'bounded-writer':
         return [], {}
     import importlib.util
@@ -166,7 +189,8 @@ def step(name, command, root=ROOT):
         prior = load_success(entry,key)
         if prior is not None:
             try:
-                if any(sha(path)!=expected for path,expected in prior.get('evidence',{}).items()):
+                if (any(sha(path)!=expected for path,expected in prior.get('evidence',{}).items())
+                    or any(prior.get('evidence',{}).get(path)!=expected for path,expected in external_files.items())):
                     prior = None
             except OSError:
                 prior = None
@@ -205,13 +229,15 @@ def step(name, command, root=ROOT):
             raise ValueError('module inputs changed during acceptance: '+name)
         evidence={}
         for directory in [p for p in artifacts.iterdir() if p.resolve() not in before_dirs]:
-            evidence.update(evidence_files(directory))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex')))
         for directory in [p for p in temp_root.iterdir() if p.resolve() not in before_tmp and p.name.startswith('sandproof-')]:
-            evidence.update(evidence_files(directory))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex')))
         for parent,prior_paths in before_external.items():
             for directory in parent.iterdir():
                 if directory.resolve() not in prior_paths:
                     evidence.update(evidence_files(directory,include_sources=True))
+        if any(not Path(path).is_file() or sha(path)!=expected for path,expected in external_files.items()):
+            raise ValueError('Required external raw evidence changed during acceptance: '+name)
         evidence.update(external_files)
         files={'command.log':sha(log)}
         files.update({str(p.relative_to(entry)):sha(p) for p in (entry/'raw-generated').glob('*')})
