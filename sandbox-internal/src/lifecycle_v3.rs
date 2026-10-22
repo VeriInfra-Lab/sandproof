@@ -3,6 +3,9 @@
 //! This module does not install HTTP routes or authorize a driver. Existing v2
 //! endpoints retain their original parsing and behavior until v3 is wired in.
 
+mod peer;
+pub use peer::CenterPeerRegistration;
+
 use sandproof_controller_service::JournalError;
 use sandproof_controller_service::template_registry::evidence::encode_bounded;
 use sandproof_protocol::internal::NodeIdentity;
