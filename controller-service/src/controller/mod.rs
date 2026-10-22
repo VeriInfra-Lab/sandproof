@@ -19,6 +19,7 @@ mod admission;
 mod admission_usage;
 mod allocators;
 mod bounded;
+mod capture;
 mod checkpoint;
 mod identity;
 mod internal_inbox;
