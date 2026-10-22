@@ -6,12 +6,14 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Reference to the protected, versioned host payload registered before
+/// Reference to the protected, versioned `HostBootstrap` payload registered before
 /// the first V3 VM starts. `policy` hashes that actual immutable registration
 /// (node/boot/kernel/CPU set and details/microcode/fixed tool and CPU template),
 /// not generic policy text or a value freshly invented during capture.
 /// The node resolves and checks that original payload against the actual host;
-/// deserializing this reference does not attest CPU or tool compatibility.
+/// Its strict purpose is startup/bootstrap, not a running VMM's CPU domain,
+/// VM-scope XSAVE/KVM capability, snapshot compatibility or resource guarantee.
+/// Deserializing this reference does not attest any hardware or tool fact.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostEpochRegistration {
@@ -44,8 +46,11 @@ impl HostEpochRequirement {
     }
 }
 
-/// Boundary observation from the protected host provider after it checks the
-/// registered payload and actual host. Public fields do not make this attested
+/// Boundary `HostBootstrap` observation from the protected provider after it
+/// checks the registered payload and its explicitly listed current host facts.
+/// Matching before/after samples is not proof of intervening/future invariance;
+/// deployment still keeps the registered epoch's tool/kernel/CPU setup fixed.
+/// This grants no Source/Capture/Stop/Release capability. Public fields do not make this attested
 /// hardware data: the receiver relies on that exact provider contract.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

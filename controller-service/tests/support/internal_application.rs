@@ -63,6 +63,10 @@ pub struct State {
     pub epoch: TestEpoch,
     pub epoch_checks: usize,
     pub recovery_observations: usize,
+    pub source: Option<sandproof_controller_service::capture::SourceProcessIdentity>,
+    pub observe_unavailable: bool,
+    pub lose_stop: Option<core::SandboxId>,
+    pub observe_hook: Option<Box<dyn FnOnce() + Send>>,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -88,17 +92,33 @@ impl WorkExecution for TestHost {
         {
             return Err(WorkerTransportError::ReplyLost);
         }
-        workflow::worker(action)
+        if matches!(action.command.command(), core::Command::StopVm { sandbox, .. }
+            if state.lose_stop == Some(*sandbox))
+        {
+            return Err(WorkerTransportError::ReplyLost);
+        }
+        let mut receipt = workflow::worker(action)?;
+        if let sandproof_protocol::WorkOutcome::ObservedSuccess(evidence) = &mut receipt.outcome {
+            evidence.source.clone_from(&state.source);
+        }
+        Ok(receipt)
     }
 }
 impl WorkRecovery for TestHost {
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
         let mut state = self.0.lock().unwrap();
         state.recovery_observations += 1;
-        state
-            .actions
-            .contains(action)
-            .then(|| workflow::success(action))
+        if let Some(hook) = state.observe_hook.take() {
+            hook();
+        }
+        (state.actions.contains(action) && !state.observe_unavailable).then(|| {
+            let mut receipt = workflow::success(action);
+            if let sandproof_protocol::WorkOutcome::ObservedSuccess(evidence) = &mut receipt.outcome
+            {
+                evidence.source.clone_from(&state.source);
+            }
+            receipt
+        })
     }
     fn reclaim_incomplete_prepare(
         &mut self,

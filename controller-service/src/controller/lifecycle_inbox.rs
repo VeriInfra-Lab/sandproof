@@ -2,6 +2,8 @@
 //! The original reducer/admission/outbox remains the local phase authority.
 mod codec;
 mod model;
+mod pending;
+mod readiness;
 #[cfg(test)]
 mod tests;
 
@@ -13,6 +15,10 @@ use crate::{
 pub(super) use codec::{charged_bytes, validate};
 use model::{Inbox, Owner};
 pub use model::{LifecycleInboxConfig, LifecycleWorkState};
+pub use readiness::{
+    CreateReadiness, CreateReadinessPending, LifecycleCreateObservation, LifecycleReadyBasis,
+    LifecycleReadyObservation, NativeCreateSnapshot,
+};
 use rusqlite::params;
 use sandbox_controller_core as core;
 use sandproof_protocol::lifecycle::{

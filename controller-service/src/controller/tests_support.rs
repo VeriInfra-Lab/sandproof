@@ -1,7 +1,9 @@
 //! Only complete component-test deployments. No production compatibility mode.
-#[path = "../../tests/support/complete_fixture.rs"]
-pub(super) mod fixture;
+#[allow(dead_code, reason = "shared original application test fixture")]
+#[path = "../../tests/support/lifecycle_application.rs"]
+pub(super) mod lifecycle_application;
 use super::*;
+pub(super) use lifecycle_application::fixture::complete_fixture as fixture;
 use serde::{Deserialize, Serialize};
 
 /// Command-specific component evidence; never used as production observation.
