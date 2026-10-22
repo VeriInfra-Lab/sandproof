@@ -25,6 +25,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[path = "snapshot_bundle.rs"]
+mod bundle;
+pub use bundle::{BundleReadLimits, SnapshotBundle};
+
 const MAX_MANIFEST_BYTES: usize = 1_048_576;
 const COPY_BUFFER_BYTES: usize = 65_536;
 

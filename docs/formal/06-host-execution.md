@@ -51,3 +51,11 @@
 `SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，通过同一个父 FD 创建、检查两原句柄，记录布局版本、原部署配置绑定及父目录/两子目录的设备、inode 和出生身份，先同步再发布。`reopen` 读取原持久记录，允许目录已有运行材料，逐一核对原身份与绑定；缺失、部分初始化、替换或版本不符均拒绝，不转为重新初始化或另建编号。Full 捕获消费这个私有构造的布局，并重查原 runtime root，任意两个 Path 不提供同等保证。这里仍采用受控静态挂载、无无关特权写者的部署条件；自有初始化/重开判断没有被整体列为可信依赖。
 
 运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。布局格式 1 是新 stage1 的有限布局，不收养或迁移旧 profile。此布局已接真实组件和故障回归；其完整 Rust 对应证明及与正式物理 profile 激活的连接仍须补齐。root/0400 封存文件供 jailer File 后端加载时的权限路径、是否需要私有 RAM 副本及相应峰值预算属于恢复批缺口，当前恢复仍不启用。
+
+### 原捕获动作与已发布材料观察
+
+`full_snapshot::capture_original` 串接真实的原 VM Pause、Full、Seal，随后重开原 bundle 核对文件，再确认原 VM 仍暂停；只返回 `FullCaptureObservation`，没有停止、释放、登记恢复资格或激活副作用。调用方必须提供原已持久工作、当前围栏、预算与无写者条件。捕获/发布后错误仍可能已有材料，不得换键重捕获。原 `WorkExecution` 接线及持久 Stop 工作由 V5 提供；本组件不等于实际 unload 已完成。
+
+`SnapshotLayout::open_capture_bundle` 和 `full_snapshot::observe_stored_capture` 只读取原发布键，通过保留 FD 检查受保护原目录、完整白名单、root/0400/单链接/长度及实际字节摘要；节点严格核对原 CaptureBinding、受保护 profile、manifest 与全部测量。已有回执摘要必须相同；尚未取得回执时返回的只是待 V5 对账的物理事实，不能凭完整文件赋予资格。它不再次 Pause/Full，也不制造原 VM 的历史来源证明。
+
+新观察器及调用链的整体 Rust 对应证明仍须补齐；既有 `snapshot_policy::accepts` 定理只覆盖其中原 Metadata 守卫，不能代替目录/FD、全字节读取、JSON、完整工作或事务连接。普通回归和真实错误版的复现见[组件说明](../../verification/experiments/capture-observation/README.md)，实际版本及验收状态仅在 #638/PR 与覆盖记录维护。

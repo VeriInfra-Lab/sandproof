@@ -149,3 +149,78 @@ fn storage_key_tracks_every_original_capture_identity_not_just_capture_number() 
     }
     assert_eq!(capture_directory_key(&original).unwrap(), baseline);
 }
+
+#[test]
+fn stored_capture_must_match_actual_files_and_the_saved_manifest_digest() {
+    let binding = binding();
+    let profile = profile();
+    let measured = measurements();
+    let manifest = manifest_from_measurements(&binding, &profile, &measured).unwrap();
+    let bytes = serde_json::to_vec(&manifest).unwrap();
+    let digest: [u8; 32] = Sha256::digest(&bytes).into();
+    assert_eq!(
+        observation::checked_manifest_from_bytes(
+            &bytes,
+            &binding,
+            &profile,
+            &measured,
+            Some(digest)
+        )
+        .unwrap(),
+        manifest
+    );
+    assert!(
+        observation::checked_manifest_from_bytes(
+            &bytes,
+            &binding,
+            &profile,
+            &measured,
+            Some([99; 32])
+        )
+        .is_err()
+    );
+    let mut changed = measured.clone();
+    changed[1].sha256[0] ^= 1;
+    assert!(
+        observation::checked_manifest_from_bytes(
+            &bytes,
+            &binding,
+            &profile,
+            &changed,
+            Some(digest)
+        )
+        .is_err()
+    );
+    let mut changed = measured.clone();
+    changed[2].length += 1;
+    assert!(
+        observation::checked_manifest_from_bytes(&bytes, &binding, &profile, &changed, None)
+            .is_err()
+    );
+}
+
+#[test]
+fn stored_capture_uses_the_original_capture_operation_not_a_later_resume_key() {
+    let original = binding();
+    let profile = profile();
+    let measured = measurements();
+    let manifest = manifest_from_measurements(&original, &profile, &measured).unwrap();
+    let bytes = serde_json::to_vec(&manifest).unwrap();
+    let mut later = original.clone();
+    later.operation.key.sequence = RequestSequence::try_from(2).unwrap();
+    later.operation.expected = ExpectedSession::Version(4);
+    assert!(
+        observation::checked_manifest_from_bytes(&bytes, &later, &profile, &measured, None)
+            .is_err()
+    );
+    let mut changed = profile.clone();
+    changed.cpu = ContentDigest::from_sha256([98; 32]);
+    assert!(
+        observation::checked_manifest_from_bytes(&bytes, &original, &changed, &measured, None)
+            .is_err()
+    );
+    assert!(
+        observation::checked_manifest_from_bytes(b"not-json", &original, &profile, &measured, None)
+            .is_err()
+    );
+}

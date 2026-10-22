@@ -245,6 +245,18 @@ impl SnapshotLayout {
         self.path.join("s")
     }
 
+    /// Read an existing published key; this never grants registration or stop.
+    /// # Errors
+    /// Rejects changed layout and invalid/incomplete original files.
+    pub fn open_capture_bundle(
+        &self,
+        directory_key: [u8; 32],
+        limits: crate::snapshot_store::BundleReadLimits,
+    ) -> Result<crate::snapshot_store::SnapshotBundle, RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?
+            .open_bundle(directory_key, limits)
+    }
+
     pub(crate) fn store_for_runtime(&self, path: &Path) -> Result<SnapshotStore, RuntimeError> {
         if path != self.runtime_root() {
             return Err(error("runtime root differs from original layout"));

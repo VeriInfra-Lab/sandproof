@@ -10,6 +10,13 @@ use sandproof_protocol::lifecycle::{
 use sha2::{Digest, Sha256};
 use std::error::Error;
 
+#[path = "full_snapshot_observation.rs"]
+mod observation;
+pub use observation::{CheckedStoredCapture, observe_stored_capture};
+#[path = "full_snapshot_execution.rs"]
+mod execution;
+pub use execution::{FullCaptureObservation, capture_original};
+
 type SealResult<T> = Result<T, Box<dyn Error>>;
 
 /// Expected fields come from the original accepted capture and protected VM
