@@ -1,7 +1,7 @@
 //! Host worker adaptation and deterministic debug-only fault boundaries.
 
 use crate::fault::{busy, project};
-use crate::{HostObservation, LinuxWorker, PhysicalProfileLease};
+use crate::{HostObservation, LinuxWorker, PhysicalProfileLease, ProtectedHostEpochSource};
 use sandbox_controller_core as core;
 use sandproof_controller_service::application::fault::{FaultContext, FaultStage};
 use sandproof_controller_service::application::{
@@ -21,6 +21,7 @@ pub struct NodeHost {
     worker: LinuxWorker,
     physical_storage: PhysicalProfileLease,
     relay_executable: std::path::PathBuf,
+    host_epoch_source: Option<ProtectedHostEpochSource>,
 }
 impl NodeHost {
     /// The relay executable is selected only by trusted service assembly.
@@ -34,7 +35,15 @@ impl NodeHost {
             worker,
             physical_storage,
             relay_executable,
+            host_epoch_source: None,
         }
+    }
+    /// Select only the original protected registration path. This does not
+    /// establish an epoch; every bootstrap invocation checks its declared fields.
+    #[must_use]
+    pub fn with_host_epoch_source(mut self, source: ProtectedHostEpochSource) -> Self {
+        self.host_epoch_source = Some(source);
+        self
     }
 }
 
@@ -298,6 +307,23 @@ impl DataRelay for NodeHost {
 }
 
 impl HostCapacity for NodeHost {
+    fn observe_host_epoch(
+        &self,
+        requirement: &sandproof_controller_service::capture::HostEpochRequirement,
+    ) -> Result<sandproof_controller_service::capture::HostEpochObservation, WorkerTransportError>
+    {
+        let result = self
+            .host_epoch_source
+            .as_ref()
+            .ok_or(sandbox_runtime::RuntimeError::InvalidConfiguration(
+                "protected bootstrap source missing",
+            ))
+            .and_then(|source| source.observe(requirement, self.worker.host_bootstrap_inputs()));
+        result.map_err(|error| {
+            project(FaultStage::Observe, FaultContext::default(), &error).emit();
+            WorkerTransportError::ConnectionLost
+        })
+    }
     fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
         crate::host_capacity::available_compute().map_err(|error| {
             busy(

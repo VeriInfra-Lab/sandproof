@@ -399,6 +399,14 @@ impl LinuxWorker {
         Ok(worker)
     }
 
+    pub(crate) fn host_bootstrap_inputs(&self) -> crate::host_epoch::Inputs<'_> {
+        crate::host_epoch::Inputs {
+            namespace: &self.config.namespace,
+            firecracker: &self.config.firecracker,
+            jailer: &self.config.jailer,
+        }
+    }
+
     #[must_use]
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
