@@ -324,6 +324,21 @@ impl HostCapacity for NodeHost {
             WorkerTransportError::ConnectionLost
         })
     }
+    fn observe_lifecycle_source(
+        &self,
+        requirement: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::RawSourceObservation, WorkerTransportError>
+    {
+        crate::source_observation::observe(
+            &self.worker,
+            self.host_epoch_source.as_ref(),
+            requirement,
+        )
+        .map_err(|error| {
+            project(FaultStage::Observe, FaultContext::default(), error.as_ref()).emit();
+            WorkerTransportError::ConnectionLost
+        })
+    }
     fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
         crate::host_capacity::available_compute().map_err(|error| {
             busy(

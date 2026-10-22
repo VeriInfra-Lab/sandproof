@@ -65,7 +65,7 @@ impl ProtectedHostEpochSource {
         self.observe_original(requirement.node(), requirement.registration(), inputs)
     }
 
-    fn observe_original(
+    pub(super) fn observe_original(
         &self,
         node: &NodeIdentity,
         registration: &HostEpochRegistration,
