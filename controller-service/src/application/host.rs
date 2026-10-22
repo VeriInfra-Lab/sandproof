@@ -187,6 +187,18 @@ pub trait DataRelay {
 
 /// Observe deployment storage and network readiness before admission.
 pub trait HostCapacity {
+    /// Read only the exact source using bounded GET and file reads. No pause,
+    /// capture, stop, repair, permission change or replacement process lookup.
+    /// Returned raw bytes are not a full compatibility or resource certificate.
+    /// # Errors
+    /// Any missing/changed/unknown fact leaves the original work unresolved.
+    fn observe_lifecycle_source(
+        &self,
+        _requirement: &crate::capture::SourceObservationRequirement,
+    ) -> Result<crate::capture::RawSourceObservation, WorkerTransportError> {
+        Err(WorkerTransportError::ConnectionLost)
+    }
+
     /// Read the original protected registration and actual current host. This
     /// runs outside any SQL transaction; echoed fields are not an observation.
     /// # Errors

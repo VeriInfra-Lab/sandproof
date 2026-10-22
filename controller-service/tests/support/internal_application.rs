@@ -49,8 +49,19 @@ pub enum TestEpoch {
     WrongBoot,
 }
 
+pub type SourceProbe = Box<
+    dyn FnOnce(
+            &sandproof_controller_service::capture::SourceObservationRequirement,
+        ) -> Result<
+            sandproof_controller_service::capture::RawSourceObservation,
+            WorkerTransportError,
+        > + Send,
+>;
+
 #[derive(Default)]
 pub struct State {
+    pub source_probe: Option<SourceProbe>,
+    pub source_calls: usize,
     pub actions: Vec<WorkAction<core::EffectId>>,
     pub configurations: BTreeMap<u64, (String, CreateOptions)>,
     pub lose_activation: bool,
@@ -167,6 +178,18 @@ impl DataRelay for TestHost {
     }
 }
 impl HostCapacity for TestHost {
+    fn observe_lifecycle_source(
+        &self,
+        requirement: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::RawSourceObservation, WorkerTransportError>
+    {
+        let probe = {
+            let mut state = self.0.lock().unwrap();
+            state.source_calls += 1;
+            state.source_probe.take()
+        };
+        probe.ok_or(WorkerTransportError::ConnectionLost)?(requirement)
+    }
     fn observe_host_epoch(
         &self,
         requirement: &sandproof_controller_service::capture::HostEpochRequirement,

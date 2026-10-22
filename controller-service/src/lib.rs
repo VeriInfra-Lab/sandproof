@@ -40,6 +40,8 @@ pub const INTERNAL_INBOX_FORMAT_VERSION: i64 =
 // Local SQLite feature gate; independent of protocol and checkpoint versions.
 #[cfg(feature = "durable")]
 pub(crate) const LIFECYCLE_INBOX_FORMAT_VERSION: i64 = 17;
+#[cfg(feature = "durable")]
+pub(crate) const SOURCE_WORK_FORMAT_VERSION: i64 = 18;
 
 #[cfg(feature = "durable")]
 pub use controller::{
@@ -50,7 +52,7 @@ pub use controller::{
     InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState,
     LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
     LifecycleReadyObservation, LifecycleWorkState, Lifetime, MaintenanceConfig,
-    NativeCreateSnapshot, RetirementCandidate,
+    NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
 };
 
 #[cfg(feature = "durable")]

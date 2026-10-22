@@ -5,6 +5,8 @@
 //! before a host effect; deserializing these values grants no authority.
 
 use serde::{Deserialize, Serialize};
+mod source;
+pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
 
 /// Reference to the protected, versioned `HostBootstrap` payload registered before
 /// the first V3 VM starts. `policy` hashes that actual immutable registration

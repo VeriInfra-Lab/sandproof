@@ -1,6 +1,6 @@
 //! Readonly connection between the original native Ready result and a current
 //! V3 Create. Host observations are collected outside every SQL transaction.
-mod snapshot;
+pub(in crate::controller) mod snapshot;
 #[cfg(test)]
 mod tests;
 
@@ -29,7 +29,8 @@ pub enum CreateReadiness {
     Observed(LifecycleReadyObservation),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeCreateSnapshot {
     pub owner: core::TenantId,
     pub phase: core::Phase,

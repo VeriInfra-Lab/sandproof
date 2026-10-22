@@ -4,6 +4,7 @@ mod codec;
 mod model;
 mod pending;
 mod readiness;
+pub(in crate::controller) mod source_work;
 #[cfg(test)]
 mod tests;
 
@@ -25,6 +26,7 @@ use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
 };
 use sha2::{Digest, Sha256};
+pub use source_work::{SourceWork, SourceWorkRecord};
 
 pub(super) struct CreateAttachment {
     pub intent: AcceptedLifecycleIntent,

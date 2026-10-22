@@ -535,6 +535,9 @@ fn charged_inbox_bytes(
     match table {
         "controller_internal_inbox" => super::internal_inbox::charged_bytes(row, bytes, cap),
         "controller_lifecycle_inbox" => super::lifecycle_inbox::charged_bytes(row, bytes, cap),
+        "controller_source_work" => {
+            super::lifecycle_inbox::source_work::charged_bytes(row, bytes, cap)
+        }
         _ => Ok(bytes),
     }
 }

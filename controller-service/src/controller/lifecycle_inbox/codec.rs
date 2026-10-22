@@ -9,14 +9,28 @@ pub(in crate::controller) fn load(connection: &Connection) -> Result<Option<Inbo
         connection.query_row("SELECT version FROM controller_meta WHERE id=1", [], |r| {
             r.get(0)
         })?;
+    let source_table: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='controller_source_work')",
+        [],
+        |r| r.get(0),
+    )?;
+    if source_table != (version == crate::SOURCE_WORK_FORMAT_VERSION) {
+        return Err(JournalError::CorruptStore);
+    }
     if !exists {
-        return if version == crate::LIFECYCLE_INBOX_FORMAT_VERSION {
+        return if matches!(
+            version,
+            crate::LIFECYCLE_INBOX_FORMAT_VERSION | crate::SOURCE_WORK_FORMAT_VERSION
+        ) {
             Err(JournalError::CorruptStore)
         } else {
             Ok(None)
         };
     }
-    if version != crate::LIFECYCLE_INBOX_FORMAT_VERSION {
+    if !matches!(
+        version,
+        crate::LIFECYCLE_INBOX_FORMAT_VERSION | crate::SOURCE_WORK_FORMAT_VERSION
+    ) {
         return Err(JournalError::CorruptStore);
     }
     if super::super::checkpoint::config(connection)?.is_none_or(|c|c.checkpoint_profile!=crate::CheckpointProfile::FirstUnload)
@@ -67,6 +81,7 @@ pub(in crate::controller) fn validate(
     connection: &Connection,
     world: &sandbox_controller_core::World,
 ) -> Result<(), JournalError> {
+    super::source_work::validate(connection, world)?;
     let Some(inbox) = load(connection)? else {
         return Ok(());
     };

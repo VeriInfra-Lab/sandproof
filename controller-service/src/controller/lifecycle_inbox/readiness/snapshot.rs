@@ -99,9 +99,9 @@ fn expected_commands(
     ])
 }
 
-type StartupEvidence = (Vec<WorkAction<core::EffectId>>, Vec<Vec<u8>>);
+pub(in crate::controller) type StartupEvidence = (Vec<WorkAction<core::EffectId>>, Vec<Vec<u8>>);
 
-fn startup_records<E: HostEvidence + DeserializeOwned>(
+pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>(
     tx: &Transaction<'_>,
     namespace: &str,
     world: &core::World,
@@ -162,7 +162,7 @@ fn startup_records<E: HostEvidence + DeserializeOwned>(
     Ok(found.into_iter().unzip())
 }
 
-fn base_snapshot(
+pub(in crate::controller) fn base_snapshot(
     tx: &Transaction<'_>,
     namespace: &str,
     world: &core::World,
