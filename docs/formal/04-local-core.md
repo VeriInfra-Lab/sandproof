@@ -48,4 +48,6 @@
 
 本批不启用产品暂停/恢复，不把旧 `ManifestDigest(u64)` 当作内容校验证据，也不声称永久停留在 Pausing 满足进展。现有 checkpoint 继续拒绝快照历史。真实 bundle 校验、同一 SQLite 提交、原工作失效/结束、撤销回执及重启枚举由紧接着的 V5/V6 批次连接；主入口的同一性质及允许的真实效果不得换成外部假设。
 
+该切片把值方法与原调用方分开验收：[组件入口和接口责任](../../verification/experiments/capture-handoff/README.md)。公共 `CaptureHandoff/Conditions` 只定义参数化的材料责任保持与撤销后迟到成功安全性质，不依赖具体生成类型；正确 `Values` 与两个真实错误版各在独立导入闭包检查同一性质，正常可接受性另外给出见证。公共根只导入纯条件，组件仍必须检查正确生成体、错误证书、全部实际文件与审计，不能漏验。原 `handle_compensation` 抽取成功只说明工具能生成，不等于其 World/计划身份/持久化对应已经证明；普通 Pause 错走终止补偿的原入口反例也仍需与两个值方法的形式反例区分。
+
 下一批增加独立内部动作 `ContinueOriginalVm`，绑定原 owner/session/incarnation/VM、失败的 capture/operation 与当前撤销/访问 epoch。它继续原运行代，区别于 Unloaded 的新运行代恢复。允许条件为：本次 capture 的资格已持久撤销、提交未知已对账、原捕获工作不能迟到发布、当前未终止，且原 VM 的 c0 backing 使用责任仍在。回执只分原 VM 已观察运行，或失败/未知且保留责任；运行观察本身不开放网关、不发布 Pause 成功。后续唯一 claim、激活前 `MayHaveExecuted`、材料退休与取用的同事务互斥另行接入原账。

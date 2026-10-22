@@ -1,0 +1,445 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_capture_handoff",
+  "functions": [
+    {
+      "def_id": 43,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureCommit.Insts.CoreCmpPartialEqCaptureCommit.eq",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{impl core::cmp::PartialEq<sandbox_controller_core::capture::CaptureCommit> for sandbox_controller_core::capture::CaptureCommit}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 13,
+        "end_line": 13
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 44,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.RestoreEligibility.Insts.CoreCmpPartialEqRestoreEligibility.eq",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{impl core::cmp::PartialEq<sandbox_controller_core::capture::RestoreEligibility> for sandbox_controller_core::capture::RestoreEligibility}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 21,
+        "end_line": 21
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 30,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.accepted",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::accepted",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 42,
+        "end_line": 42
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 38,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.impl.commit",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::commit",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 52,
+        "end_line": 52
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 39,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.impl.eligibility",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::eligibility",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 57,
+        "end_line": 57
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 40,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.has_capture_work",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::has_capture_work",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 62,
+        "end_line": 62
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 41,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.has_unload_source",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::has_unload_source",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 37,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.accepts_registration",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::accepts_registration",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 73,
+        "end_line": 73
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 31,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.registration_dispatched",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::registration_dispatched",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 82,
+        "end_line": 82
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 33,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.observe_bundle",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::observe_bundle",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 102,
+        "end_line": 102
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 32,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.register_bundle",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::register_bundle",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 92,
+        "end_line": 92
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 34,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.ordinary_failure",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::ordinary_failure",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 122,
+        "end_line": 122
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 35,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.terminate",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::terminate",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 131,
+        "end_line": 131
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 36,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff.may_stop_original",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::may_stop_original",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 138,
+        "end_line": 138
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "CaptureHandoffRust.accepted",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::accepted",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 6, "end_line": 8 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "CaptureHandoffRust.dispatch",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::dispatch",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 10, "end_line": 12 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "CaptureHandoffRust.register",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::register",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 14, "end_line": 16 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 14,
+      "lean_name": "CaptureHandoffRust.observe",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::observe",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 18, "end_line": 20 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 15,
+      "lean_name": "CaptureHandoffRust.pause_failure",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::pause_failure",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 22, "end_line": 24 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 16,
+      "lean_name": "CaptureHandoffRust.terminate",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::terminate",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 26, "end_line": 28 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 17,
+      "lean_name": "CaptureHandoffRust.stop_permit",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::stop_permit",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 30, "end_line": 32 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 18,
+      "lean_name": "CaptureHandoffRust.registration_allowed",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::registration_allowed",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 34, "end_line": 36 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 19,
+      "lean_name": "CaptureHandoffRust.commit",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::commit",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 38, "end_line": 40 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 20,
+      "lean_name": "CaptureHandoffRust.eligibility",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::eligibility",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 42, "end_line": 44 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 21,
+      "lean_name": "CaptureHandoffRust.material_uses",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandproof_capture_handoff::material_uses",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 46, "end_line": 48 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 4,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureCommit",
+      "lean_file": "CaptureHandoff/Types.lean",
+      "rust_name": "sandbox_controller_core::capture::CaptureCommit",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 15,
+        "end_line": 15
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.RestoreEligibility",
+      "lean_file": "CaptureHandoff/Types.lean",
+      "rust_name": "sandbox_controller_core::capture::RestoreEligibility",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 23,
+        "end_line": 23
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureHandoff",
+      "lean_file": "CaptureHandoff/Types.lean",
+      "rust_name": "sandbox_controller_core::capture::CaptureHandoff",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 33,
+        "end_line": 33
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": [
+    {
+      "def_id": 6,
+      "lean_name": "CaptureHandoffRust.sandbox_controller_core.capture.CaptureCommit.Insts.CoreCmpPartialEqCaptureCommit",
+      "lean_file": "CaptureHandoff/Funs.lean",
+      "rust_name": "sandbox_controller_core::capture::{impl core::cmp::PartialEq<sandbox_controller_core::capture::CaptureCommit> for sandbox_controller_core::capture::CaptureCommit}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/capture.rs",
+        "begin_line": 13,
+        "end_line": 13
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    }
+  ]
+}
