@@ -36,6 +36,8 @@ mod snapshot_layout;
 pub use snapshot_layout::SnapshotLayout;
 #[path = "staging.rs"]
 mod staging;
+#[path = "uid_retirement.rs"]
+mod uid_retirement;
 pub use cgroup::HostResources;
 pub use helper_gate::MAX_HELPER_MARKER_BYTES;
 pub use helper_gate::{

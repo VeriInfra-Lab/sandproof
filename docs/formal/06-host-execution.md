@@ -73,3 +73,11 @@
 `Runtime::stop_original_vm(resource_id, expected_source)` 只读取一次原 claim，要求独立调用方保存的 PID、启动 ticks、boot 与原 claim 完全一致，并要求当前宿主 boot 仍相同，再按该已核记录取得 pidfd、发送 TERM/KILL 和等待退出。不再调用会重新读取当前记录的通用 stop 接口；当前同名 claim 被替换、旧来源字段缺失、宿主 boot 变化或读取失败均保持未决。该方法只实现物理停止，V5 必须先确认原材料接管和原 Stop 工作提交，并持有原操作准入/助手排空条件，不能从可调用性推导允许停止。
 
 `observe_original_stopped` 用同一原来源只读观察，不重发信号。它与原通用停止接口的 `Stopped` 一样只表示原进程不再执行；尚未收割的 zombie、存活助手、运行位置占用和文件 backing 仍有各自责任。停止和退出观察不删 jail、网络、claim、bundle 或父布局，也不退额度。运行清理和位置释放必须继续使用各自精确身份、无使用者和实际清理事实；不得把 VMM 退出回执直接转换为对外 Unloaded。
+
+### 运行位置释放前的 UID 观察
+
+原 `retirement_manifest`、`retire`、`observe_retired` 与 `observe_released` 的物理检查还核对 `/proc` 下每个进程的每个线程：real、effective、saved、filesystem 四个 UID 任一仍为原位置 UID，都不能确认释放；zombie 不跳过。非 UTF-8 进程名称不影响 UID 字段解析。缺/重复/损坏 UID 字段、权限和其它读取失败保持未决；status/task 缺失只有对应目录也确实消失时才接受为该任务已离开。
+
+这次观察在原持久 Releasing/当前运行代已封闭、独占 UID 映射及原助手/route 门的条件下使用，不能独立证明将来不会有旧代新作用。运行代关闭由 V5 原 work 和节点 Occupied/Releasing 准入接线保证，已登记助手须实际结束；没有关闭新效果之前，不允许先扫描再退位。该检查不删除进程、claim、bundle 或保护根，不把一次 KVM 样本当所有运行情形的保证。UID 观察的实现及整个回收链仍须补真实 Rust 对应证明，不能沿用旧 Metadata 守卫定理。
+
+UID 扫描限于必需身份元数据，不读取 cmdline/environ；每次最多 262,144 个目录项、单 status 128 KiB、挂载信息 1 MiB，并检查同一 2 秒观察期限，超额/超时均保持未决。系统调用仍依赖固定 Linux/procfs 的完成语义，不是任意文件系统的硬实时保证。只允许真实 procfs 挂载，拒绝可检测的 hidepid/subset、多层 NSpid 与 PID namespace 不一致；这些检查不能从进程内部独立证明所在 namespace 就是整台宿主。受保护部署必须将服务放在原宿主 PID namespace，挂载完整宿主 proc 视图，并由本轮准入核对；不能在私有 PID namespace 内重新挂 proc 后宣称看到了所有宿主任务。该前提与独占 UID/已登记 spawn 一起维护。

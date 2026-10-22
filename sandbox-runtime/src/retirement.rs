@@ -458,6 +458,10 @@ impl Runtime {
         if !self.uplink_resources_absent(id)? {
             return Err(RuntimeError::IdentityMismatch("retirement uplink remains"));
         }
+        // The original position remains closed and its helper gate is held.
+        // UID absence supplements, rather than replaces, the exact process,
+        // namespace-holder, backing and exclusive-incarnation obligations.
+        super::uid_retirement::require_host_uid_unheld(self.config.vm_uid)?;
         Ok(())
     }
 }
