@@ -186,6 +186,8 @@ pub enum ResourceKind {
     Sandbox,
     Vm,
     Workspace,
+    /// A committed snapshot bundle; distinct from a workspace or running VM.
+    Snapshot,
     NetworkSlot,
 }
 

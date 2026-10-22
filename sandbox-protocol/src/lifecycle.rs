@@ -3,11 +3,16 @@
 //! These values do not enable a route or certify a snapshot. In particular,
 //! carrying a digest is distinct from hashing and checking the original files.
 
+mod authority;
 mod digest;
 mod identity;
 mod manifest;
 mod request;
 
+pub use authority::{
+    AcceptedIntentError, AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterId,
+    CenterIdentity,
+};
 pub use digest::ContentDigest;
 pub use identity::{
     CaptureId, ExpectedSession, IncarnationId, OperationBinding, OperationKey, RequestSequence,
