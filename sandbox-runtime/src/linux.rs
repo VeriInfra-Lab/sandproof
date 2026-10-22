@@ -16,6 +16,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "boot_plan.rs"]
+mod boot_plan;
 #[path = "cgroup.rs"]
 mod cgroup;
 use crate::child_process;
@@ -550,16 +552,9 @@ impl Runtime {
             Some(Gid::from_raw(self.config.vm_gid)),
         )
         .map_err(errno_to_io)?;
-        self.put(id, "/machine-config", &json!({ "vcpu_count": self.config.vcpu_count, "mem_size_mib": self.config.memory_mib }))?;
-        self.put(id, "/boot-source", &json!({ "kernel_image_path": "/vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1 pci=off" }))?;
-        self.put(id, "/drives/rootfs", &json!({ "drive_id": "rootfs", "path_on_host": "/rootfs.ext4", "is_root_device": true, "is_read_only": false }))?;
+        boot_plan::BootPlan::for_runtime(&self.config)
+            .configure(|path, body| self.put(id, path, body))?;
         if let Some(hash) = &self.config.access_token_hash {
-            self.put(id, "/network-interfaces/eth0", &json!({ "iface_id": "eth0", "host_dev_name": "tap0", "guest_mac": "06:00:ac:10:00:02" }))?;
-            self.put(
-                id,
-                "/mmds/config",
-                &json!({ "version": "V2", "network_interfaces": ["eth0"] }),
-            )?;
             self.put(
                 id,
                 "/mmds",
