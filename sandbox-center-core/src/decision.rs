@@ -116,6 +116,9 @@ impl CenterState {
         create: CreateBinding,
         now_ms: u64,
     ) -> Result<(Self, LifecycleRequest), DecisionError> {
+        if self.lifecycle_enabled() {
+            return Err(DecisionError::Conflict);
+        }
         self.create_for_role(tenant, create, now_ms, NodeRole::Runtime)
     }
     /// Trusted private build acceptance uses the SAME allocation, outbox and
@@ -128,9 +131,12 @@ impl CenterState {
         create: CreateBinding,
         now_ms: u64,
     ) -> Result<(Self, LifecycleRequest), DecisionError> {
+        if self.lifecycle_enabled() {
+            return Err(DecisionError::Conflict);
+        }
         self.create_for_role(tenant, create, now_ms, NodeRole::Builder)
     }
-    fn create_for_role(
+    pub(crate) fn create_for_role(
         &self,
         tenant: &TenantId,
         create: CreateBinding,
@@ -233,6 +239,9 @@ impl CenterState {
         end_at_ms: u64,
         now_ms: u64,
     ) -> Result<(Self, LifecycleRequest), DecisionError> {
+        if self.lifecycle_manages(sandbox) {
+            return Err(DecisionError::Conflict);
+        }
         if !self.is_valid() {
             return Err(DecisionError::Invalid);
         }
@@ -273,6 +282,16 @@ impl CenterState {
     /// # Errors
     /// Only the original owner can terminate; unknown creates retain reservations.
     pub fn destroy(
+        &self,
+        tenant: &TenantId,
+        sandbox: &SandboxId,
+    ) -> Result<(Self, LifecycleRequest), DecisionError> {
+        if self.lifecycle_manages(sandbox) {
+            return Err(DecisionError::Conflict);
+        }
+        self.destroy_inner(tenant, sandbox)
+    }
+    pub(crate) fn destroy_inner(
         &self,
         tenant: &TenantId,
         sandbox: &SandboxId,
@@ -318,6 +337,18 @@ impl CenterState {
         index: usize,
         intent: Intent,
     ) -> Result<(Self, LifecycleRequest), DecisionError> {
+        let (next, request) = self.append_candidate(index, intent)?;
+        if next.is_valid() {
+            Ok((next, request))
+        } else {
+            Err(DecisionError::Exhausted)
+        }
+    }
+    pub(crate) fn append_candidate(
+        &self,
+        index: usize,
+        intent: Intent,
+    ) -> Result<(Self, LifecycleRequest), DecisionError> {
         let number = self
             .operation_highwater
             .checked_add(1)
@@ -346,16 +377,21 @@ impl CenterState {
             request: request.clone(),
             response: None,
         });
-        if next.is_valid() {
-            Ok((next, request))
-        } else {
-            Err(DecisionError::Exhausted)
-        }
+        Ok((next, request))
     }
     /// # Errors
     /// Rejects wrong full identity, old intent/observation or regressing facts.
     /// Communication failures do not call this method or release reservations.
     pub fn apply_response(&self, response: &LifecycleResponse) -> Result<Self, DecisionError> {
+        if self.lifecycle_manages(&response.identity.sandbox_id) {
+            return Err(DecisionError::Conflict);
+        }
+        self.apply_response_inner(response)
+    }
+    pub(crate) fn apply_response_inner(
+        &self,
+        response: &LifecycleResponse,
+    ) -> Result<Self, DecisionError> {
         if !self.is_valid() {
             return Err(DecisionError::Invalid);
         }
@@ -389,6 +425,7 @@ impl CenterState {
             .last_mut()
             .ok_or(DecisionError::Invalid)?
             .response = Some(response.clone());
+        next.bind_lifecycle_ready(response)?;
         if next.is_valid() {
             Ok(next)
         } else {
@@ -404,6 +441,9 @@ impl CenterState {
     /// # Errors
     /// A stale acknowledgement cannot compact a newer intent or unknown result.
     pub fn compact_confirmed(&self, response: &LifecycleResponse) -> Result<Self, DecisionError> {
+        if self.lifecycle_manages(&response.identity.sandbox_id) {
+            return Err(DecisionError::Conflict);
+        }
         if !self.is_valid() {
             return Err(DecisionError::Invalid);
         }

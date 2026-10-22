@@ -4,6 +4,7 @@ use sandproof_center_core::{CenterState, DecisionError, NodeRegistration};
 use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleRequest, LifecycleResponse};
 use sandproof_protocol::{SandboxId, TenantId};
 
+mod lifecycle;
 mod window;
 
 impl ControlState for CenterState {
@@ -97,7 +98,7 @@ impl AuthorityState for CenterState {
         center
     }
     fn required_block_bytes(&self) -> usize {
-        self.bounds().required_block_bytes()
+        self.required_authority_bytes()
     }
 }
 pub struct CenterAuthority<S = CenterState> {

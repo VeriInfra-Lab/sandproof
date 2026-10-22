@@ -22,6 +22,30 @@
 
 本次文档内容涉及旧证明输入清单中的文档文件。保留原冻结摘要作为旧证据；新候选的冻结一致性/全套证明需要后续按工作流重新验收，本次未声称新输入已通过证明。不得只更新哈希消除该差异。
 
+### 原中心生命周期首片：实际实现与证明缺口
+
+新增 [原 CenterState 的受限 profile](../sandbox-center-core/src/lifecycle.rs)、
+[同一 Redis CAS 接线](../sandbox-center-store/src/authority/lifecycle.rs)和
+[可复现组件](../verification/experiments/stage1-center/README.md)，对应 #633/#634/#635。
+本片保存完整相对提交参数与原分配器派生的规范请求、接受版本、owner/固定节点、预留及可枚举 outbox。
+已有键按全文重放；Ready 连接原寿命守卫；Unload 暂不释额，Destroy 保留原终止预留。
+仍未接正式 HTTP/driver、内部到期责任、完整卸载事实和 manager 实机重启；profile 不默认启用，
+只存在 Creating/Running/Unloading/Terminating，不能把本片查询称为 Unloaded 闭环。
+
+新增真实 Rust 的普通/Redis/错误版测试属于工程证据，精确源码、实际数量、耗时和失败以本批 PR 回执为准。
+原 Charon/Aeneas 对版本检查和全文重放完成过生成；未运行其 Lean 内核/实际文件诊断或新增定理审计，
+不称这些根已证明。完整接受首轮失败于两层原序查询；小拆分后仍在
+`valid_lifecycle_session` 的循环预处理失败，原 IR/诊断保留。
+完整决定、恢复校验、预留/修改范围与实际调用对应仍待证明，不能整体改成库/可信适配假设。
+
+接口依赖提交 `3342edc12dbae5821656914423cb2c302f0d73ca` 的协议/internal 91 项普通测试及严格 Clippy 已通过；
+`AcceptedLifecycleIntent` 是完整数据，不是授权凭证。Context 的 pin/受保护注册连接按
+[准确 A9/B4 条件](formal/dependencies.md#v3-中心身份的薄连接)采用，正式服务绑定仍待接通。
+新增 `ResourceKind::Snapshot` 不改变 VM/Workspace 的含义，也不自动证明 snapshot 材料事实。
+
+旧 #642 及旧 V0 局部定理只覆盖各自固定输入；这里的新 CenterState 字段、恢复 checker、
+接受/提交和新增角色不能沿用旧结论背书。全局注册、冻结适用性和完整验收仍须在统一候选完成。
+
 ### 新 v3 同步协议：真实生成体的局部性质与边界
 
 [草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的生产 Rust 适用

@@ -47,8 +47,7 @@ impl<M: BusinessMetadata> AuthorityState for BusinessEnvelope<M> {
     }
     fn required_block_bytes(&self) -> usize {
         self.center
-            .bounds()
-            .required_block_bytes()
+            .required_authority_bytes()
             .saturating_add(self.metadata.required_block_bytes())
     }
 }

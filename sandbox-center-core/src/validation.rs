@@ -56,6 +56,7 @@ impl CenterState {
             return false;
         }
         self.valid_sandbox_histories(&tenants, &mut sandboxes, &mut operations)
+            && self.valid_lifecycle()
     }
 
     fn valid_sandbox_histories<'a>(

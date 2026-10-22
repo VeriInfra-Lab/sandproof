@@ -156,6 +156,8 @@ pub struct CenterState {
     pub(crate) sandbox_highwater: u64,
     pub(crate) operation_highwater: u64,
     pub(crate) sandboxes: Vec<Sandbox>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) lifecycle: Option<crate::LifecycleProfile>,
 }
 impl CenterState {
     /// # Errors
@@ -198,6 +200,7 @@ impl CenterState {
             sandbox_highwater: 0,
             operation_highwater: 0,
             sandboxes: vec![],
+            lifecycle: None,
         };
         if state.is_valid() {
             Ok(state)
@@ -246,6 +249,7 @@ impl CenterState {
     #[must_use]
     pub fn registration_matches(&self, registration: &Self) -> bool {
         self.deployment == registration.deployment
+            && self.lifecycle_registration_matches(registration)
             && self.bounds == registration.bounds
             && self.tenants == registration.tenants
             && self.nodes.len() == registration.nodes.len()
@@ -272,6 +276,11 @@ impl CenterState {
         self.sandboxes
             .iter()
             .filter(|s| !s.released)
+            .filter(|s| {
+                s.operations
+                    .first()
+                    .is_none_or(|op| !self.lifecycle_manages(&op.request.identity.sandbox_id))
+            })
             .filter_map(|s| s.operations.last())
             .filter(|op| {
                 op.response.as_ref().is_none_or(|r| {
