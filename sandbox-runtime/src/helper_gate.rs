@@ -111,7 +111,7 @@ fn valid_boot_id(value: &str) -> bool {
         })
 }
 
-fn boot_id() -> Result<String, RuntimeError> {
+pub(super) fn boot_id() -> Result<String, RuntimeError> {
     let value = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
     let value = value.trim();
     if !valid_boot_id(value) {

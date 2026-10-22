@@ -25,6 +25,8 @@ pub(crate) mod helper_gate;
 mod jail;
 #[path = "observation.rs"]
 mod observation;
+#[path = "original_stop.rs"]
+mod original_stop;
 #[path = "retirement.rs"]
 mod retirement;
 #[path = "snapshot.rs"]
@@ -629,21 +631,7 @@ impl Runtime {
     pub fn stop(&self, id: &str) -> Result<Observation, RuntimeError> {
         validate_id(id)?;
         let record = self.read_record(id)?;
-        if let Some(pidfd) = verified_process(&record)? {
-            pidfd_send_signal(&pidfd, Signal::TERM).map_err(errno_to_io)?;
-            if !wait_pidfd_exit(&pidfd, STOP_TIMEOUT)? {
-                pidfd_send_signal(&pidfd, Signal::KILL).map_err(errno_to_io)?;
-                if !wait_pidfd_exit(&pidfd, STOP_TIMEOUT)? {
-                    return Err(RuntimeError::TimedOut("exact VM process exit"));
-                }
-            }
-        }
-        Ok(Observation {
-            resource_id: id.to_owned(),
-            pid: record.pid,
-            start_time_ticks: record.start_time_ticks,
-            state: VmState::Stopped,
-        })
+        original_stop::stop_record(&record)
     }
 
     /// Remove only this stopped VM's jail and private disk. Keep its claim and
