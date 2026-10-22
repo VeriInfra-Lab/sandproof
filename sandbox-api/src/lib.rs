@@ -7,6 +7,7 @@
 pub mod admission;
 mod authentication;
 mod build_vm_api;
+pub mod lifecycle;
 mod list;
 pub use authentication::{
     PRIVATE_BUILD_CREDENTIAL_HEADER, PRIVATE_BUILD_TENANT_HEADER, PrivateBuildCredential,

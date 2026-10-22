@@ -144,6 +144,35 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> {
+    async fn record_v3(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, ReceiveError> {
+        let permit = Arc::clone(&self.work)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.record_lifecycle_intent(&intent, &context)
+                .map(
+                    |state| sandproof_protocol::lifecycle::RecordedLifecycleIntent {
+                        intent: state.intent,
+                        current_session_version: state.current_session_version,
+                        current: state.current,
+                        terminal: state.terminal,
+                    },
+                )
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
     async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
         let permit = Arc::clone(&self.work)
             .try_acquire_owned()

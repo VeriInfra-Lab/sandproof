@@ -21,6 +21,7 @@ use sandproof_protocol::{
     internal::{ControlIdentity, NodeIdentity},
 };
 use std::sync::{Arc, Mutex};
+mod lifecycle;
 
 type Envelope = BusinessEnvelope<RegistryMetadata>;
 type Authority = CenterAuthority<Envelope>;

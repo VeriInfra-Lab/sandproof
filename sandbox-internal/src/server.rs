@@ -30,11 +30,23 @@ use sandproof_protocol::internal::{
 };
 use std::{convert::Infallible, sync::Arc};
 use tokio::{net::TcpListener, sync::Semaphore, sync::oneshot, sync::watch, time::timeout};
+mod lifecycle_v3;
 
 /// Effectful receiver after mutual authentication AND complete node binding.
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
+    /// Persist only through the original application. Unsupported receivers
+    /// cannot acknowledge an echo; even a successful record is not Ready.
+    fn record_v3(
+        &self,
+        _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, ReceiveError>,
+    > + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
     fn receive(
         &self,
         request: LifecycleRequest,
@@ -117,6 +129,7 @@ pub struct InternalServer<H> {
     limits: Limits,
     connections: Arc<Semaphore>,
     handler: Arc<H>,
+    lifecycle_v3: Option<crate::lifecycle_v3::CenterPeerRegistration>,
 }
 
 impl<H> Clone for InternalServer<H> {
@@ -127,6 +140,7 @@ impl<H> Clone for InternalServer<H> {
             limits: self.limits,
             connections: Arc::clone(&self.connections),
             handler: Arc::clone(&self.handler),
+            lifecycle_v3: self.lifecycle_v3.clone(),
         }
     }
 }
@@ -142,7 +156,22 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             limits,
             connections: Arc::new(Semaphore::new(limits.max_connections)),
             handler: Arc::new(handler),
+            lifecycle_v3: None,
         }
+    }
+
+    /// Explicit protected assembly only; ordinary v2 construction stays closed.
+    /// # Errors
+    /// The original server node must match the protected peer registration.
+    pub fn with_lifecycle_v3(
+        mut self,
+        registration: crate::lifecycle_v3::CenterPeerRegistration,
+    ) -> Result<Self, TransportError> {
+        if !registration.matches_node(&self.node) {
+            return Err(TransportError::Configuration);
+        }
+        self.lifecycle_v3 = Some(registration);
+        Ok(self)
     }
 
     /// Diagnostic occupancy, not an authorization or lifecycle observation.
@@ -169,6 +198,7 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
                 node: self.node.clone(),
                 handler: Arc::clone(&self.handler),
                 limits: self.limits,
+                lifecycle_v3: self.lifecycle_v3.clone(),
             },
         )
         .serve(listener, shutdown)
@@ -180,16 +210,25 @@ struct LifecycleHttp<H> {
     node: NodeIdentity,
     handler: Arc<H>,
     limits: Limits,
+    lifecycle_v3: Option<crate::lifecycle_v3::CenterPeerRegistration>,
 }
 impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + StatusReceiver>
     ProtectedHttp for LifecycleHttp<H>
 {
     async fn respond(
         &self,
-        _: CertificatePin,
+        peer: CertificatePin,
         request: Request<Incoming>,
         streaming: watch::Sender<bool>,
     ) -> Result<Response<Body>, Infallible> {
+        if request.uri().path() == sandproof_protocol::lifecycle::LIFECYCLE_PATH {
+            let work =
+                lifecycle_v3::record(request, peer, self.lifecycle_v3.as_ref(), &*self.handler);
+            return Ok(timeout(self.limits.request_timeout, work)
+                .await
+                .unwrap_or_else(|_| response(StatusCode::REQUEST_TIMEOUT, Bytes::new()))
+                .map(Body::new));
+        }
         route(
             request,
             self.node.clone(),

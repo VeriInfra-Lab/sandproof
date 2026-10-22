@@ -7,11 +7,12 @@ mod authority;
 mod digest;
 mod identity;
 mod manifest;
+mod public;
 mod request;
 
 pub use authority::{
     AcceptedIntentError, AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterId,
-    CenterIdentity,
+    CenterIdentity, RecordedLifecycleIntent,
 };
 pub use digest::ContentDigest;
 pub use identity::{
@@ -21,6 +22,10 @@ pub use identity::{
 pub use manifest::{
     CaptureBinding, MANIFEST_FORMAT_VERSION, MAX_WRITABLE_DRIVES, ManifestError, SnapshotFile,
     SnapshotFileKind, SnapshotManifest, VmCompatibility, WritableDrive, disk_bundle_path,
+};
+pub use public::{
+    CreateParameters, PublicAcceptance, PublicCreateRequest, PublicSessionPhase, PublicSessionView,
+    PublicUnloadRequest,
 };
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 

@@ -70,6 +70,25 @@ pub struct AcceptedLifecycleIntent {
     pub center: CenterIdentity,
 }
 
+/// Confirmed original-journal reception only. These fields are not a VM
+/// observation, execution permission, completed result or release certificate.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordedLifecycleIntent {
+    pub intent: AcceptedLifecycleIntent,
+    pub current_session_version: u64,
+    pub current: bool,
+    pub terminal: bool,
+}
+impl RecordedLifecycleIntent {
+    #[must_use]
+    pub fn matches(&self, original: &AcceptedLifecycleIntent) -> bool {
+        self.intent == *original
+            && self.current_session_version >= original.accepted_version
+            && self.current == (self.current_session_version == original.accepted_version)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AcceptedIntentError {
     ForeignCenter,

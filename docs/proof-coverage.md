@@ -66,6 +66,32 @@
 普通编译、测试及严格静态检查属于工程证据；正式 profile 保持默认关闭，
 真实材料登记、原 VMM 退出、必要 runtime 清理和安全复用事实尚未连接为公开 Unloaded。
 
+### v3 公开接受与受保护 Recorded 收件：尚未驱动执行
+
+本批在 `279002a0c7be5e0ec650a501f653516334eb0fd0` 的依赖组合上增加
+[显式公开入口](../sandbox-api/src/lifecycle.rs)、
+[原业务包络接受](../sandbox-center-service/src/business/authority/lifecycle.rs)和
+[原 TLS 收件](../sandbox-internal/src/server/lifecycle_v3.rs)。
+公开认证给出 owner，原中心状态给出 deployment/node/session；客户不能在正文选择它们。
+相对参数按全文重放，首次接受才读取当前受保护模板、政策和时钟，并沿原 Redis CAS 保存。
+旧 v2 可见性排除这些 managed 会话；202 仅表示持久接受。
+
+受保护路由显式配置原 peer 注册后，将真实 TLS 提供的 pin 转成 context，
+校验完整 accepted intent，再经原 HostFacade/HostLifecycle 工作许可交给
+同一 `ControllerApplication::record_lifecycle_intent` 和 SQLite 收件。
+Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、VM 已启动或资源可释放。
+未配置路由保持拒绝；收件许可由实际 blocking worker 持有，取消等待不补造退出事实。
+这些机械接线沿已登记 A9/B1/B4 条件核对，新的业务接受函数与原应用/事务连接仍须证明，
+不因测试或已抽取的旧同步守卫而自动获得实现定理。
+
+`CreateParameters` 逐字段迁到 protocol 并保留 core 原路径重导出；这改变抽取的名义来源，
+原生成物及旧类型对应不能直接背书该新版本。没有手改生成 Lean 或刷新旧冻结摘要。
+本批新增 Lean 定理为零；相关原生测试、失败及精确适用版本以本批 PR 的回执记录。
+公开 HTTP→真实 CenterPort/Redis 与真实 TLS→原 Facade/SQLite 分别验收，
+不称公开请求已经由正式后台自动派发。原 worker、中心持久待办的重观测/发布、
+当前 Ready、新 Unload 和完整 Unloaded 均尚未接通；正式 profile 不默认启用。
+内部到期仅有设计，未实施前不能启用该 profile；Resume/GC 和真实部署输入仍开放。
+
 ### 新 v3 同步协议：真实生成体的局部性质与边界
 
 [草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的生产 Rust 适用

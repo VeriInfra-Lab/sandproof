@@ -7,6 +7,8 @@
 )]
 #[path = "../../sandbox-center-store/tests/support/engine.rs"]
 mod engine;
+#[path = "business_authority/lifecycle_public.rs"]
+mod lifecycle_public;
 #[allow(
     dead_code,
     reason = "original worker fixture used to extract actual committed evidence"

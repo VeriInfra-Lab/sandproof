@@ -1,0 +1,191 @@
+//! Public lifecycle decisions remain in the original complete business CAS.
+use super::{SharedBusinessAuthority, to_authority};
+use crate::{LifecyclePolicy, application::authority_error};
+use sandproof_api::PortError;
+use sandproof_center_core::{CenterState, DecisionError, LifecycleSubmission, SessionPhase};
+use sandproof_center_store::authority::AuthorityState;
+use sandproof_controller_service::{
+    CreateOptions,
+    application::{CreateCommand, selected_policy},
+};
+use sandproof_protocol::{
+    TenantId,
+    lifecycle::{
+        AcceptedLifecycleIntent, OperationKey, PublicCreateRequest, PublicSessionPhase,
+        PublicSessionView, PublicUnloadRequest, SessionId,
+    },
+};
+
+impl SharedBusinessAuthority {
+    /// # Errors
+    /// Replays confirm the original full input before the current policy/clock.
+    /// New requests check the protected descriptor in the SAME envelope as CAS.
+    pub fn accept_public_create(
+        &self,
+        owner: &TenantId,
+        request: &PublicCreateRequest,
+        policy: LifecyclePolicy,
+        now: impl FnOnce() -> Result<u64, PortError>,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority
+            .decide(|current| {
+                let submission = LifecycleSubmission::Create {
+                    key: key(&current.center, owner, request.window, request.sequence),
+                    parameters: request.parameters.clone(),
+                };
+                if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
+                    return Ok((current.clone(), intent));
+                }
+                let parameters = &request.parameters;
+                let template = current
+                    .metadata
+                    .bound(&parameters.template_revision, &parameters.template_digest)
+                    .map_err(to_authority)?;
+                let descriptor = current
+                    .metadata
+                    .artifact_binding(&parameters.template_revision, &parameters.template_digest)
+                    .map_err(to_authority)?;
+                let owner_number = owner
+                    .as_str()
+                    .parse::<u64>()
+                    .map_err(|_| DecisionError::Invalid)?;
+                if descriptor
+                    .owner
+                    .is_some_and(|registered| registered != owner_number)
+                    || current.metadata.builder_revision() == Some(&parameters.template_revision)
+                {
+                    return Err(DecisionError::NotFound.into());
+                }
+                let shape = template.resources();
+                let millis = |seconds: u64| {
+                    sandproof_protocol::numeric::seconds_to_milliseconds(seconds)
+                        .ok_or(DecisionError::Invalid)
+                };
+                if !policy.is_valid()
+                    || parameters.startup_timeout_ms > millis(policy.startup_timeout_secs)?
+                    || parameters.timeout_ms > millis(policy.max_timeout_secs)?
+                    || parameters.max_lifetime_ms > millis(policy.max_lifetime_secs)?
+                    || parameters.resources.instances != 1
+                    || parameters.resources.cpu != u64::from(shape.cpu_count)
+                    || parameters.resources.memory_bytes != shape.host_memory_bytes
+                    || parameters.resources.disk_bytes != shape.disk_bytes
+                {
+                    return Err(DecisionError::Invalid.into());
+                }
+                let options: CreateOptions = serde_json::from_slice(&parameters.options)
+                    .map_err(|_| DecisionError::Invalid)?;
+                if options.template.is_some()
+                    || options.validate().is_err()
+                    || options
+                        .metadata
+                        .keys()
+                        .any(|key| key.starts_with("_sandproof_"))
+                {
+                    return Err(DecisionError::Invalid.into());
+                }
+                let networking = options.networking.as_ref();
+                let command = CreateCommand {
+                    template_id: template.template_id().to_owned(),
+                    timeout: None,
+                    allow_internet_access: networking.and_then(|n| n.allow_internet_access),
+                    network: networking.and_then(|n| n.network.clone()),
+                    metadata: None,
+                    env_vars: None,
+                };
+                if selected_policy(&command).map_err(to_authority)?
+                    != sandbox_controller_core::NetworkPolicy::DenyAll
+                    && !policy.public_ipv4_enabled
+                {
+                    return Err(DecisionError::Invalid.into());
+                }
+                let (center, intent) = current.center.accept_lifecycle(
+                    owner,
+                    &submission,
+                    now().map_err(to_authority)?,
+                )?;
+                Ok((current.with_center(center), intent))
+            })
+            .map_err(authority_error)
+    }
+
+    /// # Errors
+    /// Existing full replays are confirmed. A new unload remains closed until
+    /// the original application's current Ready observation is connected.
+    pub fn accept_public_unload(
+        &self,
+        owner: &TenantId,
+        session: SessionId,
+        request: &PublicUnloadRequest,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority
+            .decide(|current| {
+                let submission = LifecycleSubmission::Unload {
+                    key: key(&current.center, owner, request.window, request.sequence),
+                    session,
+                    expected_version: request.expected_version,
+                };
+                if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
+                    return Ok((current.clone(), intent));
+                }
+                // Preserve the original new-key refusal order without saving
+                // its candidate. A historical Ready alone is insufficient.
+                let _ = current.center.accept_lifecycle(owner, &submission, 0)?;
+                Err(DecisionError::Unavailable.into())
+            })
+            .map_err(authority_error)
+    }
+
+    /// # Errors
+    /// Fresh original authority, full owner and full session are mandatory.
+    pub fn query_public_lifecycle(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+    ) -> Result<PublicSessionView, PortError> {
+        let record = self
+            .0
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .query_lifecycle(owner, session)
+            .map_err(authority_error)?
+            .ok_or(PortError::NotFound)?;
+        let current = record
+            .operations()
+            .last()
+            .ok_or(PortError::OutcomeUnknown)?
+            .intent();
+        let phase = match record.phase() {
+            SessionPhase::Creating => PublicSessionPhase::Creating,
+            // The ledger retains a historical Ready. A current publishable
+            // Running needs the original host observation provider, still
+            // absent here. A new query timestamp cannot supply that evidence.
+            SessionPhase::Running => return Err(PortError::Busy),
+            SessionPhase::Unloading => PublicSessionPhase::Unloading,
+            SessionPhase::Terminating => PublicSessionPhase::Terminating,
+        };
+        Ok(PublicSessionView {
+            session: current.request.binding.session.clone(),
+            operation: current.request.binding.key.clone(),
+            current_version: current.accepted_version,
+            phase,
+        })
+    }
+}
+
+fn key(
+    center: &CenterState,
+    owner: &TenantId,
+    window: sandproof_protocol::lifecycle::RequestWindowId,
+    sequence: sandproof_protocol::lifecycle::RequestSequence,
+) -> OperationKey {
+    OperationKey {
+        deployment: center.deployment().clone(),
+        owner: owner.clone(),
+        window,
+        sequence,
+    }
+}

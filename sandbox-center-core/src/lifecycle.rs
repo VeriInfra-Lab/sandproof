@@ -2,36 +2,22 @@
 //! Allocation, reservations and host lanes stay in the original `CenterState`.
 use crate::{CenterState, DecisionError, NodeRole};
 use sandproof_protocol::internal::PositiveCounter;
-use sandproof_protocol::internal::lifecycle::{
-    CreateBinding, LifecycleFact, LifecycleResponse, Resources,
-};
+use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleFact, LifecycleResponse};
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CaptureId, CenterIdentity, ExpectedSession, IncarnationId,
     LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey, RequestWindowId,
     SessionId,
 };
-use sandproof_protocol::{ResourceId, SandboxId, TenantId};
+use sandproof_protocol::{SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
 mod validation;
+pub use sandproof_protocol::lifecycle::CreateParameters;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LifecycleWindow {
     pub owner: TenantId,
     pub window: RequestWindowId,
-}
-
-/// Relative user parameters, saved before any now-dependent canonical fields.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateParameters {
-    pub template_revision: ResourceId,
-    pub template_digest: [u8; 32],
-    pub resources: Resources,
-    pub options: Vec<u8>,
-    pub startup_timeout_ms: u64,
-    pub timeout_ms: u64,
-    pub max_lifetime_ms: u64,
 }
 
 /// The normalized, complete submission. Owner is additionally checked against
@@ -220,7 +206,10 @@ impl CenterState {
             .required_block_bytes()
             .saturating_add(self.lifecycle_required_bytes())
     }
-    pub(crate) fn lifecycle_manages(&self, sandbox: &SandboxId) -> bool {
+    /// Separate legacy projections from managed sessions; this is not an
+    /// authorization or a physical lifecycle observation.
+    #[must_use]
+    pub fn lifecycle_manages(&self, sandbox: &SandboxId) -> bool {
         self.lifecycle
             .as_ref()
             .is_some_and(|p| p.sessions.iter().any(|s| s.original_sandbox == *sandbox))
@@ -264,6 +253,28 @@ impl CenterState {
                 .map(|op| op.intent.clone())
                 .collect()
         })
+    }
+
+    /// Check the original full submission before reading a new clock/template
+    /// policy. Absence permits a new decision; changed input is a conflict.
+    /// # Errors
+    /// Invalid state, disabled profile or foreign authenticated owner rejects.
+    pub fn replay_lifecycle(
+        &self,
+        owner: &TenantId,
+        submission: &LifecycleSubmission,
+    ) -> Result<Option<AcceptedLifecycleIntent>, DecisionError> {
+        if !self.is_valid() {
+            return Err(DecisionError::Invalid);
+        }
+        let profile = self.lifecycle.as_ref().ok_or(DecisionError::Invalid)?;
+        if submission.key().owner != *owner || submission.key().deployment != self.deployment {
+            return Err(DecisionError::NotFound);
+        }
+        profile
+            .find_operation(submission.key())
+            .map(|op| op.replay(submission))
+            .transpose()
     }
 
     /// Full-key replay is checked before current window/version/phase/time.

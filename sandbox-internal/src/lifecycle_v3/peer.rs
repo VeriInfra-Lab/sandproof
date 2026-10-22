@@ -10,6 +10,10 @@ pub struct CenterPeerRegistration {
     pins: Vec<CertificatePin>,
 }
 impl CenterPeerRegistration {
+    #[must_use]
+    pub fn matches_node(&self, node: &NodeIdentity) -> bool {
+        self.expected_node == *node
+    }
     /// Both rotation pins identify the same protected logical center.
     /// # Errors
     /// Refuses a foreign deployment, absent/duplicate pins or more than two pins.

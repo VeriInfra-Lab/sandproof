@@ -12,6 +12,15 @@
 
 输出 `AuthenticatedCenterContext` 不可反序列化，但公开工厂是明确的可信装配接缝，Rust 类型本身不证明调用者无法伪造。配置/pin 来源与调用绑定仍须在正式服务接线时核对；已有摘要值测试只检查映射，不证明 TLS 握手。`AcceptedLifecycleIntent::validate` 的中心全文、部署、原请求节点和接受版本检查属于自有同步判断，不将其整体列为 B4。持久接受、授权、原对象选择、材料完整、退出、清理和发布仍由各业务模块证明。
 
+显式 `InternalServer::with_lifecycle_v3` 路由沿原 `ProtectedHttp::respond` 的实际 peer
+调用该映射；原 TLS/连接预算和有限请求期限保留。原 HostFacade 只转交给同一
+HostLifecycle；许可进入实际 blocking worker 后才调用原应用收件，不因 HTTP 取消提前归还。
+可依赖的机械保证限于原对象、完整参数、结果和许可寿命；接受资格、全文重放、
+SQLite 提交与回执匹配是自有业务，仍需对应证明。超时/错误不证明没有提交，
+正常 Recorded 也不证明当前 Ready、执行完成或释放资格。
+真实 TLS 与原 SQLite 的组合测试仅支持该有限接法的工程采用；
+不证明任意 async Rust 精化、panic/abort 收尾或完整生命周期。
+
 ## 第一阶段新增依赖合同
 
 这些是固定 Firecracker/文件系统接口的**拟采用条件合同**，并非本次新增已证事实。原 A1–A12/B1–B4 的范围不扩大；下表在 A1/A3 下细化本阶段所需接口。实现时必须补实际调用符号、版本/配置、失败路径和实测证据，不能仅登记编号就算连接完成。

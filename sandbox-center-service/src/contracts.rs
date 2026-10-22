@@ -239,6 +239,15 @@ pub trait CommittedDriver: Send + Sync {
 /// Called from bounded blocking work, with NO center decision lock held.
 pub trait HostPort: Send + Sync + 'static {
     /// # Errors
+    /// One bounded recording call only. Default/unknown never acknowledges work.
+    fn record_lifecycle_v3(
+        &self,
+        _intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, PortError> {
+        Err(PortError::Busy)
+    }
+    /// # Errors
     /// Every error is an unknown transport outcome, never admission rejection.
     fn send(
         &self,

@@ -59,6 +59,13 @@ impl<H: ControllerHost + Send + 'static> HostFacade<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostFacade<H> {
+    async fn record_v3(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, ReceiveError> {
+        self.lifecycle.record_v3(intent, context).await
+    }
     async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
         self.lifecycle.receive(request).await
     }

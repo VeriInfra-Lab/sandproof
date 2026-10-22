@@ -9,6 +9,7 @@ mod contracts;
 mod create_binding;
 #[cfg(unix)]
 mod gateway;
+mod lifecycle;
 mod private_gate;
 mod projection;
 mod public_snapshot;
