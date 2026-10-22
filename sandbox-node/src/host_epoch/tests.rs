@@ -170,6 +170,7 @@ fn root_protected_bootstrap_roundtrip_uses_real_host_facts_without_a_vm() {
         .prefix("sandproof-bootstrap-")
         .tempdir_in("/run")
         .unwrap();
+    let owned_path = root_fixture_begin(root.path());
     let firecracker = root.path().join("synthetic-firecracker");
     let jailer = root.path().join("synthetic-jailer");
     for path in [&firecracker, &jailer] {
@@ -259,4 +260,28 @@ fn root_protected_bootstrap_roundtrip_uses_real_host_facts_without_a_vm() {
     );
     // All fixture files are below this owned /run directory; drop removes only
     // those files. No tool was executed and no VM, mount or quota was created.
+    drop(root);
+    root_fixture_end(&owned_path);
+}
+
+fn root_fixture_begin(path: &Path) -> PathBuf {
+    let metadata = fs::symlink_metadata(path).unwrap();
+    eprintln!(
+        "bootstrap_fixture_begin {}",
+        serde_json::json!({
+            "path": path, "device": metadata.dev(), "inode": metadata.ino(),
+            "owner": metadata.uid(), "mode": metadata.mode() & 0o7777,
+        })
+    );
+    path.into()
+}
+
+fn root_fixture_end(path: &Path) {
+    assert!(
+        matches!(fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    );
+    eprintln!(
+        "bootstrap_fixture_end {}",
+        serde_json::json!({"path": path, "absent": true})
+    );
 }
