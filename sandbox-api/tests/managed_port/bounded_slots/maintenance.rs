@@ -510,6 +510,7 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
     // Explicit test-only envelope, matching the component workload rather than
     // recommending deployment values.
     let policy = MaintenanceConfig {
+        checkpoint_profile: sandproof_controller_service::CheckpointProfile::CreateKill,
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10_000,
