@@ -115,3 +115,21 @@ python3 verification/experiments/stage1-protocol/replay_formal.py \
 `full_acceptance=false`。它不接收或伪造 ning 原生回执，也不替代前述 `formal.py`、
 完整普通检查、共享登记或 `scripts/verify-controller.sh`。在当前候选完成这些门槛前，
 不能把局部成功报告为整套证明验收成功。
+
+## 完整请求守卫与首错的局部证明
+
+`ValidationModel` 只导入生成类型和既有 Foundations 数学模型；`ValidRequest` 规定纯守卫的接受域，
+`FirstError` 要求所有更早守卫通过，`FullValidationContract` 同时要求成功和每种错误的充要条件。
+`Validation` 连接实际生成函数，`ValidationExamples` 给出四种操作的正常接受输入。
+它不验证 serde、当前账本、认证 owner、模板授权或持久收件；具体边界见覆盖记录。
+
+同一局部入口新增可选模式，默认 replay 保持原检查：
+
+```sh
+python3 verification/experiments/stage1-protocol/replay_formal.py \
+  --property validation --output artifacts/full-request-validation
+```
+
+该模式重抽取正确版和原 `same-incarnation` Rust 变体，逐字节核对两版独立合同，
+检查精确依赖/审计清单和所有实际文件。它继续明确输出原生检查未运行、完整验收未完成，
+不替代 ning 检查、历史组件入口或共享证明批次。

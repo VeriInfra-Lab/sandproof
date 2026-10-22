@@ -1,7 +1,7 @@
-"""Local full-request replay proofs on fresh Rust extractions; not batch acceptance.
+"""Local request replay/validation proofs on fresh extractions; not batch acceptance.
 
 Retains the historical component freeze. Each case has an isolated source and
-Lean build directory; both use the same independently stated equality contract.
+Lean build directory; both use the same independently stated property.
 Ordinary tests and native mutant assertions still belong on the test machine.
 """
 from pathlib import Path
@@ -28,6 +28,26 @@ AUDITS = ['bytes_eq', 'array_eq', 'vec_eq', 'ok_and', 'resources_eq',
           'create_eq', 'node_eq', 'key_eq', 'expected_eq', 'binding_eq',
           'operation_eq', 'request_eq', 'replay_complete',
           'replay_accepts_iff', 'replay_rejects_iff']
+REPLAY_AUDITS = ['SandboxModel.Stage1Protocol.Replay.' + n for n in AUDITS]
+VALIDATION_AUDITS = ['SandboxModel.Stage1Protocol.Validation.' + n for n in
+    ['resources_positive', 'checked_add_present', 'ok_unless', 'create_valid',
+     'ok_ite', 'validate_refines', 'expected_success_iff', 'expected_error_iff',
+     'validate_accepts_iff', 'validate_error_iff', 'validate_complete', 'validate_total']]
+EXAMPLE_AUDITS = ['SandboxModel.Stage1Protocol.Validation.Examples.' + n for n in
+                  ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted']]
+PROPERTIES = {
+    'replay': dict(kind='stage1-full-replay-local-formal', mutation='key-only-replay',
+        positive=POSITIVE, negative=NEGATIVE, common_files=[],
+        contract='ReplayContract', template='NegativeFullReplay', audits=REPLAY_AUDITS,
+        negative_audits=['mutant_accepts_changed_capture', 'key_only_not_full_replay']),
+    'validation': dict(kind='stage1-request-validation-local-formal', mutation='same-incarnation',
+        positive=[*POSITIVE, 'ValidationModel', 'Validation', 'ValidationExamples', 'Model', 'RequestValues'],
+        negative=['ValidationModel', 'Model', 'RequestValues'],
+        common_files=['SandboxModel/Foundations/Model.lean'],
+        contract='ValidationModel', template='NegativeValidation',
+        audits=REPLAY_AUDITS + VALIDATION_AUDITS + EXAMPLE_AUDITS,
+        negative_audits=['mutant_accepts_same_incarnation', 'mutant_not_full_validation']),
+}
 
 
 def sha(path):
@@ -54,10 +74,12 @@ def snapshot():
     return result
 
 
-def run(output):
+def run(output, property_name='replay'):
+    config = PROPERTIES[property_name]
+    mutant = config['mutation']
     output.mkdir(mode=0o700, parents=True)
     start = time.monotonic()
-    record = dict(kind='stage1-full-replay-local-formal', cases={}, commands=[],
+    record = dict(kind=config['kind'], cases={}, commands=[],
                   native_checks='not-run', full_acceptance=False)
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='4',
                LEAN_STACK_SIZE_KB='65536')
@@ -81,8 +103,8 @@ def run(output):
         record['inputs'] = inputs  # Includes uncommitted proof changes, not just HEAD.
         formal = load_module('replay_actual_files', ROOT / HERE / 'formal.py')
         mutations = load_module('replay_mutations', ROOT / HERE / 'negative_native.py')
-        mutation = next(m for m in mutations.MUTATIONS if m['name'] == 'key-only-replay')
-        for case in ['correct', 'key-only-replay']:
+        mutation = next(m for m in mutations.MUTATIONS if m['name'] == mutant)
+        for case in ['correct', mutant]:
             folder = output / case
             project = folder / 'source'
             project.mkdir(mode=0o700, parents=True)
@@ -131,36 +153,38 @@ def run(output):
             installed[str(LIBRARY / 'original.llbc')] = sha(extraction / 'request/original.llbc')
             expected_inputs.update(installed)
 
-            names = POSITIVE if case == 'correct' else NEGATIVE
+            names = config['positive'] if case == 'correct' else config['negative']
             targets = ['SandboxModel.Lifecycle.Protocol.' + name for name in names]
             command(project, folder, 'build', ['lake', 'build', 'SandproofStage1Request', *targets])
             files = ['SandboxModel/ProofAuditCommand.lean']
+            files += config['common_files']
             files += [str(PROOFS / (name + '.lean')) for name in names]
             files += [str(p.relative_to(project)) for p in sorted((project / LIBRARY).rglob('*.lean'))
                       if '_Template' not in p.name]
             files += ['verification/aeneas/foundations/SandproofFoundations/' + name + '.lean'
                       for name in ['TypesExternal', 'IdentifierLibrary', 'Types', 'FunsExternal']]
             if case == 'correct':
-                expected_audits = ['SandboxModel.Stage1Protocol.Replay.' + n for n in AUDITS]
+                expected_audits = config['audits']
             else:
-                relative = 'artifacts/NegativeFullReplay.lean'
-                shutil.copy2(ROOT / HERE / 'NegativeFullReplay.lean.in', project / relative)
+                relative = 'artifacts/' + config['template'] + '.lean'
+                template = ROOT / HERE / (config['template'] + '.lean.in')
+                shutil.copy2(template, project / relative)
                 files.append(relative)
-                expected_inputs[relative] = sha(ROOT / HERE / 'NegativeFullReplay.lean.in')
+                expected_inputs[relative] = sha(template)
                 expected_audits = ['SandboxModel.Stage1Protocol.Request.' + n for n in
-                                   ['mutant_accepts_changed_capture', 'key_only_not_full_replay']]
+                                   config['negative_audits']]
             actual = formal.actual_files(project, files, folder, env, command)
             if sorted(actual['audits']) != sorted(expected_audits):
-                raise ValueError('full-replay audit inventory differs')
+                raise ValueError('request property audit inventory differs')
             for name, digest in expected_inputs.items():
                 if sha(project / name) != digest:
                     raise ValueError('unexpected source/proof/generated change: ' + name)
             record['cases'][case] = dict(complete=True, **actual,
                 rust_sha256=sha(source), installed_generated=installed,
-                contract_sha256=sha(project / PROOFS / 'ReplayContract.lean'),
+                contract_sha256=sha(project / PROOFS / (config['contract'] + '.lean')),
                 extraction_record_sha256=sha(extraction / 'result.json'))
             (output / 'progress.json').write_text(json.dumps(record, indent=2)+'\n')
-        if record['cases']['correct']['contract_sha256'] != record['cases']['key-only-replay']['contract_sha256']:
+        if record['cases']['correct']['contract_sha256'] != record['cases'][mutant]['contract_sha256']:
             raise ValueError('correct and wrong versions used different properties')
         if snapshot() != inputs:
             raise ValueError('source changed during the formal checks')
@@ -175,9 +199,10 @@ def run(output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--property', choices=PROPERTIES, default='replay')
     args = parser.parse_args()
     os.umask(0o077)
-    result = run(args.output.resolve())
+    result = run(args.output.resolve(), args.property)
     print(json.dumps({k: result.get(k) for k in
                      ['kind', 'complete', 'native_checks', 'full_acceptance', 'seconds', 'error']}))
     raise SystemExit(0 if result['complete'] else 1)

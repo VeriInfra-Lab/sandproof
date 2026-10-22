@@ -121,6 +121,23 @@
 未刷新原 `frozen.json` 或共享输入摘要，也未完成共享模块登记和整套验收。
 仓库保留的旧生成物仍属原冻结版本；上述新候选的对应检查以局部入口的新生成环境为准。
 
+在全文相等扩展之上，[ValidationModel](../SandboxModel/Lifecycle/Protocol/ValidationModel.lean)
+独立规定纯请求守卫的接受条件和六类首错，仅读取生成类型，不导入生成函数。
+Create 复用原 `Foundations.CreatePlan.valid`；[Validation](../SandboxModel/Lifecycle/Protocol/Validation.lean)
+的 12 项审计连接本次真实生成体，证明完整返回值、成功充要条件、每种首错充要条件和总返回。
+版本→完整节点→deployment→期望类别→操作形状的优先级保持；Create 包括资源正值、单实例、
+非空且至多 65536 字节的 options、期限关系与 checked_add 不溢出，Resume 要求严格更大目标代。
+[ValidationExamples](../SandboxModel/Lifecycle/Protocol/ValidationExamples.lean) 另给出四种操作的正常接受见证。
+
+本扩展仍使用 `1c5a085c` 的同一生产 Rust，未增加协议功能；实际 same-incarnation Rust 变体
+把 `<=` 改成 `<`，错误接受同代请求，两个形式反例目标明确否定同一个 `FullValidationContract`。
+局部入口的 `--property validation` 从当前源码重新抽取两版，检查 31 份实际文件、33 项审计，
+其中 15 项是本证明直接复用的全文相等辅助/定理，新增正确版 16 项、错误版 2 项；
+原默认 replay 模式也重新验证。实际结果以精确输入回执为准，不把重复审计计为新增覆盖。
+此结论只刻画已解码、已表示值上的纯守卫，不证明角色构造器/serde、认证 owner、
+账本期望版本确实成立、模板/options 可信装配、资源预留或任何 VM 动作已获授权。
+宁侧普通与原生错误版回执、共享冻结迁移/登记及完整验收的缺口仍保持；未刷新旧摘要。
+
 Request 的两个、Manifest 的七个外部函数按[逐符号 A6 登记](formal/dependencies.md)使用。
 新增 `str::as_bytes = .ok value` 要求有效 Rust str 在原借用内提供完整原序只读 UTF-8 字节；
 标准库与模型符合仍是显式条件，不是库实现已证。正常分配/普通值限制保留；
