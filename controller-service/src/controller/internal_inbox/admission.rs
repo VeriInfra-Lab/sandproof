@@ -197,13 +197,14 @@ pub(in crate::controller) fn checked_binding_options(
 impl InternalAdmission {
     /// The original pure binding checks, before a numeric physical-capacity
     /// veto may become definitive. No mapping, allocation or host I/O occurs.
-    pub(crate) fn validate_attachment(
+    pub(crate) fn validate_create_binding(
         &self,
-        request: &LifecycleRequest,
+        binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
+        owner: &sandproof_protocol::TenantId,
     ) -> Result<(), AdmissionError> {
-        validate_template_and_time(request, self)?;
-        validate_owner(request, &self.template)?;
-        checked_options(request)?;
+        validate_binding_and_time(binding, self)?;
+        validate_owner_id(owner, &self.template)?;
+        checked_binding_options(binding)?;
         Ok(())
     }
 }

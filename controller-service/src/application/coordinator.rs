@@ -45,6 +45,7 @@ mod internal_health;
 mod internal_lifecycle;
 mod internal_validation;
 mod lifecycle;
+mod lifecycle_intent;
 mod maintenance;
 mod physical_storage;
 pub(super) mod recovery;

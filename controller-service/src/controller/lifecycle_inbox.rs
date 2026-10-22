@@ -36,6 +36,19 @@ fn authenticated(
 }
 
 impl ControllerJournal {
+    pub(crate) fn startup_epoch_ready(&self) -> Result<bool, JournalError> {
+        self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        let ready = codec::load(&tx)?.is_none_or(|inbox| {
+            self.active_host_epoch.is_some()
+                && self.active_host_epoch.as_ref() == inbox.host_epoch_observation.as_ref()
+        });
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(ready)
+    }
+
     /// Saved protected configuration; no provisioning or permission is inferred.
     /// # Errors
     /// Changed writers and missing/corrupt feature tables fail closed.
