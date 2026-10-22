@@ -392,10 +392,9 @@ pub fn begin_kill(
     for (key, stored) in world.operation_plans.entries() {
         if key.sandbox == sandbox && stored.capture.is_some() {
             let mut plan = stored.clone();
-            plan.capture = match plan.capture {
-                Some(capture) => Some(capture.terminate()),
-                None => None,
-            };
+            if let Some(capture) = plan.capture {
+                plan.capture = Some(capture.terminate());
+            }
             next.operation_plans.put(*key, plan);
         }
     }
@@ -463,10 +462,9 @@ pub fn begin_compensation(
         }
         if let Some(stored) = next.operation_plans.get(&key) {
             let mut plan = stored.clone();
-            plan.capture = match plan.capture {
-                Some(capture) => Some(capture.ordinary_failure()),
-                None => None,
-            };
+            if let Some(capture) = plan.capture {
+                plan.capture = Some(capture.ordinary_failure());
+            }
             next.operation_plans.put(key, plan);
         }
         return next;

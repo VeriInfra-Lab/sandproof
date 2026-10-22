@@ -309,10 +309,9 @@ pub fn dispatch_effect(world: &World, id: EffectId) -> World {
             && crate::transition::current_capture(world, sandbox, record).is_some()
         {
             let mut plan = stored.clone();
-            plan.capture = match plan.capture {
-                Some(capture) => Some(capture.registration_dispatched()),
-                None => None,
-            };
+            if let Some(capture) = plan.capture {
+                plan.capture = Some(capture.registration_dispatched());
+            }
             next.operation_plans.put(key, plan);
         }
     }
