@@ -22,13 +22,54 @@
 
 本次文档内容涉及旧证明输入清单中的文档文件。保留原冻结摘要作为旧证据；新候选的冻结一致性/全套证明需要后续按工作流重新验收，本次未声称新输入已通过证明。不得只更新哈希消除该差异。
 
-### 新 v3 字段接口：组件检查通过，对应证明仍在推进
+### 新 v3 同步协议：真实生成体的局部性质与边界
 
-[草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的首个字段提交 `cd854d748e0c2aa6241413f1f43d8ea4420ffa18` 新增 [lifecycle](../sandbox-protocol/src/lifecycle.rs) 角色类型、完整操作键/请求、内容摘要和 profile 全文件 manifest 的真实同步校验。未启用新路由、持久收件或驱动。旧 v2 保留，不把原身份/JSON 定理自动升级为这些新函数的对应证明。
+[草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的生产 Rust 适用
+`584e155163f641582e93f5d94538329e257c74f8`。相对首个字段提交，循环/借用写法作保持首错和短路的小拆分，
+新增未启用的 [v3 codec](../sandbox-internal/src/lifecycle_v3.rs)；仍没有新 HTTP 路由、持久收件或驱动。
+旧 v2 保留。源码审查和对照测试不是旧新实现的一般等价证明。
 
-该精确字段提交在普通测试环境通过协议全包 55 项测试、格式和严格 Clippy，源码与原始日志摘要逐项核对。它是自定义首轮组件记录，不是正式 proof-native 封口；原首轮没有采集完整 rustc/Clippy 指纹，不能事后倒填。真实抽取、正负对应证明、字节/有界输出接线、新增边界用例、共享冻结与完整验收分别继续推进，准确候选和结果见本批 PR；后续改动不沿用这 55 项结论。
+[独立 Model](../SandboxModel/Lifecycle/Protocol/Model.lean) 不导入被检查的生成 Funs。
+三个真实生成视图、原完整 LLBC、准确输入/导入闭包和检查器由
+[模块冻结](../verification/experiments/stage1-protocol/frozen.json)绑定；生成 Lean 未手改。
+局部性质及其限制如下，精确候选的实际组件结果、耗时与失败记录见本批 PR，不以本表代替验收回执。
 
-固定 serde/标准派生仍为 A6 条件，实际输入/字段/Writer 绑定按 B4 登记；自有版本、完整请求/manifest 比较、代次和限额分支不整体列可信。原 capture 操作、当前 Resume 键、认证 owner、实际兼容 profile、文件原句柄/哈希/同步、claim/pin 和激活资格须由各自调用方提供。最多 16 盘仅本接口的 profile 预算，32 字节摘要值本身不证明内容已校验。新 snapshot/操作结果和全链路均未据本组件完成闭合。
+| 文件与声明组 | 对应范围 | 不能推广为 |
+|---|---|---|
+| Carriers，6 项 | CaptureId 的全 U64 构造/get、零拒绝、一个正常接受、最大值耗尽；任意 32 字节摘要值完整往返 | 其它角色构造已逐项接通、任意非最大 checked_next 已证、摘要已计算或文件已校验 |
+| Request，5 项 | 任意错误版本首拒绝；其余绑定字段固定合法时任意 source/target 的严格顺序；capture 1/2 的完整请求重放 pair | 任意两请求全文等价、所有请求守卫的充要条件、认证/账本或窗口合法 |
+| LoopWitness，6 项；ManifestWitnesses，17 项 | 原生成循环/checked 算术与一个路径/profile/完整文件集见证 | 任意文件集合、所有路径或循环业务都正确 |
+| Manifest，4 项 | 任意错误格式版本首拒绝；原 capture 的 sequence 改变时先拒绝，不依赖其它 profile/文件合法；一盘完整清单接受且总长 3；同一 capture pair 合同 | 实际捕获、完整 profile 合法域、兼容性、持久发布或恢复资格 |
+
+正常 manifest 见证使用可表示路径 `r`、一个 rootfs drive、state/memory/disk 三个文件各长 1、
+32 字节零摘要；这是合法同步守卫输入，不是可恢复的物理快照。
+
+三个真实 Rust 错误版分别允许同代 Resume、只比较操作 key、跳过原 capture 绑定。
+正确版与错误版使用同一个独立 Model 合同，分别给出错误接受见证和合同否定；
+编译/导入失败不能作为反例。第三种修改使原工具生成 loop0/loop1：
+绑定不匹配的实际分支调用 loop0，私有辅助证明只更换六处真实 helper 引用，
+不改错误 Rust、生成实现或 Model；原/新证明摘要随组件记录保存。
+每个错误版有两项反例目标，manifest 视图还保留原 23 项辅助目标，不能因公共根未导入而省略。
+
+生产字段/codec 的原普通组件记录包含 88 项测试（无失败/忽略，20.519539 秒），
+三份错误 Rust 实际新编译后均被原测试同一断言拒绝（6.387291 秒）。
+这些原始记录按精确 Rust/测试输入核对，不能替代新候选的脚本检查、形式组件或完整共享验收。
+[复现入口](../verification/experiments/stage1-protocol/README.md)保留原工具重新生成、
+完整 IR/生成物比较、所有实际文件内核/原服务诊断、准确审计和真实错误版；
+源码恢复、单次 run_code 或裸 success 标记均不能代替该入口。
+
+Request 的两个、Manifest 的七个外部函数按[逐符号 A6 登记](formal/dependencies.md)使用。
+新增 `str::as_bytes = .ok value` 要求有效 Rust str 在原借用内提供完整原序只读 UTF-8 字节；
+标准库与模型符合仍是显式条件，不是库实现已证。正常分配/普通值限制保留；
+OOM/abort、资源 Drop、unwind 和 async shell 未覆盖。
+
+新 codec 的实际 serde_json/有界 Writer 调用及自有预算/首错顺序已有普通测试，
+其完整生成体/字节接线尚未由本组件证明，不把整段自有代码设为 B4。
+认证 owner、原 capture 操作、当前 Resume 键、账本版本和受保护 profile、
+原句柄/哈希/截面/同步、claim/pin/激活资格仍由各实际业务提供。
+三个生成环境按既有独立审计模式检查；公共消费者只导入纯 Model，
+没有同时导入全部生成类型，也没有接通本批的完整共享验收。
+T1/T2/V0、完整 V3 及系统闭环均未因此闭合。
 
 ## 三项公共组件的组合范围：#626、#628、#630
 

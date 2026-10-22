@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.RequestValues
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.Request
+theorem mutant_accepts_same_incarnation : runResume 1#u64 1#u64 = .ok (.Ok ()) := by
+  simp [runResume, resume, node, binding, request_validate,
+    sandproof_protocol.lifecycle.request.LifecycleRequest.validate,
+    sandproof_protocol.lifecycle.PROTOCOL_VERSION,
+    sandproof_protocol.lifecycle.identity.IncarnationId.get,
+    sandproof_protocol.internal.PositiveCounter.get,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+theorem mutant_not_resume_order :
+    ¬ ResumeOrderContract sandproof_protocol.lifecycle.request.ValidationError.InvalidIncarnation
+      runResume := by
+  intro contract
+  have refused := contract 1#u64 1#u64
+  rw [mutant_accepts_same_incarnation] at refused
+  simp at refused
+end SandboxModel.Stage1Protocol.Request
+#audit_controller_proof SandboxModel.Stage1Protocol.Request.mutant_accepts_same_incarnation
+#audit_controller_proof SandboxModel.Stage1Protocol.Request.mutant_not_resume_order

@@ -303,6 +303,29 @@ bash scripts/python-entry.sh tools/v0_use_inventory.py query artifacts/use-censu
 
 V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议规范编号解析与中心实际包装；不是将这些自有行为作为外部假设。中心恢复中完整 `CenterState::is_valid`、存储身份恢复、JSON 自有字段访问及全部调用资格仍分别属于未闭合连接。Serde/serde_json 的整套编解码不纳入本合同：将 `from_slice/to_vec<ControlIdentity>` 整体设成不透明，即使翻译成功也不能计作自有字段往返已证。
 
+### A6 v3 同步协议的字符串与完整字节视图
+
+本登记限 [v3 的三组实际抽取根](../../verification/experiments/stage1-protocol/src/lib.rs)。
+Carriers 没有新增外部函数；Request 只使用完整 String 相等和 Vec::is_empty；
+Manifest 的准确七项为 String::eq/deref、Vec::is_empty、str::len/is_empty/as_bytes、
+str::to_owned。自有请求、路径/profile、文件名/数量/总长和 capture 绑定检查保留真实生成体，
+不能把这些决定作为库假设。精确原始 IR、外部清单、完整导入和源摘要在
+[模块冻结](../../verification/experiments/stage1-protocol/frozen.json)检查。
+
+除 as_bytes 外，命名适配只转发已有固定 A6 字符串/容器模型与原内核检查的字面量构造。
+新增的 `str::as_bytes` 表示连接要求：输入是有效、有限且长度可表示的原 Rust str；
+在原借用有效期内返回完整 UTF-8 字节的只读视图，保持长度、内容和次序，不做有损解码、
+规范化或截断。后端 Str 本来用同一 Slice 表示，所以可计算模型是 `.ok value`；
+**模型与固定 Rust 原语符合仍是显式 A6 条件**，无公理审计不能把它变成标准库实现证明。
+该普通值视图不携带 FD/许可，不授权延长借用、修改原字节或擦除可观察 Drop。
+
+普通分配成功、panic/abort 与工具链信任沿原 A6/Aeneas 范围；不增加“库永不失败”保证。
+32 字节 ContentDigest 构造仅保存值，不执行哈希。原受保护 profile、文件句柄/内容摘要、
+捕获截面、同步发布及恢复资格仍由 V6/V5 提供，路径文本合法不等于文件系统路径安全。
+新 codec 的 serde/Writer 调用及预算/首错顺序尚未由本组件证明；既有 A6/B4 和 Writer 结果
+只能在实际 schema/原对象/输入/限额连接完成后使用，不能整体信任自有 codec。
+依赖、生成体或上述表示条件变化时，使本模块及实际调用者对应结论失效并重查。
+
 ### A6 JSON 非零计数器叶子接口
 
 这组根并入原 V0 抽取，与已有身份/数值共享同一份生成 Rust 类型；实现对应和原公共定理可以在同一 Lean 环境组合，不维护第二份同名类型。
