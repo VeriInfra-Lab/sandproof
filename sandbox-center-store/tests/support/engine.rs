@@ -18,6 +18,15 @@ pub(crate) const MEMORY: u64 = 64 << 20;
 pub(crate) const KEY: &str = "sandproof:authority:fixture-deployment";
 const PASSWORD: &str = "component-fixture-not-a-production-credential";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FixtureIdentityError {
+    MissingChild,
+    ChildExited,
+    ObservationUnavailable,
+    UnknownProcess,
+    WrongProcess { expected: u32, observed: u32 },
+}
+
 pub(crate) fn deployment() -> DeploymentId {
     "fixture-deployment".try_into().unwrap()
 }
@@ -116,12 +125,7 @@ impl Engine {
                 // Synthetic fixture logs only, bounded before TempDir cleanup.
                 // Keep the actual startup cause; never retry an unknown engine
                 // or mistake a different process's open port for readiness.
-                let mut diagnostic = String::new();
-                fs::File::open(self.root.path().join("redis.log"))
-                    .unwrap()
-                    .take(4096)
-                    .read_to_string(&mut diagnostic)
-                    .unwrap();
+                let diagnostic = self.startup_diagnostic();
                 panic!("fixture Redis exited before ready ({status}): {diagnostic}");
             }
             if let Ok(stream) =
@@ -140,6 +144,10 @@ impl Engine {
                 // readiness under the fixture deadline, not just an open port.
                 if matches!(redis::cmd("PING").query::<String>(&mut connection), Ok(reply) if reply == "PONG")
                 {
+                    if let Err(error) = self.verify_ready_identity(&mut connection) {
+                        let diagnostic = self.startup_diagnostic();
+                        panic!("fixture Redis identity not verified ({error:?}): {diagnostic}");
+                    }
                     break;
                 }
             }
@@ -149,6 +157,69 @@ impl Engine {
             );
             thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    fn startup_diagnostic(&self) -> String {
+        let mut diagnostic = String::new();
+        fs::File::open(self.root.path().join("redis.log"))
+            .unwrap()
+            .take(4096)
+            .read_to_string(&mut diagnostic)
+            .unwrap();
+        diagnostic
+    }
+
+    /// A PONG/fixture password does not select the original child process.
+    /// Both process observations are independent of the server's INFO value.
+    /// # Errors
+    /// Unknown/mismatched identity or an exited child cannot become readiness.
+    pub(crate) fn verify_ready_identity(
+        &mut self,
+        connection: &mut Connection,
+    ) -> Result<(), FixtureIdentityError> {
+        let child = self
+            .child
+            .as_mut()
+            .ok_or(FixtureIdentityError::MissingChild)?;
+        let expected = child.id();
+        if child
+            .try_wait()
+            .map_err(|_| FixtureIdentityError::ObservationUnavailable)?
+            .is_some()
+        {
+            return Err(FixtureIdentityError::ChildExited);
+        }
+        let info: String = redis::cmd("INFO")
+            .arg("server")
+            .query(connection)
+            .map_err(|_| FixtureIdentityError::ObservationUnavailable)?;
+        let mut observed = None;
+        for line in info.lines() {
+            if let Some(value) = line.strip_prefix("process_id:") {
+                if observed.is_some() {
+                    return Err(FixtureIdentityError::UnknownProcess);
+                }
+                let pid = value
+                    .parse::<u32>()
+                    .map_err(|_| FixtureIdentityError::UnknownProcess)?;
+                if pid == 0 {
+                    return Err(FixtureIdentityError::UnknownProcess);
+                }
+                observed = Some(pid);
+            }
+        }
+        let observed = observed.ok_or(FixtureIdentityError::UnknownProcess)?;
+        if observed != expected {
+            return Err(FixtureIdentityError::WrongProcess { expected, observed });
+        }
+        if child
+            .try_wait()
+            .map_err(|_| FixtureIdentityError::ObservationUnavailable)?
+            .is_some()
+        {
+            return Err(FixtureIdentityError::ChildExited);
+        }
+        Ok(())
     }
     pub(crate) fn stop(&mut self) {
         if let Some(mut child) = self.child.take() {
