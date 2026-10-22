@@ -68,6 +68,12 @@
 
 本批普通回归覆盖真实字段保留、旧字节往返、错误 command/独立 resource、非法 boot 和原 claim 的 boot 不同不得选中当前同 PID 的进程；整个进程记录/系统调用/回执/SQLite 的机器对应仍是后续义务，不把字段测试记成整个来源链证明。
 
+### 捕获前原配置的只读事实
+
+`Runtime::observe_original_configuration` 在已接受的原只读工作及关闭新准入条件下，沿原 PID/start/boot、claim、jail/cgroup 和保留目录 FD 读取。它只发送 GET，核对固定工具的原 instance、两次配置字节一致，并测量实际执行 inode 与原私有内核副本的字节摘要，观察原可写盘长度；前后仍须是同一来源。进程、文件、回复或上界不能确认时返回未决；错误不会 Pause、Full、Stop、创建或删除材料。返回类型私有构造，但只代表读取时的事实。
+
+该输出不验证完整设备 JSON、不认证 CPU/初始镜像兼容，也不授予捕获或停止许可。节点仍须与第一次 V3 Create 前的受保护 epoch、原 CreateOptions/template 和同一实际 BootPlan 对照；缺少事实不得填默认值。原可写盘仍在变化，当前长度不替代后续连续暂停区间内的完整测量。V5 接受回传后须重核原工作/版本并在原事务保存，同一责任接管成功后才发物理捕获许可；不在 SQL 事务内等待文件或 API I/O。manager 重启不能仅凭历史 epoch 观察继续启动，须重新核对当前受保护部署。当前只读组件不代表这些连接已经实现或证明。
+
 ### 原来源绑定的停止与退出观察
 
 `Runtime::stop_original_vm(resource_id, expected_source)` 只读取一次原 claim，要求独立调用方保存的 PID、启动 ticks、boot 与原 claim 完全一致，并要求当前宿主 boot 仍相同，再按该已核记录取得 pidfd、发送 TERM/KILL 和等待退出。不再调用会重新读取当前记录的通用 stop 接口；当前同名 claim 被替换、旧来源字段缺失、宿主 boot 变化或读取失败均保持未决。该方法只实现物理停止，V5 必须先确认原材料接管和原 Stop 工作提交，并持有原操作准入/助手排空条件，不能从可调用性推导允许停止。
