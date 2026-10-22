@@ -21,6 +21,7 @@ pub mod publication;
 pub mod recovery_monitor;
 pub mod request;
 pub mod scheduler;
+pub mod source_observation;
 pub mod store;
 pub mod terminal;
 pub(crate) mod transition;

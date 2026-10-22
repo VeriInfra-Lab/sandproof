@@ -84,7 +84,8 @@ pub struct CreateAdmission {
     pub options: CreateOptions,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Lifetime {
     /// `None` before successful startup is published.
     pub started_at_ms: Option<i64>,

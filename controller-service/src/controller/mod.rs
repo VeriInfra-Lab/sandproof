@@ -29,7 +29,11 @@ pub use internal_inbox::{
     InternalInboxConfig, InternalLocalBinding, InternalNativeAudit, InternalRetentionLane,
     InternalTemplate, InternalWorkState,
 };
-pub use lifecycle_inbox::{LifecycleInboxConfig, LifecycleWorkState};
+pub use lifecycle_inbox::{
+    CreateReadiness, CreateReadinessPending, LifecycleCreateObservation, LifecycleInboxConfig,
+    LifecycleReadyBasis, LifecycleReadyObservation, LifecycleWorkState, NativeCreateSnapshot,
+    SourceWork, SourceWorkRecord,
+};
 mod private_build;
 mod registry;
 mod storage;
