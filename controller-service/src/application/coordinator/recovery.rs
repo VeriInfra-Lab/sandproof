@@ -433,12 +433,14 @@ pub(super) fn bind_recovery_slots<H: HostSlots>(
     host: &mut H,
     world: &core::World,
     selected: Option<core::SandboxId>,
+    prior_blocked: &BTreeSet<core::SandboxId>,
     first_fault: &mut Option<FaultRecord>,
 ) -> Result<BTreeSet<core::SandboxId>, ApplicationError> {
     let mut blocked = BTreeSet::new();
     for (context, phase) in journal.host_slot_inventory().map_err(map_journal)? {
         if phase != core::maintenance::slots::HostSlotPhase::Occupied
             || selected.is_some_and(|id| id != context.binding.sandbox)
+            || prior_blocked.contains(&context.binding.sandbox)
         {
             continue;
         }
@@ -558,6 +560,24 @@ pub(super) fn release_reclaimed_slots<H: ControllerHost>(
 // Recovery is serialized by ControllerApplication's mutex. The optional sandbox filter
 // lets a repeated kill observe and finish its *existing* operation without
 // changing unrelated instances. It never accepts a second lifecycle input.
+fn epoch_blocked_startups(
+    journal: &ControllerJournal,
+    world: &core::World,
+    selected: Option<core::SandboxId>,
+) -> Result<BTreeSet<core::SandboxId>, ApplicationError> {
+    if journal.startup_epoch_ready().map_err(map_journal)? {
+        return Ok(BTreeSet::new());
+    }
+    Ok(world
+        .sandbox_records()
+        .iter()
+        .filter_map(|(sandbox, record)| {
+            (record.phase == core::Phase::Starting && selected.is_none_or(|id| id == *sandbox))
+                .then_some(*sandbox)
+        })
+        .collect())
+}
+
 pub(super) fn recover_locked<H: ControllerHost>(
     inner: &mut Inner<H>,
     selected: Option<core::SandboxId>,
@@ -578,7 +598,18 @@ pub(super) fn recover_locked<H: ControllerHost>(
     // each completed workflow while holding the management/data admission lock.
     let reclaimed = reclaimed_sandboxes(&initial);
     let mut first_fault = None;
-    let mut blocked = bind_recovery_slots(journal, host, &initial, selected, &mut first_fault)?;
+    // Missing fresh V3 bootstrap cannot be bypassed by reclaiming an already
+    // dispatched activation. Terminal/cleanup responsibility remains eligible.
+    let epoch_blocked = epoch_blocked_startups(journal, &initial, selected)?;
+    let mut blocked = bind_recovery_slots(
+        journal,
+        host,
+        &initial,
+        selected,
+        &epoch_blocked,
+        &mut first_fault,
+    )?;
+    blocked.extend(epoch_blocked.iter().copied());
     let launch_blocked = blocked_launch_configs(
         journal,
         host,
@@ -660,7 +691,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
         unresolved.insert(action.command.command().sandbox());
     }
     report.unresolved_sandboxes = unresolved.len();
-    report.failed_sandboxes = blocked.len();
+    report.failed_sandboxes = blocked.difference(&epoch_blocked).count();
     Ok(report)
 }
 

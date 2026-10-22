@@ -187,6 +187,17 @@ pub trait DataRelay {
 
 /// Observe deployment storage and network readiness before admission.
 pub trait HostCapacity {
+    /// Read the original protected registration and actual current host. This
+    /// runs outside any SQL transaction; echoed fields are not an observation.
+    /// # Errors
+    /// Missing/unverifiable payload or changed host must fail closed.
+    fn observe_host_epoch(
+        &self,
+        _requirement: &crate::capture::HostEpochRequirement,
+    ) -> Result<crate::capture::HostEpochObservation, WorkerTransportError> {
+        Err(WorkerTransportError::ConnectionLost)
+    }
+
     /// # Errors
     /// Rejects an unavailable physical disk observation.
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError>;

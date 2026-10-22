@@ -1,9 +1,9 @@
 //! Lifecycle commands and queries, separate from template publication.
 use super::{
-    AdmissionError, ApplicationError, ConnectCommand, ControllerApplication, ControllerHost,
-    CreateAdmission, CreateCommand, CreateOptions, ExpiryReport, FaultContext, FaultRecord,
-    FaultStage, Inner, InstanceDetail, InstanceInfo, InstancePage, JournalError, ListSelection,
-    NeverCrash, Session, core, data_credentials, finish_accepted_kill_v1,
+    AdmissionError, ApplicationError, BTreeSet, ConnectCommand, ControllerApplication,
+    ControllerHost, CreateAdmission, CreateCommand, CreateOptions, ExpiryReport, FaultContext,
+    FaultRecord, FaultStage, Inner, InstanceDetail, InstanceInfo, InstancePage, JournalError,
+    ListSelection, NeverCrash, Session, core, data_credentials, finish_accepted_kill_v1,
     finish_admitted_create_v1_timed, map_admission, map_journal, map_unknown_application,
     map_unknown_journal, next_operation, next_sandbox, recover_locked, release_reclaimed_slots,
     sandbox_id, tenant_id, token,
@@ -250,8 +250,15 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let world = journal
             .world()
             .map_err(|error| map_unknown_journal(error, FaultStage::AcceptedState, context))?;
-        if super::recovery::bind_recovery_slots(journal, host, &world, Some(sandbox), &mut None)?
-            .contains(&sandbox)
+        if super::recovery::bind_recovery_slots(
+            journal,
+            host,
+            &world,
+            Some(sandbox),
+            &BTreeSet::new(),
+            &mut None,
+        )?
+        .contains(&sandbox)
         {
             return Err(ApplicationError::OutcomeUnknown);
         }

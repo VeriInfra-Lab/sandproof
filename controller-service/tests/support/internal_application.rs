@@ -41,6 +41,14 @@ impl Clock for TestClock {
         Ok(self.0.load(Ordering::SeqCst))
     }
 }
+#[derive(Clone, Copy, Debug, Default)]
+pub enum TestEpoch {
+    #[default]
+    Unavailable,
+    Matching,
+    WrongBoot,
+}
+
 #[derive(Default)]
 pub struct State {
     pub actions: Vec<WorkAction<core::EffectId>>,
@@ -52,6 +60,9 @@ pub struct State {
     pub template_error: Option<ApplicationError>,
     pub template_checks: usize,
     pub cached_verifications: usize,
+    pub epoch: TestEpoch,
+    pub epoch_checks: usize,
+    pub recovery_observations: usize,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -82,9 +93,9 @@ impl WorkExecution for TestHost {
 }
 impl WorkRecovery for TestHost {
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
-        self.0
-            .lock()
-            .unwrap()
+        let mut state = self.0.lock().unwrap();
+        state.recovery_observations += 1;
+        state
             .actions
             .contains(action)
             .then(|| workflow::success(action))
@@ -136,6 +147,29 @@ impl DataRelay for TestHost {
     }
 }
 impl HostCapacity for TestHost {
+    fn observe_host_epoch(
+        &self,
+        requirement: &sandproof_controller_service::capture::HostEpochRequirement,
+    ) -> Result<sandproof_controller_service::capture::HostEpochObservation, WorkerTransportError>
+    {
+        let mut state = self.0.lock().unwrap();
+        state.epoch_checks += 1;
+        if matches!(state.epoch, TestEpoch::Unavailable) {
+            return Err(WorkerTransportError::ConnectionLost);
+        }
+        // Explicit component boundary fact only, never production attestation.
+        let mut registration = requirement.registration().clone();
+        if matches!(state.epoch, TestEpoch::WrongBoot) {
+            registration.boot_id = "wrong-boot".into();
+        }
+        Ok(
+            sandproof_controller_service::capture::HostEpochObservation {
+                node: requirement.node().clone(),
+                registration,
+            },
+        )
+    }
+
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
         Ok(self.0.lock().unwrap().disk_available.unwrap_or(u64::MAX))
     }
