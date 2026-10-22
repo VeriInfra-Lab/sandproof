@@ -1,0 +1,57 @@
+{
+  "policy_source_sha256": "3145e9a2823705170b9fa17b96120d2a63c9dc79a7bc6e6e25dbca9311466f07",
+  "variants": {
+    "correct": {
+      "policy_sha256": "3145e9a2823705170b9fa17b96120d2a63c9dc79a7bc6e6e25dbca9311466f07",
+      "llbc_sha256": "8dfdb63c70b343e84289820ec8bbd9819f2d72e30aeb991cd9741da7fe92eca1",
+      "declaration_sha256": "dd51867b3638d5a60695590addea548c329c7508fc9dce6fe5d877f7e7150fe8",
+      "generated": {
+        "SandproofSnapshotPolicy/Funs.lean": "ad9f0f8afde50f9e9e41504dbc8247300c16c33f24c37dc258f6c193f9d62026",
+        "SandproofSnapshotPolicy/Types.lean": "2da4c7c1a59f87071854da07eae673618a7be52d3d2c6c518c98aa44175d1c9c",
+        "translation.json": "4b4476f0acd527d01616d478b5344e73b08157743fd22a371df45100e2526a71"
+      }
+    },
+    "allow-two-links": {
+      "policy_sha256": "cc9d25b6dc845726254b9f9e831c4dc3779602436c2ba904ecafe67a521361ec",
+      "llbc_sha256": "dea0a932d8628eb8f0f0fc8511148051eb00dabc371984f2b82060d6c0265d89",
+      "declaration_sha256": "8f3f3484127be5f426d935f1b6011c070fedd5e22ab3ac7bdf1ed0f8199332d7",
+      "generated": {
+        "SandproofSnapshotPolicyBad/Funs.lean": "932d187eab00aae715ccd6f640154ecd815b3f7366d79293648b2f6114ff44e9",
+        "SandproofSnapshotPolicyBad/Types.lean": "b544688dfbda076240b39e778dab652c99132b109031208d317d3d1c310a72a3",
+        "translation.json": "868784027367c4c7411368ad5cf0a60fa5b0572681bce3ff62e3a2b2fcb4139a"
+      }
+    }
+  },
+  "proof_trial_sha256": "63ed5b675f0da614ba539899ec7d70c37a2ae611e1f4691f0de2cc940ff67e5e",
+  "audits": [
+    "Checked SandboxModel.HostSnapshot.FilePolicy.source_ok_iff: 3 standard logical dependencies",
+    "Checked SandboxModel.HostSnapshot.FilePolicy.source_acceptance_safe: 3 standard logical dependencies",
+    "Checked SandboxModel.HostSnapshot.FilePolicy.source_rejects_extra_links: 3 standard logical dependencies",
+    "Checked SandboxModel.HostSnapshot.FilePolicy.source_nonempty: 3 standard logical dependencies",
+    "Checked SandboxModel.HostSnapshot.FilePolicy.mutant_accepts_two_links: 3 standard logical dependencies",
+    "Checked SandboxModel.HostSnapshot.FilePolicy.mutant_not_acceptance_safe: 3 standard logical dependencies"
+  ],
+  "crate_lib_source_sha256": "8349c5bca2999ef30fbc64b027422e9f6b871d18bdc018c5129f5e1ad0736785",
+  "reviewed_metadata_refresh": {
+    "reason": "adopt actual lib.rs SnapshotLayout export; fix driver to project-relative destination; declarations and all Lean/name-map outputs unchanged",
+    "variants": {
+      "correct": {
+        "previous_ir_sha256": "b12fb0b40cc1fc7e4ea462a4fa708336d45f24282d2a8c80c0daab1847eba92e",
+        "fresh_ir_sha256": "923ff45c0eb431aae77453bc7e125b6dbbbfd729c24d18ce87591b6e186da3e0",
+        "changed_paths": [
+          "/translated/options/dest_file",
+          "/translated/files/0/contents"
+        ]
+      },
+      "allow-two-links": {
+        "previous_ir_sha256": "ef90e7f4040bffbed4c2990c0dff54bd21cf0b6babde2bd8616707c8bc822d12",
+        "fresh_ir_sha256": "dcb169792638b2d566d3c2ad7eac3b1f53dbd37a096fc9b11f16bc00574b730f",
+        "changed_paths": [
+          "/translated/options/dest_file",
+          "/translated/files/0/contents"
+        ]
+      }
+    }
+  },
+  "artifact_destination": "../raw/actual.llbc"
+}

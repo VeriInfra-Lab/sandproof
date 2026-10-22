@@ -112,6 +112,7 @@ impl LinuxWorker {
                 ObservedResult::Prepared {
                     pid: observation.pid,
                     start_ticks: observation.start_time_ticks,
+                    boot_id: self.source_boot_id(*sandbox, *vm, &observation)?,
                 }
             }
             core::Command::AbortPrepare {
@@ -187,6 +188,7 @@ impl LinuxWorker {
                 ObservedResult::Activated {
                     pid: after.pid,
                     start_ticks: after.start_time_ticks,
+                    boot_id: self.source_boot_id(*sandbox, *vm, &after)?,
                 }
             }
             core::Command::StopVm {

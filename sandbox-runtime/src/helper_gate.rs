@@ -83,7 +83,10 @@ impl RuntimeProcessIdentity {
             .is_some_and(|process| process.start_time_ticks == self.start_time_ticks))
     }
 
-    fn validate_fields(&self) -> Result<(), RuntimeError> {
+    /// Validate representation only; this does not observe or authorize a task.
+    /// # Errors
+    /// Rejects invalid PID/start fields and noncanonical host boot identities.
+    pub fn validate_fields(&self) -> Result<(), RuntimeError> {
         if self.pid == 0
             || self.pid > i32::MAX as u32
             || self.start_time_ticks == 0
@@ -108,7 +111,7 @@ fn valid_boot_id(value: &str) -> bool {
         })
 }
 
-fn boot_id() -> Result<String, RuntimeError> {
+pub(super) fn boot_id() -> Result<String, RuntimeError> {
     let value = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
     let value = value.trim();
     if !valid_boot_id(value) {

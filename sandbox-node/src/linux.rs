@@ -38,6 +38,7 @@ mod inventory;
 mod observation;
 mod readonly;
 mod recovery;
+mod source_process;
 use decisions::fence_can_advance;
 pub use readonly::LinuxObservation;
 #[path = "host_lease.rs"]
@@ -157,11 +158,28 @@ struct Fence {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum ObservedResult {
     Fence(Fence),
-    Prepared { pid: u32, start_ticks: u64 },
-    Network { namespace_inode: u64 },
-    Activated { pid: u32, start_ticks: u64 },
-    FilePolicy { disk_inode: u64 },
-    Stopped { pid: u32, start_ticks: u64 },
+    Prepared {
+        pid: u32,
+        start_ticks: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        boot_id: Option<String>,
+    },
+    Network {
+        namespace_inode: u64,
+    },
+    Activated {
+        pid: u32,
+        start_ticks: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        boot_id: Option<String>,
+    },
+    FilePolicy {
+        disk_inode: u64,
+    },
+    Stopped {
+        pid: u32,
+        start_ticks: u64,
+    },
     PrepareAborted,
     VmCleaned,
     SlotClosed,
@@ -186,6 +204,21 @@ impl ResourceEvidence for HostObservation {
 impl HostEvidence for HostObservation {
     fn validates(&self, command: &core::Command) -> bool {
         decisions::evidence_matches(self, command)
+    }
+
+    fn source_process_identity(
+        &self,
+        command: &core::Command,
+        expected_resource: &ResourceRef,
+    ) -> Option<sandproof_controller_service::capture::SourceProcessIdentity> {
+        self.recorded_source_identity(command, expected_resource)
+            .map(
+                |source| sandproof_controller_service::capture::SourceProcessIdentity {
+                    pid: source.pid,
+                    start_time_ticks: source.start_time_ticks,
+                    boot_id: source.boot_id,
+                },
+            )
     }
 }
 

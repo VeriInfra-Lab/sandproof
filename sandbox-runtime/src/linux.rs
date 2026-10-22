@@ -16,6 +16,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "boot_plan.rs"]
+mod boot_plan;
 #[path = "cgroup.rs"]
 mod cgroup;
 use crate::child_process;
@@ -25,10 +27,19 @@ pub(crate) mod helper_gate;
 mod jail;
 #[path = "observation.rs"]
 mod observation;
+#[path = "original_stop.rs"]
+mod original_stop;
 #[path = "retirement.rs"]
 mod retirement;
+#[path = "snapshot.rs"]
+mod snapshot;
+#[path = "snapshot_layout.rs"]
+mod snapshot_layout;
+pub use snapshot_layout::SnapshotLayout;
 #[path = "staging.rs"]
 mod staging;
+#[path = "uid_retirement.rs"]
+mod uid_retirement;
 pub use cgroup::HostResources;
 pub use helper_gate::MAX_HELPER_MARKER_BYTES;
 pub use helper_gate::{
@@ -38,6 +49,9 @@ pub use helper_gate::{
 pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
+pub use snapshot::{
+    CapturedFullSnapshot, FullCaptureLimits, PausedOriginalVm, PublishedFullCapture,
+};
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
 #[cfg(test)]
@@ -206,6 +220,23 @@ struct ProcessRecord {
     resource_id: String,
     pid: u32,
     start_time_ticks: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    boot_id: Option<String>,
+}
+
+impl ProcessRecord {
+    fn source_identity(&self) -> Result<Option<RuntimeProcessIdentity>, RuntimeError> {
+        let Some(boot_id) = &self.boot_id else {
+            return Ok(None);
+        };
+        let identity = RuntimeProcessIdentity {
+            pid: self.pid,
+            start_time_ticks: self.start_time_ticks,
+            boot_id: boot_id.clone(),
+        };
+        identity.validate_fields()?;
+        Ok(Some(identity))
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -459,13 +490,13 @@ impl Runtime {
             .spawn()?;
         let result = (|| {
             let pid = child.id();
-            let start_time_ticks = read_proc(pid)?
-                .ok_or(RuntimeError::Protocol("launch gate vanished"))?
-                .start_time_ticks;
+            let identity = RuntimeProcessIdentity::capture(pid)?;
+            let start_time_ticks = identity.start_time_ticks;
             let record = ProcessRecord {
                 resource_id: id.to_owned(),
                 pid,
                 start_time_ticks,
+                boot_id: Some(identity.boot_id),
             };
             self.write_new_record(&claim.join("record.json"), &record)?;
             // Directory authority must already be durable and still match
@@ -521,16 +552,9 @@ impl Runtime {
             Some(Gid::from_raw(self.config.vm_gid)),
         )
         .map_err(errno_to_io)?;
-        self.put(id, "/machine-config", &json!({ "vcpu_count": self.config.vcpu_count, "mem_size_mib": self.config.memory_mib }))?;
-        self.put(id, "/boot-source", &json!({ "kernel_image_path": "/vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1 pci=off" }))?;
-        self.put(id, "/drives/rootfs", &json!({ "drive_id": "rootfs", "path_on_host": "/rootfs.ext4", "is_root_device": true, "is_read_only": false }))?;
+        boot_plan::BootPlan::for_runtime(&self.config)
+            .configure(|path, body| self.put(id, path, body))?;
         if let Some(hash) = &self.config.access_token_hash {
-            self.put(id, "/network-interfaces/eth0", &json!({ "iface_id": "eth0", "host_dev_name": "tap0", "guest_mac": "06:00:ac:10:00:02" }))?;
-            self.put(
-                id,
-                "/mmds/config",
-                &json!({ "version": "V2", "network_interfaces": ["eth0"] }),
-            )?;
             self.put(
                 id,
                 "/mmds",
@@ -539,6 +563,29 @@ impl Runtime {
         }
         self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
         Ok(())
+    }
+
+    /// Read the boot identity already persisted before this original launch.
+    /// Old claims without it remain unavailable, never upgraded from /proc.
+    /// # Errors
+    /// Missing/changed original process, jail or cgroup remains unknown.
+    pub fn source_process_identity(
+        &self,
+        id: &str,
+    ) -> Result<Option<RuntimeProcessIdentity>, RuntimeError> {
+        validate_id(id)?;
+        let record = self.read_record(id)?;
+        let Some(identity) = record.source_identity()? else {
+            return Ok(None);
+        };
+        if !identity.is_alive()? || verified_process(&record)?.is_none() {
+            return Err(RuntimeError::IdentityMismatch(
+                "original source process unavailable",
+            ));
+        }
+        self.require_launch_jail(id, 0)?;
+        self.verify_cgroup(id, Some(record.pid))?;
+        Ok(Some(identity))
     }
 
     /// Observe only the process bound to this resource claim.
@@ -581,21 +628,7 @@ impl Runtime {
     pub fn stop(&self, id: &str) -> Result<Observation, RuntimeError> {
         validate_id(id)?;
         let record = self.read_record(id)?;
-        if let Some(pidfd) = verified_process(&record)? {
-            pidfd_send_signal(&pidfd, Signal::TERM).map_err(errno_to_io)?;
-            if !wait_pidfd_exit(&pidfd, STOP_TIMEOUT)? {
-                pidfd_send_signal(&pidfd, Signal::KILL).map_err(errno_to_io)?;
-                if !wait_pidfd_exit(&pidfd, STOP_TIMEOUT)? {
-                    return Err(RuntimeError::TimedOut("exact VM process exit"));
-                }
-            }
-        }
-        Ok(Observation {
-            resource_id: id.to_owned(),
-            pid: record.pid,
-            start_time_ticks: record.start_time_ticks,
-            state: VmState::Stopped,
-        })
+        original_stop::stop_record(&record)
     }
 
     /// Remove only this stopped VM's jail and private disk. Keep its claim and
@@ -1042,6 +1075,7 @@ impl Runtime {
             if stored.resource_id != id
                 || stored.pid != record.pid
                 || stored.start_time_ticks != record.start_time_ticks
+                || stored.boot_id != record.boot_id
             {
                 return Err(RuntimeError::IdentityMismatch("failed prepare identity"));
             }
@@ -1071,6 +1105,7 @@ impl Runtime {
         if stored.resource_id != id
             || stored.pid != record.pid
             || stored.start_time_ticks != record.start_time_ticks
+            || stored.boot_id != record.boot_id
             || verified_process(&record)?.is_some()
             || path_present(
                 &self
@@ -1147,6 +1182,7 @@ impl Runtime {
         if record.resource_id != id || record.pid == 0 || record.start_time_ticks == 0 {
             return Err(RuntimeError::IdentityMismatch("record fields"));
         }
+        record.source_identity()?;
         Ok(record)
     }
 
@@ -1184,9 +1220,20 @@ impl Runtime {
         path: &str,
         body: Option<&[u8]>,
     ) -> Result<Vec<u8>, RuntimeError> {
+        self.api_with_timeout(id, method, path, body, Duration::from_secs(2))
+    }
+
+    fn api_with_timeout(
+        &self,
+        id: &str,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, RuntimeError> {
         let mut stream = UnixStream::connect(self.socket_path(id))?;
-        stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(2)))?;
+        stream.set_read_timeout(Some(timeout))?;
+        stream.set_write_timeout(Some(timeout))?;
         let data = body.unwrap_or_default();
         write!(
             stream,
@@ -1576,6 +1623,11 @@ fn parse_proc_stat(stat: &str) -> Result<ProcStatus, RuntimeError> {
 }
 
 fn verified_process(record: &ProcessRecord) -> Result<Option<std::os::fd::OwnedFd>, RuntimeError> {
+    if let Some(identity) = record.source_identity()?
+        && !identity.is_alive()?
+    {
+        return Ok(None);
+    }
     let pid = Pid::from_raw(
         i32::try_from(record.pid).map_err(|_| RuntimeError::IdentityMismatch("pid range"))?,
     )
@@ -1786,6 +1838,7 @@ mod tests {
                 resource_id: id.clone(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
+                boot_id: None,
             },
         )
         .unwrap();
@@ -2208,3 +2261,7 @@ mod console_policy_tests {
         assert!(serde_json::from_str::<ConsolePolicy>("\"bounded_tail\"").is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "source_identity_tests.rs"]
+mod source_identity_tests;

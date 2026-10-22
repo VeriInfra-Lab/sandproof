@@ -63,6 +63,7 @@ impl LinuxWorker {
                 ObservedResult::Prepared {
                     pid: observed.pid,
                     start_ticks: observed.start_time_ticks,
+                    boot_id: self.source_boot_id(*sandbox, *vm, &observed)?,
                 }
             }
             core::Command::ConfigureNetwork {
@@ -117,6 +118,7 @@ impl LinuxWorker {
                 ObservedResult::Activated {
                     pid: observed.pid,
                     start_ticks: observed.start_time_ticks,
+                    boot_id: self.source_boot_id(*sandbox, *vm, &observed)?,
                 }
             }
             core::Command::StopVm {

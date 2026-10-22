@@ -30,7 +30,7 @@ impl JailObservation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct DirectoryIdentity {
+pub(super) struct DirectoryIdentity {
     device: u64,
     inode: u64,
     birth_seconds: i64,
@@ -38,7 +38,7 @@ struct DirectoryIdentity {
 }
 
 impl DirectoryIdentity {
-    fn capture(file: &File) -> Result<Self, RuntimeError> {
+    pub(super) fn capture(file: &File) -> Result<Self, RuntimeError> {
         let metadata = file.metadata()?;
         let extended = rustix::fs::statx(
             file,
@@ -60,7 +60,7 @@ impl DirectoryIdentity {
         })
     }
 
-    fn matches(&self, file: &File) -> Result<bool, RuntimeError> {
+    pub(super) fn matches(&self, file: &File) -> Result<bool, RuntimeError> {
         Ok(self == &Self::capture(file)?)
     }
 }
@@ -178,7 +178,7 @@ fn empty_directory(directory: &File, device: u64, depth: u16) -> Result<(), Runt
 }
 
 impl Runtime {
-    fn jail_path(&self, id: &str) -> PathBuf {
+    pub(super) fn jail_path(&self, id: &str) -> PathBuf {
         self.config
             .chroot_base
             .join(self.firecracker_name())
@@ -687,6 +687,7 @@ mod tests {
                 resource_id: ID.to_owned(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
+                boot_id: None,
             },
         )
         .unwrap();
@@ -714,6 +715,7 @@ mod tests {
                 resource_id: ID.into(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
+                boot_id: None,
             },
         )
         .unwrap();
@@ -809,6 +811,7 @@ mod tests {
                     resource_id: BOUNDED_ID.into(),
                     pid: i32::MAX as u32,
                     start_time_ticks: 1,
+                    boot_id: None,
                 },
             )
             .unwrap();

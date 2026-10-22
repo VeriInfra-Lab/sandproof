@@ -35,3 +35,51 @@
 同步守卫、参数、identity/path/manifest 校验、分类与精确清理决定经固定抽取；系统调用/FC/文件持久性用显式外部合同加实机证据。Rust 业务分支仍需机器对应，不能仅源码检查后称实现已证。
 
 真实 KVM 必须观察 RAM-only nonce、磁盘内容、长生命周期 guest 进程、旧 VMM 退出、新 VMM 身份以及后续修改；无旧 VM 留存占额。故障窗口覆盖捕获/发布/停止/加载/激活/删除；File backing 生命周期和磁盘释放单独观测。提供 LC-P4/5/6/7/9/10 的物理部分、LC-I6/7/8；结果绑定固定 CPU/内核/FC/文件系统。无 UFFD、增量链、迁移或任意设备组合支持承诺。
+
+### 捕获与封存部件的接口
+
+`Runtime::pause_original_vm` 绑定原进程的 PID、启动时间、boot 身份和原 jail，只有 API 确认为 paused 才产生 `PausedOriginalVm`。句柄只是观察结果，不授予当前操作资格；丢弃它不会停止或恢复原 VM。
+
+`capture_full_into` 发送固定 Full 请求，从原目录句柄打开 state/memory 和白名单 rootfs，保持暂停并复制到独立 store。首 profile 对应 `stage_and_boot` 的 rootfs→rootfs.ext4。调用方必须持续持有原工作/围栏及无写者条件，不能用过期观察代替它。
+
+`SnapshotStage` 检查原 FD 的类型、属主、权限、链接数及长度，逐块复制并计算真实 SHA-256。发布前核对保留的目标 FD、替换/修改及全部测量，随后同步文件、目录并执行不覆盖的同目录 rename。任何错误都保留材料；rename 后的同步错误可能已有可见效果。已有名字不自动判为同键成功，须查询原持久工作。
+
+`CapturedFullSnapshot` 与普通文件复制结果分型；节点 `full_snapshot::seal_full_capture` 再核对原 VM 身份、完整 capture 目录键和原 profile，并从实际测量构建完整 manifest。`PublishedFullCapture` 只表示文件与同步事实；V5 持久登记前没有 stop 许可。此模块无删除/kill/thaw 的失败补偿，尚未接入默认节点命令，不等于完整 pause/unload 已验收。具体提交和证据在 #638 记录。
+
+纯 `snapshot_policy::accepts` 是复制路径实际调用的 Metadata 接受检查；其局部证明不能替代原 FD 获取、冻结期间无写者、完整 manifest/事务连接或 S-C 文件持久性合同。
+
+`SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，通过同一个父 FD 创建、检查两原句柄，记录布局版本、原部署配置绑定及父目录/两子目录的设备、inode 和出生身份，先同步再发布。`reopen` 读取原持久记录，允许目录已有运行材料，逐一核对原身份与绑定；缺失、部分初始化、替换或版本不符均拒绝，不转为重新初始化或另建编号。Full 捕获消费这个私有构造的布局，并重查原 runtime root，任意两个 Path 不提供同等保证。这里仍采用受控静态挂载、无无关特权写者的部署条件；自有初始化/重开判断没有被整体列为可信依赖。
+
+运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。布局格式 1 是新 stage1 的有限布局，不收养或迁移旧 profile。此布局已接真实组件和故障回归；其完整 Rust 对应证明及与正式物理 profile 激活的连接仍须补齐。root/0400 封存文件供 jailer File 后端加载时的权限路径、是否需要私有 RAM 副本及相应峰值预算属于恢复批缺口，当前恢复仍不启用。
+
+### 原捕获动作与已发布材料观察
+
+`full_snapshot::capture_original` 串接真实的原 VM Pause、Full、Seal，随后重开原 bundle 核对文件，再确认原 VM 仍暂停；只返回 `FullCaptureObservation`，没有停止、释放、登记恢复资格或激活副作用。调用方必须提供原已持久工作、当前围栏、预算与无写者条件。捕获/发布后错误仍可能已有材料，不得换键重捕获。原 `WorkExecution` 接线及持久 Stop 工作由 V5 提供；本组件不等于实际 unload 已完成。
+
+`SnapshotLayout::open_capture_bundle` 和 `full_snapshot::observe_stored_capture` 只读取原发布键，通过保留 FD 检查受保护原目录、完整白名单、root/0400/单链接/长度及实际字节摘要；节点严格核对原 CaptureBinding、受保护 profile、manifest 与全部测量。已有回执摘要必须相同；尚未取得回执时返回的只是待 V5 对账的物理事实，不能凭完整文件赋予资格。它不再次 Pause/Full，也不制造原 VM 的历史来源证明。
+
+新观察器及调用链的整体 Rust 对应证明仍须补齐；既有 `snapshot_policy::accepts` 定理只覆盖其中原 Metadata 守卫，不能代替目录/FD、全字节读取、JSON、完整工作或事务连接。普通回归和真实错误版的复现见[组件说明](../../verification/experiments/capture-observation/README.md)，实际版本及验收状态仅在 #638/PR 与覆盖记录维护。
+
+### 原进程来源字段
+
+新的 VM claim 在原 launch gate 开放前持久保存 `ProcessRecord.boot_id`，它来自同一被记录 PID/启动 ticks 的宿主 kernel boot identity。新 Prepared/Activated 回执经原 claim、PID/ticks、jail/cgroup 检查后保留该字段；不是从 manifest、guest 或恢复时的全局 boot 值补造旧身份。`HostEvidence::source_process_identity(command, expected_resource)` 同时核原 command 和调用者从原 action 独立取得的完整 resource，再原样投影来源，不能传自己的 resource 自比。owner/operation/原工作与多份回执来源一致仍由 V5 的原持久事务建立；动作前仍须重核原进程，getter 不保证未来存活。
+
+原 claim 与 Prepared/Activated 的 boot 字段采用 default/skip-none。新读取器可读旧缺字段记录，并保持 None 的原序列化形状；这些记录没有可认证捕获来源，不从缺字段推断进程退出。此往返不保证旧代码保留或校验新的 Some 字段：原缺少相应字段的解码路径可能忽略该字段。本批不提供滚动混合版本或旧库自动升级保证；不能因为旧解码器能读就声明其认证了来源。提供者/解码版本和实际适用范围由类型登记与 V5 接线维护。新字段计入退休清单的最大序列化预算；缺失/格式损坏/冲突不得变成释放或 Stop 许可。
+
+本批普通回归覆盖真实字段保留、旧字节往返、错误 command/独立 resource、非法 boot 和原 claim 的 boot 不同不得选中当前同 PID 的进程；整个进程记录/系统调用/回执/SQLite 的机器对应仍是后续义务，不把字段测试记成整个来源链证明。
+
+### 原来源绑定的停止与退出观察
+
+`Runtime::stop_original_vm(resource_id, expected_source)` 只读取一次原 claim，要求独立调用方保存的 PID、启动 ticks、boot 与原 claim 完全一致，并要求当前宿主 boot 仍相同，再按该已核记录取得 pidfd、发送 TERM/KILL 和等待退出。不再调用会重新读取当前记录的通用 stop 接口；当前同名 claim 被替换、旧来源字段缺失、宿主 boot 变化或读取失败均保持未决。该方法只实现物理停止，V5 必须先确认原材料接管和原 Stop 工作提交，并持有原操作准入/助手排空条件，不能从可调用性推导允许停止。
+
+`observe_original_stopped` 用同一原来源只读观察，不重发信号。它与原通用停止接口的 `Stopped` 一样只表示原进程不再执行；尚未收割的 zombie、存活助手、运行位置占用和文件 backing 仍有各自责任。停止和退出观察不删 jail、网络、claim、bundle 或父布局，也不退额度。运行清理和位置释放必须继续使用各自精确身份、无使用者和实际清理事实；不得把 VMM 退出回执直接转换为对外 Unloaded。
+
+### 运行位置释放前的 UID 观察
+
+原 `retirement_manifest`、`retire`、`observe_retired` 与 `observe_released` 的物理检查还核对 `/proc` 下每个进程的每个线程：real、effective、saved、filesystem 四个 UID 任一仍为原位置 UID，都不能确认释放；zombie 不跳过。非 UTF-8 进程名称不影响 UID 字段解析。缺/重复/损坏 UID 字段、权限和其它读取失败保持未决；status/task 缺失只有对应目录也确实消失时才接受为该任务已离开。
+
+这次观察在原持久 Releasing/当前运行代已封闭、独占 UID 映射及原助手/route 门的条件下使用，不能独立证明将来不会有旧代新作用。运行代关闭由 V5 原 work 和节点 Occupied/Releasing 准入接线保证，已登记助手须实际结束；没有关闭新效果之前，不允许先扫描再退位。该检查不删除进程、claim、bundle 或保护根，不把一次 KVM 样本当所有运行情形的保证。UID 观察的实现及整个回收链仍须补真实 Rust 对应证明，不能沿用旧 Metadata 守卫定理。
+
+UID 扫描限于必需身份元数据，不读取 cmdline/environ；每次最多 262,144 个目录项、单 status 128 KiB、挂载信息 1 MiB，并检查同一 2 秒观察期限，超额/超时均保持未决。系统调用仍依赖固定 Linux/procfs 的完成语义，不是任意文件系统的硬实时保证。只允许真实 procfs 挂载，拒绝可检测的 hidepid/subset、多层 NSpid 与 PID namespace 不一致；这些检查不能从进程内部独立证明所在 namespace 就是整台宿主。受保护部署必须将服务放在原宿主 PID namespace，挂载完整宿主 proc 视图，并由本轮准入核对；不能在私有 PID namespace 内重新挂 proc 后宣称看到了所有宿主任务。该前提与独占 UID/已登记 spawn 一起维护。
+
+UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`、`/proc/self/ns/user` 与原宿主 PID 1 的对应 namespace 身份（设备号/inode）核对，不匹配或任何读取失败保持未决。配置 `vm_uid`、原 claim 的文件属主、jailer 使用的 UID 和 `/proc` 显示的四 UID 必须来自同一个受保护的宿主 user namespace，部署与整个原扫描/释放 worker 期间都不得切换 namespace。仅 PID 视图相同不足以保证 UID 数字相同；未映射编号可能在读取者域显示为 overflow UID，依据 [Linux user_namespaces(7)](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) 的 Unmapped user and group IDs。此路径不支持任意 UID 映射或私有 user namespace，不新增编号翻译器；PID namespace 内重新挂 proc 不能自证外层宿主的限制仍保留。取消或超时也必须保留实际仍运行 worker 的许可与责任，不能因调用方不再等待就 Free。

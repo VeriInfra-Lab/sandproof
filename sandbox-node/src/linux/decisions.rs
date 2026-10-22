@@ -67,8 +67,18 @@ pub(super) fn evidence_matches(observation: &HostObservation, command: &core::Co
             },
             ObservedResult::Fence(fence),
         ) => fence.epoch == *epoch && fence.terminal == *terminal,
-        (core::Command::PrepareVm { .. }, ObservedResult::Prepared { pid, start_ticks })
-        | (core::Command::ActivateVm { .. }, ObservedResult::Activated { pid, start_ticks })
+        (
+            core::Command::PrepareVm { .. },
+            ObservedResult::Prepared {
+                pid, start_ticks, ..
+            },
+        )
+        | (
+            core::Command::ActivateVm { .. },
+            ObservedResult::Activated {
+                pid, start_ticks, ..
+            },
+        )
         | (core::Command::StopVm { .. }, ObservedResult::Stopped { pid, start_ticks }) => {
             *pid != 0 && *start_ticks != 0
         }
