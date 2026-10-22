@@ -1,7 +1,7 @@
-use super::{Reject, record, reserved_slot, reserved_vm, startup_plan, unique};
+use super::{Profile, Reject, record, reserved_slot, reserved_vm, startup_plan, unique};
 use crate::{Command, EffectOutcome, EffectStatus, Phase, SandboxId, Vm, VmId, VmStatus, World};
 
-pub(super) fn validate(world: &World) -> Result<(), Reject> {
+pub(super) fn validate(world: &World, profile: Profile) -> Result<(), Reject> {
     for (workspace, fs) in world.filesystems.entries() {
         let row = record(world, fs.sandbox)?;
         if row.workspace != *workspace || row.owner != fs.owner || fs.created_generation != 1 {
@@ -9,17 +9,17 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
         }
     }
     for (vm, machine) in world.vms.entries() {
-        machine_record(world, *vm, machine)?;
+        machine_record(world, *vm, machine, profile)?;
     }
     networks(world)?;
-    indexes(world)?;
+    indexes(world, profile)?;
     policies_and_fences(world)
 }
 
 // Worker application precedes acknowledgement, so a persisted resource can
 // legitimately have a Dispatched or OutcomeUnknown effect. An unexecuted
 // Committed command or a failure receipt alone is not a resource witness.
-fn observed(world: &World, predicate: impl Fn(&Command) -> bool) -> bool {
+pub(super) fn observed(world: &World, predicate: impl Fn(&Command) -> bool) -> bool {
     world.effects.entries().iter().any(|(id, status)| {
         predicate(id.command())
             && matches!(
@@ -39,7 +39,7 @@ fn prepared_or_aborted(world: &World, sandbox: SandboxId, vm: VmId) -> bool {
     })
 }
 
-fn machine_record(world: &World, vm: VmId, machine: &Vm) -> Result<(), Reject> {
+fn machine_record(world: &World, vm: VmId, machine: &Vm, profile: Profile) -> Result<(), Reject> {
     let row = record(world, machine.sandbox)?;
     reserved_vm(world, machine.sandbox, vm)?;
     let slot_id = startup_plan(world, machine.sandbox)
@@ -74,6 +74,10 @@ fn machine_record(world: &World, vm: VmId, machine: &Vm) -> Result<(), Reject> {
             world,
             |command| matches!(command, Command::CleanupVm { vm: found, .. } | Command::AbortPrepare { vm: found, .. } if *found == vm),
         ),
+        VmStatus::Frozen if profile == Profile::FirstUnload => observed(world, |command| {
+            matches!(command, Command::FreezeVm { sandbox, generation, vm: found, .. }
+                if *sandbox == machine.sandbox && *generation == machine.generation && *found == vm)
+        }),
         VmStatus::Frozen => return Err(Reject::UnsupportedSnapshotHistory),
     };
     if !witnessed {
@@ -125,14 +129,23 @@ fn networks(world: &World) -> Result<(), Reject> {
     Ok(())
 }
 
-fn indexes(world: &World) -> Result<(), Reject> {
+fn indexes(world: &World, profile: Profile) -> Result<(), Reject> {
     for (sandbox, index) in world.resource_indexes.entries() {
         record(world, *sandbox)?;
-        if !index.snapshots.is_empty() {
+        if profile == Profile::CreateKill && !index.snapshots.is_empty() {
             return Err(Reject::UnsupportedSnapshotHistory);
         }
         unique(&index.vms)?;
         unique(&index.slots)?;
+        unique(&index.snapshots)?;
+        if index.snapshots.iter().any(|id| {
+            world
+                .snapshots
+                .get(id)
+                .is_none_or(|row| row.sandbox != *sandbox)
+        }) {
+            return Err(Reject::InvalidReference);
+        }
         if index.vms.iter().any(|id| {
             world
                 .vm_record(*id)

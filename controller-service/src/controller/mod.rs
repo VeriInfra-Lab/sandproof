@@ -37,7 +37,8 @@ pub use private_build::{BuildAnchor, BuildRetryConfig};
 
 pub use bounded::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
 pub use checkpoint::{
-    CheckpointInfo, CheckpointProgress, HostReleaseWitness, MaintenanceConfig, RetirementCandidate,
+    CheckpointInfo, CheckpointProfile, CheckpointProgress, HostReleaseWitness, MaintenanceConfig,
+    RetirementCandidate,
 };
 
 #[cfg(test)]
@@ -644,10 +645,13 @@ impl ControllerJournal {
         }
         if matches!(
             input,
-            core::ControllerInput::Request(core::Request::Create(_))
+            core::ControllerInput::Request(
+                core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
+            )
         ) {
-            // Full mode requires its lease, options and physical binding in
-            // the same admission transaction before any accepted host work.
+            // Recovery schema support alone does not admit physical work.
+            // Create uses its existing admission; pause needs the separately
+            // committed original source/bundle work before public enablement.
             return Err(JournalError::UnsupportedInput);
         }
         let sandbox = identity::input_sandbox(&input)?;

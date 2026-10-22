@@ -35,6 +35,9 @@ use crate::{
 };
 
 pub const CHECKPOINT_VERSION: u16 = 1;
+/// Explicit schema for first-generation capture/unload, not center module V2.
+/// Resume and subsequent running generations are deliberately unsupported.
+pub const UNLOAD_CHECKPOINT_VERSION: u16 = 2;
 
 /// Explicit aggregate record and nested-reference budgets. Neither value may
 /// be zero. Strings and encoded bytes require a separate service-side bound.
@@ -68,6 +71,14 @@ pub enum CheckpointReject {
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Checkpoint(CheckpointWire);
+
+impl Checkpoint {
+    /// The untrusted schema tag, used to check the service envelope binding.
+    #[must_use]
+    pub const fn version(&self) -> u16 {
+        self.0.version
+    }
+}
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Checkpoint {
@@ -222,6 +233,20 @@ pub fn capture(world: &World, limits: CheckpointLimits) -> Result<Checkpoint, Ch
     Ok(Checkpoint(CheckpointWire::from(world)))
 }
 
+/// Capture the explicit first-generation unload schema without widening V1.
+/// # Errors
+/// Rejects unsupported resume/history, invalid capture references or bounds.
+pub fn capture_unload(
+    world: &World,
+    limits: CheckpointLimits,
+) -> Result<Checkpoint, CheckpointReject> {
+    bounds::world(world, limits)?;
+    validate::unload_world(world)?;
+    let mut wire = CheckpointWire::from(world);
+    wire.version = UNLOAD_CHECKPOINT_VERSION;
+    Ok(Checkpoint(wire))
+}
+
 /// Restore only after validating the version, bounds and complete references.
 /// No partially restored World escapes on rejection.
 /// # Errors
@@ -231,11 +256,16 @@ pub fn restore(
     limits: CheckpointLimits,
 ) -> Result<World, CheckpointReject> {
     let wire = checkpoint.0;
-    if wire.version != CHECKPOINT_VERSION {
+    if wire.version != CHECKPOINT_VERSION && wire.version != UNLOAD_CHECKPOINT_VERSION {
         return Err(CheckpointReject::UnsupportedVersion);
     }
     bounds::wire(&wire, limits)?;
+    let version = wire.version;
     let world = wire.into_world()?;
-    validate::world(&world)?;
+    if version == UNLOAD_CHECKPOINT_VERSION {
+        validate::unload_world(&world)?;
+    } else {
+        validate::world(&world)?;
+    }
     Ok(world)
 }

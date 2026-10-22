@@ -36,3 +36,13 @@ pin 是具名持久集合，可重建 original loader、candidate、running back
 抽取真实同步事务决定、参数构造、回调和结果分类；原异步 SQLite/任务接线仅按已登记窄合同。表约束/受影响行数/比较字段/提交错误顺序全部接实际版本。
 
 覆盖提交前后崩溃、文件发布未登记、capture 已提交但 stop 回执丢失、claim 与 GC 竞争、load 未返回、activate 丢回执、部分删除、ENOSPC、取消等待以及两次 manager 重启。正确版本满足 LC-P3/5/7/10/11/12；“commit unknown 当未提交”“加载返回就释放 pin”的真实错误版本须失败。V6 仍需证明实际文件与进程后果，不能由数据库行自证。
+
+## 5. 显式卸载检查点
+
+`MaintenanceConfig.checkpoint_profile` 明确选择恢复支持范围。默认 `CreateKill` 保留原 schema 1、配置编码和快照拒绝；`FirstUnload` 使用 core schema 2 与服务 envelope 2，支持第一运行代的一次 Pause/Capture/Stop 历史及原 Create/Kill。根 envelope、core schema、不可变部署配置必须一致。Resume 和第二次新 Pause 在分配新身份、产生待办前拒绝；相同操作键仍由原决定检查全文重放。配置不一致不自动迁移或接管旧数据库。
+
+schema 2 仍逐项校验原状态：操作及 epoch、原 VM/网络槽、计划目标与分配上界、快照归属/运行代/workspace/manifest、LocalSealed 与 Durable/immutable 的对应、捕获未知及撤销后的材料责任、效果原计划和尝试记录。快照文件已出现、保留编号或逻辑 manifest 计数都不能单独证明业务已登记。Worker 观察在回执确认前发生，因此 Dispatched/Unknown 和相应已观察状态必须能够持久化；不要求失败或迟到历史假装从未发生。
+
+服务继续使用原 `WorldTransaction`、输入日志、outbox、回执、SQL 投影和 checkpoint 剪枝，不保留全局历史重放作为卸载格式。每个会话的有限状态及责任进入当前检查点，长期保留一个已卸载会话不能钉住其它已结束会话的全部输入。该 profile 在原 Create 预留中加入一次捕获所需的逻辑效果、重试、输入、操作结果和 SQL 空间；这是数据库/核心记录的预算，实际文件、助手与运行资源额度仍须由捕获接受事务绑定。
+
+这层接口只提供结构化恢复支持。公开 Pause/Resume 入口仍拒绝，直至原源身份、完整请求映射、物理预算和工作在同一接受事务中落实。组件测试通过原较低层接受事务与真实 SQLite/outbox/回执检查关闭重开，不手工写入模拟 World，也不声称生产捕获已启用。核心 `Phase::Paused` 不等于对外 `Unloaded`；原 VM 退出、规定运行分量清理、助手排空和原位置归还仍需分别提供证据。结构检查不是到达性、Host 观察真实性或整个 V4/V5 的机器证明；实际通过范围只在 issue/PR 与证明覆盖登记。

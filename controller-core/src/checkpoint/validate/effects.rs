@@ -4,8 +4,9 @@ use super::{
     SandboxId, StopCoverage, VmId, World, effect, record, reserved_slot, reserved_vm, terminal,
     unique,
 };
+use super::{Profile, unload};
 
-pub(super) fn validate(world: &World) -> Result<(), Reject> {
+pub(super) fn validate(world: &World, profile: Profile) -> Result<(), Reject> {
     unique(&world.effect_keys)?;
     unique(&world.inflight)?;
     if world.effect_keys.len() != world.effects.entries().len()
@@ -19,7 +20,7 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
         return Err(Reject::InvalidEffect);
     }
     for (id, logical) in world.logical_effects.entries() {
-        command(world, &id.command, logical.origin)?;
+        command(world, &id.command, logical.origin, profile)?;
         if logical
             .current_attempt
             .checked_add(logical.remaining_retries)
@@ -125,7 +126,12 @@ fn command_origin<'a>(
     })
 }
 
-fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(), Reject> {
+fn command(
+    world: &World,
+    command: &Command,
+    origin: EffectOrigin,
+    profile: Profile,
+) -> Result<(), Reject> {
     let sandbox = command.sandbox();
     let row = record(world, sandbox)?;
     let plan = command_origin(world, command, origin)?;
@@ -133,7 +139,7 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
         Command::InstallFence {
             epoch, terminal, ..
         } => {
-            fence_command(world, row, plan, *epoch, *terminal)?;
+            fence_command(world, row, plan, *epoch, *terminal, profile)?;
         }
         Command::PrepareVm {
             generation,
@@ -201,11 +207,7 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
             }
         }
         Command::StopVm { generation, vm, .. } => {
-            let plan = plan.ok_or(Reject::InvalidEffect)?;
-            if !plan.stop_vms.contains(vm) || plan.generation != *generation || !row.terminal {
-                return Err(Reject::InvalidEffect);
-            }
-            vm_reference(world, sandbox, *vm, *generation)?;
+            stop_command(world, row.terminal, plan, *generation, *vm, profile)?;
         }
         Command::CleanupVm { generation, vm, .. } => {
             if plan.is_some() {
@@ -223,9 +225,44 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
         }
         Command::FreezeVm { .. }
         | Command::SealSnapshot { .. }
-        | Command::CommitSnapshot { .. } => return Err(Reject::UnsupportedSnapshotHistory),
+        | Command::CommitSnapshot { .. } => {
+            snapshot_command(world, command, plan, profile)?;
+        }
     }
     Ok(())
+}
+
+fn snapshot_command(
+    world: &World,
+    command: &Command,
+    plan: Option<&OperationPlan>,
+    profile: Profile,
+) -> Result<(), Reject> {
+    if profile != Profile::FirstUnload {
+        return Err(Reject::UnsupportedSnapshotHistory);
+    }
+    unload::command(world, command, plan.ok_or(Reject::InvalidEffect)?)
+}
+
+fn stop_command(
+    world: &World,
+    terminal: bool,
+    plan: Option<&OperationPlan>,
+    generation: Generation,
+    vm: VmId,
+    profile: Profile,
+) -> Result<(), Reject> {
+    let plan = plan.ok_or(Reject::InvalidEffect)?;
+    if !plan.stop_vms.contains(&vm) || plan.generation != generation {
+        return Err(Reject::InvalidEffect);
+    }
+    if !terminal {
+        if profile != Profile::FirstUnload {
+            return Err(Reject::InvalidEffect);
+        }
+        unload::stop_plan(world, plan, vm)?;
+    }
+    vm_reference(world, plan.key.sandbox, vm, generation)
 }
 
 fn fence_command(
@@ -234,12 +271,15 @@ fn fence_command(
     plan: Option<&OperationPlan>,
     epoch: u64,
     terminal: bool,
+    profile: Profile,
 ) -> Result<(), Reject> {
     let origin = plan.ok_or(Reject::InvalidEffect)?;
     let operation = world
         .operation_record(origin.key)
         .ok_or(Reject::InvalidEffect)?;
-    if (!terminal && operation.operation.kind != OperationKind::Create)
+    let opening_kind = operation.operation.kind == OperationKind::Create
+        || (profile == Profile::FirstUnload && operation.operation.kind == OperationKind::Pause);
+    if (!terminal && !opening_kind)
         || epoch == 0
         || epoch > row.epoch
         || (terminal && (!row.terminal || epoch != row.epoch))

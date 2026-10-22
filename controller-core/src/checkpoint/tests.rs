@@ -8,6 +8,7 @@ use crate::*;
 mod history;
 use history::*;
 mod malformed;
+mod unload;
 
 const LIMITS: CheckpointLimits = CheckpointLimits {
     max_records: 1000,

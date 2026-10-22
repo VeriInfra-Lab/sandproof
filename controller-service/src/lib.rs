@@ -39,11 +39,11 @@ pub const INTERNAL_INBOX_FORMAT_VERSION: i64 =
 
 #[cfg(feature = "durable")]
 pub use controller::{
-    BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProgress,
-    ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission, InternalAudit,
-    InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
-    InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState, Lifetime,
-    MaintenanceConfig, RetirementCandidate,
+    BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProfile,
+    CheckpointProgress, ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission,
+    InternalAudit, InternalAuditOperation, InternalCreateResult, InternalInboxConfig,
+    InternalLocalBinding, InternalNativeAudit, InternalRetentionLane, InternalTemplate,
+    InternalWorkState, Lifetime, MaintenanceConfig, RetirementCandidate,
 };
 
 #[cfg(feature = "durable")]
