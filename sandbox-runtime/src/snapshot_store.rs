@@ -61,7 +61,7 @@ pub struct SnapshotFileMeasurement {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct FileStamp {
+pub(crate) struct FileStamp {
     device: u64,
     inode: u64,
     owner: u32,
@@ -74,7 +74,7 @@ struct FileStamp {
 }
 
 impl FileStamp {
-    fn from_metadata(metadata: &Metadata) -> Self {
+    pub(crate) fn from_metadata(metadata: &Metadata) -> Self {
         Self {
             device: metadata.dev(),
             inode: metadata.ino(),

@@ -23,10 +23,11 @@ mod linux;
 pub use linux::{
     CLAIM_RECORD_NAMES, CapturedFullSnapshot, ConsolePolicy, FullCaptureLimits, HostResources,
     JailObservation, MAX_CLAIM_RECORD_BYTES, MAX_HELPER_MARKER_BYTES, Observation,
-    PausedOriginalVm, PublishedFullCapture, RetirementManifest, Runtime, RuntimeConfig,
-    RuntimeError, RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig,
-    RuntimePhysicalObserver, RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState,
-    SnapshotLayout, VmState, check_trusted_path, check_trusted_path_for_owner,
+    OriginalConfigurationObservation, PausedOriginalVm, PublishedFullCapture, RetirementManifest,
+    Runtime, RuntimeConfig, RuntimeError, RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot,
+    RuntimeObservationConfig, RuntimePhysicalObserver, RuntimeProcessIdentity,
+    RuntimeRouteSnapshot, RuntimeRouteState, SnapshotLayout, SourceConfigurationLimits, VmState,
+    check_trusted_path, check_trusted_path_for_owner,
 };
 
 #[cfg(target_os = "linux")]

@@ -37,6 +37,11 @@ pub struct FullCaptureLimits {
 /// Observation of the exact original process/jail, not a persistent permission.
 /// Dropping this handle does not stop, thaw or clean up the original VMM.
 pub struct PausedOriginalVm {
+    original: OriginalVmSource,
+}
+
+// A live original identity without implying that it is paused.
+struct OriginalVmSource {
     resource_id: String,
     identity: RuntimeProcessIdentity,
     root: File,
@@ -157,6 +162,18 @@ impl Runtime {
         id: &str,
         expected: &RuntimeProcessIdentity,
     ) -> Result<PausedOriginalVm, RuntimeError> {
+        let original = self.open_original_source(id, expected)?;
+        let request = serde_json::to_vec(&json!({"state": "Paused"}))?;
+        self.api(id, "PATCH", "/vm", Some(&request))?;
+        self.verify_original_source(&original, true)?;
+        Ok(PausedOriginalVm { original })
+    }
+
+    fn open_original_source(
+        &self,
+        id: &str,
+        expected: &RuntimeProcessIdentity,
+    ) -> Result<OriginalVmSource, RuntimeError> {
         validate_id(id)?;
         let record = self.read_record(id)?;
         if record.pid != expected.pid
@@ -182,7 +199,7 @@ impl Runtime {
         if metadata.uid() != self.config.vm_uid || metadata.mode() & 0o077 != 0 {
             return Err(error("original jail root owner"));
         }
-        let paused = PausedOriginalVm {
+        let original = OriginalVmSource {
             resource_id: id.to_owned(),
             identity: expected.clone(),
             root,
@@ -190,11 +207,8 @@ impl Runtime {
         };
         // Verify the opened root still matches the durable jail witness before
         // sending an effectful API request through the same protected jail.
-        self.verify_original_capture(&paused, false)?;
-        let request = serde_json::to_vec(&json!({"state": "Paused"}))?;
-        self.api(id, "PATCH", "/vm", Some(&request))?;
-        self.verify_original_capture(&paused, true)?;
-        Ok(paused)
+        self.verify_original_source(&original, false)?;
+        Ok(original)
     }
 
     /// Re-observe this original VM without issuing a pause/resume action.
@@ -209,32 +223,40 @@ impl Runtime {
         paused: &PausedOriginalVm,
         require_paused: bool,
     ) -> Result<(), RuntimeError> {
-        let record = self.read_record(&paused.resource_id)?;
-        if record.pid != paused.identity.pid
-            || record.boot_id.as_ref() != Some(&paused.identity.boot_id)
-            || record.start_time_ticks != paused.identity.start_time_ticks
-            || !paused.identity.is_alive()?
+        self.verify_original_source(&paused.original, require_paused)
+    }
+
+    fn verify_original_source(
+        &self,
+        source: &OriginalVmSource,
+        require_paused: bool,
+    ) -> Result<(), RuntimeError> {
+        let record = self.read_record(&source.resource_id)?;
+        if record.pid != source.identity.pid
+            || record.boot_id.as_ref() != Some(&source.identity.boot_id)
+            || record.start_time_ticks != source.identity.start_time_ticks
+            || !source.identity.is_alive()?
             || verified_process(&record)?.is_none()
         {
             return Err(error("capture original process binding"));
         }
-        self.require_launch_jail(&paused.resource_id, 0)?;
-        self.verify_cgroup(&paused.resource_id, Some(record.pid))?;
+        self.require_launch_jail(&source.resource_id, 0)?;
+        self.verify_cgroup(&source.resource_id, Some(record.pid))?;
         let current = File::from(
             fs::open(
-                self.root_path(&paused.resource_id).as_path(),
+                self.root_path(&source.resource_id).as_path(),
                 OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
                 Mode::empty(),
             )
             .map_err(errno)?,
         );
         let metadata = current.metadata()?;
-        let original = paused.root.metadata()?;
+        let original = source.root.metadata()?;
         if metadata.dev() != original.dev() || metadata.ino() != original.ino() {
             return Err(error("capture original root replaced"));
         }
         if require_paused {
-            let body = self.api(&paused.resource_id, "GET", "/", None)?;
+            let body = self.api(&source.resource_id, "GET", "/", None)?;
             let status: serde_json::Value = serde_json::from_slice(&body)?;
             if status.get("state").and_then(serde_json::Value::as_str) != Some("Paused") {
                 return Err(error("original VMM is not observed paused"));
@@ -270,8 +292,8 @@ impl Runtime {
             write!(&mut capture_name, "{byte:02x}")
                 .map_err(|_| error("capture directory encoding"))?;
         }
-        fs::mkdirat(&paused.root, capture_name.as_str(), Mode::RWXU).map_err(errno)?;
-        let directory = open_directory_at(&paused.root, &capture_name)?;
+        fs::mkdirat(&paused.original.root, capture_name.as_str(), Mode::RWXU).map_err(errno)?;
+        let directory = open_directory_at(&paused.original.root, &capture_name)?;
         fs::fchown(
             &directory,
             Some(Uid::from_raw(self.config.vm_uid)),
@@ -279,14 +301,14 @@ impl Runtime {
         )
         .map_err(errno)?;
         directory.sync_all()?;
-        paused.root.sync_all()?;
+        paused.original.root.sync_all()?;
         let request = serde_json::to_vec(&json!({
             "snapshot_type": "Full",
             "snapshot_path": format!("/{capture_name}/state.bin"),
             "mem_file_path": format!("/{capture_name}/memory.bin"),
         }))?;
         self.api_with_timeout(
-            &paused.resource_id,
+            &paused.original.resource_id,
             "PUT",
             "/snapshot/create",
             Some(&request),
@@ -301,7 +323,7 @@ impl Runtime {
         }
         // This profile is exactly the drive configured by stage_and_boot, never
         // a guest-supplied path. Later profiles must enumerate every drive.
-        let mut disk = source_at(&paused.root, "rootfs.ext4", self.config.vm_uid)?;
+        let mut disk = source_at(&paused.original.root, "rootfs.ext4", self.config.vm_uid)?;
         stage.copy_artifact(
             &mut state_file,
             self.config.vm_uid,
@@ -322,9 +344,13 @@ impl Runtime {
         )?;
         self.verify_original_capture(paused, true)?;
         Ok(CapturedFullSnapshot {
-            resource_id: paused.resource_id.clone(),
+            resource_id: paused.original.resource_id.clone(),
             stage,
-            source: paused.identity.clone(),
+            source: paused.original.identity.clone(),
         })
     }
 }
+
+#[path = "source_configuration.rs"]
+mod source_configuration;
+pub use source_configuration::{OriginalConfigurationObservation, SourceConfigurationLimits};
