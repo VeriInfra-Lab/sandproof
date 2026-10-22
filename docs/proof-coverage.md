@@ -46,6 +46,26 @@
 旧 #642 及旧 V0 局部定理只覆盖各自固定输入；这里的新 CenterState 字段、恢复 checker、
 接受/提交和新增角色不能沿用旧结论背书。全局注册、冻结适用性和完整验收仍须在统一候选完成。
 
+### 第一阶段依赖组合：调用版本与未证明连接
+
+组合的代码输入为 `13cbea4b6856a3449de49832f66ef3ab9cbafd62`，
+其中中心组件来自 #649 的 `e16f022338acf6d03c77d645a2e486dcbdf8f39d`，
+原本地服务完整依赖截至 #651 的 `e542c7cb9077efa93fda8419192c1e549fee1a5a`，
+原运行时完整依赖截至 #650 的 `5e8784429d3f823b79d5be5d2847ec45a9111259`。
+本批实际组合和测试适配的结果见 #641 及对应 PR，不以来源 PR 各自通过代替组合验收。
+
+#651 修改了原[分配准入](../controller-service/src/controller/admission.rs)、
+[内部收件准入](../controller-service/src/controller/internal_inbox/admission.rs)、
+[恢复打开](../controller-service/src/journal.rs)及启动派发的 epoch 检查，
+并增加[原 SQLite 的 v3 收件](../controller-service/src/controller/lifecycle_inbox.rs)。
+#650 的 [BootPlan](../sandbox-runtime/src/boot_plan.rs)实际用于
+[原启动配置调用](../sandbox-runtime/src/linux.rs)。
+这些新调用、事务/恢复连接、真实宿主 epoch 提供方，以及 BootPlan 重构前后的行为对应均未由旧定理证明。
+下文旧结果仍只适用各条原记录列明的精确提交、冻结输入和条件，不能背书本组合新增或修改的函数；
+本批没有新增 Lean 定理，也未迁移旧证明、刷新旧冻结摘要或执行完整证明验收。
+普通编译、测试及严格静态检查属于工程证据；正式 profile 保持默认关闭，
+真实材料登记、原 VMM 退出、必要 runtime 清理和安全复用事实尚未连接为公开 Unloaded。
+
 ### 新 v3 同步协议：真实生成体的局部性质与边界
 
 [草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的生产 Rust 适用
