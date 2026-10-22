@@ -272,3 +272,54 @@ fn a_real_nonleader_thread_is_observed_until_joined() {
     drop(thread);
     assert!(require_task_unused(&task, rustix::process::geteuid().as_raw()).is_ok());
 }
+
+fn namespace_fixture() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("self/ns")).unwrap();
+    fs::create_dir_all(root.path().join("1/ns")).unwrap();
+    for kind in ["pid", "user"] {
+        let initial = root.path().join("1/ns").join(kind);
+        fs::write(&initial, b"original namespace identity").unwrap();
+        fs::hard_link(&initial, root.path().join("self/ns").join(kind)).unwrap();
+    }
+    root
+}
+
+#[test]
+fn matching_host_pid_and_user_namespace_identities_are_required() {
+    let root = namespace_fixture();
+    assert!(require_host_namespaces(root.path()).is_ok());
+    let own_user = root.path().join("self/ns/user");
+    fs::remove_file(&own_user).unwrap();
+    fs::write(&own_user, b"another user namespace").unwrap();
+    assert_eq!(
+        fs::metadata(root.path().join("self/ns/pid")).unwrap().ino(),
+        fs::metadata(root.path().join("1/ns/pid")).unwrap().ino()
+    );
+    assert!(matches!(
+        require_host_namespaces(root.path()),
+        Err(RuntimeError::IdentityMismatch(
+            "proc user namespace differs from current process"
+        ))
+    ));
+}
+
+#[test]
+fn host_user_namespace_read_failure_is_unresolved() {
+    let root = namespace_fixture();
+    for side in ["self", "1"] {
+        let unavailable = root.path().join(side).join("ns/user");
+        let result = require_host_namespaces_with(root.path(), |path| {
+            if path == unavailable {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            let value = fs::metadata(path)?;
+            Ok((value.dev(), value.ino()))
+        });
+        assert!(
+            matches!(result, Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::PermissionDenied)
+        );
+    }
+    fs::remove_file(root.path().join("1/ns/user")).unwrap();
+    assert!(require_host_namespaces(root.path()).is_err());
+}

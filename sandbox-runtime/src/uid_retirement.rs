@@ -228,9 +228,35 @@ fn unrestricted_proc_mount(bytes: &[u8]) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+fn require_host_namespaces(proc_root: &Path) -> Result<(), RuntimeError> {
+    require_host_namespaces_with(proc_root, |path| {
+        let value = fs::metadata(path)?;
+        Ok((value.dev(), value.ino()))
+    })
+}
+
+fn require_host_namespaces_with(
+    proc_root: &Path,
+    mut metadata: impl FnMut(&Path) -> io::Result<(u64, u64)>,
+) -> Result<(), RuntimeError> {
+    for kind in ["pid", "user"] {
+        let own = metadata(&proc_root.join("self/ns").join(kind))?;
+        let initial = metadata(&proc_root.join("1/ns").join(kind))?;
+        if own != initial {
+            return Err(error(match kind {
+                "pid" => "proc PID namespace differs from current process",
+                _ => "proc user namespace differs from current process",
+            }));
+        }
+    }
+    Ok(())
+}
+
 /// These checks reject observable restrictions; the protected host deployment
-/// must additionally supply the original host PID namespace. A proc mount
-/// newly made inside a private PID namespace cannot certify the outer host.
+/// must additionally supply the original host PID and user namespaces. A proc
+/// mount newly made inside a private PID namespace cannot certify the outer
+/// host. Configuration, claims, jailer and proc UID values must stay in that
+/// same host user-ID domain throughout the original scan and release work.
 pub(super) fn require_host_uid_unheld(uid: u32) -> Result<(), RuntimeError> {
     let mut budget = Budget {
         deadline: Instant::now() + Duration::from_secs(2),
@@ -249,11 +275,7 @@ pub(super) fn require_host_uid_unheld(uid: u32) -> Result<(), RuntimeError> {
         &read_metadata(Path::new("/proc/1/status"), MAX_STATUS_BYTES)?,
         1,
     )?;
-    let own = fs::metadata("/proc/self/ns/pid")?;
-    let initial = fs::metadata("/proc/1/ns/pid")?;
-    if own.dev() != initial.dev() || own.ino() != initial.ino() {
-        return Err(error("proc PID namespace differs from current process"));
-    }
+    require_host_namespaces(Path::new("/proc"))?;
     budget.check()?;
     require_uid_unheld(Path::new("/proc"), uid, &mut budget)
 }
