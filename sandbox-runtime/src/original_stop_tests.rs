@@ -187,3 +187,45 @@ fn a_foreign_boot_is_unresolved_and_does_not_signal_the_current_pid_occupant() {
     assert!(child.0.try_wait().unwrap().is_none());
     assert!(current.is_alive().unwrap());
 }
+
+#[test]
+fn readonly_configuration_refuses_wrong_or_legacy_source_without_effects() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
+    let (mut child, source) = process();
+    let (temp, runtime) = fixture(&source);
+    let limits = crate::SourceConfigurationLimits {
+        executable_bytes: 64 * 1024 * 1024,
+        kernel_bytes: 256 * 1024 * 1024,
+        disk_bytes: 1024,
+        configuration_bytes: 1024,
+    };
+    let claim = temp.path().join(".claims").join(ID).join("record.json");
+    let saved = fs::read(&claim).unwrap();
+    let canary = temp.path().join("preserved-original-state");
+    fs::write(&canary, b"unchanged").unwrap();
+    let wrong = RuntimeProcessIdentity {
+        start_time_ticks: source.start_time_ticks + 1,
+        ..source.clone()
+    };
+    assert!(
+        runtime
+            .observe_original_configuration(ID, &wrong, limits)
+            .is_err()
+    );
+    assert_eq!(fs::read(&claim).unwrap(), saved);
+    let mut legacy = record(&source);
+    legacy.boot_id = None;
+    save(&runtime, &legacy);
+    assert!(
+        runtime
+            .observe_original_configuration(ID, &source, limits)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(&claim).unwrap(),
+        serde_json::to_vec(&legacy).unwrap()
+    );
+    assert_eq!(fs::read(&canary).unwrap(), b"unchanged");
+    assert!(!runtime.root_path(ID).exists());
+    assert!(child.0.try_wait().unwrap().is_none());
+}

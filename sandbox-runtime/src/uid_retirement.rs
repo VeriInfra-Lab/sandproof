@@ -228,7 +228,7 @@ fn unrestricted_proc_mount(bytes: &[u8]) -> Result<(), RuntimeError> {
     Ok(())
 }
 
-fn require_host_namespaces(proc_root: &Path) -> Result<(), RuntimeError> {
+pub(super) fn require_host_namespaces(proc_root: &Path) -> Result<(), RuntimeError> {
     require_host_namespaces_with(proc_root, |path| {
         let value = fs::metadata(path)?;
         Ok((value.dev(), value.ino()))

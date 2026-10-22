@@ -10,6 +10,10 @@ mod fault;
 #[cfg(target_os = "linux")]
 mod host_capacity;
 #[cfg(target_os = "linux")]
+mod host_epoch;
+#[cfg(target_os = "linux")]
+pub use host_epoch::ProtectedHostEpochSource;
+#[cfg(target_os = "linux")]
 mod physical_profile;
 #[cfg(target_os = "linux")]
 pub use adapter::NodeHost;
