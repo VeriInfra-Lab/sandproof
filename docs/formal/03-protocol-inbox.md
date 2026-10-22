@@ -28,3 +28,27 @@
 V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久发送责任；V4/V5 提供本地接受/回执；V6 提供真实资源证据。必须补原 codec、映射函数、事务回调与恢复入口的生成体/绑定。
 
 验收：全部新消息合法往返，字段变异/非法输入/冲突拒绝，重复和乱序回执，收件提交未知，两管理进程独立重启，destroy 与旧 resume 同时到达。保留真实 mTLS/限额检查；模板分发、跨节点发现不扩入本任务。负责 LC-I3/4 的邻接和 LC-P2/3/8/9，不能单独声称系统唯一运行。
+
+## 4. 首批 v3 字段合同与未启用范围
+
+[真实字段和同步校验](../../sandbox-protocol/src/lifecycle.rs)采用独立版本 3，预留路径为 `/internal/v3/lifecycle`。原 v2 类型、路径和版本报告保持原语义。当前只提供库接口，尚未安装 v3 HTTP 路由或接通持久收件、驱动；字段校验成功不能作为已接受、已捕获或已恢复的回复。
+
+| 字段/接口 | 准确表示与检查 | 不能从中推出 |
+|---|---|---|
+| SessionId | 包装原协议 SandboxId，复用原不透明字符串域，保留全部字节 | 路径安全、实例存在或所有权 |
+| IncarnationId、CaptureId、RequestWindowId、RequestSequence | 各自包装受检 PositiveCounter；零拒绝、耗尽不回绕；不改变旧 core 数值类型 | 已分配、唯一认领或业务可重用 |
+| OperationKey | deployment、经认证的 owner、window、sequence 全部保存；内部 DTO 可解码不等于调用方已认证 | 窗口已签发、当前授权或持久去重 |
+| OperationBinding | 版本、完整 NodeIdentity、session、完整 key、ExpectedSession | 原端点/owner 的选择正确 |
+| ExpectedSession | Create 使用显式 Absent；其它操作使用 Version(u64)，不把零改作不存在标记 | 当前账本确实满足期望版本 |
+| LifecycleOperation | Create 完整原 CreateBinding 和目标代；Unload 源代和 capture；Resume 源代/capture/严格更大目标代/完整摘要；Destroy 只指逻辑会话 | 任意宿主命令、路径、PID 或删除列表 |
+| replay_matches | 比较整个原请求，包含全部操作参数 | 已查原键、已保存结果或不会再次派发；这些仍由收件事务提供 |
+
+请求的纯校验按版本、完整节点、deployment、期望类别和操作形状依次拒绝。Resume 允许废弃尝试留下的编号空洞，不要求目标恰好加一。原键查找/全文重放必须在当前阶段、窗口和资源检查之前处理；本库不读取账本，不用类型代替这项控制流。
+
+[SnapshotManifest](../../sandbox-protocol/src/lifecycle/manifest.rs)保存原 CaptureBinding、受保护配置指纹和完整文件记录。CaptureBinding 是原已接受捕获的操作/会话/源代/capture；后来的 Resume 具有自己的键，不能覆盖来源 capture 的原键。ContentDigest 是完整 32 字节 SHA-256 值，不与旧 core 的数值 ManifestDigest 转换；构造值不计算哈希或签发验证收据。
+
+文件按 state、memory、设备 profile 的全部可写盘顺序保存。每盘同时匹配原 drive_id，固定内部文件名为 state.bin、memory.bin、disk-N.img；profile 明确登记 drive_id 到原 jail 相对路径，不能仅靠数组位置选择来源。重复 drive/路径、缺少或额外文件、路径不符、零长度及总长度溢出拒绝。实际第一 runtime 的映射为 rootfs → rootfs.ext4 → disk-0.img，恢复复制到新 jail 的私有盘；不允许 VM 写回 bundle。
+
+最多 16 个可写盘是本接口的有限预算，不是 Firecracker 的通用上限或兼容性保证。snapshot_format 和工具/CPU/设备/镜像配置摘要须与原受保护 profile 比较；即使两个任意 profile 相同，也不能据此声明 VMM 兼容。实际文件白名单、原句柄/长度/内容摘要、冻结截面、同步发布及恢复资格分别由 V6/V5 提供，不能让 manifest 自己的字段批准自己。
+
+字节适配位于 [lifecycle_v3](../../sandbox-internal/src/lifecycle_v3.rs)：先检查原始字节预算，再调用固定 serde_json，最后调用上述真实守卫；原 JSON 错误及行列保留。输出复用已有 encode_bounded，不使用普通 to_vec 参考冒充服务器 Writer。该接线仍需本批实际生成体/库条件与正式验收；尚未宣称完整 serde、异步外壳或新端点已证明。实际证据与剩余条件只在覆盖记录和本批 PR 维护。
