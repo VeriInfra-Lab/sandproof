@@ -241,7 +241,8 @@ pub fn handle_reserve_startup(
     })
 }
 
-/// Rust implementation of Lean's `Controller.handleReservePauseSnapshot`.
+/// Reserve a pause snapshot only for the current eligible capture plan.
+/// Capture eligibility extends the historical Lean correspondence.
 ///
 /// # Errors
 ///
@@ -445,7 +446,8 @@ pub fn handle_dispatch_prepare(
     })
 }
 
-/// Rust implementation of Lean's `Controller.handleScheduleSealSnapshot`.
+/// Schedule sealing for the current eligible capture plan. The added capture
+/// guard is outside the historical Lean correspondence.
 ///
 /// # Errors
 ///
@@ -551,7 +553,8 @@ pub fn handle_schedule_seal_snapshot(
     })
 }
 
-/// Rust implementation of Lean's `Controller.handleScheduleCommitSnapshot`.
+/// Schedule registration for the current eligible capture plan. The added
+/// capture guard is outside the historical Lean correspondence.
 ///
 /// # Errors
 ///

@@ -229,8 +229,9 @@ pub fn begin_create(
     next
 }
 
-/// Begin a pause exactly as `SandboxModel.beginPause`: persist the new
-/// operation before committing its fence and freeze effects.
+/// Persist the pause operation and its capture responsibilities before
+/// committing its fence and freeze effects. The added capture fields are
+/// outside the historical `SandboxModel.beginPause` correspondence.
 #[must_use]
 pub fn begin_pause(
     world: &World,
@@ -374,8 +375,9 @@ fn supersede_current_operation(world: &mut World, sandbox: SandboxId, current: O
     world.operations.put(key, superseded);
 }
 
-/// Begin a kill exactly as `SandboxModel.beginKill`, including finalizing an
-/// unfinished operation that the tombstone supersedes.
+/// Begin a kill, finalize a superseded operation, and revoke capture
+/// eligibility without releasing its material responsibilities. The capture
+/// revocation is outside the historical `SandboxModel.beginKill` proof.
 #[must_use]
 pub fn begin_kill(
     world: &World,
@@ -390,7 +392,10 @@ pub fn begin_kill(
     for (key, stored) in world.operation_plans.entries() {
         if key.sandbox == sandbox && stored.capture.is_some() {
             let mut plan = stored.clone();
-            plan.capture = plan.capture.map(crate::capture::CaptureHandoff::terminate);
+            plan.capture = match plan.capture {
+                Some(capture) => Some(capture.terminate()),
+                None => None,
+            };
             next.operation_plans.put(*key, plan);
         }
     }
@@ -458,9 +463,10 @@ pub fn begin_compensation(
         }
         if let Some(stored) = next.operation_plans.get(&key) {
             let mut plan = stored.clone();
-            plan.capture = plan
-                .capture
-                .map(crate::capture::CaptureHandoff::ordinary_failure);
+            plan.capture = match plan.capture {
+                Some(capture) => Some(capture.ordinary_failure()),
+                None => None,
+            };
             next.operation_plans.put(key, plan);
         }
         return next;

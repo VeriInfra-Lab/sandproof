@@ -309,9 +309,10 @@ pub fn dispatch_effect(world: &World, id: EffectId) -> World {
             && crate::transition::current_capture(world, sandbox, record).is_some()
         {
             let mut plan = stored.clone();
-            plan.capture = plan
-                .capture
-                .map(crate::capture::CaptureHandoff::registration_dispatched);
+            plan.capture = match plan.capture {
+                Some(capture) => Some(capture.registration_dispatched()),
+                None => None,
+            };
             next.operation_plans.put(key, plan);
         }
     }
@@ -413,10 +414,11 @@ pub fn finalize_logical_failure(
     next
 }
 
-/// Mirrors `Controller.handleEffectDispatch`.
+/// Dispatch the current attempt, rejecting new capture work after revocation.
+/// Capture checks and commit uncertainty extend the historical reducer.
 ///
 /// # Errors
-/// Returns the first failed guard in the same order as the Lean reducer.
+/// Returns the first failed guard; rejection leaves `world` unchanged.
 pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
     if !world.controller_up {
         return Err(EffectReject::ControllerDown);

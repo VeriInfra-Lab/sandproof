@@ -356,8 +356,9 @@ fn current_plan<'a>(
 /// Execute one exact current worker attempt against durable state.
 ///
 /// # Errors
-/// Returns the first failed guard in the same order as the Lean worker
-/// reducer. Rejection leaves `world` unchanged.
+/// Returns the first failed guard. Rejection leaves `world` unchanged.
+/// Capture registration, late-result accounting and stop permission extend
+/// the historical worker reducer and require their own correspondence proof.
 #[allow(clippy::too_many_lines)]
 pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, WorkerReject> {
     let command = id.logical.command.clone();

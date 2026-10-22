@@ -466,9 +466,10 @@ pub fn handle_publish_running(
 }
 
 /// Publish a durable pause after every exact pause command has succeeded.
+/// Capture identity and stop-permit checks extend the historical reducer.
 ///
 /// # Errors
-/// Returns the first failed guard in Lean's publication order.
+/// Returns the first failed guard in publication order.
 #[allow(clippy::too_many_lines)]
 pub fn handle_publish_paused(
     world: &World,

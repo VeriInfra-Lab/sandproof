@@ -253,11 +253,12 @@ pub fn handle_create(world: &World, input: CreateRequest) -> Result<Decision, Re
     })
 }
 
-/// Rust implementation of Lean's `Controller.handlePause`.
+/// Admit a pause and reserve capture responsibilities in its operation plan.
+/// The added capture state is outside the historical Lean correspondence.
 ///
 /// # Errors
 ///
-/// Returns the first rejection from Lean's ordered admission checks.
+/// Returns the first rejection from the ordered admission checks.
 pub fn handle_pause(world: &World, input: PauseRequest) -> Result<Decision, Reject> {
     let PauseRequest {
         actor,
@@ -378,7 +379,8 @@ pub fn handle_resume(world: &World, input: ResumeRequest) -> Result<Decision, Re
     })
 }
 
-/// Rust implementation of Lean's `Controller.handleKill`.
+/// Admit owner termination and revoke capture eligibility, retaining material
+/// responsibilities. The added capture state is not covered by the old proof.
 ///
 /// # Errors
 ///
@@ -522,13 +524,15 @@ fn supplied_compensation_evidence(
         && id.command().epoch() == Some(epoch)
 }
 
-/// Start the terminal compensation protocol for the current create, resume,
-/// or pause operation.  Worker-caused compensation requires the finalized
-/// failure of the exact current logical-effect attempt owned by that operation.
+/// Compensate the current operation. Create/resume use terminal cleanup;
+/// ordinary pause failure preserves the original VM and capture obligations.
+/// Worker-caused compensation requires the finalized failure of the exact
+/// current logical-effect attempt owned by that operation. The pause branch
+/// and capture guards are outside the historical Lean correspondence.
 ///
 /// # Errors
 ///
-/// Returns the first rejection from Lean's ordered compensation checks.
+/// Returns the first rejection from the ordered compensation checks.
 pub fn handle_compensation(world: &World, input: CompensationRequest) -> Result<Decision, Reject> {
     let CompensationRequest {
         sandbox,
