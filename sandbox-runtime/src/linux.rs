@@ -214,6 +214,23 @@ struct ProcessRecord {
     resource_id: String,
     pid: u32,
     start_time_ticks: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    boot_id: Option<String>,
+}
+
+impl ProcessRecord {
+    fn source_identity(&self) -> Result<Option<RuntimeProcessIdentity>, RuntimeError> {
+        let Some(boot_id) = &self.boot_id else {
+            return Ok(None);
+        };
+        let identity = RuntimeProcessIdentity {
+            pid: self.pid,
+            start_time_ticks: self.start_time_ticks,
+            boot_id: boot_id.clone(),
+        };
+        identity.validate_fields()?;
+        Ok(Some(identity))
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -467,13 +484,13 @@ impl Runtime {
             .spawn()?;
         let result = (|| {
             let pid = child.id();
-            let start_time_ticks = read_proc(pid)?
-                .ok_or(RuntimeError::Protocol("launch gate vanished"))?
-                .start_time_ticks;
+            let identity = RuntimeProcessIdentity::capture(pid)?;
+            let start_time_ticks = identity.start_time_ticks;
             let record = ProcessRecord {
                 resource_id: id.to_owned(),
                 pid,
                 start_time_ticks,
+                boot_id: Some(identity.boot_id),
             };
             self.write_new_record(&claim.join("record.json"), &record)?;
             // Directory authority must already be durable and still match
@@ -547,6 +564,29 @@ impl Runtime {
         }
         self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
         Ok(())
+    }
+
+    /// Read the boot identity already persisted before this original launch.
+    /// Old claims without it remain unavailable, never upgraded from /proc.
+    /// # Errors
+    /// Missing/changed original process, jail or cgroup remains unknown.
+    pub fn source_process_identity(
+        &self,
+        id: &str,
+    ) -> Result<Option<RuntimeProcessIdentity>, RuntimeError> {
+        validate_id(id)?;
+        let record = self.read_record(id)?;
+        let Some(identity) = record.source_identity()? else {
+            return Ok(None);
+        };
+        if !identity.is_alive()? || verified_process(&record)?.is_none() {
+            return Err(RuntimeError::IdentityMismatch(
+                "original source process unavailable",
+            ));
+        }
+        self.require_launch_jail(id, 0)?;
+        self.verify_cgroup(id, Some(record.pid))?;
+        Ok(Some(identity))
     }
 
     /// Observe only the process bound to this resource claim.
@@ -1050,6 +1090,7 @@ impl Runtime {
             if stored.resource_id != id
                 || stored.pid != record.pid
                 || stored.start_time_ticks != record.start_time_ticks
+                || stored.boot_id != record.boot_id
             {
                 return Err(RuntimeError::IdentityMismatch("failed prepare identity"));
             }
@@ -1079,6 +1120,7 @@ impl Runtime {
         if stored.resource_id != id
             || stored.pid != record.pid
             || stored.start_time_ticks != record.start_time_ticks
+            || stored.boot_id != record.boot_id
             || verified_process(&record)?.is_some()
             || path_present(
                 &self
@@ -1155,6 +1197,7 @@ impl Runtime {
         if record.resource_id != id || record.pid == 0 || record.start_time_ticks == 0 {
             return Err(RuntimeError::IdentityMismatch("record fields"));
         }
+        record.source_identity()?;
         Ok(record)
     }
 
@@ -1595,6 +1638,11 @@ fn parse_proc_stat(stat: &str) -> Result<ProcStatus, RuntimeError> {
 }
 
 fn verified_process(record: &ProcessRecord) -> Result<Option<std::os::fd::OwnedFd>, RuntimeError> {
+    if let Some(identity) = record.source_identity()?
+        && !identity.is_alive()?
+    {
+        return Ok(None);
+    }
     let pid = Pid::from_raw(
         i32::try_from(record.pid).map_err(|_| RuntimeError::IdentityMismatch("pid range"))?,
     )
@@ -1805,6 +1853,7 @@ mod tests {
                 resource_id: id.clone(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
+                boot_id: None,
             },
         )
         .unwrap();
@@ -2227,3 +2276,7 @@ mod console_policy_tests {
         assert!(serde_json::from_str::<ConsolePolicy>("\"bounded_tail\"").is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "source_identity_tests.rs"]
+mod source_identity_tests;

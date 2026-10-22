@@ -165,6 +165,7 @@ impl RetirementManifest {
                 resource_id: resource_id.to_owned(),
                 pid: u32::MAX,
                 start_time_ticks: u64::MAX,
+                boot_id: Some("ffffffff-ffff-ffff-ffff-ffffffffffff".into()),
             }),
             uplink_intent: false,
             namespace: Some(NamespaceIdentity {
@@ -713,6 +714,7 @@ mod tests {
             resource_id: ID.into(),
             pid: u32::MAX,
             start_time_ticks: u64::MAX,
+            boot_id: Some("ffffffff-ffff-ffff-ffff-ffffffffffff".into()),
         });
         manifest.namespace = Some(NamespaceIdentity {
             device: u64::MAX,
@@ -790,6 +792,7 @@ mod tests {
                     resource_id: ID.into(),
                     pid: i32::MAX as u32,
                     start_time_ticks: 1,
+                    boot_id: None,
                 },
             )
             .unwrap();

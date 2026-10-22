@@ -160,6 +160,7 @@ impl Runtime {
         validate_id(id)?;
         let record = self.read_record(id)?;
         if record.pid != expected.pid
+            || record.boot_id.as_ref() != Some(&expected.boot_id)
             || record.start_time_ticks != expected.start_time_ticks
             || !expected.is_alive()?
         {
@@ -210,6 +211,7 @@ impl Runtime {
     ) -> Result<(), RuntimeError> {
         let record = self.read_record(&paused.resource_id)?;
         if record.pid != paused.identity.pid
+            || record.boot_id.as_ref() != Some(&paused.identity.boot_id)
             || record.start_time_ticks != paused.identity.start_time_ticks
             || !paused.identity.is_alive()?
             || verified_process(&record)?.is_none()

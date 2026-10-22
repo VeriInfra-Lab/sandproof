@@ -21,3 +21,5 @@ cargo test -p sandproof-node --lib --locked full_snapshot::tests::stored_capture
 正确版必须通过；错误版必须先成功编译，再由相同的文件内容一致性断言失败。缺工具、编译失败和超时不算反例；保留两版源码摘要、编译来源和原日志，不能覆盖正确版或清理共享缓存。额外/缺失文件、符号/硬链接、权限、超额、原文件/目录替换及原捕获键与后续操作键混淆另有生产路径回归。
 
 本批没有新的 VM 试验，也没有完整新增调用链的机器对应定理。先前真实 Full/Seal 证据只适用于其精确原候选，不能直接当成新入口实测；既有文件接受守卫证明不能扩张为目录取得、读取、manifest、持久接管或停止的整体证明。新 KVM 批次需要精确候选和范围准入，不能使用 test-discard 冒充产品 unload。
+
+原来源回归同时覆盖新 claim 在 launch gate 前保留宿主 boot、Prepared/Activated 的完整字段往返和旧缺字段 None 的旧字节形状。`source_process_identity` 的 expected_resource 必须来自原 action。另一个真实错误版只把 `sandbox-node/src/linux/source_process.rs` 的 `self.resource != *expected_resource` 条件禁用，运行原测试 `linux::source_process::tests::foreign_command_resource_and_malformed_source_are_refused`，必须成功编译并触发同一拒绝断言。两个错误版使用独立源码/原日志，不替换正确版。缺失来源不意味着进程已退出；新读取器对旧记录的往返不表示旧代码保留或认证了新增 Some 字段，也不支持滚动混合版本。

@@ -687,6 +687,7 @@ mod tests {
                 resource_id: ID.to_owned(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
+                boot_id: None,
             },
         )
         .unwrap();
@@ -714,6 +715,7 @@ mod tests {
                 resource_id: ID.into(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
+                boot_id: None,
             },
         )
         .unwrap();
@@ -809,6 +811,7 @@ mod tests {
                     resource_id: BOUNDED_ID.into(),
                     pid: i32::MAX as u32,
                     start_time_ticks: 1,
+                    boot_id: None,
                 },
             )
             .unwrap();
