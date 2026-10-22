@@ -51,6 +51,36 @@ fn require_healthy(connection: &Connection) -> Result<(), JournalError> {
     Ok(())
 }
 
+pub(super) fn snapshot(
+    connection: &Connection,
+    world: &core::World,
+    namespace: &str,
+    sandbox: core::SandboxId,
+    require_authorizable: bool,
+) -> Result<Option<(core::Generation, [u8; 32])>, JournalError> {
+    if require_authorizable {
+        require_healthy(connection)?;
+    }
+    validate(connection, world, namespace)?;
+    let public = identity::sandbox_id(namespace, sandbox)?;
+    let stored: Option<(String, Vec<u8>)> = connection
+        .query_row(
+            "SELECT generation,digest FROM controller_data_credentials WHERE sandbox_id=?1",
+            [public.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    stored
+        .map(|(generation, digest)| {
+            let (_, generation) = binding(world, namespace, public.as_str(), &generation)?;
+            Ok((
+                generation,
+                digest.try_into().map_err(|_| JournalError::CorruptStore)?,
+            ))
+        })
+        .transpose()
+}
+
 fn require_complete_mapping(
     connection: &Connection,
     world: &core::World,
@@ -256,29 +286,8 @@ impl ControllerJournal {
         require_authorizable: bool,
     ) -> Result<Option<(core::Generation, [u8; 32])>, JournalError> {
         let world = self.world()?;
-        let public = identity::sandbox_id(&self.namespace, sandbox)?;
         let tx = self.journal.connection.unchecked_transaction()?;
-        if require_authorizable {
-            require_healthy(&tx)?;
-        }
-        validate(&tx, &world, &self.namespace)?;
-        let stored: Option<(String, Vec<u8>)> = tx
-            .query_row(
-                "SELECT generation,digest FROM controller_data_credentials WHERE sandbox_id=?1",
-                [public.as_str()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let result = stored
-            .map(|(generation, digest)| {
-                let (_, generation) =
-                    binding(&world, &self.namespace, public.as_str(), &generation)?;
-                Ok::<_, JournalError>((
-                    generation,
-                    digest.try_into().map_err(|_| JournalError::CorruptStore)?,
-                ))
-            })
-            .transpose()?;
+        let result = snapshot(&tx, &world, &self.namespace, sandbox, require_authorizable)?;
         tx.commit()?;
         self.committed_world
             .ensure_ready(&self.journal.connection)?;

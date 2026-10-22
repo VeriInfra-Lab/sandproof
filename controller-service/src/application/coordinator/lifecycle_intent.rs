@@ -12,6 +12,60 @@ use sandproof_protocol::lifecycle::{
 };
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Read the original Create result and this call's current running facts.
+    /// Keeps the original application lock, closes every SQL snapshot before
+    /// bounded Host I/O, then rechecks all original objects and stored values.
+    /// It never executes/reclaims work, changes timeouts or repairs credentials.
+    /// # Errors
+    /// Invalid full binding, corrupt authority or unavailable clock stays explicit.
+    pub fn observe_lifecycle_create(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<crate::LifecycleCreateObservation, JournalError> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?;
+        let now = self
+            .clock
+            .now_ms()
+            .map_err(|_| JournalError::UnresolvedAction)?;
+        let candidate = inner
+            .journal
+            .lifecycle_ready_candidate::<H::Evidence>(intent, context, now)?;
+        if !candidate.can_probe() {
+            return Ok(candidate.view);
+        }
+        let local = candidate.view.local.ok_or(JournalError::CorruptStore)?;
+        let generation = candidate
+            .view
+            .native
+            .as_ref()
+            .ok_or(JournalError::CorruptStore)?
+            .generation;
+        let before =
+            super::data_credentials::verify_target(&inner, local.sandbox, generation).is_ok();
+        let probes = if before {
+            candidate
+                .actions
+                .iter()
+                .map(|action| inner.host.observe(action))
+                .collect()
+        } else {
+            vec![]
+        };
+        let credentials = before
+            && super::data_credentials::verify_target(&inner, local.sandbox, generation).is_ok();
+        let now = self
+            .clock
+            .now_ms()
+            .map_err(|_| JournalError::UnresolvedAction)?;
+        inner
+            .journal
+            .finish_lifecycle_ready(&candidate, context, &probes, credentials, now)
+    }
+
     /// Record through the original lock and writer. Reception grants no host
     /// permission; mapped Destroy also withdraws the original live data routes.
     /// # Errors

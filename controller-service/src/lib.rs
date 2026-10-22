@@ -44,11 +44,13 @@ pub(crate) const LIFECYCLE_INBOX_FORMAT_VERSION: i64 = 17;
 #[cfg(feature = "durable")]
 pub use controller::{
     BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProfile,
-    CheckpointProgress, ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission,
-    InternalAudit, InternalAuditOperation, InternalCreateResult, InternalInboxConfig,
-    InternalLocalBinding, InternalNativeAudit, InternalRetentionLane, InternalTemplate,
-    InternalWorkState, LifecycleInboxConfig, LifecycleWorkState, Lifetime, MaintenanceConfig,
-    RetirementCandidate,
+    CheckpointProgress, ControllerJournal, CreateAdmission, CreateReadiness,
+    CreateReadinessPending, HostReleaseWitness, InternalAdmission, InternalAudit,
+    InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
+    InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState,
+    LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
+    LifecycleReadyObservation, LifecycleWorkState, Lifetime, MaintenanceConfig,
+    NativeCreateSnapshot, RetirementCandidate,
 };
 
 #[cfg(feature = "durable")]

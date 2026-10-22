@@ -90,6 +90,8 @@ pub struct FakeHostEvidence {
     pub resource: ResourceRef,
     pub command: core::Command,
     pub established: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<sandproof_controller_service::capture::SourceProcessIdentity>,
 }
 
 impl ResourceEvidence for FakeHostEvidence {
@@ -102,6 +104,22 @@ impl HostEvidence for FakeHostEvidence {
     fn validates(&self, command: &core::Command) -> bool {
         self.established && self.command == *command
     }
+
+    fn source_process_identity(
+        &self,
+        command: &core::Command,
+        resource: &ResourceRef,
+    ) -> Option<sandproof_controller_service::capture::SourceProcessIdentity> {
+        (self.established
+            && self.command == *command
+            && self.resource == *resource
+            && matches!(
+                command,
+                core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }
+            ))
+        .then(|| self.source.clone())
+        .flatten()
+    }
 }
 
 pub fn success(action: &WorkAction<core::EffectId>) -> WorkReceipt<FakeHostEvidence> {
@@ -111,6 +129,7 @@ pub fn success(action: &WorkAction<core::EffectId>) -> WorkReceipt<FakeHostEvide
             resource: action.identity.resource.clone(),
             command: action.command.command().clone(),
             established: true,
+            source: None,
         }),
     }
 }

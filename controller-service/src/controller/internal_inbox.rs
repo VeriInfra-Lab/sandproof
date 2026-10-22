@@ -21,6 +21,7 @@ pub(super) use audit::snapshot as audit_snapshot;
 pub use audit::{InternalAudit, InternalAuditOperation, InternalNativeAudit};
 use codec::load;
 pub(super) use codec::{charged_bytes, validate};
+pub(super) use facts::native_ready_fact;
 pub(super) use facts::pinned;
 use model::Inbox;
 pub use model::InternalLocalBinding;
