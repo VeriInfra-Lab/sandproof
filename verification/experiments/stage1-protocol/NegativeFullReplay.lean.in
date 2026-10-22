@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.RequestValues
+import SandboxModel.Lifecycle.Protocol.ReplayContract
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.Request
+theorem mutant_accepts_changed_capture :
+    replay_matches (unload 2#u64) (unload 1#u64) = .ok true := by
+  simp [unload, binding, replay_matches,
+    sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches,
+    sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq,
+    sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+theorem key_only_not_full_replay : ¬ FullReplayContract replay_matches := by
+  classical
+  intro contract
+  have different : unload 2#u64 ≠ unload 1#u64 := by simp [unload]
+  have exact_result := contract (unload 2#u64) (unload 1#u64)
+  rw [mutant_accepts_changed_capture] at exact_result
+  simp [different] at exact_result
+end SandboxModel.Stage1Protocol.Request
+#audit_controller_proof SandboxModel.Stage1Protocol.Request.mutant_accepts_changed_capture
+#audit_controller_proof SandboxModel.Stage1Protocol.Request.key_only_not_full_replay
