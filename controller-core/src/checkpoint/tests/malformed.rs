@@ -8,7 +8,9 @@ fn reject(mut checkpoint: Checkpoint, mutate: impl FnOnce(&mut CheckpointWire)) 
 #[test]
 fn rejects_unknown_version_and_invalid_or_exhausted_record_budgets() {
     let checkpoint = capture(&enabled(), LIMITS).unwrap();
-    reject(checkpoint.clone(), |wire| wire.version += 1);
+    reject(checkpoint.clone(), |wire| {
+        wire.version = UNLOAD_CHECKPOINT_VERSION + 1;
+    });
     for limits in [
         CheckpointLimits {
             max_records: 0,

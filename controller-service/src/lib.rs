@@ -11,6 +11,7 @@
 extern crate self as sandproof_controller_service;
 
 pub mod application;
+pub mod capture;
 pub use application::BuildWindow;
 #[cfg(feature = "durable")]
 mod controller;
@@ -36,13 +37,18 @@ pub use host_contract::{
 pub const INTERNAL_INBOX_FORMAT_VERSION: i64 =
     sandproof_protocol::internal::HOST_STORE_FORMAT_VERSION;
 
+// Local SQLite feature gate; independent of protocol and checkpoint versions.
+#[cfg(feature = "durable")]
+pub(crate) const LIFECYCLE_INBOX_FORMAT_VERSION: i64 = 17;
+
 #[cfg(feature = "durable")]
 pub use controller::{
-    BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProgress,
-    ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission, InternalAudit,
-    InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
-    InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState, Lifetime,
-    MaintenanceConfig, RetirementCandidate,
+    BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProfile,
+    CheckpointProgress, ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission,
+    InternalAudit, InternalAuditOperation, InternalCreateResult, InternalInboxConfig,
+    InternalLocalBinding, InternalNativeAudit, InternalRetentionLane, InternalTemplate,
+    InternalWorkState, LifecycleInboxConfig, LifecycleWorkState, Lifetime, MaintenanceConfig,
+    RetirementCandidate,
 };
 
 #[cfg(feature = "durable")]

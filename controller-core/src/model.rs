@@ -420,6 +420,12 @@ pub struct OperationPlan {
     pub slot: Option<NetSlotId>,
     pub restore_from: Option<RestoreSource>,
     pub target_snapshot: Option<RestoreSource>,
+    /// Capture uses are named by this original plan, not by a request future.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub capture: Option<crate::capture::CaptureHandoff>,
     pub stop_vms: Vec<VmId>,
     pub close_slots: Vec<NetSlotId>,
     pub retry_limit: u64,

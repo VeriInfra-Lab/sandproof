@@ -1,3 +1,4 @@
+use super::Profile;
 use super::{
     Authority, EffectStatus, HostBinding, HostSlotPhase, OperationInput, OperationStatus, Phase,
     Reject, VmStatus, World, binding_current, ledger_shape, record,
@@ -5,7 +6,7 @@ use super::{
 use crate::maintenance::MaintenanceState;
 use crate::{OperationKind, SandboxId};
 
-pub(super) fn validate(world: &World) -> Result<(), Reject> {
+pub(super) fn validate(world: &World, profile: Profile) -> Result<(), Reject> {
     let Some(state) = &world.maintenance else {
         return Ok(());
     };
@@ -23,8 +24,8 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
         return Err(Reject::InvalidFrontier);
     }
     for (key, retained) in state.retained.entries() {
-        retained_group(state, key.sandbox)?;
-        ledger_shape(*key, &retained.ledger)?;
+        retained_group(state, key.sandbox, profile)?;
+        ledger_shape(*key, &retained.ledger, profile)?;
         if world.sandbox_record(key.sandbox).is_some()
             || !matches!(
                 retained.ledger.operation.status,
@@ -122,6 +123,7 @@ fn limits_and_clock(state: &MaintenanceState) -> Result<(), Reject> {
 
 fn released(world: &World, binding: HostBinding) -> Result<(), Reject> {
     let row = record(world, binding.sandbox)?;
+    // A paused row alone is not an Unloaded/running-position release witness.
     if !row.terminal
         || row.phase != Phase::Destroyed
         || row.desired != Authority::Closed
@@ -145,10 +147,15 @@ fn released(world: &World, binding: HostBinding) -> Result<(), Reject> {
     Ok(())
 }
 
-fn retained_group(state: &MaintenanceState, sandbox: SandboxId) -> Result<(), Reject> {
+fn retained_group(
+    state: &MaintenanceState,
+    sandbox: SandboxId,
+    profile: Profile,
+) -> Result<(), Reject> {
     let mut creates = 0_u64;
     let mut kills = 0_u64;
     let mut failed_create = false;
+    let mut pauses = 0_u64;
     for (key, retained) in state.retained.entries() {
         if key.sandbox != sandbox {
             continue;
@@ -160,12 +167,13 @@ fn retained_group(state: &MaintenanceState, sandbox: SandboxId) -> Result<(), Re
                     matches!(retained.ledger.operation.status, OperationStatus::Failed(_));
             }
             OperationKind::Kill => kills += 1,
+            OperationKind::Pause if profile == Profile::FirstUnload => pauses += 1,
             OperationKind::Pause | OperationKind::Resume => {
                 return Err(Reject::UnsupportedSnapshotHistory);
             }
         }
     }
-    if creates != 1 || kills > 1 || (kills == 0 && !failed_create) {
+    if creates != 1 || kills > 1 || pauses > 1 || (kills == 0 && !failed_create) {
         return Err(Reject::InvalidMaintenance);
     }
     Ok(())

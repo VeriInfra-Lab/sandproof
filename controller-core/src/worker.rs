@@ -356,8 +356,9 @@ fn current_plan<'a>(
 /// Execute one exact current worker attempt against durable state.
 ///
 /// # Errors
-/// Returns the first failed guard in the same order as the Lean worker
-/// reducer. Rejection leaves `world` unchanged.
+/// Returns the first failed guard. Rejection leaves `world` unchanged.
+/// Capture registration, late-result accounting and stop permission extend
+/// the historical worker reducer and require their own correspondence proof.
 #[allow(clippy::too_many_lines)]
 pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, WorkerReject> {
     let command = id.logical.command.clone();
@@ -643,6 +644,11 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
             if record.phase != Phase::Pausing {
                 return Err(WorkerReject::WrongPhase);
             }
+            if !crate::transition::current_capture(world, sandbox, record)
+                .is_some_and(crate::capture::CaptureHandoff::has_capture_work)
+            {
+                return Err(WorkerReject::ResourceBusy);
+            }
             if epoch != record.epoch
                 || generation != record.generation
                 || record.current_vm != Some(vm)
@@ -708,6 +714,12 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
                 || plan.target_snapshot != Some(RestoreSource { snapshot, manifest })
             {
                 return Err(WorkerReject::PlanMismatch);
+            }
+            if !plan
+                .capture
+                .is_some_and(crate::capture::CaptureHandoff::has_capture_work)
+            {
+                return Err(WorkerReject::ResourceBusy);
             }
             let Some(stored_vm) = world.vms.get(&vm) else {
                 return Err(WorkerReject::ResourceNotFound);
@@ -789,20 +801,36 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
             if stored.stage != SnapshotStage::LocalSealed {
                 return Err(WorkerReject::SnapshotNotReady);
             }
+            let (key, plan) = current_plan(world, sandbox, record)?;
+            if plan.vm != Some(vm)
+                || plan.target_snapshot != Some(RestoreSource { snapshot, manifest })
+            {
+                return Err(WorkerReject::PlanMismatch);
+            }
+            let Some(capture) = crate::transition::current_capture(world, sandbox, record)
+                .and_then(crate::capture::CaptureHandoff::observe_bundle)
+            else {
+                return Err(WorkerReject::ResourceBusy);
+            };
             let mut next = world.clone();
+            let mut registered = plan.clone();
+            registered.capture = Some(capture);
+            next.operation_plans.put(key, registered);
             let mut durable = *stored;
             durable.stage = SnapshotStage::Durable;
             durable.immutable = true;
             put_snapshot(&mut next, snapshot, durable);
-            enqueue(
-                &mut next,
-                Command::StopVm {
-                    sandbox,
-                    epoch: record.epoch,
-                    generation: record.generation,
-                    vm,
-                },
-            );
+            if capture.may_stop_original() {
+                enqueue(
+                    &mut next,
+                    Command::StopVm {
+                        sandbox,
+                        epoch: record.epoch,
+                        generation: record.generation,
+                        vm,
+                    },
+                );
+            }
             Ok(WorkerDecision {
                 event: WorkerEvent::CommitSnapshot { snapshot },
                 next,
@@ -848,14 +876,23 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
                     return Err(WorkerReject::FenceNotReady);
                 }
                 let (_, plan) = current_plan(world, sandbox, record)?;
+                if plan.vm != Some(vm)
+                    || !crate::transition::current_capture(world, sandbox, record)
+                        .is_some_and(crate::capture::CaptureHandoff::may_stop_original)
+                {
+                    return Err(WorkerReject::SnapshotNotReady);
+                }
                 let Some(target) = plan.target_snapshot else {
                     return Err(WorkerReject::SnapshotNotReady);
                 };
                 let Some(stored_snapshot) = world.snapshots.get(&target.snapshot) else {
                     return Err(WorkerReject::SnapshotNotReady);
                 };
-                if stored_snapshot.sandbox != sandbox
+                if stored_snapshot.owner != record.owner
+                    || stored_snapshot.sandbox != sandbox
                     || stored_snapshot.source_generation != record.generation
+                    || stored_snapshot.workspace != record.workspace
+                    || stored_snapshot.manifest != target.manifest
                     || stored_snapshot.stage != SnapshotStage::Durable
                     || !stored_snapshot.immutable
                 {

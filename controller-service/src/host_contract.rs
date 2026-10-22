@@ -250,6 +250,21 @@ pub struct HostSlotContext {
 /// exact identity and readiness. The pure reducer cannot inspect host I/O.
 pub trait HostEvidence: ResourceEvidence {
     fn validates(&self, command: &core::Command) -> bool;
+
+    /// Return the process identity from the matching successful original
+    /// Prepare/Activate observation, never from a future capture manifest.
+    /// The adapter must match `command` and the independently expected resource.
+    /// The controller supplies that resource from the validated original action;
+    /// comparing an observation's resource with itself is not a check.
+    /// Old observations without boot identity remain unavailable. This fact
+    /// alone grants neither capture admission nor a durable Stop permit.
+    fn source_process_identity(
+        &self,
+        _command: &core::Command,
+        _expected_resource: &sandproof_protocol::ResourceRef,
+    ) -> Option<crate::capture::SourceProcessIdentity> {
+        None
+    }
 }
 
 /// An interrupted transport does not prove whether the worker ran the action.

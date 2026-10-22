@@ -13,8 +13,10 @@ mod validation;
 mod window;
 use super::{ControllerJournal, capacity, transaction::WorldTransaction};
 use crate::{CrashInjector, CrashPoint, JournalError};
+pub(super) use admission::terminate_local;
 pub(super) use admission::{AdmissionAttachment, attach_admission};
 pub use admission::{InternalAdmission, InternalCreateResult, InternalTemplate};
+pub(super) use admission::{checked_binding_options, validate_binding_and_time, validate_owner_id};
 pub(super) use audit::snapshot as audit_snapshot;
 pub use audit::{InternalAudit, InternalAuditOperation, InternalNativeAudit};
 use codec::load;
@@ -113,6 +115,9 @@ impl ControllerJournal {
             return Err(JournalError::UnsupportedStore);
         }
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        if super::lifecycle_inbox::configured(&tx)? {
+            return Err(JournalError::UnsupportedStore);
+        }
         if load(&tx)?.is_some() {
             return Err(JournalError::Conflict);
         }

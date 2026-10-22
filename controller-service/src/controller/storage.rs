@@ -37,6 +37,7 @@ pub(super) fn apply(
     input: core::ControllerInput,
 ) -> Result<core::ControllerDecision, JournalError> {
     let world = transaction.world();
+    checkpoint::check_input_profile(transaction, &world, &input)?;
     let sandbox = identity::input_sandbox(&input)?;
     let stored = StoredInput { version: 1, input };
     let serialized = checkpoint::input_bytes(transaction, &stored)?;

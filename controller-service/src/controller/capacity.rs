@@ -41,6 +41,44 @@ const SQL_ROWS: u64 = 1 + 2 + ATTEMPTS + RECEIPTS + LOGICAL + 7;
 const SCALAR_BYTES: u64 = 4096;
 const OPTIONS_BYTES: u64 = crate::CreateOptions::MAX_ENCODED_BYTES as u64;
 
+struct Graph {
+    logical: u64,
+    attempts: u64,
+    receipts: u64,
+    records: u64,
+    references: u64,
+    policy_copies: u64,
+    inputs: u64,
+    sql_rows: u64,
+    operations: u64,
+}
+fn graph(policy: &checkpoint::MaintenanceConfig) -> Graph {
+    let unload = policy.checkpoint_profile == checkpoint::CheckpointProfile::FirstUnload;
+    // The one-pause profile adds fence/freeze/seal/register/stop (the final
+    // kill's stop has a different epoch). Reserve all retries before create.
+    let logical = LOGICAL + if unload { 5 } else { 0 };
+    let attempts = logical * (core::DEFAULT_RETRY_LIMIT + 1);
+    let receipts = attempts * 2;
+    Graph {
+        logical,
+        attempts,
+        receipts,
+        records: RECORDS + (logical - LOGICAL) + (attempts - ATTEMPTS) + if unload { 3 } else { 0 },
+        references: REFERENCES + 2 * (attempts - ATTEMPTS) + if unload { 8 } else { 0 },
+        policy_copies: POLICY_COPIES,
+        inputs: INPUTS
+            + 4 * (attempts - ATTEMPTS)
+            + (logical - LOGICAL) * (core::DEFAULT_RETRY_LIMIT + 1)
+            + if unload { 16 } else { 0 },
+        sql_rows: SQL_ROWS
+            + (attempts - ATTEMPTS)
+            + (receipts - RECEIPTS)
+            + (logical - LOGICAL)
+            + u64::from(unload),
+        operations: if unload { 3 } else { 2 },
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapacityConfig {
@@ -148,7 +186,7 @@ pub(super) fn configure(
     }
     tx.execute_batch("CREATE TABLE controller_capacity_reservations(sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id) DEFERRABLE INITIALLY DEFERRED, policy_entries INTEGER NOT NULL, policy_bytes INTEGER NOT NULL, input_left INTEGER NOT NULL, effect_left INTEGER NOT NULL, outbox_left INTEGER NOT NULL, receipt_left INTEGER NOT NULL);")?;
     let (initial, _) = sql_usage(tx, cap, policy)?;
-    if add(initial.rows, SQL_ROWS)? > cap.max_sql_rows
+    if add(initial.rows, graph(policy).sql_rows)? > cap.max_sql_rows
         || add(initial.bytes, sql_lease(policy, cap)?)? > cap.max_sql_bytes
     {
         return Err(JournalError::UnsupportedStore);
@@ -179,12 +217,15 @@ pub(super) fn validate_host(
         )?,
     )?;
     if host.console_policy != Some(super::ConsolePolicy::Discard)
-        || host.maintenance.max_retained_results < 2
-        || policy.max_records < add(base, RECORDS)?
-        || policy.max_references < REFERENCES
+        || host.maintenance.max_retained_results < graph(policy).operations
+        || policy.max_records < add(base, graph(policy).records)?
+        || policy.max_references < graph(policy).references
         || policy.max_checkpoint_bytes
-            < mul(base + 6 + RECORDS + REFERENCES + 2, SCALAR_BYTES)? + POLICY_COPIES * 9
-        || cap.max_sql_rows < add(SQL_ROWS + 10, host.maintenance.max_host_slots)?
+            < mul(
+                base + 6 + graph(policy).records + graph(policy).references + 2,
+                SCALAR_BYTES,
+            )? + graph(policy).policy_copies * 9
+        || cap.max_sql_rows < add(graph(policy).sql_rows + 10, host.maintenance.max_host_slots)?
         || cap.max_sql_bytes < add(fixed_sql, sql_lease(policy, cap)?)?
     {
         return Err(JournalError::UnsupportedStore);
@@ -308,10 +349,10 @@ pub(super) fn admit(
             identity::sandbox_id(&namespace, request.sandbox)?.as_str(),
             sql(entries)?,
             sql(bytes)?,
-            sql(INPUTS)?,
-            sql(LOGICAL)?,
-            sql(ATTEMPTS)?,
-            sql(RECEIPTS)?
+            sql(graph(&policy).inputs)?,
+            sql(graph(&policy).logical)?,
+            sql(graph(&policy).attempts)?,
+            sql(graph(&policy).receipts)?
         ],
     )?;
     Ok(())
@@ -438,9 +479,7 @@ fn sql_usage(
                 }
                 bytes = add(bytes - length, 20)?;
             }
-            if table == "controller_internal_inbox" {
-                bytes = super::internal_inbox::charged_bytes(row, bytes, cap)?;
-            }
+            bytes = charged_inbox_bytes(&table, row, bytes, cap)?;
             if table == "controller_host_slots" {
                 continue;
             } // fixed global lease below
@@ -485,6 +524,19 @@ fn sql_usage(
         mul(host.maintenance.max_host_slots, SCALAR_BYTES)?,
     )?;
     Ok((total, owned))
+}
+
+fn charged_inbox_bytes(
+    table: &str,
+    row: &rusqlite::Row<'_>,
+    bytes: u64,
+    cap: &CapacityConfig,
+) -> Result<u64, JournalError> {
+    match table {
+        "controller_internal_inbox" => super::internal_inbox::charged_bytes(row, bytes, cap),
+        "controller_lifecycle_inbox" => super::lifecycle_inbox::charged_bytes(row, bytes, cap),
+        _ => Ok(bytes),
+    }
 }
 
 fn row_bytes(
@@ -541,15 +593,16 @@ fn sql_lease(
 ) -> Result<u64, JournalError> {
     // Actions contain a policy-sized command plus fixed identities; each
     // outbox row has its final receipt and receipt history keeps <=2 copies.
-    let actions = mul(ATTEMPTS, add(policy.max_input_bytes, SCALAR_BYTES)?)?;
-    let receipts = mul(ATTEMPTS + RECEIPTS, cap.max_receipt_bytes)?;
-    let keys = mul(LOGICAL, add(policy.max_input_bytes, SCALAR_BYTES)?)?;
+    let g = graph(policy);
+    let actions = mul(g.attempts, add(policy.max_input_bytes, SCALAR_BYTES)?)?;
+    let receipts = mul(g.attempts + g.receipts, cap.max_receipt_bytes)?;
+    let keys = mul(g.logical, add(policy.max_input_bytes, SCALAR_BYTES)?)?;
     // Sandbox contains up to 3 policy copies and the create ledger one.
     add(
         add(add(actions, receipts)?, keys)?,
         add(
             add(mul(4, policy.max_input_bytes)?, 3 * OPTIONS_BYTES)?,
-            mul(SQL_ROWS, SCALAR_BYTES)?,
+            mul(g.sql_rows, SCALAR_BYTES)?,
         )?,
     )
 }
@@ -563,6 +616,7 @@ pub(super) fn validate(connection: &Connection, world: &core::World) -> Result<(
     let host = bounded::config(connection)?.ok_or(JournalError::CorruptStore)?;
     let (mut sql, owned) = sql_usage(connection, cap, &policy)?;
     let sql_bytes = sql_lease(&policy, cap)?;
+    let g = graph(&policy);
     let mut q=connection.prepare("SELECT sandbox_id,policy_entries,policy_bytes,input_left,effect_left,outbox_left,receipt_left FROM controller_capacity_reservations")?;
     let mut count = 0_u64;
     let mut refs = 0_u64;
@@ -592,38 +646,38 @@ pub(super) fn validate(connection: &Connection, world: &core::World) -> Result<(
                 .operation_records()
                 .iter()
                 .filter(|(key, _)| key.sandbox == *sandbox)
-                .count()
-                > 2
+                .count() as u64
+                > g.operations
             || world
                 .effect_ids()
                 .iter()
                 .filter(|id| id.command().sandbox() == *sandbox)
                 .count() as u64
-                > ATTEMPTS
+                > g.attempts
         {
             return Err(JournalError::CorruptStore);
         }
         for (index, value) in left.into_iter().enumerate() {
-            if value > [INPUTS, LOGICAL, ATTEMPTS, RECEIPTS][index] {
+            if value > [g.inputs, g.logical, g.attempts, g.receipts][index] {
                 return Err(JournalError::CorruptStore);
             }
             reserved[index] = add(reserved[index], value)?;
         }
         count = add(count, 1)?;
-        refs = add(refs, add(REFERENCES, mul(POLICY_COPIES, entries)?)?)?;
+        refs = add(refs, add(g.references, mul(g.policy_copies, entries)?)?)?;
         // Rows plus reference arrays, release witness and operation cursor.
         bytes = add(
             bytes,
             add(
-                mul(RECORDS + REFERENCES + 2, SCALAR_BYTES)?,
-                mul(POLICY_COPIES, policy_bytes)?,
+                mul(g.records + g.references + 2, SCALAR_BYTES)?,
+                mul(g.policy_copies, policy_bytes)?,
             )?,
         )?;
         let usage = owned.get(&id).copied().unwrap_or_default();
-        if usage.rows > SQL_ROWS || usage.bytes > sql_bytes {
+        if usage.rows > g.sql_rows || usage.bytes > sql_bytes {
             return Err(JournalError::MaintenanceCapacity);
         }
-        sql.rows = add(sql.rows, SQL_ROWS - usage.rows)?;
+        sql.rows = add(sql.rows, g.sql_rows - usage.rows)?;
         sql.bytes = add(sql.bytes, sql_bytes - usage.bytes)?;
     }
     if count != world.sandbox_records().len() as u64 || count > cap.max_live_sandboxes {
@@ -637,10 +691,10 @@ pub(super) fn validate(connection: &Connection, world: &core::World) -> Result<(
         add(1, host.maintenance.max_host_slots)?,
         host.maintenance.windows.max_open_windows(),
     )?;
-    let result_slots = add(mul(2, count)?, retained)?;
+    let result_slots = add(mul(g.operations, count)?, retained)?;
     // A retained create has at most max_input_bytes of policy; every result's
     // scalar shape is bounded separately. These are never evicted early.
-    let records = add(add(base, mul(count, RECORDS)?)?, retained)?;
+    let records = add(add(base, mul(count, g.records)?)?, retained)?;
     let (retained_refs, retained_bytes) = retained_usage(state)?;
     refs = add(refs, retained_refs)?;
     bytes = add(bytes, add(mul(base + 6, SCALAR_BYTES)?, retained_bytes)?)?;
@@ -752,8 +806,13 @@ pub(super) fn fixture_sql_budget(
     for (sandbox, _) in world.sandbox_records() {
         let id = identity::sandbox_id(&namespace, *sandbox)?;
         let usage = owned.get(id.as_str()).copied().unwrap_or_default();
-        total.rows = add(total.rows, SQL_ROWS - usage.rows)?;
+        total.rows = add(total.rows, graph(&policy).sql_rows - usage.rows)?;
         total.bytes = add(total.bytes, sql_lease(&policy, cap)? - usage.bytes)?;
     }
-    Ok((total.rows, total.bytes, SQL_ROWS, sql_lease(&policy, cap)?))
+    Ok((
+        total.rows,
+        total.bytes,
+        graph(&policy).sql_rows,
+        sql_lease(&policy, cap)?,
+    ))
 }

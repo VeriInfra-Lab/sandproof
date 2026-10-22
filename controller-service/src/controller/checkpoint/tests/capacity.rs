@@ -4,6 +4,7 @@ use sandproof_protocol::WorkReceipt;
 
 pub(super) fn full_config() -> MaintenanceConfig {
     MaintenanceConfig {
+        checkpoint_profile: CheckpointProfile::CreateKill,
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10_000,

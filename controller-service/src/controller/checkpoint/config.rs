@@ -5,12 +5,38 @@ use rusqlite::{Connection, Transaction};
 use sandbox_controller_core as core;
 use serde::{Deserialize, Serialize};
 
+/// Explicit recovery support; it does not enable any public lifecycle route.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointProfile {
+    #[default]
+    CreateKill,
+    FirstUnload,
+}
+impl CheckpointProfile {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde skip_serializing_if requires a borrowed field"
+    )]
+    pub(super) fn is_create_kill(&self) -> bool {
+        *self == Self::CreateKill
+    }
+    pub(super) const fn version(self) -> u16 {
+        match self {
+            Self::CreateKill => 1,
+            Self::FirstUnload => 2,
+        }
+    }
+}
+
 /// Explicit deployment bounds. Row/input/checkpoint bounds do not bound WAL,
 /// temp files, long-lived readers or all SQL-only payloads; those need separate
 /// admission and cleanup reservations. No fixture values are production defaults.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaintenanceConfig {
+    #[serde(default, skip_serializing_if = "CheckpointProfile::is_create_kill")]
+    pub checkpoint_profile: CheckpointProfile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<super::super::capacity::CapacityConfig>,
     pub retention_ms: u64,

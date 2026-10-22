@@ -19,14 +19,17 @@ mod admission;
 mod admission_usage;
 mod allocators;
 mod bounded;
+mod capture;
 mod checkpoint;
 mod identity;
 mod internal_inbox;
+mod lifecycle_inbox;
 pub use internal_inbox::{
     InternalAdmission, InternalAudit, InternalAuditOperation, InternalCreateResult,
     InternalInboxConfig, InternalLocalBinding, InternalNativeAudit, InternalRetentionLane,
     InternalTemplate, InternalWorkState,
 };
+pub use lifecycle_inbox::{LifecycleInboxConfig, LifecycleWorkState};
 mod private_build;
 mod registry;
 mod storage;
@@ -36,7 +39,8 @@ pub use private_build::{BuildAnchor, BuildRetryConfig};
 
 pub use bounded::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
 pub use checkpoint::{
-    CheckpointInfo, CheckpointProgress, HostReleaseWitness, MaintenanceConfig, RetirementCandidate,
+    CheckpointInfo, CheckpointProfile, CheckpointProgress, HostReleaseWitness, MaintenanceConfig,
+    RetirementCandidate,
 };
 
 #[cfg(test)]
@@ -104,6 +108,9 @@ pub struct ControllerJournal {
     journal: Journal,
     namespace: String,
     committed_world: transaction::CommittedWorld,
+    // Fresh provider observation for this manager; never restored from SQL as
+    // permission to dispatch new startup effects on a possibly different boot.
+    active_host_epoch: Option<crate::capture::HostEpochObservation>,
     // Keep this last: the SQLite journal closes before ownership is released.
     _lease: ControllerLease,
 }
@@ -600,6 +607,7 @@ impl ControllerJournal {
         Ok(Self {
             journal,
             committed_world,
+            active_host_epoch: None,
             namespace: namespace.to_owned(),
             _lease: lease,
         })
@@ -643,10 +651,13 @@ impl ControllerJournal {
         }
         if matches!(
             input,
-            core::ControllerInput::Request(core::Request::Create(_))
+            core::ControllerInput::Request(
+                core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
+            )
         ) {
-            // Full mode requires its lease, options and physical binding in
-            // the same admission transaction before any accepted host work.
+            // Recovery schema support alone does not admit physical work.
+            // Create uses its existing admission; pause needs the separately
+            // committed original source/bundle work before public enablement.
             return Err(JournalError::UnsupportedInput);
         }
         let sandbox = identity::input_sandbox(&input)?;
@@ -797,6 +808,13 @@ impl ControllerJournal {
             let action: WorkAction<core::EffectId> = serde_json::from_slice(&json)?;
             action.identity.validate_version()?;
             if selected.is_some_and(|sandbox| action.command.command().sandbox() != sandbox) {
+                continue;
+            }
+            if !lifecycle_inbox::dispatch_epoch_allows(
+                &transaction,
+                self.active_host_epoch.as_ref(),
+                action.command.command(),
+            )? {
                 continue;
             }
             if storage::unresolved(&world, action.command.command().sandbox())
