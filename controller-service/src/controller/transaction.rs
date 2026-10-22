@@ -106,6 +106,7 @@ impl<'a> WorldTransaction<'a> {
 
     pub(super) fn commit(self) -> Result<(), JournalError> {
         super::checkpoint::validate_candidate(&self, &self.world())?;
+        super::lifecycle_inbox::validate(&self, &self.world())?;
         super::capacity::validate(&self, &self.world())?;
         super::checkpoint::validate_transaction(&self)?;
         #[cfg(test)]

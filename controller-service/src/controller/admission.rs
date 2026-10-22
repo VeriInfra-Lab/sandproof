@@ -470,6 +470,7 @@ impl ControllerJournal {
             return Err(AdmissionError::InvalidCreateOptions);
         }
         let world = tx.world();
+        super::lifecycle_inbox::check_admission(&tx, internal)?;
         if storage::unresolved(&world, request.sandbox) {
             return Err(JournalError::UnresolvedAction.into());
         }
@@ -521,7 +522,8 @@ impl ControllerJournal {
             // across native tenant retirement. Native options remain the exact
             // LOCAL owner projection used by the original core/worker rules.
             let immutable = if let Some(attachment) = internal {
-                let registered = &attachment.registered_template;
+                let registered = attachment.registered_template();
+                let local = attachment.local();
                 let mut projected = registered.clone();
                 if projected.owner.is_some() {
                     projected.owner = Some(request.owner.0);
@@ -532,12 +534,12 @@ impl ControllerJournal {
                 projected.rootfs.path.clone_from(&template.rootfs.path);
                 if !registered.is_valid()
                     || registered.owner.is_some_and(|owner| {
-                        owner.to_string() != attachment.request.identity.tenant_id.as_str()
+                        owner.to_string() != attachment.authenticated_owner().as_str()
                     })
                     || projected != *template
-                    || attachment.local.owner != request.owner
-                    || attachment.local.sandbox != request.sandbox
-                    || attachment.local.operation != request.operation
+                    || local.owner != request.owner
+                    || local.sandbox != request.sandbox
+                    || local.operation != request.operation
                 {
                     return Err(AdmissionError::InvalidCreateOptions);
                 }

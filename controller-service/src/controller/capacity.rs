@@ -479,9 +479,7 @@ fn sql_usage(
                 }
                 bytes = add(bytes - length, 20)?;
             }
-            if table == "controller_internal_inbox" {
-                bytes = super::internal_inbox::charged_bytes(row, bytes, cap)?;
-            }
+            bytes = charged_inbox_bytes(&table, row, bytes, cap)?;
             if table == "controller_host_slots" {
                 continue;
             } // fixed global lease below
@@ -526,6 +524,19 @@ fn sql_usage(
         mul(host.maintenance.max_host_slots, SCALAR_BYTES)?,
     )?;
     Ok((total, owned))
+}
+
+fn charged_inbox_bytes(
+    table: &str,
+    row: &rusqlite::Row<'_>,
+    bytes: u64,
+    cap: &CapacityConfig,
+) -> Result<u64, JournalError> {
+    match table {
+        "controller_internal_inbox" => super::internal_inbox::charged_bytes(row, bytes, cap),
+        "controller_lifecycle_inbox" => super::lifecycle_inbox::charged_bytes(row, bytes, cap),
+        _ => Ok(bytes),
+    }
 }
 
 fn row_bytes(

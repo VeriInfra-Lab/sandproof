@@ -23,11 +23,13 @@ mod capture;
 mod checkpoint;
 mod identity;
 mod internal_inbox;
+mod lifecycle_inbox;
 pub use internal_inbox::{
     InternalAdmission, InternalAudit, InternalAuditOperation, InternalCreateResult,
     InternalInboxConfig, InternalLocalBinding, InternalNativeAudit, InternalRetentionLane,
     InternalTemplate, InternalWorkState,
 };
+pub use lifecycle_inbox::{LifecycleInboxConfig, LifecycleWorkState};
 mod private_build;
 mod registry;
 mod storage;
@@ -106,6 +108,9 @@ pub struct ControllerJournal {
     journal: Journal,
     namespace: String,
     committed_world: transaction::CommittedWorld,
+    // Fresh provider observation for this manager; never restored from SQL as
+    // permission to dispatch new startup effects on a possibly different boot.
+    active_host_epoch: Option<crate::capture::HostEpochObservation>,
     // Keep this last: the SQLite journal closes before ownership is released.
     _lease: ControllerLease,
 }
@@ -602,6 +607,7 @@ impl ControllerJournal {
         Ok(Self {
             journal,
             committed_world,
+            active_host_epoch: None,
             namespace: namespace.to_owned(),
             _lease: lease,
         })
@@ -802,6 +808,13 @@ impl ControllerJournal {
             let action: WorkAction<core::EffectId> = serde_json::from_slice(&json)?;
             action.identity.validate_version()?;
             if selected.is_some_and(|sandbox| action.command.command().sandbox() != sandbox) {
+                continue;
+            }
+            if !lifecycle_inbox::dispatch_epoch_allows(
+                &transaction,
+                self.active_host_epoch.as_ref(),
+                action.command.command(),
+            )? {
                 continue;
             }
             if storage::unresolved(&world, action.command.command().sandbox())
