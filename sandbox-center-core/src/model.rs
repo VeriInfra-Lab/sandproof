@@ -2,8 +2,8 @@ use sandproof_protocol::internal::lifecycle::{RESULT_CONFIRMATION_BODY_BYTES, Re
 use sandproof_protocol::internal::window::RETENTION_LANE_BYTES;
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use sandproof_protocol::lifecycle::{
-    CenterIdentity, CurrentReadyFacts, LifecycleOperation, TerminalLifecycleObservation,
-    TerminalStatus,
+    CenterIdentity, CurrentReadyFacts, LifecycleOperation, RenewalConfirmation,
+    RENEWAL_CONFIRMATION_BODY_BYTES, TerminalLifecycleObservation, TerminalStatus,
 };
 use sandproof_protocol::{DeploymentId, TenantId};
 use serde::{Deserialize, Serialize};
@@ -46,11 +46,17 @@ impl Bounds {
                     .saturating_mul(
                         (self.max_options_bytes as usize)
                             .saturating_mul(4)
-                            .saturating_add(8192),
+                            .saturating_add(8192)
+                            // Original predecessor deadline and its presence tag.
+                            .saturating_add(128),
                     )
                     .saturating_add(8192)
                     // Reserve the ENTIRE future exact terminal acknowledgement.
-                    .saturating_add(RESULT_CONFIRMATION_BODY_BYTES),
+                    .saturating_add(RESULT_CONFIRMATION_BODY_BYTES)
+                    // Full latest SDK checkpoint coexists with terminal ACK.
+                    .saturating_add(RENEWAL_CONFIRMATION_BODY_BYTES)
+                    // Actual deleted-version frontier and sampled-time maximum.
+                    .saturating_add(256),
             )
             .saturating_add(usize::from(self.max_nodes).saturating_mul(
                 4096 + usize::from(self.max_templates_per_node) * 512
@@ -113,6 +119,16 @@ pub struct Sandbox {
     /// Exact latest terminal result durably acknowledged by the host. This is
     /// not ordinary renewal compaction and never replaces cleanup evidence.
     pub terminal_confirmation: Option<TerminalLifecycleObservation>,
+    /// Original full applied SDK result acknowledged at both authorities.
+    /// This is historical and never grants fresh data access or release.
+    #[serde(deserialize_with = "crate::lifecycle::required_option")]
+    pub confirmed_renewal: Option<RenewalConfirmation>,
+    /// Greatest accepted version of an SDK Renew actually removed by prune.
+    #[serde(deserialize_with = "crate::lifecycle::required_option")]
+    pub compacted_sdk_through: Option<u64>,
+    /// Preserve every removed Sampled time, including Some(0) and clock rollback.
+    #[serde(deserialize_with = "crate::lifecycle::required_option")]
+    pub compacted_sampled_acceptance_max_ms: Option<u64>,
 }
 impl Sandbox {
     #[must_use]

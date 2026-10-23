@@ -10,6 +10,8 @@ use fixture::*;
 mod acceptance_time;
 #[path = "lifecycle/refusal.rs"]
 mod refusal;
+#[path = "lifecycle/renewal_confirmation.rs"]
+mod renewal_confirmation;
 
 fn state() -> CenterState {
     CenterState::new(

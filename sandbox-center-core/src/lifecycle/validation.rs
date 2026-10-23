@@ -127,6 +127,7 @@ impl CenterState {
             return false;
         };
         if !origin.retention.valid_for(self.bounds.max_sandboxes)
+            || !session.valid_renewal_checkpoint()
             || session.operations.len() > usize::from(self.bounds.operations_per_sandbox)
             || (!session.terminating()
                 && session.operations.len() >= usize::from(self.bounds.operations_per_sandbox))
@@ -175,7 +176,7 @@ impl CenterState {
                     .any(|window| window.contains_history(&actual.key))
                 || intent.request.validate(&b.node).is_err()
                 || intent.accepted_version_for_request() != Some(intent.accepted_version)
-                || intent.accepted_version != position as u64 + 1
+                || (position == 0 && intent.accepted_version != 1)
                 || op.allocation_number <= previous_allocation
                 || op.allocation_number > self.operation_highwater
                 || !allocations.insert(op.allocation_number)
@@ -212,8 +213,6 @@ impl CenterState {
         op: &LifecycleOperationRecord,
         position: usize,
     ) -> bool {
-        let intent = &op.intent;
-        let request = &intent.request;
         if position != 0 && op.create_refusal.is_some() {
             return false;
         }
@@ -227,7 +226,7 @@ impl CenterState {
         let Some(previous) = previous else {
             return self.valid_lifecycle_create_record(op, position);
         };
-        if request.binding.expected != ExpectedSession::Version(previous.intent.accepted_version) {
+        if !session.valid_version_link(previous, op) {
             return false;
         }
         Self::valid_lifecycle_followup(
@@ -264,6 +263,9 @@ impl CenterState {
                 let Some(prior) = previous.running.as_ref() else {
                     return false;
                 };
+                let Some(previous_end) = op.previous_effective_end_at_ms else {
+                    return false;
+                };
                 let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else {
                     return false;
                 };
@@ -271,11 +273,11 @@ impl CenterState {
                     return false;
                 };
                 let target = if *extend_only {
-                    prior.end_at_ms.max(end)
+                    previous_end.max(end)
                 } else {
                     end
                 };
-                *expected_version == previous.intent.accepted_version
+                request.binding.expected == ExpectedSession::Version(*expected_version)
                     && named == &request.binding.session
                     && *extend_only == *actual_extend
                     && incarnation.get() == 1
@@ -285,7 +287,11 @@ impl CenterState {
                         *timeout_secs,
                         prior.max_end_at_ms,
                     ) == end
-                    && prior.end_at_ms > accepted_at_ms
+                    && previous_end > accepted_at_ms
+                    && previous_end > prior.started_at_ms
+                    && previous_end <= prior.max_end_at_ms
+                    && (*expected_version != previous.intent.accepted_version
+                        || previous_end == prior.end_at_ms)
                     && prior.max_end_at_ms > accepted_at_ms
                     && op.terminal.is_none()
                     && op.running.as_ref().is_none_or(|facts| {
@@ -307,9 +313,10 @@ impl CenterState {
                     capture,
                 },
             ) => {
-                *expected_version == previous.intent.accepted_version
+                request.binding.expected == ExpectedSession::Version(*expected_version)
                     && named == &request.binding.session
                     && previous.running.is_some()
+                    && op.previous_effective_end_at_ms.is_none()
                     && source_incarnation.get() == 1
                     && capture.get() == 1
                     && op.acceptance_time.sampled_at_ms().is_some()
@@ -328,8 +335,9 @@ impl CenterState {
                     return false;
                 };
                 is_last
-                    && *expected_version == previous.intent.accepted_version
+                    && request.binding.expected == ExpectedSession::Version(*expected_version)
                     && named == &request.binding.session
+                    && op.previous_effective_end_at_ms.is_none()
                     && !matches!(
                         previous.intent.request.operation,
                         LifecycleOperation::Destroy {}
@@ -360,6 +368,7 @@ impl CenterState {
                 },
             ) => {
                 position == 0
+                    && op.previous_effective_end_at_ms.is_none()
                     && request.binding.expected == ExpectedSession::Absent
                     && target_incarnation.get() == 1
                     && create.is_valid()

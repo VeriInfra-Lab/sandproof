@@ -10,11 +10,20 @@ use sandproof_protocol::{SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
 mod key;
 mod ready;
+mod renewal;
 mod validation;
 pub use sandproof_protocol::lifecycle::CreateParameters;
 
 /// One supported current format. Missing registration is not a legacy profile.
-pub const LIFECYCLE_PROFILE_VERSION: u16 = 4;
+pub const LIFECYCLE_PROFILE_VERSION: u16 = 5;
+
+pub(crate) fn required_option<'de, D, T>(input: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::deserialize(input)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -81,6 +90,10 @@ pub struct LifecycleOperationRecord {
     pub(crate) allocation_number: u64,
     pub(crate) acceptance_time: AcceptanceTime,
     pub(crate) running: Option<CurrentReadyFacts>,
+    /// Actual predecessor lifetime sampled on admission, not reconstructed
+    /// from Create or a later native observation after compaction.
+    #[serde(deserialize_with = "required_option")]
+    pub(crate) previous_effective_end_at_ms: Option<u64>,
     /// Exact original Create refusal; later Destroy never erases its cause.
     pub(crate) create_refusal: Option<CreateRefusalReason>,
     pub(crate) terminal: Option<RetainedTerminalResult>,
@@ -221,6 +234,12 @@ impl Sandbox {
         now_ms.checked_add(retention_ms)
     }
     pub(crate) fn acceptance_times_not_after(&self, now_ms: u64) -> bool {
+        if self
+            .compacted_sampled_acceptance_max_ms
+            .is_some_and(|maximum| maximum > now_ms)
+        {
+            return false;
+        }
         let mut valid = true;
         let mut index = 0;
         while valid && index < self.operations.len() {
@@ -451,7 +470,7 @@ impl CenterState {
             .iter()
             .filter_map(|record| {
                 let operation = record.operations.last()?;
-                if operation.running.is_some() {
+                if operation.running.is_some() && record.unconfirmed_sdk_renewal().is_none() {
                     return None;
                 }
                 if operation.terminal.as_ref().is_some_and(|retained| {
@@ -615,10 +634,14 @@ impl CenterState {
                 allocation_number: allocation.operation_number,
                 acceptance_time: AcceptanceTime::Sampled { at_ms: now_ms },
                 running: None,
+                previous_effective_end_at_ms: None,
                 create_refusal: None,
                 terminal: None,
             }],
             terminal_confirmation: None,
+            confirmed_renewal: None,
+            compacted_sdk_through: None,
+            compacted_sampled_acceptance_max_ms: None,
         });
         if !next.is_valid() {
             return Err(DecisionError::Invalid);
@@ -644,6 +667,11 @@ impl CenterState {
         }
         if previous.terminating() || (!destroy && previous.phase() != SessionPhase::Running) {
             return Err(DecisionError::Conflict);
+        }
+        if matches!(submission, LifecycleSubmission::Renew { key, .. } if key.window.get() == 2)
+            && previous.unconfirmed_sdk_renewal().is_some()
+        {
+            return Err(DecisionError::Unavailable);
         }
         let number = self
             .operation_highwater
@@ -713,6 +741,11 @@ impl CenterState {
                 allocation_number: number,
                 acceptance_time: if destroy { AcceptanceTime::Unsampled } else { AcceptanceTime::Sampled { at_ms: now_ms } },
                 running: None,
+                previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. }) {
+                    prior.running.as_ref().map(|facts| facts.end_at_ms)
+                } else {
+                    None
+                },
                 create_refusal: None,
                 terminal: None,
             });

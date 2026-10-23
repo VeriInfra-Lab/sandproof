@@ -22,6 +22,21 @@
 较小的新序号在同一个开放窗口内可乱序接受。已删除的 SDK 键不能凭记录缺失再次受理。
 Stale 仅说明这次没有新增受理，不证明这个键历史上未执行。
 
+内部 SDK 续期的有限回收候选在原会话中保存最新完整确认、实际删除版本前沿及被删采样时间最大值；
+每次只删原上一个完整且已应用的 SDK Renew，保留 Create、公开输入、当前行、未知结果和终止责任。
+恢复保留相邻版本检查，间隙只能落在实际删除前沿及完整确认之前；该结构检查不单独证明被删历史。
+Renew 保存原前驱有效期限，不能用 Create 的期限替代；下一 SDK 检查全部保留历史中的未确认 SDK，
+不能靠插入公开操作绕过确认，Destroy 不受此门控。新字段、纯回收函数和相应回归仍为未验收候选，
+不是已完成的服务/数据库接线或真实 Rust 证明，旧恢复和终态抽取结论不自动适用。
+
+当前中心的引用来自 `ValidationLink` 的原 Create/Destroy、`GlobalBuildAnchor` 的原 Create/Cleaned，
+由 `RegistryMetadata::validation_valid`、`PrivateBuilds::valid_for` 与 `publication::terminal_request`
+检查；数据投影读取原 Create 和当前操作，令牌签名不建立另一张旧 SDK 引用表。
+原 `BusinessEnvelope` 的同一 CAS 仍须验证完整交叉引用，不能从“已确认”推导任意资源或 pin 已消失。
+本候选需证明回收保持首行、当前行、终态、位置和所有其它操作，及这些真实引用检查的保持性；
+目前是源码核对和待证业务义务。以后新增 capture/claim/pin 引用旧操作时必须在原同一事务补齐检查，
+不能直接沿用目前没有该引用的范围。
+
 当前生产中心服务已改用完整 `AcceptedLifecycleIntent` 与真实终态观察；私有创建、验证证据和终止
 沿同一原 Redis/CAS，公开查询、卸载和销毁从同一业务包络排除私有实例。
 旧 `wait/send/confirm` 派发路径已从生产中心服务移除；旧单元测试、Redis/SDK 夹具仍需迁移，

@@ -33,3 +33,11 @@ pub fn terminal_result(
 ) -> Result<CenterState, DecisionError> {
     state.accept_lifecycle_terminal_observation(result, now_ms)
 }
+
+/// Original pure SDK confirmation/prune, including the real recovery checks.
+pub fn renewal_result(
+    state: &CenterState,
+    result: &sandproof_protocol::lifecycle::ConfirmedRenewal,
+) -> Result<CenterState, DecisionError> {
+    state.confirm_lifecycle_renewal(result)
+}
