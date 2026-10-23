@@ -302,6 +302,9 @@ pub trait HostPort: Send + Sync + 'static {
 /// Tests inject storage faults while using the same pure `CenterState`
 /// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
+    /// # Errors
+    /// Expiry sets current termination in the original CAS, including private rows.
+    fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError>;
     /// One fresh, finite projection of the same authoritative managed inbox.
     /// # Errors
     /// Unknown storage cannot supply detached work from a cached candidate.

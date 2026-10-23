@@ -48,21 +48,26 @@ impl CenterState {
                 || (lane.phase == LanePhase::Exhausted) != lane.current().is_none()
                 || !valid_last_retired(lane, self)
             { return false; }
-            let mut count = 0;
-            for record in &self.sandboxes {
-                let Some(first) = record.operations.first() else { return false; };
-                if first.intent().request.binding.node != lane.node || first.intent().retention.slot != lane.retention_slot {
-                    continue;
-                }
-                count += 1;
-                if count > 1 || lane.current().map(|w| w.get()) != Some(first.intent().retention.window.get())
-                    || lane.phase == LanePhase::Exhausted
-                    || (lane.phase == LanePhase::ClosePending && terminal(record).is_none())
-                { return false; }
-            }
-            if count == 0 && lane.phase == LanePhase::ClosePending { return false; }
+            if !self.valid_lane_records(lane) { return false; }
         }
         true
+    }
+    /// Separate the inner ordered scan for the fixed Aeneas loop prepass.
+    /// Same records, first refusal, count and lane checks; no host effects.
+    fn valid_lane_records(&self, lane: &RetentionLane) -> bool {
+        let mut count = 0;
+        for record in &self.sandboxes {
+            let Some(first) = record.operations.first() else { return false; };
+            if first.intent().request.binding.node != lane.node || first.intent().retention.slot != lane.retention_slot {
+                continue;
+            }
+            count += 1;
+            if count > 1 || lane.current().map(|w| w.get()) != Some(first.intent().retention.window.get())
+                || lane.phase == LanePhase::Exhausted
+                || (lane.phase == LanePhase::ClosePending && terminal(record).is_none())
+            { return false; }
+        }
+        count != 0 || lane.phase != LanePhase::ClosePending
     }
     /// # Errors
     /// Operational drain never retires history or releases resources.

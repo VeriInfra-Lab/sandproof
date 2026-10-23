@@ -112,7 +112,8 @@ impl<H: ControllerHost + Send + 'static> ValidationReceiver for HostFacade<H> {
     async fn validation_evidence(
         &self,
         request: ValidationRequest,
+        context: AuthenticatedCenterContext,
     ) -> Result<ValidationEvidence, ReceiveError> {
-        self.lifecycle.validation_evidence(request).await
+        self.lifecycle.validation_evidence(request, context).await
     }
 }

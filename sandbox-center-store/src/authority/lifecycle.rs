@@ -6,6 +6,14 @@ use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
 impl<S: AuthorityState> CenterAuthority<S> {
     /// # Errors
+    /// Same original authority and business pins; no host I/O or public owner bypass.
+    pub fn terminate_expired(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self.state()?.terminate_expired(now_ms)?;
+        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        Ok(())
+    }
+    /// # Errors
     /// A rejected decision writes nothing. Unknown CAS fences every projection;
     /// recovery reads/reaffirms this same block and replays the original key.
     pub fn accept_lifecycle(

@@ -518,3 +518,33 @@ fn temporary_bad_clock_can_establish_retention_once_after_restart() {
     }, 200).unwrap();
     assert!(retired.sandboxes().is_empty());
 }
+
+#[test]
+fn pending_renewal_expiry_uses_its_accepted_deadline_without_releasing_resources() {
+    let owner = "1".try_into().unwrap();
+    let (created, original) = state().accept_lifecycle(&owner, &create("1", 1), 10).unwrap();
+    let running = created.accept_lifecycle_create_observation(&observed(&original)).unwrap();
+    let mut key = original.request.binding.key.clone();
+    key.sequence = 2.try_into().unwrap();
+    let (pending, _) = running.accept_lifecycle(&owner, &LifecycleSubmission::Renew {
+        key, session: original.request.binding.session.clone(), expected_version: 1,
+        timeout_secs: 1, extend_only: true,
+    }, 150).unwrap();
+    assert_eq!(pending.terminate_expired(250).unwrap(), pending);
+    let terminating = pending.terminate_expired(600).unwrap();
+    assert_eq!(terminating.sandboxes()[0].phase(), SessionPhase::Terminating);
+    assert_eq!(terminating.identity_frontiers(), (1, 3));
+    assert_eq!(terminating.reserved(None, None), Some(resources(1)));
+    assert!(!terminating.sandboxes()[0].released());
+}
+
+#[test]
+fn startup_expiry_preserves_both_owner_rows_and_their_reserved_destroy_capacity() {
+    let (first, _) = state().accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10).unwrap();
+    let (both, _) = first.accept_lifecycle(&"2".try_into().unwrap(), &create("2", 1), 10).unwrap();
+    let terminating = both.terminate_expired(1010).unwrap();
+    assert_eq!(terminating.sandboxes().len(), 2);
+    assert_eq!(terminating.identity_frontiers(), (2, 4));
+    assert!(terminating.sandboxes().iter().all(|record| record.terminating() && !record.released()));
+    assert_eq!(terminating.reserved(None, None), Some(resources(2)));
+}

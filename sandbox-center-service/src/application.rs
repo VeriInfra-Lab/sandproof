@@ -590,76 +590,12 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     /// # Errors
     /// Shared authority faults stop the scan. Unknown host work stays pending.
     pub fn reconcile_once(&self) -> Result<usize, PortError> {
-        let managed_completed = self.reconcile_lifecycle_once()?;
         let now = self.now()?;
-        let pending = {
-            let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
-            let state = authority.snapshot().map_err(authority_error)?;
-            for record in state.sandboxes().iter().filter(|r| {
-                !state.lifecycle_manages(&r.operations[0].request.identity.sandbox_id)
-                    && !r.terminating
-                    && !r.released
-                    && (r.end_at_ms.is_some_and(|end| end <= now)
-                        || (r.started_at_ms.is_none()
-                            && r.operations
-                                .first()
-                                .is_some_and(|op| op.request.create.startup_deadline_ms <= now)))
-            }) {
-                let request = &record.operations.first().ok_or(PortError::Busy)?.request;
-                authority
-                    .destroy(&request.identity.tenant_id, &request.identity.sandbox_id)
-                    .map_err(authority_error)?;
-            }
-            authority.snapshot().map_err(authority_error)?.pending()
-        };
-        let mut completed = managed_completed;
-        for request in pending {
-            let deadline = Instant::now()
-                .checked_add(self.config.reply_timeout)
-                .ok_or(PortError::OutcomeUnknown)?;
-            match self.send_current(&request, deadline) {
-                Ok(_) => completed += 1,
-                Err(AttemptError::SharedAuthority) => return Err(PortError::OutcomeUnknown),
-                Err(AttemptError::UnknownHost | AttemptError::Superseded) => {}
-            }
-        }
-        // A dropped confirmation can leave a final operation with no ordinary
-        // pending intent. Derive retry work from the same authority, not a second
-        // acknowledgement journal or an unbounded retry queue.
-        let state = self.snapshot()?;
-        for result in state
-            .sandboxes()
-            .iter()
-            .filter(|record| {
-                !state.lifecycle_manages(&record.operations[0].request.identity.sandbox_id)
-                    && (record.has_compaction_work()
-                    || record
-                        .operations
-                        .last()
-                        .and_then(|op| op.response.as_ref())
-                        .is_some_and(|result| {
-                            matches!(
-                                result.fact,
-                                LifecycleFact::Cleaned | LifecycleFact::NotAccepted
-                            ) && record.terminal_confirmation.as_ref() != Some(result)
-                        }))
-            })
-            .filter_map(|record| record.operations.last()?.response.as_ref())
-            .filter(|result| {
-                !matches!(
-                    result.fact,
-                    LifecycleFact::Recorded | LifecycleFact::Stopped
-                )
-            })
-        {
-            let deadline = Instant::now()
-                .checked_add(self.config.reply_timeout)
-                .ok_or(PortError::OutcomeUnknown)?;
-            match self.confirm_saved(result, deadline) {
-                Ok(()) | Err(AttemptError::Superseded | AttemptError::UnknownHost) => {}
-                Err(AttemptError::SharedAuthority) => return Err(PortError::OutcomeUnknown),
-            }
-        }
+        self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
+            .expire_current(now).map_err(authority_error)?;
+        let completed = self.reconcile_lifecycle_once()?;
+        // Only already-committed close work is sent here. New close admission
+        // remains after publication reconciliation and its original pin veto.
         self.reconcile_closes()?;
         Ok(completed)
     }

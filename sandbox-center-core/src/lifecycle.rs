@@ -138,6 +138,22 @@ impl Sandbox {
         if self.operations.iter().any(|operation| operation.accepted_at_ms > now_ms) { return None; }
         now_ms.checked_add(retention_ms)
     }
+    #[must_use]
+    pub fn termination_due(&self, now_ms: u64) -> bool {
+        if self.terminating() { return false; }
+        let Some(current) = self.operations.last() else { return false; };
+        let Some(origin) = self.operations.first() else { return false; };
+        let LifecycleOperation::Create { create, .. } = &origin.intent.request.operation else { return false; };
+        let Some(prior) = self.last_running() else { return now_ms >= create.startup_deadline_ms; };
+        let end = match &current.intent.request.operation {
+            LifecycleOperation::Renew { end_at_ms, extend_only, .. } => {
+                let Ok(target) = u64::try_from(*end_at_ms) else { return true; };
+                if *extend_only { prior.end_at_ms.max(target) } else { target }
+            }
+            _ => prior.end_at_ms,
+        };
+        now_ms >= end || now_ms >= prior.max_end_at_ms
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +214,28 @@ pub(crate) fn normalized_renewal_end(now_ms: u64, seconds: u64, maximum_ms: u64)
 }
 
 impl CenterState {
+    /// Persist due termination for all original rows, including private work.
+    /// This is a bounded pure candidate in the original business CAS, not host
+    /// cleanup, a second queue or permission to release any resource.
+    /// # Errors
+    /// Invalid state or exhausted reserved identity keeps the original authority.
+    pub fn terminate_expired(&self, now_ms: u64) -> Result<Self, DecisionError> {
+        if !self.is_valid() { return Err(DecisionError::Invalid); }
+        let due = self.sandboxes.iter().filter(|record| record.termination_due(now_ms))
+            .filter_map(|record| record.operations.first().map(|operation| (
+                operation.intent.request.binding.key.owner.clone(),
+                operation.intent.request.binding.session.clone(),
+            ))).collect::<Vec<_>>();
+        let mut next = self.clone();
+        for (owner, session) in due {
+            let current = next.lifecycle_session(&owner, &session).ok_or(DecisionError::Invalid)?;
+            let expected_version = current.current_version().ok_or(DecisionError::Invalid)?;
+            let key = next.next_sdk_operation_key(&owner)?;
+            let submission = LifecycleSubmission::Destroy { key, session, expected_version };
+            next = next.accept_lifecycle(&owner, &submission, now_ms)?.0;
+        }
+        Ok(next)
+    }
     #[must_use]
     pub const fn lifecycle_profile_version(&self) -> u16 { self.lifecycle.format_version }
     /// Current authenticated client's window. Exhaustion is explicit; no reset.

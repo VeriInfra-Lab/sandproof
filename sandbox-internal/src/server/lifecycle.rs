@@ -1,7 +1,7 @@
 //! Current lifecycle route bound to the original post-TLS peer value.
 use super::{
     BodyExt, Bytes, CertificatePin, Full, Incoming, LifecycleReceiver, Limited, Method,
-    ReceiveError, Request, Response, StatusCode, json_response, response,
+    ReceiveError, Request, Response, StatusCode, ValidationReceiver, json_response, response,
 };
 use crate::lifecycle::{CenterPeerRegistration, REQUEST_BODY_BYTES, CREATE_OBSERVATION_BODY_BYTES};
 use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
@@ -13,9 +13,10 @@ pub(super) enum Call {
     TerminalObservation,
     Confirm,
     Close,
+    Validation,
 }
 
-pub(super) async fn respond<H: LifecycleReceiver>(
+pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     request: Request<Incoming>,
     peer: CertificatePin,
     registration: Option<&CenterPeerRegistration>,
@@ -34,7 +35,9 @@ pub(super) async fn respond<H: LifecycleReceiver>(
     if request.method() != Method::POST {
         return response(StatusCode::METHOD_NOT_ALLOWED, Bytes::new());
     }
-    let limit = if matches!(call, Call::Confirm | Call::Close) {
+    let limit = if matches!(call, Call::Validation) {
+        crate::template::VALIDATION_REQUEST_BODY_BYTES
+    } else if matches!(call, Call::Confirm | Call::Close) {
         sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES
     } else { REQUEST_BODY_BYTES };
     if request
@@ -63,6 +66,9 @@ pub(super) async fn respond<H: LifecycleReceiver>(
     else {
         return response(StatusCode::BAD_REQUEST, Bytes::new());
     };
+    if matches!(call, Call::Validation) {
+        return super::validation_evidence(&body.to_bytes(), context, handler).await;
+    }
     if matches!(call, Call::Confirm | Call::Close) {
         return terminal_command(&body.to_bytes(), context, handler, call).await;
     }

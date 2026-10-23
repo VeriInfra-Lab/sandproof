@@ -57,8 +57,9 @@ impl ValidationReceiver for RegisteredHost {
     async fn validation_evidence(
         &self,
         request: ValidationRequest,
+        context: AuthenticatedCenterContext,
     ) -> Result<ValidationEvidence, ReceiveError> {
-        self.facade.validation_evidence(request).await
+        self.facade.validation_evidence(request, context).await
     }
 }
 impl CacheReceiver for RegisteredHost {

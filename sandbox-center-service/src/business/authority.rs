@@ -501,6 +501,9 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
     }
 }
 impl AuthorityPort for SharedBusinessAuthority {
+    fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
+        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?.terminate_expired(now_ms)
+    }
     fn accept_lifecycle_terminal_observation(
         &mut self, result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation, now_ms: u64,
     ) -> Result<(), AuthorityError> {
