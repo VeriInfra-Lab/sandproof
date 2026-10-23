@@ -133,7 +133,7 @@ pub(super) fn command_resource(
         core::Command::ApplyFilePolicy { workspace, .. } => {
             (ResourceKind::Workspace, "fs", workspace.0)
         }
-        _ => return Err("unsupported host resource command".into()),
+        core::Command::CommitSnapshot { .. } => return Err("unsupported host resource command".into()),
     };
     Ok(ResourceRef {
         kind,

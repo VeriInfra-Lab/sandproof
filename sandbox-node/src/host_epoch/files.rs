@@ -191,7 +191,7 @@ fn write_owned_payload(
     let metadata = parent.metadata()?;
     let mut components = Path::new(leaf).components();
     if bytes.is_empty()
-        || bytes.len() > Kind::Payload.maximum() as usize
+        || u64::try_from(bytes.len()).map_err(|_| error("bootstrap payload length"))? > Kind::Payload.maximum()
         || !metadata.is_dir()
         || metadata.uid() != owner
         || metadata.mode() & 0o022 != 0

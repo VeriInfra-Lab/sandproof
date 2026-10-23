@@ -20,7 +20,7 @@ impl LinuxWorker {
             action,
             request,
             original_source,
-            |runtime, id, source| runtime.pause_original_vm(id, source),
+            Runtime::pause_original_vm,
         )
     }
 

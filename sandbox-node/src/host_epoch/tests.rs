@@ -173,16 +173,8 @@ fn root_protected_bootstrap_roundtrip_uses_real_host_facts_without_a_vm() {
     let owned_path = root_fixture_begin(root.path());
     let firecracker = root.path().join("synthetic-firecracker");
     let jailer = root.path().join("synthetic-jailer");
-    for path in [&firecracker, &jailer] {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o700)
-            .open(path)
-            .unwrap();
-        file.write_all(b"synthetic tool bytes, never executed")
-            .unwrap();
-    }
+    write_synthetic_tool(&firecracker);
+    write_synthetic_tool(&jailer);
     let inputs = Inputs {
         namespace: NAMESPACE,
         firecracker: &firecracker,
@@ -275,6 +267,12 @@ fn root_protected_bootstrap_roundtrip_uses_real_host_facts_without_a_vm() {
     // those files. No tool was executed and no VM, mount or quota was created.
     drop(root);
     root_fixture_end(&owned_path);
+}
+
+fn write_synthetic_tool(path: &Path) {
+    let mut file = fs::OpenOptions::new()
+        .write(true).create_new(true).mode(0o700).open(path).unwrap();
+    file.write_all(b"synthetic tool bytes, never executed").unwrap();
 }
 
 fn root_fixture_begin(path: &Path) -> PathBuf {

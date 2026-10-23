@@ -103,7 +103,7 @@ impl NodeHost {
     /// Missing/changed protected source, epoch or layout refuses assembly.
     pub fn with_capture_settings(
         mut self,
-        settings: crate::ProtectedCaptureSettings,
+        settings: &crate::ProtectedCaptureSettings,
         original: &sandproof_controller_service::capture::HostEpochRequirement,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let provider = self

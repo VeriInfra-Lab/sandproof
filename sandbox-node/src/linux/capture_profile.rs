@@ -54,7 +54,7 @@ impl ProtectedCaptureProfile {
     pub(crate) fn assemble(
         worker: &LinuxWorker,
         provider: &ProtectedHostEpochSource,
-        settings: ProtectedCaptureSettings,
+        settings: &ProtectedCaptureSettings,
         epoch: &HostEpochRequirement,
     ) -> NodeResult<Self> {
         settings.validate()?;

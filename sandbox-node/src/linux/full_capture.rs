@@ -24,7 +24,12 @@ use sha2::{Digest, Sha256};
 const SNAPSHOT_FORMAT: u16 = 10; // Fixed FC 1.16.1 SNAPSHOT_VERSION=10.0.0.
 
 fn hex(bytes: &[u8; 32]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write as _;
+    let mut output=String::with_capacity(64);
+    for byte in bytes {
+        write!(&mut output,"{byte:02x}").expect("writing to a String cannot fail");
+    }
+    output
 }
 fn expected_compatibility(
     template: &TemplateBinding,
@@ -37,7 +42,9 @@ fn expected_compatibility(
     }
     let image = Sha256::digest(serde_json::to_vec(&(
         "cold-template-image",
-        template.canonical_digest().map_err(|_| "invalid original sealed template digest")?,
+        template
+            .canonical_digest()
+            .map_err(|_| "invalid original sealed template digest")?,
         device,
     ))?);
     Ok(VmCompatibility {
