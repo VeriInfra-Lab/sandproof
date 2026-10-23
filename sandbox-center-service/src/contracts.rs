@@ -287,6 +287,13 @@ pub trait HostPort: Send + Sync + 'static {
 /// Tests inject storage faults while using the same pure `CenterState`
 /// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
+    /// # Errors
+    /// Only an authenticated exact refusal may record its original Destroy.
+    fn accept_lifecycle_create_refusal(
+        &mut self, _observation: &sandproof_protocol::lifecycle::CreateObservation, _now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
+        Err(sandproof_center_core::DecisionError::Invalid.into())
+    }
     /// Protected workflow termination of its exact original accepted Create.
     /// Public owner/visibility checks remain at their original public entry.
     /// # Errors

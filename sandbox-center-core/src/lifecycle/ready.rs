@@ -15,9 +15,11 @@ fn same_lifetime(left: &CurrentReadyFacts, right: &CurrentReadyFacts) -> bool {
 impl CenterState {
     /// Save the exact pre-admission refusal and its original termination
     /// responsibility together. Reservations remain until real Cleaned.
+    /// A newly allocated Destroy records the caller's actual clock; replay of
+    /// an existing Destroy never replaces its original acceptance timestamp.
     /// # Errors
     /// Wrong origin/currentness, a prior Running or unsupported refusal rejects.
-    pub fn accept_lifecycle_create_refusal(&self, observation: &CreateObservation)
+    pub fn accept_lifecycle_create_refusal(&self, observation: &CreateObservation, now_ms: u64)
         -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
     {
         if !self.is_valid() { return Err(DecisionError::Invalid); }
@@ -42,7 +44,7 @@ impl CenterState {
                     key: self.next_sdk_operation_key(&binding.key.owner)?,
                     session: binding.session.clone(), expected_version: current.accepted_version,
                 };
-                self.accept_lifecycle(&binding.key.owner, &submission, 0)?
+                self.accept_lifecycle(&binding.key.owner, &submission, now_ms)?
             }
             LifecycleOperation::Destroy {} => (self.clone(), current.clone()),
             _ => return Err(DecisionError::Conflict),
