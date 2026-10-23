@@ -3,6 +3,14 @@
 use super::{AcceptedLifecycleIntent, LifecycleOperation};
 use serde::{Deserialize, Serialize};
 
+/// A durable refusal of the original Create before native admission. This is
+/// never inferred from Busy, an absent mapping, a timeout or an I/O failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateRefusalReason {
+    Capacity,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CurrentReadyFacts {
@@ -53,6 +61,9 @@ pub enum CurrentCreateReadiness {
     NotRunning,
     Expired,
     Pending,
+    /// Bound to this observation's full original request. The same durable
+    /// refusal remains queryable while its current Destroy is being settled.
+    Refused { reason: CreateRefusalReason },
     Observed { facts: CurrentReadyFacts },
 }
 
@@ -88,6 +99,22 @@ impl CreateObservation {
         {
             return false;
         }
+        if matches!(self.readiness, CurrentCreateReadiness::Refused { .. }) {
+            if self.historical_create_succeeded
+                || original.accepted_version != 1
+                || original.accepted_version_for_request() != Some(1)
+                || original.request.binding.expected != super::ExpectedSession::Absent
+                || original.request.validate(&requested.node).is_err()
+            {
+                return false;
+            }
+            return self.current_request == *original
+                || (matches!(self.current_request.request.operation, LifecycleOperation::Destroy {})
+                    && self.current_request.accepted_version > original.accepted_version
+                    && self.current_request.accepted_version_for_request()
+                        == Some(self.current_request.accepted_version)
+                    && current.key != requested.key);
+        }
         if self.current_request != *original {
             if matches!(self.current_request.request.operation, LifecycleOperation::Renew { .. }) {
                 if self.current_request.accepted_version <= original.accepted_version
@@ -98,14 +125,14 @@ impl CreateObservation {
                         && facts.matches_renewed(original, &self.current_request),
                     CurrentCreateReadiness::NotRunning | CurrentCreateReadiness::Expired
                     | CurrentCreateReadiness::Pending => true,
-                    CurrentCreateReadiness::NotCurrent => false,
+                    CurrentCreateReadiness::NotCurrent | CurrentCreateReadiness::Refused { .. } => false,
                 };
             }
             return self.current_request.accepted_version > original.accepted_version
                 && self.readiness == CurrentCreateReadiness::NotCurrent;
         }
         match &self.readiness {
-            CurrentCreateReadiness::NotCurrent => false,
+            CurrentCreateReadiness::NotCurrent | CurrentCreateReadiness::Refused { .. } => false,
             CurrentCreateReadiness::Observed { facts } => {
                 self.historical_create_succeeded && facts.matches_create(original)
             }
@@ -115,3 +142,7 @@ impl CreateObservation {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "observation_tests.rs"]
+mod tests;
