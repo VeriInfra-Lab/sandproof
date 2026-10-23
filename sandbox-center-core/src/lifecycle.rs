@@ -2,7 +2,7 @@
 //! One Sandbox row owns one bounded operation history; no shadow lifecycle table.
 use crate::{CenterState, DecisionError, NodeRole, Sandbox, TenantBudget};
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CurrentReadyFacts, ExpectedSession,
+    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CreateRefusalReason, CurrentReadyFacts, ExpectedSession,
     IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
     RequestWindowId, SessionId, TerminalLifecycleObservation,
 };
@@ -14,7 +14,7 @@ mod validation;
 pub use sandproof_protocol::lifecycle::CreateParameters;
 
 /// One supported current format. Missing registration is not a legacy profile.
-pub const LIFECYCLE_PROFILE_VERSION: u16 = 3;
+pub const LIFECYCLE_PROFILE_VERSION: u16 = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -81,6 +81,8 @@ pub struct LifecycleOperationRecord {
     pub(crate) allocation_number: u64,
     pub(crate) accepted_at_ms: u64,
     pub(crate) running: Option<CurrentReadyFacts>,
+    /// Exact original Create refusal; later Destroy never erases its cause.
+    pub(crate) create_refusal: Option<CreateRefusalReason>,
     pub(crate) terminal: Option<RetainedTerminalResult>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,6 +105,10 @@ impl LifecycleOperationRecord {
     #[must_use]
     pub const fn running(&self) -> Option<&CurrentReadyFacts> {
         self.running.as_ref()
+    }
+    #[must_use]
+    pub const fn create_refusal(&self) -> Option<CreateRefusalReason> {
+        self.create_refusal
     }
     #[must_use]
     pub fn terminal(&self) -> Option<&TerminalLifecycleObservation> {
@@ -575,6 +581,7 @@ impl CenterState {
                 allocation_number: allocation.operation_number,
                 accepted_at_ms: now_ms,
                 running: None,
+                create_refusal: None,
                 terminal: None,
             }],
             terminal_confirmation: None,
@@ -672,6 +679,7 @@ impl CenterState {
                 allocation_number: number,
                 accepted_at_ms: now_ms,
                 running: None,
+                create_refusal: None,
                 terminal: None,
             });
         if !next.is_valid() {

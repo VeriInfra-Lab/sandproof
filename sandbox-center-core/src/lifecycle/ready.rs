@@ -1,7 +1,7 @@
 //! Current result storage: no synthetic legacy response or host observation counter.
-use super::{CenterState, DecisionError, RetainedTerminalResult, SessionPhase};
+use super::{CenterState, DecisionError, LifecycleSubmission, RetainedTerminalResult, SessionPhase};
 use sandproof_protocol::lifecycle::{
-    CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation,
+    AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation,
     TerminalLifecycleObservation, TerminalStatus,
 };
 
@@ -13,6 +13,45 @@ fn same_lifetime(left: &CurrentReadyFacts, right: &CurrentReadyFacts) -> bool {
 }
 
 impl CenterState {
+    /// Save the exact pre-admission refusal and its original termination
+    /// responsibility together. Reservations remain until real Cleaned.
+    /// # Errors
+    /// Wrong origin/currentness, a prior Running or unsupported refusal rejects.
+    pub fn accept_lifecycle_create_refusal(&self, observation: &CreateObservation)
+        -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
+    {
+        if !self.is_valid() { return Err(DecisionError::Invalid); }
+        let CurrentCreateReadiness::Refused { reason } = observation.readiness else {
+            return Err(DecisionError::Invalid);
+        };
+        let binding = &observation.request.request.binding;
+        let index = self.index(&binding.key.owner, binding.session.as_protocol_id())?;
+        let record = &self.sandboxes[index];
+        let original = record.operations.first().ok_or(DecisionError::Invalid)?;
+        let current = record.operations.last().ok_or(DecisionError::Invalid)?.intent();
+        if observation.request != *original.intent() || observation.current_request != *current {
+            return Err(DecisionError::Stale);
+        }
+        if !observation.matches_request(original.intent()) { return Err(DecisionError::Invalid); }
+        if record.last_running().is_some()
+            || original.create_refusal.is_some_and(|saved| saved != reason)
+        { return Err(DecisionError::Conflict); }
+        let (mut next, destroy) = match current.request.operation {
+            LifecycleOperation::Create { .. } => {
+                let submission = LifecycleSubmission::Destroy {
+                    key: self.next_sdk_operation_key(&binding.key.owner)?,
+                    session: binding.session.clone(), expected_version: current.accepted_version,
+                };
+                self.accept_lifecycle(&binding.key.owner, &submission, 0)?
+            }
+            LifecycleOperation::Destroy {} => (self.clone(), current.clone()),
+            _ => return Err(DecisionError::Conflict),
+        };
+        next.sandboxes[index].operations[0].create_refusal = Some(reason);
+        if !next.is_valid() { return Err(DecisionError::Invalid); }
+        Ok((next, destroy))
+    }
+
     /// Store an observation only for the actual current Create or applied Renew.
     /// The caller separately supplies original authenticated call/time evidence.
     /// # Errors

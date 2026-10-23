@@ -6,7 +6,7 @@ mod lifecycle;
 mod window;
 
 impl ControlState for CenterState {
-    const FORMAT_VERSION: u32 = 5;
+    const FORMAT_VERSION: u32 = sandproof_protocol::internal::CENTER_STORE_FORMAT_VERSION;
     fn check_supported_profiles(&self) -> Result<(), StoreError> {
         if self.lifecycle_profile_version() != sandproof_center_core::LIFECYCLE_PROFILE_VERSION {
             return Err(StoreError::UnsupportedProfile);
