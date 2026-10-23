@@ -158,8 +158,9 @@ impl sandproof_internal::ValidationReceiver for Reception {
     async fn validation_evidence(
         &self,
         request: sandproof_internal::template::ValidationRequest,
+        context: AuthenticatedCenterContext,
     ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
-        self.host.validation_evidence(request).await
+        self.host.validation_evidence(request, context).await
     }
 }
 impl DataReceiver for Reception {
@@ -585,7 +586,7 @@ async fn center_http_lifecycle_uses_real_redis_https_and_original_host_driver() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn lost_durable_ready_then_center_reopen_preserves_original_vm_and_lifetime() {
+async fn lost_current_ready_observation_then_center_reopen_preserves_original_execution_and_lifetime() {
     let fixture = Fixture::new().await;
     fixture.reply_loss.store(true, Ordering::SeqCst);
     let application = fixture.application();
@@ -610,10 +611,10 @@ async fn lost_durable_ready_then_center_reopen_preserves_original_vm_and_lifetim
     let original = before.sandboxes()[0].operations()[0].intent().clone();
     let LifecycleOperation::Create { create, .. } = &original.request.operation else { panic!("original Create required") };
     assert_eq!(before.reserved(None, None), Some(create.resources));
-    let durable = fixture.host.observe_create(original.clone(), current::context()).await.unwrap();
-    let CurrentCreateReadiness::Observed { facts } = durable.readiness
+    let observed = fixture.host.observe_create(original.clone(), current::context()).await.unwrap();
+    let CurrentCreateReadiness::Observed { facts } = observed.readiness
     else {
-        panic!("Ready must already be durable before reply loss");
+        panic!("original committed execution must remain observable after reply loss");
     };
     assert_eq!(fixture.preparations(), 1);
     drop((router, application));
@@ -708,7 +709,7 @@ async fn blocked_original_prepare_allows_other_ready_and_destroy_without_duplica
         state.actions.iter().filter(|a| matches!(a.command.command(), sandbox_controller_core::Command::PrepareVm { .. })).map(|a| a.command.command().sandbox()).collect()
     };
     assert_eq!(prepared.len(), 2);
-    assert_ne!(prepared[0], prepared[1], "each original VM is prepared once");
+    assert_ne!(prepared[0], prepared[1], "each original sandbox is prepared once");
     let sandbox = created["sandboxID"].as_str().unwrap();
     assert_eq!(
         send(
