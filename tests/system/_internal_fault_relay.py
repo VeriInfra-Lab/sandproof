@@ -13,6 +13,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import base64
+import copy
 import hashlib
 import http.client
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -31,6 +32,7 @@ from tools.system_acceptance import private_path
 BODY_BYTES = 2 * 1024**2
 MATERIAL_BYTES = 512 * 1024
 LIFECYCLE = '/internal/lifecycle'
+CREATE_OBSERVATION = '/internal/lifecycle/create-observation'
 CONTROL_PATHS = frozenset((LIFECYCLE, '/internal/lifecycle/result-confirmation',
                           '/internal/lifecycle/window-close',
                           '/internal/lifecycle/create-observation',
@@ -91,6 +93,106 @@ def read_body(source, headers, *, limit=BODY_BYTES):
     return data
 
 
+def _fields(value, names):
+    if type(value) is not dict or set(value) != set(names.split()):
+        raise ValueError('current lifecycle fields required')
+    return value
+
+
+def _u64(value, *, positive=False):
+    if type(value) is not int or not int(positive) <= value < 2**64:
+        raise ValueError('typed lifecycle counter required')
+    return value
+
+
+def _opaque(value):
+    if (type(value) is not str or not 0 < len(value) <= 128
+            or any(not (c.isascii() and (c.isalnum() or c in '-_.')) for c in value)):
+        raise ValueError('bounded lifecycle identifier required')
+
+
+def _bytes(value, *, size=None):
+    if (type(value) is not list or (size is not None and len(value) != size)
+            or any(type(v) is not int or not 0 <= v <= 255 for v in value)):
+        raise ValueError('lifecycle byte array required')
+
+
+def accepted_request(value, node):
+    """Finite test correlation of current envelopes; never admission authority."""
+    _fields(value, 'request accepted_version center retention')
+    version = _u64(value['accepted_version'], positive=True)
+    center = _fields(value['center'], 'deployment center')
+    for v in center.values():
+        _opaque(v)
+    retention = _fields(value['retention'], 'slot window')
+    if not 1 <= _u64(retention['slot']) <= 4096:
+        raise ValueError('original retained position required')
+    _u64(retention['window'], positive=True)
+    request = _fields(value['request'], 'binding operation')
+    binding = _fields(request['binding'], 'protocol_version node session key expected')
+    actual_node = _fields(binding['node'], 'deployment_id node_id node_generation')
+    _opaque(actual_node['deployment_id'])
+    _opaque(actual_node['node_id'])
+    _u64(actual_node['node_generation'], positive=True)
+    if (type(binding['protocol_version']) is not int or binding['protocol_version'] != 3
+            or actual_node != node or center['deployment'] != actual_node['deployment_id']):
+        raise ValueError('current protocol and exact original node required')
+    _opaque(binding['session'])
+    key = _fields(binding['key'], 'deployment owner window sequence')
+    _opaque(key['deployment'])
+    _opaque(key['owner'])
+    _u64(key['window'], positive=True)
+    _u64(key['sequence'], positive=True)
+    if key['deployment'] != actual_node['deployment_id']:
+        raise ValueError('request deployment changed')
+    expected = binding['expected']
+    operation = request['operation']
+    if type(operation) is not dict:
+        raise ValueError('current operation required')
+    kind = operation.get('kind')
+    shapes = {'create': 'kind create target_incarnation',
+              'destroy': 'kind', 'unload': 'kind source_incarnation capture',
+              'resume': 'kind source_incarnation capture target_incarnation manifest_digest',
+              'renew': 'kind incarnation end_at_ms extend_only'}
+    if type(kind) is not str or kind not in shapes:
+        raise ValueError('current operation kind required')
+    _fields(operation, shapes[kind])
+    if kind == 'create':
+        _fields(expected, 'state')
+        if expected['state'] != 'absent' or version != 1:
+            raise ValueError('initial Create acceptance required')
+        create = _fields(operation['create'], 'template_revision template_digest resources options startup_deadline_ms timeout_ms max_lifetime_ms')
+        _opaque(create['template_revision'])
+        _bytes(create['template_digest'], size=32)
+        _bytes(create['options'])
+        if not 0 < len(create['options']) <= 65536:
+            raise ValueError('bounded full Create options required')
+        resources = _fields(create['resources'], 'instances cpu memory_bytes disk_bytes')
+        for v in resources.values():
+            _u64(v, positive=True)
+        for name in ('startup_deadline_ms', 'timeout_ms', 'max_lifetime_ms'):
+            _u64(create[name], positive=True)
+        if (resources['instances'] != 1 or create['timeout_ms'] > create['max_lifetime_ms']
+                or create['startup_deadline_ms'] + create['max_lifetime_ms'] >= 2**64):
+            raise ValueError('original Create bounds required')
+    else:
+        _fields(expected, 'state version')
+        if expected['state'] != 'version' or _u64(expected['version']) + 1 != version:
+            raise ValueError('accepted successor required')
+    for name in ('target_incarnation', 'source_incarnation', 'capture', 'incarnation'):
+        if name in operation:
+            _u64(operation[name], positive=True)
+    if kind == 'resume':
+        _bytes(operation['manifest_digest'], size=32)
+        if operation['target_incarnation'] <= operation['source_incarnation']:
+            raise ValueError('new resume incarnation required')
+    if kind == 'renew' and (type(operation['end_at_ms']) is not int
+            or not -(2**63) <= operation['end_at_ms'] < 2**63
+            or type(operation['extend_only']) is not bool):
+        raise ValueError('typed normalized renewal required')
+    return operation
+
+
 class ReceiptBarrier:
     """A real Ready is held before any response bytes are sent centerward."""
     def __init__(self, node):
@@ -114,27 +216,55 @@ class ReceiptBarrier:
 
     def observe(self, request, response):
         with self.lock:
-            if not self.armed or request.get('intent') != {'kind': 'create'}:
+            if not self.armed:
                 return False
-            identity = request.get('identity')
-            fact = response.get('fact', {})
-            if fact.get('kind') != 'ready':
+            operation = accepted_request(request, self.node)
+            if operation['kind'] != 'create':
                 return False
-            if (type(identity) is not dict or identity.get('node') != self.node
-                    or identity.get('intent_version') != 1 or response.get('identity') != identity):
-                raise ValueError('Ready receipt changed fixed original identity')
-            create = request['create']
-            start = fact['started_at_ms']
-            if (type(start) is not int or start >= create['startup_deadline_ms']
-                    or fact['end_at_ms'] != start + create['timeout_ms']
-                    or fact['max_end_at_ms'] != start + create['max_lifetime_ms']):
-                raise ValueError('Ready receipt changed original lifetime')
-            captured = dict(identity=identity, fact=fact,
-                            observation_version=response['observation_version'])
+            _fields(response, 'request current_request historical_create_succeeded readiness')
+            if type(response['historical_create_succeeded']) is not bool:
+                raise ValueError('typed historical success required')
+            accepted_request(response['request'], self.node)
+            accepted_request(response['current_request'], self.node)
+            if response['request'] != request:
+                raise ValueError('observation changed full original request')
+            readiness = response['readiness']
+            if type(readiness) is not dict:
+                raise ValueError('current readiness required')
+            state = readiness.get('state')
+            if state in ('pending', 'not_current', 'not_running', 'expired'):
+                _fields(readiness, 'state')
+                return False
+            if state == 'refused':
+                _fields(readiness, 'state reason')
+                if readiness['reason'] != 'capacity':
+                    raise ValueError('unknown refusal reason')
+                return False
+            _fields(readiness, 'state facts')
+            if state != 'observed':
+                raise ValueError('unknown current readiness')
+            if response['current_request'] != request or not response['historical_create_succeeded']:
+                raise ValueError('Ready must describe this exact current Create')
+            facts = _fields(readiness['facts'], 'started_at_ms end_at_ms max_end_at_ms startup_deadline_ms observed_at_ms')
+            for v in facts.values():
+                _u64(v)
+            create = operation['create']
+            start = facts['started_at_ms']
+            if (facts['startup_deadline_ms'] != create['startup_deadline_ms']
+                    or start > create['startup_deadline_ms']
+                    or facts['end_at_ms'] != start + create['timeout_ms']
+                    or facts['max_end_at_ms'] != start + create['max_lifetime_ms']
+                    or not start <= facts['observed_at_ms'] < facts['end_at_ms'] <= facts['max_end_at_ms']):
+                raise ValueError('Ready changed original lifetime or current observation')
             if self.captured is None:
-                self.captured = captured
-            elif self.captured != captured:
-                raise ValueError('receipt loss produced another VM or lifetime')
+                self.captured = copy.deepcopy(response)
+            else:
+                # Real readonly queries can observe the same execution later;
+                # no invented host sequence or frozen observation time exists.
+                previous = copy.deepcopy(self.captured)
+                previous['readiness']['facts']['observed_at_ms'] = facts['observed_at_ms']
+                if previous != response:
+                    raise ValueError('receipt loss produced another request or lifetime')
             self.ready.set()
             return True
 
@@ -299,10 +429,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(400, [], b'')
             return
         body = read_body(self.rfile, self.headers)
-        request = json.loads(body, object_pairs_hook=unique_keys) if self.path == LIFECYCLE else None
+        request = json.loads(body, object_pairs_hook=unique_keys) if self.path in (LIFECYCLE, CREATE_OBSERVATION) else None
         if self.path in CONTROL_PATHS and relay.partition.is_set():
             if request is not None:
-                relay.note_partition(request)
+                relay.note_partition(request, path=self.path)
             self._reply(503, [], b'')
             return
         backend = _Backend(relay.backend, relay.materials)
@@ -316,7 +446,7 @@ class _Handler(BaseHTTPRequestHandler):
             if len(data) > BODY_BYTES:
                 raise ValueError('test response exceeds finite budget')
             outgoing = [(name, value) for name, value in response.getheaders() if name.lower() not in HOP_HEADERS]
-            held = (self.path == LIFECYCLE and response.status == 200
+            held = (self.path == CREATE_OBSERVATION and response.status == 200
                     and relay.barrier.observe(request, json.loads(data, object_pairs_hook=unique_keys)))
             if held:
                 if not relay.barrier.release.wait(timeout=60):
@@ -364,21 +494,21 @@ class InternalFaultRelay:
         self.partition = threading.Event()
         self.destroy_seen = threading.Event()
         self.failed = threading.Event()
-        self.partition_identities = []
+        self.partition_requests = []
         self.lock = threading.Lock()
         self.server = _FiniteServer(listen, self)
         self.thread = threading.Thread(target=self.server.serve_forever, name='dk-fixed-mtls-relay')
 
-    def note_partition(self, request):
-        identity = request['identity']
-        if identity.get('node') != self.barrier.node:
-            raise ValueError('partition request changed original fixed node')
+    def note_partition(self, request, *, path):
+        operation = accepted_request(request, self.barrier.node)
+        if path not in (LIFECYCLE, CREATE_OBSERVATION):
+            raise ValueError('partition evidence requires an original request path')
         with self.lock:
-            if identity not in self.partition_identities:
-                if len(self.partition_identities) == 32:
+            if request not in self.partition_requests:
+                if len(self.partition_requests) == 32:
                     raise ValueError('finite partition evidence budget exhausted')
-                self.partition_identities.append(identity)
-        if request['intent'] == {'kind': 'destroy'}:
+                self.partition_requests.append(copy.deepcopy(request))
+        if path == LIFECYCLE and operation == {'kind': 'destroy'}:
             self.destroy_seen.set()
 
     def start(self):
