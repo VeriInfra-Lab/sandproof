@@ -140,7 +140,7 @@
     "sandbox-internal/src/server/lifecycle.rs": "125c60c650a5a15d39b1caf14c3a8252807c29ae5bf77a21cec46f8116291a02",
     "sandbox-internal/src/status.rs": "c7d4f41b0bf263da5b08780a24cd2c4f9b8913963998dd9981749fe3bfafaff9",
     "sandbox-internal/src/template.rs": "a271ecfe20e46ac1b9896e5f56f9bc33584a5d629519a6fbea8c02b4cd67098c",
-    "sandbox-internal/src/template/tests.rs": "d7549f27e2ef1c8f810e010e2fb6defeba92dc12d449ed474eeac0910ec2a7e3",
+    "sandbox-internal/src/template/tests.rs": "2306445ccd049758c3c0ff4a5c675e8e11c11abf1513c90b79b733ce326da79a",
     "sandbox-internal/src/tls.rs": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
     "sandbox-internal/tests/renewal_confirmation.rs": "c6c0c89d086027e0914d8c2e95cb4da6eac7efe08098b2f5a54fdeea8c1faf8d",
     "sandbox-internal/tests/secure_data.rs": "5ddaf5185d8b386c695a16192276d5ac00169bea6806d36f6fc7b37eea987ff9",

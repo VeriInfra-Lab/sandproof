@@ -9,20 +9,7 @@ use sandproof_protocol::{
     lifecycle::{CenterIdentity, IncarnationId, OperationBinding, OperationKey, RetentionBinding},
 };
 
-/// This exercises the wire shape, not admission of arbitrary CreateOptions or
-/// production of native evidence. Those retain their original business checks.
-fn largest_request() -> ValidationRequest {
-    let name = "n".repeat(128);
-    let node = NodeIdentity {
-        deployment_id: name.as_str().try_into().unwrap(),
-        node_id: name.as_str().try_into().unwrap(),
-        node_generation: u64::MAX.try_into().unwrap(),
-    };
-    let center = CenterIdentity {
-        deployment: node.deployment_id.clone(),
-        center: name.as_str().try_into().unwrap(),
-    };
-    let candidate_id = "f".repeat(32);
+fn largest_descriptor(candidate_id: &str) -> TemplateBinding {
     let mut descriptor = TemplateBinding {
         template_id: format!("tpl-{candidate_id}"),
         revision: "r1".into(),
@@ -52,7 +39,7 @@ fn largest_request() -> ValidationRequest {
     let remaining =
         CreateOptions::MAX_ENCODED_BYTES - serde_json::to_vec(&descriptor).unwrap().len();
     let mut path = format!("/k{}", "\"".repeat(remaining / 2));
-    if remaining % 2 != 0 {
+    if !remaining.is_multiple_of(2) {
         path.push('a');
     }
     descriptor.kernel.path = path.into();
@@ -60,6 +47,24 @@ fn largest_request() -> ValidationRequest {
         serde_json::to_vec(&descriptor).unwrap().len(),
         CreateOptions::MAX_ENCODED_BYTES
     );
+    descriptor
+}
+
+/// This exercises the wire shape, not admission of arbitrary `CreateOptions` or
+/// production of native evidence. Those retain their original business checks.
+fn largest_request() -> ValidationRequest {
+    let name = "n".repeat(128);
+    let node = NodeIdentity {
+        deployment_id: name.as_str().try_into().unwrap(),
+        node_id: name.as_str().try_into().unwrap(),
+        node_generation: u64::MAX.try_into().unwrap(),
+    };
+    let center = CenterIdentity {
+        deployment: node.deployment_id.clone(),
+        center: name.as_str().try_into().unwrap(),
+    };
+    let candidate_id = "f".repeat(32);
+    let descriptor = largest_descriptor(&candidate_id);
     let digest = descriptor.canonical_digest().unwrap();
     let publication = Publication {
         candidate_id,
