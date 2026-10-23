@@ -112,6 +112,7 @@ impl PrivateBuilds {
                             crate::business::publication::terminal_request(create, cleaned).as_ref()
                                 == Some(last.intent())
                                 && last.terminal() == Some(cleaned)
+                                && record.terminal_confirmation.as_ref() == Some(cleaned)
                         })
                     })
             })
