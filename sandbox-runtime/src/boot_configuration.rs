@@ -83,7 +83,7 @@ impl BootPlan {
     /// against another copy of the GET or a caller-supplied manifest profile.
     /// Uses only the cold-launch profile currently sent by configure; this is
     /// not a general validator for arbitrary restored or external VMMs.
-    pub(super) fn check_full_configuration(&self, bytes: &[u8]) -> Result<(), RuntimeError> {
+    pub(crate) fn check_full_configuration(&self, bytes: &[u8]) -> Result<(), RuntimeError> {
         if bytes.is_empty() || bytes.len() > 1_048_576 {
             return Err(RuntimeError::Protocol("source configuration response budget"));
         }
