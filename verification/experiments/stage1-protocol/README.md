@@ -90,3 +90,46 @@ Charon 从固定 crate 工作目录写固定相对 raw 位置；旧 raw 先归�
 三个生成环境存在全局 discriminant 辅助实例重名，按既有 Status/Writer 模式独立构建检查。
 公共消费者只导入独立 Model；不能同时导入所有实现视图，也不能因此省去某个正确/错误目标。
 组件通过后仍须共享模块登记、同一候选完整验收及正式集成；不据此关闭 T1/T2/V0 或启用路由。
+
+## 任意请求全文重放的局部证明
+
+`ReplayContract` 独立规定：任意两个请求的比较总返回成功，布尔值精确等于完整值是否相等。
+`ReplayEquality` 对真实请求生成体证明这个合同及接受/拒绝充要条件，覆盖四种操作的全部字段，
+包括 options 的长度和完整字节、两个摘要以及所有身份/版本字段。范围和实际验收状态只在
+[覆盖记录](../../../docs/proof-coverage.md)维护；它不表示请求合法、已认证或持久重放闭合。
+
+在批准的证明机、固定工具和已准备好的 Lake 依赖环境运行：
+
+```sh
+python3 verification/experiments/stage1-protocol/replay_formal.py \
+  --output artifacts/full-request-replay
+```
+
+入口对当前 Git 工作树的跟踪文件及非忽略新文件做摘要快照，使用独立源码和 `.lake/build`。
+固定原工具从真实 Rust 重新生成两版；key-only 修改复用 `negative_native.py` 的原单点变体。
+两版保留逐字节相同的独立合同，分别检查完整正例和通用合同的否定，并经既有严格实际文件服务
+核对准确审计清单。原 LLBC、全部原工具输出、固定工具/配置/源摘要与服务日志保存在输出目录。
+生成体只安装进该次隔离目录，不手改，也不改变历史冻结记录。
+
+这是便于推进这一条性质的局部形式入口，输出明确保留 `native_checks=not-run` 和
+`full_acceptance=false`。它不接收或伪造 ning 原生回执，也不替代前述 `formal.py`、
+完整普通检查、共享登记或 `scripts/verify-controller.sh`。在当前候选完成这些门槛前，
+不能把局部成功报告为整套证明验收成功。
+
+## 完整请求守卫与首错的局部证明
+
+`ValidationModel` 只导入生成类型和既有 Foundations 数学模型；`ValidRequest` 规定纯守卫的接受域，
+`FirstError` 要求所有更早守卫通过，`FullValidationContract` 同时要求成功和每种错误的充要条件。
+`Validation` 连接实际生成函数，`ValidationExamples` 给出四种操作的正常接受输入。
+它不验证 serde、当前账本、认证 owner、模板授权或持久收件；具体边界见覆盖记录。
+
+同一局部入口新增可选模式，默认 replay 保持原检查：
+
+```sh
+python3 verification/experiments/stage1-protocol/replay_formal.py \
+  --property validation --output artifacts/full-request-validation
+```
+
+该模式重抽取正确版和原 `same-incarnation` Rust 变体，逐字节核对两版独立合同，
+检查精确依赖/审计清单和所有实际文件。它继续明确输出原生检查未运行、完整验收未完成，
+不替代 ning 检查、历史组件入口或共享证明批次。

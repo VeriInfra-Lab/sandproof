@@ -128,6 +128,42 @@ Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、V
 完整 IR/生成物比较、所有实际文件内核/原服务诊断、准确审计和真实错误版；
 源码恢复、单次 run_code 或裸 success 标记均不能代替该入口。
 
+新增 [ReplayContract](../SandboxModel/Lifecycle/Protocol/ReplayContract.lean) 与
+[ReplayEquality](../SandboxModel/Lifecycle/Protocol/ReplayEquality.lean) 把上述固定 pair 扩展为
+任意两请求的完整值相等：`replay_complete` 总返回 `.ok (decide (request = original))`，
+并给出接受/拒绝充要条件。覆盖 binding 的版本、节点、session、完整 key、expected，
+以及 Create/Unload/Resume/Destroy 的全部字段；Create 的 options 比较包括长度和每个字节，
+摘要比较包括全部 32 字节。它对所有生成值成立，不以请求预先合法为前提，
+但不证明 serde 表示、请求守卫、鉴权、持久账本或跨重启重放。
+
+本扩展的 Rust 输入来自依赖组合 `1c5a085c5df53bdc456c492ff79f9a4488d00e6c`，
+未修改生产 Rust。新增[局部复现入口](../verification/experiments/stage1-protocol/replay_formal.py)
+在独立源码/构建目录内用固定原工具重新抽取两版，保留完整 LLBC 和原样生成文件；
+正确版 15 项审计、key-only 错误版 2 项审计使用逐字节相同的 `FullReplayContract`。
+错误版由原 `negative_native.py` 登记的唯一 Rust 修改生成，形式反例明确否定同一通用合同。
+实际文件经过内核及标准服务完整非陈旧诊断，源码、模型、生成物和日志摘要在局部回执记录。
+此入口只报告局部形式检查：本批未取得 ning 普通检查和原生错误版回执，
+共享 `verify-controller.sh` 仍因原冻结输入与当前候选不同而失败；
+未刷新原 `frozen.json` 或共享输入摘要，也未完成共享模块登记和整套验收。
+仓库保留的旧生成物仍属原冻结版本；上述新候选的对应检查以局部入口的新生成环境为准。
+
+在全文相等扩展之上，[ValidationModel](../SandboxModel/Lifecycle/Protocol/ValidationModel.lean)
+独立规定纯请求守卫的接受条件和六类首错，仅读取生成类型，不导入生成函数。
+Create 复用原 `Foundations.CreatePlan.valid`；[Validation](../SandboxModel/Lifecycle/Protocol/Validation.lean)
+的 12 项审计连接本次真实生成体，证明完整返回值、成功充要条件、每种首错充要条件和总返回。
+版本→完整节点→deployment→期望类别→操作形状的优先级保持；Create 包括资源正值、单实例、
+非空且至多 65536 字节的 options、期限关系与 checked_add 不溢出，Resume 要求严格更大目标代。
+[ValidationExamples](../SandboxModel/Lifecycle/Protocol/ValidationExamples.lean) 另给出四种操作的正常接受见证。
+
+本扩展仍使用 `1c5a085c` 的同一生产 Rust，未增加协议功能；实际 same-incarnation Rust 变体
+把 `<=` 改成 `<`，错误接受同代请求，两个形式反例目标明确否定同一个 `FullValidationContract`。
+局部入口的 `--property validation` 从当前源码重新抽取两版，检查 31 份实际文件、33 项审计，
+其中 15 项是本证明直接复用的全文相等辅助/定理，新增正确版 16 项、错误版 2 项；
+原默认 replay 模式也重新验证。实际结果以精确输入回执为准，不把重复审计计为新增覆盖。
+此结论只刻画已解码、已表示值上的纯守卫，不证明角色构造器/serde、认证 owner、
+账本期望版本确实成立、模板/options 可信装配、资源预留或任何 VM 动作已获授权。
+宁侧普通与原生错误版回执、共享冻结迁移/登记及完整验收的缺口仍保持；未刷新旧摘要。
+
 Request 的两个、Manifest 的七个外部函数按[逐符号 A6 登记](formal/dependencies.md)使用。
 新增 `str::as_bytes = .ok value` 要求有效 Rust str 在原借用内提供完整原序只读 UTF-8 字节；
 标准库与模型符合仍是显式条件，不是库实现已证。正常分配/普通值限制保留；
