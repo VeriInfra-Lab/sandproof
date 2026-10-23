@@ -29,7 +29,7 @@ structure sandproof_protocol.internal.lifecycle.Resources where
   disk_bytes : Std.U64
 
 /-- [sandproof_protocol::ResourceId]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 70:8-70:33
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 73:8-73:33
     Name pattern: [sandproof_protocol::ResourceId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::ResourceId"]
@@ -57,14 +57,14 @@ structure sandproof_protocol.internal.lifecycle.CreateBinding where
 def sandproof_protocol.internal.PositiveCounter := Std.U64
 
 /-- [sandproof_protocol::NodeId]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 70:8-70:33
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 73:8-73:33
     Name pattern: [sandproof_protocol::NodeId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::NodeId"]
 def sandproof_protocol.NodeId := String
 
 /-- [sandproof_protocol::DeploymentId]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 70:8-70:33
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 73:8-73:33
     Name pattern: [sandproof_protocol::DeploymentId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::DeploymentId"]
@@ -81,14 +81,14 @@ structure sandproof_protocol.internal.NodeIdentity where
   node_generation : sandproof_protocol.internal.PositiveCounter
 
 /-- [sandproof_protocol::SandboxId]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 70:8-70:33
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 73:8-73:33
     Name pattern: [sandproof_protocol::SandboxId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::SandboxId"]
 def sandproof_protocol.SandboxId := String
 
 /-- [sandproof_protocol::TenantId]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 70:8-70:33
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 73:8-73:33
     Name pattern: [sandproof_protocol::TenantId]
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::TenantId"]
@@ -145,7 +145,7 @@ def sandproof_protocol.lifecycle.identity.RequestSequence :=
   sandproof_protocol.internal.PositiveCounter
 
 /-- [sandproof_protocol::lifecycle::identity::OperationKey]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 74:0-74:23
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 93:0-93:23
     Name pattern: [sandproof_protocol::lifecycle::identity::OperationKey]
     Visibility: public -/
 @[rust_type "sandproof_protocol::lifecycle::identity::OperationKey"]
@@ -156,7 +156,7 @@ structure sandproof_protocol.lifecycle.identity.OperationKey where
   sequence : sandproof_protocol.lifecycle.identity.RequestSequence
 
 /-- [sandproof_protocol::lifecycle::identity::ExpectedSession]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 89:0-89:24
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 108:0-108:24
     Name pattern: [sandproof_protocol::lifecycle::identity::ExpectedSession]
     Visibility: public -/
 @[discriminant isize, rust_type
@@ -166,7 +166,7 @@ inductive sandproof_protocol.lifecycle.identity.ExpectedSession where
 | Version : Std.U64 → sandproof_protocol.lifecycle.identity.ExpectedSession
 
 /-- [sandproof_protocol::lifecycle::identity::OperationBinding]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 97:0-97:27
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 116:0-116:27
     Name pattern: [sandproof_protocol::lifecycle::identity::OperationBinding]
     Visibility: public -/
 @[rust_type "sandproof_protocol::lifecycle::identity::OperationBinding"]
@@ -212,10 +212,15 @@ inductive sandproof_protocol.lifecycle.request.LifecycleOperation where
   sandproof_protocol.lifecycle.identity.IncarnationId →
   sandproof_protocol.lifecycle.digest.ContentDigest →
   sandproof_protocol.lifecycle.request.LifecycleOperation
+| Renew :
+  sandproof_protocol.lifecycle.identity.IncarnationId →
+  Std.I64 →
+  Bool →
+  sandproof_protocol.lifecycle.request.LifecycleOperation
 | Destroy : sandproof_protocol.lifecycle.request.LifecycleOperation
 
 /-- [sandproof_protocol::lifecycle::request::LifecycleRequest]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 40:0-40:27
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 49:0-49:27
     Name pattern: [sandproof_protocol::lifecycle::request::LifecycleRequest]
     Visibility: public -/
 @[rust_type "sandproof_protocol::lifecycle::request::LifecycleRequest"]

@@ -9,6 +9,11 @@ namespace SandboxModel.Stage1Protocol.Replay
 registered A6 model; arrays and vectors use the fixed Aeneas byte comparisons.
 This theorem is about value equality, not authentication or durable replay state. -/
 
+theorem bool_ne_model_exact (left right : Bool) :
+    SandproofStage1RequestRust.Bool.Insts.CoreCmpPartialEqBool.ne left right =
+      .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;> rfl
+
 theorem bytes_eq (xs ys : List U8) (h : xs.length = ys.length) :
     List.allM (fun (p : U8 × U8) => (.ok (decide (p.1 = p.2)) : Result Bool))
       (List.zip xs ys) = .ok (decide (xs = ys)) := by
@@ -125,7 +130,9 @@ theorem operation_eq (a b : LifecycleOperation) :
       CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
       PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
       sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
-      array_eq, ok_and]
+      array_eq, ok_and, core.cmp.impls.PartialEqBool.eq,
+      and_assoc, and_comm]
+  all_goals simp [lift, Bool.and_left_comm]
 
 theorem request_eq (a b : LifecycleRequest) :
     LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq a b =
@@ -167,3 +174,5 @@ end SandboxModel.Stage1Protocol.Replay
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.replay_complete
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.replay_accepts_iff
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.replay_rejects_iff
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Replay.bool_ne_model_exact

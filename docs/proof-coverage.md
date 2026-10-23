@@ -243,7 +243,25 @@ Create 复用原 `Foundations.CreatePlan.valid`；[Validation](../SandboxModel/L
 账本期望版本确实成立、模板/options 可信装配、资源预留或任何 VM 动作已获授权。
 宁侧普通与原生错误版回执、共享冻结迁移/登记及完整验收的缺口仍保持；未刷新旧摘要。
 
-Request 的两个、Manifest 的七个外部函数按[逐符号 A6 登记](formal/dependencies.md)使用。
+#### 当前五操作请求的迁移
+
+请求证明迁到统一候选 `a0ae6288a6ad90aae5a8fc4956d9d3506ae9d119` 的生产 Rust。
+新增的 `Renew` 带运行代、I64 绝对期限和 `extend_only`；全文相等覆盖这些完整字段，
+独立校验模型把 Renew 的期望类别限定为 Version，保留原六类首错顺序和总返回。
+[Renew](../SandboxModel/Lifecycle/Protocol/Renew.lean) 给出任意表示值的纯守卫接受、
+Absent 拒绝、三个字段的精确重放条件与逐字段修改拒绝，以及正常和负期限见证。
+负期限见证明确说明本层不检查实际寿命、当前运行代或续期授权；这些义务仍属于后续业务函数。
+
+本迁移同步固定原工具产生的完整请求 LLBC、Types、Funs 和 translation，未手改生成体。
+布尔外部模板复用已登记 A6 模型的命名空间适配，两版固定 `cmp.rs` 与原登记摘要核对一致。
+原五项 Request 定理及所有请求生成根的证明消费者进入局部 validation 检查；
+key-only 实际 Rust 错误版另有改变 Renew 模式仍被接受的见证，并否定同一个全文相等合同。
+正确与错误版均由局部入口重新抽取，精确输入、实际文件诊断和审计以本迁移回执为准。
+这不刷新历史 `frozen.json` 或共享输入摘要，不迁记上游其它提交的普通/原生检查结果；
+完整普通检查、原生错误版回执、共享冻结/登记和全套证明验收仍需在统一候选闭合。
+
+历史 Request 的两个、Manifest 的七个外部函数按[逐符号 A6 登记](formal/dependencies.md)使用；
+当前五操作请求另复用上述已登记的布尔比较模型。
 新增 `str::as_bytes = .ok value` 要求有效 Rust str 在原借用内提供完整原序只读 UTF-8 字节；
 标准库与模型符合仍是显式条件，不是库实现已证。正常分配/普通值限制保留；
 OOM/abort、资源 Drop、unwind 和 async shell 未覆盖。

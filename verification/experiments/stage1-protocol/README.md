@@ -116,11 +116,19 @@ python3 verification/experiments/stage1-protocol/replay_formal.py \
 完整普通检查、共享登记或 `scripts/verify-controller.sh`。在当前候选完成这些门槛前，
 不能把局部成功报告为整套证明验收成功。
 
+当前请求迁移包含 Renew：其运行代、I64 期限和 `extend_only` 进入完整值相等。
+仓库请求生成根由固定原工具完整更新，历史 `frozen.json` 仍只认领旧版；不更新摘要使旧组件假绿。
+新增布尔模板仅委托已有 A6 网络库模型；key-only 变体不再到达该模板。
+实际文件清单同时检查这份模型及其类型闭包；其它未登记外部函数仍拒绝。
+
 ## 完整请求守卫与首错的局部证明
 
 `ValidationModel` 只导入生成类型和既有 Foundations 数学模型；`ValidRequest` 规定纯守卫的接受域，
 `FirstError` 要求所有更早守卫通过，`FullValidationContract` 同时要求成功和每种错误的充要条件。
 `Validation` 连接实际生成函数，`ValidationExamples` 给出四种操作的正常接受输入。
+`Renew` 补第五种操作、三个字段的重放条件、Absent 拒绝和负期限的守卫边界见证。
+validation 模式同时回归原 `Request` 的五项定理；replay 模式检查实际 key-only 错误版
+接受被改动的 Renew 模式，并否定正确版同一个独立合同。
 它不验证 serde、当前账本、认证 owner、模板授权或持久收件；具体边界见覆盖记录。
 
 同一局部入口新增可选模式，默认 replay 保持原检查：

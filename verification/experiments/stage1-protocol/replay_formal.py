@@ -27,7 +27,7 @@ NEGATIVE = ['ReplayContract', 'Model', 'RequestValues']
 AUDITS = ['bytes_eq', 'array_eq', 'vec_eq', 'ok_and', 'resources_eq',
           'create_eq', 'node_eq', 'key_eq', 'expected_eq', 'binding_eq',
           'operation_eq', 'request_eq', 'replay_complete',
-          'replay_accepts_iff', 'replay_rejects_iff']
+          'replay_accepts_iff', 'replay_rejects_iff', 'bool_ne_model_exact']
 REPLAY_AUDITS = ['SandboxModel.Stage1Protocol.Replay.' + n for n in AUDITS]
 VALIDATION_AUDITS = ['SandboxModel.Stage1Protocol.Validation.' + n for n in
     ['resources_positive', 'checked_add_present', 'ok_unless', 'create_valid',
@@ -35,17 +35,26 @@ VALIDATION_AUDITS = ['SandboxModel.Stage1Protocol.Validation.' + n for n in
      'validate_accepts_iff', 'validate_error_iff', 'validate_complete', 'validate_total']]
 EXAMPLE_AUDITS = ['SandboxModel.Stage1Protocol.Validation.Examples.' + n for n in
                   ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted']]
+REQUEST_AUDITS = ['SandboxModel.Stage1Protocol.Request.' + n for n in
+                 ['unsupported_version_first', 'resume_order', 'resume_equal_refused',
+                  'resume_nonempty_success', 'replay_complete_pair']]
+RENEW_AUDITS = ['SandboxModel.Stage1Protocol.Renew.' + n for n in
+               ['accepts_all_represented', 'absent_rejected', 'replay_iff',
+                'changed_incarnation_rejected', 'changed_deadline_rejected',
+                'changed_mode_rejected', 'accepted', 'negative_deadline_passes_guard']]
 PROPERTIES = {
     'replay': dict(kind='stage1-full-replay-local-formal', mutation='key-only-replay',
         positive=POSITIVE, negative=NEGATIVE, common_files=[],
         contract='ReplayContract', template='NegativeFullReplay', audits=REPLAY_AUDITS,
-        negative_audits=['mutant_accepts_changed_capture', 'key_only_not_full_replay']),
+        negative_audits=['mutant_accepts_changed_capture', 'key_only_not_full_replay',
+                         'mutant_accepts_changed_renew_mode', 'renew_mode_not_full_replay']),
     'validation': dict(kind='stage1-request-validation-local-formal', mutation='same-incarnation',
-        positive=[*POSITIVE, 'ValidationModel', 'Validation', 'ValidationExamples', 'Model', 'RequestValues'],
+        positive=[*POSITIVE, 'ValidationModel', 'Validation', 'ValidationExamples',
+                  'Model', 'RequestValues', 'Request', 'Renew'],
         negative=['ValidationModel', 'Model', 'RequestValues'],
         common_files=['SandboxModel/Foundations/Model.lean'],
         contract='ValidationModel', template='NegativeValidation',
-        audits=REPLAY_AUDITS + VALIDATION_AUDITS + EXAMPLE_AUDITS,
+        audits=REPLAY_AUDITS + VALIDATION_AUDITS + EXAMPLE_AUDITS + REQUEST_AUDITS + RENEW_AUDITS,
         negative_audits=['mutant_accepts_same_incarnation', 'mutant_not_full_validation']),
 }
 
@@ -163,6 +172,8 @@ def run(output, property_name='replay'):
                       if '_Template' not in p.name]
             files += ['verification/aeneas/foundations/SandproofFoundations/' + name + '.lean'
                       for name in ['TypesExternal', 'IdentifierLibrary', 'Types', 'FunsExternal']]
+            files += ['verification/aeneas/network/SandproofNetwork/' + name + '.lean'
+                      for name in ['Types', 'FunsExternal']]
             if case == 'correct':
                 expected_audits = config['audits']
             else:

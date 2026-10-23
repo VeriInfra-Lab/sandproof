@@ -125,6 +125,11 @@ def extract(output, profiles, tool_root):
                              'alloc.string.String.Insts.CoreOpsDerefDerefStr.deref', 'alloc.vec.Vec.is_empty'},
                 'carriers': set(),
             }
+            # The key-only Rust mutant no longer reaches operation equality.
+            # Register only this existing A6 primitive when it is emitted.
+            bool_ne = 'Bool.Insts.CoreCmpPartialEqBool.ne'
+            if name == 'request' and bool_ne in external:
+                allowed[name].add(bool_ne)
             if set(external) != allowed[name] or len(external) != len(set(external)):
                 raise ValueError('unregistered opaque primitive or project function: ' + repr(external))
             row['external_functions'] = sorted(external)

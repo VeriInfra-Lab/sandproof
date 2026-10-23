@@ -19,14 +19,15 @@ def createView (r : CreateBinding) : CreatePlan :=
 def expectationOK (operation : LifecycleOperation) (expected : ExpectedSession) : Prop :=
   match operation, expected with
   | .Create _ _, .Absent => True
-  | .Unload _ _, .Version _ | .Resume _ _ _ _, .Version _ | .Destroy, .Version _ => True
+  | .Unload _ _, .Version _ | .Resume _ _ _ _, .Version _
+  | .Renew _ _ _, .Version _ | .Destroy, .Version _ => True
   | _, _ => False
 
 def operationOK (operation : LifecycleOperation) : Prop :=
   match operation with
   | .Create create _ => (createView create).valid
   | .Resume source _ target _ => source.val < target.val
-  | .Unload _ _ | .Destroy => True
+  | .Unload _ _ | .Renew _ _ _ | .Destroy => True
 
 def headersOK (request : LifecycleRequest) (node : NodeIdentity) : Prop :=
   request.binding.protocol_version.val = 3 ∧ request.binding.node = node ∧
@@ -65,7 +66,7 @@ noncomputable def expectedResult (request : LifecycleRequest) (node : NodeIdenti
     else match request.operation with
       | .Create create _ => if (createView create).valid then .Ok () else .Err .InvalidCreate
       | .Resume source _ target _ => if source.val < target.val then .Ok () else .Err .InvalidIncarnation
-      | .Unload _ _ | .Destroy => .Ok ()
+      | .Unload _ _ | .Renew _ _ _ | .Destroy => .Ok ()
 
 def FullValidationContract
     (run : LifecycleRequest → NodeIdentity → Result (core.result.Result Unit ValidationError)) : Prop :=

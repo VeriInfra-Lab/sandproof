@@ -22,6 +22,33 @@ theorem key_only_not_full_replay : ¬ FullReplayContract replay_matches := by
   have exact_result := contract (unload 2#u64) (unload 1#u64)
   rw [mutant_accepts_changed_capture] at exact_result
   simp [different] at exact_result
+
+theorem mutant_accepts_changed_renew_mode (incarnation : U64) (endAt : I64) (extendOnly : Bool) :
+    replay_matches (renew incarnation endAt extendOnly) (renew incarnation endAt (!extendOnly)) =
+      .ok true := by
+  simp [renew, binding, replay_matches,
+    sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches,
+    sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq,
+    sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+theorem renew_mode_not_full_replay : ¬ FullReplayContract replay_matches := by
+  classical
+  intro contract
+  have different : renew 1#u64 100#i64 false ≠ renew 1#u64 100#i64 true := by simp [renew]
+  have exact_result := contract (renew 1#u64 100#i64 false) (renew 1#u64 100#i64 true)
+  have accepted : replay_matches (renew 1#u64 100#i64 false)
+      (renew 1#u64 100#i64 true) = .ok true := by
+    simpa using mutant_accepts_changed_renew_mode 1#u64 100#i64 false
+  rw [accepted] at exact_result
+  simp [different] at exact_result
 end SandboxModel.Stage1Protocol.Request
 #audit_controller_proof SandboxModel.Stage1Protocol.Request.mutant_accepts_changed_capture
 #audit_controller_proof SandboxModel.Stage1Protocol.Request.key_only_not_full_replay
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Request.mutant_accepts_changed_renew_mode
+#audit_controller_proof SandboxModel.Stage1Protocol.Request.renew_mode_not_full_replay

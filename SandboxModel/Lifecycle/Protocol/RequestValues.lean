@@ -18,4 +18,7 @@ def resume (source target : U64) : WireRequest := ⟨binding, .Resume source 1#u
 def runResume (source target : U64) := request_validate (resume source target) node
 def unload (capture : U64) : WireRequest := ⟨binding, .Unload 1#u64 capture⟩
 
+def renew (incarnation : U64) (endAt : I64) (extendOnly : Bool) : WireRequest :=
+  ⟨binding, .Renew incarnation endAt extendOnly⟩
+
 end SandboxModel.Stage1Protocol.Request

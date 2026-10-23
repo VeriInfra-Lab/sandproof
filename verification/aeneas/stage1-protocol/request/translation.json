@@ -4,6 +4,23 @@
   "crate": "sandproof_stage1_protocol_extract",
   "functions": [
     {
+      "def_id": 58,
+      "lean_name": "Bool.Insts.CoreCmpPartialEqBool.ne",
+      "lean_file": "SandproofStage1Request/FunsExternal_Template.lean",
+      "rust_name": "core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/cmp.rs",
+        "begin_line": 2156,
+        "end_line": 2156
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
       "def_id": 41,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
       "lean_file": "SandproofStage1Request/FunsExternal_Template.lean",
@@ -38,7 +55,7 @@
       "reducible": false
     },
     {
-      "def_id": 60,
+      "def_id": 64,
       "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.Insts.CoreCmpPartialEqResources.eq",
       "lean_file": "SandproofStage1Request/Funs.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::Resources> for sandproof_protocol::internal::lifecycle::Resources}::eq",
@@ -72,15 +89,15 @@
       "reducible": false
     },
     {
-      "def_id": 58,
+      "def_id": 62,
       "lean_name": "SandproofStage1RequestRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
       "lean_file": "SandproofStage1Request/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq",
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 68,
-        "end_line": 68
+        "begin_line": 71,
+        "end_line": 71
       },
       "is_opaque": false,
       "can_fail": true,
@@ -164,8 +181,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 68,
-        "end_line": 68
+        "begin_line": 71,
+        "end_line": 71
       },
       "is_opaque": false,
       "can_fail": true,
@@ -181,8 +198,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 68,
-        "end_line": 68
+        "begin_line": 71,
+        "end_line": 71
       },
       "is_opaque": false,
       "can_fail": true,
@@ -215,8 +232,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 68,
-        "end_line": 68
+        "begin_line": 71,
+        "end_line": 71
       },
       "is_opaque": false,
       "can_fail": true,
@@ -232,8 +249,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 68,
-        "end_line": 68
+        "begin_line": 71,
+        "end_line": 71
       },
       "is_opaque": false,
       "can_fail": true,
@@ -242,7 +259,7 @@
       "reducible": false
     },
     {
-      "def_id": 55,
+      "def_id": 59,
       "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq",
       "lean_file": "SandproofStage1Request/Funs.lean",
       "rust_name": "sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq",
@@ -293,7 +310,7 @@
       "reducible": false
     },
     {
-      "def_id": 54,
+      "def_id": 56,
       "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq",
       "lean_file": "SandproofStage1Request/Funs.lean",
       "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}::eq",
@@ -368,8 +385,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
-        "begin_line": 72,
-        "end_line": 72
+        "begin_line": 91,
+        "end_line": 91
       },
       "is_opaque": false,
       "can_fail": true,
@@ -385,8 +402,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
-        "begin_line": 82,
-        "end_line": 82
+        "begin_line": 101,
+        "end_line": 101
       },
       "is_opaque": false,
       "can_fail": true,
@@ -402,8 +419,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
-        "begin_line": 95,
-        "end_line": 95
+        "begin_line": 114,
+        "end_line": 114
       },
       "is_opaque": false,
       "can_fail": true,
@@ -436,8 +453,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs",
-        "begin_line": 38,
-        "end_line": 38
+        "begin_line": 47,
+        "end_line": 47
       },
       "is_opaque": false,
       "can_fail": true,
@@ -453,8 +470,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs",
-        "begin_line": 49,
-        "end_line": 49
+        "begin_line": 58,
+        "end_line": 58
       },
       "is_opaque": false,
       "can_fail": true,
@@ -470,8 +487,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs",
-        "begin_line": 59,
-        "end_line": 59
+        "begin_line": 68,
+        "end_line": 68
       },
       "is_opaque": false,
       "can_fail": true,
@@ -527,8 +544,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 70,
-        "end_line": 70
+        "begin_line": 73,
+        "end_line": 73
       }
     },
     {
@@ -563,8 +580,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 70,
-        "end_line": 70
+        "begin_line": 73,
+        "end_line": 73
       }
     },
     {
@@ -575,8 +592,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 70,
-        "end_line": 70
+        "begin_line": 73,
+        "end_line": 73
       }
     },
     {
@@ -599,8 +616,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 70,
-        "end_line": 70
+        "begin_line": 73,
+        "end_line": 73
       }
     },
     {
@@ -611,8 +628,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 70,
-        "end_line": 70
+        "begin_line": 73,
+        "end_line": 73
       }
     },
     {
@@ -695,8 +712,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
-        "begin_line": 74,
-        "end_line": 74
+        "begin_line": 93,
+        "end_line": 93
       }
     },
     {
@@ -707,8 +724,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
-        "begin_line": 89,
-        "end_line": 89
+        "begin_line": 108,
+        "end_line": 108
       }
     },
     {
@@ -719,8 +736,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
-        "begin_line": 97,
-        "end_line": 97
+        "begin_line": 116,
+        "end_line": 116
       }
     },
     {
@@ -755,8 +772,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs",
-        "begin_line": 40,
-        "end_line": 40
+        "begin_line": 49,
+        "end_line": 49
       }
     }
   ],
@@ -782,8 +799,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs",
-        "begin_line": 23,
-        "end_line": 23
+        "begin_line": 45,
+        "end_line": 45
       },
       "can_fail": false
     }
@@ -828,15 +845,15 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
-        "begin_line": 68,
-        "end_line": 68
+        "begin_line": 71,
+        "end_line": 71
       },
       "impl_trait_def_id": 5,
       "impl_trait_rust_name": "core::cmp::PartialEq",
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 21,
+      "def_id": 23,
       "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest",
       "lean_file": "SandproofStage1Request/Funs.lean",
       "rust_name": "sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}",
@@ -866,7 +883,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 20,
+      "def_id": 21,
       "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId",
       "lean_file": "SandproofStage1Request/Funs.lean",
       "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}",
@@ -888,8 +905,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs",
-        "begin_line": 38,
-        "end_line": 38
+        "begin_line": 47,
+        "end_line": 47
       },
       "impl_trait_def_id": 5,
       "impl_trait_rust_name": "core::cmp::PartialEq",
