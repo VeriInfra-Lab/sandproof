@@ -195,7 +195,20 @@ impl ControllerJournal {
         }) {
             return Err(JournalError::Conflict);
         }
-        let source_pinned = source_work::retains_session(&tx, &session.id)?;
+        let source_pinned = if let Some(previous) = previous.as_ref() {
+            let pinned = source_work::references_intent(&tx, &previous.request)?;
+            if pinned || session.entries.iter().any(|entry| {
+                entry.intent == previous.request && entry.local_operation.is_some()
+            }) {
+                // Preserve the previous complete checkpoint until its exact
+                // responsibility is settled. Advancing despite this pin would
+                // forget which retained SDK row can later be reclaimed.
+                return Err(JournalError::UnresolvedAction);
+            }
+            pinned
+        } else {
+            false
+        };
         let session = &mut inbox.sessions[s];
         if let Some(previous) = previous {
             let current = session.current_version;

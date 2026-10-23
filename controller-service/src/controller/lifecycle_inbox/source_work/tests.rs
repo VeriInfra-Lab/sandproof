@@ -90,6 +90,56 @@ fn observation(requirement: &SourceObservationRequirement) -> RawSourceObservati
 }
 
 #[test]
+fn source_work_keeps_its_exact_create_and_unload_rows_while_old_sdk_checkpoint_is_reclaimed() {
+    use sandproof_protocol::lifecycle::RenewalConfirmation;
+    let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("db");
+    let (mut journal, _) = running_source(&path);
+    let create = v3::request();
+    let mut sdk = create.clone(); sdk.accepted_version = 2;
+    sdk.request.binding.expected = ExpectedSession::Version(1);
+    sdk.request.binding.key.window = 2.try_into().unwrap();
+    sdk.request.binding.key.sequence = 2.try_into().unwrap();
+    sdk.request.operation = LifecycleOperation::Renew {
+        incarnation: 101.try_into().unwrap(), end_at_ms: 90_010, extend_only: false,
+    };
+    journal.record_lifecycle_intent(&sdk, &v3::context(), &mut NeverCrash).unwrap();
+    let first = RenewalConfirmation {
+        effective_end_at_ms: journal.apply_lifecycle_renew(&sdk, &v3::context(), 100, &mut NeverCrash).unwrap().1,
+        request: sdk.clone(),
+    };
+    journal.confirm_lifecycle_renewal(&first, &v3::context(), &mut NeverCrash).unwrap();
+    let mut next = sdk.clone(); next.accepted_version = 3;
+    next.request.binding.expected = ExpectedSession::Version(2);
+    next.request.binding.key.sequence = 3.try_into().unwrap();
+    next.request.operation = LifecycleOperation::Renew {
+        incarnation: 101.try_into().unwrap(), end_at_ms: 100_010, extend_only: false,
+    };
+    journal.record_lifecycle_intent(&next, &v3::context(), &mut NeverCrash).unwrap();
+    let result = RenewalConfirmation {
+        effective_end_at_ms: journal.apply_lifecycle_renew(&next, &v3::context(), 100, &mut NeverCrash).unwrap().1,
+        request: next,
+    };
+    let mut unload = unload(); unload.accepted_version = 4;
+    unload.request.binding.expected = ExpectedSession::Version(3);
+    unload.request.binding.key.sequence = 4.try_into().unwrap();
+    journal.record_lifecycle_intent(&unload, &v3::context(), &mut NeverCrash).unwrap();
+    let work = journal.prepare_lifecycle_source_work::<Evidence>(&unload, &v3::context(), 100, &mut NeverCrash).unwrap();
+    assert!(retains_session(&journal.journal.connection, &create.request.binding.session).unwrap());
+    assert!(references_intent(&journal.journal.connection, &create).unwrap());
+    assert!(references_intent(&journal.journal.connection, &unload).unwrap());
+    assert!(!references_intent(&journal.journal.connection, &sdk).unwrap());
+    journal.confirm_lifecycle_renewal(&result, &v3::context(), &mut NeverCrash).unwrap();
+    assert!(matches!(journal.lifecycle_work_state(&sdk, &v3::context()), Err(JournalError::Conflict)),
+        "an unrelated source retirement pin must not permanently retain the old SDK row");
+    assert_eq!(journal.lifecycle_work_state(&unload, &v3::context()).unwrap().intent, unload);
+    assert!(journal.lifecycle_work_state(&create, &v3::context()).is_ok());
+    assert_eq!(journal.lifecycle_source_work(&v3::config().node).unwrap(), vec![work.clone()]);
+    codec::validate(&journal.journal.connection, &journal.world().unwrap()).unwrap();
+    drop(journal); let journal = v3::open(&path);
+    assert_eq!(journal.lifecycle_source_work(&v3::config().node).unwrap(), vec![work]);
+}
+
+#[test]
 fn source_and_inbox_initialize_atomically_with_exact_immutable_limits() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
