@@ -1,8 +1,10 @@
 //! Current result storage: no synthetic legacy response or host observation counter.
-use super::{CenterState, DecisionError, LifecycleSubmission, RetainedTerminalResult, SessionPhase};
+use super::{
+    CenterState, DecisionError, LifecycleSubmission, RetainedTerminalResult, SessionPhase,
+};
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation,
-    TerminalLifecycleObservation, TerminalStatus,
+    AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, CurrentReadyFacts,
+    LifecycleOperation, TerminalLifecycleObservation, TerminalStatus,
 };
 
 fn same_lifetime(left: &CurrentReadyFacts, right: &CurrentReadyFacts) -> bool {
@@ -19,10 +21,14 @@ impl CenterState {
     /// an existing Destroy never replaces its original acceptance timestamp.
     /// # Errors
     /// Wrong origin/currentness, a prior Running or unsupported refusal rejects.
-    pub fn accept_lifecycle_create_refusal(&self, observation: &CreateObservation, now_ms: u64)
-        -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
-    {
-        if !self.is_valid() { return Err(DecisionError::Invalid); }
+    pub fn accept_lifecycle_create_refusal(
+        &self,
+        observation: &CreateObservation,
+        now_ms: u64,
+    ) -> Result<(Self, AcceptedLifecycleIntent), DecisionError> {
+        if !self.is_valid() {
+            return Err(DecisionError::Invalid);
+        }
         let CurrentCreateReadiness::Refused { reason } = observation.readiness else {
             return Err(DecisionError::Invalid);
         };
@@ -30,19 +36,28 @@ impl CenterState {
         let index = self.index(&binding.key.owner, binding.session.as_protocol_id())?;
         let record = &self.sandboxes[index];
         let original = record.operations.first().ok_or(DecisionError::Invalid)?;
-        let current = record.operations.last().ok_or(DecisionError::Invalid)?.intent();
+        let current = record
+            .operations
+            .last()
+            .ok_or(DecisionError::Invalid)?
+            .intent();
         if observation.request != *original.intent() || observation.current_request != *current {
             return Err(DecisionError::Stale);
         }
-        if !observation.matches_request(original.intent()) { return Err(DecisionError::Invalid); }
+        if !observation.matches_request(original.intent()) {
+            return Err(DecisionError::Invalid);
+        }
         if record.last_running().is_some()
             || original.create_refusal.is_some_and(|saved| saved != reason)
-        { return Err(DecisionError::Conflict); }
+        {
+            return Err(DecisionError::Conflict);
+        }
         let (mut next, destroy) = match current.request.operation {
             LifecycleOperation::Create { .. } => {
                 let submission = LifecycleSubmission::Destroy {
                     key: self.next_sdk_operation_key(&binding.key.owner)?,
-                    session: binding.session.clone(), expected_version: current.accepted_version,
+                    session: binding.session.clone(),
+                    expected_version: current.accepted_version,
                 };
                 self.accept_lifecycle(&binding.key.owner, &submission, now_ms)?
             }
@@ -50,7 +65,9 @@ impl CenterState {
             _ => return Err(DecisionError::Conflict),
         };
         next.sandboxes[index].operations[0].create_refusal = Some(reason);
-        if !next.is_valid() { return Err(DecisionError::Invalid); }
+        if !next.is_valid() {
+            return Err(DecisionError::Invalid);
+        }
         Ok((next, destroy))
     }
 

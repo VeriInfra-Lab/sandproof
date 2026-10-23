@@ -155,7 +155,10 @@ mod tests {
         };
         (
             AcceptedLifecycleIntent {
-                retention: RetentionBinding { slot: 1, window: 1.try_into().unwrap() },
+                retention: RetentionBinding {
+                    slot: 1,
+                    window: 1.try_into().unwrap(),
+                },
                 center: center.clone(),
                 accepted_version: version,
                 request: LifecycleRequest {
@@ -220,7 +223,10 @@ mod tests {
         let (mut value, context) = intent(1);
         for slot in [0, 4097] {
             value.retention.slot = slot;
-            assert_eq!(value.validate(&context), Err(AcceptedIntentError::InvalidRetention));
+            assert_eq!(
+                value.validate(&context),
+                Err(AcceptedIntentError::InvalidRetention)
+            );
         }
         value.retention.slot = 4096;
         value.retention.window = u64::MAX.try_into().unwrap();

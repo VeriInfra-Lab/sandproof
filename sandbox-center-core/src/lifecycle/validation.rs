@@ -130,13 +130,22 @@ impl CenterState {
             || session.operations.len() > usize::from(self.bounds.operations_per_sandbox)
             || (!session.terminating()
                 && session.operations.len() >= usize::from(self.bounds.operations_per_sandbox))
-            || lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(origin.retention.window.get())
+            || lane
+                .current()
+                .map(sandproof_protocol::internal::PositiveCounter::get)
+                != Some(origin.retention.window.get())
             || !self.tenant_is_registered(&b.key.owner)
             || !self.nodes.iter().any(|node| node.identity == b.node)
             || (first.create_refusal.is_some()
                 && (session.operations.len() != 2
-                    || !matches!(last.intent.request.operation, LifecycleOperation::Destroy {})
-                    || session.operations.iter().any(|operation| operation.running.is_some())))
+                    || !matches!(
+                        last.intent.request.operation,
+                        LifecycleOperation::Destroy {}
+                    )
+                    || session
+                        .operations
+                        .iter()
+                        .any(|operation| operation.running.is_some())))
             || session
                 .terminal_confirmation
                 .as_ref()
@@ -226,6 +235,17 @@ impl CenterState {
         if request.binding.expected != ExpectedSession::Version(previous.intent.accepted_version) {
             return false;
         }
+        Self::valid_lifecycle_followup(op, origin, previous, position + 1 == session.operations.len())
+    }
+
+    fn valid_lifecycle_followup(
+        op: &LifecycleOperationRecord,
+        origin: &LifecycleOperationRecord,
+        previous: &LifecycleOperationRecord,
+        is_last: bool,
+    ) -> bool {
+        let intent = &op.intent;
+        let request = &intent.request;
         match (&op.submission, &request.operation) {
             (
                 LifecycleSubmission::Renew {
@@ -300,7 +320,7 @@ impl CenterState {
                 },
                 LifecycleOperation::Destroy {},
             ) => {
-                position + 1 == session.operations.len()
+                is_last
                     && *expected_version == previous.intent.accepted_version
                     && named == &request.binding.session
                     && !matches!(
@@ -314,13 +334,20 @@ impl CenterState {
     }
 
     /// The same initial-record branch, kept separate from follow-up checks.
-    fn valid_lifecycle_create_record(&self, op: &LifecycleOperationRecord, position: usize) -> bool {
+    fn valid_lifecycle_create_record(
+        &self,
+        op: &LifecycleOperationRecord,
+        position: usize,
+    ) -> bool {
         let intent = &op.intent;
         let request = &intent.request;
         match (&op.submission, &request.operation) {
             (
                 LifecycleSubmission::Create { parameters, .. },
-                LifecycleOperation::Create { create, target_incarnation },
+                LifecycleOperation::Create {
+                    create,
+                    target_incarnation,
+                },
             ) => {
                 position == 0
                     && request.binding.expected == ExpectedSession::Absent
@@ -337,7 +364,10 @@ impl CenterState {
                     && parameters.timeout_ms == create.timeout_ms
                     && parameters.max_lifetime_ms == create.max_lifetime_ms
                     && op.terminal.is_none()
-                    && op.running.as_ref().is_none_or(|facts| facts.matches_create(intent))
+                    && op
+                        .running
+                        .as_ref()
+                        .is_none_or(|facts| facts.matches_create(intent))
             }
             _ => false,
         }

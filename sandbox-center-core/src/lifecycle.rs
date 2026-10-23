@@ -2,9 +2,9 @@
 //! One Sandbox row owns one bounded operation history; no shadow lifecycle table.
 use crate::{CenterState, DecisionError, NodeRole, Sandbox, TenantBudget};
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CreateRefusalReason, CurrentReadyFacts, ExpectedSession,
-    IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
-    RequestWindowId, SessionId, TerminalLifecycleObservation,
+    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CreateRefusalReason, CurrentReadyFacts,
+    ExpectedSession, IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding,
+    OperationKey, RequestWindowId, SessionId, TerminalLifecycleObservation,
 };
 use sandproof_protocol::{SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
@@ -161,7 +161,9 @@ impl Sandbox {
             return SessionPhase::Creating;
         };
         match &operation.intent.request.operation {
-            LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. } if operation.running.is_some() => {
+            LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. }
+                if operation.running.is_some() =>
+            {
                 SessionPhase::Running
             }
             LifecycleOperation::Create { .. } => SessionPhase::Creating,

@@ -290,7 +290,9 @@ pub trait AuthorityPort: Send + 'static {
     /// # Errors
     /// Only an authenticated exact refusal may record its original Destroy.
     fn accept_lifecycle_create_refusal(
-        &mut self, _observation: &sandproof_protocol::lifecycle::CreateObservation, _now_ms: u64,
+        &mut self,
+        _observation: &sandproof_protocol::lifecycle::CreateObservation,
+        _now_ms: u64,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
         Err(sandproof_center_core::DecisionError::Invalid.into())
     }

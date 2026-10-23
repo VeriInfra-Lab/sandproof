@@ -9,12 +9,19 @@ impl<S: AuthorityState> CenterAuthority<S> {
     /// # Errors
     /// Unknown commit fences all reads; no quota or cleanup fact is fabricated.
     pub fn accept_lifecycle_create_refusal(
-        &mut self, observation: &sandproof_protocol::lifecycle::CreateObservation, now_ms: u64,
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::CreateObservation,
+        now_ms: u64,
     ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
-        let (next, destroy) = self.state()?.accept_lifecycle_create_refusal(observation, now_ms)?;
-        if &next == self.state()? { self.snapshot()?; }
-        else { self.commit_center(next)?; }
+        let (next, destroy) = self
+            .state()?
+            .accept_lifecycle_create_refusal(observation, now_ms)?;
+        if &next == self.state()? {
+            self.snapshot()?;
+        } else {
+            self.commit_center(next)?;
+        }
         Ok(destroy)
     }
 

@@ -99,18 +99,33 @@ mod tests {
         assert_eq!(identity.validate(&context), Ok(()));
         let mut wrong = identity.clone();
         wrong.node.node_generation = 2.try_into().unwrap();
-        assert_eq!(wrong.validate(&context), Err(AccessIdentityError::ForeignNode));
+        assert_eq!(
+            wrong.validate(&context),
+            Err(AccessIdentityError::ForeignNode)
+        );
         wrong = identity.clone();
         wrong.center.center = "other-center".try_into().unwrap();
-        assert_eq!(wrong.validate(&context), Err(AccessIdentityError::ForeignCenter));
+        assert_eq!(
+            wrong.validate(&context),
+            Err(AccessIdentityError::ForeignCenter)
+        );
         wrong = identity.clone();
         wrong.operation.deployment = "other-deployment".try_into().unwrap();
-        assert_eq!(wrong.validate(&context), Err(AccessIdentityError::ForeignDeployment));
+        assert_eq!(
+            wrong.validate(&context),
+            Err(AccessIdentityError::ForeignDeployment)
+        );
         wrong = identity.clone();
         wrong.accepted_version = 0;
-        assert_eq!(wrong.validate(&context), Err(AccessIdentityError::InvalidAcceptedVersion));
+        assert_eq!(
+            wrong.validate(&context),
+            Err(AccessIdentityError::InvalidAcceptedVersion)
+        );
         wrong.protocol_version = 0;
-        assert_eq!(wrong.validate(&context), Err(AccessIdentityError::UnsupportedVersion));
+        assert_eq!(
+            wrong.validate(&context),
+            Err(AccessIdentityError::UnsupportedVersion)
+        );
     }
 
     #[test]
@@ -123,7 +138,10 @@ mod tests {
         identity.incarnation = u64::MAX.try_into().unwrap();
         assert_eq!(identity.validate(&context), Ok(()));
         let bytes = serde_json::to_vec(&identity).unwrap();
-        assert_eq!(serde_json::from_slice::<LifecycleAccessIdentity>(&bytes).unwrap(), identity);
+        assert_eq!(
+            serde_json::from_slice::<LifecycleAccessIdentity>(&bytes).unwrap(),
+            identity
+        );
         let mut value = serde_json::to_value(identity).unwrap();
         value["authorized"] = true.into();
         assert!(serde_json::from_value::<LifecycleAccessIdentity>(value).is_err());

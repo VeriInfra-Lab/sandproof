@@ -24,13 +24,20 @@ impl SharedBusinessAuthority {
         session: &SessionId,
     ) -> Result<(AcceptedLifecycleIntent, SessionPhase), PortError> {
         let record = self.public_lifecycle_record(owner, session)?;
-        let intent = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent().clone();
+        let intent = record
+            .operations()
+            .last()
+            .ok_or(PortError::OutcomeUnknown)?
+            .intent()
+            .clone();
         Ok((intent, record.phase()))
     }
 
-    pub(crate) fn public_lifecycle_record(&self, owner: &TenantId, session: &SessionId)
-        -> Result<sandproof_center_core::Sandbox, PortError>
-    {
+    pub(crate) fn public_lifecycle_record(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+    ) -> Result<sandproof_center_core::Sandbox, PortError> {
         let current = self.snapshot()?;
         if current
             .metadata
@@ -397,7 +404,11 @@ impl SharedBusinessAuthority {
         session: &SessionId,
     ) -> Result<PublicSessionView, PortError> {
         let record = self.public_lifecycle_record(owner, session)?;
-        let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent();
+        let current = record
+            .operations()
+            .last()
+            .ok_or(PortError::OutcomeUnknown)?
+            .intent();
         let phase = match record.phase() {
             SessionPhase::Creating => PublicSessionPhase::Creating,
             // The ledger retains a historical Ready. A current publishable
@@ -414,7 +425,10 @@ impl SharedBusinessAuthority {
             operation: current.request.binding.key.clone(),
             current_version: current.accepted_version,
             phase,
-            create_refusal: record.operations().first().and_then(|first| first.create_refusal()),
+            create_refusal: record
+                .operations()
+                .first()
+                .and_then(|first| first.create_refusal()),
         })
     }
 }
