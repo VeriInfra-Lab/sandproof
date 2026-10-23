@@ -26,12 +26,22 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
 
     fn current_create_observation_before(&self, intent: &AcceptedLifecycleIntent, deadline: Instant) -> Result<CreateObservation, PortError> {
         let policy = self.lifecycle_observation_policy.ok_or(PortError::Busy)?;
+        // A Renew changes the current key/version, not the execution's Create
+        // source. Query that original source and retain the real current value
+        // in the response; never relabel Renew as another Create.
+        let state = self.snapshot()?;
+        let session = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
+            .ok_or(PortError::NotFound)?;
+        if session.operations().last().ok_or(PortError::OutcomeUnknown)?.intent() != intent {
+            return Err(PortError::Busy);
+        }
+        let original = session.operations().first().ok_or(PortError::OutcomeUnknown)?.intent();
         let before = self.now()?;
         let budget = time_left(deadline)?;
-        let view = self.hosts.observe_lifecycle_create(intent, budget)?;
+        let view = self.hosts.observe_lifecycle_create(original, budget)?;
         let after = self.now()?;
         time_left(deadline)?;
-        if !view.matches_request(intent) { return Err(PortError::Busy); }
+        if !view.matches_request(original) || view.current_request != *intent { return Err(PortError::Busy); }
         let CurrentCreateReadiness::Observed { facts } = &view.readiness else { return Err(PortError::Busy); };
         if policy.healthy_until(before, after, facts.observed_at_ms).is_none() || after >= facts.end_at_ms {
             return Err(PortError::Busy);

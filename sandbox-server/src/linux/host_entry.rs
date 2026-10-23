@@ -35,6 +35,17 @@ struct HostAuditView<'a> {
 
 const MAX_CONFIG_BYTES: usize = 16 * 1024 * 1024;
 
+#[derive(Debug)]
+struct DueWorkFailure(sandproof_controller_service::application::ApplicationError);
+impl std::fmt::Display for DueWorkFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // ApplicationError is a closed payload-free category. Preserve that
+        // exact category instead of treating every startup fault as Busy.
+        write!(formatter, "host due-work admission failed: {:?}", self.0)
+    }
+}
+impl Error for DueWorkFailure {}
+
 /// Explicit operator action only. It creates new protected material, never
 /// overwrites a registration and does not open or initialize the journal.
 pub(crate) fn provision_bootstrap(path: &Path) -> Result<(), Box<dyn Error>> {
@@ -212,7 +223,7 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
     // Register due termination/revocation in short transactions only. Slow
     // recovery belongs to the bounded per-session driver after assembly; one
     // unknown or large VM must not delay every other session's control path.
-    application.accept_due_work()?;
+    application.accept_due_work().map_err(DueWorkFailure)?;
     let facade = HostFacade::new(
         Arc::clone(&application),
         contract.transfers.clone(),
