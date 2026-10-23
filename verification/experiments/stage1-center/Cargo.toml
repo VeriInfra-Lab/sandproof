@@ -9,3 +9,5 @@ publish = false
 [dependencies]
 sandproof-center-core = { path = "../../../sandbox-center-core" }
 sandproof-protocol = { path = "../../../sandbox-protocol" }
+sandbox-controller-core = { path = "../../../controller-core", features = ["serde"] }
+sandproof-controller-service = { path = "../../../controller-service", default-features = false }

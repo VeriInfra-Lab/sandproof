@@ -41,3 +41,18 @@ pub fn renewal_result(
 ) -> Result<CenterState, DecisionError> {
     state.confirm_lifecycle_renewal(result)
 }
+
+/// The exact rule called by the original SQL adapter, without durable features.
+pub fn renewal_rule(
+    request: &AcceptedLifecycleIntent,
+    applied_end: Option<i64>,
+    previous_end: Option<i64>,
+    local_operation: Option<sandbox_controller_core::OperationId>,
+    checkpoint: &sandproof_protocol::lifecycle::RenewalConfirmation,
+    current_version: u64,
+    source_pinned: bool,
+) -> bool {
+    sandproof_controller_service::lifecycle_renewal::can_discard_confirmed_sdk(
+        request, applied_end, previous_end, local_operation, checkpoint, current_version, source_pinned,
+    )
+}

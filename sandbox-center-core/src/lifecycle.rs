@@ -129,6 +129,33 @@ pub(crate) struct RetainedTerminalResult {
     pub(crate) retain_until_ms: Option<u64>,
 }
 impl LifecycleOperationRecord {
+    fn followup(
+        submission: &LifecycleSubmission,
+        previous: &Self,
+        intent: AcceptedLifecycleIntent,
+        allocation_number: u64,
+        now_ms: u64,
+    ) -> Self {
+        Self {
+            submission: submission.clone(),
+            intent,
+            allocation_number,
+            acceptance_time: if matches!(submission, LifecycleSubmission::Destroy { .. }) {
+                AcceptanceTime::Unsampled
+            } else {
+                AcceptanceTime::Sampled { at_ms: now_ms }
+            },
+            running: None,
+            previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. }) {
+                previous.running.as_ref().map(|facts| facts.end_at_ms)
+            } else {
+                None
+            },
+            create_refusal: None,
+            terminal: None,
+        }
+    }
+
     #[must_use]
     pub const fn intent(&self) -> &AcceptedLifecycleIntent {
         &self.intent
@@ -735,20 +762,9 @@ impl CenterState {
         next.operation_highwater = number;
         next.sandboxes[index]
             .operations
-            .push(LifecycleOperationRecord {
-                submission: submission.clone(),
-                intent: intent.clone(),
-                allocation_number: number,
-                acceptance_time: if destroy { AcceptanceTime::Unsampled } else { AcceptanceTime::Sampled { at_ms: now_ms } },
-                running: None,
-                previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. }) {
-                    prior.running.as_ref().map(|facts| facts.end_at_ms)
-                } else {
-                    None
-                },
-                create_refusal: None,
-                terminal: None,
-            });
+            .push(LifecycleOperationRecord::followup(
+                submission, prior, intent.clone(), number, now_ms,
+            ));
         if !next.is_valid() {
             return Err(DecisionError::Invalid);
         }

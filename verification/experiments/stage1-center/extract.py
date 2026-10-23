@@ -21,8 +21,10 @@ def extract(output, profile, tool_root):
     output.mkdir(mode=0o700, parents=True)
     record = {"kind": "stage1-center-fixed-tool-preflight", "profile": profile, "steps": []}
     started = time.monotonic()
-    inputs = [p for name in ("sandbox-center-core", "sandbox-protocol")
+    inputs = [p for name in ("sandbox-center-core", "sandbox-protocol", "controller-core", "controller-service")
               for p in (ROOT / name).rglob("*.rs")]
+    inputs += [ROOT / name / "Cargo.toml" for name in (
+        "sandbox-center-core", "sandbox-protocol", "controller-core", "controller-service")]
     inputs += [HERE / "src/lib.rs", HERE / "Cargo.toml", HERE / "Cargo.lock",
                HERE / "extract.py", ROOT / "verification/foundations-environment.json"]
     record["inputs"] = {str(p.relative_to(ROOT)): digest(p) for p in sorted(inputs)}
@@ -57,9 +59,13 @@ def extract(output, profile, tool_root):
             raw.unlink()
         destination = "../../../artifacts/stage1-center/raw/" + profile + ".llbc"
         root = {"version": "version_next", "replay": "replay", "accept": "accept",
-                "terminal": "terminal_result"}[profile]
+                "terminal": "terminal_result", "renewal": "renewal_result",
+                "renewal-rule": "renewal_rule"}[profile]
+        crates = (["sandproof_controller_service", "sandbox_controller_core", "sandproof_protocol"]
+                  if profile == "renewal-rule" else ["sandproof_center_core", "sandproof_protocol"])
+        include = [option for crate in crates for option in ("--include", crate)]
         run("charon", [str(charon), "cargo", "--preset=aeneas", "--error-on-warnings",
-            "--sysroot", "default", "--include", "sandproof_center_core", "--include", "sandproof_protocol",
+            "--sysroot", "default", *include,
             "--start-from", "crate::" + root, "--dest-file", destination, "--", "--manifest-path",
             "Cargo.toml", "--lib", "--locked", "--offline", "--target", expected["target"]], HERE)
         if not raw.is_file():
@@ -95,7 +101,7 @@ def extract(output, profile, tool_root):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--profile", choices=("version", "replay", "accept", "terminal"), required=True)
+    parser.add_argument("--profile", choices=("version", "replay", "accept", "terminal", "renewal", "renewal-rule"), required=True)
     parser.add_argument("--tool-root", required=True, type=Path)
     args = parser.parse_args()
     result = extract(args.output, args.profile, args.tool_root)
