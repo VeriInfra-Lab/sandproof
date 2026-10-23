@@ -852,11 +852,22 @@ async fn blocked_original_prepare_allows_other_ready_and_destroy_without_duplica
 
 fn assert_two_original_prepares(physical: &Mutex<local::State>) {
     let state = physical.lock().unwrap();
-    let prepared: Vec<_> = state.actions.iter().filter(|a| matches!(
-        a.command.command(), sandbox_controller_core::Command::PrepareVm { .. }
-    )).map(|a| a.command.command().sandbox()).collect();
+    let prepared: Vec<_> = state
+        .actions
+        .iter()
+        .filter(|a| {
+            matches!(
+                a.command.command(),
+                sandbox_controller_core::Command::PrepareVm { .. }
+            )
+        })
+        .map(|a| a.command.command().sandbox())
+        .collect();
     assert_eq!(prepared.len(), 2);
-    assert_ne!(prepared[0], prepared[1], "each original sandbox is prepared once");
+    assert_ne!(
+        prepared[0], prepared[1],
+        "each original sandbox is prepared once"
+    );
 }
 
 struct Release(Option<std::sync::mpsc::Sender<()>>);
