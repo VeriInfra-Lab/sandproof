@@ -69,6 +69,11 @@ fn authenticated(
 
 impl ControllerJournal {
     #[cfg(test)]
+    pub(crate) fn fail_next_lifecycle_commit(durable: bool) {
+        super::transaction::fail_next_commit(durable);
+    }
+
+    #[cfg(test)]
     pub(crate) fn fail_next_lifecycle_work_state_read() {
         FAIL_NEXT_WORK_STATE_READ.set(true);
     }
