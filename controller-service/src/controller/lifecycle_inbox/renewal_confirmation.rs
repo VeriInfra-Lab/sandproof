@@ -35,13 +35,15 @@ fn discard_previous(
     current_version: u64,
     source_pinned: bool,
 ) -> bool {
-    !source_pinned
-        && is_sdk_renewal(&entry.intent)
-        && previous.matches_request(&entry.intent)
-        && entry.applied_deadline == Some(previous.effective_end_at_ms)
-        && entry.previous_effective_end_at_ms.is_some()
-        && entry.local_operation.is_none()
-        && entry.intent.accepted_version != current_version
+    crate::lifecycle_renewal::can_discard_confirmed_sdk(
+        &entry.intent,
+        entry.applied_deadline,
+        entry.previous_effective_end_at_ms,
+        entry.local_operation,
+        previous,
+        current_version,
+        source_pinned,
+    )
 }
 
 /// Validate the retained full checkpoint and the actual removed frontier.
