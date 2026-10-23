@@ -4,7 +4,7 @@
 //! two equal reads cannot establish that temporal condition.
 //!
 //! The existing file is at most 1 MiB, root-owned, 0400 and single-link, below
-//! trusted root ancestors. No initializer or automatic epoch upgrade is offered.
+//! trusted root ancestors. Provisioning is explicit and never overwrites an epoch.
 //! Its required JSON fields are `version=1`, `purpose="host_bootstrap"`, the
 //! original `node` and namespace, `cold_profile="rootfs_eth0_mmds_v2_v1"`,
 //! `cpu_template="host_default_v1"` and `host`. Host fields name boot/kernel,
@@ -55,6 +55,69 @@ impl ProtectedHostEpochSource {
             return Err(error("invalid protected bootstrap path"));
         }
         Ok(Self { path })
+    }
+
+    /// Explicit operator provisioning before the first lifecycle registration.
+    /// Uses the actual configured tool files and host facts, not client data.
+    /// It creates one new root/0400 file and never overwrites, repairs or upgrades
+    /// an existing epoch. A failed write/sync may leave an unregistered file.
+    /// # Errors
+    /// Rejects an unsafe/existing path, unsupported namespace, changing host,
+    /// oversized payload or any ownership, file, read or durability failure.
+    pub fn provision(
+        &self,
+        node: &NodeIdentity,
+        config: &crate::NodeConfig,
+    ) -> Result<HostEpochRegistration> {
+        self.provision_inputs(node, Inputs {
+            namespace: &config.namespace,
+            firecracker: &config.firecracker,
+            jailer: &config.jailer,
+        })
+    }
+
+    fn provision_inputs(&self, node: &NodeIdentity, inputs: Inputs<'_>) -> Result<HostEpochRegistration> {
+        if inputs.namespace.len() != 16
+            || !inputs.namespace.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(error("invalid original bootstrap namespace"));
+        }
+        let before = HostFacts::read(inputs)?;
+        let payload = Payload {
+            version: 1,
+            purpose: "host_bootstrap".into(),
+            node: node.clone(),
+            namespace: inputs.namespace.to_owned(),
+            cold_profile: ColdProfile::RootfsEth0MmdsV2V1,
+            cpu_template: CpuTemplate::HostDefaultV1,
+            host: before.clone(),
+        };
+        let bytes = serde_json::to_vec(&payload)?;
+        if HostFacts::read(inputs)? != before {
+            return Err(error("bootstrap host changed during provisioning"));
+        }
+        files::write_new_payload(&self.path, &bytes)?;
+        self.registration(node, inputs)
+    }
+
+    pub(super) fn registration(
+        &self,
+        node: &NodeIdentity,
+        inputs: Inputs<'_>,
+    ) -> Result<HostEpochRegistration> {
+        let file = CheckedFile::payload(&self.path)?;
+        let payload: Payload = serde_json::from_slice(&file.bytes)?;
+        let registration = HostEpochRegistration {
+            version: 1,
+            boot_id: payload.host.boot_id.clone(),
+            policy: sandproof_protocol::lifecycle::ContentDigest::from_sha256(file.sha256),
+        };
+        payload.bind_original(node, &registration, inputs.namespace)?;
+        // Reuse the exact existing provider's current-host checks. Recheck the
+        // first retained file too; a second read cannot silently adopt a swap.
+        self.observe_original(node, &registration, inputs)?;
+        file.recheck()?;
+        Ok(registration)
     }
 
     pub(super) fn observe(
