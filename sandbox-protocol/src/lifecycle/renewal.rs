@@ -19,8 +19,7 @@ impl RenewalConfirmation {
             || intent.accepted_version < 2
             || intent.accepted_version_for_request() != Some(intent.accepted_version)
             || intent.center.deployment != intent.request.binding.node.deployment_id
-            || intent.retention.slot == 0
-            || intent.retention.window.get() == 0
+            || !intent.retention.valid_for(4096)
             || intent.request.validate(&intent.request.binding.node).is_err()
         {
             return false;
@@ -126,7 +125,7 @@ mod tests {
         binding.key.owner = id.try_into().unwrap();
         binding.key.sequence = u64::MAX.try_into().unwrap();
         binding.expected = ExpectedSession::Version(u64::MAX - 1);
-        result.request.retention.slot = u16::MAX;
+        result.request.retention.slot = 4096;
         result.request.retention.window = u64::MAX.try_into().unwrap();
         result.request.accepted_version = u64::MAX;
         result.request.request.operation = LifecycleOperation::Renew {

@@ -30,6 +30,14 @@ mod lifecycle;
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
+    /// Exact SDK Renew result only; unsupported receivers cannot confirm it.
+    fn confirm_renewal(
+        &self,
+        _result: sandproof_protocol::lifecycle::RenewalConfirmation,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::ConfirmedRenewal, ReceiveError>> + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
     fn confirm_terminal(
         &self,
         _result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,
@@ -250,6 +258,7 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             || request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
+            || request.uri().path() == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH
             || request.uri().path() == VALIDATION_PATH
         {
@@ -266,6 +275,8 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
                     lifecycle::Call::Confirm
                 } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
                     lifecycle::Call::Close
+                } else if request.uri().path() == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH {
+                    lifecycle::Call::RenewalConfirm
                 } else if request.uri().path() == VALIDATION_PATH {
                     lifecycle::Call::Validation
                 } else {

@@ -78,6 +78,18 @@ impl RegisteredHosts {
     }
 }
 impl HostPort for RegisteredHosts {
+    fn confirm_lifecycle_renewal(
+        &self,
+        result: &sandproof_protocol::lifecycle::RenewalConfirmation,
+        deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, PortError> {
+        let client = self.client(&result.request.request.binding.node)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, client.confirm_lifecycle_renewal(result))
+                .await.map_err(|_| PortError::OutcomeUnknown)?
+                .map_err(|_| PortError::OutcomeUnknown)
+        })
+    }
     fn confirm_lifecycle_terminal(
         &self,
         result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
