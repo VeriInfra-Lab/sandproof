@@ -100,7 +100,7 @@ fn unknown_release_confirmation_recovers_without_rebinding_released_position() {
         assert_eq!(state.lock().unwrap().released_slots, vec![context]);
     }
 }
-fn admission() -> InternalAdmission {
+pub(super) fn admission() -> InternalAdmission {
     let template = TemplateBinding {
         guest: None,
         template_id: "protected-base".into(),
@@ -143,7 +143,7 @@ fn admission() -> InternalAdmission {
         file_policy_digest: core::PolicyDigest(1),
     }
 }
-fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
+pub(super) fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
     let a = admission();
     AcceptedLifecycleIntent {
         retention: sandproof_protocol::lifecycle::RetentionBinding {
@@ -185,7 +185,7 @@ fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
         },
     }
 }
-fn open(path: &std::path::Path) -> ControllerJournal {
+pub(super) fn open(path: &std::path::Path) -> ControllerJournal {
     let maintenance = super::super::tests_support::lifecycle_application::maintenance();
     ControllerJournal::open_complete(
         path,
@@ -196,14 +196,14 @@ fn open(path: &std::path::Path) -> ControllerJournal {
     )
     .unwrap()
 }
-fn initialize(path: &std::path::Path) -> ControllerJournal {
+pub(super) fn initialize(path: &std::path::Path) -> ControllerJournal {
     let mut j = open(path);
     j.initialize_lifecycle_inbox(config(), source_limits(), &mut NeverCrash)
         .unwrap();
     refresh_epoch(&mut j);
     j
 }
-fn refresh_epoch(j: &mut ControllerJournal) {
+pub(super) fn refresh_epoch(j: &mut ControllerJournal) {
     j.establish_host_epoch(
         &mut |requirement| {
             Ok(crate::capture::HostEpochObservation {
@@ -230,7 +230,7 @@ fn dispatch_counted(
     )
     .unwrap()
 }
-fn destroy(create: &AcceptedLifecycleIntent) -> AcceptedLifecycleIntent {
+pub(super) fn destroy(create: &AcceptedLifecycleIntent) -> AcceptedLifecycleIntent {
     let mut intent = create.clone();
     intent.accepted_version = 2;
     intent.request.binding.expected = ExpectedSession::Version(1);

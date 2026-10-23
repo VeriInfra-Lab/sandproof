@@ -368,6 +368,7 @@ impl<H: ControllerHost + Send + 'static> ValidationReceiver for HostLifecycle<H>
     async fn validation_evidence(
         &self,
         request: ValidationRequest,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<ValidationEvidence, ReceiveError> {
         let permit = Arc::clone(&self.control)
             .try_acquire_owned()
@@ -375,11 +376,12 @@ impl<H: ControllerHost + Send + 'static> ValidationReceiver for HostLifecycle<H>
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            app.internal_validation_evidence(
+            app.lifecycle_validation_evidence(
                 &request.create,
                 &request.terminal,
                 &request.revision,
                 &request.publication,
+                &context,
             )
             .map_err(|error| match error {
                 JournalError::Conflict => ReceiveError::Conflict,
