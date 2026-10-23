@@ -2,14 +2,13 @@ use sandproof_center_core::{
     Bounds, CenterState, CreateParameters, DecisionError, LifecycleSubmission, LifecycleWindow,
     NodeMode, NodeRegistration, NodeRole, SessionPhase, TenantBudget,
 };
-use sandproof_protocol::internal::lifecycle::LifecycleFact;
 use sandproof_protocol::lifecycle::{CenterIdentity, LifecycleOperation, OperationKey};
 #[path = "../../sandbox-protocol/tests/support/lifecycle.rs"]
 mod fixture;
 use fixture::*;
 
 fn state() -> CenterState {
-    let center = CenterState::new(
+    CenterState::new(
         node("host-a").deployment_id,
         Bounds {
             max_nodes: 1,
@@ -17,6 +16,7 @@ fn state() -> CenterState {
             max_sandboxes: 2,
             operations_per_sandbox: 3,
             max_options_bytes: 128,
+            result_retention_ms: 100,
             platform: resources(2),
         },
         vec![NodeRegistration {
@@ -40,10 +40,6 @@ fn state() -> CenterState {
                 limit: resources(2),
             })
             .collect(),
-    )
-    .unwrap();
-    center
-        .enable_lifecycle(
             CenterIdentity {
                 deployment: node("host-a").deployment_id,
                 center: "center".try_into().unwrap(),
@@ -55,8 +51,8 @@ fn state() -> CenterState {
                     window: 9.try_into().unwrap(),
                 })
                 .collect(),
-        )
-        .unwrap()
+    )
+    .unwrap()
 }
 fn create(owner: &str, sequence: u64) -> LifecycleSubmission {
     let binding = binding();
@@ -121,7 +117,9 @@ fn two_owners_get_original_allocations_and_same_block_enumerable_outbox() {
     assert_eq!(second.identity_frontiers(), (2, 2));
     assert_eq!(second.reserved(None, None), Some(resources(2)));
     assert_eq!(second.pending_lifecycle(), vec![a, b]);
-    assert!(second.pending().is_empty());
+    let encoded = serde_json::to_value(&second).unwrap();
+    assert!(encoded["lifecycle"].get("sessions").is_none());
+    assert_eq!(encoded["sandboxes"].as_array().unwrap().len(), 2);
     let bytes = serde_json::to_vec(&second).unwrap();
     let reopened: CenterState = serde_json::from_slice(&bytes).unwrap();
     assert!(reopened.is_valid());
@@ -147,7 +145,7 @@ fn replay_precedes_time_and_phase_checks_without_new_ids_or_new_deadlines() {
         .unwrap();
     assert_eq!(same, unloading);
     assert_eq!(replay, intent);
-    assert_eq!(same.identity_frontiers(), (1, 1));
+    assert_eq!(same.identity_frontiers(), (1, 2));
 }
 
 #[test]
@@ -210,7 +208,7 @@ fn unload_requires_actual_ready_binding_preserves_reservations_and_destroy_capac
         LifecycleOperation::Destroy {}
     ));
     assert_eq!(terminating.reserved(None, None), ready.reserved(None, None));
-    assert!(terminating.sandboxes()[0].terminating);
+    assert!(terminating.sandboxes()[0].terminating());
     assert_eq!(terminating.pending_lifecycle(), vec![destroy]);
     assert_eq!(
         terminating.accept_lifecycle_create_observation(&observed(&intent)),
@@ -219,7 +217,7 @@ fn unload_requires_actual_ready_binding_preserves_reservations_and_destroy_capac
 }
 
 #[test]
-fn stale_version_and_window_refuse_before_effects_and_legacy_writes_cannot_bypass() {
+fn stale_version_and_window_refuse_before_effects_and_missing_registration_rejects() {
     let (creating, intent) = state()
         .accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10)
         .unwrap();
@@ -247,27 +245,12 @@ fn stale_version_and_window_refuse_before_effects_and_legacy_writes_cannot_bypas
         ready.accept_lifecycle(&"1".try_into().unwrap(), &wrong_window, 150),
         Err(DecisionError::Stale)
     );
-    assert_eq!(
-        ready.create(&"1".try_into().unwrap(), binding(), 10),
-        Err(DecisionError::Conflict)
-    );
-    assert_eq!(
-        ready.destroy(
-            &"1".try_into().unwrap(),
-            intent.request.binding.session.as_protocol_id()
-        ),
-        Err(DecisionError::Conflict)
-    );
-    let old = request(
-        1,
-        1,
-        sandproof_protocol::internal::lifecycle::Intent::Create,
-    );
-    assert_eq!(
-        ready.apply_response(&response(&old, 2, LifecycleFact::Stopped)),
-        Err(DecisionError::Conflict)
-    );
-    assert!(ready.pending().is_empty());
+    let mut missing = serde_json::to_value(&ready).unwrap();
+    missing.as_object_mut().unwrap().remove("lifecycle");
+    assert!(serde_json::from_value::<CenterState>(missing).is_err());
+    let mut old_envelope = serde_json::to_value(&ready).unwrap();
+    old_envelope["sandboxes"][0]["operations"][0]["response"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<CenterState>(old_envelope).is_err());
 }
 
 #[test]
@@ -275,13 +258,13 @@ fn recovery_refuses_corrupt_versions_keys_or_original_mapping() {
     let (accepted, _) = state()
         .accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10)
         .unwrap();
-    for field in ["accepted_version", "original_sandbox", "created_at_ms"] {
+    for field in ["accepted_version", "session", "accepted_at_ms"] {
         let mut json = serde_json::to_value(&accepted).unwrap();
-        let session = &mut json["lifecycle"]["sessions"][0];
+        let operation = &mut json["sandboxes"][0]["operations"][0];
         match field {
-            "accepted_version" => session["operations"][0]["intent"][field] = 2.into(),
-            "original_sandbox" => session[field] = "sandbox-2".into(),
-            _ => session[field] = 999.into(),
+            "accepted_version" => operation["intent"][field] = 2.into(),
+            "session" => operation["intent"]["request"]["binding"][field] = "sandbox-2".into(),
+            _ => operation[field] = 999.into(),
         }
         let wrong: CenterState = serde_json::from_value(json).unwrap();
         assert!(!wrong.is_valid(), "corrupt {field} accepted");
@@ -323,4 +306,193 @@ fn observed(intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) -> 
             startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: 100,
         } },
     }
+}
+
+#[test]
+fn renewal_keeps_the_original_execution_and_replays_the_original_relative_input() {
+    let owner = "1".try_into().unwrap();
+    let (created, original) = state().accept_lifecycle(&owner, &create("1", 1), 10).unwrap();
+    let running = created.accept_lifecycle_create_observation(&observed(&original)).unwrap();
+    let mut key = original.request.binding.key.clone();
+    key.sequence = 2.try_into().unwrap();
+    let input = LifecycleSubmission::Renew {
+        key, session: original.request.binding.session.clone(), expected_version: 1,
+        timeout_ms: 300, extend_only: false,
+    };
+    let (pending, renewed) = running.accept_lifecycle(&owner, &input, 150).unwrap();
+    assert_eq!(pending.sandboxes()[0].phase(), SessionPhase::Renewing);
+    assert!(pending.sandboxes()[0].current_running().is_none());
+    assert!(matches!(renewed.request.operation, LifecycleOperation::Renew { end_at_ms: 450, .. }));
+    let mut observation = observed(&original);
+    observation.current_request = renewed.clone();
+    let sandproof_protocol::lifecycle::CurrentCreateReadiness::Observed { facts } = &mut observation.readiness else { unreachable!() };
+    facts.end_at_ms = 450;
+    facts.observed_at_ms = 160;
+    let committed = pending.accept_lifecycle_create_observation(&observation).unwrap();
+    let current = committed.sandboxes()[0].current_running().unwrap();
+    assert_eq!((current.started_at_ms, current.max_end_at_ms, current.end_at_ms), (100, 600, 450));
+    let (same, replay) = committed.accept_lifecycle(&owner, &input, u64::MAX).unwrap();
+    assert_eq!(same, committed);
+    assert_eq!(replay, renewed);
+    let mut changed = input;
+    let LifecycleSubmission::Renew { timeout_ms, .. } = &mut changed else { unreachable!() };
+    *timeout_ms = 301;
+    assert_eq!(committed.accept_lifecycle(&owner, &changed, 150), Err(DecisionError::Conflict));
+}
+
+fn cleaned(
+    accepted: &CenterState,
+    original: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    sdk_destroy: bool,
+    now: u64,
+) -> (CenterState, sandproof_protocol::lifecycle::TerminalLifecycleObservation) {
+    use sandproof_protocol::lifecycle::{TerminalLifecycleObservation, TerminalStatus};
+    let owner = &original.request.binding.key.owner;
+    let mut input = followup(original, 3, true);
+    if sdk_destroy {
+        let LifecycleSubmission::Destroy { key, .. } = &mut input else { unreachable!() };
+        *key = accepted.next_sdk_operation_key(owner).unwrap();
+    }
+    let (terminating, intent) = accepted.accept_lifecycle(owner, &input, 20).unwrap();
+    let result = TerminalLifecycleObservation { request: intent, status: TerminalStatus::Cleaned };
+    let state = terminating.accept_lifecycle_terminal_observation(&result, now).unwrap();
+    (state, result)
+}
+
+#[test]
+fn exact_confirmation_expiry_and_close_ack_are_separate_retirement_gates() {
+    use sandproof_protocol::lifecycle::{ClosedLifecycleWindow, ConfirmedLifecycleResult};
+    let owner = "1".try_into().unwrap();
+    let (accepted, intent) = state().accept_lifecycle(&owner, &create("1", 1), 10).unwrap();
+    let (completed, result) = cleaned(&accepted, &intent, false, 100);
+    assert!(completed.sandboxes()[0].released());
+    assert!(completed.retirement_candidates(200).is_empty());
+    assert_eq!(completed.begin_close(&result, 200), Err(DecisionError::Conflict));
+    let confirmed = completed.confirm_terminal(&ConfirmedLifecycleResult { result: result.clone() }).unwrap();
+    assert_eq!(confirmed.begin_close(&result, 199), Err(DecisionError::Unavailable));
+    let (closing, request) = confirmed.begin_close(&result, 200).unwrap();
+    let wrong = ClosedLifecycleWindow { terminal: result.clone(), retired_through: 2.try_into().unwrap() };
+    assert_eq!(closing.apply_close_ack(&wrong, 200), Err(DecisionError::Stale));
+    let exact = ClosedLifecycleWindow { terminal: result, retired_through: request.terminal.request.retention.window };
+    assert_eq!(closing.apply_close_ack(&exact, 199), Err(DecisionError::Unavailable));
+    let retired = closing.apply_close_ack(&exact, 200).unwrap();
+    assert!(retired.sandboxes().is_empty());
+    assert_eq!(retired.apply_close_ack(&exact, 201).unwrap(), retired);
+    assert!(retired.is_valid());
+}
+
+#[test]
+fn public_out_of_order_keys_and_old_live_replay_survive_a_peer_retirement() {
+    use sandproof_protocol::lifecycle::{ClosedLifecycleWindow, ConfirmedLifecycleResult};
+    let owner = "1".try_into().unwrap();
+    let first_input = create("1", 2);
+    let second_input = create("1", 1);
+    let (first, a) = state().accept_lifecycle(&owner, &first_input, 10).unwrap();
+    let (both, b) = first.accept_lifecycle(&owner, &second_input, 10).unwrap();
+    // Last Destroy is SDK2. Deletion must still close the public Create window.
+    let (completed, result) = cleaned(&both, &a, true, 100);
+    let confirmed = completed.confirm_terminal(&ConfirmedLifecycleResult { result: result.clone() }).unwrap();
+    let (closing, close) = confirmed.begin_close(&result, 200).unwrap();
+    let retired = closing.apply_close_ack(&ClosedLifecycleWindow {
+        terminal: close.terminal.clone(), retired_through: close.terminal.request.retention.window,
+    }, 200).unwrap();
+    assert_eq!(retired.public_request_window(&owner).unwrap().unwrap().get(), 11);
+    let (same, replay) = retired.accept_lifecycle(&owner, &second_input, u64::MAX).unwrap();
+    assert_eq!(same, retired);
+    assert_eq!(replay, b);
+    assert_eq!(retired.accept_lifecycle(&owner, &first_input, 200), Err(DecisionError::Stale));
+    let mut fresh = create("1", 1);
+    let LifecycleSubmission::Create { key, .. } = &mut fresh else { unreachable!() };
+    key.window = 11.try_into().unwrap();
+    assert!(retired.accept_lifecycle(&owner, &fresh, 200).is_ok());
+}
+
+#[test]
+fn duplicate_terminal_observation_does_not_extend_retention() {
+    use sandproof_protocol::lifecycle::ConfirmedLifecycleResult;
+    let owner = "1".try_into().unwrap();
+    let (accepted, original) = state().accept_lifecycle(&owner, &create("1", 1), 10).unwrap();
+    let (completed, result) = cleaned(&accepted, &original, false, 100);
+    let replay = completed.accept_lifecycle_terminal_observation(&result, 199).unwrap();
+    assert_eq!(replay, completed);
+    let reopened: CenterState = serde_json::from_slice(&serde_json::to_vec(&replay).unwrap()).unwrap();
+    let confirmed = reopened.confirm_terminal(&ConfirmedLifecycleResult { result: result.clone() }).unwrap();
+    assert!(confirmed.begin_close(&result, 200).is_ok());
+}
+
+#[test]
+fn retention_clock_faults_keep_the_completed_fact_and_block_deletion() {
+    use sandproof_protocol::lifecycle::ConfirmedLifecycleResult;
+    for (period, clock) in [(u64::MAX, 100), (100, 0)] {
+        let mut value = serde_json::to_value(state()).unwrap();
+        value["bounds"]["result_retention_ms"] = period.into();
+        let initial: CenterState = serde_json::from_value(value).unwrap();
+        let owner = "1".try_into().unwrap();
+        let (accepted, original) = initial.accept_lifecycle(&owner, &create("1", 1), 10).unwrap();
+        let (completed, result) = cleaned(&accepted, &original, false, clock);
+        assert_eq!(completed.sandboxes()[0].phase(), SessionPhase::Cleaned);
+        let confirmed = completed.confirm_terminal(&ConfirmedLifecycleResult { result: result.clone() }).unwrap();
+        assert_eq!(confirmed.begin_close(&result, u64::MAX), Err(DecisionError::Unavailable));
+        assert!(confirmed.is_valid());
+    }
+}
+
+#[test]
+fn deleted_sdk_keys_cannot_be_accepted_again_without_a_retained_record() {
+    use sandproof_protocol::lifecycle::{ClosedLifecycleWindow, ConfirmedLifecycleResult};
+    let owner = "1".try_into().unwrap();
+    let initial = state();
+    let mut input = create("1", 1);
+    let LifecycleSubmission::Create { key, .. } = &mut input else { unreachable!() };
+    *key = initial.next_sdk_operation_key(&owner).unwrap();
+    let (accepted, original) = initial.accept_lifecycle(&owner, &input, 10).unwrap();
+    let (completed, result) = cleaned(&accepted, &original, true, 100);
+    let confirmed = completed.confirm_terminal(&ConfirmedLifecycleResult { result: result.clone() }).unwrap();
+    let (closing, close) = confirmed.begin_close(&result, 200).unwrap();
+    let retired = closing.apply_close_ack(&ClosedLifecycleWindow {
+        terminal: close.terminal.clone(), retired_through: close.terminal.request.retention.window,
+    }, 200).unwrap();
+    assert_eq!(retired.accept_lifecycle(&owner, &input, 200), Err(DecisionError::Stale));
+    assert_eq!(retired.public_request_window(&owner).unwrap().unwrap().get(), 9);
+    let LifecycleSubmission::Create { key, .. } = &mut input else { unreachable!() };
+    *key = retired.next_sdk_operation_key(&owner).unwrap();
+    assert_eq!(key.sequence.get(), 3);
+    assert!(retired.accept_lifecycle(&owner, &input, 200).is_ok());
+}
+
+#[test]
+fn public_window_exhaustion_never_wraps_or_consumes_the_internal_key_reserve() {
+    use sandproof_protocol::lifecycle::{ClosedLifecycleWindow, ConfirmedLifecycleResult};
+    let mut value = serde_json::to_value(state()).unwrap();
+    value["lifecycle"]["windows"][0]["registration"]["window"] = u64::MAX.into();
+    value["lifecycle"]["windows"][0]["current"] = u64::MAX.into();
+    let initial: CenterState = serde_json::from_value(value).unwrap();
+    assert!(initial.is_valid());
+    let owner = "1".try_into().unwrap();
+    let mut input = create("1", 1);
+    let LifecycleSubmission::Create { key, .. } = &mut input else { unreachable!() };
+    key.window = u64::MAX.try_into().unwrap();
+    let (accepted, original) = initial.accept_lifecycle(&owner, &input, 10).unwrap();
+    let (completed, result) = cleaned(&accepted, &original, true, 100);
+    let confirmed = completed.confirm_terminal(&ConfirmedLifecycleResult { result: result.clone() }).unwrap();
+    let (closing, close) = confirmed.begin_close(&result, 200).unwrap();
+    let retired = closing.apply_close_ack(&ClosedLifecycleWindow {
+        terminal: close.terminal.clone(), retired_through: close.terminal.request.retention.window,
+    }, 200).unwrap();
+    assert_eq!(retired.public_request_window(&owner).unwrap(), None);
+    assert_eq!(retired.accept_lifecycle(&owner, &input, 200), Err(DecisionError::Stale));
+    let LifecycleSubmission::Create { key, .. } = &mut input else { unreachable!() };
+    *key = retired.next_sdk_operation_key(&owner).unwrap();
+    assert!(retired.accept_lifecycle(&owner, &input, 200).is_ok());
+    assert!(retired.is_valid());
+}
+
+#[test]
+fn acceptance_keeps_a_future_destroy_identity_before_exhaustion() {
+    let mut value = serde_json::to_value(state()).unwrap();
+    value["operation_highwater"] = (u64::MAX - 1).into();
+    let initial: CenterState = serde_json::from_value(value).unwrap();
+    assert!(initial.is_valid());
+    assert_eq!(initial.accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10), Err(DecisionError::Exhausted));
+    assert_eq!(initial.identity_frontiers(), (0, u64::MAX - 1));
 }

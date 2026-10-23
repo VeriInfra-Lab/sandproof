@@ -396,11 +396,12 @@ impl CenterAssemblyInputs {
             file.bounds,
             file.nodes.iter().map(|n| n.registration.clone()).collect(),
             file.tenants,
+            CenterIdentity {
+                deployment: file.deployment_id.clone(),
+                center: file.center_id,
+            },
+            windows,
         )
-        .and_then(|state| state.enable_lifecycle(CenterIdentity {
-            deployment: file.deployment_id.clone(),
-            center: file.center_id,
-        }, windows))
         .map_err(|_| invalid())?;
         let store = StoreConfig::new(
             file.deployment_id,

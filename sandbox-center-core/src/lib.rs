@@ -8,9 +8,8 @@ mod lifecycle;
 mod model;
 mod validation;
 mod window;
-pub use decision::ResponseDisposition;
 pub use lifecycle::{
-    CreateParameters, LifecycleOperationRecord, LifecycleProfile, LifecycleSession,
+    CreateParameters, LifecycleOperationRecord, LifecycleProfile,
     LifecycleSubmission, LifecycleWindow, SessionPhase, next_lifecycle_version, LIFECYCLE_PROFILE_VERSION,
 };
 pub use model::*;

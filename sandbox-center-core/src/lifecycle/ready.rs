@@ -1,77 +1,80 @@
-//! Profile-2 center receipt ordering, independent of physical host observations.
-use super::{CenterState, DecisionError, LIFECYCLE_PROFILE_VERSION};
-use sandproof_protocol::{
-    internal::{PositiveCounter, lifecycle::{LifecycleFact, LifecycleResponse}},
-    lifecycle::{CreateObservation, CurrentCreateReadiness},
+//! Current result storage: no synthetic legacy response or host observation counter.
+use super::{CenterState, DecisionError, RetainedTerminalResult, SessionPhase};
+use sandproof_protocol::lifecycle::{
+    CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation,
+    TerminalLifecycleObservation, TerminalStatus,
 };
 
-/// Cannot be supplied by a host or a caller of the v3 save interface. Its raw
-/// storage slot is interpreted only under persisted managed profile version 2.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CenterReadyReceiptSequence(PositiveCounter);
-impl CenterReadyReceiptSequence {
-    fn next(prior: Option<PositiveCounter>) -> Result<Self, DecisionError> {
-        match prior {
-            Some(prior) => prior.checked_next().map(Self).map_err(|_| DecisionError::Exhausted),
-            None => PositiveCounter::try_from(1).map(Self).map_err(|_| DecisionError::Exhausted),
-        }
-    }
+fn same_lifetime(left: &CurrentReadyFacts, right: &CurrentReadyFacts) -> bool {
+    left.started_at_ms == right.started_at_ms && left.end_at_ms == right.end_at_ms
+        && left.max_end_at_ms == right.max_end_at_ms
+        && left.startup_deadline_ms == right.startup_deadline_ms
 }
 
 impl CenterState {
-    /// Save history from this call's full current Create observation. The
-    /// original caller must bind its sender, actual call and time policy;
-    /// this pure method checks data/current intent and chooses its own receipt.
-    /// Duplicate lifetime facts preserve the exact original stored sequence.
+    /// Store an observation only for the actual current Create or applied Renew.
+    /// The caller separately supplies original authenticated call/time evidence.
     /// # Errors
-    /// Wrong domain/input, superseded intent, conflicting facts or exhaustion.
-    pub fn accept_lifecycle_create_observation(
-        &self,
-        observation: &CreateObservation,
-    ) -> Result<Self, DecisionError> {
-        if self.lifecycle_profile_version() != Some(LIFECYCLE_PROFILE_VERSION) || !self.is_valid() {
-            return Err(DecisionError::Invalid);
-        }
-        let intent = &observation.request;
-        let session = self.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
-            .ok_or(DecisionError::NotFound)?;
+    /// Foreign origin, superseded current intent and conflicting execution facts reject.
+    pub fn accept_lifecycle_create_observation(&self, observation: &CreateObservation)
+        -> Result<Self, DecisionError>
+    {
+        if !self.is_valid() { return Err(DecisionError::Invalid); }
+        let binding = &observation.request.request.binding;
+        let index = self.index(&binding.key.owner, binding.session.as_protocol_id())?;
+        let session = &self.sandboxes[index];
+        let original = session.operations.first().ok_or(DecisionError::Invalid)?.intent();
         let current = session.operations.last().ok_or(DecisionError::Invalid)?;
-        if current.intent != *intent || observation.current_request != *intent {
+        if observation.request != *original || observation.current_request != *current.intent() {
             return Err(DecisionError::Stale);
         }
-        if !observation.matches_request(intent) { return Err(DecisionError::Invalid); }
+        if !observation.matches_request(original) { return Err(DecisionError::Invalid); }
         let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
             return Err(DecisionError::Unavailable);
         };
-        let fact = LifecycleFact::Ready {
-            started_at_ms: facts.started_at_ms,
-            end_at_ms: facts.end_at_ms,
-            max_end_at_ms: facts.max_end_at_ms,
-        };
-        if let Some(previous) = &current.ready {
-            return if previous.fact == fact { Ok(self.clone()) } else { Err(DecisionError::Conflict) };
+        if let Some(saved) = current.running() {
+            return if same_lifetime(saved, facts) { Ok(self.clone()) } else { Err(DecisionError::Conflict) };
         }
-        let index = self.index(&intent.request.binding.key.owner, &session.original_sandbox)?;
-        let original = &self.sandboxes[index];
-        let sequence = CenterReadyReceiptSequence::next(original.observation_version)?;
-        // Reuse only storage and checked value logic. Profile 2 is the durable
-        // discriminator; public legacy apply_response refuses these records.
-        self.apply_response_inner(&LifecycleResponse {
-            identity: original.operations[0].request.identity.clone(),
-            observation_version: sequence.0,
-            fact,
-        })
+        if let LifecycleOperation::Renew { end_at_ms, extend_only, .. } = current.intent().request.operation {
+            let prior = session.last_running().ok_or(DecisionError::Invalid)?;
+            let target = u64::try_from(end_at_ms).map_err(|_| DecisionError::Invalid)?;
+            let expected = if extend_only { prior.end_at_ms.max(target) } else { target };
+            if facts.started_at_ms != prior.started_at_ms || facts.max_end_at_ms != prior.max_end_at_ms
+                || facts.startup_deadline_ms != prior.startup_deadline_ms || facts.end_at_ms != expected
+            { return Err(DecisionError::Conflict); }
+        } else if !matches!(current.intent().request.operation, LifecycleOperation::Create { .. }) {
+            return Err(DecisionError::Stale);
+        }
+        let mut next = self.clone();
+        next.sandboxes[index].operations.last_mut().ok_or(DecisionError::Invalid)?.running = Some(facts.clone());
+        if !next.is_valid() { return Err(DecisionError::Invalid); }
+        Ok(next)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn private_center_sequence_initial_maximum_and_exhaustion_do_not_wrap() {
-        assert_eq!(CenterReadyReceiptSequence::next(None).unwrap().0.get(), 1);
-        let last = PositiveCounter::try_from(u64::MAX).unwrap();
-        assert_eq!(CenterReadyReceiptSequence::next(Some(last)), Err(DecisionError::Exhausted));
-        assert_eq!(CenterReadyReceiptSequence::next(Some(PositiveCounter::try_from(u64::MAX-1).unwrap())).unwrap().0, last);
+    /// A real provider's Cleaned is saved BEFORE its center confirmation is sent.
+    /// Pending does not release quota, complete work or enable window retirement.
+    /// # Errors
+    /// Only the exact current Destroy may receive this result.
+    pub fn accept_lifecycle_terminal_observation(&self, result: &TerminalLifecycleObservation, now_ms: u64)
+        -> Result<Self, DecisionError>
+    {
+        if !self.is_valid() { return Err(DecisionError::Invalid); }
+        let binding = &result.request.request.binding;
+        let index = self.index(&binding.key.owner, binding.session.as_protocol_id())?;
+        let record = &self.sandboxes[index];
+        let current = record.operations.last().ok_or(DecisionError::Invalid)?;
+        if !result.matches_request(current.intent()) { return Err(DecisionError::Stale); }
+        if result.status == TerminalStatus::Pending || record.phase() == SessionPhase::Cleaned {
+            return Ok(self.clone());
+        }
+        let mut next = self.clone();
+        // Preserve a real completed fact even if a clock fault makes safe
+        // result expiry impossible. Its bounded original row remains held.
+        let retain_until_ms = record.retention_deadline(now_ms, self.bounds.result_retention_ms);
+        next.sandboxes[index].operations.last_mut().ok_or(DecisionError::Invalid)?.terminal = Some(RetainedTerminalResult {
+            result: result.clone(), recorded_at_ms: now_ms, retain_until_ms,
+        });
+        if !next.is_valid() { return Err(DecisionError::Invalid); }
+        Ok(next)
     }
 }

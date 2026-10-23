@@ -65,6 +65,7 @@
     "max_sandboxes": 4,
     "operations_per_sandbox": 4,
     "max_options_bytes": 4096,
+    "result_retention_ms": 300000,
     "platform": {
       "instances": 2,
       "cpu": 2,

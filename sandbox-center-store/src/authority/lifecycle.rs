@@ -1,6 +1,6 @@
 //! Same original Redis CAS for canonical intent, original reservation and outbox.
 use super::{AuthorityError, AuthorityState, CenterAuthority};
-use sandproof_center_core::{LifecycleSession, LifecycleSubmission};
+use sandproof_center_core::{Sandbox, LifecycleSubmission};
 use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
@@ -39,11 +39,11 @@ impl<S: AuthorityState> CenterAuthority<S> {
         &mut self,
         owner: &TenantId,
         session: &SessionId,
-    ) -> Result<Option<LifecycleSession>, AuthorityError> {
+    ) -> Result<Option<Sandbox>, AuthorityError> {
         Ok(self.snapshot()?.lifecycle_session(owner, session).cloned())
     }
 
-    /// Store one checked V3 observation with a center-owned receipt sequence.
+    /// Store one checked current observation in the original single session row.
     /// Sender/call/freshness conditions belong to the original caller; no host
     /// observation number is accepted or synthesized by this interface.
     /// # Errors
