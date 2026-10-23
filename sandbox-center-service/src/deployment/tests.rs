@@ -374,11 +374,20 @@ fn unknown_host_fields_missing_budgets_and_invalid_defaults_fail_before_serving(
         Err(AssemblyError::InvalidConfiguration)
     ));
     let mut missing_retention = fixture.config.clone();
-    missing_retention["bounds"].as_object_mut().unwrap().remove("result_retention_ms");
-    assert!(matches!(fixture.load(&missing_retention), Err(AssemblyError::InvalidConfiguration)));
+    missing_retention["bounds"]
+        .as_object_mut()
+        .unwrap()
+        .remove("result_retention_ms");
+    assert!(matches!(
+        fixture.load(&missing_retention),
+        Err(AssemblyError::InvalidConfiguration)
+    ));
     let mut zero_retention = fixture.config.clone();
     zero_retention["bounds"]["result_retention_ms"] = json!(0);
-    assert!(matches!(fixture.load(&zero_retention), Err(AssemblyError::InvalidConfiguration)));
+    assert!(matches!(
+        fixture.load(&zero_retention),
+        Err(AssemblyError::InvalidConfiguration)
+    ));
     let mut foreign_user = fixture.config.clone();
     foreign_user["credentials"][0]["tenant"] = json!(2);
     assert!(matches!(
