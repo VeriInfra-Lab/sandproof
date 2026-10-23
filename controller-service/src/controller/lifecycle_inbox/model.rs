@@ -212,6 +212,7 @@ impl Inbox {
         {
             return Err(JournalError::CorruptStore);
         }
+        self.validate_retired_identities()?;
         if self.host_epoch_observation.as_ref().is_some_and(|o| {
             o.node != self.config.node || Some(&o.registration) != self.config.host_epoch.as_ref()
         }) {
@@ -270,6 +271,39 @@ impl Inbox {
             }
         }
         Ok(())
+    }
+
+    fn validate_retired_identities(&self) -> Result<(), JournalError> {
+        for (index, lane) in self.lanes.iter().enumerate() {
+            let Some(retired) = &lane.last_retired else {
+                continue;
+            };
+            let binding = &retired.request.request.binding;
+            if self.lanes[..index].iter().any(|other| {
+                other.last_retired.as_ref().is_some_and(|last| {
+                    last.request.request.binding.session == binding.session
+                        || last.request.request.binding.key == binding.key
+                })
+            }) || self.sessions.iter().any(|session| {
+                session.id == binding.session
+                    || session
+                        .entries
+                        .iter()
+                        .any(|entry| entry.intent.request.binding.key == binding.key)
+            }) {
+                return Err(JournalError::CorruptStore);
+            }
+        }
+        Ok(())
+    }
+
+    fn recently_retired_identity(&self, intent: &AcceptedLifecycleIntent) -> bool {
+        self.lanes.iter().any(|lane| {
+            lane.last_retired.as_ref().is_some_and(|last| {
+                last.request.request.binding.session == intent.request.binding.session
+                    || last.request.request.binding.key == intent.request.binding.key
+            })
+        })
     }
 
     fn validate_session_shape(&self, index: usize, session: &Session) -> Result<(), JournalError> {
@@ -485,6 +519,9 @@ impl Inbox {
         intent: &AcceptedLifecycleIntent,
     ) -> Result<(usize, usize), JournalError> {
         let request = &intent.request;
+        if self.recently_retired_identity(intent) {
+            return Err(JournalError::Conflict);
+        }
         if intent.retention.slot == 0 || intent.retention.slot > self.config.max_sessions {
             return Err(JournalError::Conflict);
         }

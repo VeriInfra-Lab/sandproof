@@ -560,6 +560,8 @@ fn exhausted_retention_lanes_never_wrap_and_advertise_no_fresh_logical_capacity(
             fixture::create("beta", "session-b")
         };
         request.retention.slot = slot;
+        request.request.binding.session =
+            format!("last-session-{slot}").as_str().try_into().unwrap();
         request.retention.window = RetentionWindowId::try_from(u64::MAX).unwrap();
         request.request.binding.key.window = u64::MAX.try_into().unwrap();
         journal
@@ -602,4 +604,321 @@ fn exhausted_retention_lanes_never_wrap_and_advertise_no_fresh_logical_capacity(
             .record_lifecycle_intent(&fresh, &context(), &mut NeverCrash)
             .is_err()
     );
+}
+
+#[test]
+fn running_stopped_unknown_release_and_unconfirmed_native_work_keep_window_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut journal = fixture::initialize(&dir.path().join("db"));
+    let (create, local) = running_native(
+        &mut journal,
+        fixture::create("alpha", "session-a"),
+        fixture::admission(),
+    );
+    let destroy = fixture::destroy(&create);
+    let close = LifecycleWindowClose {
+        terminal: TerminalLifecycleObservation {
+            request: destroy.clone(),
+            status: TerminalStatus::Cleaned,
+        },
+    };
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
+        Err(JournalError::Conflict)
+    ));
+    journal
+        .record_lifecycle_intent(&destroy, &context(), &mut NeverCrash)
+        .unwrap();
+    crate::finish_accepted_kill(
+        &mut journal,
+        local.sandbox,
+        core::OperationId(2),
+        &mut crate::controller::tests_support::worker,
+    )
+    .unwrap();
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&destroy, &context())
+            .unwrap()
+    );
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    let position = journal.host_slot_context(local.sandbox).unwrap().unwrap();
+    assert!(
+        journal
+            .release_host_slot(
+                position,
+                |_| Err(crate::WorkerTransportError::ReplyLost),
+                &mut NeverCrash
+            )
+            .is_err()
+    );
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&destroy, &context())
+            .unwrap()
+    );
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert!(journal.retirement_candidates().unwrap().is_empty());
+    assert_eq!(inbox(&journal).lanes[0].retired_through, 0);
+    journal
+        .release_host_slot(position, |_| Ok(()), &mut NeverCrash)
+        .unwrap();
+    assert!(
+        journal
+            .lifecycle_destroy_cleaned(&destroy, &context())
+            .unwrap()
+    );
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert!(journal.retirement_candidates().unwrap().is_empty());
+    journal
+        .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
+        .unwrap();
+    journal
+        .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+        .unwrap();
+    assert!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(local.sandbox)
+            .is_some()
+    );
+    assert_eq!(
+        journal.retirement_candidates().unwrap()[0].sandbox,
+        local.sandbox
+    );
+}
+
+#[test]
+fn owner_and_native_high_water_survive_an_empty_world_after_each_retirement() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = fixture::initialize(&path);
+    for round in 1..=3 {
+        let mut create = fixture::create("alpha", "session-a");
+        create.request.binding.session = format!("completed-{round}").as_str().try_into().unwrap();
+        create.request.binding.key.window = (10 + round).try_into().unwrap();
+        create.retention.window = round.try_into().unwrap();
+        let (create, local) = running_native(&mut journal, create, fixture::admission());
+        assert_eq!(local.owner, core::TenantId(round));
+        assert_eq!(local.sandbox, core::SandboxId(round));
+        let close = clean_native(&mut journal, &create, local);
+        journal
+            .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
+            .unwrap();
+        journal
+            .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+            .unwrap();
+        journal
+            .retire_reclaimed(local.sandbox, 700_000, |_| Ok(()), &mut NeverCrash)
+            .unwrap();
+        assert!(journal.world().unwrap().sandbox_records().is_empty());
+        assert_eq!(
+            journal.next_sandbox_id().unwrap(),
+            core::SandboxId(round + 1)
+        );
+        let saved = inbox(&journal);
+        assert!(saved.owners.is_empty() && saved.sessions.is_empty());
+        assert_eq!(saved.owner_high_water, round);
+        assert_eq!(saved.lanes[0].retired_through, round);
+        drop(journal);
+        journal = fixture::open(&path);
+        fixture::refresh_epoch(&mut journal);
+        assert_eq!(inbox(&journal).owner_high_water, round);
+    }
+}
+
+#[test]
+fn foreign_sql_writer_cannot_acknowledge_or_advance_an_original_confirmed_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = fixture::initialize(&path);
+    let close = record_terminal(&mut journal);
+    journal
+        .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
+        .unwrap();
+    let before = inbox(&journal);
+    let external = rusqlite::Connection::open(&path).unwrap();
+    external
+        .execute("CREATE TABLE foreign_writer(id INTEGER)", [])
+        .unwrap();
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
+        Err(JournalError::CorruptStore)
+    ));
+    assert_eq!(inbox(&journal), before);
+    assert_eq!(before.lanes[0].retired_through, 0);
+    assert_eq!(
+        before.sessions[0].confirmed_terminal.as_ref(),
+        Some(&close.terminal)
+    );
+}
+
+#[test]
+fn full_operation_history_preserves_destroy_confirmation_and_recent_stamp_capacity() {
+    use sandproof_protocol::lifecycle::{ExpectedSession, LifecycleOperation};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = fixture::initialize(&path);
+    let mut create = fixture::create("alpha", "session-a");
+    create.request.binding.key.window = u64::MAX.try_into().unwrap();
+    create.request.binding.key.sequence = (u64::MAX - 7).try_into().unwrap();
+    let LifecycleOperation::Create {
+        create: parameters,
+        target_incarnation,
+    } = &mut create.request.operation
+    else {
+        panic!()
+    };
+    let incarnation = *target_incarnation;
+    let mut options = crate::CreateOptions::default();
+    options
+        .metadata
+        .insert("long-value".into(), "x".repeat(600));
+    parameters.options = options.encoded().unwrap();
+    let (create, local) = running_native(&mut journal, create, fixture::admission());
+    let mut last = create.clone();
+    for version in 2..=7 {
+        let mut renew = create.clone();
+        renew.accepted_version = version;
+        renew.request.binding.expected = ExpectedSession::Version(version - 1);
+        renew.request.binding.key.sequence = (u64::MAX - 8 + version).try_into().unwrap();
+        renew.request.operation = LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms: 60_020 + i64::try_from(version).unwrap() * 100,
+            extend_only: true,
+        };
+        journal
+            .record_lifecycle_intent(&renew, &context(), &mut NeverCrash)
+            .unwrap();
+        journal
+            .apply_lifecycle_renew(&renew, &context(), 20, &mut NeverCrash)
+            .unwrap();
+        last = renew;
+    }
+    assert_eq!(inbox(&journal).sessions[0].entries.len(), 7);
+    let mut extra = last.clone();
+    extra.accepted_version = 8;
+    extra.request.binding.expected = ExpectedSession::Version(7);
+    extra.request.binding.key.sequence = u64::MAX.try_into().unwrap();
+    assert!(matches!(
+        journal.record_lifecycle_intent(&extra, &context(), &mut NeverCrash),
+        Err(JournalError::Conflict)
+    ));
+    assert_eq!(
+        journal
+            .record_lifecycle_intent(&last, &context(), &mut NeverCrash)
+            .unwrap()
+            .intent,
+        last
+    );
+    extra.request.operation = LifecycleOperation::Destroy {};
+    journal
+        .record_lifecycle_intent(&extra, &context(), &mut NeverCrash)
+        .unwrap();
+    assert_eq!(inbox(&journal).sessions[0].entries.len(), 8);
+    crate::finish_accepted_kill(
+        &mut journal,
+        local.sandbox,
+        core::OperationId(2),
+        &mut crate::controller::tests_support::worker,
+    )
+    .unwrap();
+    let position = journal.host_slot_context(local.sandbox).unwrap().unwrap();
+    journal
+        .release_host_slot(position, |_| Ok(()), &mut NeverCrash)
+        .unwrap();
+    let close = LifecycleWindowClose {
+        terminal: TerminalLifecycleObservation {
+            request: extra,
+            status: TerminalStatus::Cleaned,
+        },
+    };
+    journal
+        .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
+        .unwrap();
+    let confirmed = inbox(&journal);
+    assert!(
+        (serde_json::to_vec(&confirmed).unwrap().len() as u64) <= confirmed.config.required_bytes()
+    );
+    journal
+        .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+        .unwrap();
+    let retired = inbox(&journal);
+    assert_eq!(
+        retired.lanes[0].last_retired.as_ref(),
+        Some(&close.terminal)
+    );
+    assert!(
+        (serde_json::to_vec(&retired).unwrap().len() as u64) <= retired.config.required_bytes()
+    );
+    drop(journal);
+    let mut journal = fixture::open(&path);
+    assert!(
+        journal
+            .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+            .unwrap()
+            .matches(&close)
+    );
+}
+
+#[test]
+fn retained_stamps_cannot_alias_a_live_session_or_full_operation_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut journal = fixture::initialize(&dir.path().join("db"));
+    let close = record_terminal(&mut journal);
+    journal
+        .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
+        .unwrap();
+    journal
+        .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+        .unwrap();
+    let peer = fixture::create("beta", "session-b");
+    journal
+        .record_lifecycle_intent(&peer, &context(), &mut NeverCrash)
+        .unwrap();
+    let original = inbox(&journal);
+    let mut wrong = original.clone();
+    wrong.lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .request
+        .request
+        .binding
+        .session = peer.request.binding.session.clone();
+    assert!(matches!(wrong.validate(), Err(JournalError::CorruptStore)));
+    let mut wrong = original.clone();
+    wrong.lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .request
+        .request
+        .binding
+        .key = peer.request.binding.key.clone();
+    assert!(matches!(wrong.validate(), Err(JournalError::CorruptStore)));
+    for reuse_session in [false, true] {
+        let mut next = fixture::create("alpha", "fresh-session");
+        next.retention.window = 2.try_into().unwrap();
+        if reuse_session {
+            next.request.binding.session = close.terminal.request.request.binding.session.clone();
+        } else {
+            next.request.binding.key = close.terminal.request.request.binding.key.clone();
+        }
+        assert!(matches!(
+            journal.record_lifecycle_intent(&next, &context(), &mut NeverCrash),
+            Err(JournalError::Conflict)
+        ));
+        assert_eq!(inbox(&journal), original);
+    }
 }
