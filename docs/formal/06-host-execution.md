@@ -111,3 +111,14 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 Node 沿原 Occupied 位置、owner/VM/generation、原 helper 独占门和未终止当前围栏执行；在 Pause 两侧重新核对原 epoch、实际源配置和文件事实，确认同一私有 paused 句柄后，才构造原 action 的 `Frozen` 回执。任何错误仍可能已经 Pause，原责任不退。`observe_pause_original` 复用相同 guard 和 source 输入，只读重开原 paused 观察，绝不重发 PATCH 或 Full；Running、Exited 或不能确认均不产生 Frozen。通用 execute/observe 在缺少这些原输入时仍拒绝 Freeze，不靠当前 PID/全局 boot 补字段。
 
 此候选尚待统一 ning 编译/针对性回归、真实固定 VMM 端点、对应 Rust 抽取和完整卸载验收。Full 仍是后继独立 `SealSnapshot`，须额外接 protected layout、实际来源匹配的兼容配置和原持久预算；不能从请求里的 profile/尺寸直接制造期望或预留。Linux 文件大小限额与原 cgroup 只提供各自实际约束，不能保证唯一源 VM 在撞限时存活，也不是正常支持条件充分的证明。尚未闭合这些条件之前不启用物理 Full，更不因此赋予 Stop、Unloaded 或释放资格。
+
+
+### 原启动 CPU 范围与实际 VMM 线程
+
+当前唯一 `ProcessRecord` 增加必填 `launch_cpu_domain`。它在原 shell 启动门仍阻塞时，按刚捕获的同一 PID/start/boot 读取该子进程实际继承的 CPU mask；两次原线程快照一致且只有一个原启动线程后，才与原身份一起持久保存，再开放原 gate。它不复制受保护配置 A 或当前 manager/SSH 的 mask 充当旧 VM 事实；采集、身份或持久写入错误沿原失败路径关闭 gate 并等待该自有子进程。缺字段、空/重复/无序/超界 CPU 的旧开发 claim 拒绝，正式验收采用新的隔离部署，不迁移或收养旧记录。RetirementManifest 的原存储上界同时计入最多 256 项原 CPU 字段。
+
+`Runtime::verify_original_cpu_domain` 沿原 claim、PID/start/boot、jail/cgroup 和 pidfd 对象读取原 VMM 的全部线程，要求原记录的启动集合与每个当前线程集合都包含于原受保护 A。线程还须匹配原 Tgid、TID 和启动 ticks；原线程集/身份/范围变化、缺失/损坏/无法读取、最多 1024 线程或 2 秒观察界失败都保持未知。每份 status 最多 128KiB，stat 最多 16KiB；任务名称可以是非 UTF-8，不因名称跳过身份。该接口只读，不调用 sched_setaffinity、不取得 VM FD、不修改共享 CPU/cgroup 策略。
+
+Node 从同一原 `HostEpochRegistration.policy` 绑定的 protected payload 取 A，沿原 source-work 在实际配置观察前后执行上述检查；原 Pause 两侧 source 检查复用它。A 不是每次 work DTO 的可选声明；原 Bootstrap 仍核当前调用线程及所有 manager 线程的同一已登记范围。Full 后续沿相同原 source/profile 再核，不能凭 Paused/Exited 或目录存在确认旧 Full/复制 worker 已结束。
+
+固定 jailer/Firecracker 启动路径不扩大 affinity、没有未登记外部 affinity/CPU 热插拔/微码写者、真实完整宿主 proc 视图及受保护 CPU 域在原 epoch 内不变仍是必要条件；读回不能证明整个中间区间或未来永远不变。该检查也不读取 guest CPUID/MSR 或实际 VM XSAVE，不自动认证 Xmax、编码上界、预留、捕获资格或停止权。尚待本批定向原生检查、固定依赖亲和行为源码依据、真实启动/Pause/Full 及 Rust 对应证明；旧 boot 或 Metadata 定理不自动背书新增字段/调用。

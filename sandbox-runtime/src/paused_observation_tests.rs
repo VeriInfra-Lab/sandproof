@@ -123,6 +123,7 @@ fn late_record_replacement_corruption_or_loss_refuses_an_otherwise_paused_reply(
             pid: source.pid,
             start_time_ticks: source.start_time_ticks,
             boot_id: source.boot_id.clone(),
+            launch_cpu_domain: vec![0],
         };
         fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
         let after = path.clone();

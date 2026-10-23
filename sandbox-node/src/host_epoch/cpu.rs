@@ -26,6 +26,10 @@ pub(super) struct CpuDomain {
     descriptions: Vec<CpuDescription>,
 }
 
+impl CpuDomain {
+    pub(super) fn allowed_cpus(&self) -> &[u32] { &self.manager_allowed }
+}
+
 fn number(value: &str) -> Result<u32> {
     if value.is_empty()
         || !value.bytes().all(|b| b.is_ascii_digit())

@@ -20,6 +20,8 @@ use std::time::{Duration, Instant};
 mod boot_plan;
 #[path = "cgroup.rs"]
 mod cgroup;
+#[path = "cpu_domain.rs"]
+mod cpu_domain;
 use crate::child_process;
 #[path = "helper_gate.rs"]
 pub(crate) mod helper_gate;
@@ -222,6 +224,7 @@ struct ProcessRecord {
     pid: u32,
     start_time_ticks: u64,
     boot_id: String,
+    launch_cpu_domain: Vec<u32>,
 }
 
 impl ProcessRecord {
@@ -232,6 +235,7 @@ impl ProcessRecord {
             boot_id: self.boot_id.clone(),
         };
         identity.validate_fields()?;
+        cpu_domain::validate(&self.launch_cpu_domain)?;
         Ok(identity)
     }
 }
@@ -489,11 +493,13 @@ impl Runtime {
             let pid = child.id();
             let identity = RuntimeProcessIdentity::capture(pid)?;
             let start_time_ticks = identity.start_time_ticks;
+            let launch_cpu_domain = cpu_domain::launch_domain(&identity)?;
             let record = ProcessRecord {
                 resource_id: id.to_owned(),
                 pid,
                 start_time_ticks,
                 boot_id: identity.boot_id,
+                launch_cpu_domain,
             };
             self.write_new_record(&claim.join("record.json"), &record)?;
             // Directory authority must already be durable and still match
@@ -1833,6 +1839,7 @@ mod tests {
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
                 boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
+                launch_cpu_domain: vec![0],
             },
         )
         .unwrap();
