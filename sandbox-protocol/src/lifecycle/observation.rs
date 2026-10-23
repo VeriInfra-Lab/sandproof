@@ -77,6 +77,7 @@ impl CreateObservation {
             || original.center.deployment != requested.node.deployment_id
             || !matches!(original.request.operation, LifecycleOperation::Create { .. })
             || self.current_request.center != original.center
+            || self.current_request.retention != original.retention
             || current.node != requested.node
             || current.session != requested.session
             || current.key.owner != requested.key.owner

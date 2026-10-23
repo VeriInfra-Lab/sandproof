@@ -480,7 +480,7 @@ fn unknown_terminal_fence_before_binding_recovers_only_the_original_cancel() {
     let mut journal = open_journal(&path);
     // Inject cancellation's claim/host-loss boundary: it claimed its fence even
     // though physical binding had never succeeded. It never dispatched prepare.
-    let failure = kill_v1::<Evidence, _>(
+    let failure = kill::<Evidence, _>(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),

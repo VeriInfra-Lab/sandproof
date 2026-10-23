@@ -326,7 +326,7 @@ fn local_certificate(activated: bool) -> (LocalValidationBinding, ValidationCert
         local::open_complete(root.path().join("native.db"), local::NAMESPACE).unwrap();
     local::apply(&mut journal, local::create());
     if activated {
-        sandproof_controller_service::finish_admitted_create_v1(
+        sandproof_controller_service::finish_admitted_create(
             &mut journal,
             local::SANDBOX,
             local::CREATE_OP,
@@ -334,7 +334,7 @@ fn local_certificate(activated: bool) -> (LocalValidationBinding, ValidationCert
         )
         .unwrap();
         local::apply(&mut journal, local::kill(1));
-        sandproof_controller_service::finish_accepted_kill_v1(
+        sandproof_controller_service::finish_accepted_kill(
             &mut journal,
             local::SANDBOX,
             sandbox_controller_core::OperationId(101),
@@ -348,7 +348,7 @@ fn local_certificate(activated: bool) -> (LocalValidationBinding, ValidationCert
                 .unwrap(),
             1
         );
-        sandproof_controller_service::finish_compensating_create_v1(
+        sandproof_controller_service::finish_compensating_create(
             &mut journal,
             local::SANDBOX,
             local::CREATE_OP,
