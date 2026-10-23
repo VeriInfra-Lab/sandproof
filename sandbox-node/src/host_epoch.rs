@@ -40,7 +40,9 @@ pub struct ProtectedHostEpochSource {
     path: PathBuf,
 }
 impl ProtectedHostEpochSource {
-    pub(crate) fn original_path(&self) -> &Path { &self.path }
+    pub(crate) fn original_path(&self) -> &Path {
+        &self.path
+    }
 
     /// Configure a pathname only. Actual ownership, bytes, identity and host
     /// facts are checked each time the original bootstrap requirement is used.

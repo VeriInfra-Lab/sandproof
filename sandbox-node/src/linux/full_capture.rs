@@ -209,24 +209,34 @@ impl LinuxWorker {
         original: &SourceObservationRequirement,
         executable: &std::path::Path,
     ) -> NodeResult<super::capture_worker::PreparedCaptureWorker> {
-        let context=self.require_full_action(action,request)?;
-        let slot=self.runtime_host_slot(context.position,context.binding.vm)?;
-        let gate=slot.helper_gate.try_acquire(Some(&slot))?;
-        let actual=self.prepare_full_capture(provider,profile,&request.pause,original)?;
-        require_expected_request(request,&actual)?;
-        let expected=self.expected_cold_work(provider,profile,&request.pause,original)?;
-        if expected.context!=context || expected.request!=actual
-            || self.require_full_action(action,request)?!=context {
+        let context = self.require_full_action(action, request)?;
+        let slot = self.runtime_host_slot(context.position, context.binding.vm)?;
+        let gate = slot.helper_gate.try_acquire(Some(&slot))?;
+        let actual = self.prepare_full_capture(provider, profile, &request.pause, original)?;
+        require_expected_request(request, &actual)?;
+        let expected = self.expected_cold_work(provider, profile, &request.pause, original)?;
+        if expected.context != context
+            || expected.request != actual
+            || self.require_full_action(action, request)? != context
+        {
             return Err("capture worker source changed before preparation".into());
         }
-        super::capture_worker::PreparedCaptureWorker::prepare(gate,&slot,executable,
+        super::capture_worker::PreparedCaptureWorker::prepare(
+            gate,
+            &slot,
+            executable,
             super::capture_worker::CaptureWorkerJob {
-                action:action.clone(),full:actual,source:original.clone(),
-                runtime:expected.runtime_config,template:expected.template,
-                namespace:self.config.namespace.clone(),
-                bootstrap_path:provider.original_path().to_path_buf(),
-                layout_parent:profile.layout_parent.clone(),layout_binding:profile.layout_binding,
-            })
+                action: action.clone(),
+                full: actual,
+                source: original.clone(),
+                runtime: expected.runtime_config,
+                template: expected.template,
+                namespace: self.config.namespace.clone(),
+                bootstrap_path: provider.original_path().to_path_buf(),
+                layout_parent: profile.layout_parent.clone(),
+                layout_binding: profile.layout_binding,
+            },
+        )
     }
 
     pub(crate) fn capture_original(

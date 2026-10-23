@@ -154,11 +154,18 @@ impl NodeHost {
         action: &WorkAction<core::EffectId>,
         request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
         original: &sandproof_controller_service::capture::SourceObservationRequirement,
-    ) -> Result<crate::PreparedCaptureWorker,Box<dyn std::error::Error>> {
+    ) -> Result<crate::PreparedCaptureWorker, Box<dyn std::error::Error>> {
         self.worker.prepare_capture_worker(
-            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
-            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,
-            action,request,original,&self.relay_executable,
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            action,
+            request,
+            original,
+            &self.relay_executable,
         )
     }
 
