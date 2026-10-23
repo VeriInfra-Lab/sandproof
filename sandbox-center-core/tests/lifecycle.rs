@@ -317,26 +317,26 @@ fn renewal_keeps_the_original_execution_and_replays_the_original_relative_input(
     key.sequence = 2.try_into().unwrap();
     let input = LifecycleSubmission::Renew {
         key, session: original.request.binding.session.clone(), expected_version: 1,
-        timeout_ms: 300, extend_only: false,
+        timeout_secs: 1, extend_only: false,
     };
     let (pending, renewed) = running.accept_lifecycle(&owner, &input, 150).unwrap();
     assert_eq!(pending.sandboxes()[0].phase(), SessionPhase::Renewing);
     assert!(pending.sandboxes()[0].current_running().is_none());
-    assert!(matches!(renewed.request.operation, LifecycleOperation::Renew { end_at_ms: 450, .. }));
+    assert!(matches!(renewed.request.operation, LifecycleOperation::Renew { end_at_ms: 600, .. }));
     let mut observation = observed(&original);
     observation.current_request = renewed.clone();
     let sandproof_protocol::lifecycle::CurrentCreateReadiness::Observed { facts } = &mut observation.readiness else { unreachable!() };
-    facts.end_at_ms = 450;
+    facts.end_at_ms = 600;
     facts.observed_at_ms = 160;
     let committed = pending.accept_lifecycle_create_observation(&observation).unwrap();
     let current = committed.sandboxes()[0].current_running().unwrap();
-    assert_eq!((current.started_at_ms, current.max_end_at_ms, current.end_at_ms), (100, 600, 450));
+    assert_eq!((current.started_at_ms, current.max_end_at_ms, current.end_at_ms), (100, 600, 600));
     let (same, replay) = committed.accept_lifecycle(&owner, &input, u64::MAX).unwrap();
     assert_eq!(same, committed);
     assert_eq!(replay, renewed);
     let mut changed = input;
-    let LifecycleSubmission::Renew { timeout_ms, .. } = &mut changed else { unreachable!() };
-    *timeout_ms = 301;
+    let LifecycleSubmission::Renew { timeout_secs, .. } = &mut changed else { unreachable!() };
+    *timeout_secs = 2;
     assert_eq!(committed.accept_lifecycle(&owner, &changed, 150), Err(DecisionError::Conflict));
 }
 
@@ -495,4 +495,26 @@ fn acceptance_keeps_a_future_destroy_identity_before_exhaustion() {
     assert!(initial.is_valid());
     assert_eq!(initial.accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10), Err(DecisionError::Exhausted));
     assert_eq!(initial.identity_frontiers(), (0, u64::MAX - 1));
+}
+
+#[test]
+fn temporary_bad_clock_can_establish_retention_once_after_restart() {
+    use sandproof_protocol::lifecycle::{ClosedLifecycleWindow, ConfirmedLifecycleResult};
+    let owner = "1".try_into().unwrap();
+    let (accepted, original) = state().accept_lifecycle(&owner, &create("1", 1), 10).unwrap();
+    let (completed, result) = cleaned(&accepted, &original, false, 0);
+    assert_eq!(completed.sandboxes()[0].phase(), SessionPhase::Cleaned);
+    assert!(!completed.pending_lifecycle().is_empty());
+    let reopened: CenterState = serde_json::from_slice(&serde_json::to_vec(&completed).unwrap()).unwrap();
+    let restored = reopened.accept_lifecycle_terminal_observation(&result, 100).unwrap();
+    let duplicate = restored.accept_lifecycle_terminal_observation(&result, 150).unwrap();
+    assert_eq!(restored, duplicate);
+    let confirmed = duplicate.confirm_terminal(&ConfirmedLifecycleResult { result: result.clone() }).unwrap();
+    assert!(confirmed.pending_lifecycle().is_empty());
+    assert_eq!(confirmed.begin_close(&result, 199), Err(DecisionError::Unavailable));
+    let (closing, close) = confirmed.begin_close(&result, 200).unwrap();
+    let retired = closing.apply_close_ack(&ClosedLifecycleWindow {
+        terminal: close.terminal.clone(), retired_through: close.terminal.request.retention.window,
+    }, 200).unwrap();
+    assert!(retired.sandboxes().is_empty());
 }

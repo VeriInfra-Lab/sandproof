@@ -17,6 +17,38 @@ use sandproof_protocol::{
 };
 
 impl SharedBusinessAuthority {
+    /// # Errors
+    /// Public owner/visibility, current version and key allocation share one CAS.
+    pub(super) fn accept_sdk_followup(
+        &self, owner: &TenantId, sandbox: &sandproof_protocol::SandboxId,
+        renewal: Option<(u64, bool)>, now_ms: u64,
+    ) -> Result<AcceptedLifecycleIntent, sandproof_center_store::authority::AuthorityError> {
+        let mut authority = self.0.lock().map_err(|_| sandproof_center_store::authority::AuthorityError::RecoveryRequired)?;
+        authority.snapshot_envelope()?;
+        authority.decide(|current| {
+            if current.metadata.private_sandboxes().contains(sandbox) {
+                return Err(DecisionError::NotFound.into());
+            }
+            let session = SessionId::from_protocol_id(sandbox.clone());
+            let record = current.center.lifecycle_session(owner, &session).ok_or(DecisionError::NotFound)?;
+            let prior = record.operations().last().ok_or(DecisionError::Invalid)?.intent();
+            if renewal.is_none() && record.terminating() {
+                return Ok((current.clone(), prior.clone()));
+            }
+            let key = current.center.next_sdk_operation_key(owner)?;
+            let submission = match renewal {
+                Some((timeout_secs, extend_only)) => LifecycleSubmission::Renew {
+                    key, session, expected_version: prior.accepted_version, timeout_secs, extend_only,
+                },
+                None => LifecycleSubmission::Destroy {
+                    key, session, expected_version: prior.accepted_version,
+                },
+            };
+            let (center, intent) = current.center.accept_lifecycle(owner, &submission, now_ms)?;
+            Ok((current.with_center(center), intent))
+        })
+    }
+
     /// Persist termination without waiting for any host operation. Exact
     /// replay returns the same intent; unknown CAS never means no effect.
     /// # Errors
@@ -247,8 +279,10 @@ impl SharedBusinessAuthority {
             // Running needs the original host observation provider, still
             // absent here. A new query timestamp cannot supply that evidence.
             SessionPhase::Running => return Err(PortError::Busy),
+            SessionPhase::Renewing => PublicSessionPhase::Renewing,
             SessionPhase::Unloading => PublicSessionPhase::Unloading,
             SessionPhase::Terminating => PublicSessionPhase::Terminating,
+            SessionPhase::Cleaned => PublicSessionPhase::Cleaned,
         };
         Ok(PublicSessionView {
             session: current.request.binding.session.clone(),

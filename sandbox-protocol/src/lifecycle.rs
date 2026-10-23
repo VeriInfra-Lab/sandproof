@@ -32,7 +32,7 @@ pub use manifest::{
 pub use observation::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts};
 pub use public::{
     CreateParameters, PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase,
-    PublicSessionView, PublicUnloadRequest,
+    PublicSessionView, PublicUnloadRequest, PublicRequestWindow,
 };
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 pub use terminal::{TerminalLifecycleObservation, TerminalStatus};

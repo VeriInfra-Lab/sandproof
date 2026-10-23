@@ -32,7 +32,7 @@ pub enum LifecycleSubmission {
     Unload { key: OperationKey, session: SessionId, expected_version: u64 },
     Renew {
         key: OperationKey, session: SessionId, expected_version: u64,
-        timeout_ms: u64, extend_only: bool,
+        timeout_secs: u64, extend_only: bool,
     },
     Destroy { key: OperationKey, session: SessionId, expected_version: u64 },
 }
@@ -73,8 +73,11 @@ pub struct LifecycleOperationRecord {
 pub(crate) struct RetainedTerminalResult {
     pub(crate) result: TerminalLifecycleObservation,
     pub(crate) recorded_at_ms: u64,
-    /// None explicitly quarantines clock rollback/overflow. The actual Cleaned
-    /// fact stays durable, but no time-based deletion is then permitted.
+    /// A temporary bad clock leaves this uninitialized. The same finishing
+    /// CAS may establish it ONCE after clock recovery; never refresh it.
+    pub(crate) retention_started_at_ms: Option<u64>,
+    /// None with a start means checked arithmetic exhausted; without a start
+    /// it means the actual Cleaned fact is awaiting a trustworthy clock.
     pub(crate) retain_until_ms: Option<u64>,
 }
 impl LifecycleOperationRecord {
@@ -186,6 +189,14 @@ pub fn next_lifecycle_version(expected: u64, current: u64) -> Result<u64, Decisi
     current.checked_add(1).ok_or(DecisionError::Exhausted)
 }
 
+/// Preserve the existing SDK cap for even the largest positive second value.
+/// U128 can represent U64 seconds * 1000 plus a U64 clock without overflow.
+pub(crate) fn normalized_renewal_end(now_ms: u64, seconds: u64, maximum_ms: u64) -> u64 {
+    let requested = u128::from(now_ms) + u128::from(seconds) * 1000;
+    // The minimum is at most the original U64 maximum, so narrowing is exact.
+    u64::try_from(requested.min(u128::from(maximum_ms))).expect("bounded by original U64 maximum")
+}
+
 impl CenterState {
     #[must_use]
     pub const fn lifecycle_profile_version(&self) -> u16 { self.lifecycle.format_version }
@@ -218,9 +229,14 @@ impl CenterState {
     }
     #[must_use]
     pub fn pending_lifecycle(&self) -> Vec<AcceptedLifecycleIntent> {
-        self.sandboxes.iter().filter_map(|record| record.operations.last())
-            .filter(|operation| operation.running.is_none() && operation.terminal.is_none())
-            .map(|operation| operation.intent.clone()).collect()
+        self.sandboxes.iter().filter_map(|record| {
+            let operation = record.operations.last()?;
+            if operation.running.is_some() { return None; }
+            if operation.terminal.as_ref().is_some_and(|retained|
+                retained.retention_started_at_ms.is_some() && record.terminal_confirmation.is_some())
+            { return None; }
+            Some(operation.intent.clone())
+        }).collect()
     }
     fn find_lifecycle_operation(&self, key: &OperationKey) -> Option<&LifecycleOperationRecord> {
         for record in &self.sandboxes {
@@ -335,10 +351,10 @@ impl CenterState {
                 source_incarnation: incarnation,
                 capture: CaptureId::try_from(1).map_err(|_| DecisionError::Invalid)?,
             },
-            LifecycleSubmission::Renew { timeout_ms, extend_only, .. } => {
+            LifecycleSubmission::Renew { timeout_secs, extend_only, .. } => {
                 let facts = prior.running.as_ref().ok_or(DecisionError::Conflict)?;
-                let end = now_ms.checked_add(*timeout_ms).ok_or(DecisionError::Exhausted)?;
-                if *timeout_ms == 0 || facts.end_at_ms <= now_ms || end > facts.max_end_at_ms {
+                let end = normalized_renewal_end(now_ms, *timeout_secs, facts.max_end_at_ms);
+                if *timeout_secs == 0 || facts.end_at_ms <= now_ms || facts.max_end_at_ms <= now_ms {
                     return Err(DecisionError::Conflict);
                 }
                 if !self.node_is_reachable(&request.binding.node, now_ms) { return Err(DecisionError::Unavailable); }

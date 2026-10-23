@@ -317,6 +317,13 @@ pub trait AuthorityPort: Send + 'static {
         Err(sandproof_center_core::DecisionError::Invalid.into())
     }
     /// # Errors
+    /// Save the original completed fact and fixed retention in the same authority.
+    fn accept_lifecycle_terminal_observation(
+        &mut self,
+        result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError>;
+    /// # Errors
     /// Must confirm an authority view within this call; cached-only reads fail.
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError>;
     /// # Errors
@@ -333,6 +340,17 @@ pub trait AuthorityPort: Send + 'static {
         policy: crate::LifecyclePolicy,
         now_ms: u64,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError>;
+    /// # Errors
+    /// Original SDK seconds and current version are normalized by the SAME CAS.
+    fn renew_current(
+        &mut self, owner: &TenantId, sandbox: &SandboxId,
+        timeout_secs: u64, extend_only: bool, now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError>;
+    /// # Errors
+    /// Timely termination neither waits for host work nor invents cleanup.
+    fn destroy_current(
+        &mut self, owner: &TenantId, sandbox: &SandboxId,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError>;
     /// # Errors
     /// Acceptance and the original outbox commit together.
     fn create(
@@ -365,7 +383,7 @@ pub trait AuthorityPort: Send + 'static {
     fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
     /// # Errors
     /// Requires the exact host-confirmed terminal result, not an absent record.
-    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
+    fn confirm_terminal(&mut self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), AuthorityError>;
     /// # Errors
     /// Stops new creates only after the original authority commit succeeds.
     fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError>;
@@ -373,14 +391,15 @@ pub trait AuthorityPort: Send + 'static {
     /// Requires ONE exact terminal confirmation and its business pin veto.
     fn begin_close(
         &mut self,
-        terminal: &LifecycleResponse,
-    ) -> Result<WindowCloseRequest, AuthorityError>;
+        terminal: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::LifecycleWindowClose, AuthorityError>;
     /// # Errors
     /// Returns only committed close responsibilities from the original authority.
-    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError>;
+    fn close_batch(&mut self, now_ms: u64) -> Result<Vec<sandproof_protocol::lifecycle::LifecycleWindowClose>, AuthorityError>;
     /// # Errors
     /// Wrong acknowledgements or unresolved business pins retain responsibility.
-    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError>;
+    fn apply_close_ack(&mut self, ack: &sandproof_protocol::lifecycle::ClosedLifecycleWindow, now_ms: u64) -> Result<(), AuthorityError>;
     /// # Errors
     /// Unknown commits require explicit durable reconciliation.
     fn recover(&mut self) -> Result<(), AuthorityError>;

@@ -57,4 +57,18 @@ impl<S: AuthorityState> CenterAuthority<S> {
         if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
         Ok(())
     }
+
+    /// Save the real current terminal result before sending any confirmation.
+    /// # Errors
+    /// Unknown CAS fences the same block; recovery reuses its original deadline.
+    pub fn accept_lifecycle_terminal_observation(
+        &mut self,
+        result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self.state()?.accept_lifecycle_terminal_observation(result, now_ms)?;
+        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        Ok(())
+    }
 }

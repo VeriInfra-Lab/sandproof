@@ -74,6 +74,23 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         }
     }
 
+    pub(crate) fn wait_current_terminal(&self, intent: &AcceptedLifecycleIntent) -> Result<(), PortError> {
+        let deadline = self.reply_deadline()?;
+        loop {
+            time_left(deadline)?;
+            self.reconcile_lifecycle_intent(intent, deadline)?;
+            let state = self.snapshot()?;
+            let record = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
+                .ok_or(PortError::OutcomeUnknown)?;
+            let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?;
+            if current.intent() != intent { return Err(PortError::OutcomeUnknown); }
+            if current.terminal().is_some_and(|result|
+                result.status == sandproof_protocol::lifecycle::TerminalStatus::Cleaned && result.matches_request(intent))
+            { return Ok(()); }
+            self.poll_pause(deadline);
+        }
+    }
+
     pub(crate) fn current_lifecycle_intent(&self, owner: &TenantId, session: &SessionId) -> Result<(AcceptedLifecycleIntent, SessionPhase), PortError> {
         let state = self.snapshot()?;
         let record = state.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
@@ -139,10 +156,33 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let budget = time_left(deadline)?;
         let Ok(received) = self.hosts.record_lifecycle(intent, budget) else { return Ok(false); };
         if !received.matches(intent) || !received.current { return Ok(false); }
+        if matches!(intent.request.operation, LifecycleOperation::Destroy {}) {
+            let Ok(result) = self.hosts.observe_lifecycle_terminal(intent, time_left(deadline)?) else { return Ok(false); };
+            if !result.matches_request(intent) || result.status != sandproof_protocol::lifecycle::TerminalStatus::Cleaned {
+                return Ok(false);
+            }
+            // Persist the actual completed fact BEFORE sending any result
+            // confirmation. Unknown CAS prevents the acknowledgement call.
+            let saved = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
+                .accept_lifecycle_terminal_observation(&result, self.now()?);
+            match saved {
+                Ok(()) => {}
+                Err(AuthorityError::Decision(DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound)) => return Ok(false),
+                Err(error) => return Err(authority_error(error)),
+            }
+            let Ok(confirmed) = self.hosts.confirm_lifecycle_terminal(&result, time_left(deadline)?) else { return Ok(false); };
+            if !confirmed.matches(&result) { return Ok(false); }
+            return match self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
+                .confirm_terminal(&confirmed) {
+                Ok(()) => Ok(true),
+                Err(AuthorityError::Decision(DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound)) => Ok(false),
+                Err(error) => Err(authority_error(error)),
+            };
+        }
         // All current intents use the same durable receiver. Recording Unload
         // or Destroy cannot publish physical completion or retire the outbox;
         // their actual final receipts are a separate obligation.
-        if !matches!(intent.request.operation, LifecycleOperation::Create { .. }) { return Ok(false); }
+        if !matches!(intent.request.operation, LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. }) { return Ok(false); }
         let Ok(observation) = self.current_create_observation_before(intent, deadline) else { return Ok(false); };
         match self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
             .accept_lifecycle_create_observation(&observation) {

@@ -12,8 +12,13 @@ const SECRET: &str = "public-lifecycle-fixture-only-api-key-0001";
 struct Port(
     Mutex<Vec<(String, PublicCreateRequest)>>,
     Mutex<Vec<(String, SessionId, PublicDestroyRequest)>>,
+    Mutex<Vec<String>>,
 );
 impl LifecyclePort for Port {
+    fn request_window(&self, owner: &str) -> Result<PublicRequestWindow, PortError> {
+        self.2.lock().unwrap().push(owner.to_owned());
+        Ok(PublicRequestWindow { window: Some(7.try_into().unwrap()) })
+    }
     fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: PublicDestroyRequest) -> Result<PublicAcceptance, PortError> {
         self.1.lock().unwrap().push((owner.to_owned(), session.clone(), request.clone()));
         Ok(PublicAcceptance {
@@ -50,6 +55,25 @@ impl LifecyclePort for Port {
     fn query_lifecycle(&self, _: &str, _: SessionId) -> Result<PublicSessionView, PortError> {
         Err(PortError::NotFound)
     }
+}
+
+#[tokio::test]
+async fn request_window_uses_the_authenticated_owner_and_shared_admission() {
+    let port = Arc::new(Port::default());
+    let router = router_with_admission(port.clone(), vec![ApiCredential {
+        tenant: "8".into(), secret: SECRET.into(),
+    }], Arc::new(RequestAdmission::default())).unwrap();
+    let request = |secret: &str| Request::builder().method("GET")
+        .uri("/sandproof/lifecycle/request-window?owner=9")
+        .header("x-api-key", secret).body(Body::empty()).unwrap();
+    assert_eq!(router.clone().oneshot(request("wrong")).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    assert!(port.2.lock().unwrap().is_empty());
+    let response = router.oneshot(request(SECRET)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+    let value: PublicRequestWindow = serde_json::from_slice(&body).unwrap();
+    assert_eq!(value.window.unwrap().get(), 7);
+    assert_eq!(*port.2.lock().unwrap(), vec!["8".to_owned()]);
 }
 
 #[tokio::test]

@@ -64,8 +64,22 @@ impl CenterState {
         let record = &self.sandboxes[index];
         let current = record.operations.last().ok_or(DecisionError::Invalid)?;
         if !result.matches_request(current.intent()) { return Err(DecisionError::Stale); }
-        if result.status == TerminalStatus::Pending || record.phase() == SessionPhase::Cleaned {
+        if result.status == TerminalStatus::Pending {
             return Ok(self.clone());
+        }
+        if record.phase() == SessionPhase::Cleaned {
+            let retained = current.terminal.as_ref().ok_or(DecisionError::Invalid)?;
+            if retained.retention_started_at_ms.is_some()
+                || record.operations.iter().any(|operation| operation.accepted_at_ms > now_ms)
+                || now_ms < retained.recorded_at_ms
+            { return Ok(self.clone()); }
+            let mut next = self.clone();
+            let saved = next.sandboxes[index].operations.last_mut().ok_or(DecisionError::Invalid)?
+                .terminal.as_mut().ok_or(DecisionError::Invalid)?;
+            saved.retention_started_at_ms = Some(now_ms);
+            saved.retain_until_ms = now_ms.checked_add(self.bounds.result_retention_ms);
+            if !next.is_valid() { return Err(DecisionError::Invalid); }
+            return Ok(next);
         }
         let mut next = self.clone();
         // Preserve a real completed fact even if a clock fault makes safe
@@ -73,6 +87,8 @@ impl CenterState {
         let retain_until_ms = record.retention_deadline(now_ms, self.bounds.result_retention_ms);
         next.sandboxes[index].operations.last_mut().ok_or(DecisionError::Invalid)?.terminal = Some(RetainedTerminalResult {
             result: result.clone(), recorded_at_ms: now_ms, retain_until_ms,
+            retention_started_at_ms: (!record.operations.iter().any(|operation| operation.accepted_at_ms > now_ms))
+                .then_some(now_ms),
         });
         if !next.is_valid() { return Err(DecisionError::Invalid); }
         Ok(next)

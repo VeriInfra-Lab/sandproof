@@ -94,8 +94,13 @@ impl CenterState {
                 || op.terminal.as_ref().is_some_and(|retained|
                     retained.result.status != TerminalStatus::Cleaned
                     || !retained.result.matches_request(intent)
-                    || session.retention_deadline(retained.recorded_at_ms, self.bounds.result_retention_ms)
-                        != retained.retain_until_ms)
+                    || match retained.retention_started_at_ms {
+                        Some(started) => started < retained.recorded_at_ms
+                            || session.operations.iter().any(|operation| operation.accepted_at_ms > started)
+                            || started.checked_add(self.bounds.result_retention_ms) != retained.retain_until_ms,
+                        None => retained.retain_until_ms.is_some()
+                            || !session.operations.iter().any(|operation| operation.accepted_at_ms > retained.recorded_at_ms),
+                    })
                 || !self.valid_lifecycle_operation(session, op, position)
             { return false; }
             keys.push(&actual.key);
@@ -127,15 +132,15 @@ impl CenterState {
             return false;
         }
         match (&op.submission, &request.operation) {
-            (LifecycleSubmission::Renew { session: named, expected_version, timeout_ms, extend_only, .. },
+            (LifecycleSubmission::Renew { session: named, expected_version, timeout_secs, extend_only, .. },
                 LifecycleOperation::Renew { incarnation, end_at_ms, extend_only: actual_extend }) => {
                 let Some(prior) = previous.running.as_ref() else { return false; };
                 let Ok(end) = u64::try_from(*end_at_ms) else { return false; };
                 let target = if *extend_only { prior.end_at_ms.max(end) } else { end };
                 *expected_version == previous.intent.accepted_version && named == &request.binding.session
-                    && *extend_only == *actual_extend && incarnation.get() == 1 && *timeout_ms > 0
-                    && op.accepted_at_ms.checked_add(*timeout_ms) == Some(end)
-                    && prior.end_at_ms > op.accepted_at_ms && end <= prior.max_end_at_ms
+                    && *extend_only == *actual_extend && incarnation.get() == 1 && *timeout_secs > 0
+                    && super::normalized_renewal_end(op.accepted_at_ms, *timeout_secs, prior.max_end_at_ms) == end
+                    && prior.end_at_ms > op.accepted_at_ms && prior.max_end_at_ms > op.accepted_at_ms
                     && op.terminal.is_none() && op.running.as_ref().is_none_or(|facts|
                         facts.matches_renewed(&origin.intent, intent)
                         && facts.started_at_ms == prior.started_at_ms && facts.max_end_at_ms == prior.max_end_at_ms
