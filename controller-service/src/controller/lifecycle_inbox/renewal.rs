@@ -6,6 +6,10 @@ use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
 };
 
+#[cfg(test)]
+#[path = "renewal_tests.rs"]
+mod tests;
+
 impl ControllerJournal {
     /// Returns the saved result and its actual current-order flags. A replay
     /// never recomputes a relative duration and is not fresh liveness evidence.
