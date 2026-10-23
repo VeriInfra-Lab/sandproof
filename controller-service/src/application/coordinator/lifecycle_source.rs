@@ -1,5 +1,5 @@
-//! Existing application owner; every provider call is outside SQL.
-use super::{ControllerApplication, ControllerHost, Inner, JournalError, NeverCrash};
+//! Existing application owner; provider I/O is outside SQL and the application lock.
+use super::{ControllerApplication, ControllerHost, JournalError, NeverCrash};
 use crate::{SourceWork, SourceWorkRecord};
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, AuthenticatedCenterContext};
 
@@ -38,6 +38,26 @@ impl<H: ControllerHost> ControllerApplication<H> {
         work: &SourceWork,
         context: &AuthenticatedCenterContext,
     ) -> Result<SourceWorkRecord, JournalError> {
+        let host = {
+            let inner = self
+                .inner
+                .lock()
+                .map_err(|_| JournalError::ControllerBusy)?;
+            let now = self
+                .clock
+                .now_ms()
+                .map_err(|_| JournalError::UnresolvedAction)?;
+            let record = inner
+                .journal
+                .source_work_for_observation::<H::Evidence>(work, context, now)?;
+            if record.observation.is_some() {
+                return Ok(record);
+            }
+            std::sync::Arc::clone(&inner.host)
+        };
+        let observation = host
+            .observe_lifecycle_source(work.requirement())
+            .map_err(|_| JournalError::UnresolvedAction)?;
         let mut inner = self
             .inner
             .lock()
@@ -46,22 +66,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .clock
             .now_ms()
             .map_err(|_| JournalError::UnresolvedAction)?;
-        let record = inner
-            .journal
-            .source_work_for_observation::<H::Evidence>(work, context, now)?;
-        if record.observation.is_some() {
-            return Ok(record);
-        }
-        let observation = inner
-            .host
-            .observe_lifecycle_source(work.requirement())
-            .map_err(|_| JournalError::UnresolvedAction)?;
-        let now = self
-            .clock
-            .now_ms()
-            .map_err(|_| JournalError::UnresolvedAction)?;
-        let Inner { journal, .. } = &mut *inner;
-        journal.save_source_observation::<H::Evidence>(
+        inner.journal.save_source_observation::<H::Evidence>(
             work,
             context,
             observation,

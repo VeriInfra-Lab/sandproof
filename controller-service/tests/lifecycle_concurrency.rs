@@ -2,6 +2,8 @@
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "support/lifecycle_application.rs"]
 mod lifecycle;
+#[path = "lifecycle_concurrency/source_observation.rs"]
+mod source_observation;
 use lifecycle::fixture::{State, TestEpoch};
 use sandproof_controller_service::{
     CreateReadiness, application::ApplicationError, capture::SourceProcessIdentity,
