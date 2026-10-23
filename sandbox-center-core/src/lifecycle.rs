@@ -238,6 +238,8 @@ impl CenterState {
     }
     #[must_use]
     pub const fn lifecycle_profile_version(&self) -> u16 { self.lifecycle.format_version }
+    #[must_use]
+    pub const fn center_identity(&self) -> &CenterIdentity { &self.lifecycle.center }
     /// Current authenticated client's window. Exhaustion is explicit; no reset.
     /// # Errors
     /// An unknown owner cannot inspect another registration.

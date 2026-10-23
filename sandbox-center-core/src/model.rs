@@ -273,24 +273,23 @@ impl CenterState {
         tenant: Option<&TenantId>,
         node: Option<&NodeIdentity>,
     ) -> Option<Resources> {
-        let mut sum = Resources::ZERO;
-        for sandbox in &self.sandboxes {
-            if sandbox.released() {
-                continue;
-            }
-            let Some(op) = sandbox.operations.first() else {
-                continue;
-            };
-            if tenant.is_none_or(|t| &op.intent().request.binding.key.owner == t)
+        let mut sum = Some(Resources::ZERO);
+        let mut index = 0;
+        while sum.is_some() && index < self.sandboxes.len() {
+            let sandbox = &self.sandboxes[index];
+            if !sandbox.released()
+                && let Some(op) = sandbox.operations.first()
+                && tenant.is_none_or(|t| &op.intent().request.binding.key.owner == t)
                 && node.is_none_or(|n| &op.intent().request.binding.node == n)
             {
-                let LifecycleOperation::Create { create, .. } = &op.intent().request.operation else {
-                    return None;
+                sum = match (&op.intent().request.operation, sum) {
+                    (LifecycleOperation::Create { create, .. }, Some(total)) => total.checked_add(create.resources),
+                    _ => None,
                 };
-                sum = sum.checked_add(create.resources)?;
             }
+            index += 1;
         }
-        Some(sum)
+        sum
     }
     /// Explicit physical/time/config input; no heartbeat-based release or rebind.
     /// # Errors

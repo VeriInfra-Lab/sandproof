@@ -23,41 +23,54 @@ impl CenterState {
         let mut sessions = BTreeSet::new();
         let mut allocations = BTreeSet::new();
         let mut keys = Vec::new();
-        for result in self.retention_lanes.iter().filter_map(|lane| lane.last_retired.as_ref()) {
-            let b = &result.request.request.binding;
-            if !sessions.insert(b.session.as_protocol_id().as_str()) || keys.contains(&&b.key) {
-                return false;
+        let mut index = 0;
+        let mut valid = true;
+        while valid && index < self.retention_lanes.len() {
+            if let Some(result) = self.retention_lanes[index].last_retired.as_ref() {
+                let b = &result.request.request.binding;
+                valid = sessions.insert(b.session.as_protocol_id().as_str()) && !keys.contains(&&b.key);
+                if valid { keys.push(&b.key); }
             }
-            keys.push(&b.key);
+            index += 1;
         }
-        for session in &self.sandboxes {
-            let Some(first) = session.operations.first() else { return false; };
-            let id = first.intent.request.binding.session.as_protocol_id().as_str();
-            if !sessions.insert(id) || crate::validation::number(id, "sandbox-", self.sandbox_highwater).is_none()
-                || !self.valid_lifecycle_session(session, &mut allocations, &mut keys)
-            { return false; }
+        index = 0;
+        while valid && index < self.sandboxes.len() {
+            let session = &self.sandboxes[index];
+            if let Some(first) = session.operations.first() {
+                let id = first.intent.request.binding.session.as_protocol_id().as_str();
+                valid = sessions.insert(id) && crate::validation::number(id, "sandbox-", self.sandbox_highwater).is_some()
+                    && self.valid_lifecycle_session(session, &mut allocations, &mut keys);
+            } else {
+                valid = false;
+            }
+            index += 1;
         }
-        true
+        valid
     }
     fn valid_lifecycle_windows(&self, p: &LifecycleProfile) -> bool {
-        for (index, window) in p.windows.iter().enumerate() {
+        let mut index = 0;
+        let mut valid = true;
+        while valid && index < p.windows.len() {
+            let window = &p.windows[index];
             let initial = &window.registration;
-            if !self.tenant_is_registered(&initial.owner)
+            valid = !(!self.tenant_is_registered(&initial.owner)
                 || p.windows[..index].iter().any(|w| w.registration.owner == initial.owner
                     && (w.registration.window.get() == 2) == (initial.window.get() == 2))
                 || if initial.window.get() == 2 { window.current != Some(initial.window) }
                     else { initial.window.get() % 2 != 1 || window.current.is_some_and(|current|
-                        current.get() % 2 != 1 || current.get() < initial.window.get()) }
-            { return false; }
+                        current.get() % 2 != 1 || current.get() < initial.window.get()) });
+            index += 1;
         }
-        for tenant in &self.tenants {
-            if p.windows.iter().filter(|w| w.registration.owner == tenant.tenant
+        index = 0;
+        while valid && index < self.tenants.len() {
+            let tenant = &self.tenants[index];
+            valid = !(p.windows.iter().filter(|w| w.registration.owner == tenant.tenant
                 && w.registration.window.get() % 2 == 1).count() != 1
                 || p.windows.iter().filter(|w| w.registration.owner == tenant.tenant
-                    && w.registration.window.get() == 2).count() != 1
-            { return false; }
+                    && w.registration.window.get() == 2).count() != 1);
+            index += 1;
         }
-        true
+        valid
     }
     fn valid_lifecycle_session<'a>(&self, session: &'a Sandbox,
         allocations: &mut BTreeSet<u64>, keys: &mut Vec<&'a OperationKey>) -> bool
@@ -77,10 +90,13 @@ impl CenterState {
                 !session.released() || last.terminal() != Some(confirmed))
         { return false; }
         let mut previous_allocation = 0;
-        for (position, op) in session.operations.iter().enumerate() {
+        let mut position = 0;
+        let mut valid = true;
+        while valid && position < session.operations.len() {
+            let op = &session.operations[position];
             let intent = &op.intent;
             let actual = &intent.request.binding;
-            if intent.center != self.lifecycle.center || actual.key != *op.submission.key()
+            valid = !(intent.center != self.lifecycle.center || actual.key != *op.submission.key()
                 || actual.key.deployment != self.deployment || actual.key.owner != b.key.owner
                 || actual.node != b.node || actual.session != b.session || intent.retention != origin.retention
                 || keys.contains(&&actual.key)
@@ -101,12 +117,14 @@ impl CenterState {
                         None => retained.retain_until_ms.is_some()
                             || !session.operations.iter().any(|operation| operation.accepted_at_ms > retained.recorded_at_ms),
                     })
-                || !self.valid_lifecycle_operation(session, op, position)
-            { return false; }
-            keys.push(&actual.key);
-            previous_allocation = op.allocation_number;
+                || !self.valid_lifecycle_operation(session, op, position));
+            if valid {
+                keys.push(&actual.key);
+                previous_allocation = op.allocation_number;
+            }
+            position += 1;
         }
-        true
+        valid
     }
     fn valid_lifecycle_operation(&self, session: &Sandbox, op: &LifecycleOperationRecord, position: usize) -> bool {
         let intent = &op.intent;

@@ -6,10 +6,11 @@ use sandproof_api::PortError;
 use sandproof_protocol::{
     ResourceId, TenantId,
     internal::lifecycle::{
-        LIFECYCLE_BODY_BYTES, LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES,
+        LIFECYCLE_BODY_BYTES, RESULT_CONFIRMATION_BODY_BYTES,
     },
 };
 use serde::{Deserialize, Serialize};
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, TerminalLifecycleObservation};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,9 +57,9 @@ pub struct GlobalBuildAnchor {
     pub window: WindowId,
     pub build_id: String,
     pub parameters: BuildParameters,
-    pub original_create: LifecycleRequest,
+    pub original_create: AcceptedLifecycleIntent,
     /// Explicit same-authority Cleaned evidence, not a boolean success flag.
-    pub settlement: Option<LifecycleResponse>,
+    pub settlement: Option<TerminalLifecycleObservation>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

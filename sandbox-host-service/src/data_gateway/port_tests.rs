@@ -157,6 +157,7 @@ async fn native_identity_binds_original_guest_secret_through_body_preparation() 
     let create = lifecycle::request();
     let context = lifecycle::context();
     application.record_lifecycle_intent(&create, &context).unwrap();
+    application.establish_lifecycle_host_epoch().unwrap();
     application
         .advance_recorded_lifecycle_create_with_verification(
             &create, context.expected_node(), Some(local::template()), local::compute(), None,

@@ -32,25 +32,31 @@ impl CenterState {
     }
     fn valid_nodes(&self) -> bool {
         let mut nodes = BTreeSet::new();
-        for node in &self.nodes {
-            if node.identity.deployment_id != self.deployment
+        let mut index = 0;
+        let mut valid = true;
+        while valid && index < self.nodes.len() {
+            let node = &self.nodes[index];
+            valid = !(node.identity.deployment_id != self.deployment
                 || !nodes.insert(node.identity.node_id.as_str()) || !node.limit.positive()
                 || node.retention_slots == 0 || node.retention_slots > self.bounds.max_sandboxes
                 || node.templates.len() > usize::from(self.bounds.max_templates_per_node)
                 || node.templates.iter().map(|t| t.revision.as_str()).collect::<BTreeSet<_>>().len() != node.templates.len()
                 || (node.protocol_version != INTERNAL_PROTOCOL_VERSION && node.mode == NodeMode::Accepting)
-                || self.reserved(None, Some(&node.identity)).is_none_or(|r| !r.fits(node.limit))
-            { return false; }
+                || self.reserved(None, Some(&node.identity)).is_none_or(|r| !r.fits(node.limit)));
+            index += 1;
         }
-        true
+        valid
     }
     fn valid_tenants(&self) -> bool {
         let mut tenants = BTreeSet::new();
-        for budget in &self.tenants {
-            if !budget.limit.positive() || !tenants.insert(budget.tenant.as_str())
-                || self.reserved(Some(&budget.tenant), None).is_none_or(|r| !r.fits(budget.limit))
-            { return false; }
+        let mut index = 0;
+        let mut valid = true;
+        while valid && index < self.tenants.len() {
+            let budget = &self.tenants[index];
+            valid = !(!budget.limit.positive() || !tenants.insert(budget.tenant.as_str())
+                || self.reserved(Some(&budget.tenant), None).is_none_or(|r| !r.fits(budget.limit)));
+            index += 1;
         }
-        true
+        valid
     }
 }

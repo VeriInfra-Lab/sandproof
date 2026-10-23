@@ -41,33 +41,45 @@ impl CenterState {
         let expected = self.nodes.iter().map(|node| usize::from(node.retention_slots)).sum::<usize>();
         let mut identities = std::collections::BTreeSet::new();
         if self.retention_lanes.len() != expected { return false; }
-        for lane in &self.retention_lanes {
-            let Some(node) = self.nodes.iter().find(|node| node.identity == lane.node) else { return false; };
-            if lane.retention_slot == 0 || lane.retention_slot > node.retention_slots
-                || !identities.insert((lane.node.node_id.as_str(), lane.retention_slot))
-                || (lane.phase == LanePhase::Exhausted) != lane.current().is_none()
-                || !valid_last_retired(lane, self)
-            { return false; }
-            if !self.valid_lane_records(lane) { return false; }
+        let mut index = 0;
+        let mut valid = true;
+        while valid && index < self.retention_lanes.len() {
+            let lane = &self.retention_lanes[index];
+            if let Some(node) = self.nodes.iter().find(|node| node.identity == lane.node) {
+                valid = lane.retention_slot != 0 && lane.retention_slot <= node.retention_slots
+                    && identities.insert((lane.node.node_id.as_str(), lane.retention_slot))
+                    && (lane.phase == LanePhase::Exhausted) == lane.current().is_none()
+                    && valid_last_retired(lane, self);
+                if valid { valid = self.valid_lane_records(lane); }
+            } else {
+                valid = false;
+            }
+            // The guard established index < length, so this cannot wrap.
+            index += 1;
         }
-        true
+        valid
     }
     /// Separate the inner ordered scan for the fixed Aeneas loop prepass.
     /// Same records, first refusal, count and lane checks; no host effects.
     fn valid_lane_records(&self, lane: &RetentionLane) -> bool {
         let mut count = 0;
-        for record in &self.sandboxes {
-            let Some(first) = record.operations.first() else { return false; };
-            if first.intent().request.binding.node != lane.node || first.intent().retention.slot != lane.retention_slot {
-                continue;
+        let mut index = 0;
+        let mut valid = true;
+        while valid && index < self.sandboxes.len() {
+            let record = &self.sandboxes[index];
+            if let Some(first) = record.operations.first() {
+                if first.intent().request.binding.node == lane.node && first.intent().retention.slot == lane.retention_slot {
+                    count += 1;
+                    valid = count <= 1 && lane.current().map(|w| w.get()) == Some(first.intent().retention.window.get())
+                        && lane.phase != LanePhase::Exhausted
+                        && (lane.phase != LanePhase::ClosePending || terminal(record).is_some());
+                }
+            } else {
+                valid = false;
             }
-            count += 1;
-            if count > 1 || lane.current().map(|w| w.get()) != Some(first.intent().retention.window.get())
-                || lane.phase == LanePhase::Exhausted
-                || (lane.phase == LanePhase::ClosePending && terminal(record).is_none())
-            { return false; }
+            index += 1;
         }
-        count != 0 || lane.phase != LanePhase::ClosePending
+        valid && (count != 0 || lane.phase != LanePhase::ClosePending)
     }
     /// # Errors
     /// Operational drain never retires history or releases resources.
