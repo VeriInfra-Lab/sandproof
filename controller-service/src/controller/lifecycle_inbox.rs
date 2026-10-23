@@ -4,6 +4,7 @@ mod access;
 pub(in crate::controller) mod audit;
 mod codec;
 mod renewal;
+mod validation;
 mod window;
 pub use audit::{LifecycleAudit, LifecycleAuditOperation};
 mod model;

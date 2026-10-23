@@ -10,6 +10,27 @@ mod work;
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
 pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 
+/// Original committed material expectation for readonly reopen after the
+/// source position has been released. It grants no restore, delete or access
+/// permission. The original journal must eventually provide this only after
+/// checking the saved full work, source/profile binding and manifest receipt.
+/// No constructor is exposed while that durable handoff is not implemented.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommittedCaptureExpectation {
+    work: FullCaptureWorkRequest,
+    manifest_digest: sandproof_protocol::lifecycle::ContentDigest,
+}
+impl CommittedCaptureExpectation {
+    #[must_use]
+    pub const fn work(&self) -> &FullCaptureWorkRequest {
+        &self.work
+    }
+    #[must_use]
+    pub const fn manifest_digest(&self) -> &sandproof_protocol::lifecycle::ContentDigest {
+        &self.manifest_digest
+    }
+}
+
 /// Reference to the protected, versioned `HostBootstrap` payload registered before
 /// the first V3 VM starts. `policy` hashes that actual immutable registration
 /// (node/boot/kernel/CPU set and details/microcode/fixed tool and CPU template),
