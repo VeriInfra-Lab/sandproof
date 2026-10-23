@@ -7,6 +7,8 @@ import io
 import json
 import os
 import shutil
+import shlex
+import sys
 import subprocess
 import tarfile
 import tempfile
@@ -137,6 +139,41 @@ class CommittedArchiveTests(unittest.TestCase):
             (self.root/'scripts/entry.sh').write_text('#!/bin/sh\nexit 1\n')
             self.commit()
             self.assertNotEqual(after_mode, key())
+
+    def test_shell_entry_passes_a_new_child_not_the_existing_temporary_parent(self):
+        # Exercise the real shell path and real component mkdir/archive path.
+        # A forbidden role stops before any native/proof command; all other
+        # shell consumers are explicitly synthetic fixtures, not acceptance.
+        entry = self.root/'scripts/verify-stage1-protocol.sh'
+        shutil.copy2(ROOT/'scripts/verify-stage1-protocol.sh', entry)
+        (self.root/'verification').mkdir()
+        digest = hashlib.sha256((self.root/'fixture.json').read_bytes()).hexdigest()
+        (self.root/'verification/stage1-protocol-inputs.sha256').write_text(digest+'  fixture.json\n')
+        runner = self.root/'entry-path-fixture.py'
+        runner.write_text(
+            'from pathlib import Path\nimport importlib.util,sys\n'
+            + 'p=Path(' + repr(str(HERE/'component.py')) + ')\n'
+            + 'spec=importlib.util.spec_from_file_location("entry_fixture",p)\n'
+            + 'module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\n'
+            + 'module.ROOT=Path(' + repr(str(self.root)) + ')\n'
+            + 'assert sys.argv[2]=="--output"\n'
+            + 'result=module.run(Path(sys.argv[3]),True)\n'
+            + 'assert result["complete"] is False and "native host role" in result["error"]\n'
+            + 'print("entry-output-new")\n')
+        python_entry = self.root/'scripts/python-entry.sh'
+        python_entry.write_text('#!/bin/sh\n'
+            + 'if [ "$1" = "tools/proof_native_suite.py" ]; then exit 0; fi\n'
+            + 'exec ' + shlex.quote(sys.executable) + ' ' + shlex.quote(str(runner)) + ' "$@"\n')
+        self.commit()
+        tmp = self.base/'entry-tmp'
+        tmp.mkdir()
+        result = subprocess.run(['bash', str(entry)], cwd=self.root, text=True, capture_output=True,
+            env=dict(os.environ, TMPDIR=str(tmp), SANDPROOF_ACCEPTANCE_ROLE='path-fixture-only'))
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn('entry-output-new', result.stdout)
+        outputs = list(tmp.glob('sandproof-stage1-protocol.*/reproduction/component-result.json'))
+        self.assertEqual(len(outputs), 1)
+        self.assertFalse(json.loads(outputs[0].read_text())['complete'])
 
     def test_formal_wrapper_cannot_replace_missing_shared_native_seal_with_bare_success(self):
         from tools import acceptance_receipts
