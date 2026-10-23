@@ -42,10 +42,13 @@ def main():
     evidence = args.destination / 'evidence'
     evidence.mkdir(exist_ok=False)
     profile = json.loads((assets / 'candidate.json').read_text())
+    from tools.check_redis_diagnostics_binding import check as check_diagnostics
+    diagnostic_review = check_diagnostics(repository, root)
     before = {name: digest(root / name) for name in profile['candidate_files']}
     results = []
     receipt = {'scope': 'source-bound isolated candidate extraction, not complete proof acceptance',
-               'base': profile['base_anchor'], 'candidate_inputs': before, 'results': results}
+               'base': profile['base_anchor'], 'candidate_inputs': before, 'results': results,
+               'diagnostic_source_review': diagnostic_review}
 
     def save():
         (evidence / 'replay.json').write_text(json.dumps(receipt, indent=2) + '\n')
@@ -87,7 +90,7 @@ def main():
         command = [charon, 'cargo', '--preset=aeneas', '--error-on-warnings', '--sysroot', 'default']
         for name in roots:
             command += ['--start-from', 'crate::' + name]
-        for name in ('eval', 'info', 'settings', 'trim_cr', 'split_colon'):
+        for name in ('eval', 'info', 'settings', 'trim_cr', 'split_colon', 'emit', 'Diagnostics'):
             command += ['--opaque', 'sandproof_storage_extract::store::storage_io::' + name]
         for name in ('sandproof_center_store', 'sandproof_protocol', 'sandproof_center_core'):
             command += ['--include', name]

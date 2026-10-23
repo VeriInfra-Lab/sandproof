@@ -653,7 +653,7 @@ def exampleConfig : store.StoreConfig :=
 
 def exampleLedger (replies : List LibraryReply) (requests : List LibraryRequest := []) : store.RedisLedger Unit :=
   ⟨⟨⟨1⟩, "proof-user", "proof-password"⟩, exampleConfig,
-    ⟨"proof-example", ⟨1⟩⟩, some ⟨1, replies, requests⟩, false, ()⟩
+    ⟨"proof-example", ⟨1⟩⟩, some ⟨1, replies, requests⟩, false, ⟨1, [], []⟩, ()⟩
 
 theorem same_option_ne (text : Str) :
     core.cmp.PartialEq.ne.trait_default

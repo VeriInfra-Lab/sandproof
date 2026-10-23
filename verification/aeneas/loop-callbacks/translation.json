@@ -1,0 +1,148 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_loop_callbacks_extract",
+  "functions": [
+    {
+      "def_id": 23,
+      "lean_name": "SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get_loop.body",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 22,
+        "end_line": 29
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get"
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get_loop",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 22,
+        "end_line": 29
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get"
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 20,
+        "end_line": 20
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.contains_key",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::contains_key",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 32,
+        "end_line": 32
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofLoopCallbacksRust.lookup",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandproof_loop_callbacks_extract::lookup",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 5, "end_line": 7 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofLoopCallbacksRust.contains",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandproof_loop_callbacks_extract::contains",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 10, "end_line": 12 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofLoopCallbacksRust.lookup_u64",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandproof_loop_callbacks_extract::lookup_u64",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 15, "end_line": 17 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofLoopCallbacksRust.contains_u64",
+      "lean_file": "SandproofLoopCallbacks/Funs.lean",
+      "rust_name": "sandproof_loop_callbacks_extract::contains_u64",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 20, "end_line": 22 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 2,
+      "lean_name": "SandproofLoopCallbacksRust.sandbox_controller_core.store.Store",
+      "lean_file": "SandproofLoopCallbacks/Types.lean",
+      "rust_name": "sandbox_controller_core::store::Store",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 6,
+        "end_line": 6
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}

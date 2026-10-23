@@ -1,0 +1,82 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_controller_service",
+  "functions": [
+    {
+      "def_id": 20,
+      "lean_name": "std.sync.poison.mutex.Mutex.get_mut",
+      "lean_file": "SandproofStdMutex/FunsExternal_Template.lean",
+      "rust_name": "std::sync::poison::mutex::{std::sync::poison::mutex::Mutex<T>}::get_mut",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/sync/poison/mutex.rs",
+        "begin_line": 664,
+        "end_line": 664
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofStdMutexRust.application.diagnostics.SerialMutex.get_mut",
+      "lean_file": "SandproofStdMutex/Funs.lean",
+      "rust_name": "sandproof_controller_service::application::diagnostics::{sandproof_controller_service::application::diagnostics::SerialMutex<T>}::get_mut",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/application/diagnostics.rs",
+        "begin_line": 116,
+        "end_line": 118
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 3,
+      "lean_name": "std.sync.poison.mutex.Mutex",
+      "lean_file": "SandproofStdMutex/TypesExternal_Template.lean",
+      "rust_name": "std::sync::poison::mutex::Mutex",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/sync/poison/mutex.rs",
+        "begin_line": 227,
+        "end_line": 227
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "std.sync.poison.PoisonError",
+      "lean_file": "SandproofStdMutex/TypesExternal_Template.lean",
+      "rust_name": "std::sync::poison::PoisonError",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/sync/poison.rs",
+        "begin_line": 194,
+        "end_line": 194
+      }
+    },
+    {
+      "def_id": 1,
+      "lean_name": "SandproofStdMutexRust.application.diagnostics.SerialMutex",
+      "lean_file": "SandproofStdMutex/Types.lean",
+      "rust_name": "sandproof_controller_service::application::diagnostics::SerialMutex",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/application/diagnostics.rs",
+        "begin_line": 110,
+        "end_line": 110
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}

@@ -17,6 +17,11 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
+NATIVE_SCHEMA = 2
+SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
+                   'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
+                   'SANDPROOF_WRITER_SOURCE_ARCHIVE',
+                   'SANDPROOF_LIBRARY_SOURCE_ARCHIVE')
 
 
 def sha(path):
@@ -110,6 +115,49 @@ def rules(root=ROOT):
                       'verification/fixtures/')) and not n.endswith('.lean'))}
 
 
+def contract_inputs(root):
+    """Root JSON contracts affect native checkers as well as formal proofs.
+
+    Include newly prepared candidates; retain tracked names so deletion fails
+    closed rather than silently dropping an input. Proof-only Lean/manifests
+    stay in the formal closure, not this native execution configuration.
+    """
+    names = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
+    selected = {n for n in names if n and Path(n).parent == Path('verification')
+                and Path(n).suffix == '.json'}
+    selected.update(str(p.relative_to(root)) for p in (root / 'verification').glob('*.json'))
+    result = {}
+    for name in sorted(selected):
+        path = root / name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('missing or non-regular native contract input: ' + name)
+        result[name] = sha(path)
+    return result
+
+
+def source_archive_inputs(environment=None):
+    """Content, not machine-specific paths, binds the three original archives."""
+    environment = os.environ if environment is None else environment
+    result = {}
+    for name in SOURCE_ARCHIVES:
+        value = environment.get(name)
+        if not value:
+            continue
+        path = Path(value)
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('missing or non-regular native source archive: ' + name)
+        result[name] = sha(path)
+    return result
+
+
+def current_native_seal(seal, runtime):
+    return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
+            and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0
+            and seal.get('rules') == rules() and seal.get('runtime') == runtime
+            and seal.get('contracts') == contract_inputs(ROOT)
+            and seal.get('source_archives') == source_archive_inputs())
+
+
 def native_key(label, command, source, root=ROOT, environment=None):
     # Absolute scratch paths do not change semantics, but argument order does.
     normalized = [str(c).replace(str(source), '$SOURCE') for c in command]
@@ -119,8 +167,10 @@ def native_key(label, command, source, root=ROOT, environment=None):
         'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_TARGET', 'RUSTC_BOOTSTRAP',
         'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER','CC','CXX','AR','LD','CFLAGS','CPPFLAGS',
         'PKG_CONFIG','SQLITE3','LIBSQLITE3')) or k in ('RUSTC','RUSTDOC','CARGO_BUILD_RUSTC')}
-    result=dict(schema=1, label=label, command=normalized, options=options,
+    result=dict(schema=NATIVE_SCHEMA, label=label, command=normalized, options=options,
                 rust=rust_inputs(source), rules=rules(root),
+                contracts=dict(review=contract_inputs(root), source=contract_inputs(source)),
+                source_archives=source_archive_inputs(env),
                 runtime=json.loads(runtime_path.read_text()))
     if label == 'functional':
         result['repository']=repository_inputs(source)
@@ -148,9 +198,8 @@ def load_success(directory, key):
 def validate_native(cache):
     cache = Path(cache)
     seal = json.loads((cache/'complete.json').read_text())
-    if (seal.get('complete') is not True or seal.get('exit_code') != 0
-            or seal.get('rules') != rules() or not seal.get('commands')
-            or seal.get('runtime') != json.loads((cache/'runtime.json').read_text())):
+    if (not current_native_seal(seal,json.loads((cache/'runtime.json').read_text()))
+            or not seal.get('commands')):
         raise ValueError('native suite is missing, incomplete or has changed rules/tools')
     for identity, expected in seal['commands'].items():
         if len(identity)!=64 or set(identity)-set('0123456789abcdef'):
@@ -200,8 +249,7 @@ def native_run(label, command, source, log, environment=None, expected=0):
     entry = cache / 'commands' / digest(key)
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
         seal = json.loads((cache / 'complete.json').read_text())
-        if (seal.get('complete') is not True or seal.get('exit_code') != 0
-                or seal.get('rules') != rules() or seal.get('runtime') != key['runtime']):
+        if not current_native_seal(seal,key['runtime']):
             raise ValueError('native suite missing, incomplete or has different acceptance rules')
         receipt = load_success(entry, key)
         if receipt is None or receipt.get('expected') != expected:
@@ -249,9 +297,7 @@ def native_case(label, source, output, action=None):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
         seal = json.loads((cache / 'complete.json').read_text())
         receipt = load_success(entry, key)
-        if (seal.get('complete') is not True or seal.get('exit_code') != 0
-                or seal.get('rules') != rules() or receipt is None
-                or seal.get('runtime') != key['runtime']
+        if (not current_native_seal(seal,key['runtime']) or receipt is None
                 or seal['commands'].get(entry.name) != sha(entry / 'receipt.json')):
             raise ValueError('missing/incomplete/changed native component: ' + label)
         return receipt

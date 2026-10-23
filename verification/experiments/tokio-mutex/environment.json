@@ -1,0 +1,160 @@
+{
+  "contract_id": "A6-B2-tokio-mutex-original-borrowed-guard",
+  "proof_kind": "conditional-library-event-model-with-finite-production-wiring",
+  "source_integration": "139f4db6990f67c1ed9cd28c4ce28af707d469f9",
+  "async_rust_refinement": false,
+  "owned_or_map_api": false,
+  "fifo_or_unconditional_progress": false,
+  "poison_result": false,
+  "panic_rolls_back_payload": false,
+  "production_sources": {
+    "sandbox-guest-service/src/session.rs": "b1c83a980caeb19639f0e391565ae401f974a4c83cb434c6371877810124561a",
+    "sandbox-guest-service/src/command.rs": "95a02eb7f54860c8901904f3ac60ebb7de1dac20588a9deee8f1ae8fb4a63c6c",
+    "sandbox-guest-service/src/command/driver.rs": "7657fe7bb09e9d2579131b86f0f9f4efb2644095400c46b610e0fa30bbe44083"
+  },
+  "tokio": {
+    "version": "1.49.0",
+    "sources": {
+      "src/sync/mutex.rs": "f5ca224054d774db86f735e5400fde606aa6acb6e84a711598678082f562af85",
+      "src/sync/batch_semaphore.rs": "714cbd7f724101891200c0c588b384aad92d3815bc1ee94973088d1bc5c36a60"
+    }
+  },
+  "use_points": [
+    {
+      "id": "init.new",
+      "file": "sandbox-guest-service/src/session.rs",
+      "ordered_anchors": [
+        "init: Mutex::new(()),"
+      ],
+      "original_object": "Session.shared.init",
+      "caller_obligations": "V8: limits and initialization; the protected payload is (), current is another RwLock"
+    },
+    {
+      "id": "init.apply",
+      "file": "sandbox-guest-service/src/session.rs",
+      "ordered_anchors": [
+        "let _init = self",
+        ".try_lock()",
+        "let (current_hash, identity) = {",
+        "self.metadata.fetch().await?",
+        "self.shared.current.write().await",
+        "apply_defaults("
+      ],
+      "original_object": "same original init and _init scope",
+      "caller_obligations": "V8: token, metadata, defaults and current replacement; cancellation has actual Drop or partial effects, no rollback"
+    },
+    {
+      "id": "input.new",
+      "file": "sandbox-guest-service/src/command.rs",
+      "ordered_anchors": [
+        "input: tokio::sync::Mutex::new(None),"
+      ],
+      "original_object": "command::Shared.input",
+      "caller_obligations": "V8: exact process/input identity; no input installed at construction"
+    },
+    {
+      "id": "input.write",
+      "file": "sandbox-guest-service/src/command.rs",
+      "ordered_anchors": [
+        "async fn write_channel(",
+        "let mut input = self",
+        ".try_lock()",
+        "self.require_started()?;",
+        "tokio::select!",
+        "input.take();",
+        "let mut remaining = bytes;",
+        "writer.write_pty(identity, chunk).await",
+        "tokio::task::yield_now().await;"
+      ],
+      "original_object": "same original input and writer guard across slices/await",
+      "caller_obligations": "V8: actual bytes, delivered prefix, I/O errors/unknown, actual select order; take has its own resource Drop"
+    },
+    {
+      "id": "input.close",
+      "file": "sandbox-guest-service/src/command.rs",
+      "ordered_anchors": [
+        "pub fn close_input(",
+        "let mut input = self",
+        ".try_lock()",
+        "self.require_started()?;",
+        ".close_input(identity)"
+      ],
+      "original_object": "same original input and borrowed guard",
+      "caller_obligations": "V8: identity, started/channel checks, port close and resource Drop effects"
+    },
+    {
+      "id": "input.install",
+      "file": "sandbox-guest-service/src/command/driver.rs",
+      "ordered_anchors": [
+        "*shared.input.lock().await = process.take_input(shared.identity).ok();"
+      ],
+      "original_object": "same original input",
+      "caller_obligations": "V8: original process release/input and Started publication; take_input error becomes None, Started does not prove Some input; replacing a prior payload has separate Drop"
+    },
+    {
+      "id": "input.finish",
+      "file": "sandbox-guest-service/src/command/driver.rs",
+      "ordered_anchors": [
+        "fn finish(",
+        "shared.input.try_lock()",
+        "input.take();",
+        "state.completion = Some(result);"
+      ],
+      "original_object": "same original input",
+      "caller_obligations": "V8: completion may publish even on Busy; cannot infer take or FD closure from completion"
+    }
+  ],
+  "model_files": [
+    "SandboxModel/Boundaries/TokioMutex.lean",
+    "SandboxModel/Boundaries/TokioMutex/Core.lean",
+    "SandboxModel/Boundaries/TokioMutex/Examples.lean",
+    "SandboxModel/Boundaries/TokioMutex/Audit.lean"
+  ],
+  "audits": [
+    "SandboxModel.Boundaries.TokioMutexContract.initial_safe",
+    "SandboxModel.Boundaries.TokioMutexContract.step_refines_existing_lock",
+    "SandboxModel.Boundaries.TokioMutexContract.step_keeps_empty_readers",
+    "SandboxModel.Boundaries.TokioMutexContract.step_safe",
+    "SandboxModel.Boundaries.TokioMutexContract.history_safe",
+    "SandboxModel.Boundaries.TokioMutexContract.history_refines_existing_lock",
+    "SandboxModel.Boundaries.TokioMutexContract.returned_guard_is_original",
+    "SandboxModel.Boundaries.TokioMutexContract.live_access_is_exclusive",
+    "SandboxModel.Boundaries.TokioMutexContract.held_guard_blocks_return",
+    "SandboxModel.Boundaries.TokioMutexContract.original_lock_identity",
+    "SandboxModel.Boundaries.TokioMutexContract.release_invalidates_access",
+    "SandboxModel.Boundaries.TokioMutexContract.forget_invalidates_access",
+    "SandboxModel.Boundaries.TokioMutexContract.forget_keeps_exclusion",
+    "SandboxModel.Boundaries.TokioMutexContract.normal_release_keeps_inline_payload",
+    "SandboxModel.Boundaries.TokioMutexContract.invariant_from_caller_writes",
+    "SandboxModel.Boundaries.TokioMutexContract.acquired_use_is_protected",
+    "SandboxModel.Boundaries.TokioMutexContract.early_release_rejected_by_same_protected_use",
+    "SandboxModel.Boundaries.TokioMutexContract.Examples.nonempty_legal_history",
+    "SandboxModel.Boundaries.TokioMutexContract.Examples.own_mutation_and_release_do_not_rollback",
+    "SandboxModel.Boundaries.TokioMutexContract.Examples.retained_use_is_legal",
+    "SandboxModel.Boundaries.TokioMutexContract.Examples.detached_early_release_is_rejected"
+  ],
+  "guarantees": [
+    "Normal acquire returns exclusive usable access to the same original borrowed lock; linear Rust ownership is A6/B2 input.",
+    "Busy is allowed for an unpolled reservation; do not infer an active callback or promise immediate success from no projected holder.",
+    "Waiting acquire cancellation removes no other returned guard; queue/runtime changes and other steps are not erased.",
+    "Normal guard release ends that access and preserves inline payload only while the original lock survives.",
+    "Forget ends usable access while retaining exclusion. Normal unwind may unlock; already made writes are not rolled back.",
+    "Caller supplies each actual payload write relation including intermediate effects. External heaps/IO/FD/permits/last Arc are separate."
+  ],
+  "base_inputs": {
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "lakefile.toml": "233a66b24d674e3b5402973c78fcbb1c5f04f91a1b9b74347720d1dbe5b6427f",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "SandboxModel/Boundaries/TokioRwLock/Core.lean": "59614152d1b9253b79e185afb178ca43d87b0b1450a3c9b5e468dfc7f28adbd8",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+    "sandbox-guest-service/Cargo.toml": "975189ff30cd9172bb5d2f7ccb0191940cdcfd95408b47951212a3dd85a53d01",
+    "sandbox-guest-runtime/Cargo.toml": "99930d77b9d08ac275e5b48fb195fbd21d18116d4be4de5cf0e3b2c760c826f3",
+    "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7"
+  }
+}

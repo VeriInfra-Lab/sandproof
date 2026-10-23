@@ -3,6 +3,8 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,7 +28,8 @@ class ReceiptTests(unittest.TestCase):
         self.cache=self.base/'evidence';self.cache.mkdir()
         receipts.write_json(self.cache/'runtime.json',{'unit_test_fixture':True})
         self.env=mock.patch.dict(os.environ,{'SANDPROOF_NATIVE_EVIDENCE':str(self.cache),
-            'SANDPROOF_ACCEPTANCE_ROLE':'native'})
+            'SANDPROOF_ACCEPTANCE_ROLE':'native',
+            **{name:'' for name in receipts.SOURCE_ARCHIVES}})
         self.env.start();self.addCleanup(self.env.stop)
         self.command=[sys.executable,'-c','print("actual native fixture ran")']
         self.log=self.base/'command.log'
@@ -36,8 +39,9 @@ class ReceiptTests(unittest.TestCase):
         receipts.native_run('fixture',command,self.source,self.log,expected=expected)
         key=receipts.native_key('fixture',command,self.source)
         entry=self.cache/'commands'/receipts.digest(key)
-        receipts.write_json(self.cache/'complete.json',dict(complete=True,exit_code=0,
+        receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,complete=True,exit_code=0,
             rules=receipts.rules(),runtime={'unit_test_fixture':True},
+            contracts=receipts.contract_inputs(receipts.ROOT),source_archives=receipts.source_archive_inputs(),
             commands={entry.name:receipts.sha(entry/'receipt.json')}))
         return command,key,entry
 
@@ -74,7 +78,8 @@ class ReceiptTests(unittest.TestCase):
     def test_missing_or_incomplete_seal_cannot_replay(self):
         command,_,_=self.publish();os.environ['SANDPROOF_ACCEPTANCE_ROLE']='formal'
         seal=json.loads((self.cache/'complete.json').read_text())
-        for field,value in [('complete',False),('exit_code',17),('rules',{})]:
+        for field,value in [('complete',False),('exit_code',17),('rules',{}),
+                            ('schema',1),('contracts',{}),('source_archives',{'changed':'0'*64})]:
             bad=copy.deepcopy(seal);bad[field]=value
             receipts.write_json(self.cache/'complete.json',bad)
             with self.subTest(field=field),self.assertRaises(ValueError):
@@ -141,6 +146,95 @@ class ReceiptTests(unittest.TestCase):
         self.assertNotEqual(before,after)
         self.assertIn('sandbox-added/src/control.rs',after)
         self.assertIn('.cargo/config.toml',after)
+
+    def add_contract(self, name='fixture-environment.json', value='first'):
+        path=self.source/'verification'/name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps({'normal_result':value}))
+        subprocess.run(['git','add',str(path.relative_to(self.source))],cwd=self.source,check=True)
+        return path
+
+    def test_root_contract_change_reexecutes_the_actual_command(self):
+        path=self.add_contract()
+        command=[sys.executable,'-c',
+            'import json;print(json.load(open("verification/fixture-environment.json"))["normal_result"])']
+        receipts.native_run('contract',command,self.source,self.log)
+        self.assertEqual(self.log.read_text().strip(),'first')
+        path.write_text('{"normal_result":"second"}')
+        receipts.native_run('contract',command,self.source,self.log)
+        self.assertEqual(self.log.read_text().strip(),'second')
+        path.unlink()
+        with self.assertRaisesRegex(ValueError,'native contract input'):
+            receipts.native_run('contract',command,self.source,self.log)
+
+    def test_component_case_reuses_identical_contract_and_reexecutes_changed_contract(self):
+        path=self.add_contract();output=self.base/'component';output.mkdir();calls=[]
+        def execute():
+            calls.append(json.loads(path.read_text())['normal_result'])
+            (output/'original.log').write_text(calls[-1])
+        receipts.native_case('contract',self.source,output,execute)
+        receipts.native_case('contract',self.source,output,execute)
+        self.assertEqual(calls,['first'])
+        path.write_text('{"normal_result":"second"}')
+        receipts.native_case('contract',self.source,output,execute)
+        self.assertEqual(calls,['first','second'])
+
+    def test_review_and_candidate_contracts_addition_removal_and_bytes_are_inputs(self):
+        path=self.add_contract();key=receipts.native_key('fixture',self.command,self.source,root=self.source)
+        self.assertIn('verification/fixture-environment.json',key['contracts']['review'])
+        self.assertIn('verification/fixture-environment.json',key['contracts']['source'])
+        added=self.source/'verification/new-contract.json';added.write_text('{}')
+        self.assertNotEqual(key,receipts.native_key('fixture',self.command,self.source,root=self.source))
+        added.unlink()
+        self.assertEqual(key,receipts.native_key('fixture',self.command,self.source,root=self.source))
+        other=self.base/'review';shutil.copytree(self.source,other)
+        before=receipts.native_key('fixture',self.command,self.source,root=other)
+        (other/'verification/fixture-environment.json').write_text('{"normal_result":"other"}')
+        self.assertNotEqual(before,receipts.native_key('fixture',self.command,self.source,root=other))
+        original=path.read_bytes();path.unlink();path.symlink_to(other/'verification/fixture-environment.json')
+        with self.assertRaisesRegex(ValueError,'native contract input'):
+            receipts.native_key('fixture',self.command,self.source)
+        path.unlink();path.write_bytes(original)
+
+    def test_same_archive_bytes_reuse_but_changed_bytes_execute_again(self):
+        archive=self.base/'original.tar';archive.write_text('first')
+        name=receipts.SOURCE_ARCHIVES[0];os.environ[name]=str(archive)
+        command=[sys.executable,'-c','import os;print(open(os.environ["'+name+'"]).read())']
+        with mock.patch.object(receipts.subprocess,'run',wraps=subprocess.run) as run:
+            receipts.native_run('archive',command,self.source,self.log)
+            relocated=self.base/'relocated.tar';shutil.copyfile(archive,relocated)
+            os.environ[name]=str(relocated)
+            receipts.native_run('archive',command,self.source,self.log)
+            self.assertEqual(len([c for c in run.call_args_list if c.args[0]==command]),1)
+            relocated.write_text('second')
+            receipts.native_run('archive',command,self.source,self.log)
+            self.assertEqual(len([c for c in run.call_args_list if c.args[0]==command]),2)
+            self.assertEqual(self.log.read_text().strip(),'second')
+            relocated.unlink()
+            with self.assertRaisesRegex(ValueError,'native source archive'):
+                receipts.native_run('archive',command,self.source,self.log)
+            relocated.symlink_to(archive)
+            with self.assertRaisesRegex(ValueError,'native source archive'):
+                receipts.native_run('archive',command,self.source,self.log)
+
+    def test_formal_admission_rejects_old_seal_schema_and_changed_archive(self):
+        archive=self.base/'original.tar';archive.write_text('first')
+        os.environ[receipts.SOURCE_ARCHIVES[0]]=str(archive)
+        self.publish();self.assertTrue(receipts.validate_native(self.cache)['complete'])
+        seal=json.loads((self.cache/'complete.json').read_text());seal['schema']=1
+        receipts.write_json(self.cache/'complete.json',seal)
+        with self.assertRaises(ValueError):receipts.validate_native(self.cache)
+        seal['schema']=receipts.NATIVE_SCHEMA;receipts.write_json(self.cache/'complete.json',seal)
+        archive.write_text('changed')
+        with self.assertRaises(ValueError):receipts.validate_native(self.cache)
+
+    def test_native_contract_binding_does_not_turn_proof_only_edits_into_native_inputs(self):
+        self.add_contract();key=receipts.native_key('fixture',self.command,self.source,root=self.source)
+        (self.source/'verification/fixture-inputs.sha256').write_text('not consumed execution configuration')
+        (self.source/'README.md').write_text('updated report')
+        (self.source/'verification/Proof.lean').write_text('-- changed proof')
+        subprocess.run(['git','add','.'],cwd=self.source,check=True)
+        self.assertEqual(key,receipts.native_key('fixture',self.command,self.source,root=self.source))
 
     def test_functional_acceptance_cannot_reuse_stale_documents(self):
         doc=self.source/'README.md';doc.write_text('[valid](Cargo.toml)\n')
@@ -222,14 +316,100 @@ class ClosureTests(unittest.TestCase):
 
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
-            'task-contract','revocation-contract','owned-message','notify','joinset','tunnel','data-drain','sqlite','foundations','network',
-            'first-chain-linux','first-chain','storage'})
+            'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
+            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
         retained=(root/'scripts/verify-retained-proofs.sh').read_text()
         self.assertIn("rg --files SandboxModel -g '*.lean'",retained)
         self.assertIn('verification/ProofAudit.lean',retained)
         self.assertIn('tools/proof_services.py',retained)
+
+    def test_every_formal_component_requirement_is_reachable_through_cli(self):
+        root = Path(__file__).resolve().parents[2]
+        required = set()
+        for entry in (root / 'scripts').glob('verify-*.sh'):
+            required.update(re.findall(r'tools/proof_native_suite\.py require ([a-z][a-z0-9-]*)',
+                                       entry.read_text()))
+        self.assertIn('condvar', required)
+        self.assertIn('tokio-rwlock', required)
+        self.assertIn('child-observation', required)
+        self.assertIn('callback-state', required)
+        self.assertIn('bounded-writer', required)
+        for case in sorted(required):
+            with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
+                proof_native_suite.main(['require', case])
+                admit.assert_called_once_with(case, proof_native_suite.ROOT, None)
+
+    def test_sqlite_view_retains_the_complete_parent_without_duplicate_libraries(self):
+        from tools.check_sqlite_extraction import audit_surface
+        repository=Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            shutil.copytree(repository/'verification/aeneas/sqlite',root/'verification/aeneas/sqlite')
+            base=(repository/'lake-first-chain.toml').read_text()
+            view=root/'lake-sqlite.toml'
+            (root/'lake-first-chain.toml').write_text(base)
+            view.write_text(base)
+            self.assertEqual(len(audit_surface(root)),18)
+            extension='\n[[lean_lib]]\nname = "SandproofSqlite"\nsrcDir = "verification/aeneas/sqlite"\n'
+            view.write_text(base.rstrip()+'\n'+extension)
+            with self.assertRaisesRegex(ValueError,'preserve the full'):
+                audit_surface(root)
+            view.write_text(base.replace('name = "SandproofSchemaDomains"','name = "WrongLibrary"'))
+            with self.assertRaisesRegex(ValueError,'preserve the full'):
+                audit_surface(root)
+            without=base.replace(extension,'')
+            self.assertNotEqual(without,base)
+            (root/'lake-first-chain.toml').write_text(without)
+            view.write_text(without.rstrip()+'\n'+extension)
+            self.assertEqual(len(audit_surface(root)),18)
+            invalid=base.replace('srcDir = "verification/aeneas/sqlite"','srcDir = "wrong-source"')
+            (root/'lake-first-chain.toml').write_text(invalid)
+            view.write_text(invalid)
+            with self.assertRaisesRegex(ValueError,'original unique source'):
+                audit_surface(root)
+
+    def test_audit_inventory_includes_separate_negative_roots_and_requires_their_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            fixtures={
+                'verification/ProofAudit.lean':'Root.accepts',
+                'SandboxModel/Actual/Audit.lean':'Actual.safe',
+                'verification/aeneas/Actual/Audit.lean':'Generated.refines',
+                **{name:'Wrong.rejected'+str(index) for index,name in enumerate(proof_batch.EXTRA_AUDIT_FILES)}}
+            for name, declaration in fixtures.items():
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text('#audit_controller_proof '+declaration+'\n')
+            self.assertEqual(proof_batch.expected_audits(root),set(fixtures.values()))
+            (root/proof_batch.EXTRA_AUDIT_FILES[0]).unlink()
+            with self.assertRaises(OSError):proof_batch.expected_audits(root)
+
+
+class ExecutionMappingTests(unittest.TestCase):
+    def test_required_namespace_files_are_content_bound_and_cannot_be_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            environment={}
+            for name in ['SANDPROOF_FORMAL_WRAPPER','SANDPROOF_WRITER_LEASE','SANDPROOF_PROOF_BWRAP']:
+                path=root/name;path.write_text('fixture for '+name)
+                environment[name]=str(path)
+            with mock.patch.object(proof_batch,'MODULES',('bounded-writer',)), mock.patch.dict(os.environ,environment):
+                before=proof_batch.execution_runtime_inputs()
+                self.assertEqual(set(before),{'outer_wrapper','directory_lease','namespace_binary'})
+                for name in environment:
+                    path=Path(environment[name]);original=path.read_bytes()
+                    path.write_bytes(original+b' changed')
+                    self.assertNotEqual(before,proof_batch.execution_runtime_inputs())
+                    path.write_bytes(original)
+                    path.unlink()
+                    with self.assertRaises((OSError,ValueError)):
+                        proof_batch.execution_runtime_inputs()
+                    path.write_bytes(original)
+            with mock.patch.object(proof_batch,'MODULES',('bounded-writer',)), mock.patch.dict(os.environ,{},clear=True):
+                with self.assertRaises(KeyError):proof_batch.execution_runtime_inputs()
+            with mock.patch.object(proof_batch,'MODULES',('network',)):
+                self.assertEqual(proof_batch.execution_runtime_inputs(),{})
 
 
 class FormalReuseTests(unittest.TestCase):
@@ -271,6 +451,49 @@ class FormalReuseTests(unittest.TestCase):
         receipts.write_json(entry/'receipt.json',data)
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
 
+    def test_external_raw_source_and_archive_are_required_for_reuse(self):
+        work=self.base/'external-module-work';work.mkdir()
+        archive=work/'baseline.tar.gz';archive.write_bytes(b'fixture source archive')
+        code=('from pathlib import Path; import tempfile; '
+              'p=Path(tempfile.mkdtemp(prefix="run-",dir='+repr(str(work))+')); '
+              '(p/"wrong.rs").write_text("pub fn wrong() {}\\n"); '
+              '(p/"original.llbc").write_text("actual raw fixture"); '
+              'print("external fixture executed")')
+        command=[sys.executable,'-c',code]
+        def inputs(*_):return [work],{str(archive):receipts.sha(archive)}
+        with mock.patch.object(proof_batch,'external_component_paths',side_effect=inputs):
+            first=proof_batch.step('network',command,self.source)
+            data=json.loads(Path(first['receipt']).read_text())
+            raws=[Path(n) for n in data['evidence'] if n.endswith('wrong.rs')]
+            self.assertEqual(len(raws),1)
+            self.assertIn(str(archive),data['evidence'])
+            self.assertTrue(proof_batch.step('network',command,self.source)['reused'])
+            raws[0].write_text('corrupt actual wrong source')
+            self.assertFalse(proof_batch.step('network',command,self.source)['reused'])
+            archive.write_bytes(b'changed archive')
+            self.assertFalse(proof_batch.step('network',command,self.source)['reused'])
+
+    def test_new_required_external_evidence_cannot_reuse_an_unbound_record(self):
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+        raw=self.base/'reviewed-stdlib.rs';raw.write_text('actual reviewed source')
+        required={str(raw):receipts.sha(raw)}
+        with mock.patch.object(proof_batch,'external_component_paths',return_value=([],required)):
+            current=proof_batch.step('network',self.command,self.source)
+            self.assertFalse(current['reused'])
+            self.assertEqual(json.loads(Path(current['receipt']).read_text())['evidence'][str(raw)],receipts.sha(raw))
+            self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_external_evidence_change_during_run_never_publishes_success(self):
+        raw=self.base/'reviewed-stdlib.rs';raw.write_text('before execution')
+        expected=receipts.sha(raw)
+        command=[sys.executable,'-c','from pathlib import Path;Path('+repr(str(raw))+').write_text("changed while running")']
+        with mock.patch.object(proof_batch,'external_component_paths',return_value=([],{str(raw):expected})):
+            with self.assertRaisesRegex(ValueError,'external raw evidence changed'):
+                proof_batch.step('network',command,self.source)
+            key=proof_batch.module_key('network',command,self.source)
+            entry=Path(os.environ['SANDPROOF_FORMAL_CACHE'])/'modules/network'/receipts.digest(key)
+            self.assertFalse((entry/'receipt.json').exists())
+
     def test_existing_fixed_output_is_snapshotted_and_required_for_reuse(self):
         relative='artifacts/existing/source.llbc'
         raw=self.source/relative;raw.parent.mkdir(parents=True);raw.write_text('original raw fixture')
@@ -302,6 +525,18 @@ class FormalReuseTests(unittest.TestCase):
         runtime=Path(os.environ['SANDPROOF_FORMAL_RUNTIME'])
         receipts.write_json(runtime,{'unit_test_fixture':'tool changed'})
         self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+
+    def test_sealed_contract_archive_and_schema_changes_reexecute_the_module(self):
+        # This fixture exercises the internal cache step, not native admission.
+        seal=dict(schema=2,rules={},rust={},runtime={},commands={},contracts={},source_archives={})
+        receipts.write_json(self.cache/'complete.json',seal)
+        self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
+        self.assertTrue(proof_batch.step('network',self.command,self.source)['reused'])
+        for field,value in [('contracts',{'verification/fixture.json':'1'*64}),
+                            ('source_archives',{'original':'2'*64}),('schema',3)]:
+            seal[field]=value;receipts.write_json(self.cache/'complete.json',seal)
+            with self.subTest(field=field):
+                self.assertFalse(proof_batch.step('network',self.command,self.source)['reused'])
 
     def test_new_functional_document_check_does_not_discard_an_unchanged_proof(self):
         seal=dict(rules={},rust={},runtime={},commands={})

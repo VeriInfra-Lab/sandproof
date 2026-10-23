@@ -1,0 +1,331 @@
+{
+  "contract_id": "A6-B2-tokio-rwlock-original-read-lease",
+  "proof_kind": "conditional-library-event-model-with-finite-production-wiring",
+  "source_integration": "e576a8475043c2d21b68231b7f6b1ead09be1952",
+  "model_modules": [
+    "Core",
+    "Mapping",
+    "Examples"
+  ],
+  "theorems": [
+    "SandboxModel.Boundaries.TokioRwLockContract.initial_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.read_acquisition_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.write_acquisition_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.read_release_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.read_forget_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.write_release_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.write_forget_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.step_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.history_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.read_return_owns_original",
+    "SandboxModel.Boundaries.TokioRwLockContract.write_return_owns_original",
+    "SandboxModel.Boundaries.TokioRwLockContract.read_write_exclusive",
+    "SandboxModel.Boundaries.TokioRwLockContract.two_live_writers_are_same",
+    "SandboxModel.Boundaries.TokioRwLockContract.reader_blocks_write_return",
+    "SandboxModel.Boundaries.TokioRwLockContract.released_reader_cannot_access",
+    "SandboxModel.Boundaries.TokioRwLockContract.forgotten_reader_cannot_access",
+    "SandboxModel.Boundaries.TokioRwLockContract.forgotten_reader_still_blocks_write",
+    "SandboxModel.Boundaries.TokioRwLockContract.forgotten_writer_still_blocks_read",
+    "SandboxModel.Boundaries.TokioRwLockContract.release_keeps_original_payload",
+    "SandboxModel.Boundaries.TokioRwLockContract.step_keeps_original_lock",
+    "SandboxModel.Boundaries.TokioRwLockContract.step_preserves_payload_invariant",
+    "SandboxModel.Boundaries.TokioRwLockContract.history_preserves_payload_invariant",
+    "SandboxModel.Boundaries.TokioRwLockContract.step_keeps_payload_while_reader",
+    "SandboxModel.Boundaries.TokioRwLockContract.read_history_owns_last",
+    "SandboxModel.Boundaries.TokioRwLockContract.read_history_is_history",
+    "SandboxModel.Boundaries.TokioRwLockContract.retained_reader_keeps_payload",
+    "SandboxModel.Boundaries.TokioRwLockContract.mapped_guard_is_original",
+    "SandboxModel.Boundaries.TokioRwLockContract.map_keeps_original_state",
+    "SandboxModel.Boundaries.TokioRwLockContract.map_failure_returns_original_guard",
+    "SandboxModel.Boundaries.TokioRwLockContract.map_success_returns_original_view",
+    "SandboxModel.Boundaries.TokioRwLockContract.mapped_reply_still_owns_read",
+    "SandboxModel.Boundaries.TokioRwLockContract.mapped_reply_blocks_writer",
+    "SandboxModel.Boundaries.TokioRwLockContract.dropping_mapped_reply_invalidates_original",
+    "SandboxModel.Boundaries.TokioRwLockContract.retained_mapped_snapshot",
+    "SandboxModel.Boundaries.TokioRwLockContract.mapped_reply_keeps_same_protected_read",
+    "SandboxModel.Boundaries.TokioRwLockContract.early_release_rejected_by_same_protected_read",
+    "SandboxModel.Boundaries.TokioRwLockContract.Examples.one_reader_safe",
+    "SandboxModel.Boundaries.TokioRwLockContract.Examples.two_readers_are_legal",
+    "SandboxModel.Boundaries.TokioRwLockContract.Examples.two_live_readers_coexist",
+    "SandboxModel.Boundaries.TokioRwLockContract.Examples.drop_one_reader_keeps_the_other_and_blocks_writer",
+    "SandboxModel.Boundaries.TokioRwLockContract.Examples.copy_then_unlock_allows_a_real_model_write",
+    "SandboxModel.Boundaries.TokioRwLockContract.Examples.completed_writer_is_not_a_retained_snapshot"
+  ],
+  "scope": {
+    "async_rust_refinement": false,
+    "fifo_or_unconditional_progress": false,
+    "queue_reservations_are_not_live_guards": true,
+    "payload_frame_requires_surviving_original_lock": true,
+    "linear_mapping_does_not_copy_guard_ownership": true,
+    "caller_provides_write_relation_and_actual_B2_events": true
+  },
+  "production_sources": {
+    "sandbox-guest-service/src/session.rs": "b1c83a980caeb19639f0e391565ae401f974a4c83cb434c6371877810124561a",
+    "sandbox-guest-service/src/session/file_authorization.rs": "53171f0af7ca0932d8cbc62996ba0f1902e5255e77462bd07804433387aa28ac"
+  },
+  "tokio": {
+    "version": "1.49.0",
+    "reviewed_sources": {
+      "src/sync/rwlock.rs": "41258ad275ad40e0ab87092fc05a6af19ccd317bc22f4502638d8656e543f7f2",
+      "src/sync/rwlock/read_guard.rs": "ef65da1df5042f809d391b595b59bcb32b0105a90b17b30d912ef0c4713c585e",
+      "src/sync/rwlock/owned_read_guard.rs": "f6678f20bef3c1e4602f6ea1ae939235aa502471bfb55161f8f1b353d8b2c3e6",
+      "src/sync/rwlock/write_guard.rs": "adce3b45dc7b2a985cb974abbec3a9cfd2adfd0bad9b3bcd7b88c447215da55e",
+      "src/sync/batch_semaphore.rs": "714cbd7f724101891200c0c588b384aad92d3815bc1ee94973088d1bc5c36a60"
+    }
+  },
+  "use_points": [
+    {
+      "id": "current.construct",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "    pub fn new(metadata: M, limits: InitLimits)",
+        "    #[must_use]\n    pub const fn limits"
+      ],
+      "anchors": [
+        "current: Arc::new(RwLock::new(None)),"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8: original session identity, validated finite limits and initial uninitialized domain; construction does not authorize requests.",
+      "public_results": [
+        "SandboxModel.Boundaries.TokioRwLockContract.initial_safe"
+      ]
+    },
+    {
+      "id": "authorize.read-map",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "    pub async fn authorize(",
+        "    /// Apply the original host's"
+      ],
+      "anchors": [
+        "let guard = Arc::clone(&self.shared.current).read_owned().await;",
+        "let guard = OwnedRwLockReadGuard::try_map(guard, Option::as_ref)",
+        "Ok(AuthPermit { guard })"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8: token byte/hash checks, current initialized domain, exact permit lifetime and operation dispatch; a returned permit is not an external-exit or revocation-complete fact.",
+      "public_results": [
+        "SandboxModel.Boundaries.TokioRwLockContract.mapped_guard_is_original",
+        "SandboxModel.Boundaries.TokioRwLockContract.mapped_reply_still_owns_read",
+        "SandboxModel.Boundaries.TokioRwLockContract.mapped_reply_blocks_writer"
+      ]
+    },
+    {
+      "id": "apply.shared-read",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "    async fn apply(&self, mut request:",
+        "\n}\n\nmod file_authorization;"
+      ],
+      "anchors": [
+        "let (current_hash, identity) = {",
+        "let state = self.shared.current.read().await;",
+        "let (instance, template) ="
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8: copied identity and hash may become stale after this block; connect actual later write-lock acquisition, metadata and init serialization. Ending this read is not final authorization.",
+      "public_results": [
+        "SandboxModel.Boundaries.TokioRwLockContract.step_keeps_payload_while_reader"
+      ]
+    },
+    {
+      "id": "apply.exclusive-write",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "    async fn apply(&self, mut request:",
+        "\n}\n\nmod file_authorization;"
+      ],
+      "anchors": [
+        "let mut current = self.shared.current.write().await;",
+        "apply_defaults(&mut defaults, request, &instance, &template, self.limits)?;",
+        "*current = Some(Initialized {"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8: all business validation, entire replacement and write relation, old Initialized/Secret destruction and final state; never assume apply_defaults or arbitrary callback is correct.",
+      "public_results": [
+        "SandboxModel.Boundaries.TokioRwLockContract.read_write_exclusive",
+        "SandboxModel.Boundaries.TokioRwLockContract.history_preserves_payload_invariant"
+      ]
+    },
+    {
+      "id": "permit.defaults",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "    pub fn defaults(&self) -> &Defaults",
+        "\nimpl<M: MetadataSource> Session<M>"
+      ],
+      "anchors": [
+        "&self.guard.defaults"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8: original permit and guarded Defaults projection; scope of the actual reference, no copied unlocked snapshot. No arbitrary interior-mutability invariant.",
+      "public_results": [
+        "SandboxModel.Boundaries.TokioRwLockContract.retained_mapped_snapshot"
+      ]
+    },
+    {
+      "id": "permit.guard-field",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "pub struct AuthPermit {",
+        "\nimpl AuthPermit {"
+      ],
+      "anchors": [
+        "guard: OwnedRwLockReadGuard<Option<Initialized>, Initialized>,"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "T5/V8: actual permit moves/drops, all Arc aliases and original lock lifetime. Only normal release on a surviving lock uses the payload frame; last Arc may destroy payload.",
+      "public_results": [
+        "SandboxModel.Boundaries.TokioRwLockContract.release_keeps_original_payload",
+        "SandboxModel.Boundaries.TokioRwLockContract.released_reader_cannot_access"
+      ]
+    },
+    {
+      "id": "file.read-map",
+      "file": "sandbox-guest-service/src/session/file_authorization.rs",
+      "range": [
+        "    async fn authorize_file_clock(",
+        "\nfn signature("
+      ],
+      "anchors": [
+        "let guard = timeout_at(deadline, Arc::clone(&self.shared.current).read_owned())",
+        "let guard = OwnedRwLockReadGuard::try_map(guard, Option::as_ref)",
+        "auth: AuthPermit { guard },"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8: original deadline and cancellation branch, exact signature/token/path/user/request binding, wall-clock order and dispatch/retirement. Err still owns its guard until actually dropped.",
+      "public_results": [
+        "SandboxModel.Boundaries.TokioRwLockContract.mapped_reply_keeps_same_protected_read",
+        "SandboxModel.Boundaries.TokioRwLockContract.map_failure_returns_original_guard"
+      ]
+    },
+    {
+      "id": "authorize.credentials",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "    pub async fn authorize(",
+        "    /// Apply the original host's"
+      ],
+      "anchors": [
+        "let digest = token_digest(token, self.limits.token_bytes)?;",
+        "if !bool::from(guard.hash.ct_eq(&digest))"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8 proves token format, digest and authentication; B2 never supplies their truth.",
+      "public_results": []
+    },
+    {
+      "id": "apply.replacement",
+      "file": "sandbox-guest-service/src/session.rs",
+      "range": [
+        "    async fn apply(&self, mut request:",
+        "\n}\n\nmod file_authorization;"
+      ],
+      "anchors": [
+        "let mut defaults = current",
+        "apply_defaults(&mut defaults, request, &instance, &template, self.limits)?;",
+        "*current = Some(Initialized {"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8 proves chosen identity, defaults budget, rejection without partial replacement and successful complete replacement; T5 connects old payload destruction.",
+      "public_results": []
+    },
+    {
+      "id": "file.authorization",
+      "file": "sandbox-guest-service/src/session/file_authorization.rs",
+      "range": [
+        "    async fn authorize_file_clock(",
+        "\nfn signature("
+      ],
+      "anchors": [
+        "if token.is_empty() {",
+        "query.signature = None;",
+        "query.into_text()"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "original_object": "Session.shared.current and the returned original guard/Arc; no detached snapshot lock",
+      "preconditions": "A6/B2 actual events on the same original Arc/RwLock and unique Rust guard ownership; finite safe values. Payload frame is only for an original lock that remains alive, never for the final Arc destruction. No fabricated normal return after cancellation/panic/abort.",
+      "caller_obligations": "V8 proves signature/token precedence, expiration and actual decoded query/operation; lock possession does not imply these checks succeeded.",
+      "public_results": []
+    }
+  ],
+  "negative_evidence": {
+    "formal": "Model earlyReleaseReply rejected by the same ProtectedRead; not Rust extraction.",
+    "native": "Actual isolated Session::authorize mutation replaces the original guard with a guard on a detached copy; original rotation assertion rejects it after successful fresh library+binary compilation.",
+    "unsupported": "Fixed original Charon rejects coroutine and MetadataSource GAT; failure is not a semantic negative."
+  },
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel.lean",
+    "SandboxModel/Boundaries/TokioRwLock.lean",
+    "SandboxModel/Boundaries/TokioRwLock/Audit.lean",
+    "SandboxModel/Boundaries/TokioRwLock/Core.lean",
+    "SandboxModel/Boundaries/TokioRwLock/Examples.lean",
+    "SandboxModel/Boundaries/TokioRwLock/Mapping.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "docs/formal/dependencies.md",
+    "docs/proof-workflow.md",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "rust-toolchain.toml",
+    "sandbox-guest-service/Cargo.toml",
+    "sandbox-guest-service/src/session.rs",
+    "sandbox-guest-service/src/session/file_authorization.rs",
+    "sandbox-guest-service/src/session/file_authorization/tests.rs",
+    "sandbox-guest-service/tests/session.rs",
+    "scripts/lean-mcp-server.sh",
+    "scripts/python-entry.sh",
+    "scripts/verify-tokio-rwlock.sh",
+    "tools/check_first_chain_extraction.py",
+    "tools/check_foundations_extraction.py",
+    "tools/check_owned_message_components.py",
+    "tools/check_task_contract.py",
+    "tools/check_tokio_rwlock_components.py",
+    "tools/check_tokio_rwlock_contract.py",
+    "tools/lean_session.py",
+    "tools/proof_batch.py",
+    "tools/proof_native_suite.py",
+    "tools/proof_services.py",
+    "tools/tests/test_acceptance_receipts.py",
+    "tools/tests/test_tokio_rwlock_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/acceptance-inputs.sha256",
+    "verification/experiments/tokio-rwlock/README.md",
+    "verification/experiments/tokio-rwlock/preflight.py",
+    "verification/experiments/tokio-rwlock/session-tests.rs",
+    "verification/task-contract-inputs.sha256",
+    "verification/tokio-rwlock-environment.json",
+    "verification/use-inventory/responsibilities.json"
+  ]
+}

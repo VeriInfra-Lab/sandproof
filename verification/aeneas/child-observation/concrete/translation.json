@@ -1,0 +1,499 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandbox_runtime",
+  "functions": [
+    {
+      "def_id": 45,
+      "lean_name": "std.time.Instant.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "std::time::{impl core::clone::Clone for std::time::Instant}::clone",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 153,
+        "end_line": 153
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 46,
+      "lean_name": "std.time.Instant.Insts.CoreCmpPartialEqInstant.eq",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "std::time::{impl core::cmp::PartialEq<std::time::Instant> for std::time::Instant}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 153,
+        "end_line": 153
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 43,
+      "lean_name": "std.time.Instant.Insts.CoreCmpPartialOrdInstant.partial_cmp",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "std::time::{impl core::cmp::PartialOrd<std::time::Instant> for std::time::Instant}::partial_cmp",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 153,
+        "end_line": 153
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 32,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.unknown_exit",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::unknown_exit",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 38,
+        "end_line": 40
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 31,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.retain",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::retain",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 35,
+        "end_line": 37
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 30,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.pause",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::pause",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 32,
+        "end_line": 34
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 29,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.add_grace",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::add_grace",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 29,
+        "end_line": 31
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 28,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.now",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::now",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 26,
+        "end_line": 28
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 27,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.close_pipes",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::close_pipes",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 21,
+        "end_line": 25
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.kill",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::kill",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 18,
+        "end_line": 20
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 25,
+      "lean_name": "child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant.try_wait",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}::try_wait",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 15,
+        "end_line": 17
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 20,
+      "lean_name": "child_process.observation_io.system",
+      "lean_file": "SandproofChildObservation/FunsExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::system",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 45,
+        "end_line": 47
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofChildObservationRust.child_process.observation_core.stop_loop0.body",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_core::stop",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_core.rs",
+        "begin_line": 34,
+        "end_line": 49
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofChildObservationRust.child_process.observation_core.stop"
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofChildObservationRust.child_process.observation_core.stop_loop0",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_core::stop",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_core.rs",
+        "begin_line": 34,
+        "end_line": 49
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofChildObservationRust.child_process.observation_core.stop"
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofChildObservationRust.child_process.observation_core.stop_loop1.body",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_core::stop",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_core.rs",
+        "begin_line": 34,
+        "end_line": 49
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 1, "pos": [ 1 ], "is_body": true },
+      "parent_lean_name": "SandproofChildObservationRust.child_process.observation_core.stop"
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofChildObservationRust.child_process.observation_core.stop_loop1",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_core::stop",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_core.rs",
+        "begin_line": 34,
+        "end_line": 49
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 1, "pos": [ 1 ], "is_body": false },
+      "parent_lean_name": "SandproofChildObservationRust.child_process.observation_core.stop"
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofChildObservationRust.child_process.observation_core.stop",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_core::stop",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_core.rs",
+        "begin_line": 19,
+        "end_line": 50
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofChildObservationRust.child_process.OwnedChild.stop_and_reap",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "sandbox_runtime::child_process::{sandbox_runtime::child_process::OwnedChild}::stop_and_reap",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process.rs",
+        "begin_line": 80,
+        "end_line": 83
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 8,
+      "lean_name": "core.io.error.Error",
+      "lean_file": "SandproofChildObservation/TypesExternal_Template.lean",
+      "rust_name": "core::io::error::Error",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/io/error.rs",
+        "begin_line": 87,
+        "end_line": 87
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "std.process.Child",
+      "lean_file": "SandproofChildObservation/TypesExternal_Template.lean",
+      "rust_name": "std::process::Child",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/process.rs",
+        "begin_line": 220,
+        "end_line": 220
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "std.process.ExitStatus",
+      "lean_file": "SandproofChildObservation/TypesExternal_Template.lean",
+      "rust_name": "std::process::ExitStatus",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/process.rs",
+        "begin_line": 1931,
+        "end_line": 1931
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "std.time.Instant",
+      "lean_file": "SandproofChildObservation/TypesExternal_Template.lean",
+      "rust_name": "std::time::Instant",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 156,
+        "end_line": 156
+      }
+    },
+    {
+      "def_id": 9,
+      "lean_name": "child_process.observation_io.SystemIo",
+      "lean_file": "SandproofChildObservation/TypesExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::SystemIo",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 8,
+        "end_line": 8
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "child_process.reaper.Slot",
+      "lean_file": "SandproofChildObservation/TypesExternal_Template.lean",
+      "rust_name": "sandbox_runtime::child_process::reaper::Slot",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/reaper.rs",
+        "begin_line": 18,
+        "end_line": 18
+      }
+    },
+    {
+      "def_id": 1,
+      "lean_name": "SandproofChildObservationRust.child_process.OwnedChild",
+      "lean_file": "SandproofChildObservation/Types.lean",
+      "rust_name": "sandbox_runtime::child_process::OwnedChild",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process.rs",
+        "begin_line": 50,
+        "end_line": 53
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [
+    {
+      "def_id": 4,
+      "lean_name": "SandproofChildObservationRust.child_process.observation_core.Operations",
+      "lean_file": "SandproofChildObservation/Types.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_core::Operations",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_core.rs",
+        "begin_line": 3,
+        "end_line": 17
+      }
+    }
+  ],
+  "trait_impls": [
+    {
+      "def_id": 11,
+      "lean_name": "SandproofChildObservationRust.std.time.Instant.Insts.CoreCloneClone",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "std::time::{impl core::clone::Clone for std::time::Instant}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 153,
+        "end_line": 153
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 9,
+      "lean_name": "SandproofChildObservationRust.std.time.Instant.Insts.CoreMarkerCopy",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "std::time::{impl core::marker::Copy for std::time::Instant}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 153,
+        "end_line": 153
+      },
+      "impl_trait_def_id": 7,
+      "impl_trait_rust_name": "core::marker::Copy",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofChildObservationRust.std.time.Instant.Insts.CoreCmpPartialEqInstant",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "std::time::{impl core::cmp::PartialEq<std::time::Instant> for std::time::Instant}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 153,
+        "end_line": 153
+      },
+      "impl_trait_def_id": 8,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 10,
+      "lean_name": "SandproofChildObservationRust.std.time.Instant.Insts.CoreCmpPartialOrdInstant",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "std::time::{impl core::cmp::PartialOrd<std::time::Instant> for std::time::Instant}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/std/src/time.rs",
+        "begin_line": 153,
+        "end_line": 153
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialOrd",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofChildObservationRust.child_process.observation_io.SystemIo.Insts.Sandbox_runtimeChild_processObservation_coreOperationsChildSlotExitStatusErrorInstant",
+      "lean_file": "SandproofChildObservation/Funs.lean",
+      "rust_name": "sandbox_runtime::child_process::observation_io::{impl sandbox_runtime::child_process::observation_core::Operations<std::process::Child, sandbox_runtime::child_process::reaper::Slot, std::process::ExitStatus, core::io::error::Error, std::time::Instant> for sandbox_runtime::child_process::observation_io::SystemIo}",
+      "is_local": true,
+      "source": {
+        "file": "sandbox-runtime/src/child_process/observation_io.rs",
+        "begin_line": 9,
+        "end_line": 41
+      },
+      "impl_trait_def_id": 4,
+      "impl_trait_rust_name": "sandbox_runtime::child_process::observation_core::Operations",
+      "impl_trait_is_builtin": false
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "1.97.0-x86_64-unknown-linux-gnu": {
+    "std/src/fs.rs": "50e3ed9eeb546023b0f6ac074c27d3718221e022cdf450f529466c336ddaec56",
+    "std/src/os/unix/fs.rs": "4696b633f754fd0e1173512498dd731d2f2f811eef1d066fd008a475732870c4",
+    "std/src/os/linux/fs.rs": "6716634f16a8771d96f5f1d98003796e1e0aa370d6fa26c12ac2bd11dd36066a",
+    "std/src/sys/fs/unix.rs": "02bd45fd5f2e9d8b08122630f8febf15354c1784c7f6550d8cfbfb967cebf30d"
+  },
+  "nightly-2026-08-18-x86_64-unknown-linux-gnu": {
+    "std/src/fs.rs": "f55687b208e28570d9dcf303d0d75180c4bdd32a3db96ad0b5ce65c06568e522",
+    "std/src/os/unix/fs.rs": "038fb0ad99eb2d21744410aa3fc9a6b99a4251fe0b978433f05dc0cd7cdde055",
+    "std/src/os/linux/fs.rs": "60535718ad740747074fb60a9c508156508d3e8129355ac21e8eadf6731e24bf",
+    "std/src/sys/fs/unix.rs": "476c76c34bd9dac8cc4dc8e8040175f6a0c73df4166745833e570cc80abeb2be"
+  }
+}

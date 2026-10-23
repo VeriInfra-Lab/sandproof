@@ -1,0 +1,60 @@
+{
+  "scope": "exact generated interfaces; no implementations/axioms added to a Lean project",
+  "declarations": {
+    "alloc.collections.btree.set.BTreeSet.insert": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "alloc.collections.btree.set.BTreeSet.insert\n  {T : Type} {A : Type} (corecloneCloneInst : core.clone.Clone A)\n  (corecmpOrdInst : core.cmp.Ord T) :\n  alloc.collections.btree.set.BTreeSet T A \u2192 T \u2192 Result (Bool \u00d7\n    (alloc.collections.btree.set.BTreeSet T A))",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "alloc.collections.btree.set.BTreeSet": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "alloc.collections.btree.set.BTreeSet (T : Type) (A : Type) : Type",
+      "template_file": "TypesExternal_Template.lean"
+    },
+    "Shared1A.Insts.CoreCmpPartialOrdShared0B.partial_cmp": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Shared1A.Insts.CoreCmpPartialOrdShared0B.partial_cmp\n  {A : Type} {B : Type} (PartialOrdInst : core.cmp.PartialOrd A B) :\n  A \u2192 B \u2192 Result (Option Ordering)",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "Shared0A.Insts.CoreCmpOrd.cmp": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Shared0A.Insts.CoreCmpOrd.cmp\n  {A : Type} (OrdInst : core.cmp.Ord A) : A \u2192 A \u2192 Result Ordering",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "Str.Insts.CoreCmpPartialOrdStr.partial_cmp": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Str.Insts.CoreCmpPartialOrdStr.partial_cmp\n  : Str \u2192 Str \u2192 Result (Option Ordering)",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "Str.Insts.CoreCmpPartialEqStr.eq": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Str.Insts.CoreCmpPartialEqStr.eq : Str \u2192 Str \u2192 Result Bool",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "Str.Insts.CoreCmpOrd.cmp": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Str.Insts.CoreCmpOrd.cmp : Str \u2192 Str \u2192 Result Ordering",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "Pair.Insts.CoreCmpPartialEqPair.eq": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Pair.Insts.CoreCmpPartialEqPair.eq\n  {U : Type} {T : Type} (cmpPartialEqInst : core.cmp.PartialEq U U)\n  (cmpPartialEqInst1 : core.cmp.PartialEq T T) :\n  (U \u00d7 T) \u2192 (U \u00d7 T) \u2192 Result Bool",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "Pair.Insts.CoreCmpPartialOrdPair.partial_cmp": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Pair.Insts.CoreCmpPartialOrdPair.partial_cmp\n  {U : Type} {T : Type} (cmpPartialOrdInst : core.cmp.PartialOrd U U)\n  (cmpPartialOrdInst1 : core.cmp.PartialOrd T T) :\n  (U \u00d7 T) \u2192 (U \u00d7 T) \u2192 Result (Option Ordering)",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "Pair.Insts.CoreCmpOrd.cmp": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "Pair.Insts.CoreCmpOrd.cmp\n  {U : Type} {T : Type} (cmpOrdInst : core.cmp.Ord U) (cmpOrdInst1 :\n  core.cmp.Ord T) :\n  (U \u00d7 T) \u2192 (U \u00d7 T) \u2192 Result Ordering",
+      "template_file": "FunsExternal_Template.lean"
+    },
+    "alloc.collections.btree.set.BTreeSetTGlobal.new": {
+      "kind": "unimplemented original generated external declaration, not imported",
+      "signature": "alloc.collections.btree.set.BTreeSetTGlobal.new\n  (T : Type) : Result (alloc.collections.btree.set.BTreeSet T Global)",
+      "template_file": "FunsExternal_Template.lean"
+    }
+  }
+}

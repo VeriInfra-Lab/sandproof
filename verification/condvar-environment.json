@@ -1,0 +1,303 @@
+{
+  "contract_id": "std-condvar-original-waiter-v0",
+  "base_commit": "646fc2c8569083cf4f03554f9acb2ca67bf22e6e",
+  "proof_kind": "conditional-library-event-model-with-frozen-production-wiring",
+  "production_sources": {
+    "sandbox-runtime/src/child_process/reaper.rs": "a50a5049809a21b0180c3cad384cbee2c1bb6ee088205b854d6beb417e9698a8"
+  },
+  "standard_library": {
+    "production": {
+      "toolchain": "1.97.0",
+      "sources": {
+        "std/src/sync/poison/condvar.rs": "b04d88c4281a8da36c8a4f683cbab3dda453d404ca9efcc887deec25d1be4769",
+        "std/src/sys/sync/condvar/futex.rs": "18037d0dbba53a96fac7331308bb34bb5e3ab99c71256d305086cb71e29a9aa1"
+      }
+    },
+    "frontend": {
+      "toolchain": "nightly-2026-08-18",
+      "sources": {
+        "std/src/sync/poison/condvar.rs": "b04d88c4281a8da36c8a4f683cbab3dda453d404ca9efcc887deec25d1be4769",
+        "std/src/sys/sync/condvar/futex.rs": "38a23f999184a176a0722c410a1866a919f2b527733f6da875bf5f5ac3cdf93e"
+      }
+    }
+  },
+  "model_modules": [
+    "Core",
+    "Protocol",
+    "Examples"
+  ],
+  "theorems": [
+    "SandboxModel.Boundaries.CondvarContract.suspend_keeps_payload",
+    "SandboxModel.Boundaries.CondvarContract.suspend_keeps_poison",
+    "SandboxModel.Boundaries.CondvarContract.suspended_lease_cannot_access_payload",
+    "SandboxModel.Boundaries.CondvarContract.suspended_state_safe",
+    "SandboxModel.Boundaries.CondvarContract.resume_keeps_current_payload",
+    "SandboxModel.Boundaries.CondvarContract.resume_does_not_clear_poison",
+    "SandboxModel.Boundaries.CondvarContract.resume_state_safe",
+    "SandboxModel.Boundaries.CondvarContract.resume_returns_original_guard",
+    "SandboxModel.Boundaries.CondvarContract.resume_preserves_original_poison_marker",
+    "SandboxModel.Boundaries.CondvarContract.resume_result_holds_original_mutex",
+    "SandboxModel.Boundaries.CondvarContract.resume_result_is_live",
+    "SandboxModel.Boundaries.CondvarContract.poison_error_still_returns_guard_and_timeout",
+    "SandboxModel.Boundaries.CondvarContract.busy_mutex_has_no_normal_return",
+    "SandboxModel.Boundaries.CondvarContract.returned_guard_reads_current_invariant",
+    "SandboxModel.Boundaries.CondvarContract.return_step_requires_free_mutex",
+    "SandboxModel.Boundaries.CondvarContract.held_mutex_cannot_return",
+    "SandboxModel.Boundaries.CondvarContract.return_step_uses_original_mutex",
+    "SandboxModel.Boundaries.CondvarContract.return_step_preserves_physical_guard",
+    "SandboxModel.Boundaries.CondvarContract.return_step_returns_live_guard",
+    "SandboxModel.Boundaries.CondvarContract.return_step_keeps_current_payload",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.mutex_step_issued_monotone",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.mutex_step_does_not_revive_old_lease",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.initial_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.begin_wait_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.signal_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.elapsed_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.peer_keeps_waiter_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.peer_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.resume_preserves_condvar",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.finish_wait_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.step_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.history_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.notification_keeps_mutex",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.notify_before_wait_has_no_buffer",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.notification_does_not_authorize_suspended_lease",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.returned_value_has_live_original_guard",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.step_keeps_original_call",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.step_preserves_payload_invariant",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.history_preserves_payload_invariant",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.busy_ready_cannot_finish",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.wake_without_reacquiring_rejected",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.untimed_ready_is_not_timeout",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.example_start_safe",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.spurious_return_is_a_legal_history",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.spurious_return_does_not_prove_business_predicate",
+    "SandboxModel.Boundaries.CondvarContract.Waiting.elapsed_wait_need_not_have_reacquired_mutex"
+  ],
+  "api_scope": [
+    "new original object binding",
+    "one live original wait invocation",
+    "wait consumes and returns the original guard value",
+    "wait_timeout preserves guard and timeout tuple in Ok/PoisonError",
+    "atomic unlock and registration",
+    "notify_one without stored permits",
+    "spurious wake",
+    "same mutex reacquisition",
+    "current payload and inherited panic marker"
+  ],
+  "excluded": [
+    "multiple concurrent waiters on one Condvar",
+    "notify_all/wait_while/wait_timeout_while convenience APIs",
+    "fairness or unconditional return",
+    "hard wall-clock return bound",
+    "business queue/predicate/reap/exit/Slot-release correctness",
+    "full Reaper Rust refinement",
+    "general panic/unwind/abort or crash cleanup"
+  ],
+  "use_points": [
+    {
+      "original_object": "One original Reaper wake Condvar, its pending Mutex, and one consumed guard-value occurrence; not an address or a queue/exit snapshot.",
+      "preconditions": "A6 fixed standard library, valid original safe Rust borrows and original guard ownership; B2 only named mechanical call binding. At most one live wait invocation on this Condvar; V6 provides the actual single consumer. Interrupted execution has only its observed prefix, without completion or cleanup assumptions.",
+      "id": "reaper.construct",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "    pub fn acquire()",
+        "    fn reserve("
+      ],
+      "anchors": [
+        "pending: Mutex::new(Vec::with_capacity(MAX_HELPERS)),",
+        "wake: Condvar::new(),"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.CondvarContract.Waiting.initial_safe"
+      ],
+      "caller_obligations": "V6: bind exactly the initialized Reaper and original pending Mutex, valid original guard and at most one consumer. Initializer/spawn success, capacity and allocation are not provided by Condvar."
+    },
+    {
+      "original_object": "One original Reaper wake Condvar, its pending Mutex, and one consumed guard-value occurrence; not an address or a queue/exit snapshot.",
+      "preconditions": "A6 fixed standard library, valid original safe Rust borrows and original guard ownership; B2 only named mechanical call binding. At most one live wait invocation on this Condvar; V6 provides the actual single consumer. Interrupted execution has only its observed prefix, without completion or cleanup assumptions.",
+      "id": "retain.notify",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "    pub fn retain(self, child: Child)",
+        "impl Drop for Slot"
+      ],
+      "anchors": [
+        "let reaper = Arc::clone(&self.0);",
+        "reaper.pending.lock().unwrap().push((child, self));",
+        "reaper.wake.notify_one();"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.CondvarContract.Waiting.notification_keeps_mutex",
+        "SandboxModel.Boundaries.CondvarContract.Waiting.notify_before_wait_has_no_buffer"
+      ],
+      "caller_obligations": "V6: original child/Slot and valid enqueue, complete original payload, capacity and ownership. Normal source order is push, end temporary guard, notify; panic/abort may stop earlier. Notification proves no reaping, exit or release; queued work may already be handled at notify return."
+    },
+    {
+      "original_object": "One original Reaper wake Condvar, its pending Mutex, and one consumed guard-value occurrence; not an address or a queue/exit snapshot.",
+      "preconditions": "A6 fixed standard library, valid original safe Rust borrows and original guard ownership; B2 only named mechanical call binding. At most one live wait invocation on this Condvar; V6 provides the actual single consumer. Interrupted execution has only its observed prefix, without completion or cleanup assumptions.",
+      "id": "run.original-lock",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "    fn run(&self)",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        "let mut pending = self.pending.lock().unwrap();"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.CondvarContract.Waiting.initial_safe"
+      ],
+      "caller_obligations": "V6: original self/pending and chosen poison policy, all queue writers preserve the business invariant. Existing std Mutex A6/B2 supplies the original guard; unwrap is not repair."
+    },
+    {
+      "original_object": "One original Reaper wake Condvar, its pending Mutex, and one consumed guard-value occurrence; not an address or a queue/exit snapshot.",
+      "preconditions": "A6 fixed standard library, valid original safe Rust borrows and original guard ownership; B2 only named mechanical call binding. At most one live wait invocation on this Condvar; V6 provides the actual single consumer. Interrupted execution has only its observed prefix, without completion or cleanup assumptions.",
+      "id": "run.wait",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "    fn run(&self)",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        "if pending.is_empty() {",
+        "pending = self.wake.wait(pending).unwrap();"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.CondvarContract.Waiting.history_safe",
+        "SandboxModel.Boundaries.CondvarContract.Waiting.history_preserves_payload_invariant",
+        "SandboxModel.Boundaries.CondvarContract.resume_preserves_original_poison_marker"
+      ],
+      "caller_obligations": "V6: actual branch predicate, original same mutex and single waiting consumer. On normal return use current contents and recheck; no snapshot of pre-wait data or implication of nonempty queue."
+    },
+    {
+      "original_object": "One original Reaper wake Condvar, its pending Mutex, and one consumed guard-value occurrence; not an address or a queue/exit snapshot.",
+      "preconditions": "A6 fixed standard library, valid original safe Rust borrows and original guard ownership; B2 only named mechanical call binding. At most one live wait invocation on this Condvar; V6 provides the actual single consumer. Interrupted execution has only its observed prefix, without completion or cleanup assumptions.",
+      "id": "run.wait-timeout",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "    fn run(&self)",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        ".wait_timeout(pending, Duration::from_millis(10))\n                    .unwrap()\n                    .0;"
+      ],
+      "ordered": true,
+      "status": "conditional-mechanical",
+      "public_results": [
+        "SandboxModel.Boundaries.CondvarContract.poison_error_still_returns_guard_and_timeout",
+        "SandboxModel.Boundaries.CondvarContract.Waiting.busy_ready_cannot_finish",
+        "SandboxModel.Boundaries.CondvarContract.Waiting.elapsed_wait_need_not_have_reacquired_mutex"
+      ],
+      "caller_obligations": "V6: original guard, full timeout argument and result tuple. Caller ignores the timeout flag only; it is not a child-exit or queue-completion fact. Timeout observation does not bound mutex reacquisition or total return time."
+    },
+    {
+      "original_object": "One original Reaper wake Condvar, its pending Mutex, and one consumed guard-value occurrence; not an address or a queue/exit snapshot.",
+      "preconditions": "A6 fixed standard library, valid original safe Rust borrows and original guard ownership; B2 only named mechanical call binding. At most one live wait invocation on this Condvar; V6 provides the actual single consumer. Interrupted execution has only its observed prefix, without completion or cleanup assumptions.",
+      "id": "run.business-predicate",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "    fn run(&self)",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        "Self::reap_ready(&mut pending);",
+        "if pending.is_empty() {"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "caller_obligations": "V6: all actual try_wait/queue/reap/Slot release decisions, invariant initialization/preservation, and why/when another pass should occur. No entire run/reap_ready body is trusted."
+    },
+    {
+      "original_object": "One original Reaper wake Condvar, its pending Mutex, and one consumed guard-value occurrence; not an address or a queue/exit snapshot.",
+      "preconditions": "A6 fixed standard library, valid original safe Rust borrows and original guard ownership; B2 only named mechanical call binding. At most one live wait invocation on this Condvar; V6 provides the actual single consumer. Interrupted execution has only its observed prefix, without completion or cleanup assumptions.",
+      "id": "run.poison-policy",
+      "file": "sandbox-runtime/src/child_process/reaper.rs",
+      "range": [
+        "    fn run(&self)",
+        "\n#[cfg(test)]"
+      ],
+      "anchors": [
+        "self.pending.lock().unwrap()",
+        "self.wake.wait(pending).unwrap()",
+        ".wait_timeout(pending, Duration::from_millis(10))\n                    .unwrap()"
+      ],
+      "ordered": true,
+      "status": "business-obligation",
+      "public_results": [],
+      "caller_obligations": "V6: original unwrap decisions and panic handling. Poison errors still contain and own the full original guard or guard/timeout tuple; any actual unwinding/abort retains its observed prefix, not assumed successful recovery."
+    }
+  ],
+  "preflight": {
+    "file": "verification/experiments/condvar/preflight.py",
+    "root": "crate::child_process::reaper::_::run",
+    "observed_charon_exit": 0,
+    "observed_aeneas_exit": 2,
+    "observed_local_bodies": [
+      11,
+      23
+    ],
+    "observed_limitation": "InterpReduceCollapse.ml, line 1137 while joining the original run loop; not a semantic counterexample",
+    "production_sources_unchanged": true
+  },
+  "negative_scope": {
+    "formal": "Conditional model Safe rejects returnWithoutReacquiring; not extracted Rust",
+    "native": "Freshly compiled API fixture changes the guard input to another mutex; same original-mutex assertion rejects it; not a production Reaper mutation or formal Rust refutation"
+  },
+  "representation": "Model payloads retain original inline fields/handles; no snapshot of aliased mutable heaps or OS state. Logical lease numbers and originalGuard occurrence identities are ghost names, not runtime addresses or scheduling promises.",
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel.lean",
+    "SandboxModel/Boundaries/Condvar.lean",
+    "SandboxModel/Boundaries/Condvar/Audit.lean",
+    "SandboxModel/Boundaries/Condvar/Core.lean",
+    "SandboxModel/Boundaries/Condvar/Examples.lean",
+    "SandboxModel/Boundaries/Condvar/Protocol.lean",
+    "SandboxModel/Boundaries/StdMutex/Guard.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "docs/formal/dependencies.md",
+    "docs/proof-workflow.md",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "rust-toolchain.toml",
+    "sandbox-runtime/Cargo.toml",
+    "sandbox-runtime/src/child_process/reaper.rs",
+    "scripts/lean-mcp-server.sh",
+    "scripts/python-entry.sh",
+    "scripts/verify-condvar.sh",
+    "tools/check_condvar_components.py",
+    "tools/check_condvar_contract.py",
+    "tools/check_first_chain_extraction.py",
+    "tools/check_foundations_extraction.py",
+    "tools/check_owned_message_components.py",
+    "tools/check_task_contract.py",
+    "tools/lean_session.py",
+    "tools/proof_batch.py",
+    "tools/proof_native_suite.py",
+    "tools/proof_services.py",
+    "tools/tests/test_acceptance_receipts.py",
+    "tools/tests/test_condvar_contract.py",
+    "verification/ProofAudit.lean",
+    "verification/README.zh-CN.md",
+    "verification/acceptance-inputs.sha256",
+    "verification/condvar-environment.json",
+    "verification/experiments/condvar/README.md",
+    "verification/experiments/condvar/preflight.py",
+    "verification/experiments/condvar/reaper-tests.rs",
+    "verification/first-chain-linux-environment.json",
+    "verification/std-mutex-environment.json",
+    "verification/std-mutex-inputs.sha256",
+    "verification/use-inventory/responsibilities.json"
+  ]
+}

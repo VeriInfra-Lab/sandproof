@@ -1,0 +1,84 @@
+{
+  "kind": "finite-reviewed-retain-interface-not-complete-call-graph",
+  "base": "e576a8475043c2d21b68231b7f6b1ead09be1952",
+  "production_sources": {
+    "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3",
+    "controller-core/src/maintenance.rs": "bb99cad7a63aa4fdc040a86e091089a23646f5714fc4b6964d68e4fa964ae038",
+    "controller-core/src/maintenance/retirement.rs": "9cc830a6d180fe405dd06f501fa3c3a5a7f33ac5e12658dd0bbe3d518656df57"
+  },
+  "representatives": [
+    {
+      "source": "controller-core/src/store.rs",
+      "function": "retain_visits_each_original_row_once_in_order_and_preserves_survivors",
+      "role": "original external trace callback; parameterized helper candidate"
+    },
+    {
+      "source": "controller-core/src/store.rs",
+      "function": "retain_preserves_stateful_callback_results_including_empty_and_extreme_rows",
+      "role": "original external counter and empty/extreme input native regression"
+    },
+    {
+      "source": "verification/extract-callback-state/src/lib.rs",
+      "function": "toggle_step",
+      "role": "isolated representative state mutation; not an existing production call"
+    },
+    {
+      "source": "verification/extract-callback-state/src/lib.rs",
+      "function": "trace_step",
+      "role": "actual extracted parameterized trace body from original test"
+    }
+  ],
+  "bindings": [
+    {
+      "wrapper": "retain_toggle",
+      "helper": "toggle_step",
+      "external_state": "state",
+      "arguments": [
+        "key",
+        "value"
+      ],
+      "calls_per_original_row": 1,
+      "result": "unchanged bool"
+    },
+    {
+      "wrapper": "retain_trace",
+      "helper": "trace_step",
+      "external_state": "visited",
+      "arguments": [
+        "key",
+        "value",
+        "floor"
+      ],
+      "calls_per_original_row": 1,
+      "result": "unchanged bool"
+    }
+  ],
+  "normal_domain": [
+    "same original Store and safe exclusive external-state borrow",
+    "ordinary u64 rows/bool/Vec without custom Drop or interior mutation",
+    "finite representable trace and normal allocation",
+    "actual A6 ordered traversal and B4 mechanical binding"
+  ],
+  "downstream": [
+    {
+      "source": "controller-core/src/maintenance.rs",
+      "function": "handle_maintenance / ExpireResults",
+      "provider": "V4",
+      "obligation": "real time/expiry predicate and maintenance invariants; current predicate captures only read-only now_ms"
+    },
+    {
+      "source": "controller-core/src/maintenance/retirement.rs",
+      "function": "remove_details",
+      "provider": "V4/V6",
+      "obligation": "which sandbox rows may be retired and actual resources already quiescent; deletion does not prove physical release"
+    }
+  ],
+  "excluded": [
+    "general FnMut/async translation",
+    "whole closure machine refinement",
+    "Rust panic/OOM/unwind heap refinement",
+    "arbitrary Drop/comparator/IO effects",
+    "T0 complete call graph",
+    "whole production callers and resource release"
+  ]
+}

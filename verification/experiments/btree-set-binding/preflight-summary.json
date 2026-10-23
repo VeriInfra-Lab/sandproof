@@ -1,0 +1,254 @@
+{
+  "kind": "fixed-Std-BTreeSet-codegen-preflight-not-semantic-verification",
+  "base": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "source_inputs": {
+    "probe/Cargo.toml": "61029a0486027a2c49df255e6a90cefb186592b3ef18565734c5b7c2fa4bf3a7",
+    "probe/src/lib.rs": "ae379c043d3247e47c261c684e5669a87c7313030be5f98a8a67a2d7722da8f7"
+  },
+  "cargo_lock_sha256": "04bcf20b1493b33e13600c5be6400a3f3fc90297f2a8bd80e1702bd872781c4e",
+  "identities": {
+    "aeneas": {
+      "revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+      "binary_sha256": "22b326476f854e19b52ca5a2acfd953fd186da7694cd10d8d008ed5502f7c46a"
+    },
+    "charon": {
+      "revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+      "binary_sha256": "2603f720f0d26a4c77ae215485e2457029d69504dbd9d318a497ed866f21d4fd",
+      "driver_sha256": "428e5331f3a436daef97fb859056cd77453f00eaef1b526d432e42e7b46234cf"
+    },
+    "frontend": "nightly-2026-08-18",
+    "production": {
+      "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6",
+      "cfg": [
+        "debug_assertions",
+        "panic=\"unwind\"",
+        "target_abi=\"\"",
+        "target_arch=\"x86_64\"",
+        "target_endian=\"little\"",
+        "target_env=\"gnu\"",
+        "target_family=\"unix\"",
+        "target_feature=\"fxsr\"",
+        "target_feature=\"sse\"",
+        "target_feature=\"sse2\"",
+        "target_has_atomic=\"16\"",
+        "target_has_atomic=\"32\"",
+        "target_has_atomic=\"64\"",
+        "target_has_atomic=\"8\"",
+        "target_has_atomic=\"ptr\"",
+        "target_has_atomic_primitive_alignment=\"16\"",
+        "target_has_atomic_primitive_alignment=\"32\"",
+        "target_has_atomic_primitive_alignment=\"64\"",
+        "target_has_atomic_primitive_alignment=\"8\"",
+        "target_has_atomic_primitive_alignment=\"ptr\"",
+        "target_os=\"linux\"",
+        "target_pointer_width=\"64\"",
+        "target_vendor=\"unknown\"",
+        "unix"
+      ],
+      "library": {
+        "alloc/src/collections/btree/set.rs": {
+          "sha256": "a7be8e5e576fac0975d0af0f24407ddd709751820bbb1f5059d55f08414a4888",
+          "bytes": 83670
+        },
+        "alloc/src/collections/btree/map.rs": {
+          "sha256": "f58ece50e59502b344616a4c7dcbb13987b5b5ef6b2c4038888ceefaac5635d1",
+          "bytes": 129417
+        },
+        "core/src/cmp.rs": {
+          "sha256": "b8ae0403b4787172b39eef6a69cb3676846a956fa8b7d16defefb4a9d86ab195",
+          "bytes": 75027
+        },
+        "core/src/tuple.rs": {
+          "sha256": "b9576a20ceaeb520062360953fde57b33c552d6b9a959fd7c2d4f599320dc34e",
+          "bytes": 8974
+        },
+        "core/src/str/traits.rs": {
+          "sha256": "e243be20a65e3d80eb53f275fe9b5369d4262b98b4a965b1f91e6c13a3479f3d",
+          "bytes": 35534
+        }
+      }
+    },
+    "extraction": {
+      "rustc": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)\nbinary: rustc\ncommit-hash: 8fa1c96cfd489e4c27654c144ae871ce2c4db6c6\ncommit-date: 2026-08-17\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0-nightly\nLLVM version: 23.1.0",
+      "cfg": [
+        "debug_assertions",
+        "fmt_debug=\"full\"",
+        "overflow_checks",
+        "panic=\"unwind\"",
+        "relocation_model=\"pic\"",
+        "target_abi=\"\"",
+        "target_arch=\"x86_64\"",
+        "target_endian=\"little\"",
+        "target_env=\"gnu\"",
+        "target_family=\"unix\"",
+        "target_feature=\"fxsr\"",
+        "target_feature=\"sse\"",
+        "target_feature=\"sse2\"",
+        "target_feature=\"x87\"",
+        "target_has_atomic",
+        "target_has_atomic=\"16\"",
+        "target_has_atomic=\"32\"",
+        "target_has_atomic=\"64\"",
+        "target_has_atomic=\"8\"",
+        "target_has_atomic=\"ptr\"",
+        "target_has_atomic_load_store",
+        "target_has_atomic_load_store=\"16\"",
+        "target_has_atomic_load_store=\"32\"",
+        "target_has_atomic_load_store=\"64\"",
+        "target_has_atomic_load_store=\"8\"",
+        "target_has_atomic_load_store=\"ptr\"",
+        "target_has_atomic_primitive_alignment=\"16\"",
+        "target_has_atomic_primitive_alignment=\"32\"",
+        "target_has_atomic_primitive_alignment=\"64\"",
+        "target_has_atomic_primitive_alignment=\"8\"",
+        "target_has_atomic_primitive_alignment=\"ptr\"",
+        "target_has_reliable_f128",
+        "target_has_reliable_f16",
+        "target_has_reliable_f16_math",
+        "target_has_threads",
+        "target_object_format=\"elf\"",
+        "target_os=\"linux\"",
+        "target_pointer_width=\"64\"",
+        "target_thread_local",
+        "target_vendor=\"unknown\"",
+        "ub_checks",
+        "unix"
+      ],
+      "library": {
+        "alloc/src/collections/btree/set.rs": {
+          "sha256": "9c30765d177df89a76378e61e342340e84d8abc437325088c03f71e33accd50a",
+          "bytes": 83668
+        },
+        "alloc/src/collections/btree/map.rs": {
+          "sha256": "67b794871d39e6c6e7dbd3e3cb4d6b7fadc9a534d13a52a054b9c03bd62abf78",
+          "bytes": 129483
+        },
+        "core/src/cmp.rs": {
+          "sha256": "99d9443dfc103cf0acffb7a9462cd9723364f7bf072651123bd4910934ee7dbe",
+          "bytes": 84205
+        },
+        "core/src/tuple.rs": {
+          "sha256": "fb6428078cdef84917282841caac6286d091e481994159723d75937ec99a0162",
+          "bytes": 9069
+        },
+        "core/src/str/traits.rs": {
+          "sha256": "c62e78cdf36bca4eddef7653d564b693044e1bab1a81301acddbd6354c10ca16",
+          "bytes": 34635
+        }
+      }
+    }
+  },
+  "elapsed_component_seconds": 9.402,
+  "elapsed_host_seconds": 9.694,
+  "all_five_codegen_succeeded": true,
+  "lean_compiled": false,
+  "semantic_proof": false,
+  "production_validator_proof": false,
+  "external_templates_used_as_axioms": false,
+  "cases": {
+    "insert_u64": {
+      "charon_exit": 0,
+      "aeneas_exit": 0,
+      "llbc_sha256": "fdf1c0480452c7e6f8ce154293102d83c0ed63fcc137bded969ef39ee788742f",
+      "generated_sha256": {
+        "artifacts/btree-set-preflight/insert_u64-lean/translation.json": "9364edf4abadcf07adbd61c42759687fd80cffc335cdb6c0b7b8e438c8a66c68",
+        "artifacts/btree-set-preflight/insert_u64-lean/SandproofBtreeSetProbe/TypesExternal_Template.lean": "d230b5eec227a896f3c861832832eaebbb2b5be901c2053ca85a3ec84e7d66b2",
+        "artifacts/btree-set-preflight/insert_u64-lean/SandproofBtreeSetProbe/FunsExternal_Template.lean": "98f00b1d0ec5f724fc03cda1f0d6f619d38ad9e2795fded6b6f296e36cecbb8a",
+        "artifacts/btree-set-preflight/insert_u64-lean/SandproofBtreeSetProbe/Funs.lean": "18cbc05df0dfca2f2462c231a4496def206a03c4ab98f1b5306698631d4f41d0",
+        "artifacts/btree-set-preflight/insert_u64-lean/SandproofBtreeSetProbe/Types.lean": "bd3d53a65c0b0044fa7ac83efc1407b155ba0bbfff69db75b9039aeb57796e7d"
+      },
+      "generated_root": "def insert_u64\n  (seen : alloc.collections.btree.set.BTreeSet Std.U64 Global)\n  (value : Std.U64) :\n  Result (Bool \u00d7 (alloc.collections.btree.set.BTreeSet Std.U64 Global))\n  := do\n  alloc.collections.btree.set.BTreeSet.insert core.core.clone.CloneGlobal\n    core.cmp.OrdU64 seen value",
+      "effect_syntax_counts_not_runtime_counts": {
+        "Call": 1,
+        "on_unwind": 1,
+        "UnwindResume": 1,
+        "Return": 1
+      }
+    },
+    "insert_str": {
+      "charon_exit": 0,
+      "aeneas_exit": 0,
+      "llbc_sha256": "3e29f9e5f751bf80b13b3ae2d0b805d6d7deb6d29b8995595714cf3c706ddf28",
+      "generated_sha256": {
+        "artifacts/btree-set-preflight/insert_str-lean/translation.json": "a3ac59e36476fdfe9b6f70f6f27dfc329224d028cdc8781d5862ef82f73e3210",
+        "artifacts/btree-set-preflight/insert_str-lean/SandproofBtreeSetProbe/TypesExternal_Template.lean": "d230b5eec227a896f3c861832832eaebbb2b5be901c2053ca85a3ec84e7d66b2",
+        "artifacts/btree-set-preflight/insert_str-lean/SandproofBtreeSetProbe/FunsExternal_Template.lean": "822657aa85efeb2f98d55a2753acb8ce34d922a310864c85c8d677b08738f0db",
+        "artifacts/btree-set-preflight/insert_str-lean/SandproofBtreeSetProbe/Funs.lean": "52b950a6988111aa7a3a91b429e0cb6217bb8b60aabb79044ecca848de32b299",
+        "artifacts/btree-set-preflight/insert_str-lean/SandproofBtreeSetProbe/Types.lean": "bd3d53a65c0b0044fa7ac83efc1407b155ba0bbfff69db75b9039aeb57796e7d"
+      },
+      "generated_root": "def insert_str\n  (seen : alloc.collections.btree.set.BTreeSet Str Global) (value : Str) :\n  Result (Bool \u00d7 (alloc.collections.btree.set.BTreeSet Str Global))\n  := do\n  alloc.collections.btree.set.BTreeSet.insert core.core.clone.CloneGlobal\n    (Shared0A.Insts.CoreCmpOrd Str.Insts.CoreCmpOrd) seen value",
+      "effect_syntax_counts_not_runtime_counts": {
+        "Call": 1,
+        "on_unwind": 1,
+        "UnwindResume": 1,
+        "Return": 1
+      }
+    },
+    "insert_lane": {
+      "charon_exit": 0,
+      "aeneas_exit": 0,
+      "llbc_sha256": "9df6d3168d2c902655d085461693301add23566df57e0405b1bd5bcda6178c69",
+      "generated_sha256": {
+        "artifacts/btree-set-preflight/insert_lane-lean/translation.json": "d084a9b3ff6ac5d20671f0db8764de660c348d65e15e02aa639105c60e7d85b3",
+        "artifacts/btree-set-preflight/insert_lane-lean/SandproofBtreeSetProbe/TypesExternal_Template.lean": "d230b5eec227a896f3c861832832eaebbb2b5be901c2053ca85a3ec84e7d66b2",
+        "artifacts/btree-set-preflight/insert_lane-lean/SandproofBtreeSetProbe/FunsExternal_Template.lean": "07df2c45f67f62ae601e2f1bff9ad7bd7d6e8023e7672c3d4ef447dcfb8d8eea",
+        "artifacts/btree-set-preflight/insert_lane-lean/SandproofBtreeSetProbe/Funs.lean": "5559065eda3c1ac4b57d3e7c04f54cfc77856738984ad7f33b5d7a110a06d44c",
+        "artifacts/btree-set-preflight/insert_lane-lean/SandproofBtreeSetProbe/Types.lean": "bd3d53a65c0b0044fa7ac83efc1407b155ba0bbfff69db75b9039aeb57796e7d"
+      },
+      "generated_root": "def insert_lane\n  (seen : alloc.collections.btree.set.BTreeSet (Str \u00d7 Std.U16) Global)\n  (node : Str) (slot : Std.U16) :\n  Result (Bool \u00d7 (alloc.collections.btree.set.BTreeSet (Str \u00d7 Std.U16)\n    Global))\n  := do\n  alloc.collections.btree.set.BTreeSet.insert core.core.clone.CloneGlobal\n    (Pair.Insts.CoreCmpOrd (Shared0A.Insts.CoreCmpOrd Str.Insts.CoreCmpOrd)\n    core.cmp.OrdU16) seen (node, slot)",
+      "effect_syntax_counts_not_runtime_counts": {
+        "Call": 1,
+        "on_unwind": 1,
+        "UnwindResume": 1,
+        "Return": 1
+      }
+    },
+    "repeat_str": {
+      "charon_exit": 0,
+      "aeneas_exit": 0,
+      "llbc_sha256": "6f1e5637c26872a70cc04cc59fcd42e970327c8a45ee76e23b5ccef392b9a64e",
+      "generated_sha256": {
+        "artifacts/btree-set-preflight/repeat_str-lean/translation.json": "1e8531c213f128b1142eb1408325d19fde8310e4e71b96eecbf86256ec05aece",
+        "artifacts/btree-set-preflight/repeat_str-lean/SandproofBtreeSetProbe/TypesExternal_Template.lean": "d230b5eec227a896f3c861832832eaebbb2b5be901c2053ca85a3ec84e7d66b2",
+        "artifacts/btree-set-preflight/repeat_str-lean/SandproofBtreeSetProbe/FunsExternal_Template.lean": "822657aa85efeb2f98d55a2753acb8ce34d922a310864c85c8d677b08738f0db",
+        "artifacts/btree-set-preflight/repeat_str-lean/SandproofBtreeSetProbe/Funs.lean": "cea27b9d1933172e3e49562b6949692c8d97e5c3aa4f0584bdbcd804829e82f4",
+        "artifacts/btree-set-preflight/repeat_str-lean/SandproofBtreeSetProbe/Types.lean": "bd3d53a65c0b0044fa7ac83efc1407b155ba0bbfff69db75b9039aeb57796e7d"
+      },
+      "generated_root": "def repeat_str\n  (seen : alloc.collections.btree.set.BTreeSet Str Global) (value : Str) :\n  Result ((Bool \u00d7 Bool) \u00d7 (alloc.collections.btree.set.BTreeSet Str Global))\n  := do\n  let (first, seen1) \u2190\n    alloc.collections.btree.set.BTreeSet.insert core.core.clone.CloneGlobal\n      (Shared0A.Insts.CoreCmpOrd Str.Insts.CoreCmpOrd) seen value\n  let (second, seen2) \u2190\n    alloc.collections.btree.set.BTreeSet.insert core.core.clone.CloneGlobal\n      (Shared0A.Insts.CoreCmpOrd Str.Insts.CoreCmpOrd) seen1 value\n  ok ((first, second), seen2)",
+      "effect_syntax_counts_not_runtime_counts": {
+        "Call": 2,
+        "on_unwind": 2,
+        "UnwindResume": 2,
+        "Return": 1
+      }
+    },
+    "new_then_repeat_str": {
+      "charon_exit": 0,
+      "aeneas_exit": 0,
+      "llbc_sha256": "bbb04b74c3c02247dcb31ae6be074631a8f0ae126a7882b74edbe3fdbcae9029",
+      "generated_sha256": {
+        "artifacts/btree-set-preflight/new_then_repeat_str-lean/translation.json": "8252f6de06d11dc3902cf79498677945f6a458bda6d8a02805de7d7968767bfb",
+        "artifacts/btree-set-preflight/new_then_repeat_str-lean/SandproofBtreeSetProbe/TypesExternal_Template.lean": "d230b5eec227a896f3c861832832eaebbb2b5be901c2053ca85a3ec84e7d66b2",
+        "artifacts/btree-set-preflight/new_then_repeat_str-lean/SandproofBtreeSetProbe/FunsExternal_Template.lean": "dcf99663f1049c2419d69c231e204fa2bc58d07583feac3b0d9b4ed3f97cae84",
+        "artifacts/btree-set-preflight/new_then_repeat_str-lean/SandproofBtreeSetProbe/Funs.lean": "39255028e87bbda1167b1624fc864ab1547ff37fd07d7944a4179f98b79aeaa1",
+        "artifacts/btree-set-preflight/new_then_repeat_str-lean/SandproofBtreeSetProbe/Types.lean": "bd3d53a65c0b0044fa7ac83efc1407b155ba0bbfff69db75b9039aeb57796e7d"
+      },
+      "generated_root": "def new_then_repeat_str (value : Str) : Result (Bool \u00d7 Bool) := do\n  let seen \u2190 alloc.collections.btree.set.BTreeSetTGlobal.new Str\n  let (first, seen1) \u2190\n    alloc.collections.btree.set.BTreeSet.insert core.core.clone.CloneGlobal\n      (Shared0A.Insts.CoreCmpOrd Str.Insts.CoreCmpOrd) seen value\n  let (second, _) \u2190\n    alloc.collections.btree.set.BTreeSet.insert core.core.clone.CloneGlobal\n      (Shared0A.Insts.CoreCmpOrd Str.Insts.CoreCmpOrd) seen1 value\n  ok (first, second)",
+      "effect_syntax_counts_not_runtime_counts": {
+        "Call": 3,
+        "on_unwind": 6,
+        "UnwindResume": 4,
+        "Drop": 3,
+        "Return": 1
+      }
+    }
+  },
+  "evidence_package_sha256": "d0ddc44d87f3f3890d1a4dd53d395663931091782866e39f23e39e45d26fac01",
+  "drop_analysis": {
+    "case": "new_then_repeat_str",
+    "normal_conditional_drop_sites": 1,
+    "unwind_cleanup_drop_sites": 2,
+    "syntax_counts_not_dynamic_counts": true,
+    "lean_drop_effects_verified": false
+  }
+}

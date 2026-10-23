@@ -1,0 +1,71 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["SandboxModel.Boundaries.ChildObservation.Audit"]
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/foundations"
+
+[[lean_lib]]
+name = "SandproofNetwork"
+srcDir = "verification/aeneas/network"
+
+[[lean_lib]]
+name = "SandproofDataDrain"
+srcDir = "verification/aeneas/data-drain"
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+
+[[lean_lib]]
+name = "SandproofTls"
+srcDir = "verification/aeneas/tls"
+
+[[lean_lib]]
+name = "SandproofStdMutex"
+srcDir = "verification/aeneas/std-mutex"
+
+[[lean_lib]]
+name = "SandproofSchemaDomains"
+srcDir = "verification/aeneas/schema-domains"
+
+[[lean_lib]]
+name = "SandproofLoopCallbacks"
+srcDir = "verification/aeneas/loop-callbacks"
+
+[[lean_lib]]
+name = "SandproofSqliteStatements"
+srcDir = "verification/aeneas/sqlite-statements"
+
+[[lean_lib]]
+name = "SandproofSqlite"
+srcDir = "verification/aeneas/sqlite"
+
+[[lean_lib]]
+name = "SandproofChildObservation"
+srcDir = "verification/aeneas/child-observation"
+
+[[lean_lib]]
+name = "SandproofCallbackState"
+srcDir = "verification/aeneas/callback-state"
+
+[[lean_lib]]
+name = "SandproofBoundedWriter"
+srcDir = "verification/aeneas/bounded-writer"
+
+[[lean_lib]]
+name = "SandproofBtreeSetProbe"
+srcDir = "verification/aeneas/btree-set-binding"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectory"
+srcDir = "verification/aeneas/protected-directory/correct"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectoryBad"
+srcDir = "verification/aeneas/protected-directory/bypass-writes"

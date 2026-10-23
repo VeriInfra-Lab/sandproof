@@ -137,9 +137,16 @@ Redis 脚本原子执行指不被其他请求插入，不保证任意多写脚�
 | A11：Redis 7.2.16 与 redis-rs 1.7.1 | 原受保护 IPv4 回环、ACL、单有效写者及冻结持久化/内存配置下，采用该版本命令和回复的合同。EVAL 执行期间不插入其它命令 | 不承诺外部调用总返回；错误不保证无写入或回滚。实际 Lua 的检查、参数和唯一写入顺序仍由 V2 提供；磁盘/文件系统及机器故障范围必须另有部署条件 |
 | B4：候选 `storage_io::eval` | 将原 CAS 文本、单个 key、部署、格式、旧修订、新修订、完整新旧 payload 和限额按实际 KEYS/ARGV 顺序传给原连接；保留实际数字或错误 | `LibraryRequest` 只记录传给适配的参数，不表示发包、执行或落盘。选择文本/对象/字段、解释返回码以及确认/未知决定不属于机械适配 |
 | B4：候选 `storage_io::info/settings/query` | 把实际 section、完整有序配置键和原绝对 deadline 交给同一连接；按原调用设置剩余读写超时，忠实传递回复/错误及连接回写 | 多次检查不是原子快照；超时设置不是整个调用的严格墙钟上界。失去响应、协议/类型转换错误或读取失败都可能在命令已执行之后发生；不能因本地连接被清空推导数据库没变或物理连接已经关闭 |
+| B4：原 `diagnostics::emit` 经候选 `storage_io::emit` | 仅把原 Phase、Failure 和两个时长交给同一进程的原日志函数；正常返回不改写账本业务字段、连接或围栏。参数中没有账本、连接、载荷、租约或用户回调 | 允许写入失败、记录被抑制、阻塞、panic 或不返回；不保证日志写入成功、64 次内一定结束，亦不保证异常后已设置围栏。健康判断、拒绝先后和返回码仍是透明自有代码 |
 | A6：候选 `trim_cr/split_colon` 与固定字符串/表操作 | 固定标准库的 UTF-8/字节接口；按第一个冒号分割、按原规则去掉末尾 CR，Lines 保留原 LF/CRLF 行语义；仅采用纯 String/str 比较和借用、唯一键字典及纯字节克隆 | 自有 INFO 扫描、重复键拒绝及配置选择仍抽取；任意自定义比较器、Borrow、Clone、格式回调或有状态两次编码不在本范围 |
 | A8/B4：候选 `OperationClock/SystemClock` | 本次原超时配置传给原时钟，产生的 deadline 原样交给后续调用；回调状态在抽取结果中保留 | 不假设跨机时钟一致，也不从一个 deadline 推出调用一定结束；单位、溢出和更高层寿命仍由调用者负责 |
 | B4：公开 `commit/reaffirm` 到泛型核心 | 实际薄转调传递原账本、原观察、原 next、`T::FORMAT_VERSION`、原 `JsonCodec` 和 `SystemClock`；完整返回与异常路径保留 | 完整公开 Charon AST 的源码/参数准入是审查和检查证据，不是具体 Serde 回调图的 Lean 精化；改变回调、参数、分支或字典必须重查 |
+
+此日志合同由 owner 于 2026-10-20 采纳，见[具体提案](https://github.com/VeriInfra-Lab/sandproof/issues/333#issuecomment-6288404741)与[采纳记录](https://github.com/VeriInfra-Lab/sandproof/issues/333#issuecomment-6289377201)。候选增加的 `storage_io::Diagnostics` 在真实 Rust 中是空结构，不拥有文件、锁或连接；其模型中的后续结果和调用历史是对输出行为的逻辑表示，不是新增的 Rust 存储。健康检查允许推进这一逻辑历史，原 endpoint、config、租约、围栏及载荷标记保持不变。它不能证明日志内部原子计数、stderr 锁或输出格式正确。
+
+[输出模型](../../verification/aeneas/storage/SandproofStorage/FunsExternal.lean)保留正常写入、写入失败但调用正常返回、抑制、panic 和不返回；历史只记录接口调用，不作为实际写入证据。本批透明健康拒绝只传 ConfigurationMismatch/UnhealthyPersistence 两种 Failure；其它查询诊断仍在原 `query` 适配内，沿用其可能失败或不返回的合同，不新增任意日志器的通用模型。`Duration::ZERO` 另按 A6 表示零秒、零纳秒，源码仍由原两版 `core/src/time.rs` 摘要核对。输出的失败和发散不会被换成业务成功。
+
+[来源检查](../../tools/check_redis_diagnostics_binding.py)同时核对当前生产诊断文件原字节、完整移出的查询体、先清空连接再日志、CAS 的原 phase、三类健康调用的元数据与第一次拒绝顺序。它支持 B4 的采用，不是一般旧新等价证明。隔离候选、模型或任何实际调用发生变化时，重新核对这些连接与完整 LLBC/Drop/审计；不能只刷新原文件摘要。
 
 原 LLBC 的析构逐位置登记在候选 `environment.json`：普通 String/Vec、已登记字典和自有载荷容器，仅在普通值域中忽略其内存释放；泛型 T 不得含可观察自定义 Drop 或共享资源。`fence_unknown` 对原 Option<Connection> 的替换另按外部 A6/B4 处理，**不把 TCP 连接析构说成纯内存操作**：实际关闭可能让对端继续处理已发请求或产生其它网络结果，物理效果仍未知。此域只允许原受控非 PubSub TCP 连接，不安装用户 push sender，不据模型中的 None 证明物理关闭、退出或回滚。写者文件租约及 codec/clock 原所有者均为借用，不在这组调用中释放。异常清理位置同样冻结，但正常后态定理不覆盖 panic/unwind/abort；若将来引入资源载荷、PubSub、用户析构或新关闭行为，须重审该域。
 
@@ -566,12 +573,12 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返回就不补造广播完成、析构完成、退出或恢复。安全模型不承诺最终再次 poll、最终删除或调度公平。模型之外的真实 I/O、锁顺序和内部推进仍按所属 V8/V6/V9 义务完成。
 
-本条不覆盖 `notify_last`、多接收者单通知队列或任意混用单通知/广播。源码中 [reaper.wake](../../sandbox-runtime/src/child_process/reaper.rs) 的同名 `notify_one` 实为标准库 **Condvar**，由已有 typed MIR 定位确认；其公共合同仍归 V0，队列谓词/回收策略归 V6，明确作为未完成项登记，不借本条认领。当前源码定位、原工具不支持诊断和确定性原生回归只支持所列可信条件，未证明全部 Rust 并发。
+本条不覆盖 `notify_last`、多接收者单通知队列或任意混用单通知/广播。源码中 [reaper.wake](../../sandbox-runtime/src/child_process/reaper.rs) 的同名 `notify_one` 实为标准库 **Condvar**，由已有 typed MIR 定位确认；其窄接口和未覆盖项见本页独立 Condvar 合同；队列谓词/回收策略归 V6，不借本 Notify 条款认领。当前源码定位、原工具不支持诊断和确定性原生回归只支持所列可信条件，未证明全部 Rust 并发。
 
 
 ## A6/B2/B3 JoinSet：收齐原任务与返回值
 
-固定 Tokio 1.49.0，生产来源为 integration `886f2dd6`。范围限于原 [中心监督](../../sandbox-center/src/runtime.rs)、[受保护连接组](../../sandbox-internal/src/protected_server.rs)和 [Guest 连接组](../../sandbox-guest-service/src/listener.rs)使用的 `new/spawn/len/is_empty/join_next/abort_all` 与正常组析构。三处源码、四份库实现、十二组机械操作和三项业务责任见[逐点登记](../../verification/joinset-environment.json)；[摘要](../../verification/joinset-inputs.sha256)固定实际输入。本条是既有 A6/B2/B3 的窄接法，不将整个服务、TLS 或业务回调列为可信。
+固定 Tokio 1.49.0，生产来源为 integration `886f2dd6`。范围限于原 [中心监督](../../sandbox-center/src/runtime.rs)、[受保护连接组](../../sandbox-internal/src/protected_server.rs)和 [Guest 连接组](../../sandbox-guest-service/src/listener.rs)使用的 `new/spawn/len/is_empty/join_next/abort_all` 与正常组析构。三处源码、五份库实现、十二组机械操作和三项业务责任见[逐点登记](../../verification/joinset-environment.json)；[摘要](../../verification/joinset-inputs.sha256)固定实际输入。本条是既有 A6/B2/B3 的窄接法，不将整个服务、TLS 或业务回调列为可信。
 
 | 提供方与实际操作 | 可以依赖的保证 | 使用方仍须证明 |
 | --- | --- | --- |
@@ -588,3 +595,174 @@ panic/unwind/abort、取消或崩溃只保留已观察前缀；没有正常返�
 这 36 条声明证明所列模型的历史守恒、原身份/值和单次交付、受检容量与完整收齐；另保留合法非空成功，以及提前 drop/只 abort 不能满足同一收齐性质的反例。原 Charon 的实际异步入口预检、逐符号源码核对和确定性原生回归支持可信接线的采用，不提供完整 async Rust 机器精化。原生错误版分别去掉中心/Guest 原收齐循环，必须先新编译，再被正确版相同的即时断言拒绝；编译失败或超时不算反例。
 
 本条不覆盖 join_all、shutdown 便利方法、detach_all、JoinSet::spawn_blocking 或任务 ID 接口。没有无条件最终调度、终止或清理保证；不返回、panic/abort/崩溃只保留已观察前缀。业务回调、首次拒绝/错误、持久提交、真实 I/O/命令退出、Report 语义与授权仍归原 V2/V6/V8/V9，Mutex/RwLock、Condvar 及其它通道的公共缺口继续归 V0。
+
+
+## A6/B2 标准 Mutex：原守卫、中毒与唯一借用
+
+范围为固定 Rust 1.97.0 与前端 nightly-2026-08-18 标准库的 `Mutex::new/lock/try_lock/get_mut`、原守卫的借用/正常析构和 `PoisonError` 恢复。两版标准库的 mutex、poison 与 Linux futex 实现、三份代表生产源码和十三组操作/责任见[登记](../../verification/std-mutex-environment.json)及[冻结输入](../../verification/std-mutex-inputs.sha256)。本条细化既有 A6/B2，不增加整个业务正确的可信条件。
+
+| 提供方与接口 | 可依赖的窄保证 | 使用者仍须提供 |
+| --- | --- | --- |
+| A6：同一原 Mutex 的 lock/try_lock | 正常取得返回原守卫；中毒错误也已经取得并持有原守卫。try_lock 先尝试原底层锁，忙时返回 WouldBlock，即使中毒也不返回一个可用守卫 | 原对象/有效 Rust 借用和守卫所有权，哪些字段由该锁保护；阻塞、重复领取、锁顺序与无死锁另证。逻辑领取序号不是指针、线程 ID 或公平队列 |
+| A6：PoisonError 恢复与守卫读写 | 恢复返回原载荷/原守卫；不回滚已写数据，不清除 poison。持锁期间的写入须由调用者自己的关系描述 | 选择拒绝还是恢复、修复哪个业务不变量、原返回值及错误解释。中毒只是建议性观察，不是内存安全/完整业务状态的凭证 |
+| A6：正常守卫 Drop | 在原锁上结束该次持有并按实际 panic 状态更新中毒；不析构 Mutex 内的 T。若取得时已经处于 unwind，后续释放可以不设置新的 poison | 区分正常返回、实际 unwind、Drop 自身 panic、abort/崩溃。forget 不解锁；外部进程、FD、许可等真实归还按原载荷全部所有者及业务证据处理 |
+| A6：get_mut 的真实唯一借用 | 由实际 &mut Mutex 排除新的共享领取，不需要取得底层锁；返回原正常/中毒分支的可变借用，写回只修改原 payload | 独立的唯一 Rust loan 条件，不能从“当前没有活跃守卫”推出唯一访问。此前 forget 留下的底层锁可以仍锁住，get_mut 不修复它 |
+| B2：SerialMutex/SerialGuard 诊断薄层 | 构造/lock 使用原 Mutex；lock 的诊断通知先于真正尝试，不证明取得。正常执行到 drop(self.guard.take()) 后，原解锁先于后续 CURRENT 诊断修改 | 此适配只在 contention-diagnostics 特性启用；计时表达式先完成才观察到该释放事件。measure/host_call 的业务回调、诊断状态恢复及计数不整体可信 |
+
+[守卫模型](../../SandboxModel/Boundaries/StdMutex/Guard.lean)证明逐步/有限历史的互斥、原身份、守卫失效、忙碌/中毒、正常释放和调用者给定写关系下的不变量保持。payload 仅投影原内联字段及句柄，不把别名可变堆冻结成快照，不复制 Rust 资源所有权。守卫被遗忘时原底层锁仍忙；停止使用该守卫也不授予唯一借用。
+
+实际 [SerialMutex::get_mut](../../controller-service/src/application/diagnostics.rs) 由原 Charon/Aeneas 透明抽取，[借用合同](../../SandboxModel/Boundaries/StdMutex/BorrowModel.lean)、[实现对应](../../SandboxModel/Boundaries/StdMutex/GetMut.lean)和[模型连接](../../SandboxModel/Boundaries/StdMutex/Bridge.lean)固定正常/中毒分支、原字段和回写。标准 Mutex 的独占借用库模型仍依 A6 符合性，不是标准库机器证明。吞中毒错误的实际 Rust 版本重新编译抽取后，被正确版同一 GetMutContract 内核反驳；它使用的 PoisonError<&mut T>::into_inner 专用绑定先核对实际 LLBC 借用实例，不适用于任意拥有值的 PoisonError<T>。
+
+真实 Guest Meter::lock 和 PtyMaster::descriptor/close 分别登记原 Snapshot 和 Option<Arc<AsyncFd<OwnedFd>>>。Meter 的 exact=false、PTY 的中毒拒绝/恢复及 close 资格属于 V8/V6 业务；原句柄克隆仍可持有 FD，清空 Option/通知不提供物理退出或最后归还证据。两处共享借用入口的原工具预检保留后端非可结束借用、动态 I/O 错误类型障碍；条件模型、原源码审查和原生回归不冒充这两个入口已机器精化。
+
+本条不覆盖 Condvar 原子解锁/重锁、Tokio Mutex/RwLock、所有生产 Mutex 使用点、全业务不变量或无条件进展。它们的公共缺口继续归 V0，实际业务守卫、恢复、授权与释放条件归 V1–V9，不能由 A6/B2 整体代替。
+
+
+## A6/B4 Status 字段与普通 JSON 字节
+
+[SchemaDomains](../../SandboxModel/Boundaries/SchemaDomains.lean)只连接原 StatusRequest/HostStatus 守卫和登记的普通字节调用。来源、完整字段、标准派生及四个字节根见[逐符号登记](../../verification/schema-domains-environment.json)与[字段分类](../../verification/experiments/schema-domains/catalogue.json)。固定工具、原 NodeIdentity/Resources 和原切片/游标不能换成另一个请求或字典。
+
+真实同步 validate/validate_for 由原工具抽取，证明全文节点绑定、原拒绝及 slots 的 1..=4096 守卫；可表示的 4097 在守卫拒绝，不假装解码器不能表示它。资源零值及任意可表示时间是原允许输入，不因此获得授权、新鲜性或资源真实性。两条真实错误分支使用正确版同一独立合同反驳。
+
+A6 仍只提供固定 JSON 引擎、标准派生和普通值接口；B4 只连接登记的原对象、完整参数/结果及实际字节位置。正常分配的 SliceRead/Vec 合同保留字段次序、对象/声明顺序数组、缺失/重复/未知字段、原错误和结束检查；异常可能已有输入/输出前缀，不许假定回滚或两次有状态编码相等。自有 ID/非零计数器及守卫继续使用真实生成体定理。任意自有 Serialize/Deserialize 回调、资源载荷、可观察 Drop、panic/unwind/OOM/abort 不属于普通值合同。
+
+客户端请求编码、服务器请求解码、客户端响应解码有实际来源绑定；普通 Vec 的响应编码仅是参考。真实服务器的 encode_bounded 使用私有 Writer，不能用参考 to_vec 的定理代替；长度/分配失败/部分输出/错误优先级由独立 BoundedWriter 公共接口及其实际调用条件处理，见本页对应条目；其当前验收层次见覆盖记录。22 类型/10 上下文的分类不表示它们已全部证明。V3/V7 提供端点/认证绑定，V6 提供观察真实性，V1/V4 提供实际容量使用。
+
+Status 与 TLS 的独立生成根会产生同名的 TransportError 判别辅助声明，不能在同一个 Lean 环境直接混合导入。公共根提供[纯值词汇和接受条件](../../SandboxModel/Boundaries/SchemaDomains/Values.lean)；完整 Status Rust 对应与 46 项审计保持独立文件/模块检查，并进入全部保留文件构建、真实文件诊断和总清单。没有删除 TLS 或 Status 检查，也没有改写生成物。调用方须区分可共同导入的值合同和各生成根的实现对应；本接线不承诺所有独立生成根能直接共同导入。
+
+## A6 原 Store 共享查询与成员判断
+
+[LoopCallbacks](../../SandboxModel/Foundations/LoopCallbacks.lean)复用有限首次匹配理论，连接原 Store::get/contains_key 和四个透明 Rust 委托。完整来源邻域见[登记](../../verification/experiments/loop-callbacks/source-map.json)，函数/字典及借用域见[环境](../../verification/loop-callbacks-environment.json)。本条只使用原工具/A6 和有效安全共享借用的既有可信链，不增加整个调用者或比较器正确的 B 条件。
+
+返回值保留原有序表的首次匹配，允许重复键；contains_key 由同一次 get 的结果判断。实际 u64 比较已有对应定理；其他键须由使用方证明 TableLawfulEq，键投影须单射，V 不要求 Copy。共享借用仅给出普通值观察，不承诺物理地址、不复制资源，也不把别名可变堆当作不可变快照。跳过首项和反转成员判断的真实错误版均由独立的同一查询/成员合同拒绝。
+
+源码邻域只登记 World、checkpoint 及 runtime 的实际调用，未证明它们的完整业务；V4/V9 继续提供自有比较/表示、恢复、授权、状态选择及释放决定。回调次数/状态和有状态 FnMut 是独立义务，不由这组只读查询定理自动得到。
+
+## A4/A6/B4 SQLite 条件 UPDATE 的固定五参数接口
+
+[SqliteStatements](../../SandboxModel/Boundaries/SqliteStatements/Model.lean)为原 write_accepted_with_ids 中一条条件 UPDATE 提供有限行片段；[环境](../../verification/sqlite-statements-environment.json)与[候选](../../verification/experiments/sqlite-statements/candidate.json)固定 SQL、五个位置/类型、原连接/事务、checked_add、整数边界、原错误和 changed != 1 的决定。这里只证明隔离副本实际调用的核心，生产未改；分离核心/固定五元组的有限数据库对照不构成一般旧新等价。
+
+A4 采用固定 rusqlite 0.40.2/SQLite 3.53.2 的完整 Connection.execute API；A6 保留固定标准库与普通值。B4 只承担已登记的原对象和值传递。固定五元组的 NormalReplyContract 是联合接口：参数编码成功不等于 raw_bind 已成功，run 仍包含 raw_bind 的第一个错误及 step/reset 的原返回优先级。不能从内部 __bind_in 直接推导执行成功，也不支持任意有状态 ToSql、裸 Statement 或旧绑定复用。Statement::drop 忽略 finalize 的 Result，成功返回不证明清理无错。
+
+行效果要求调用者/V5 提供真实 schema、有效非 NULL 列域、BINARY 文本比较、数据库保护、没有未登记触发器及同一事务连续历史；非 STRICT 类型声明本身不提供这些条件。成功恰改一行才能继续；零行的正常观察被错误版接受时由同一性质反驳。底层错误仍可有部分效果，影响一行不等于耐久提交，SQLite 不回滚外部 I/O。完整 outbox/投影/编码、事务提交、读取/确认/恢复、授权和寿命仍归 V5；panic/unwind/abort/崩溃后态与资源真实释放未因此证明。
+
+本模块的完整生成根存在与旧根重名的全局声明，故保留独立 Lake/物理诊断视图；公共根只复用纯行 Model。独立的 38 项正例及 7 项错误版内核审计都进入完整批次清单，不因未强行共同导入而省略任何模块或检查。
+
+## A6/B2 Condvar：等待时释放，返回前重新持有原锁
+
+本条只覆盖固定标准库的 `Condvar::new/wait/wait_timeout/notify_one`，以及原 [Reaper](../../sandbox-runtime/src/child_process/reaper.rs) 的有限调用连接。两版库源、原对象、七组操作和业务提供方见[接口登记](../../verification/condvar-environment.json)。模型限定一次活跃等待，可以有其它线程在此期间取得、修改和释放同一个 Mutex；V6 提供这个 Reaper 的单一等待消费者及原锁绑定。多个同时等待者、`notify_all`、便利等待方法和公平性不能直接套用本条。
+
+| 满足前提后可使用的保证 | 调用者仍须提供的条件和限制 |
+| --- | --- |
+| 原守卫交给 wait，注册等待与解锁按库合同连接；等待期间该次旧领取不能再访问受保护数据。暂停不是守卫 Drop，不设置新的 poison，也不析构原 payload | 有效的原 Rust 所有权、同一个原 Condvar/Mutex/守卫及一次等待。不能在检查谓词后先自行解锁，再把之后的通知视为已保存 |
+| 正常返回前重新取得原 Mutex，返回同一个被传入的守卫值，保留其最初取得时的 panic 标记；读取当前数据而非等待前的快照 | 守卫值身份不是地址或线程编号。其它持锁者的实际写入关系和业务不变量由调用者证明；锁保护原字段/句柄，不冻结外部进程、别名可变堆或其它资源 |
+| `PoisonError` 也已经持有原守卫；`wait_timeout` 的错误保留完整 `(guard, timeout-result)` 元组，恢复不回滚数据或清除 poison | 拒绝、恢复或 unwrap 的选择由业务证明。没有正常返回时只保留实际前缀；不假设 panic、abort 或崩溃一定完成析构或归还 |
+| 通知不会改变原锁数据，也不保存给未来等待领取的许可；允许虚假唤醒 | 通知不证明队列非空、授权有效、子进程退出、任务完成或许可归还；返回后须重新检查实际谓词 |
+| 实际超时结果只说明该次库等待的超时观察；通知和超时均不替代重新取得锁 | 本模型不保证时钟/调度推进，也不给出包含锁竞争在内的硬返回时限。10ms 参数不是进程退出或真实清理证据 |
+
+[Core](../../SandboxModel/Boundaries/Condvar/Core.lean)和[等待协议](../../SandboxModel/Boundaries/Condvar/Protocol.lean)复用标准 Mutex 的逻辑领取与原对象规则。公开返回步骤同时要求匹配的活跃等待已经可以返回，以及原 Mutex 空闲；裸 `resume` 只是值构造器，不能单独作为真实调用已获准的证据。如果调用者证明每次实际写入保持自己的不变量，可以复用历史保持结论；[合法历史](../../SandboxModel/Boundaries/Condvar/Examples.lean)同时表明虚假唤醒不建立业务谓词、超时不保证已经重新取得锁。
+
+B2 仅连接原 `self.wake/self.pending`、完整守卫/时长/结果及原 `Slot::retain` 中的调用顺序，不把 `run/reap_ready`、入队资格、队列谓词、真实退出或释放决定整体列可信。正常执行到 notify 前，源码已经执行原 push 并结束该临时守卫；若先前 panic 则不补造通知；notify 正常返回时工作也可能已被其它线程处理，不能断言原条目仍在队列。V6 继续提供每个原 Child/Slot、容量、全部业务写入、错误处理和释放依据。
+
+真实原 `run/reap_ready` 的 Charon 预检可得到透明函数体；固定 Aeneas 在 `run` 循环的借用合并处报错，原文保留。本条的模型定理、源码/原生证据和条件接线不构成整个 Reaper Rust 的机器精化；不会通过把这个循环设为 opaque 来消除业务义务。模型中“不重新持锁就返回”被同一 Safe 性质反驳；原生错误锁例只是接口夹具，不冒充真实 Rust 的形式错误版。复现及原入口见[实验说明](../../verification/experiments/condvar/README.md)。
+
+
+## A6/B2 Tokio RwLock：保留原读守卫的共享观察
+
+本条限定固定 Tokio 1.49.0 的 `RwLock::new/read/read_owned/write`、原读写守卫的正常释放，以及 `OwnedRwLockReadGuard::try_map` 接 `Option::as_ref`。实际对象是 Guest 的 `Session.shared.current`；两份生产源码、五份固定库实现、七组机械操作和三项业务责任见[来源登记](../../verification/tokio-rwlock-environment.json)。[公共模块](../../SandboxModel/Boundaries/TokioRwLock.lean)只提供条件接口；不把整个会话或文件授权函数列为可信。
+
+| 满足前提后可以使用的保证 | 调用者仍须提供的条件和限制 |
+| --- | --- |
+| 同一原锁可以同时持有多个读守卫；返回的写守卫独占，活跃或被遗忘的读持有尚未结束时不能完成写取得 | 有效 Rust 所有权、同一个原 Arc/锁及哪些字段受保护；没有写者只是必要条件，不保证下一次读立刻完成。锁序、重入、跨 await 持锁和无环等待另证 |
+| `try_map` 成功将原守卫线性转为原字段的共享视图，不释放原读持有；失败把仍持锁的原守卫放在 Err 中 | 固定 `Option::as_ref` 是共享投影；原 Rust 守卫被消耗，不能复制成两次拥有。自定义有状态回调、内部可变对象及任意回调析构不能直接套用 |
+| 持续保留同一个活跃原读守卫期间，其保护的内联字段/句柄不被合法写者改写；正常读/写守卫释放终止本次访问，forget 保留底层排斥 | `ReadHistory` 由实际守卫寿命和 A6/B2 事件提供；每次真实写入的业务关系及不变量由调用者证明。仅复制字段后解锁不能获得同一 `ProtectedRead` 结论；不冻结外部进程、时钟或别名可变堆 |
+| 取消等待撤销本次内部排队/预留，不凭空提供可用守卫；其它任务可能因此继续执行 | 内部已分配的 semaphore 预留不是已返回的读守卫。模型只投影已取得的读写权，不说整个队列/运行时不变；真实取消、正常释放、panic、abort 与崩溃分别连接 |
+| 在原锁继续存活的范围内，守卫释放本身不改写锁内载荷；本接口没有标准库 Mutex 式 poison 结果 | owned 守卫持有 Arc。若它是最后一个强引用，完整 Drop 还可能销毁原锁及其载荷，不能引用存活载荷的保持结论。T5/V8 继续连接所有别名、最终析构、秘密清零和资源责任；panic 不回滚已写内容，也不保证任意异常都完成析构 |
+
+B2 只连接原 `current`、原守卫、共享投影和调用次序：`authorize/authorize_file_clock` 返回的 `AuthPermit` 保留原映射守卫；`apply` 的旧身份读取在该作用域结束后释放，之后才等待原写锁。旧快照能否用于后续决定、令牌/签名和期限、元数据、默认值校验、完整替换及何时结束许可仍由 V8/V9 提供，不能由锁定理推出授权正确。
+
+模型和有限非空历史证明读写排斥、原领取、映射及保留读者时的值保持，同一 `ProtectedRead` 拒绝提前释放模型。原 Rust 错误副本改持一个副本锁、提前释放原会话锁，由原轮换等待断言检查；这是原生回归证据。固定 Charon 对真实 async `Session::authorize` 的 coroutine/GAT 限制保留，未完成 async Rust 机器精化。源审查和测试仅支持所列 A6/B2 符合条件的采用。
+
+本条没有 FIFO、最大读者数、无条件最终取得或硬返回时限定理；不覆盖任意 `map` 回调、升级/降级、`write_owned`、`blocking_*`、任意其它 RwLock/Mutex 使用点或整个 Guest 业务。未被本条覆盖的公共接法仍归 V0，业务授权和真实资源/释放决定仍归所属模块。
+
+
+## A2/A3/A6/A8/B4 原 Child 的退出观察与未知交接
+
+[公共入口](../../SandboxModel/Boundaries/ChildObservation.lean)针对原 `OwnedChild::stop_and_reap` 的隔离同步候选。来源冻结于 integration `646fc2c8`，生产未采用该拆分；原实现和候选的有限对照是源码/测试证据，不是一般新旧 Rust 等价证明。[逐符号合同](../../verification/experiments/child-observation/contracts.json)保存九个机械函数的完整片段摘要、固定标准库版本、原对象和失败含义；核心、实际调用方及同性质错误版都使用固定原工具。
+
+入口由 V6 提供有效原 Child、已预占原 Slot、真实创建/回收身份及两项都存在的条件。A2 解释这一次原进程观察，A3 解释原管道关闭，A6/A8 解释正常值、时钟和暂停；B4 只连接 `system/try_wait/kill/close_pipes/now/add_grace/pause/retain/unknown_exit` 的原对象、完整参数及该次回复。它不担保整个停止函数、reaper 或释放决定正确。
+
+| 正常返回提供的窄保证 | 不提供的结论与调用者责任 |
+|---|---|
+| `try_wait` 的 Some 是原 Child 的同一完整退出状态，可来自其已缓存状态；None 与普通 io::Error 仍是合法回复 | None/Err 不说明进程仍活着或无效果；V6 防止提前回收后仍向复用 PID 发信号。一个进程退出不代表后代、VM 或全部 FD 已结束 |
+| `kill` 保留原终止请求及回复；已缓存退出时可不发新信号便成功。`close_pipes` 顺序取出并正常析构本地三个原管道 | kill 成功与管道为空均不是退出/排空证据；复制 FD、在途字节及全部后代由 V6/V8 处理。部分关闭不回滚 |
+| 每次 `now` 重新观察时钟，`add_grace` 使用原两秒常量，`pause` 是原十毫秒调用 | 不能推出两秒硬上界、时钟必然推进或最终回收；不可表示加法、panic、不返回没有正常后态 |
+| `retain` 正常返回表示原 Child/Slot 曾一并交给原 reaper，随后执行原通知；`unknown_exit` 保留原错误类别与全文 | 这是历史事实，worker 可能已经回收，不能断言当前队列成员关系；全局计费与原 reaper 释放政策归 V6。通知不提供退出证据 |
+
+机器证明的自有决定是：按原顺序观察/kill/关闭/比较截止；成功保留完整退出观察与本地原名额；未知返回前先取原 Child、再取原 Slot，转交原 pair 后构造原错误。实际生成调用方和具体接口字典另有检查。形式响应流与历史属于每次调用的逻辑上下文，不声称空 Rust SystemIo 物理存储这些字段，也不冻结外部 OS、时钟或其它队列。
+
+普通 Err 是正常回复，不能被删去。正常返回合同不为中断调用、panic/unwind、abort、崩溃或取消补造后态、清理或回滚。Error/Status/Instant 等表示限普通值，不允许把额外许可、FD 或自定义可观察析构藏在其中。缺值 panic 诊断、OwnedChild::Drop/into_child、整个 pump/exchange、SafeLaunch、全局容量和完整生命周期仍由 V6/V8 证明。原生错误版与形式错误版均检验原 pair 责任；编译失败不是反例。
+
+## A6/B4 有状态回调：原外部状态与访问顺序
+
+[CallbackState](../../SandboxModel/Foundations/CallbackState.lean)证明隔离 crate 内真实 `toggle_step/trace_step` 的生成体，再以逐次正常观察连接通用筛选理论。[来源登记](../../verification/experiments/callback-state/source-map.json)明确：trace/calls 来自原 Store 回归，toggle 是隔离代表，完整生产谓词没有因这两个例子完成证明。
+
+A6 仅提供普通值 Vec::retain 的正常有限遍历：对原每一行按原顺序调用一次，按该次 bool 保留原行；B4 只把同一个 helper、原外部可变状态、完整 key/value/配置及结果原样接上。自有比较、克隆、谓词、授权、退休与释放仍由 V4/V6/V9 证明，不能把整个 FnMut 或业务回调列可信。
+
+`Chain/Selected` 记录每次真实返回与原行选择；公共定理推出完整状态转移、次数、顺序、幸存行及 trace 的完整前缀追加。调用者须提供有效独占借用、普通值且无额外 Drop、每次对应及可表示 trace 容量；正常分配与模型容量不同，不保证物理内存足够。bool 回调没有 Result 错误短路；有业务 Result 的接口须另保留首错。中断只说明已完成调用的历史前缀，不声明当前外部堆/Store 回滚；受控 panic 仅为原生测试证据。
+
+两个真实错误 helper 均重新编译抽取，再由正确版同一 ToggleContract/TraceContract 拒绝。机械外壳的来源审查、原生测试与模型条件各自保留；未获得完整高阶闭包的机器精化。
+
+## T7/T8 有限依赖使用目录的读法
+
+[OS/存储目录](../../verification/os-boundary-catalogue.json)在固定五根、60 个编译变体之上核对 25 类接口、71 个代表源码位置；它没有新增可信保证或程序定理。每行说明原对象/配置、正常结果、错误和部分效果、未知/取消、进展和业务提供方。其 public_status 与待办是 review_baseline 的历史审查快照，当前交付状态见 #333 与覆盖记录；business_obligation 表示仍待业务证明。
+
+本页 A/B 是依赖合同的权威位置。目录中对源码行为的解释仍需其自有前提和业务证明，不能把该行整函数变成可信依赖，也不能把有代表例子理解为所有 SQL/Lua、驱动、Guest 或 Firecracker 调用已抽取。尚未接通的具体签名须给最小预检，不提前保证工具支持。有限目录不提供完整调用图、依赖析构或 Future 取消胶水语义。TLS 原借用输入连接仍是公开缺口，不由现有首叶候选或来源定位自动完成。
+
+
+## A6/B4 有界 Writer：真实写入、结束和响应选择
+
+[BoundedWriter](../../SandboxModel/Boundaries/BoundedWriter.lean)连接原私有 Writer 的隔离同步候选：`checked_add → limit → capacity → reserve → append`，以及 `exceeded → serializer result → bytes` 的结束顺序。原 `json_response` 的成功/失败选择另行抽取，HTTP 构造只机械转交原字节。[候选来源](../../verification/experiments/bounded-writer/candidate.json)、[完整差异](../../verification/experiments/bounded-writer/candidate-diff.json)和[原语登记](../../verification/bounded-writer-environment.json)固定原 e576a847 源码与具体实现；生产未采用拆分，一般旧新等价未机器证明。
+
+A6 仅提供固定普通 Vec 的长度、capacity、正常 reserve 不改内容、append 原字节及移出原字节；两个固定 IO 错误工厂保留原类别/文本。B4 只连接原 Writer/限额/块/serializer 结果与实际 HTTP builder，不担保限额判断、错误解释或任意 Serialize 正确。实际生成函数证明正常写入的全部字节与计数、历史中已接受块的精确连接、逻辑字节界、原超限优先级和 200 响应的原完整字节。
+
+拒绝不追加本次字节，但不撤销此前私有前缀，回调也可继续写较小/空块。大小加法溢出或超限才置 exceeded；reserve 失败保留原标记，不能统一叫超限。Writer 没有保存任意 IO 错误的全局首错；单次检查顺序、serializer 最终错误和超限优先级分别保留。自定义 Serialize 可以吞掉分配错误再正常返回，此时 finish 可以接受不完整前缀；完整 JSON 仍要求固定派生/实际回调正确传播错误与轨迹条件，由实际 schema/V3/V7/V8 提供。
+
+初始字节界由调用方建立；原入口从空 Vec 开始，预填充调用不自动满足。普通值、有效借用、有限可表示输入与正常分配是适用域，逻辑输出字节界不控制 Vec capacity、分配器、临时数据或整个服务 RAM。panic/unwind、OOM/abort、资源载荷的可观察 Drop、取消和网络最终交付不由正常后态定理提供。真实错误 Rust 删除限额拒绝后成功抽取，由同一 WriteContract 拒绝；库条件有合法非空接受与分配拒绝见证，不以不可满足条件获证。
+
+
+## A6 BTreeSet 普通键插入
+
+[实际连接](../../SandboxModel/Foundations/BtreeSetBinding/Refinement.lean)和[使用范围](../../verification/experiments/btree-set-binding/model/README.md)限固定 Global 分配器及 `&str`、`(&str, u16)` 普通键，`u64` 只作对照。Rust 仍调用原 `BTreeSet::insert`；五个透明委托的实际生成体已连接集合值模型，不把生产集合替换成 Vec。
+
+| 接口条件或结论 | 提供方和准确范围 |
+|---|---|
+| 正常插入返回 true 恰好表示原集合没有此键；随后集合包含该键，重复插入返回 false | 固定 Std 的 A6 正常值合同；真实委托与此合同的组合由 Refinement 证明 |
+| 后一次调用读取前一次回写后的同一集合 | 原生成函数的移动/回写连接；不能把连续调用改成两份旧快照 |
+| 字符串按完整 UTF-8 字节比较，元组先比较字符串再比较 u16 | 固定字典符合性；借用必须有效稳定，元素和长度可表示，所需分配可用 |
+| 只允许普通键和 Global 的不可观察内存释放 | A6 使用域；自定义 Ord、allocator、资源键 Drop 和异常清理不在本合同内 |
+
+模型中的列表仅表示集合含有哪些值，不保证真实树形、地址、迭代顺序、比较调用轨迹或物理内存上界。正常返回的合同不承诺 OOM/panic/abort 回滚或无条件进展。`contains/len/collect/iter`、其它键类型及完整 validator 不由插入接口推出；V1/V6/V8 仍证明实际唯一性要求、字段选择、首错和业务状态。22 项正确/辅助目标与2项真实错误版目标分别审计；真实返回值取反版经原工具抽取后由同一 `InsertContract` 拒绝，不把 Std 树算法称为已机器证明。
+
+## A3/B4 Metadata 目录判断
+
+[原函数对应](../../SandboxModel/Boundaries/ProtectedDirectory/Refinement.lean)验证 `protected_files::directory(&Metadata, owner)`。A3/B4 只提供同一份已取得 Metadata 的 `is_dir/uid/mode` 三个 getter，按固定生产/抽取编译器的八份 Std 原文核对；getter 不再次查询文件系统。目录类型、属主比较、权限掩码、短路顺序与 Ok/Untrusted 选择保留原 Rust 生成体。
+
+正常返回 Ok 当且仅当快照表示目录、属主为 root 或指定 owner，且 group/other 不可写，或该目录同时属于 root 并设置 sticky 位。合法私有目录和 root sticky 目录有原函数接受见证；去掉写权限掩码的真实 Rust 副本由相同 `AcceptanceSafe` 性质拒绝。14 项正确/辅助与2项错误版目标使用各自实际生成环境；局部 elaboration 适配仅在两个具名命名空间启用现有标准逻辑实例，不修改生成物或加入业务公理。
+
+本合同不保证 owner 选择正确，也不保证路径解析、首次打开、返回的 FD 身份、查验到使用之间没有替换、读写/同步/关闭顺序或物理退出。V6/V8 提供这些业务和对象条件。后续 `open_checked` 试点的循环/借用翻译仍有阻断；目录快照证明不代替完整受保护读取。原源码归档和八份 Std 原文均是正式复现必需输入，缺失或内容变化不能复用旧结果。
+
+## A6/B2 Tokio Mutex 原借用守卫
+
+[公共模型](../../SandboxModel/Boundaries/TokioMutex.lean)复用 RwLock 的独占写者规则并限制为没有读者的状态。固定 Tokio 1.49.0 的 borrowed `Mutex` 操作仍按 A6/B2 信任，实际异步表达式没有由 Aeneas 机器证明。三份生产源码中的七组操作在[逐点登记](../../verification/experiments/tokio-mutex/environment.json)维护：Session 的 init 创建/使用，以及命令 input 的创建、写入、关闭、安装和完成处理。
+
+| 操作或观察 | 可依赖的保证 | 调用者仍须提供 |
+|---|---|---|
+| 取得并持续持有原守卫 | 同一锁的其它取得不能同时返回可用守卫；逻辑 ticket 相等不允许复制 Rust 守卫 | 原锁/原守卫/实际操作历史符合登记，各次写入和中间状态保持业务不变量 |
+| try_lock 返回 Busy | 没有取得新可用守卫；Busy 也可能来自等待者预留 | 不把 Busy 推成另一个业务任务正在执行或输入已经关闭 |
+| 取消尚未取得守卫的等待 | 不凭空释放别人的已返回守卫 | 只描述本等待的守卫投影；取消整个持有资源的业务 future 须核对真实 Drop、I/O 和其它资源 |
+| 正常归还或 forget | 归还使旧访问失效；forget 使可用访问消失但锁仍可能一直占用 | 原锁存活；释放事件本身不改 inline payload，不保证解锁后其它写者没有立即修改 |
+
+Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+
+21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。

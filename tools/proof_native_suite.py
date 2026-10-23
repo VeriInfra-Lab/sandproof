@@ -14,7 +14,8 @@ import stat
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
-    rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success)
+    rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
+    contract_inputs, source_archive_inputs, NATIVE_SCHEMA)
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
                          'check_json_identifiers_negative.py',
@@ -108,7 +109,8 @@ def run_locked_suite(output):
                                                mode=oct(private_tmp.stat().st_mode&0o777)))
     os.environ['SANDPROOF_NATIVE_EVIDENCE'] = str(output)
     os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'native'
-    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT))
+    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+                   contracts=contract_inputs(ROOT),source_archives=source_archive_inputs())
     write_json(output / 'runtime.json', initial['runtime'])
     started = time.monotonic()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=output))
@@ -140,10 +142,44 @@ def run_locked_suite(output):
                            ('revocation','check_revocation_components.py'),
                            ('owned-message','check_owned_message_components.py'),
                            ('notify','check_notify_components.py'),
-                           ('joinset','check_joinset_components.py')]:
+                           ('joinset','check_joinset_components.py'),
+                           ('std-mutex','check_std_mutex_components.py'),
+                           ('condvar','check_condvar_components.py'),
+                           ('tokio-rwlock','check_tokio_rwlock_components.py'),
+                           ('callback-state','check_callback_state_components.py')]:
         target = work / name
         native_case(name, ROOT, target, lambda n=filename, p=target:
                     call(['tools/' + n, '--output', p]))
+    for name, driver in [('btree-set-binding','tools/check_btree_set_binding_components.py'),
+                         ('tokio-mutex','verification/experiments/tokio-mutex/native.py')]:
+        target=work/name
+        native_case(name, ROOT, target, lambda d=driver,p=target: call([d,'--output',p]))
+    target=work/'protected-directory'
+    library_archive=Path(os.environ['SANDPROOF_LIBRARY_SOURCE_ARCHIVE']).resolve(strict=True)
+    def protected_directory_native():
+        call(['verification/experiments/protected-directory/check.py'])
+        call(['verification/experiments/protected-directory/test_checks.py'])
+        call(['verification/experiments/protected-directory/native.py','--archive',library_archive,'--output',target])
+    native_case('protected-directory',ROOT,target,protected_directory_native)
+    target = work / 'schema-domains'
+    native_case('schema-domains', ROOT, target, lambda p=target:
+        call(['verification/experiments/schema-domains/native.py', '--output', p]))
+    target = work / 'loop-callbacks'
+    native_case('loop-callbacks', ROOT, target, lambda p=target:
+        call(['tools/check_loop_callbacks_components.py', '--output', p]))
+    target = work / 'bounded-writer'
+    writer_archive=Path(os.environ['SANDPROOF_WRITER_SOURCE_ARCHIVE']).resolve(strict=True)
+    native_case('bounded-writer', ROOT, target, lambda p=target:
+        call(['verification/experiments/bounded-writer/native.py', '--source-archive', writer_archive, '--output', p]))
+    target = work / 'child-observation'
+    child_archive=Path(os.environ['SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE']).resolve(strict=True)
+    native_case('child-observation', ROOT, target, lambda p=target:
+        call(['verification/experiments/child-observation/native.py', '--archive', child_archive, '--output', p]))
+    target = work / 'sqlite-statements'
+    archive = Path(os.environ['SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE']).resolve(strict=True)
+    native_case('sqlite-statements', ROOT, target, lambda p=target:
+        call(['verification/experiments/sqlite-statements/native.py',
+              '--source-archive', archive, '--output', p]))
     target = work / 'sqlite-correct'
     native_case('sqlite-correct', ROOT, target, lambda:
         call(['verification/experiments/sqlite-commit/native.py', '--source-base', ROOT,
@@ -165,7 +201,8 @@ def run_locked_suite(output):
             source, env=dict(os.environ, RUST_TEST_THREADS='1'))
     from tools.tls_pin_reproduction import reproduce
     reproduce(ROOT, ROOT / '.tools', work / 'tls', native_only=True)
-    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT)) != initial:
+    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+            contracts=contract_inputs(ROOT),source_archives=source_archive_inputs()) != initial:
         raise ValueError('source, rules or native tools changed during the suite')
     trusted_checkout(ROOT)
     commands={};uses=[]
@@ -179,8 +216,9 @@ def run_locked_suite(output):
         if sha(entry/'receipt.json')!=value or load_success(entry,receipt['key']) is None:
             raise ValueError('native evidence lost before complete publication')
         commands[identity]=value
-    result = dict(schema=1, complete=True, exit_code=0, rules=initial['rules'],
+    result = dict(schema=NATIVE_SCHEMA, complete=True, exit_code=0, rules=initial['rules'],
                   rust=initial['rust'], runtime=initial['runtime'], commands=commands,uses=uses,
+                  contracts=initial['contracts'],source_archives=initial['source_archives'],
                   repository_sha256=digest(initial['repository']))
     write_json(output / 'complete.json', result)
     print(json.dumps(dict(native_suite_complete=True, seconds=round(time.monotonic()-started,3),
@@ -200,7 +238,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','sqlite-correct'])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex'])
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':

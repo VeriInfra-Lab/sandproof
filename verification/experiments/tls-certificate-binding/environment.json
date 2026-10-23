@@ -1,0 +1,734 @@
+{
+  "schema": 1,
+  "scope": "finite-source-AST-admission-not-machine-refinement",
+  "base_commit": "a12f4e16b491cd58452d2b967f06af1bfc48a847",
+  "contracts": [
+    "A6",
+    "A9",
+    "A12",
+    "B4"
+  ],
+  "new_trust": false,
+  "new_theorems": 0,
+  "llbc_sha256": "26ee89998c7d7e8c79a3d6a461e1cc3fa23191a17d8c7a721dca46024773b592",
+  "llbc_digest": "089bea3282465d93db7447724f096c412d4d9ea46b5555ccbad9549b25ab420d",
+  "charon_options": {
+    "ullbc": false,
+    "precise_drops": false,
+    "mir": null,
+    "rustc_args": [],
+    "targets": [],
+    "sysroot": "default",
+    "monomorphize": false,
+    "monomorphize_mut": null,
+    "start_from": [
+      "crate::tls::_::verify_peer",
+      "crate::tls::_::peer_pin"
+    ],
+    "start_from_if_exists": [],
+    "start_from_attribute": [],
+    "start_from_pub": false,
+    "include": [
+      "crate::tls"
+    ],
+    "opaque": [
+      "rustls",
+      "rustls_pki_types",
+      "sha2",
+      "digest",
+      "generic_array",
+      "typenum",
+      "crypto_common"
+    ],
+    "exclude": [],
+    "extract_opaque_bodies": false,
+    "translate_all_methods": false,
+    "duplicate_defaulted_methods": false,
+    "lift_associated_types": [
+      "*"
+    ],
+    "hide_marker_traits": true,
+    "hide_allocator": true,
+    "remove_unused_clauses": false,
+    "remove_unused_self_clauses": true,
+    "remove_adt_clauses": true,
+    "desugar_drops": false,
+    "ops_to_function_calls": true,
+    "index_to_function_calls": true,
+    "treat_box_as_builtin": true,
+    "no_gen_tuple_structs": true,
+    "raw_consts": false,
+    "consts": null,
+    "unsized_strings": false,
+    "reconstruct_fallible_operations": true,
+    "reconstruct_asserts": true,
+    "reconstruct_matches": true,
+    "deallocate_all_locals": true,
+    "unbind_item_vars": true,
+    "print_original_ullbc": false,
+    "print_ullbc": false,
+    "print_built_llbc": false,
+    "print_llbc": false,
+    "dest_dir": null,
+    "dest_file": "verification/experiments/tls-certificate-binding/original.llbc",
+    "no_dedup_serialized_ast": false,
+    "format": null,
+    "no_serialize": false,
+    "skip_borrowck": false,
+    "no_typecheck": false,
+    "no_normalize": false,
+    "no_reorder_decls": false,
+    "abort_on_error": false,
+    "error_on_warnings": true,
+    "preset": "Aeneas"
+  },
+  "tool_registry": "verification/first-chain-linux-environment.json",
+  "tool_registry_sha256": "f0e7463b5c953afa3064cf14d6515026e2e90657f29a68433889e15cbd961496",
+  "local_functions": {
+    "11": {
+      "role": "server-verify-peer",
+      "sha256": "aa093b81aa0f11a5ef5d6fa16f037303ce8b87ca1c790859f325587e21c25ca5",
+      "signature_sha256": "09b6da0d5adbe876c1e3e805196f33d21b3dc7c137ec7dba5d8a8cd9c878fabb",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 3
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "verify_peer",
+            0
+          ]
+        }
+      ]
+    },
+    "12": {
+      "role": "client-verify-peer",
+      "sha256": "4e8420d2b951fbe9c090406eb57814925513d8cda4b7e962cf66f357f6a18819",
+      "signature_sha256": "a14a670f941c17dc98708061c1cd32b17bca119c375c88461159fd66b26edb97",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 4
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "verify_peer",
+            0
+          ]
+        }
+      ]
+    },
+    "13": {
+      "role": "server-peer-pin",
+      "sha256": "dd982fde0582fa7363a94fe34518c0dd009ab7386c392cba5be513ad9f967d79",
+      "signature_sha256": "afefda5d083911a835e6974dc6fff2be1fdeec6cef33089a2b814f0be8bfade8",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 3
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "peer_pin",
+            0
+          ]
+        }
+      ]
+    },
+    "23": {
+      "role": "verify-pin",
+      "sha256": "7c4afa63d721ea637e29eb1156feb26a1fc0367f69209a60aea0c605eb19b67c",
+      "signature_sha256": "810ac7b4ea7e99bac1950ad79cc54416b20bdbcb029979fae9d3ba51ce2f973f",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "verify_pin",
+            0
+          ]
+        }
+      ]
+    },
+    "27": {
+      "role": "certificate-from-DER",
+      "sha256": "c7ad42c4efbac81ab8e65d02fbb588c1daea76a1116a244ad7d35a1592183abe",
+      "signature_sha256": "d734188203fb63fe89d193a21cf21e3e47d447db9b352ce7e40f412e04ba2f9d",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 6
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "from_certificate",
+            0
+          ]
+        }
+      ]
+    },
+    "32": {
+      "role": "peer-pin-first-closure",
+      "sha256": "30fe7df3b429a7268d7f35cb4c35cbf24d780e6f8bd609d99e097f555d727a73",
+      "signature_sha256": "0eeb6514844af0f210fefe0e25b6069ce855e518ef0e02de8adb1ba19bc46b66",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 3
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "peer_pin",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 7
+          }
+        },
+        {
+          "Ident": [
+            "call_once",
+            0
+          ]
+        }
+      ]
+    },
+    "34": {
+      "role": "peer-pin-first-closure-drop",
+      "sha256": "76eb07bed703ccbd9b7e0c5fc534c6e1d602a76a00180ce1e6f6ec05acab4faa",
+      "signature_sha256": "70fc447a9176232e19bbbdcfa1ffeba49fc3eec11fc38cb1864d245e1f6cec65",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 3
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Ident": [
+            "peer_pin",
+            0
+          ]
+        },
+        {
+          "Builtin": [
+            "Closure",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 9
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ]
+    },
+    "38": {
+      "role": "certificate-function-pointer-call",
+      "sha256": "cfa2b9daf77a4bbffbe650c455ca85822ad9a02dbc9e5e0c9d01a906e02affaf",
+      "signature_sha256": "7ff7cae39ac7a708f6d92e4e33d826b5b4632d7dd5b275bb7774a3545830b4d6",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Ty": {
+              "params": {
+                "regions": [],
+                "types": [],
+                "const_generics": [],
+                "trait_clauses": [],
+                "regions_outlive": [],
+                "types_outlive": [],
+                "trait_type_constraints": []
+              },
+              "skip_binder": {
+                "Deduplicated": 6
+              },
+              "kind": "InherentImplBlock"
+            }
+          }
+        },
+        {
+          "Impl": {
+            "Trait": 10
+          }
+        },
+        {
+          "Ident": [
+            "call_once",
+            0
+          ]
+        }
+      ]
+    },
+    "40": {
+      "role": "transport-error-drop",
+      "sha256": "101265f13ca1943f399e6e12ff5100a33c9fe0c60002f6505bff72fbcb3a0c12",
+      "signature_sha256": "0be1deb4c40a15e2dd089c78689ef641977cf39bacb51c22f2a256a68ece72f4",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "TransportError",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 13
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ]
+    },
+    "41": {
+      "role": "verify-pin-first-closure",
+      "sha256": "536735386aec6ffde6a02a854f8b4ce0b44ca1f3a6586ddbf7c29afa6f7124ad",
+      "signature_sha256": "653764e58272d7f7d625c02d49b8ec479544fae3ed8ded2360d13a31d66cb912",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "verify_pin",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 14
+          }
+        },
+        {
+          "Ident": [
+            "call_once",
+            0
+          ]
+        }
+      ]
+    },
+    "42": {
+      "role": "verify-pin-digest-membership-closure",
+      "sha256": "f548ede514bb234f447e469396ba42733782299a57706129493f87d4bee932b6",
+      "signature_sha256": "c73d6301e931e1691671021cbdfb9e4f4f1134d3c13feb18daa562837bc59770",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "verify_pin",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 15
+          }
+        },
+        {
+          "Ident": [
+            "call_once",
+            0
+          ]
+        }
+      ]
+    },
+    "43": {
+      "role": "verify-pin-first-closure-drop",
+      "sha256": "9b9facdae2086639db2c232daf910b13d759801f89d7942880e8077934b4d470",
+      "signature_sha256": "15ee85ead7b88f5afa4c229f45aaa72c534589d1b368fd74b73c6227321b31ad",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "verify_pin",
+            0
+          ]
+        },
+        {
+          "Builtin": [
+            "Closure",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 16
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ]
+    },
+    "44": {
+      "role": "verify-pin-membership-closure-drop",
+      "sha256": "ca8039b4f729e94227c056a460e2afb61601b52d597d4ac8f16d6080b0e22f82",
+      "signature_sha256": "0b991cec50db086b2d03fc07f6422bac5cb5adde87cf211770691159938f0180",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "verify_pin",
+            0
+          ]
+        },
+        {
+          "Builtin": [
+            "Closure",
+            1
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 17
+          }
+        },
+        {
+          "Builtin": [
+            "DropGlue",
+            0
+          ]
+        }
+      ]
+    },
+    "143": {
+      "role": "complete-pin-derived-equality",
+      "sha256": "30a182e968be2f2eaf3924124c6c9f8c0736455de57945df7c871199cea16948",
+      "signature_sha256": "d0b29cefff9ca5376b76ea4e674630509d62dfe51efb1c7e40b62cb2db9d1474",
+      "name": [
+        {
+          "Ident": [
+            "sandproof_internal",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "tls",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 77
+          }
+        },
+        {
+          "Ident": [
+            "eq",
+            0
+          ]
+        }
+      ]
+    }
+  },
+  "sources": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "SandboxModel/Boundaries/TlsPin/Audit.lean": "18d21d18f84cf91d7807cd5b58aeeabc8f26343b83ef763e6d0e9a71ee55690f",
+    "SandboxModel/Boundaries/TlsPin/Calls.lean": "7d5bf392adc1a4e28d8c535ee311b3302717a759c69b062100539b3eeba19d2d",
+    "SandboxModel/Boundaries/TlsPin/Examples.lean": "2c6abee2a6b19b2e09977924c486c85d5c32bb0f777ab3e67916c7f2e11f8afe",
+    "SandboxModel/Boundaries/TlsPin/Library.lean": "85420e4f2cda108ce252c1431f0cb52d574aad67d622f03b69f8dfe00e59bd6d",
+    "SandboxModel/Boundaries/TlsPin/Model.lean": "c5086cf62e72627e7650611426d9527b4fc6cf6599e1776581d9c6458b2d7f17",
+    "SandboxModel/Boundaries/TlsPin/Refinement.lean": "52fb42cdf4a5f9d11c82de526a030cf75b5bd8d9c2e8029e7cd9766d3ee9fc24",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "sandbox-internal/Cargo.toml": "c82e0cceeaa52433d4cf20947f2f5cd4fa1bcf169e9df90a5a683a005c927e1b",
+    "sandbox-internal/src/artifact_client.rs": "3f230a7d9322460c7789356ad5c133112661b934f9bcbabd1f85c3ca2e32940f",
+    "sandbox-internal/src/cache.rs": "ef33d3adb64712ab41c4f63f7f9076547f5825db61b6f0b90fb2a02f09111595",
+    "sandbox-internal/src/client.rs": "4a6fbc333dbe328e0cbfeb8277e22602081b34c60f30d8807c581be7b6bf7f73",
+    "sandbox-internal/src/client/cache.rs": "13bf98b196e388503200d6011d3d45398e1cbaa28344afddf50f5243012689ae",
+    "sandbox-internal/src/client/data.rs": "ac3d888bfce52d4f9978ca79f58d1f8477c1e2640379529f1e56e6936eec7a16",
+    "sandbox-internal/src/client/status.rs": "e2723a4476eb7ff0502948bae62ea5d0fbaaa7c7a0c12ff0120bed8b7eef5c9a",
+    "sandbox-internal/src/diagnostic.rs": "1b556be1a953e2106a272a07ee67970a536f543657fcc01667cd58e7d774eb09",
+    "sandbox-internal/src/lib.rs": "d681f6005233368b5f306dc6eed4a75686f992ce6e4ff658cca465349b8b5e28",
+    "sandbox-internal/src/protected_files.rs": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
+    "sandbox-internal/src/protected_server.rs": "385cd30615731a7c452d26c999fb72c4caad5275f09696d4fe3f3f9d584e8225",
+    "sandbox-internal/src/server.rs": "4e76dec6c5b6ef06e3eecba819e551b4bef7ce5c369195efc5fa13f7cba9c9cc",
+    "sandbox-internal/src/status.rs": "5a39f5480ebf16ac403393cca5f64a7cd31d91eae4711ab0e6e9df21b16a1542",
+    "sandbox-internal/src/template.rs": "c952bc986488730ab51525951ddf9e4625b401d96b33eb43bd5d8386542c1b95",
+    "sandbox-internal/src/tls.rs": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
+    "sandbox-internal/tests/secure_data.rs": "64b052b99e2fd161eebc8d076a4bba3e50a82d1eabe71c0ea792169bf92f9a4e",
+    "sandbox-internal/tests/secure_probe.rs": "636da58c58929fc58a3fdcf3e5e89f3381851e2db3148f3888aaf86b97423bad",
+    "sandbox-internal/tests/support/lifecycle_cases.rs": "3f2c608683cb69e9dc5289fa87e0d056c9dcac7e1b7ee6e005cefc5ced101f32",
+    "sandbox-internal/tests/support/python_relay.rs": "1929bf5f3ae0bbbed26f7afd2f15dd29c233650abf194fd4b3880ad8e1f23847",
+    "sandbox-internal/tests/support/status_cases.rs": "a16305785317c190cd73885c8c4ea3bd06efd503a457460f11f0ec9786bb9646",
+    "sandbox-internal/tests/support/tls.rs": "9d2eeced4593eeeeca9d704a1dc0ef768b1d300e07a95aec99ad0d65c6c8b072",
+    "tools/check_tls_certificate_binding.py": "a375f50b6e85aa8b3fbe4c2ba77f2cf6e3b61476d0b64b47ac151b3710128bda",
+    "tools/tests/test_tls_certificate_binding.py": "10a50f3041df45f380e4d829c42a1964f9a6b59fe879da1672224173473436b6",
+    "verification/aeneas/llbc/sandproof_tls.llbc": "f8870ea741b20c4d7c8184d773e129f0cfe68d463b20abfdf2fe1349915f8ee8",
+    "verification/aeneas/tls/SandproofTls/Funs.lean": "b84067f5174a1582ded9e37f5b9c5d22cb2d5593a5378682147027954b9a08e1",
+    "verification/aeneas/tls/SandproofTls/FunsExternal.lean": "fc7824bbf555939ba63d05f72c8a0f9bcea4fbdd4f15419c8c06b055a9971ae8",
+    "verification/aeneas/tls/SandproofTls/Types.lean": "668e4d6013be7e0c16da07baee8c1e972e5df98dd1a61d06673b84e689e2268a",
+    "verification/experiments/tls-certificate-binding/collect.py": "d16626b69f64a6e9545882f3ed5912d4ceae6965c48f6d5fbf6647314c2c956d",
+    "verification/experiments/tls-certificate-binding/correspondence.json": "531ba07abf88ea83a153435b7d28d2817e602591a60c2280c24e0efa93350e14",
+    "verification/experiments/tls-certificate-binding/native.py": "6bde05e17add35dd38aacbdf7af514f2aa3daf7d0b555dabe72901b84c0e0972",
+    "verification/experiments/tls-certificate-binding/native.rs": "6919ef1f1d5ad212ea0bf2d161a27e1e1ba73a3f09b4aca1343c2264ee245cc2",
+    "verification/experiments/tls-certificate-binding/primitive-audit.json": "8d1f681322155e5957044bdbb1140f3991fce157283942a6989bd8eff198aa42",
+    "verification/first-chain-linux-environment.json": "f0e7463b5c953afa3064cf14d6515026e2e90657f29a68433889e15cbd961496",
+    "verification/fixtures/tls-pin-candidate.patch": "15c3fd86d6fff9710e7743ffd7fdf1feec0f80f532e94e3c9c0da73d45ada38d",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/tls-pin-environment.json": "837f8c9611d076ce62b9f0ff00c25af3f8443977870215dfcf55ecc17f460f0a",
+    "verification/tls-pin-inputs.sha256": "2cdcc9a14ce7032372e8c5bba481aa25bfa950455be4f80f15e0dcad0b6899dc"
+  },
+  "normal_domain": "valid shared borrow, complete finite DER bytes, fixed SHA and full 32-byte pin, normal call returns; no arbitrary custom Drop/callbacks",
+  "not_proved": [
+    "original function machine refinement",
+    "general original/candidate Rust equivalence",
+    "TLS/SHA internals",
+    "future cancellation/physical exit",
+    "full allocation budget",
+    "whole authorization/revocation/deployment"
+  ],
+  "compiler_generated_unsafe_drop_glue": [
+    34,
+    40,
+    43,
+    44
+  ]
+}

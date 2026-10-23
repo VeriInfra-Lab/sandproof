@@ -16,7 +16,7 @@ V0 是 #333 统一跟踪的证明底座，包含原 #515 的 T0–T8 和原 #510
 | [身份构造](../../sandbox-protocol/src/lib.rs)、[规范编号解析](../../sandbox-protocol/src/identifiers.rs)及[中心恢复检查](../../sandbox-center-core/src/validation.rs)的纯解析入口 | 八类不透明字符串的原值与构造域；中心已分配编号的精确前缀、非零、高水位和规范十进制文本；完整恢复状态与退休许可仍由 V1/V2 提供 |
 | [共享动作与回执](../../sandbox-protocol/src/lib.rs)的 `ActionIdentity::validate_version`、`WorkReceipt::validate_for` | 完整动作/资源表示与输入域、版本→全文身份→可选观察资源的顺序；观察 getter 是自有提供方义务，回执检查接受不等于工作成功 |
 | [公共数值](../../sandbox-protocol/src/numeric.rs) | 秒到毫秒的溢出拒绝、字节向上取整为 MiB 的 U32 边界、逻辑剩余与现场报告的交集；时钟、期限、准入及观察真实性由调用模块提供 |
-| [有限表](../../controller-core/src/store.rs)的 `Store::get_copy/put/retain` | 首次匹配查询、首次替换或缺失追加、有限遍历终止；删除、唯一性和修改范围分别证明，自有键比较由调用模块实例化 |
+| [有限表](../../controller-core/src/store.rs)的 `Store::get_copy/get/contains_key/put/retain` | 首次匹配查询、首次替换或缺失追加、有限遍历终止；删除、唯一性和修改范围分别证明，自有键比较由调用模块实例化 |
 | [协议样例](../../sandbox-protocol/tests/contract_examples.rs)、[依赖锁](../../Cargo.lock) | 编解码/数值边界的固定输入，库模型版本登记 |
 | [公共抽取入口](../../scripts/regenerate-foundations-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前公共/共享状态/首链入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
 
@@ -74,6 +74,10 @@ V0–V9 是证明责任模块，不是顺序版本。V0 完成条件只包含本
 ### 公共查询投影接口
 
 [TableQueryContracts](../../SandboxModel/Foundations/TableQueryContracts.lean)连接首次匹配查询、值投影与实际 `get_copy`/u64 调用根。键投影必须单射，值可抽象，顺序与重复键不能悄悄改成无序映射；调用模块提供自有比较及表示关系。它不授权维护或建立完整 World 不变量。不能以几项通用定理代替全部调用入口清单。
+
+[共享查询接入](../../SandboxModel/Foundations/LoopCallbacks.lean)另外连接原 get/contains_key 的安全共享值观察及四个透明委托；保留首次匹配/重复键、比较和投影条件，不代表所有业务调用者或有状态回调已完成。
+
+有状态回调另由 [CallbackState](../../SandboxModel/Foundations/CallbackState.lean)提供真实 helper 对应及逐次外部状态组合。正常遍历与机械状态传递分别依 A6/B4；完整自有谓词/比较和业务提供方仍须实例化。原 Child 的退出观察及未知 pair 交接见 [ChildObservation](../../SandboxModel/Boundaries/ChildObservation.lean)与依赖登记；它是隔离同步候选，不代替生产一般等价或完整宿主生命周期。T7/T8 的[有限使用目录](../../verification/experiments/os-boundary-catalogue/README.md)帮助逐点审查，不能当作语义覆盖证明。
 
 ### 可观察组合合同
 
@@ -155,6 +159,8 @@ T0–T8 原由 #515/#510 分别跟踪，现统一归 [V0 #333](https://github.co
 - 固定 Redis 脚本和 SQLite 事务选择一个代表性真实路径，接通实际文本、参数位置、列/返回码和 Rust 结果解释；不能假定“数据库可靠，所以自有事务正确”。
 - 公共接口保留部分效果、未知、重放与恢复所需证据。Redis 脚本原子不等于报错回滚；SQLite 事务不包含 VM/网络副作用。
 - V0 交付可复用结果/接口和最小连接方法；V2/V5 提供全部实际 SQL/Lua、缓存/outbox/提交确认/恢复定理。未完成代表路径或签名适配时仍是本项阻断，不能用计划表代替可行性。
+
+本轮 SQLite 代表接法见[固定五参数 UPDATE](../../SandboxModel/Boundaries/SqliteStatements/Model.lean)及[接口限制](dependencies.md#a4a6b4-sqlite-条件-update-的固定五参数接口)。完整生成体和反例采用独立审计视图；公共根复用纯行模型，保留真实绑定失败、部分效果和完整事务/恢复的下游责任。
 
 #### T8 宿主、TLS 和流式输入输出
 

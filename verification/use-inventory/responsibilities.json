@@ -2,58 +2,710 @@
   "schema": 1,
   "meaning": "Review assignments, not a trust whitelist or a claim that these implementations are proved. Exact native source is frozen separately. Every compiled body stays in the private full index, including excluded template algorithms.",
   "packages": {
-    "sandbox-controller-core": {"owner": ["V0", "V4"], "review": ["T1", "T2", "T3", "T4", "T5"]},
-    "sandproof-protocol": {"owner": ["V0", "V3", "V7"], "review": ["T1", "T2", "T4", "T5"]},
-    "sandproof-controller-service": {"owner": ["V4", "V5", "V8"], "review": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"]},
-    "sandbox-runtime": {"owner": ["V6"], "review": ["T1", "T2", "T3", "T4", "T5", "T6", "T8"]},
-    "sandproof-node": {"owner": ["V4", "V6"], "review": ["T1", "T2", "T3", "T4", "T5", "T7", "T8"]},
-    "sandproof-api": {"owner": ["V7"], "review": ["T1", "T2", "T3", "T4", "T8"]},
-    "sandproof-server": {"owner": ["V6", "V8"], "review": ["T1", "T2", "T4", "T5", "T6", "T8"]},
-    "sandproof-data-transport": {"owner": ["V8"], "review": ["T1", "T3", "T4", "T5", "T6", "T8"]},
-    "sandproof-stream-codec": {"owner": ["V8"], "review": ["T1", "T2", "T3", "T4", "T8"]},
-    "sandproof-host-service": {"owner": ["V4", "V6", "V8"], "review": ["T1", "T2", "T4", "T5", "T6", "T8"]},
-    "sandproof-internal": {"owner": ["V3"], "review": ["T1", "T2", "T3", "T4", "T5", "T6", "T8"]},
-    "sandproof-center": {"owner": ["V1", "V2", "V3", "V7", "V8"], "review": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"]},
-    "sandproof-center-core": {"owner": ["V1"], "review": ["T1", "T2", "T3", "T4", "T5"]},
-    "sandproof-center-service": {"owner": ["V3", "V7", "V8"], "review": ["T1", "T2", "T3", "T4", "T5", "T6", "T8"]},
-    "sandproof-center-store": {"owner": ["V2"], "review": ["T1", "T2", "T3", "T4", "T5", "T7"]},
-    "sandproof-guest-core": {"owner": ["V8"], "review": ["T1", "T2", "T3", "T4", "T5"], "note": "T9 compatibility algorithms excluded; Guest safety is not excluded."},
-    "sandproof-guest-runtime": {"owner": ["V8"], "review": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"]},
-    "sandproof-guest-service": {"owner": ["V8"], "review": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"]}
+    "sandbox-controller-core": {
+      "owner": [
+        "V0",
+        "V4"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5"
+      ]
+    },
+    "sandproof-protocol": {
+      "owner": [
+        "V0",
+        "V3",
+        "V7"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T4",
+        "T5"
+      ]
+    },
+    "sandproof-controller-service": {
+      "owner": [
+        "V4",
+        "V5",
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    "sandbox-runtime": {
+      "owner": [
+        "V6"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8"
+      ]
+    },
+    "sandproof-node": {
+      "owner": [
+        "V4",
+        "V6"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T7",
+        "T8"
+      ]
+    },
+    "sandproof-api": {
+      "owner": [
+        "V7"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T8"
+      ]
+    },
+    "sandproof-server": {
+      "owner": [
+        "V6",
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T4",
+        "T5",
+        "T6",
+        "T8"
+      ]
+    },
+    "sandproof-data-transport": {
+      "owner": [
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8"
+      ]
+    },
+    "sandproof-stream-codec": {
+      "owner": [
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T8"
+      ]
+    },
+    "sandproof-host-service": {
+      "owner": [
+        "V4",
+        "V6",
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T4",
+        "T5",
+        "T6",
+        "T8"
+      ]
+    },
+    "sandproof-internal": {
+      "owner": [
+        "V3"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8"
+      ]
+    },
+    "sandproof-center": {
+      "owner": [
+        "V1",
+        "V2",
+        "V3",
+        "V7",
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    "sandproof-center-core": {
+      "owner": [
+        "V1"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5"
+      ]
+    },
+    "sandproof-center-service": {
+      "owner": [
+        "V3",
+        "V7",
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8"
+      ]
+    },
+    "sandproof-center-store": {
+      "owner": [
+        "V2"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T7"
+      ]
+    },
+    "sandproof-guest-core": {
+      "owner": [
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5"
+      ],
+      "note": "T9 compatibility algorithms excluded; Guest safety is not excluded."
+    },
+    "sandproof-guest-runtime": {
+      "owner": [
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    "sandproof-guest-service": {
+      "owner": [
+        "V8"
+      ],
+      "review": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    }
   },
   "drop_review": [
-    {"source": "sandbox-data-transport/src/admission.rs", "receiver": "&mut TransferLease<K>", "owner": ["V8"], "effect": "If the original counts mutex is acquired, decrement total/per-instance and remove a zero row. Poison may prevent credit; key comparison and counter validity remain own obligations."},
-    {"source": "sandbox-data-transport/src/gzip_upload.rs", "receiver": "&mut gzip_upload::Stream", "owner": ["V8"], "effect": "Attempt to send cancellation; does not observe decoder or blocking worker exit."},
-    {"source": "sandbox-runtime/src/child_process.rs", "receiver": "&mut OwnedChild", "owner": ["V6"], "effect": "Attempt stop/reap of the original child; on uncertain bounded wait, transfer child and slot to the original reaper. Drop is not an unconditional exit receipt."},
-    {"source": "sandbox-runtime/src/child_process/reaper.rs", "receiver": "&mut reaper::Slot", "owner": ["V6"], "effect": "Atomic fetch_sub(1, AcqRel) on original active counter is a wrapping primitive. V6 must prove positive count and exact child/slot ownership; this is not an exit observation."},
-    {"source": "sandbox-node/src/host_lease.rs", "receiver": "&mut HostLease", "owner": ["V4", "V6"], "effect": "Attempt unlock of the original controller-only open file; not a per-child ownership release policy."},
-    {"source": "sandbox-node/src/physical_profile.rs", "receiver": "&mut PhysicalProfileLease", "owner": ["V6"], "effect": "Attempt unlock of the original profile coordination file; retain failed-unlock/deployment conditions."},
-    {"source": "sandbox-center-store/src/writer.rs", "receiver": "&mut WriterLease", "owner": ["V2"], "effect": "Attempt unlock of the original writer file; does not establish durable Redis commit or absence of another writer by itself."},
-    {"source": "controller-service/src/controller/mod.rs", "receiver": "&mut ControllerLease", "owner": ["V5"], "effect": "Attempt explicit controller-store unlock, including transient fork-before-exec descriptor copies; not database recovery evidence."},
-    {"source": "controller-service/src/controller/transaction.rs", "receiver": "&mut WorldTransaction<'_>", "owner": ["V5"], "effect": "If an owned transaction remains, attempt rollback; invalidate committed memo on rollback error. Does not roll back VM or network effects."},
-    {"source": "controller-service/src/application/relay_child.rs", "receiver": "&mut TrackedRelayChild", "owner": ["V5", "V6", "V8"], "effect": "Move the original child to its reaper; channel failure falls back to kill/wait. Transfer is not an exit observation and fallback may block."},
-    {"source": "sandbox-server/src/linux/host_entry/cache.rs", "receiver": "&mut CacheLease", "owner": ["A10-interface", "V6"], "effect": "Attempt cache-file unlock. Template implementation is an engineering boundary; authorized immutable input binding at core use stays required."},
-    {"source": "sandbox-host-service/src/data_gateway/drain.rs", "receiver": "&mut RelayExit", "owner": ["V8"], "effect": "If exit was not confirmed, mark the original lease Unknown. Never create a drained/physical-exit receipt."},
-    {"source": "sandbox-guest-runtime/src/pid_claims.rs", "receiver": "&mut PidClaims", "owner": ["V8"], "effect": "Attempt original PID-claim writer unlock; does not retire persistent PID identity or prove process exit."},
-    {"source": "sandbox-guest-runtime/src/process/preparation.rs", "receiver": "&mut CommandPreparation", "owner": ["V8"], "effect": "Request kill using original pidfd or not-yet-reaped Child; no repeated numeric kill after uncertain wait. No unconditional wait/exit guarantee."},
-    {"source": "sandbox-guest-runtime/src/process.rs", "receiver": "&mut CommandProcess", "owner": ["V8"], "effect": "Unless launch is Released, attempt KILL through original pidfd. No wait, exit or automatic capacity credit."},
-    {"source": "sandbox-guest-service/src/command/preparation/owner.rs", "receiver": "&mut AdmissionOwner", "owner": ["V8"], "effect": "When unfinished, quarantine unsettled permit with forget, publish OwnerLost and reply Unknown. This is not B1's normal permit return."},
-    {"source": "sandbox-guest-service/src/command/driver.rs", "receiver": "&mut OwnerGuard", "owner": ["V8"], "effect": "When unsettled, take/forget record permit, fail streams and mark owner loss; requires original shared-object/lock identity."},
-    {"source": "sandbox-guest-service/src/command/body.rs", "receiver": "&mut command::body::Frame", "owner": ["V8"], "effect": "Free own bytes and output before sending release time; later field destruction and retained Arc owners still matter."},
-    {"source": "sandbox-guest-service/src/command/registry.rs", "receiver": "&mut TagClaim", "owner": ["V8"], "effect": "Remove only the pending original tag under original table lock, including poison recovery; do not repair an active record."},
-    {"source": "sandbox-guest-service/src/command/registry.rs", "receiver": "&mut registry::Guard", "owner": ["V8"], "effect": "If record was not explicitly removed, mark that original record Unknown; not a process-exit or release certificate."},
-    {"source": "sandbox-guest-service/src/file_transfer.rs", "receiver": "&mut DownloadChunk", "owner": ["V8"], "effect": "Free own bytes before releasing producer backpressure; other byte/lease clones are separate ownership obligations."},
-    {"source": "sandbox-guest-service/src/listener/rejection.rs", "receiver": "&mut ObservedBody", "owner": ["V8"], "effect": "Store abandoned=true if the original Incoming was not ended; this triggers bounded transport closeout, not successful request completion."},
-    {"source": "sandbox-guest-service/src/owned_body.rs", "receiver": "&mut OwnedChunk", "owner": ["V8"], "effect": "Free own bytes before producer acknowledgement; original dynamic owner remains a field and may have observable Drop."},
-    {"source": "sandbox-guest-service/src/owned_body.rs", "receiver": "&mut OwnedBody<E>", "owner": ["V8"], "effect": "Attempt cancellation notification; does not join the admitted blocking source."},
-    {"source": "sandbox-guest-service/src/owned_body.rs", "receiver": "&mut CancelWait", "owner": ["V8"], "effect": "If armed, attempt cancellation on the original signal. Notification is not worker exit."},
-    {"source": "sandbox-guest-service/src/command/preparation/owner.rs", "receiver": "&mut FailedPreparation", "owner": ["V8"], "effect": "On destruction of the failed preparation result, call the original owner.stopped(error): clear unsettled, take the original reservation before Stopped/reply, and mark finished. The result can outlive the blocking closure or its waiter. V8 must establish no spawned child or actual child wait before credit; cancellation of the waiter alone is not that evidence."},
-    {"source": "sandbox-guest-service/src/task_accounting.rs", "receiver": "&mut task_accounting::Guard", "owner": ["V8"], "effect": "Decrement the original meter role/group/total under its original mutex, retaining sticky exact=false on poison or arithmetic failure. Tracked/Blocking field order keeps captured work destruction before this observation credit. This measures process_service_owned_tasks only: it is not admission permit return, returned-value accounting, child/VM exit or a physical memory receipt. Capture/destructor and poll binding remain V8/T5/T6 obligations."}
+    {
+      "source": "sandbox-data-transport/src/admission.rs",
+      "receiver": "&mut TransferLease<K>",
+      "owner": [
+        "V8"
+      ],
+      "effect": "If the original counts mutex is acquired, decrement total/per-instance and remove a zero row. Poison may prevent credit; key comparison and counter validity remain own obligations."
+    },
+    {
+      "source": "sandbox-data-transport/src/gzip_upload.rs",
+      "receiver": "&mut gzip_upload::Stream",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Attempt to send cancellation; does not observe decoder or blocking worker exit."
+    },
+    {
+      "source": "sandbox-runtime/src/child_process.rs",
+      "receiver": "&mut OwnedChild",
+      "owner": [
+        "V6"
+      ],
+      "effect": "Attempt stop/reap of the original child; on uncertain bounded wait, transfer child and slot to the original reaper. Drop is not an unconditional exit receipt."
+    },
+    {
+      "source": "sandbox-runtime/src/child_process/reaper.rs",
+      "receiver": "&mut reaper::Slot",
+      "owner": [
+        "V6"
+      ],
+      "effect": "Atomic fetch_sub(1, AcqRel) on original active counter is a wrapping primitive. V6 must prove positive count and exact child/slot ownership; this is not an exit observation."
+    },
+    {
+      "source": "sandbox-node/src/host_lease.rs",
+      "receiver": "&mut HostLease",
+      "owner": [
+        "V4",
+        "V6"
+      ],
+      "effect": "Attempt unlock of the original controller-only open file; not a per-child ownership release policy."
+    },
+    {
+      "source": "sandbox-node/src/physical_profile.rs",
+      "receiver": "&mut PhysicalProfileLease",
+      "owner": [
+        "V6"
+      ],
+      "effect": "Attempt unlock of the original profile coordination file; retain failed-unlock/deployment conditions."
+    },
+    {
+      "source": "sandbox-center-store/src/writer.rs",
+      "receiver": "&mut WriterLease",
+      "owner": [
+        "V2"
+      ],
+      "effect": "Attempt unlock of the original writer file; does not establish durable Redis commit or absence of another writer by itself."
+    },
+    {
+      "source": "controller-service/src/controller/mod.rs",
+      "receiver": "&mut ControllerLease",
+      "owner": [
+        "V5"
+      ],
+      "effect": "Attempt explicit controller-store unlock, including transient fork-before-exec descriptor copies; not database recovery evidence."
+    },
+    {
+      "source": "controller-service/src/controller/transaction.rs",
+      "receiver": "&mut WorldTransaction<'_>",
+      "owner": [
+        "V5"
+      ],
+      "effect": "If an owned transaction remains, attempt rollback; invalidate committed memo on rollback error. Does not roll back VM or network effects."
+    },
+    {
+      "source": "controller-service/src/application/relay_child.rs",
+      "receiver": "&mut TrackedRelayChild",
+      "owner": [
+        "V5",
+        "V6",
+        "V8"
+      ],
+      "effect": "Move the original child to its reaper; channel failure falls back to kill/wait. Transfer is not an exit observation and fallback may block."
+    },
+    {
+      "source": "sandbox-server/src/linux/host_entry/cache.rs",
+      "receiver": "&mut CacheLease",
+      "owner": [
+        "A10-interface",
+        "V6"
+      ],
+      "effect": "Attempt cache-file unlock. Template implementation is an engineering boundary; authorized immutable input binding at core use stays required."
+    },
+    {
+      "source": "sandbox-host-service/src/data_gateway/drain.rs",
+      "receiver": "&mut RelayExit",
+      "owner": [
+        "V8"
+      ],
+      "effect": "If exit was not confirmed, mark the original lease Unknown. Never create a drained/physical-exit receipt."
+    },
+    {
+      "source": "sandbox-guest-runtime/src/pid_claims.rs",
+      "receiver": "&mut PidClaims",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Attempt original PID-claim writer unlock; does not retire persistent PID identity or prove process exit."
+    },
+    {
+      "source": "sandbox-guest-runtime/src/process/preparation.rs",
+      "receiver": "&mut CommandPreparation",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Request kill using original pidfd or not-yet-reaped Child; no repeated numeric kill after uncertain wait. No unconditional wait/exit guarantee."
+    },
+    {
+      "source": "sandbox-guest-runtime/src/process.rs",
+      "receiver": "&mut CommandProcess",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Unless launch is Released, attempt KILL through original pidfd. No wait, exit or automatic capacity credit."
+    },
+    {
+      "source": "sandbox-guest-service/src/command/preparation/owner.rs",
+      "receiver": "&mut AdmissionOwner",
+      "owner": [
+        "V8"
+      ],
+      "effect": "When unfinished, quarantine unsettled permit with forget, publish OwnerLost and reply Unknown. This is not B1's normal permit return."
+    },
+    {
+      "source": "sandbox-guest-service/src/command/driver.rs",
+      "receiver": "&mut OwnerGuard",
+      "owner": [
+        "V8"
+      ],
+      "effect": "When unsettled, take/forget record permit, fail streams and mark owner loss; requires original shared-object/lock identity."
+    },
+    {
+      "source": "sandbox-guest-service/src/command/body.rs",
+      "receiver": "&mut command::body::Frame",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Free own bytes and output before sending release time; later field destruction and retained Arc owners still matter."
+    },
+    {
+      "source": "sandbox-guest-service/src/command/registry.rs",
+      "receiver": "&mut TagClaim",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Remove only the pending original tag under original table lock, including poison recovery; do not repair an active record."
+    },
+    {
+      "source": "sandbox-guest-service/src/command/registry.rs",
+      "receiver": "&mut registry::Guard",
+      "owner": [
+        "V8"
+      ],
+      "effect": "If record was not explicitly removed, mark that original record Unknown; not a process-exit or release certificate."
+    },
+    {
+      "source": "sandbox-guest-service/src/file_transfer.rs",
+      "receiver": "&mut DownloadChunk",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Free own bytes before releasing producer backpressure; other byte/lease clones are separate ownership obligations."
+    },
+    {
+      "source": "sandbox-guest-service/src/listener/rejection.rs",
+      "receiver": "&mut ObservedBody",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Store abandoned=true if the original Incoming was not ended; this triggers bounded transport closeout, not successful request completion."
+    },
+    {
+      "source": "sandbox-guest-service/src/owned_body.rs",
+      "receiver": "&mut OwnedChunk",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Free own bytes before producer acknowledgement; original dynamic owner remains a field and may have observable Drop."
+    },
+    {
+      "source": "sandbox-guest-service/src/owned_body.rs",
+      "receiver": "&mut OwnedBody<E>",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Attempt cancellation notification; does not join the admitted blocking source."
+    },
+    {
+      "source": "sandbox-guest-service/src/owned_body.rs",
+      "receiver": "&mut CancelWait",
+      "owner": [
+        "V8"
+      ],
+      "effect": "If armed, attempt cancellation on the original signal. Notification is not worker exit."
+    },
+    {
+      "source": "sandbox-guest-service/src/command/preparation/owner.rs",
+      "receiver": "&mut FailedPreparation",
+      "owner": [
+        "V8"
+      ],
+      "effect": "On destruction of the failed preparation result, call the original owner.stopped(error): clear unsettled, take the original reservation before Stopped/reply, and mark finished. The result can outlive the blocking closure or its waiter. V8 must establish no spawned child or actual child wait before credit; cancellation of the waiter alone is not that evidence."
+    },
+    {
+      "source": "sandbox-guest-service/src/task_accounting.rs",
+      "receiver": "&mut task_accounting::Guard",
+      "owner": [
+        "V8"
+      ],
+      "effect": "Decrement the original meter role/group/total under its original mutex, retaining sticky exact=false on poison or arithmetic failure. Tracked/Blocking field order keeps captured work destruction before this observation credit. This measures process_service_owned_tasks only: it is not admission permit return, returned-value accounting, child/VM exit or a physical memory receipt. Capture/destructor and poll binding remain V8/T5/T6 obligations."
+    }
   ],
   "unresolved": [
-    {"review": ["T4", "T5"], "owner": ["V0", "V8"], "item": "Resolve actual Fn/trait/dyn targets and Arc<dyn Send+Sync> owners per call. A literal call/type line is not that binding."},
-    {"review": ["T5", "T6"], "owner": ["V0", "V4", "V6", "V8"], "item": "Compiler-generated future cancellation/drop glue, nested dependency destructors, all capture/field drop order and panic-in-drop require per-use Rust/approved-adapter review; stable emitted MIR does not close these obligations."},
-    {"review": ["T1", "T2"], "owner": ["V0", "V3", "V7", "V8"], "item": "Signature/local types are indexed literally; expanded structural fields/schema and legal runtime instances still require their existing per-type/source checks."},
-    {"review": ["T8"], "owner": ["V3", "V6", "V8"], "item": "Configured external executables, Python/shell helpers, FFI/kernel/VM/TLS effects and their complete invocation binding are not made proved by compiling Rust roots."}
+    {
+      "review": [
+        "T4",
+        "T5"
+      ],
+      "owner": [
+        "V0",
+        "V8"
+      ],
+      "item": "Resolve actual Fn/trait/dyn targets and Arc<dyn Send+Sync> owners per call. A literal call/type line is not that binding."
+    },
+    {
+      "review": [
+        "T5",
+        "T6"
+      ],
+      "owner": [
+        "V0",
+        "V4",
+        "V6",
+        "V8"
+      ],
+      "item": "Compiler-generated future cancellation/drop glue, nested dependency destructors, all capture/field drop order and panic-in-drop require per-use Rust/approved-adapter review; stable emitted MIR does not close these obligations."
+    },
+    {
+      "review": [
+        "T1",
+        "T2"
+      ],
+      "owner": [
+        "V0",
+        "V3",
+        "V7",
+        "V8"
+      ],
+      "item": "Signature/local types are indexed literally; expanded structural fields/schema and legal runtime instances still require their existing per-type/source checks."
+    },
+    {
+      "review": [
+        "T8"
+      ],
+      "owner": [
+        "V3",
+        "V6",
+        "V8"
+      ],
+      "item": "Configured external executables, Python/shell helpers, FFI/kernel/VM/TLS effects and their complete invocation binding are not made proved by compiling Rust roots."
+    }
+  ],
+  "public_connections": [
+    {
+      "id": "status-schema-domains",
+      "source_registry": "verification/schema-domains-environment.json",
+      "production_sources": [
+        "sandbox-internal/src/status.rs",
+        "sandbox-internal/src/client.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "roots": [
+        "StatusRequest::validate",
+        "HostStatus::validate_for"
+      ],
+      "proof": "SandboxModel/Boundaries/SchemaDomains/Audit.lean",
+      "condition": "A6/B4 fixed standard derive, original SliceRead/Vec and exact byte bindings; server bounded Writer has a separate conditional component; full schema/caller connection remains explicit",
+      "business_provider": [
+        "V3",
+        "V6",
+        "V7"
+      ],
+      "meaning": "finite reviewed source binding; not all schemas/callers proved"
+    },
+    {
+      "id": "store-shared-query",
+      "source_registry": "verification/experiments/loop-callbacks/source-map.json",
+      "production_sources": [
+        "controller-core/src/store.rs"
+      ],
+      "roots": [
+        "Store::get",
+        "Store::contains_key"
+      ],
+      "proof": "SandboxModel/Foundations/LoopCallbacks/Audit.lean",
+      "condition": "A6 ordinary shared value borrow, caller-proved lawful comparison/injective projection",
+      "business_provider": [
+        "V4",
+        "V9"
+      ],
+      "meaning": "original shared-query core; neighborhoods are not complete business proofs/call graph"
+    },
+    {
+      "id": "sqlite-conditional-update",
+      "source_registry": "verification/sqlite-statements-environment.json",
+      "production_sources": [
+        "controller-service/src/journal.rs"
+      ],
+      "roots": [
+        "write_accepted_with_ids -> isolated next_revision/update_existing"
+      ],
+      "proof": "SandboxModel/Boundaries/SqliteStatements/Audit.lean",
+      "condition": "A4/A6/B4 fixed five-tuple execute joint contract; raw_bind/step/reset failures retained; valid row/schema history supplied by V5",
+      "business_provider": [
+        "V5"
+      ],
+      "meaning": "source-bound isolated candidate, not production general equivalence/full transaction/recovery"
+    },
+    {
+      "id": "std-condvar-original-waiter",
+      "source_registry": "verification/condvar-environment.json",
+      "production_sources": [
+        "sandbox-runtime/src/child_process/reaper.rs"
+      ],
+      "roots": [
+        "Reaper::run -> original Condvar wait/wait_timeout",
+        "Slot::retain -> original queue then notify_one"
+      ],
+      "proof": "SandboxModel/Boundaries/Condvar/Audit.lean",
+      "condition": "A6/B2 fixed original Condvar/Mutex/guard, one active wait invocation; current payload and inherited panic marker; no unconditional return",
+      "business_provider": [
+        "V6"
+      ],
+      "meaning": "conditional API model plus finite source/native binding; original Reaper loop backend limitation retained, not full Rust refinement"
+    },
+    {
+      "id": "tokio-rwlock-original-read-lease",
+      "source_registry": "verification/tokio-rwlock-environment.json",
+      "production_sources": [
+        "sandbox-guest-service/src/session.rs",
+        "sandbox-guest-service/src/session/file_authorization.rs"
+      ],
+      "roots": [
+        "Session::authorize/authorize_file_clock -> original read_owned and Option::as_ref try_map",
+        "Session::apply -> scoped shared read, then original exclusive write",
+        "AuthPermit -> original owned mapped guard and defaults shared observation"
+      ],
+      "proof": "SandboxModel/Boundaries/TokioRwLock/Audit.lean",
+      "condition": "A6/B2 original lock/guard ownership and actual event projection; payload frame only while original lock survives; no FIFO/capacity/unconditional progress",
+      "business_provider": [
+        "V8",
+        "V9"
+      ],
+      "meaning": "conditional read/write/map model plus finite source/native evidence, not full async Rust refinement or authentication correctness"
+    },
+    {
+      "id": "child-observation-original-pair",
+      "source_registry": "verification/experiments/child-observation/contracts.json",
+      "production_sources": [
+        "sandbox-runtime/src/child_process.rs",
+        "sandbox-runtime/src/child_process/reaper.rs"
+      ],
+      "roots": [
+        "OwnedChild::stop_and_reap -> isolated observation_core::stop and concrete SystemIo caller"
+      ],
+      "proof": "SandboxModel/Boundaries/ChildObservation/Audit.lean",
+      "condition": "A2/A3/A6/A8/B4 original Child/Slot/status/clock and per-call normal-result histories; no incomplete-call afterstate, no whole production equivalence",
+      "business_provider": [
+        "V6",
+        "V8"
+      ],
+      "meaning": "real isolated synchronous core/caller machine proofs under narrow API models; original production binding source/native evidence; reaper release and full lifecycle remain business obligations"
+    },
+    {
+      "id": "callback-external-state",
+      "source_registry": "verification/experiments/callback-state/source-map.json",
+      "production_sources": [
+        "controller-core/src/store.rs"
+      ],
+      "roots": [
+        "Store::retain -> isolated toggle_step/trace_step helpers and original external mutable state"
+      ],
+      "proof": "SandboxModel/Foundations/CallbackState/Audit.lean",
+      "condition": "A6 ordinary value traversal/normal allocation and B4 same helper/state/complete input/result forwarding; trace capacity/callback semantics supplied by caller",
+      "business_provider": [
+        "V4",
+        "V6",
+        "V9"
+      ],
+      "meaning": "actual helper machine proofs plus conditional sequential composition; toggle isolated example, trace/calls original test provenance; no whole FnMut or panic heap refinement"
+    },
+    {
+      "id": "os-storage-finite-catalogue",
+      "source_registry": "verification/os-boundary-catalogue.json",
+      "production_sources": [
+        "sandbox-runtime/src/linux.rs",
+        "sandbox-center-store/src/store.rs",
+        "controller-service/src/journal.rs",
+        "sandbox-internal/src/tls.rs"
+      ],
+      "roots": [
+        "five compiled production roots; 25 interface families and 71 representative source locations"
+      ],
+      "proof": "verification/experiments/os-boundary-catalogue/README.md",
+      "condition": "A1–A12/B1–B4 existing narrow guarantees only; historical review baseline statuses, not new trust or semantic theorem",
+      "business_provider": [
+        "V2",
+        "V3",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "meaning": "finite checked source/contract review, not all-call completeness or new program proof; current public completion tracked in333/coverage"
+    },
+    {
+      "id": "bounded-writer-original-output",
+      "source_registry": "verification/experiments/bounded-writer/candidate.json",
+      "production_sources": [
+        "controller-service/src/template_registry/evidence.rs",
+        "sandbox-internal/src/server.rs"
+      ],
+      "roots": [
+        "original private Writer::write/flush and encode_bounded finish -> isolated write_bounded/finish_bounded",
+        "original json_response -> isolated result selection and original HTTP builder"
+      ],
+      "proof": "SandboxModel/Boundaries/BoundedWriter/Audit.lean",
+      "condition": "A6 ordinary Vec/Serde/HTTP primitives and B4 source factorization/complete state/bytes/result forwarding; initial bound, callback error propagation and normal allocation explicit",
+      "business_provider": [
+        "V3",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "meaning": "actual isolated generated write/finish/response proofs with exact successful bytes and logical limit; source/native production connection, not arbitrary Serialize equivalence or RAM/async proof"
+    }
   ]
 }

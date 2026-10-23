@@ -159,13 +159,13 @@ def store.storage_io.eval (connection : Option redis.connection.Connection)
   readReply (fun | .number value => some value | _ => none) reply next
 
 def store.storage_io.info (connection : Option redis.connection.Connection)
-    (sectionName : Str) (deadline : std.time.Instant) :
+    (sectionName : Str) (deadline : std.time.Instant) (_phase : store.diagnostics.Phase) :
     Result (core.result.Result String sandproof_center_store.StoreError × Option redis.connection.Connection) :=
   let (reply, next) := invoke connection ⟨"INFO", [sectionName.val], deadline.tick⟩
   readReply (fun | .text value => some value | _ => none) reply next
 
 def store.storage_io.settings (connection : Option redis.connection.Connection)
-    (keys : Slice Str) (deadline : std.time.Instant) :
+    (keys : Slice Str) (deadline : std.time.Instant) (_phase : store.diagnostics.Phase) :
     Result (core.result.Result (alloc.collections.btree.map.BTreeMap String String Global)
       sandproof_center_store.StoreError × Option redis.connection.Connection) :=
   let args := SandproofFoundationsRust.IdentifierLibrary.stringBytes "GET" :: keys.val.map (·.val)
@@ -176,5 +176,41 @@ def store.storage_io.trim_cr (value : Str) : Result Str := .ok (LibraryBytes.tri
 
 def store.storage_io.split_colon (value : Str) : Result (Option (Str × Str)) :=
   .ok (LibraryBytes.splitColon value)
+
+-- The new constant is the original standard-library zero duration.
+def core.time.Duration.ZERO : Result core.time.Duration := .ok ⟨0, 0⟩
+
+def diagnosticPhase (phase : store.diagnostics.Phase) : Nat :=
+  match phase with
+  | .ServerHealth => 0
+  | .SettingsHealth => 1
+  | .PersistenceHealth => 2
+  | .Read => 3
+  | .Cas => 4
+
+-- Only the two failure values emitted by the transparent health path are
+-- admitted here. Other diagnostics stay inside the existing query adapter.
+def diagnosticFailure (failure : store.diagnostics.Failure) : Option Nat :=
+  match failure with
+  | .ConfigurationMismatch => some 7
+  | .UnhealthyPersistence => some 8
+  | _ => none
+
+def store.storage_io.emit (output : store.storage_io.Diagnostics)
+    (phase : store.diagnostics.Phase) (failure : store.diagnostics.Failure)
+    (elapsed budget : core.time.Duration) : Result store.storage_io.Diagnostics :=
+  match diagnosticFailure failure with
+  | none => .fail .panic
+  | some failureCode =>
+    match output.replies with
+    | [] => .div
+    | reply :: rest =>
+      match reply with
+      | .panicked => .fail .panic
+      | .nonReturning => .div
+      | .written | .writeFailed | .suppressed =>
+        .ok { output with
+          replies := rest
+          calls := output.calls ++ [⟨diagnosticPhase phase, failureCode, elapsed, budget⟩] }
 
 end SandproofStorageRust

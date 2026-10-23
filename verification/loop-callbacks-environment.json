@@ -1,0 +1,781 @@
+{
+  "contract_id": "V0-original-loop-shared-query",
+  "proof_kind": "original-rust-shared-query-with-explicit-lawful-equality",
+  "baseline_commit": "501e79d85b4329f5f6a0bce17c640fb611547009",
+  "production_compiler": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "target": "x86_64-unknown-linux-gnu",
+  "target_information": [
+    {
+      "key": "x86_64-unknown-linux-gnu",
+      "value": {
+        "target_pointer_size": 8,
+        "is_little_endian": true,
+        "c_enum_smallest_repr_ty": "I32",
+        "primitive_alignments": [
+          {
+            "key": "Bool",
+            "value": 1
+          },
+          {
+            "key": {
+              "Integer": {
+                "Signed": "I8"
+              }
+            },
+            "value": 1
+          },
+          {
+            "key": {
+              "Integer": {
+                "Signed": "I16"
+              }
+            },
+            "value": 2
+          },
+          {
+            "key": {
+              "Integer": {
+                "Signed": "I32"
+              }
+            },
+            "value": 4
+          },
+          {
+            "key": {
+              "Integer": {
+                "Signed": "I64"
+              }
+            },
+            "value": 8
+          },
+          {
+            "key": {
+              "Integer": {
+                "Signed": "I128"
+              }
+            },
+            "value": 16
+          },
+          {
+            "key": {
+              "Integer": {
+                "Signed": "Isize"
+              }
+            },
+            "value": 8
+          },
+          {
+            "key": {
+              "Integer": {
+                "Unsigned": "U8"
+              }
+            },
+            "value": 1
+          },
+          {
+            "key": {
+              "Integer": {
+                "Unsigned": "U16"
+              }
+            },
+            "value": 2
+          },
+          {
+            "key": {
+              "Integer": {
+                "Unsigned": "U32"
+              }
+            },
+            "value": 4
+          },
+          {
+            "key": {
+              "Integer": {
+                "Unsigned": "U64"
+              }
+            },
+            "value": 8
+          },
+          {
+            "key": {
+              "Integer": {
+                "Unsigned": "U128"
+              }
+            },
+            "value": 16
+          },
+          {
+            "key": {
+              "Integer": {
+                "Unsigned": "Usize"
+              }
+            },
+            "value": 8
+          },
+          {
+            "key": {
+              "Float": "F16"
+            },
+            "value": 2
+          },
+          {
+            "key": {
+              "Float": "F32"
+            },
+            "value": 4
+          },
+          {
+            "key": {
+              "Float": "F64"
+            },
+            "value": 8
+          },
+          {
+            "key": {
+              "Float": "F128"
+            },
+            "value": 16
+          },
+          {
+            "key": "Char",
+            "value": 4
+          }
+        ]
+      }
+    }
+  ],
+  "parent_inputs": [
+    "verification/acceptance-inputs.sha256",
+    "verification/foundations-inputs.sha256"
+  ],
+  "inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "SandboxModel/Boundaries/JsonIdentifiers.lean",
+    "SandboxModel/Boundaries/JsonIdentifiers/Audit.lean",
+    "SandboxModel/Boundaries/JsonIdentifiers/Calls.lean",
+    "SandboxModel/Boundaries/JsonIdentifiers/Examples.lean",
+    "SandboxModel/Boundaries/JsonIdentifiers/Model.lean",
+    "SandboxModel/Boundaries/JsonIdentifiers/Refinement.lean",
+    "SandboxModel/Boundaries/JsonIdentifiers/ValueReader.lean",
+    "SandboxModel/Boundaries/JsonRequest.lean",
+    "SandboxModel/Boundaries/JsonRequest/Audit.lean",
+    "SandboxModel/Boundaries/JsonRequest/Callbacks.lean",
+    "SandboxModel/Boundaries/JsonRequest/Codec.lean",
+    "SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean",
+    "SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean",
+    "SandboxModel/Boundaries/JsonRequest/Encoding.lean",
+    "SandboxModel/Boundaries/JsonRequest/Guard.lean",
+    "SandboxModel/Boundaries/JsonRequest/Model.lean",
+    "SandboxModel/Boundaries/JsonRequest/Representation.lean",
+    "SandboxModel/Boundaries/JsonRequest/SliceBinding.lean",
+    "SandboxModel/Foundations.lean",
+    "SandboxModel/Foundations/AllocatedNumbers.lean",
+    "SandboxModel/Foundations/Audit.lean",
+    "SandboxModel/Foundations/ByteArray.lean",
+    "SandboxModel/Foundations/Cloning.lean",
+    "SandboxModel/Foundations/Composition.lean",
+    "SandboxModel/Foundations/Containers.lean",
+    "SandboxModel/Foundations/Counter.lean",
+    "SandboxModel/Foundations/CreatePlan.lean",
+    "SandboxModel/Foundations/ErrorMessages.lean",
+    "SandboxModel/Foundations/Evidence.lean",
+    "SandboxModel/Foundations/FiniteCopy.lean",
+    "SandboxModel/Foundations/FiniteInsert.lean",
+    "SandboxModel/Foundations/FiniteScan.lean",
+    "SandboxModel/Foundations/Focused.lean",
+    "SandboxModel/Foundations/IdentifierModel.lean",
+    "SandboxModel/Foundations/Identifiers.lean",
+    "SandboxModel/Foundations/Identity.lean",
+    "SandboxModel/Foundations/IdentityDomain.lean",
+    "SandboxModel/Foundations/LoopCallbacks.lean",
+    "SandboxModel/Foundations/LoopCallbacks/Audit.lean",
+    "SandboxModel/Foundations/LoopCallbacks/Contracts.lean",
+    "SandboxModel/Foundations/LoopCallbacks/Examples.lean",
+    "SandboxModel/Foundations/LoopCallbacks/Loop.lean",
+    "SandboxModel/Foundations/LoopCallbacks/Refinement.lean",
+    "SandboxModel/Foundations/Model.lean",
+    "SandboxModel/Foundations/NumberCompleteness.lean",
+    "SandboxModel/Foundations/Numeric.lean",
+    "SandboxModel/Foundations/Observations.lean",
+    "SandboxModel/Foundations/OptionPredicates.lean",
+    "SandboxModel/Foundations/Receipts.lean",
+    "SandboxModel/Foundations/Representation.lean",
+    "SandboxModel/Foundations/Resources.lean",
+    "SandboxModel/Foundations/StreamHistory.lean",
+    "SandboxModel/Foundations/TableQueryContracts.lean",
+    "SandboxModel/Foundations/TableRetention.lean",
+    "SandboxModel/Foundations/TableWriteContracts.lean",
+    "SandboxModel/Foundations/TableWrites.lean",
+    "SandboxModel/Foundations/Windows.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "controller-core/Cargo.toml",
+    "controller-core/src/auxiliary.rs",
+    "controller-core/src/checkpoint.rs",
+    "controller-core/src/checkpoint/bounds.rs",
+    "controller-core/src/checkpoint/strict.rs",
+    "controller-core/src/checkpoint/tests.rs",
+    "controller-core/src/checkpoint/tests/history.rs",
+    "controller-core/src/checkpoint/tests/malformed.rs",
+    "controller-core/src/checkpoint/validate.rs",
+    "controller-core/src/checkpoint/validate/effects.rs",
+    "controller-core/src/checkpoint/validate/maintenance.rs",
+    "controller-core/src/checkpoint/validate/resources.rs",
+    "controller-core/src/controller.rs",
+    "controller-core/src/effect.rs",
+    "controller-core/src/ids.rs",
+    "controller-core/src/lib.rs",
+    "controller-core/src/maintenance.rs",
+    "controller-core/src/maintenance/retirement.rs",
+    "controller-core/src/maintenance/retirement_tests.rs",
+    "controller-core/src/maintenance/slot_integration_tests.rs",
+    "controller-core/src/maintenance/slots.rs",
+    "controller-core/src/maintenance/windows.rs",
+    "controller-core/src/model.rs",
+    "controller-core/src/network.rs",
+    "controller-core/src/publication.rs",
+    "controller-core/src/recovery_monitor.rs",
+    "controller-core/src/request.rs",
+    "controller-core/src/scheduler.rs",
+    "controller-core/src/store.rs",
+    "controller-core/src/terminal.rs",
+    "controller-core/src/transition.rs",
+    "controller-core/src/worker.rs",
+    "controller-service/src/application/coordinator/internal_health.rs",
+    "controller-service/src/application/coordinator/lifecycle.rs",
+    "controller-service/src/controller/admission.rs",
+    "docs/formal/00-foundations.md",
+    "docs/formal/dependencies.md",
+    "docs/proof-workflow.md",
+    "lake-first-chain.toml",
+    "lake-loop-callbacks.toml",
+    "lake-manifest.json",
+    "lakefile.toml",
+    "lean-toolchain",
+    "sandbox-center-core/Cargo.toml",
+    "sandbox-center-core/src/lib.rs",
+    "sandbox-center-core/src/model.rs",
+    "sandbox-center-core/src/validation.rs",
+    "sandbox-center-service/src/contracts.rs",
+    "sandbox-center-service/src/create_binding.rs",
+    "sandbox-center-service/src/projection.rs",
+    "sandbox-internal/src/client.rs",
+    "sandbox-internal/src/server.rs",
+    "sandbox-protocol/Cargo.toml",
+    "sandbox-protocol/src/identifiers.rs",
+    "sandbox-protocol/src/internal.rs",
+    "sandbox-protocol/src/internal/lifecycle.rs",
+    "sandbox-protocol/src/lib.rs",
+    "sandbox-protocol/src/numeric.rs",
+    "sandbox-protocol/tests/identifier_boundaries.rs",
+    "sandbox-protocol/tests/identity_codec_boundaries.rs",
+    "sandbox-protocol/tests/identity_codec_equivalence.rs",
+    "sandbox-protocol/tests/numeric_boundaries.rs",
+    "sandbox-protocol/tests/receipt_check_order.rs",
+    "scripts/acceptance-native.sh",
+    "scripts/lean-mcp-server.sh",
+    "scripts/proof-cache-step.sh",
+    "scripts/python-entry.sh",
+    "scripts/regenerate-foundations-lean.sh",
+    "scripts/regenerate-loop-callbacks-lean.sh",
+    "scripts/verify-foundations.sh",
+    "scripts/verify-json-identifiers.sh",
+    "scripts/verify-loop-callbacks.sh",
+    "scripts/verify-retained-proofs.sh",
+    "tools/acceptance_receipts.py",
+    "tools/check_first_chain_extraction.py",
+    "tools/check_foundations_extraction.py",
+    "tools/check_json_identifiers_extraction.py",
+    "tools/check_json_identifiers_negative.py",
+    "tools/check_json_request_binding.py",
+    "tools/check_loop_callbacks_components.py",
+    "tools/check_loop_callbacks_contract.py",
+    "tools/check_owned_message_components.py",
+    "tools/check_shared_field_bindings.py",
+    "tools/check_tls_certificate_binding.py",
+    "tools/lean-mcp-requirements.txt",
+    "tools/lean_session.py",
+    "tools/proof_batch.py",
+    "tools/proof_native_suite.py",
+    "tools/proof_services.py",
+    "tools/tests/test_acceptance_receipts.py",
+    "tools/tests/test_foundations_extraction.py",
+    "tools/tests/test_json_identifiers_extraction.py",
+    "tools/tests/test_json_request_binding.py",
+    "tools/tests/test_loop_callbacks_contract.py",
+    "tools/tests/test_shared_field_bindings.py",
+    "tools/tests/test_tls_certificate_binding.py",
+    "verification/acceptance-inputs.sha256",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+    "verification/aeneas/llbc/sandproof_loop_callbacks.llbc",
+    "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Funs.lean",
+    "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Types.lean",
+    "verification/aeneas/loop-callbacks/translation.json",
+    "verification/experiments/loop-callbacks/InvertPresence.lean",
+    "verification/experiments/loop-callbacks/SkipFirst.lean",
+    "verification/experiments/loop-callbacks/query-tests.rs",
+    "verification/experiments/loop-callbacks/replay.py",
+    "verification/experiments/loop-callbacks/source-map.json",
+    "verification/extract-foundations/Cargo.lock",
+    "verification/extract-foundations/Cargo.toml",
+    "verification/extract-foundations/src/json.rs",
+    "verification/extract-foundations/src/json_ids.rs",
+    "verification/extract-foundations/src/json_request.rs",
+    "verification/extract-foundations/src/lib.rs",
+    "verification/extract-foundations/src/numeric.rs",
+    "verification/extract-foundations/src/receipts.rs",
+    "verification/extract-loop-callbacks/Cargo.lock",
+    "verification/extract-loop-callbacks/Cargo.toml",
+    "verification/extract-loop-callbacks/src/lib.rs",
+    "verification/first-chain-linux-environment.json",
+    "verification/fixtures/json-identifiers-negative.lean.in",
+    "verification/foundations-environment.json",
+    "verification/foundations-inputs.sha256",
+    "verification/json-identifiers-environment.json",
+    "verification/json-request-binding.json",
+    "verification/loop-callbacks-environment.json",
+    "verification/use-inventory/responsibilities.json"
+  ],
+  "model_modules": [
+    "Contracts",
+    "Loop",
+    "Refinement",
+    "Examples"
+  ],
+  "theorems": [
+    "SandboxModel.Foundations.LoopCallbacks.membership_from_original_query",
+    "SandboxModel.Foundations.LoopCallbacks.original_loop_body_agrees",
+    "SandboxModel.Foundations.LoopCallbacks.original_loop_agrees",
+    "SandboxModel.Foundations.LoopCallbacks.original_loop_refines",
+    "SandboxModel.Foundations.LoopCallbacks.original_get_refines",
+    "SandboxModel.Foundations.LoopCallbacks.original_query_contract",
+    "SandboxModel.Foundations.LoopCallbacks.original_contains_connected",
+    "SandboxModel.Foundations.LoopCallbacks.original_membership_contract",
+    "SandboxModel.Foundations.LoopCallbacks.delegate_query_contract",
+    "SandboxModel.Foundations.LoopCallbacks.delegate_membership_contract",
+    "SandboxModel.Foundations.LoopCallbacks.u64_query_contract",
+    "SandboxModel.Foundations.LoopCallbacks.u64_membership_contract",
+    "SandboxModel.Foundations.LoopCallbacks.query_empty",
+    "SandboxModel.Foundations.LoopCallbacks.query_first_of_rows",
+    "SandboxModel.Foundations.LoopCallbacks.query_missing_of_no_row",
+    "SandboxModel.Foundations.LoopCallbacks.represented_query",
+    "SandboxModel.Foundations.LoopCallbacks.represented_membership",
+    "SandboxModel.Foundations.LoopCallbacks.contains_failure_preserved",
+    "SandboxModel.Foundations.LoopCallbacks.duplicate_first_example",
+    "SandboxModel.Foundations.LoopCallbacks.nonempty_membership_example",
+    "SandboxModel.Foundations.LoopCallbacks.absent_key_example"
+  ],
+  "llbc_digest": "1913a6232fd6f5be8b013aff0ea2b34e7762a8c0e4aba1f984b6c24258338e8f",
+  "reviewed_opaque_signatures": [
+    {
+      "name_hint": "alloc::vec::{impl}::index",
+      "name_sha256": "4fc0c678f99e9ce4b7e7766a894d557bf3015b3707332fba92adda70dc143f1d",
+      "signature_sha256": "f34fe6496d76e4380c27f2ea1abb2a56ca735685618bc70d3c2f96646a73386a"
+    },
+    {
+      "name_hint": "alloc::vec::{impl}::len",
+      "name_sha256": "f34bcf3581acf23f848876b97b6d67373c138cdbe02124b563b39f61699811b7",
+      "signature_sha256": "947a5afbef8046667ac0fb22aef275c42b80e2cfb50cecf645d9690be2fe9554"
+    },
+    {
+      "name_hint": "core::array::repeat",
+      "name_sha256": "db3962080a0d1c0fcf2d378d6752d41ff79068715069358935b709fd75e64acf",
+      "signature_sha256": "255d96a31f934c23980f9bf7ecbf85261900495f5f9e17dc9461f11a55d2ad2e"
+    },
+    {
+      "name_hint": "core::array::{impl}::as_mut_slice",
+      "name_sha256": "378d0891ca7b93302b8909ea6933c6c0a60a51e5bd5ec4c550e5a8fe142cb4d6",
+      "signature_sha256": "ed49edb25242845ae0b277d906ebdd3c75a0aa483752759dbcfe183352539f08"
+    },
+    {
+      "name_hint": "core::array::{impl}::as_slice",
+      "name_sha256": "9d4c89377adb7b7f22d994e6306605c719c0156e54b170983f8350f3ecc944b3",
+      "signature_sha256": "26d564dab05dfdc7b9684123369cc6aab1a50c5f3335e40182842a8075ba92b5"
+    },
+    {
+      "name_hint": "core::array::{impl}::index",
+      "name_sha256": "6570cc3864df1a18f2b4ee146a681ee892ee4c2f2ea75337a1a7945210ebc226",
+      "signature_sha256": "16849fc8da8b363e5aa821209eb46824d721455966a4631e2520050bae32b6ae"
+    },
+    {
+      "name_hint": "core::array::{impl}::index_mut",
+      "name_sha256": "6edc448e3d86485c396b03d5c20ff9cf0ca936b2b43d7247a240adfd03982a57",
+      "signature_sha256": "6c8d3a3dfad21922f088d15a02c77dd20b6aea739c14dea51f3dfc9661ed1f6d"
+    },
+    {
+      "name_hint": "core::cmp::impls::{impl}::eq",
+      "name_sha256": "5443e5228a9434e3bd4a776a2ae73e590da9f36ac8277cee2673c6f22e49e4fd",
+      "signature_sha256": "fe103fa34d8f382dbdb06fae20af831a033edd5941fdebf7deea8fc8d142c689"
+    },
+    {
+      "name_hint": "core::cmp::impls::{impl}::eq",
+      "name_sha256": "82ea0a2102704743103b931948a74393c2991c1e38ce84e62a050cbd460b609e",
+      "signature_sha256": "fdaa7932311874ee07d62d71d9a3d46a18ea7e1db2122e3c8af83a733d25816d"
+    },
+    {
+      "name_hint": "core::option::{impl}::is_some",
+      "name_sha256": "cd2fe1672ef036039686c4779a415043de0acffe101c72051c23d2c15d9785a8",
+      "signature_sha256": "0c2a6d1bedfa0e1282f903e068f72e51ba309f1911746feebf5f371e06e5699b"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get",
+      "name_sha256": "4c1b558484572fbb6a4c272cab69444944d97b8449c8e61e934a394d143de87d",
+      "signature_sha256": "d0706dabd707bb06fb52a11aa45dd0f583c391057047574c89971b0962a8fc84"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get",
+      "name_sha256": "a720442514ee5bdbbe0d846b3a79d07bda93f38c323a598c6879f8ea63f480d3",
+      "signature_sha256": "b036a8a837168ffcaa4d1f2154266ebcf6806ef05d616a6c654c0deff660a19f"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get_mut",
+      "name_sha256": "6fe3c9a508e6e5de2167fa3f7882ba271004c0f05f8e0760f6cde6118ae71fc5",
+      "signature_sha256": "52876145cc3fbf128577f2879d68b7d67d6a308297f551a86c1d77e05c875146"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get_mut",
+      "name_sha256": "db4470447aa823f612a352bb70741490fa5797d59c55c4255d47512b20cf988b",
+      "signature_sha256": "6b244dd3646d0642d21b11aa9174fafc0e40a7fa02e5c57b18d8d7f3df38e4af"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get_unchecked",
+      "name_sha256": "6f563bf832d24f10e2e66867f522f884475b3cba52026c161c70288552e256b1",
+      "signature_sha256": "5bce4bc9b3f2c4731e92f5d8ce8dd6af363e27816b94dc77e962d2d7ce595a53"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get_unchecked",
+      "name_sha256": "9814f72ac8b242f4d648d08215b6a9029f7508483f542427d6cc4589d8fe9df6",
+      "signature_sha256": "22f1c67630b5a0178ef45a9909c38fd2c88173fddd940b702ba91757254ed50b"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get_unchecked_mut",
+      "name_sha256": "a8727cf8ca848c4b3dab4633ac7db8b688be5f88fca87f895bf1f903d544c489",
+      "signature_sha256": "1b04547158e7b6d7ee280acff43169aaaa334fc9dc9da8491e2d3af660fa78a9"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::get_unchecked_mut",
+      "name_sha256": "db779feb77f97dd84e1b344d14c0d6cde9209f2e9a37f0014b9bf56bbd3ac00c",
+      "signature_sha256": "f8d2d26f57914c6cb8405cb30c26525b7ad68c06c77af7527646ccb7ae30c57e"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::index",
+      "name_sha256": "3c49f99e62b05afcdaaf0efc4653adc3bb61febc09c34e5f3c4b947bb9bc955b",
+      "signature_sha256": "274f3cf4abe5005cd10f48127cc17648772a9463b9ef0bdefc14f6a7c6dc9964"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::index",
+      "name_sha256": "f44d92ac00874cbaf96f613514ce2a495a3a38d4e46e868bf3e07d817ba1aa82",
+      "signature_sha256": "53f4ba3b85f6deff0117d644926b227806d2ba08196e15a9b7a88ee69570dc9f"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::index",
+      "name_sha256": "ff7e47df7ac8be09b4c3921cde2aa808df72ea2fedfdda812be028f45bd4a78f",
+      "signature_sha256": "0385ab28be0e4f18b1444bbb53e08480ba944e5090535482f2da391726eb0428"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::index_mut",
+      "name_sha256": "b5cf0a544515a6ed969b5ccf53ba2d85d522a2f62f8983f3541b1f20073694e6",
+      "signature_sha256": "0d20feebc4af778492ec83af4712fe10b1340f9fc6849ec7e8cce005288f01c0"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::index_mut",
+      "name_sha256": "dc567679068448b5d5ad2fec206f29a0749639f593e05526a01237bb0fdf8009",
+      "signature_sha256": "9635f2840fc3a7bbba870d5a6e0bc74d9c597e8f868c4af005100fc4bfa4f71a"
+    },
+    {
+      "name_hint": "core::slice::index::{impl}::index_mut",
+      "name_sha256": "fcb5e304a1efd9d165a473c969fc7112583db14aff0e3e6f3ae7ae340bcbb2dd",
+      "signature_sha256": "bf1a6e5db78124538fe4ec6d98d602066e29034b167dcca1458e0d01729155d2"
+    }
+  ],
+  "library_conditions": [
+    "Fixed original Charon/Aeneas and Lean backend versions, checked by existing Linux tool admission.",
+    "A6: original Vec len/index, scalar checked arithmetic, shared equality and Option presence models.",
+    "Lawful actual comparison dictionary must be supplied by the caller; trait naming alone is insufficient.",
+    "Finite valid safe shared value borrows; no new borrowed-resource destruction, heap snapshot or physical pointer theorem."
+  ],
+  "trusted_adapters": [],
+  "scope": "Original get/contains_key and four transparent Rust delegates; source neighborhoods are finite reviewed examples, not whole callers or a complete call graph.",
+  "wrong_variants": {
+    "skip-first": {
+      "template": "verification/experiments/loop-callbacks/SkipFirst.lean",
+      "contract": "QueryContract",
+      "mutated_source_sha256": "df15e01e33278b8403fb5745b58896c2073d463df05c0719c32a5cad638add5a",
+      "llbc_digest": "dc73b5db1e0a62a6e59be09fc983d400afd8f829a585528a15105293e165383e",
+      "generated": {
+        "verification/aeneas/llbc/sandproof_loop_callbacks.llbc": "a5269a559ce311a12d54fb620b02a61af3e96910adffcb027e71730e52cb8c53",
+        "verification/aeneas/loop-callbacks/translation.json": "30e94e2a0bb7a6c4fb85c82cf4eb0ff194ef9c29b8553959fe8121b8e00cdaff",
+        "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Funs.lean": "9791163698b8479464a3c3aff30a35d610c0da5b7910468889395c6e07bbebfb",
+        "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Types.lean": "2390d17cca950a3fb2547600bed042089c73316d83919bf35a96cb355b939b06"
+      },
+      "reviewed_opaque_signatures": [
+        {
+          "name_hint": "alloc::vec::{impl}::index",
+          "name_sha256": "4fc0c678f99e9ce4b7e7766a894d557bf3015b3707332fba92adda70dc143f1d",
+          "signature_sha256": "f34fe6496d76e4380c27f2ea1abb2a56ca735685618bc70d3c2f96646a73386a"
+        },
+        {
+          "name_hint": "alloc::vec::{impl}::len",
+          "name_sha256": "f34bcf3581acf23f848876b97b6d67373c138cdbe02124b563b39f61699811b7",
+          "signature_sha256": "947a5afbef8046667ac0fb22aef275c42b80e2cfb50cecf645d9690be2fe9554"
+        },
+        {
+          "name_hint": "core::array::repeat",
+          "name_sha256": "db3962080a0d1c0fcf2d378d6752d41ff79068715069358935b709fd75e64acf",
+          "signature_sha256": "255d96a31f934c23980f9bf7ecbf85261900495f5f9e17dc9461f11a55d2ad2e"
+        },
+        {
+          "name_hint": "core::array::{impl}::as_mut_slice",
+          "name_sha256": "378d0891ca7b93302b8909ea6933c6c0a60a51e5bd5ec4c550e5a8fe142cb4d6",
+          "signature_sha256": "ed49edb25242845ae0b277d906ebdd3c75a0aa483752759dbcfe183352539f08"
+        },
+        {
+          "name_hint": "core::array::{impl}::as_slice",
+          "name_sha256": "9d4c89377adb7b7f22d994e6306605c719c0156e54b170983f8350f3ecc944b3",
+          "signature_sha256": "26d564dab05dfdc7b9684123369cc6aab1a50c5f3335e40182842a8075ba92b5"
+        },
+        {
+          "name_hint": "core::array::{impl}::index",
+          "name_sha256": "6570cc3864df1a18f2b4ee146a681ee892ee4c2f2ea75337a1a7945210ebc226",
+          "signature_sha256": "16849fc8da8b363e5aa821209eb46824d721455966a4631e2520050bae32b6ae"
+        },
+        {
+          "name_hint": "core::array::{impl}::index_mut",
+          "name_sha256": "6edc448e3d86485c396b03d5c20ff9cf0ca936b2b43d7247a240adfd03982a57",
+          "signature_sha256": "6c8d3a3dfad21922f088d15a02c77dd20b6aea739c14dea51f3dfc9661ed1f6d"
+        },
+        {
+          "name_hint": "core::cmp::impls::{impl}::eq",
+          "name_sha256": "5443e5228a9434e3bd4a776a2ae73e590da9f36ac8277cee2673c6f22e49e4fd",
+          "signature_sha256": "fe103fa34d8f382dbdb06fae20af831a033edd5941fdebf7deea8fc8d142c689"
+        },
+        {
+          "name_hint": "core::cmp::impls::{impl}::eq",
+          "name_sha256": "82ea0a2102704743103b931948a74393c2991c1e38ce84e62a050cbd460b609e",
+          "signature_sha256": "fdaa7932311874ee07d62d71d9a3d46a18ea7e1db2122e3c8af83a733d25816d"
+        },
+        {
+          "name_hint": "core::option::{impl}::is_some",
+          "name_sha256": "cd2fe1672ef036039686c4779a415043de0acffe101c72051c23d2c15d9785a8",
+          "signature_sha256": "0c2a6d1bedfa0e1282f903e068f72e51ba309f1911746feebf5f371e06e5699b"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get",
+          "name_sha256": "4c1b558484572fbb6a4c272cab69444944d97b8449c8e61e934a394d143de87d",
+          "signature_sha256": "d0706dabd707bb06fb52a11aa45dd0f583c391057047574c89971b0962a8fc84"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get",
+          "name_sha256": "a720442514ee5bdbbe0d846b3a79d07bda93f38c323a598c6879f8ea63f480d3",
+          "signature_sha256": "b036a8a837168ffcaa4d1f2154266ebcf6806ef05d616a6c654c0deff660a19f"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_mut",
+          "name_sha256": "6fe3c9a508e6e5de2167fa3f7882ba271004c0f05f8e0760f6cde6118ae71fc5",
+          "signature_sha256": "52876145cc3fbf128577f2879d68b7d67d6a308297f551a86c1d77e05c875146"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_mut",
+          "name_sha256": "db4470447aa823f612a352bb70741490fa5797d59c55c4255d47512b20cf988b",
+          "signature_sha256": "6b244dd3646d0642d21b11aa9174fafc0e40a7fa02e5c57b18d8d7f3df38e4af"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked",
+          "name_sha256": "6f563bf832d24f10e2e66867f522f884475b3cba52026c161c70288552e256b1",
+          "signature_sha256": "5bce4bc9b3f2c4731e92f5d8ce8dd6af363e27816b94dc77e962d2d7ce595a53"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked",
+          "name_sha256": "9814f72ac8b242f4d648d08215b6a9029f7508483f542427d6cc4589d8fe9df6",
+          "signature_sha256": "22f1c67630b5a0178ef45a9909c38fd2c88173fddd940b702ba91757254ed50b"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked_mut",
+          "name_sha256": "a8727cf8ca848c4b3dab4633ac7db8b688be5f88fca87f895bf1f903d544c489",
+          "signature_sha256": "1b04547158e7b6d7ee280acff43169aaaa334fc9dc9da8491e2d3af660fa78a9"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked_mut",
+          "name_sha256": "db779feb77f97dd84e1b344d14c0d6cde9209f2e9a37f0014b9bf56bbd3ac00c",
+          "signature_sha256": "f8d2d26f57914c6cb8405cb30c26525b7ad68c06c77af7527646ccb7ae30c57e"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index",
+          "name_sha256": "3c49f99e62b05afcdaaf0efc4653adc3bb61febc09c34e5f3c4b947bb9bc955b",
+          "signature_sha256": "274f3cf4abe5005cd10f48127cc17648772a9463b9ef0bdefc14f6a7c6dc9964"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index",
+          "name_sha256": "f44d92ac00874cbaf96f613514ce2a495a3a38d4e46e868bf3e07d817ba1aa82",
+          "signature_sha256": "53f4ba3b85f6deff0117d644926b227806d2ba08196e15a9b7a88ee69570dc9f"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index",
+          "name_sha256": "ff7e47df7ac8be09b4c3921cde2aa808df72ea2fedfdda812be028f45bd4a78f",
+          "signature_sha256": "0385ab28be0e4f18b1444bbb53e08480ba944e5090535482f2da391726eb0428"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index_mut",
+          "name_sha256": "b5cf0a544515a6ed969b5ccf53ba2d85d522a2f62f8983f3541b1f20073694e6",
+          "signature_sha256": "0d20feebc4af778492ec83af4712fe10b1340f9fc6849ec7e8cce005288f01c0"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index_mut",
+          "name_sha256": "dc567679068448b5d5ad2fec206f29a0749639f593e05526a01237bb0fdf8009",
+          "signature_sha256": "9635f2840fc3a7bbba870d5a6e0bc74d9c597e8f868c4af005100fc4bfa4f71a"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index_mut",
+          "name_sha256": "fcb5e304a1efd9d165a473c969fc7112583db14aff0e3e6f3ae7ae340bcbb2dd",
+          "signature_sha256": "bf1a6e5db78124538fe4ec6d98d602066e29034b167dcca1458e0d01729155d2"
+        }
+      ],
+      "theorems": [
+        "SandboxModel.Foundations.LoopCallbacks.WrongSkipFirst.observed_wrong_query",
+        "SandboxModel.Foundations.LoopCallbacks.WrongSkipFirst.same_query_contract_rejects"
+      ]
+    },
+    "invert-presence": {
+      "template": "verification/experiments/loop-callbacks/InvertPresence.lean",
+      "contract": "MembershipContract",
+      "mutated_source_sha256": "8d6815c551dc360bff2e374980ecdd322946c56c1ebbe95554d612c120274a54",
+      "llbc_digest": "3e14a36049d7f31785347dafdd2791f32d764f4974e2cf39880208329ab0723e",
+      "generated": {
+        "verification/aeneas/llbc/sandproof_loop_callbacks.llbc": "cc5a6281253a272f901555dbaa74eb703b2c86b22c32994be288772748da1d4a",
+        "verification/aeneas/loop-callbacks/translation.json": "30e94e2a0bb7a6c4fb85c82cf4eb0ff194ef9c29b8553959fe8121b8e00cdaff",
+        "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Funs.lean": "66644484e9aee18c72ade81739aed67d56b9c48ef2c57a53ae06577b9cdf3eb1",
+        "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Types.lean": "2390d17cca950a3fb2547600bed042089c73316d83919bf35a96cb355b939b06"
+      },
+      "reviewed_opaque_signatures": [
+        {
+          "name_hint": "alloc::vec::{impl}::index",
+          "name_sha256": "4fc0c678f99e9ce4b7e7766a894d557bf3015b3707332fba92adda70dc143f1d",
+          "signature_sha256": "f34fe6496d76e4380c27f2ea1abb2a56ca735685618bc70d3c2f96646a73386a"
+        },
+        {
+          "name_hint": "alloc::vec::{impl}::len",
+          "name_sha256": "f34bcf3581acf23f848876b97b6d67373c138cdbe02124b563b39f61699811b7",
+          "signature_sha256": "947a5afbef8046667ac0fb22aef275c42b80e2cfb50cecf645d9690be2fe9554"
+        },
+        {
+          "name_hint": "core::array::repeat",
+          "name_sha256": "db3962080a0d1c0fcf2d378d6752d41ff79068715069358935b709fd75e64acf",
+          "signature_sha256": "255d96a31f934c23980f9bf7ecbf85261900495f5f9e17dc9461f11a55d2ad2e"
+        },
+        {
+          "name_hint": "core::array::{impl}::as_mut_slice",
+          "name_sha256": "378d0891ca7b93302b8909ea6933c6c0a60a51e5bd5ec4c550e5a8fe142cb4d6",
+          "signature_sha256": "ed49edb25242845ae0b277d906ebdd3c75a0aa483752759dbcfe183352539f08"
+        },
+        {
+          "name_hint": "core::array::{impl}::as_slice",
+          "name_sha256": "9d4c89377adb7b7f22d994e6306605c719c0156e54b170983f8350f3ecc944b3",
+          "signature_sha256": "26d564dab05dfdc7b9684123369cc6aab1a50c5f3335e40182842a8075ba92b5"
+        },
+        {
+          "name_hint": "core::array::{impl}::index",
+          "name_sha256": "6570cc3864df1a18f2b4ee146a681ee892ee4c2f2ea75337a1a7945210ebc226",
+          "signature_sha256": "16849fc8da8b363e5aa821209eb46824d721455966a4631e2520050bae32b6ae"
+        },
+        {
+          "name_hint": "core::array::{impl}::index_mut",
+          "name_sha256": "6edc448e3d86485c396b03d5c20ff9cf0ca936b2b43d7247a240adfd03982a57",
+          "signature_sha256": "6c8d3a3dfad21922f088d15a02c77dd20b6aea739c14dea51f3dfc9661ed1f6d"
+        },
+        {
+          "name_hint": "core::cmp::impls::{impl}::eq",
+          "name_sha256": "5443e5228a9434e3bd4a776a2ae73e590da9f36ac8277cee2673c6f22e49e4fd",
+          "signature_sha256": "fe103fa34d8f382dbdb06fae20af831a033edd5941fdebf7deea8fc8d142c689"
+        },
+        {
+          "name_hint": "core::cmp::impls::{impl}::eq",
+          "name_sha256": "82ea0a2102704743103b931948a74393c2991c1e38ce84e62a050cbd460b609e",
+          "signature_sha256": "fdaa7932311874ee07d62d71d9a3d46a18ea7e1db2122e3c8af83a733d25816d"
+        },
+        {
+          "name_hint": "core::option::{impl}::is_none",
+          "name_sha256": "ec200ee7d8f4afddbc66ccf189f46ab579f7744451fabc050df37bc9eb899653",
+          "signature_sha256": "0c2a6d1bedfa0e1282f903e068f72e51ba309f1911746feebf5f371e06e5699b"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get",
+          "name_sha256": "4c1b558484572fbb6a4c272cab69444944d97b8449c8e61e934a394d143de87d",
+          "signature_sha256": "d0706dabd707bb06fb52a11aa45dd0f583c391057047574c89971b0962a8fc84"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get",
+          "name_sha256": "a720442514ee5bdbbe0d846b3a79d07bda93f38c323a598c6879f8ea63f480d3",
+          "signature_sha256": "b036a8a837168ffcaa4d1f2154266ebcf6806ef05d616a6c654c0deff660a19f"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_mut",
+          "name_sha256": "6fe3c9a508e6e5de2167fa3f7882ba271004c0f05f8e0760f6cde6118ae71fc5",
+          "signature_sha256": "52876145cc3fbf128577f2879d68b7d67d6a308297f551a86c1d77e05c875146"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_mut",
+          "name_sha256": "db4470447aa823f612a352bb70741490fa5797d59c55c4255d47512b20cf988b",
+          "signature_sha256": "6b244dd3646d0642d21b11aa9174fafc0e40a7fa02e5c57b18d8d7f3df38e4af"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked",
+          "name_sha256": "6f563bf832d24f10e2e66867f522f884475b3cba52026c161c70288552e256b1",
+          "signature_sha256": "5bce4bc9b3f2c4731e92f5d8ce8dd6af363e27816b94dc77e962d2d7ce595a53"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked",
+          "name_sha256": "9814f72ac8b242f4d648d08215b6a9029f7508483f542427d6cc4589d8fe9df6",
+          "signature_sha256": "22f1c67630b5a0178ef45a9909c38fd2c88173fddd940b702ba91757254ed50b"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked_mut",
+          "name_sha256": "a8727cf8ca848c4b3dab4633ac7db8b688be5f88fca87f895bf1f903d544c489",
+          "signature_sha256": "1b04547158e7b6d7ee280acff43169aaaa334fc9dc9da8491e2d3af660fa78a9"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::get_unchecked_mut",
+          "name_sha256": "db779feb77f97dd84e1b344d14c0d6cde9209f2e9a37f0014b9bf56bbd3ac00c",
+          "signature_sha256": "f8d2d26f57914c6cb8405cb30c26525b7ad68c06c77af7527646ccb7ae30c57e"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index",
+          "name_sha256": "3c49f99e62b05afcdaaf0efc4653adc3bb61febc09c34e5f3c4b947bb9bc955b",
+          "signature_sha256": "274f3cf4abe5005cd10f48127cc17648772a9463b9ef0bdefc14f6a7c6dc9964"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index",
+          "name_sha256": "f44d92ac00874cbaf96f613514ce2a495a3a38d4e46e868bf3e07d817ba1aa82",
+          "signature_sha256": "53f4ba3b85f6deff0117d644926b227806d2ba08196e15a9b7a88ee69570dc9f"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index",
+          "name_sha256": "ff7e47df7ac8be09b4c3921cde2aa808df72ea2fedfdda812be028f45bd4a78f",
+          "signature_sha256": "0385ab28be0e4f18b1444bbb53e08480ba944e5090535482f2da391726eb0428"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index_mut",
+          "name_sha256": "b5cf0a544515a6ed969b5ccf53ba2d85d522a2f62f8983f3541b1f20073694e6",
+          "signature_sha256": "0d20feebc4af778492ec83af4712fe10b1340f9fc6849ec7e8cce005288f01c0"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index_mut",
+          "name_sha256": "dc567679068448b5d5ad2fec206f29a0749639f593e05526a01237bb0fdf8009",
+          "signature_sha256": "9635f2840fc3a7bbba870d5a6e0bc74d9c597e8f868c4af005100fc4bfa4f71a"
+        },
+        {
+          "name_hint": "core::slice::index::{impl}::index_mut",
+          "name_sha256": "fcb5e304a1efd9d165a473c969fc7112583db14aff0e3e6f3ae7ae340bcbb2dd",
+          "signature_sha256": "bf1a6e5db78124538fe4ec6d98d602066e29034b167dcca1458e0d01729155d2"
+        }
+      ],
+      "theorems": [
+        "SandboxModel.Foundations.LoopCallbacks.WrongInvertPresence.observed_original_query",
+        "SandboxModel.Foundations.LoopCallbacks.WrongInvertPresence.observed_wrong_membership",
+        "SandboxModel.Foundations.LoopCallbacks.WrongInvertPresence.same_membership_contract_rejects"
+      ]
+    }
+  },
+  "integration_checked_commit": "2165f57f059eb861258c87e595d8bd5774ea3065"
+}
