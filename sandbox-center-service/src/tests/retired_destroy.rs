@@ -7,8 +7,8 @@ use std::{sync::mpsc, thread::JoinHandle};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Checkpoint {
     AfterDestroyAccepted,
-    BeforeConfirmationSnapshot,
-    AfterStaleApply,
+    BeforeConfirmationCommit,
+    BeforeTerminalApply,
     RetiredSnapshot,
 }
 
@@ -19,57 +19,27 @@ pub(super) struct RetirementStep {
 }
 
 impl MemoryAuthority {
-    pub(super) fn retire_at_checkpoint(
-        &mut self,
-        checkpoint: Checkpoint,
-    ) -> Result<(), AuthorityError> {
-        let Some(step) = self.retirement_step.as_mut() else {
-            return Ok(());
-        };
-        if step.checkpoint != checkpoint {
-            return Ok(());
-        }
-        if checkpoint == Checkpoint::BeforeConfirmationSnapshot
-            && !self.state.sandboxes().iter().any(|record| {
-                record
-                    .operations
-                    .last()
-                    .and_then(|op| op.response.as_ref())
-                    .is_some_and(|result| result.fact == LifecycleFact::Cleaned)
-            })
-        {
-            return Ok(());
-        }
-        if step.skip_reads > 0 {
-            step.skip_reads -= 1;
-            return Ok(());
-        }
+    pub(super) fn retire_at_checkpoint(&mut self, checkpoint: Checkpoint) -> Result<(), AuthorityError> {
+        let Some(step) = self.retirement_step.as_mut() else { return Ok(()); };
+        if step.checkpoint != checkpoint { return Ok(()); }
+        if step.skip_reads > 0 { step.skip_reads -= 1; return Ok(()); }
         let step = self.retirement_step.take().unwrap();
         step.gate.entered.send(()).unwrap();
         step.gate.release.recv().unwrap();
-        if checkpoint == Checkpoint::RetiredSnapshot {
-            return Ok(());
-        }
-        let record = &self.state.sandboxes()[0];
-        let current = record.operations.last().unwrap();
-        let terminal = current
-            .response
-            .as_ref()
-            .filter(|result| result.fact == LifecycleFact::Cleaned)
-            .cloned()
-            .unwrap_or_else(|| LifecycleResponse {
-                identity: current.request.identity.clone(),
-                observation_version: record.observation_version.unwrap().checked_next().unwrap(),
-                fact: LifecycleFact::Cleaned,
-            });
-        // Inject the already-completed background work at this exact boundary,
-        // rather than scheduling a competing mutex acquisition with sleeps.
-        self.state = self.state.apply_response(&terminal)?;
-        self.state = self.state.confirm_terminal(&terminal)?;
-        let (pending, close) = self.state.begin_close(&terminal)?;
-        self.state = pending.apply_close_ack(&WindowCloseAck {
-            terminal: close.terminal,
-        })?;
+        if checkpoint == Checkpoint::RetiredSnapshot { return Ok(()); }
+        let current = self.state.sandboxes()[0].operations().last().unwrap();
+        let terminal = current.terminal().cloned().unwrap_or_else(|| TerminalLifecycleObservation {
+            request: current.intent().clone(), status: TerminalStatus::Cleaned });
+        let recorded_at = self.clock.0.load(Ordering::SeqCst);
+        // An injected completed background result at an actual provider boundary.
+        // All state changes still use the same production reducers.
+        self.state = self.state.accept_lifecycle_terminal_observation(&terminal, recorded_at)?;
+        self.state = self.state.confirm_terminal(&ConfirmedLifecycleResult { result: terminal.clone() })?;
+        let now = recorded_at.checked_add(RESULT_RETENTION_MS).unwrap();
+        self.clock.0.store(now, Ordering::SeqCst);
+        let (pending, close) = self.state.begin_close(&terminal, now)?;
+        self.state = pending.apply_close_ack(&ClosedLifecycleWindow {
+            retired_through: close.terminal.request.retention.window, terminal: close.terminal }, now)?;
         Ok(())
     }
 }
@@ -116,48 +86,22 @@ fn observe(entered: &mpsc::Receiver<()>) {
     entered.recv_timeout(Duration::from_secs(2)).unwrap();
 }
 
-fn current_destroy(f: &Fixture) -> LifecycleRequest {
-    f.app.authority.lock().unwrap().state.sandboxes()[0]
-        .operations
-        .last()
-        .unwrap()
-        .request
-        .clone()
+fn current_destroy(f: &Fixture) -> AcceptedLifecycleIntent {
+    f.app.authority.lock().unwrap().state.sandboxes()[0].operations().last().unwrap().intent().clone()
 }
-
-fn save_cleaned(f: &Fixture, request: &LifecycleRequest) -> LifecycleResponse {
-    let terminal = LifecycleResponse {
-        identity: request.identity.clone(),
-        observation_version: 3.try_into().unwrap(),
-        fact: LifecycleFact::Cleaned,
-    };
-    f.app
-        .authority
-        .lock()
-        .unwrap()
-        .apply_response(&terminal)
-        .unwrap();
-    f.host.responses.lock().unwrap().insert(
-        request.identity.operation_id.as_str().to_owned(),
-        terminal.clone(),
-    );
+fn save_cleaned(f: &Fixture, request: &AcceptedLifecycleIntent) -> TerminalLifecycleObservation {
+    let terminal = TerminalLifecycleObservation { request: request.clone(), status: TerminalStatus::Cleaned };
+    f.app.authority.lock().unwrap().accept_lifecycle_terminal_observation(&terminal, f.clock.0.load(Ordering::SeqCst)).unwrap();
+    f.host.terminals.lock().unwrap().push(terminal.clone());
     terminal
 }
-
-fn assert_retired(f: &Fixture, request: &LifecycleRequest) {
+fn assert_retired(f: &Fixture, request: &AcceptedLifecycleIntent) {
     let state = f.app.snapshot().unwrap();
     assert!(state.sandboxes().is_empty());
-    let terminal = state
-        .lane(&request.identity.node, request.identity.retention_slot)
-        .unwrap()
-        .last_retired()
-        .unwrap();
-    assert_eq!(terminal.fact, LifecycleFact::Cleaned);
-    assert!(terminal.validate_for(request).is_ok());
-    assert_eq!(
-        f.app.kill("1", request.identity.sandbox_id.as_str()),
-        Err(PortError::NotFound)
-    );
+    let terminal = state.lane(&request.request.binding.node, request.retention.slot).unwrap().last_retired().unwrap();
+    assert_eq!(terminal.status, TerminalStatus::Cleaned);
+    assert!(terminal.matches_request(request));
+    assert_eq!(f.app.kill("1", request.request.binding.session.as_protocol_id().as_str()), Err(PortError::NotFound));
 }
 
 #[test]
@@ -174,14 +118,14 @@ fn accepted_destroy_retired_before_first_wait_snapshot_still_succeeds() {
     let state = f.app.snapshot().unwrap();
     assert!(state.sandboxes().is_empty());
     assert_eq!(
-        state.retention_lanes()[0].last_retired().unwrap().fact,
-        LifecycleFact::Cleaned
+        state.retention_lanes()[0].last_retired().unwrap().status,
+        TerminalStatus::Cleaned
     );
 }
 
 #[test]
 fn retired_destroy_recovers_after_detached_reply_cannot_apply_to_removed_record() {
-    for fact in [LifecycleFact::Recorded, LifecycleFact::Cleaned] {
+    for status in [TerminalStatus::Pending, TerminalStatus::Cleaned] {
         let f = racing_fixture();
         let session = f.app.create("1", command()).unwrap();
         let (network, entered, release) = gate();
@@ -189,27 +133,22 @@ fn retired_destroy_recovers_after_detached_reply_cannot_apply_to_removed_record(
         let killer = start_kill(&f, session.sandbox_id);
         observe(&entered);
         let request = current_destroy(&f);
-        let terminal = save_cleaned(&f, &request);
+        save_cleaned(&f, &request);
         f.app.reconcile_once().unwrap();
+        advance_retention(&f);
         f.app.retire_terminal_history_once().unwrap();
-        *f.host.late_response.lock().unwrap() = Some(if fact == LifecycleFact::Cleaned {
-            terminal
-        } else {
-            LifecycleResponse {
-                identity: request.identity.clone(),
-                observation_version: 2.try_into().unwrap(),
-                fact,
-            }
-        });
+        *f.host.late_terminal.lock().unwrap() = Some(TerminalLifecycleObservation { request: request.clone(), status });
         release.send(()).unwrap();
         assert_eq!(killer.join().unwrap(), Ok(()));
         assert_retired(&f, &request);
-        assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
+        // Background confirmation re-records the same current Destroy.
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), 3);
+        assert_eq!(f.app.snapshot().unwrap().identity_frontiers(), (1, 2));
     }
 }
 
 #[test]
-fn retired_destroy_recovers_when_stale_reply_recheck_finds_original_already_retired() {
+fn retired_destroy_recovers_when_detached_terminal_apply_finds_original_retired() {
     let f = racing_fixture();
     let session = f.app.create("1", command()).unwrap();
     let (network, sent, send_release) = gate();
@@ -218,12 +157,8 @@ fn retired_destroy_recovers_when_stale_reply_recheck_finds_original_already_reti
     observe(&sent);
     let request = current_destroy(&f);
     save_cleaned(&f, &request);
-    let (stale, stale_release) = install_checkpoint(&f, Checkpoint::AfterStaleApply, 0);
-    *f.host.late_response.lock().unwrap() = Some(LifecycleResponse {
-        identity: request.identity.clone(),
-        observation_version: 2.try_into().unwrap(),
-        fact: LifecycleFact::Recorded,
-    });
+    let (stale, stale_release) = install_checkpoint(&f, Checkpoint::BeforeTerminalApply, 0);
+    *f.host.late_terminal.lock().unwrap() = Some(TerminalLifecycleObservation { request: request.clone(), status: TerminalStatus::Cleaned });
     send_release.send(()).unwrap();
     observe(&stale);
     stale_release.send(()).unwrap();
@@ -233,17 +168,17 @@ fn retired_destroy_recovers_when_stale_reply_recheck_finds_original_already_reti
 }
 
 #[test]
-fn retired_destroy_recovers_before_optional_confirmation_snapshot() {
+fn retired_destroy_recovers_before_original_confirmation_commit() {
     let f = racing_fixture();
     let session = f.app.create("1", command()).unwrap();
-    let (entered, release) = install_checkpoint(&f, Checkpoint::BeforeConfirmationSnapshot, 0);
+    let (entered, release) = install_checkpoint(&f, Checkpoint::BeforeConfirmationCommit, 0);
     let killer = start_kill(&f, session.sandbox_id);
     observe(&entered);
     release.send(()).unwrap();
     assert_eq!(killer.join().unwrap(), Ok(()));
     let state = f.app.snapshot().unwrap();
     assert!(state.sandboxes().is_empty());
-    assert_eq!(f.host.confirmation_budgets.lock().unwrap().len(), 0);
+    assert_eq!(f.host.confirmation_budgets.lock().unwrap().len(), 1);
 }
 
 #[test]
@@ -258,20 +193,22 @@ fn retired_destroy_recovers_after_optional_confirmation_rpc_before_local_commit(
     // The background shares the same authority and can complete the exact
     // confirmation/close while the original confirmation response is detached.
     f.app.reconcile_once().unwrap();
-    f.app.retire_terminal_history_once().unwrap();
+    advance_retention(&f);
+        f.app.retire_terminal_history_once().unwrap();
     release.send(()).unwrap();
     assert_eq!(killer.join().unwrap(), Ok(()));
     assert_retired(&f, &request);
     assert_eq!(f.host.confirmation_budgets.lock().unwrap().len(), 2);
 }
 
-fn retired_fixture() -> (Fixture, LifecycleRequest, LifecycleRequest) {
+fn retired_fixture() -> (Fixture, AcceptedLifecycleIntent, AcceptedLifecycleIntent) {
     let f = racing_fixture();
     let session = f.app.create("1", command()).unwrap();
     let create = f.host.last.lock().unwrap().clone().unwrap();
     f.app.kill("1", &session.sandbox_id).unwrap();
     let destroy = current_destroy(&f);
-    f.app.retire_terminal_history_once().unwrap();
+    advance_retention(&f);
+        f.app.retire_terminal_history_once().unwrap();
     (f, create, destroy)
 }
 
@@ -279,17 +216,17 @@ fn retired_fixture() -> (Fixture, LifecycleRequest, LifecycleRequest) {
 fn retired_receipt_rejects_old_create_other_full_identity_and_future_window() {
     let (f, create, destroy) = retired_fixture();
     let mut wrong_node = destroy.clone();
-    wrong_node.identity.node.node_id = "other-host".try_into().unwrap();
+    wrong_node.request.binding.node.node_id = "other-host".try_into().unwrap();
     let mut wrong_owner = destroy.clone();
-    wrong_owner.identity.tenant_id = "2".try_into().unwrap();
+    wrong_owner.request.binding.key.owner = "2".try_into().unwrap();
     let mut wrong_operation = destroy.clone();
-    wrong_operation.identity.operation_id = "operation-1".try_into().unwrap();
+    wrong_operation.request.binding.key.sequence = 1.try_into().unwrap();
     let mut wrong_version = destroy.clone();
-    wrong_version.identity.intent_version = 1.try_into().unwrap();
+    wrong_version.accepted_version = 1;
     let mut wrong_intent = destroy.clone();
-    wrong_intent.intent = Intent::Create;
+    wrong_intent.request.operation = create.request.operation.clone();
     let mut future_window = destroy.clone();
-    future_window.identity.request_window = destroy.identity.request_window.checked_next().unwrap();
+    future_window.retention.window = destroy.retention.window.checked_next().unwrap();
     for request in [
         create,
         wrong_node,
@@ -299,7 +236,7 @@ fn retired_receipt_rejects_old_create_other_full_identity_and_future_window() {
         wrong_intent,
         future_window,
     ] {
-        assert_eq!(f.app.wait(&request), Err(PortError::OutcomeUnknown));
+        assert_eq!(f.app.wait_current_terminal(&request), Err(PortError::OutcomeUnknown));
     }
     assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
     assert_retired(&f, &destroy);
@@ -311,15 +248,16 @@ fn successor_does_not_invalidate_exact_retired_receipt_but_its_later_retirement_
     let successor = f.app.create("1", command()).unwrap();
     let successor_request = f.host.last.lock().unwrap().clone().unwrap();
     assert_eq!(
-        successor_request.identity.retention_slot,
-        destroy.identity.retention_slot
+        successor_request.retention.slot,
+        destroy.retention.slot
     );
     let before = f.app.get("1", &successor.sandbox_id).unwrap();
-    assert_eq!(f.app.wait(&destroy).unwrap().fact, LifecycleFact::Cleaned);
+    assert_eq!(f.app.wait_current_terminal(&destroy), Ok(()));
     assert_eq!(f.app.get("1", &successor.sandbox_id).unwrap(), before);
     f.app.kill("1", &successor.sandbox_id).unwrap();
-    f.app.retire_terminal_history_once().unwrap();
-    assert_eq!(f.app.wait(&destroy), Err(PortError::OutcomeUnknown));
+    advance_retention(&f);
+        f.app.retire_terminal_history_once().unwrap();
+    assert_eq!(f.app.wait_current_terminal(&destroy), Err(PortError::OutcomeUnknown));
     assert_eq!(f.host.calls.load(Ordering::SeqCst), 4);
 }
 
@@ -330,7 +268,7 @@ fn fallback_durable_snapshot_fault_cannot_reuse_the_retired_receipt() {
     let (entered, release) = install_checkpoint(&f, Checkpoint::RetiredSnapshot, 1);
     let app = Arc::clone(&f.app);
     let request = destroy.clone();
-    let waiter = std::thread::spawn(move || app.wait(&request));
+    let waiter = std::thread::spawn(move || app.wait_current_terminal(&request));
     observe(&entered);
     f.unreadable.store(true, Ordering::SeqCst);
     release.send(()).unwrap();
@@ -348,7 +286,7 @@ fn fallback_snapshot_crossing_original_reply_deadline_cannot_report_late_success
     let (f, _, destroy) = retired_fixture();
     let (entered, release) = install_checkpoint(&f, Checkpoint::RetiredSnapshot, 1);
     let app = Arc::clone(&f.app);
-    let waiter = std::thread::spawn(move || app.wait(&destroy));
+    let waiter = std::thread::spawn(move || app.wait_current_terminal(&destroy));
     observe(&entered);
     consume_reply_budget(f.app.config.reply_timeout);
     release.send(()).unwrap();

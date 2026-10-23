@@ -11,23 +11,26 @@ fn reads(f: &Fixture) -> u64 {
     f.app.authority.lock().unwrap().projection_reads
 }
 
-fn original_ready(f: &Fixture) -> LifecycleRequest {
+fn original_ready(f: &Fixture) -> AcceptedLifecycleIntent {
     let authority = f.app.authority.lock().unwrap();
     assert_eq!(authority.state.sandboxes().len(), 1);
     let record = &authority.state.sandboxes()[0];
-    assert_eq!(record.operations.len(), 1);
-    let operation = &record.operations[0];
-    assert!(matches!(
-        operation.response.as_ref().unwrap().fact,
-        LifecycleFact::Ready { .. }
-    ));
-    assert_eq!(operation.request.identity.sandbox_id.as_str(), "sandbox-1");
-    assert_eq!(
-        operation.request.identity.operation_id.as_str(),
-        "operation-1"
-    );
-    assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
-    operation.request.clone()
+    assert_eq!(record.operations().len(), 1);
+    let operation = &record.operations()[0];
+    assert!(operation.running().is_some());
+    assert_eq!(operation.intent().request.binding.session.as_protocol_id().as_str(), "sandbox-1");
+    assert_eq!(operation.intent().request.binding.key.sequence.get(), 1);
+    operation.intent().clone()
+}
+fn original_pending(f: &Fixture) {
+    let authority = f.app.authority.lock().unwrap();
+    assert_eq!(authority.state.identity_frontiers(), (1, 1));
+    let record = &authority.state.sandboxes()[0];
+    assert_eq!(record.operations().len(), 1);
+    assert!(record.current_running().is_none());
+    assert_eq!(authority.state.pending_lifecycle(), vec![record.operations()[0].intent().clone()]);
+    assert_eq!(authority.state.reserved(None, None), Some(resources(1)));
+    assert!(f.host.ready.lock().unwrap().iter().any(|v| matches!(v.readiness, CurrentCreateReadiness::Observed { .. })));
 }
 
 #[test]
@@ -42,7 +45,7 @@ fn ready_create_waits_for_original_node_observation_without_another_create() {
     );
     let session = f.app.create("1", command()).unwrap();
     let request = original_ready(&f);
-    assert_eq!(session.sandbox_id, request.identity.sandbox_id.as_str());
+    assert_eq!(session.sandbox_id, request.request.binding.session.as_protocol_id().as_str());
     assert_eq!(reads(&f), 2);
     assert_eq!(f.host.last.lock().unwrap().as_ref(), Some(&request));
     assert!(f.app.resolve_data_route(&session.envd_access_token).is_ok());
@@ -67,15 +70,15 @@ fn renewed_session_uses_same_observation_wait_without_another_renewal() {
         .unwrap();
     assert_eq!(connected, original);
     assert_eq!(reads(&f) - before, 3);
-    assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(f.host.calls.load(Ordering::SeqCst), 3);
     let state = f.app.snapshot().unwrap();
     assert_eq!(state.sandboxes().len(), 1);
-    let operations = &state.sandboxes()[0].operations;
+    let operations = state.sandboxes()[0].operations();
     assert_eq!(operations.len(), 2);
-    assert!(matches!(operations[1].request.intent, Intent::Renew { .. }));
+    assert!(matches!(operations[1].intent().request.operation, LifecycleOperation::Renew { .. }));
     assert_eq!(
-        operations[1].request.identity.operation_id.as_str(),
-        "operation-2"
+        operations[1].intent().request.binding.key.sequence.get(),
+        2
     );
 }
 
@@ -113,7 +116,7 @@ fn ready_at_original_reply_deadline_cannot_start_a_new_session_budget() {
     // wait. No random sleep or second synthetic timer decides the outcome.
     f.host.consume_reply_budget.store(true, Ordering::SeqCst);
     assert_eq!(f.app.create("1", command()), Err(PortError::OutcomeUnknown));
-    original_ready(&f);
+    original_pending(&f);
     assert_eq!(reads(&f), 0);
 }
 
@@ -151,13 +154,10 @@ fn renewed_at_original_reply_deadline_cannot_issue_another_session() {
     assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
     let state = f.app.snapshot().unwrap();
     assert_eq!(state.sandboxes().len(), 1);
-    assert_eq!(state.sandboxes()[0].operations.len(), 2);
-    assert!(matches!(
-        state.sandboxes()[0].operations[1]
-            .response
-            .as_ref()
-            .unwrap()
-            .fact,
-        LifecycleFact::Renewed { .. }
-    ));
+    assert_eq!(state.sandboxes()[0].operations().len(), 2);
+    let operation = &state.sandboxes()[0].operations()[1];
+    assert!(matches!(operation.intent().request.operation, LifecycleOperation::Renew { .. }));
+    assert!(operation.running().is_none(), "expired observation cannot establish Ready");
+    assert_eq!(state.identity_frontiers(), (1, 2));
+    assert!(f.host.ready.lock().unwrap().iter().any(|v| v.current_request == *operation.intent() && matches!(v.readiness, CurrentCreateReadiness::Observed { .. })));
 }
