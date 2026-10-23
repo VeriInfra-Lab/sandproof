@@ -102,13 +102,22 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             time_left(deadline)?;
             self.reconcile_lifecycle_intent(intent, deadline)?;
             let state = self.snapshot()?;
-            let record = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
-                .ok_or(PortError::OutcomeUnknown)?;
+            let Some(record) = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session) else {
+                // Only THIS already-accepted in-flight call may use the exact
+                // recent retirement stamp. Generic queries do not use this as
+                // an indefinitely retained result service.
+                let exact = state.lane(&intent.request.binding.node, intent.retention.slot)
+                    .and_then(sandproof_center_core::RetentionLane::last_retired)
+                    .is_some_and(|result| result.status == sandproof_protocol::lifecycle::TerminalStatus::Cleaned
+                        && result.matches_request(intent));
+                time_left(deadline)?;
+                return if exact { Ok(()) } else { Err(PortError::OutcomeUnknown) };
+            };
             let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?;
             if current.intent() != intent { return Err(PortError::OutcomeUnknown); }
             if current.terminal().is_some_and(|result|
                 result.status == sandproof_protocol::lifecycle::TerminalStatus::Cleaned && result.matches_request(intent))
-            { return Ok(()); }
+            { time_left(deadline)?; return Ok(()); }
             self.poll_pause(deadline);
         }
     }
