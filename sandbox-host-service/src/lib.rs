@@ -218,6 +218,28 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> {
+    async fn confirm_renewal(
+        &self,
+        result: sandproof_protocol::lifecycle::RenewalConfirmation,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, ReceiveError> {
+        let permit = Arc::clone(&self.control)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.confirm_lifecycle_renewal(&result, &context)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+
     async fn confirm_terminal(
         &self,
         result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,

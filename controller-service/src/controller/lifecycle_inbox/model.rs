@@ -34,7 +34,9 @@ impl LifecycleInboxConfig {
                 + u64::from(self.max_operations_per_session) * 8192
                 + 2 * u64::from(self.max_manifest_bytes)
                 + u64::from(self.max_profile_bytes)
-                + 3 * 8192)
+                // The full latest SDK renewal confirmation has its own fixed
+                // reservation, alongside terminal confirmation/retirement.
+                + 4 * 8192)
             + 8192
     }
     pub fn valid(&self) -> bool {
@@ -78,6 +80,9 @@ pub(super) struct Entry {
     pub local_operation: Option<sandbox_controller_core::OperationId>,
     /// Exact effective deadline committed in the same transaction as renewal.
     pub applied_deadline: Option<i64>,
+    /// Actual native deadline read before that same renewal transaction.
+    /// Kept even if its previously confirmed SDK predecessor is compacted.
+    pub previous_effective_end_at_ms: Option<i64>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,6 +97,10 @@ pub(super) struct Session {
     pub local: Option<InternalLocalBinding>,
     pub entries: Vec<Entry>,
     pub confirmed_terminal: Option<sandproof_protocol::lifecycle::TerminalLifecycleObservation>,
+    pub confirmed_renewal: Option<sandproof_protocol::lifecycle::RenewalConfirmation>,
+    /// Greatest SDK version actually removed by the exact confirmation rule.
+    /// This is not the latest accepted/confirmed version or a global key floor.
+    pub compacted_sdk_through: Option<u64>,
 }
 
 /// Same original per-position retirement frontier and one complete recent
@@ -229,18 +238,14 @@ impl Inbox {
         }
         for (i, session) in self.sessions.iter().enumerate() {
             self.validate_session_shape(i, session)?;
+            super::renewal_confirmation::validate_session(session)?;
             let mut maximum = 0;
             let mut kinds = [0_u16; 4];
             for entry in &session.entries {
                 let intent = &entry.intent;
                 if intent.accepted_version <= maximum
                     || !matches!(intent.request.operation, LifecycleOperation::Destroy {})
-                        && intent.request.binding.expected
-                            != if maximum == 0 {
-                                ExpectedSession::Absent
-                            } else {
-                                ExpectedSession::Version(maximum)
-                            }
+                        && !super::renewal_confirmation::follows_retained(session, maximum, intent)
                 {
                     return Err(JournalError::CorruptStore);
                 }
@@ -340,6 +345,7 @@ impl Inbox {
                 || session.entries.iter().any(|entry| {
                     entry.local_operation.is_some()
                         || entry.applied_deadline.is_some()
+                        || entry.previous_effective_end_at_ms.is_some()
                         || !matches!(
                             entry.intent.request.operation,
                             LifecycleOperation::Create { .. } | LifecycleOperation::Destroy {}
@@ -377,7 +383,8 @@ impl Inbox {
             || binding.key.owner != session.owner
             || session.local.is_none() && entry.local_operation.is_some()
             || !matches!(intent.request.operation, LifecycleOperation::Renew { .. })
-                && entry.applied_deadline.is_some()
+                && (entry.applied_deadline.is_some()
+                    || entry.previous_effective_end_at_ms.is_some())
             || self
                 .sessions
                 .iter()
@@ -417,9 +424,13 @@ impl Inbox {
                 if session.incarnation != Some(*incarnation)
                     || session.local.is_none()
                     || *end_at_ms < 0
+                    || entry.applied_deadline.is_some()
+                        != entry.previous_effective_end_at_ms.is_some()
+                    || entry.previous_effective_end_at_ms.is_some_and(|end| end < 0)
                     || entry.applied_deadline.is_some_and(|end| {
                         if *extend_only {
-                            end < *end_at_ms
+                            entry.previous_effective_end_at_ms
+                                .is_none_or(|previous| end != previous.max(*end_at_ms))
                         } else {
                             end != *end_at_ms
                         }
@@ -504,12 +515,21 @@ impl Inbox {
                 }) => {}
             _ => return Err(JournalError::UnsupportedInput),
         }
+        // A later public row must not hide an earlier unconfirmed SDK renewal.
+        // This gate concerns only a NEW SDK renewal; Destroy always retains its
+        // reserved path, and exact retained replays were returned above.
+        if super::renewal_confirmation::is_sdk_renewal(intent)
+            && super::renewal_confirmation::has_unconfirmed_sdk(session)
+        {
+            return Err(JournalError::UnresolvedAction);
+        }
         session.current_version = intent.accepted_version;
         session.terminal = terminal;
         session.entries.push(Entry {
             intent: intent.clone(),
             local_operation: None,
             applied_deadline: None,
+            previous_effective_end_at_ms: None,
         });
         Ok((s, session.entries.len() - 1))
     }
@@ -564,8 +584,11 @@ impl Inbox {
                 intent: intent.clone(),
                 local_operation: None,
                 applied_deadline: None,
+                previous_effective_end_at_ms: None,
             }],
             confirmed_terminal: None,
+            confirmed_renewal: None,
+            compacted_sdk_through: None,
         });
         Ok((self.sessions.len() - 1, 0))
     }

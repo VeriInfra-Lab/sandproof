@@ -21,6 +21,22 @@ enum PreparedCurrentAdmission {
 }
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Acknowledge only the exact original applied SDK renewal, under the same
+    /// application authority. This performs no Host I/O or lease revocation.
+    /// # Errors
+    /// Unknown/foreign/unapplied results do not advance the saved checkpoint.
+    pub fn confirm_lifecycle_renewal(
+        &self,
+        result: &sandproof_protocol::lifecycle::RenewalConfirmation,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?
+            .journal
+            .confirm_lifecycle_renewal(result, context, &mut NeverCrash)
+    }
+
     /// Persist the full authenticated center confirmation, after our original
     /// journal independently verifies the terminal fact.
     /// # Errors
