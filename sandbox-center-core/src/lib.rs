@@ -11,7 +11,7 @@ mod window;
 pub use decision::ResponseDisposition;
 pub use lifecycle::{
     CreateParameters, LifecycleOperationRecord, LifecycleProfile, LifecycleSession,
-    LifecycleSubmission, LifecycleWindow, SessionPhase, next_lifecycle_version,
+    LifecycleSubmission, LifecycleWindow, SessionPhase, next_lifecycle_version, LIFECYCLE_PROFILE_VERSION,
 };
 pub use model::*;
 /// Pure syntax/frontier check used by recovery; it grants no authority.

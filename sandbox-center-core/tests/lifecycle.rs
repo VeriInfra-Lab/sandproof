@@ -136,7 +136,7 @@ fn replay_precedes_time_and_phase_checks_without_new_ids_or_new_deadlines() {
         .accept_lifecycle(&"1".try_into().unwrap(), &input, 10)
         .unwrap();
     let ready = accepted
-        .observe_lifecycle_ready(&intent, 1.try_into().unwrap(), 100, 200, 600)
+        .accept_lifecycle_create_observation(&observed(&intent))
         .unwrap();
     let unload = followup(&intent, 2, false);
     let (unloading, _) = ready
@@ -182,7 +182,7 @@ fn unload_requires_actual_ready_binding_preserves_reservations_and_destroy_capac
         Err(DecisionError::Conflict)
     );
     let ready = creating
-        .observe_lifecycle_ready(&intent, 1.try_into().unwrap(), 100, 200, 600)
+        .accept_lifecycle_create_observation(&observed(&intent))
         .unwrap();
     let (unloading, accepted) = ready
         .accept_lifecycle(&"1".try_into().unwrap(), &unload, 150)
@@ -213,7 +213,7 @@ fn unload_requires_actual_ready_binding_preserves_reservations_and_destroy_capac
     assert!(terminating.sandboxes()[0].terminating);
     assert_eq!(terminating.pending_lifecycle(), vec![destroy]);
     assert_eq!(
-        terminating.observe_lifecycle_ready(&intent, 2.try_into().unwrap(), 100, 200, 600),
+        terminating.accept_lifecycle_create_observation(&observed(&intent)),
         Err(DecisionError::Stale)
     );
 }
@@ -224,7 +224,7 @@ fn stale_version_and_window_refuse_before_effects_and_legacy_writes_cannot_bypas
         .accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10)
         .unwrap();
     let ready = creating
-        .observe_lifecycle_ready(&intent, 1.try_into().unwrap(), 100, 200, 600)
+        .accept_lifecycle_create_observation(&observed(&intent))
         .unwrap();
     let mut input = followup(&intent, 2, false);
     let LifecycleSubmission::Unload {
@@ -310,4 +310,17 @@ fn snapshot_resource_has_a_distinct_wire_role() {
         sandproof_protocol::ResourceKind::Snapshot,
         sandproof_protocol::ResourceKind::Workspace
     );
+}
+
+// Controlled input to the V3 save contract, not physical-host evidence.
+fn observed(intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) -> sandproof_protocol::lifecycle::CreateObservation {
+    use sandproof_protocol::lifecycle::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation};
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else { unreachable!() };
+    CreateObservation {
+        request: intent.clone(), current_request: intent.clone(), historical_create_succeeded: true,
+        readiness: CurrentCreateReadiness::Observed { facts: CurrentReadyFacts {
+            started_at_ms: 100, end_at_ms: 200, max_end_at_ms: 600,
+            startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: 100,
+        } },
+    }
 }

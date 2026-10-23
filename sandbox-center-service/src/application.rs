@@ -28,6 +28,7 @@ pub struct CenterApplication<A: AuthorityPort, H: HostPort, T: TemplateProvider>
     pub(crate) config: CenterConfig,
     pub(crate) tokens: Tokens,
     clock: Arc<dyn Clock>,
+    pub(crate) lifecycle_observation_policy: Option<crate::NodeObservationPolicy>,
 }
 enum AttemptError {
     SharedAuthority,
@@ -55,6 +56,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             config,
             tokens: Tokens::new(token_key)?,
             clock: Arc::new(SystemClock),
+            lifecycle_observation_policy: None,
         })
     }
     #[must_use]
@@ -600,12 +602,14 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     /// # Errors
     /// Shared authority faults stop the scan. Unknown host work stays pending.
     pub fn reconcile_once(&self) -> Result<usize, PortError> {
+        let managed_completed = self.reconcile_lifecycle_creates_once()?;
         let now = self.now()?;
         let pending = {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
             let state = authority.snapshot().map_err(authority_error)?;
             for record in state.sandboxes().iter().filter(|r| {
-                !r.terminating
+                !state.lifecycle_manages(&r.operations[0].request.identity.sandbox_id)
+                    && !r.terminating
                     && !r.released
                     && (r.end_at_ms.is_some_and(|end| end <= now)
                         || (r.started_at_ms.is_none()
@@ -620,7 +624,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             }
             authority.snapshot().map_err(authority_error)?.pending()
         };
-        let mut completed = 0;
+        let mut completed = managed_completed;
         for request in pending {
             let deadline = Instant::now()
                 .checked_add(self.config.reply_timeout)
@@ -639,7 +643,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .sandboxes()
             .iter()
             .filter(|record| {
-                record.has_compaction_work()
+                !state.lifecycle_manages(&record.operations[0].request.identity.sandbox_id)
+                    && (record.has_compaction_work()
                     || record
                         .operations
                         .last()
@@ -649,7 +654,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                                 result.fact,
                                 LifecycleFact::Cleaned | LifecycleFact::NotAccepted
                             ) && record.terminal_confirmation.as_ref() != Some(result)
-                        })
+                        }))
             })
             .filter_map(|record| record.operations.last()?.response.as_ref())
             .filter(|result| {

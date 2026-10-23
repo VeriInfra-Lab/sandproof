@@ -239,6 +239,15 @@ pub trait CommittedDriver: Send + Sync {
 /// Called from bounded blocking work, with NO center decision lock held.
 pub trait HostPort: Send + Sync + 'static {
     /// # Errors
+    /// A missing/currently unavailable observation does not prove VM absence.
+    fn observe_lifecycle_create(
+        &self,
+        _intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::CreateObservation, PortError> {
+        Err(PortError::Busy)
+    }
+    /// # Errors
     /// One bounded recording call only. Default/unknown never acknowledges work.
     fn record_lifecycle_v3(
         &self,
@@ -274,6 +283,20 @@ pub trait HostPort: Send + Sync + 'static {
 /// Tests inject storage faults while using the same pure `CenterState`
 /// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
+    /// One fresh, finite projection of the same authoritative managed inbox.
+    /// # Errors
+    /// Unknown storage cannot supply detached work from a cached candidate.
+    fn lifecycle_dispatch_batch(&mut self) -> Result<Vec<sandproof_protocol::lifecycle::AcceptedLifecycleIntent>, AuthorityError> {
+        Ok(self.snapshot()?.pending_lifecycle())
+    }
+    /// # Errors
+    /// Unsupported adapters cannot acknowledge a fabricated Ready history.
+    fn accept_lifecycle_create_observation(
+        &mut self,
+        _observation: &sandproof_protocol::lifecycle::CreateObservation,
+    ) -> Result<(), AuthorityError> {
+        Err(sandproof_center_core::DecisionError::Invalid.into())
+    }
     /// # Errors
     /// Must confirm an authority view within this call; cached-only reads fail.
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError>;

@@ -351,7 +351,7 @@ impl Fixture {
                         if changed.is_err() || *shutdown.borrow() { break; }
                     }
                     () = wake.notified() => {
-                        worker.drive_once(DriverConfig { node: local::wire::node("host-a"), compute: local::compute(), interval: Duration::from_millis(100) }, Arc::clone(&cache)).await.unwrap();
+                        worker.drive_once(DriverConfig { profile: sandproof_controller_service::CheckpointProfile::CreateKill, node: local::wire::node("host-a"), compute: local::compute(), interval: Duration::from_millis(100) }, Arc::clone(&cache)).await.unwrap();
                     }
                 }
             }

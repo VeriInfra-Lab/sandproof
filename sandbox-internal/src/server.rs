@@ -36,6 +36,16 @@ mod lifecycle_v3;
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
+    /// One original readonly Create observation; unsupported receivers refuse.
+    fn observe_create_v3(
+        &self,
+        _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::CreateObservation, ReceiveError>,
+    > + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
     /// Persist only through the original application. Unsupported receivers
     /// cannot acknowledge an echo; even a successful record is not Ready.
     fn record_v3(
@@ -221,9 +231,11 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
         request: Request<Incoming>,
         streaming: watch::Sender<bool>,
     ) -> Result<Response<Body>, Infallible> {
-        if request.uri().path() == sandproof_protocol::lifecycle::LIFECYCLE_PATH {
-            let work =
-                lifecycle_v3::record(request, peer, self.lifecycle_v3.as_ref(), &*self.handler);
+        if request.uri().path() == sandproof_protocol::lifecycle::LIFECYCLE_PATH
+            || request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
+        {
+            let observation = request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH;
+            let work = lifecycle_v3::respond(request, peer, self.lifecycle_v3.as_ref(), &*self.handler, observation);
             return Ok(timeout(self.limits.request_timeout, work)
                 .await
                 .unwrap_or_else(|_| response(StatusCode::REQUEST_TIMEOUT, Bytes::new()))

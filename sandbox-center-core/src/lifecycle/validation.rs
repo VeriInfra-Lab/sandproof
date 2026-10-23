@@ -21,7 +21,7 @@ impl CenterState {
         let Some(profile) = &self.lifecycle else {
             return true;
         };
-        if profile.format_version != 1
+        if profile.format_version != super::LIFECYCLE_PROFILE_VERSION
             || profile.center.deployment != self.deployment
             || self.bounds.operations_per_sandbox < 3
             || self

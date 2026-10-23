@@ -709,6 +709,7 @@ async fn cache_failed_exact_cleanup_does_not_release_unknown_temporary_reservati
 
 fn driver_config() -> DriverConfig {
     DriverConfig {
+        profile: sandproof_controller_service::CheckpointProfile::CreateKill,
         node: local::wire::node("host-a"),
         compute: local::compute(),
         interval: Duration::from_millis(100),

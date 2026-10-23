@@ -24,6 +24,13 @@ impl<H> RejectTemplateCache<H> {
     }
 }
 impl<H: LifecycleReceiver> LifecycleReceiver for RejectTemplateCache<H> {
+    async fn observe_create_v3(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::CreateObservation, ReceiveError> {
+        self.0.observe_create_v3(intent, context).await
+    }
     async fn record_v3(
         &self,
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,

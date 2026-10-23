@@ -21,6 +21,7 @@ use tokio::sync::Semaphore;
 pub mod data_gateway;
 mod driver;
 mod facade;
+mod observation;
 mod status_admission;
 pub use driver::{DriveReport, DriverConfig, TemplateSource};
 pub use facade::HostFacade;
@@ -144,6 +145,23 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> {
+    async fn observe_create_v3(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::CreateObservation, ReceiveError> {
+        let permit = Arc::clone(&self.work).try_acquire_owned().map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let view = app.observe_lifecycle_create(&intent, &context).map_err(|error| match error {
+                JournalError::Conflict => ReceiveError::Conflict,
+                JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                _ => ReceiveError::Unavailable,
+            })?;
+            Ok(observation::project(view))
+        }).await.map_err(|_| ReceiveError::Unavailable)?
+    }
     async fn record_v3(
         &self,
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,

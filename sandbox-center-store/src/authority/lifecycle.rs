@@ -2,7 +2,6 @@
 use super::{AuthorityError, AuthorityState, CenterAuthority};
 use sandproof_center_core::{LifecycleSession, LifecycleSubmission};
 use sandproof_protocol::TenantId;
-use sandproof_protocol::internal::PositiveCounter;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
 impl<S: AuthorityState> CenterAuthority<S> {
@@ -44,25 +43,18 @@ impl<S: AuthorityState> CenterAuthority<S> {
         Ok(self.snapshot()?.lifecycle_session(owner, session).cloned())
     }
 
-    /// Actual host Ready facts remain a V3 authentication/V5 evidence obligation.
-    /// This method saves them only for the exact current canonical Create.
+    /// Store one checked V3 observation with a center-owned receipt sequence.
+    /// Sender/call/freshness conditions belong to the original caller; no host
+    /// observation number is accepted or synthesized by this interface.
     /// # Errors
-    /// Full binding, original lifetime or CAS failures cannot publish Running.
-    pub fn observe_lifecycle_ready(
+    /// A stale intent/domain, conflicting facts or unknown CAS retains work.
+    pub fn accept_lifecycle_create_observation(
         &mut self,
-        intent: &AcceptedLifecycleIntent,
-        observation_version: PositiveCounter,
-        started_at_ms: u64,
-        end_at_ms: u64,
-        max_end_at_ms: u64,
+        observation: &sandproof_protocol::lifecycle::CreateObservation,
     ) -> Result<(), AuthorityError> {
-        let next = self.state()?.observe_lifecycle_ready(
-            intent,
-            observation_version,
-            started_at_ms,
-            end_at_ms,
-            max_end_at_ms,
-        )?;
-        self.commit_center(next)
+        self.snapshot()?;
+        let next = self.state()?.accept_lifecycle_create_observation(observation)?;
+        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        Ok(())
     }
 }

@@ -3,14 +3,15 @@ use super::{
     BodyExt, Bytes, CertificatePin, Full, Incoming, LifecycleReceiver, Limited, Method,
     ReceiveError, Request, Response, StatusCode, json_response, response,
 };
-use crate::lifecycle_v3::{CenterPeerRegistration, REQUEST_BODY_BYTES};
+use crate::lifecycle_v3::{CenterPeerRegistration, REQUEST_BODY_BYTES, CREATE_OBSERVATION_BODY_BYTES};
 use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
 
-pub(super) async fn record<H: LifecycleReceiver>(
+pub(super) async fn respond<H: LifecycleReceiver>(
     request: Request<Incoming>,
     peer: CertificatePin,
     registration: Option<&CenterPeerRegistration>,
     handler: &H,
+    observation: bool,
 ) -> Response<Full<Bytes>> {
     let Some(registration) = registration else {
         return response(StatusCode::NOT_FOUND, Bytes::new());
@@ -55,6 +56,13 @@ pub(super) async fn record<H: LifecycleReceiver>(
     };
     if intent.validate(&context).is_err() {
         return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    if observation {
+        return match handler.observe_create_v3(intent.clone(), context).await {
+            Ok(view) if view.matches_request(&intent) => json_response(&view, CREATE_OBSERVATION_BODY_BYTES),
+            Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+        };
     }
     match handler.record_v3(intent.clone(), context).await {
         Ok(recorded) if recorded.matches(&intent) => json_response(&recorded, REQUEST_BODY_BYTES),

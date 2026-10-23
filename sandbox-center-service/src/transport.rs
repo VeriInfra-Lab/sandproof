@@ -82,6 +82,17 @@ impl RegisteredHosts {
     }
 }
 impl HostPort for RegisteredHosts {
+    fn observe_lifecycle_create(
+        &self,
+        intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::CreateObservation, PortError> {
+        let client = self.client(&intent.request.binding.node)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, client.observe_lifecycle_create(intent))
+                .await.map_err(|_| PortError::Busy)?.map_err(|_| PortError::Busy)
+        })
+    }
     fn record_lifecycle_v3(
         &self,
         intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,

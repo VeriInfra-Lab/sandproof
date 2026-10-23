@@ -78,7 +78,7 @@ fn lifecycle_same_cas_reopen_retains_both_owners_original_requests_and_unload() 
         .accept_lifecycle(&"2".try_into().unwrap(), &input("2"), 10)
         .unwrap();
     authority
-        .observe_lifecycle_ready(&a, 1.try_into().unwrap(), 100, 200, 600)
+        .accept_lifecycle_create_observation(&observed(&a))
         .unwrap();
     let mut key = a.request.binding.key.clone();
     key.sequence = 2.try_into().unwrap();
@@ -200,4 +200,17 @@ fn lifecycle_changed_full_input_never_commits_and_corrupt_or_missing_block_never
         ),
         Err(StoreError::Missing)
     ));
+}
+
+// Controlled input to the V3 save contract, not physical-host evidence.
+fn observed(intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) -> sandproof_protocol::lifecycle::CreateObservation {
+    use sandproof_protocol::lifecycle::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation};
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else { unreachable!() };
+    CreateObservation {
+        request: intent.clone(), current_request: intent.clone(), historical_create_succeeded: true,
+        readiness: CurrentCreateReadiness::Observed { facts: CurrentReadyFacts {
+            started_at_ms: 100, end_at_ms: 200, max_end_at_ms: 600,
+            startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: 100,
+        } },
+    }
 }

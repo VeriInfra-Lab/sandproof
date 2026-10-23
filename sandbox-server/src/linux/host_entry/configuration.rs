@@ -127,6 +127,7 @@ impl HostConfig {
         self.data_requests(&contract).validate()?;
         self.internal.tls.validate()?;
         let driver = DriverConfig {
+            profile: contract.maintenance.checkpoint_profile,
             node: self.inbox.node.clone(),
             compute: self
                 .native

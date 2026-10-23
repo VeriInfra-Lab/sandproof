@@ -500,6 +500,15 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
     }
 }
 impl AuthorityPort for SharedBusinessAuthority {
+    fn lifecycle_dispatch_batch(&mut self) -> Result<Vec<sandproof_protocol::lifecycle::AcceptedLifecycleIntent>, AuthorityError> {
+        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?.lifecycle_dispatch_batch()
+    }
+    fn accept_lifecycle_create_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::CreateObservation,
+    ) -> Result<(), AuthorityError> {
+        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?.accept_lifecycle_create_observation(observation)
+    }
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
         self.0
             .lock()

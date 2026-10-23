@@ -2,7 +2,7 @@
 //! No volatile retry queue, remote low-level commands, or second lifecycle.
 use crate::HostLifecycle;
 use sandproof_controller_service::{
-    InternalTemplate,
+    CheckpointProfile, InternalTemplate,
     application::fault::{FaultContext, FaultRecord, FaultStage},
     application::{ApplicationError, ControllerHost},
     template_registry::CandidateVerification,
@@ -14,6 +14,7 @@ use sandproof_protocol::internal::{
 };
 use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
+mod lifecycle;
 
 /// Protected immutable cache lookup; never resolves a user alias or downloads
 /// under the application lock. Absence must not substitute a base template.
@@ -33,6 +34,9 @@ pub trait TemplateSource: Send + Sync + 'static {
 /// Trusted deployment supplies explicit scheduling and original local limits.
 #[derive(Clone, Debug)]
 pub struct DriverConfig {
+    /// Selects the original configured inbox; unsupported/mismatched storage
+    /// refuses instead of falling back to a different protocol.
+    pub profile: CheckpointProfile,
     pub node: NodeIdentity,
     pub compute: ComputeLimits,
     pub interval: Duration,
@@ -80,6 +84,12 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
             app.recover_on_startup().map_err(shared_failure)?;
             app.expire_due_report().map_err(shared_failure)?;
             app.maintain().map_err(shared_failure)?;
+            match config.profile {
+                CheckpointProfile::FirstUnload => {
+                    return lifecycle::drive_creates(app, &config, &*templates);
+                }
+                CheckpointProfile::CreateKill => {}
+            }
             let requests = app.internal_pending(&config.node).map_err(shared_failure)?;
             let mut report = DriveReport::default();
             for request in requests {

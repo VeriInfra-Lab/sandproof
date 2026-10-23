@@ -7,6 +7,7 @@ mod authority;
 mod digest;
 mod identity;
 mod manifest;
+mod observation;
 mod public;
 mod request;
 
@@ -23,6 +24,7 @@ pub use manifest::{
     CaptureBinding, MANIFEST_FORMAT_VERSION, MAX_WRITABLE_DRIVES, ManifestError, SnapshotFile,
     SnapshotFileKind, SnapshotManifest, VmCompatibility, WritableDrive, disk_bundle_path,
 };
+pub use observation::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts};
 pub use public::{
     CreateParameters, PublicAcceptance, PublicCreateRequest, PublicSessionPhase, PublicSessionView,
     PublicUnloadRequest,
@@ -32,3 +34,4 @@ pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 /// A distinct profile: existing v2 endpoints retain their original semantics.
 pub const PROTOCOL_VERSION: u16 = 3;
 pub const LIFECYCLE_PATH: &str = "/internal/v3/lifecycle";
+pub const CREATE_OBSERVATION_PATH: &str = "/internal/v3/lifecycle/create-observation";

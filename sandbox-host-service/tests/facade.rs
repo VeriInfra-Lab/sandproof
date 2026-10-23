@@ -55,6 +55,7 @@ fn request(token: Option<&str>) -> Request<Body> {
 }
 fn driver() -> DriverConfig {
     DriverConfig {
+        profile: sandproof_controller_service::CheckpointProfile::CreateKill,
         node: local::wire::node("host-a"),
         compute: local::compute(),
         interval: Duration::from_millis(100),

@@ -133,6 +133,7 @@ async fn authority_fault_during_advance_halts_before_another_healthy_request() {
 }
 fn config() -> DriverConfig {
     DriverConfig {
+        profile: sandproof_controller_service::CheckpointProfile::CreateKill,
         node: local::wire::node("host-a"),
         compute: local::compute(),
         interval: Duration::from_millis(100),

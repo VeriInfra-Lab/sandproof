@@ -1,7 +1,6 @@
 //! Opt-in lifecycle metadata inside the original center authority block.
 //! Allocation, reservations and host lanes stay in the original `CenterState`.
 use crate::{CenterState, DecisionError, NodeRole};
-use sandproof_protocol::internal::PositiveCounter;
 use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleFact, LifecycleResponse};
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CaptureId, CenterIdentity, ExpectedSession, IncarnationId,
@@ -11,7 +10,12 @@ use sandproof_protocol::lifecycle::{
 use sandproof_protocol::{SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
 mod validation;
+mod ready;
 pub use sandproof_protocol::lifecycle::CreateParameters;
+
+/// Managed v3 receipts use a center acceptance sequence, never a host version.
+/// Earlier experimental profile 1 is not migrated or reinterpreted.
+pub const LIFECYCLE_PROFILE_VERSION: u16 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -185,7 +189,7 @@ impl CenterState {
         }
         let mut next = self;
         next.lifecycle = Some(LifecycleProfile {
-            format_version: 1,
+            format_version: LIFECYCLE_PROFILE_VERSION,
             center,
             windows,
             sessions: vec![],
@@ -199,6 +203,12 @@ impl CenterState {
     #[must_use]
     pub const fn lifecycle_enabled(&self) -> bool {
         self.lifecycle.is_some()
+    }
+    /// Raw persisted profile version, also available to the storage decoder
+    /// before domain validation. Absence retains the legacy host-version domain.
+    #[must_use]
+    pub fn lifecycle_profile_version(&self) -> Option<u16> {
+        self.lifecycle.as_ref().map(|profile| profile.format_version)
     }
     #[must_use]
     pub fn required_authority_bytes(&self) -> usize {
@@ -455,45 +465,6 @@ impl CenterState {
             return Err(DecisionError::Invalid);
         }
         Ok((next, intent))
-    }
-
-    /// Bind an authenticated host's Ready observation to the exact current v3
-    /// intent and original allocation. No legacy HTTP response can call through
-    /// this path without the full canonical envelope supplied by its adapter.
-    /// # Errors
-    /// Superseded/non-Create envelopes or invalid original lifetime facts reject.
-    pub fn observe_lifecycle_ready(
-        &self,
-        intent: &AcceptedLifecycleIntent,
-        observation_version: PositiveCounter,
-        started_at_ms: u64,
-        end_at_ms: u64,
-        max_end_at_ms: u64,
-    ) -> Result<Self, DecisionError> {
-        let session = self
-            .lifecycle_session(
-                &intent.request.binding.key.owner,
-                &intent.request.binding.session,
-            )
-            .ok_or(DecisionError::NotFound)?;
-        let current = session.operations.last().ok_or(DecisionError::Invalid)?;
-        if current.intent != *intent
-            || !matches!(intent.request.operation, LifecycleOperation::Create { .. })
-        {
-            return Err(DecisionError::Stale);
-        }
-        let index = self.index(&intent.request.binding.key.owner, &session.original_sandbox)?;
-        let request = &self.sandboxes[index].operations[0].request;
-        let response = LifecycleResponse {
-            identity: request.identity.clone(),
-            observation_version,
-            fact: LifecycleFact::Ready {
-                started_at_ms,
-                end_at_ms,
-                max_end_at_ms,
-            },
-        };
-        self.apply_response_inner(&response)
     }
 
     pub(crate) fn bind_lifecycle_ready(
