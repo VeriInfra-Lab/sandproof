@@ -72,58 +72,58 @@ impl CenterState {
             return false;
         }
         let mut index = 0;
-        while index < self.retention_lanes.len() {
+        let mut valid = true;
+        while valid && index < self.retention_lanes.len() {
             let lane = &self.retention_lanes[index];
-            let Some(node_index) = self
+            if let Some(node_index) = self
                 .nodes
                 .iter()
                 .position(|node| node.identity == lane.node)
-            else {
-                return false;
-            };
-            let node = &self.nodes[node_index];
-            if lane.retention_slot == 0
-                || lane.retention_slot > node.retention_slots
-                || !identities.insert((lane.node.node_id.as_str().to_owned(), lane.retention_slot))
-                || (lane.phase == LanePhase::Exhausted) != lane.current().is_none()
-                || !valid_last_retired(lane, self)
-                || !self.valid_lane_records(lane)
             {
-                return false;
+                let node = &self.nodes[node_index];
+                valid = lane.retention_slot != 0
+                    && lane.retention_slot <= node.retention_slots
+                    && identities.insert((lane.node.node_id.as_str().to_owned(), lane.retention_slot))
+                    && (lane.phase == LanePhase::Exhausted) == lane.current().is_none()
+                    && valid_last_retired(lane, self);
+                if valid {
+                    valid = self.valid_lane_records(lane);
+                }
+            } else {
+                valid = false;
             }
             // The guard established index < length, so this cannot wrap.
             index += 1;
         }
-        true
+        valid
     }
     /// Separate the inner ordered scan for the fixed Aeneas loop prepass.
     /// Same records, first refusal, count and lane checks; no host effects.
     fn valid_lane_records(&self, lane: &RetentionLane) -> bool {
         let mut count = 0;
         let mut index = 0;
-        while index < self.sandboxes.len() {
+        let mut valid = true;
+        while valid && index < self.sandboxes.len() {
             let record = &self.sandboxes[index];
-            let Some(first) = record.operations.first() else {
-                return false;
-            };
-            if first.intent().request.binding.node == lane.node
-                && first.intent().retention.slot == lane.retention_slot
-            {
-                count += 1;
-                if count > 1
-                    || lane
-                        .current()
-                        .map(sandproof_protocol::internal::PositiveCounter::get)
-                        != Some(first.intent().retention.window.get())
-                    || lane.phase == LanePhase::Exhausted
-                    || (lane.phase == LanePhase::ClosePending && terminal(record).is_none())
+            if let Some(first) = record.operations.first() {
+                if first.intent().request.binding.node == lane.node
+                    && first.intent().retention.slot == lane.retention_slot
                 {
-                    return false;
+                    count += 1;
+                    valid = count <= 1
+                        && lane
+                            .current()
+                            .map(sandproof_protocol::internal::PositiveCounter::get)
+                            == Some(first.intent().retention.window.get())
+                        && lane.phase != LanePhase::Exhausted
+                        && (lane.phase != LanePhase::ClosePending || terminal(record).is_some());
                 }
+            } else {
+                valid = false;
             }
             index += 1;
         }
-        count != 0 || lane.phase != LanePhase::ClosePending
+        valid && (count != 0 || lane.phase != LanePhase::ClosePending)
     }
     /// # Errors
     /// Operational drain never retires history or releases resources.

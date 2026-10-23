@@ -142,10 +142,13 @@ impl Sandbox {
     }
     #[must_use]
     pub fn released(&self) -> bool {
-        self.operations
-            .last()
-            .and_then(|operation| operation.terminal())
-            .is_some_and(|result| result.status == TerminalStatus::Cleaned)
+        let Some(operation) = self.operations.last() else {
+            return false;
+        };
+        let Some(result) = operation.terminal() else {
+            return false;
+        };
+        result.status == TerminalStatus::Cleaned
     }
     /// Historical lifetime, never sufficient by itself to authorize access.
     #[must_use]
@@ -155,13 +158,14 @@ impl Sandbox {
     }
     fn last_running_index(&self) -> Option<usize> {
         let mut index = self.operations.len();
-        while index > 0 {
+        let mut found = None;
+        while found.is_none() && index > 0 {
             index -= 1;
             if self.operations[index].running.is_some() {
-                return Some(index);
+                found = Some(index);
             }
         }
-        None
+        found
     }
     /// Only a result committed for the actual current Create/Renew can route.
     #[must_use]

@@ -68,16 +68,16 @@ impl CenterState {
     }
     fn valid_lifecycle_windows(&self, p: &LifecycleProfile) -> bool {
         let mut index = 0;
-        while index < p.windows.len() {
-            if !self.valid_lifecycle_window(p, index) {
-                return false;
-            }
+        let mut valid = true;
+        while valid && index < p.windows.len() {
+            valid = self.valid_lifecycle_window(p, index);
             index += 1;
         }
         index = 0;
-        while index < self.tenants.len() {
+        while valid && index < self.tenants.len() {
             let tenant = &self.tenants[index];
-            if p.windows
+            valid = !(p
+                .windows
                 .iter()
                 .filter(|w| {
                     w.registration.owner == tenant.tenant && w.registration.window.get() % 2 == 1
@@ -90,13 +90,10 @@ impl CenterState {
                         w.registration.owner == tenant.tenant && w.registration.window.get() == 2
                     })
                     .count()
-                    != 1
-            {
-                return false;
-            }
+                    != 1);
             index += 1;
         }
-        true
+        valid
     }
     fn valid_lifecycle_window(&self, p: &LifecycleProfile, index: usize) -> bool {
         let window = &p.windows[index];

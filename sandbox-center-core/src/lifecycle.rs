@@ -175,7 +175,8 @@ impl LifecycleOperationRecord {
     }
     #[must_use]
     pub fn terminal(&self) -> Option<&TerminalLifecycleObservation> {
-        self.terminal.as_ref().map(|retained| &retained.result)
+        let retained = self.terminal.as_ref()?;
+        Some(&retained.result)
     }
     /// # Errors
     /// Reusing a key with any changed original field conflicts.
@@ -197,13 +198,14 @@ impl Sandbox {
     /// Resolve the same first match before borrowing its returned row.
     fn operation_index(&self, key: &OperationKey) -> Option<usize> {
         let mut index = 0;
-        while index < self.operations.len() {
+        let mut found = None;
+        while found.is_none() && index < self.operations.len() {
             if self.operations[index].intent.request.binding.key == *key {
-                return Some(index);
+                found = Some(index);
             }
             index += 1;
         }
-        None
+        found
     }
     #[must_use]
     pub fn operations(&self) -> &[LifecycleOperationRecord] {
