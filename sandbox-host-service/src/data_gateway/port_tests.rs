@@ -148,7 +148,10 @@ fn native_guest_credential_replaces_all_public_bearers_without_fallback() {
 #[tokio::test]
 async fn native_identity_binds_original_guest_secret_through_body_preparation() {
     let directory = tempfile::tempdir().unwrap();
-    let state = Arc::new(std::sync::Mutex::new(local::State::default()));
+    let state = Arc::new(std::sync::Mutex::new(local::State {
+        epoch: local::TestEpoch::Matching,
+        ..local::State::default()
+    }));
     let application = Arc::new(lifecycle::application(
         &directory.path().join("db"),
         Arc::clone(&state),
