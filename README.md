@@ -1,69 +1,69 @@
 # Sandproof
 
-**简体中文** · [English](README.en.md)
+**English** · [简体中文](README.zh-CN.md)
 
-Sandproof 是一个以 Rust 实现、以 Lean 验证关键控制逻辑的有状态沙箱系统。当前目标是：在管理服务崩溃、请求重试和并发操作下，实现可靠的暂停卸载、同宿主恢复及资源回收。
+Sandproof is a stateful sandbox system implemented in Rust, with Lean proofs for selected control logic. Its current goal is reliable suspension, unloading, restoration on the same host, and resource reclamation despite management-service crashes, request retries, and concurrent operations.
 
-## 当前目标
+## Current goals
 
-第一阶段聚焦三个相互关联的问题：
+The first stage focuses on three connected problems:
 
-- **保住最新状态**：暂停时保存同一次冻结期间的全量内存、VM/设备状态和匹配的私有磁盘，再卸载旧 VM；恢复延续原会话状态。
-- **保证唯一执行资格**：恢复为新的运行代，旧执行者、重复请求和迟到回执不能造成重复执行；客户端通过操作键查询原请求结果。
-- **安全回收材料**：卸载后释放运行位置，保留会话及恢复材料的记账；仍被恢复过程或运行 VM 使用的材料不能提前删除。
+- **Preserve the latest state.** Capture full memory, VM/device state, and the matching private disk during the same freeze interval before unloading the old VM. Restoration must continue the original session's state.
+- **Maintain exclusive execution authority.** Restore into a new execution incarnation. Old executors, duplicate requests, and late acknowledgments must not permit duplicate execution. Clients use operation keys to retrieve the result of the original request.
+- **Reclaim recovery materials safely.** Release the execution slot after unloading while continuing to account for the session and its recovery materials. Materials still used by a restore operation or a running VM must not be deleted prematurely.
 
-保留真实中心→宿主网络链路：一个有效中心写者及权威 Redis，一个固定 Linux/KVM 宿主及其 SQLite，支持多用户、多会话。中心负责全局授权、绑定、预留和意图；宿主负责本地控制、持久化、实际执行与精确清理。Redis、SQLite、文件和 VMM 之间没有跨层原子事务。
+The system retains a real center-to-host network path: one active center writer with authoritative Redis, and one fixed Linux/KVM host with SQLite, supporting multiple users and sessions. The center owns global authorization, bindings, reservations, and intent; the host owns local control, persistence, physical execution, and precise cleanup. Redis, SQLite, files, and the VMM do not share an atomic transaction.
 
-当前范围以[总计划 #1](https://github.com/VeriInfra-Lab/sandproof/issues/1)和 [stage1 项目蓝图](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md)为准；新的 V0–V9 任务见总计划中的 #632–#641。交付要求包括真实系统、指定 Rust 实现的条件证明，以及可复现的状态连续性、故障和资源实验。
+The [project plan (#1)](https://github.com/VeriInfra-Lab/sandproof/issues/1) and [stage1 blueprint](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md) define the current scope. The new V0–V9 work is tracked in #632–#641, linked from the project plan. Delivery requires a working system, conditional proofs for the designated Rust implementation, and reproducible experiments covering state continuity, failures, and resources.
 
-## 目标与现状
+## Goals and implementation status
 
-既有中心/宿主、冷启动与清理、E2B 核心兼容、模板链、网关和公共证明是后续工作的基础。**新的有状态生命周期正在分批实现与验证，完整 create → unload → 管理进程重启 → resume → destroy 闭环尚不能声明已验收或已证明。** 纯核心中的 Pause/Resume 类型、局部组件测试和历史证明都不能代替真实产品链路的验收。
+Existing center/host components, cold boot and cleanup, core E2B compatibility, the template pipeline, gateways, and shared proofs provide the foundation. **The new stateful lifecycle is being implemented and verified incrementally. The complete create → unload → management-process restart → resume → destroy path cannot yet be described as accepted or proved.** Pause/Resume types in a pure core, isolated component tests, and historical proofs do not establish acceptance of the actual product path.
 
-当前阶段设计维护在 `stage1`，尚未整体进入本分支的文档树。阅读最新范围、合同与验收要求请使用下方 stage1 链接；本分支的代码和[覆盖记录](docs/proof-coverage.md)仅说明各自已集成的基线，后续候选的实际结果见对应 issue/PR。
+The current stage design is maintained on `stage1` and has not been integrated wholesale into this branch's documentation tree. Use the stage1 links below for the latest scope, contracts, and acceptance requirements. Code and [proof coverage](docs/proof-coverage.md) in this branch describe their respective integrated baseline; issues and PRs record the actual results for later candidates.
 
-第一阶段要求同宿主全量快照及先加载为暂停状态，暂停/恢复不重置会话总寿命；新生命周期操作需要客户端首次发送前已知的操作键。旧无键 SDK create 不自动获得安全重试语义，也不承诺旧 TCP/vsock 连接在恢复后连续。
+The first stage requires full snapshots on the same host and loading a restored VM in a paused state. Suspension and restoration must not reset the session's total lifetime. New lifecycle operations require an operation key known to the client before its first send. Existing SDK create calls without a key do not automatically acquire safe retry semantics, and existing TCP/vsock connections are not guaranteed to survive restoration.
 
-多宿主迁移、fork、增量快照、对象存储、中心高可用、完整来宾协议证明，以及任意 VMM 死亡后的 RAM 恢复均不在本阶段范围。模板构建与镜像转换继续通过工程测试验收；**运行态快照管理、恢复资格和清理决策属于本阶段必须验证的自有业务**。
+Cross-host migration, fork, incremental snapshots, object storage, center high availability, proofs of the complete guest protocol, and RAM recovery after arbitrary VMM death are outside this stage. Template builds and image conversion continue to rely on engineering tests. **Runtime snapshot management, restoration authority, and cleanup decisions are project-owned logic that must be verified in this stage.**
 
-## 开发入口
+## Development entry points
 
-详细文档目前主要为中文；本页提供英文入口，未表示全部文档已有译本。
+Detailed documentation is currently primarily in Chinese. This English README is an entry point; it does not imply that all documents have English translations.
 
-- [总计划与任务](https://github.com/VeriInfra-Lab/sandproof/issues/1)、[里程碑](https://github.com/VeriInfra-Lab/sandproof/milestones)
-- [开发指南](CONTRIBUTING.md)：分支、提交、PR、测试和文档维护规则；任务 → integration → test → main
-- [本分支文档目录](docs/README.md)：已集成基线的文档与工具说明
-- [当前阶段蓝图](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md)、[架构](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/ARCHITECTURE.md)、[模块合同](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/module-contracts.md)：最新目标、责任及失败语义
-- [当前验证设计](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/formal-verification-design.md)、[证明覆盖](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/proof-coverage.md)、[验收清单](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/testing-plan.md)：目标性质、适用范围及实机判据
-- [CI 运行记录](https://github.com/VeriInfra-Lab/sandproof/actions)
+- [Project plan and tasks](https://github.com/VeriInfra-Lab/sandproof/issues/1), [milestones](https://github.com/VeriInfra-Lab/sandproof/milestones)
+- [Contributing guide](CONTRIBUTING.md): branches, commits, PRs, testing, and documentation; task branch → integration → test → main
+- [Documentation index for this branch](docs/README.md): integrated baseline documentation and tooling
+- [Current stage blueprint](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md), [architecture](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/ARCHITECTURE.md), and [module contracts](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/module-contracts.md): current goals, responsibilities, and failure semantics
+- [Current verification design](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/formal-verification-design.md), [proof coverage](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/proof-coverage.md), and [acceptance plan](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/testing-plan.md): target properties, applicability, and real-machine acceptance criteria
+- [CI runs](https://github.com/VeriInfra-Lab/sandproof/actions)
 
-## 代码和证明
+## Code and proofs
 
-| 目录 | 用途 |
+| Directory | Purpose |
 |---|---|
-| `sandbox-center-core/`、`sandbox-center-store/` | 中心纯决策与 Redis 持久协调 |
-| `controller-core/`、`controller-service/` | 宿主本地控制、SQLite 和恢复编排 |
-| `sandbox-node/`、`sandbox-runtime/` | 节点协议接入、真实资源执行与精确清理 |
-| `sandbox-center/`、`sandbox-server/` | 中心与受保护宿主服务的装配入口 |
-| `SandboxModel/` | Lean 模型、性质及指定 Rust 的对应证明 |
-| `verification/` | 固定版本 Charon/Aeneas 抽取、工具链说明和证明依赖审计 |
-| `scripts/`、`tools/` | 功能检查、证明验收、部署与开发辅助工具 |
-| `docs/`、`benchmarks/` | 已集成设计与覆盖记录，以及固定兼容/评测入口 |
+| `sandbox-center-core/`, `sandbox-center-store/` | Pure center decisions and persistent coordination through Redis |
+| `controller-core/`, `controller-service/` | Local host control, SQLite, and recovery orchestration |
+| `sandbox-node/`, `sandbox-runtime/` | Node protocol integration, physical resource execution, and precise cleanup |
+| `sandbox-center/`, `sandbox-server/` | Assembly entry points for the center and protected host services |
+| `SandboxModel/` | Lean models, properties, and correspondence proofs for designated Rust code |
+| `verification/` | Pinned Charon/Aeneas extraction, toolchain documentation, and proof dependency audits |
+| `scripts/`, `tools/` | Functional checks, proof acceptance, deployment, and development tools |
+| `docs/`, `benchmarks/` | Integrated design and coverage records, plus pinned compatibility and benchmark entry points |
 
-## 本地检查
+## Local checks
 
-先按[开发指南](CONTRIBUTING.md)及 [CI 环境说明](docs/ci.md)准备固定工具链、Python 和校验后的 Redis，并显式设置 `SANDPROOF_REDIS_SERVER`。
+Follow the [contributing guide](CONTRIBUTING.md) and [CI environment instructions](docs/ci.md) to prepare the pinned toolchains, Python, and a verified Redis binary. Set `SANDPROOF_REDIS_SERVER` explicitly.
 
 ```sh
-bash scripts/check-function.sh             # Linux 完整基础检查
-bash scripts/check-function.sh --portable  # macOS 开发检查，不代替 Linux 验收
+bash scripts/check-function.sh             # Complete Linux baseline checks
+bash scripts/check-function.sh --portable  # macOS development checks; not Linux acceptance
 ```
 
-证明开发先完整阅读[证明工作流](docs/proof-workflow.md)，使用其指定服务与固定工具链；完整证明验收入口为：
+Before proof development, read the entire [proof workflow](docs/proof-workflow.md) and use its designated service and pinned toolchain. The complete proof acceptance entry point is:
 
 ```sh
-scripts/bootstrap-aeneas.sh  # 首次准备固定版本工具链
+scripts/bootstrap-aeneas.sh  # Prepare the pinned toolchain on first use
 scripts/verify-controller.sh
 ```
 
-Lean 是协议规范来源；Charon/Aeneas 将指定真实 Rust 抽取为 Lean 函数，再证明其与规范的对应关系。抽取受固定工具链支持子集和外部合同限制。模型定理、实现对应、原生测试及 Linux/KVM 实测分别报告；已有结论只适用于记录的代码、输入、故障模型和前提，不代表整个系统、虚拟化隔离或底层 OS 已被完整验证。
+Lean is the source of the protocol specification. Charon/Aeneas extracts designated real Rust into Lean functions, whose correspondence with the specification is then proved. Extraction is limited by the pinned toolchain's supported subset and external contracts. Model theorems, implementation correspondence, native tests, and Linux/KVM experiments are reported separately. Existing results apply only to their recorded code, inputs, failure models, and assumptions; they do not establish complete verification of the system, virtualization isolation, or the underlying OS.
