@@ -11,7 +11,10 @@ use std::{
     cell::RefCell,
     fs::{self, File},
     io::{self, Read, Write},
-    os::{fd::AsRawFd, unix::fs::{MetadataExt, OpenOptionsExt}},
+    os::{
+        fd::AsRawFd,
+        unix::fs::{MetadataExt, OpenOptionsExt},
+    },
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
 };
@@ -22,8 +25,7 @@ const EXEC_GATE: &str =
 // initial shell exec. Only a durable caller-authorized release replaces it.
 // Diagnostics after release join the bounded result pipe; parsers must reject
 // anything other than their exact single reply frame.
-const CAPTURE_EXEC_GATE: &str =
-    "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
+const CAPTURE_EXEC_GATE: &str = "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
 pub const MAX_HELPER_MARKER_BYTES: u64 = 16_384;
 
 /// Fixed gate inode created by the trusted node's mapping initialization.
@@ -449,13 +451,13 @@ impl RuntimeHelperGuard {
         if self.file.as_raw_fd() < 3 {
             return Err(RuntimeError::IdentityMismatch("capture gate aliases stdio"));
         }
-        let mut command=self.command_waiting(program,args,CAPTURE_EXEC_GATE);
+        let mut command = self.command_waiting(program, args, CAPTURE_EXEC_GATE);
         command.stderr(Stdio::from(self.file.try_clone()?));
         Ok(command)
     }
 
     fn gated_command(&self, program: &str, args: &[&str]) -> Command {
-        self.command_waiting(program,args,EXEC_GATE)
+        self.command_waiting(program, args, EXEC_GATE)
     }
 
     fn command_waiting(&self, program: &str, args: &[&str], script: &str) -> Command {
@@ -525,7 +527,17 @@ impl RuntimeHelperGuard {
             .write(true)
             .mode(0o600)
             .open(&stage)?;
-        self.prepare_reserved(context, None, None, &path, &stage, staged, program, args, retain_waiting_gate)
+        self.prepare_reserved(
+            context,
+            None,
+            None,
+            &path,
+            &stage,
+            staged,
+            program,
+            args,
+            retain_waiting_gate,
+        )
     }
 
     /// Release only the exact originally prepared child under the same guard.
@@ -543,24 +555,35 @@ impl RuntimeHelperGuard {
             || prepared.child.id() != witness.record.process.pid
             || !witness.record.process.is_alive()?
         {
-            return Err(RuntimeError::IdentityMismatch("prepared helper release binding"));
+            return Err(RuntimeError::IdentityMismatch(
+                "prepared helper release binding",
+            ));
         }
         let (path, _) = match witness.record.route_index {
             Some(index) => self.gate.route_paths(index)?,
             None => self.gate.inflight_paths()?,
         };
-        let current = self.read_cell(&path, witness.record.route_index)?
-            .ok_or(RuntimeError::IdentityMismatch("prepared helper witness missing"))?;
+        let current = self.read_cell(&path, witness.record.route_index)?.ok_or(
+            RuntimeError::IdentityMismatch("prepared helper witness missing"),
+        )?;
         if current.record != witness.record
-            || current.device != witness.device || current.inode != witness.inode
+            || current.device != witness.device
+            || current.inode != witness.inode
             || (witness.record.route_index.is_none()
-                && self.active.borrow().as_ref().is_none_or(|active|
+                && self.active.borrow().as_ref().is_none_or(|active| {
                     active.record != witness.record
-                    || active.device != witness.device || active.inode != witness.inode))
+                        || active.device != witness.device
+                        || active.inode != witness.inode
+                }))
         {
-            return Err(RuntimeError::IdentityMismatch("prepared helper witness replaced"));
+            return Err(RuntimeError::IdentityMismatch(
+                "prepared helper witness replaced",
+            ));
         }
-        prepared.child.stdin.as_mut()
+        prepared
+            .child
+            .stdin
+            .as_mut()
             .ok_or(RuntimeError::Protocol("tracked helper gate pipe"))?
             .write_all(b"release\n")?;
         Ok(prepared.child)
@@ -674,7 +697,17 @@ impl RuntimeHelperGuard {
         program: &str,
         args: &[&str],
     ) -> Result<OwnedChild, RuntimeError> {
-        let prepared=self.prepare_reserved(context,route_index,control,path,stage,staged,program,args,false)?;
+        let prepared = self.prepare_reserved(
+            context,
+            route_index,
+            control,
+            path,
+            stage,
+            staged,
+            program,
+            args,
+            false,
+        )?;
         self.release_tracked(prepared)
     }
 
@@ -710,7 +743,7 @@ impl RuntimeHelperGuard {
                 return Err(error.into());
             }
         };
-        let witness=self.publish_prepared(
+        let witness = self.publish_prepared(
             context,
             route_index,
             control,
@@ -721,7 +754,7 @@ impl RuntimeHelperGuard {
             args,
             &child,
         )?;
-        Ok(PreparedTrackedChild{child,witness})
+        Ok(PreparedTrackedChild { child, witness })
     }
 
     fn abandon_unspawned_stage(&self, stage: &Path, staged: &File) -> Result<(), RuntimeError> {
@@ -784,7 +817,11 @@ impl RuntimeHelperGuard {
         )
         .map_err(io::Error::from)?;
         sync_parent(path)?;
-        let witness=OwnedMarker{record,device:metadata.dev(),inode:metadata.ino()};
+        let witness = OwnedMarker {
+            record,
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        };
         if route_index.is_none() {
             *self.active.borrow_mut() = Some(witness.clone());
         }
@@ -1572,11 +1609,11 @@ mod tests {
             .write_all(b"{\"partial\"")
             .unwrap();
         let mut staged = File::open(&stage).unwrap(); // deterministic write failure
-        let mut child = OwnedChild::new(guard.gated_command("/bin/true", &[]).spawn().unwrap());
+        let child = OwnedChild::new(guard.gated_command("/bin/true", &[]).spawn().unwrap());
         let id = child.id();
         assert!(
             guard
-                .publish_and_release(
+                .publish_prepared(
                     &context,
                     None,
                     None,
@@ -1585,7 +1622,7 @@ mod tests {
                     &mut staged,
                     "/bin/true",
                     &[],
-                    &mut child
+                    &child
                 )
                 .is_err()
         );
@@ -1829,21 +1866,31 @@ mod tests {
         let (temp, context) = fixture(1);
         let guard = acquire(&context, false).unwrap();
         let effect = temp.path().join("must-not-run");
-        let mut prepared = guard.prepare_tracked(&context, "/bin/sh",
-            &["-c", "printf effect > \"$1\"", "prepared-eof", effect.to_str().unwrap()]).unwrap();
-        let process=prepared.process().clone();
-        let marker=context.helper_gate.inflight_paths().unwrap().0;
-        let original=fs::read(&marker).unwrap();
-        let stored:InflightRecord=serde_json::from_slice(&original).unwrap();
-        assert_eq!(stored.process,process);
-        assert_eq!(&stored.command_digest,prepared.command_digest());
+        let mut prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "prepared-eof",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        let marker = context.helper_gate.inflight_paths().unwrap().0;
+        let original = fs::read(&marker).unwrap();
+        let stored: InflightRecord = serde_json::from_slice(&original).unwrap();
+        assert_eq!(stored.process, process);
+        assert_eq!(&stored.command_digest, prepared.command_digest());
         drop(prepared.child.stdin.take());
-        let output=prepared.child.wait_output().unwrap();
+        let output = prepared.child.wait_output().unwrap();
         assert!(!output.status.success());
         assert!(output.stdout.is_empty());
         assert!(!effect.exists());
         assert_reaped(process.pid);
-        assert_eq!(fs::read(&marker).unwrap(),original);
+        assert_eq!(fs::read(&marker).unwrap(), original);
         guard.finish_tracked().unwrap();
     }
 
@@ -1852,15 +1899,23 @@ mod tests {
         let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (_temp, context) = fixture(1);
         let guard = acquire(&context, false).unwrap();
-        let prepared=guard.prepare_tracked(&context,"/bin/sh",
-            &["-c", "IFS= read -r body; [ \"$body\" = payload ] || exit 2; printf consumed"]).unwrap();
-        let process=prepared.process().clone();
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "IFS= read -r body; [ \"$body\" = payload ] || exit 2; printf consumed",
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
         assert!(process.is_alive().unwrap());
-        let mut child=guard.release_tracked(prepared).unwrap();
-        assert_eq!(child.id(),process.pid);
-        let output=child.exchange(b"payload\n",HelperLimits::CONTROL).unwrap();
+        let mut child = guard.release_tracked(prepared).unwrap();
+        assert_eq!(child.id(), process.pid);
+        let output = child.exchange(b"payload\n", HelperLimits::CONTROL).unwrap();
         assert!(output.status.success());
-        assert_eq!(output.stdout,b"consumed");
+        assert_eq!(output.stdout, b"consumed");
         assert_reaped(process.pid);
         assert!(context.helper_gate.inflight_paths().unwrap().0.exists());
         guard.finish_tracked().unwrap();
@@ -1871,12 +1926,22 @@ mod tests {
         let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (temp, context) = fixture(1);
         let (_other_temp, other_context) = fixture(1);
-        let guard=acquire(&context,false).unwrap();
-        let other=acquire(&other_context,false).unwrap();
-        let effect=temp.path().join("must-not-run");
-        let prepared=guard.prepare_tracked(&context,"/bin/sh",
-            &["-c", "printf effect > \"$1\"", "foreign-release", effect.to_str().unwrap()]).unwrap();
-        let process=prepared.process().clone();
+        let guard = acquire(&context, false).unwrap();
+        let other = acquire(&other_context, false).unwrap();
+        let effect = temp.path().join("must-not-run");
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "foreign-release",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
         assert!(other.release_tracked(prepared).is_err());
         assert_reaped(process.pid);
         assert!(!effect.exists());
@@ -1888,22 +1953,38 @@ mod tests {
     fn replacing_prepared_witness_refuses_release_without_erasing_either_record() {
         let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (temp, context) = fixture(1);
-        let guard=acquire(&context,false).unwrap();
-        let effect=temp.path().join("must-not-run");
-        let prepared=guard.prepare_tracked(&context,"/bin/sh",
-            &["-c", "printf effect > \"$1\"", "replaced-release", effect.to_str().unwrap()]).unwrap();
-        let process=prepared.process().clone();
-        let marker=context.helper_gate.inflight_paths().unwrap().0;
-        let original=fs::read(&marker).unwrap();
-        let moved=marker.with_extension("original");
-        fs::rename(&marker,&moved).unwrap();
-        File::options().create_new(true).write(true).mode(0o600).open(&marker)
-            .unwrap().write_all(b"{}").unwrap();
+        let guard = acquire(&context, false).unwrap();
+        let effect = temp.path().join("must-not-run");
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "replaced-release",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        let marker = context.helper_gate.inflight_paths().unwrap().0;
+        let original = fs::read(&marker).unwrap();
+        let moved = marker.with_extension("original");
+        fs::rename(&marker, &moved).unwrap();
+        File::options()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&marker)
+            .unwrap()
+            .write_all(b"{}")
+            .unwrap();
         assert!(guard.release_tracked(prepared).is_err());
         assert_reaped(process.pid);
         assert!(!effect.exists());
-        assert_eq!(fs::read(&marker).unwrap(),b"{}");
-        assert_eq!(fs::read(&moved).unwrap(),original);
+        assert_eq!(fs::read(&marker).unwrap(), b"{}");
+        assert_eq!(fs::read(&moved).unwrap(), original);
         assert!(guard.finish_tracked().is_err());
     }
 
@@ -1911,24 +1992,36 @@ mod tests {
     fn prepared_child_retains_the_slot_lock_across_exec_until_eof_and_exact_exit() {
         let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (temp, context) = fixture(1);
-        let guard=acquire(&context,false).unwrap();
-        let effect=temp.path().join("must-not-run");
-        let mut prepared=guard.prepare_tracked(&context,"/bin/sh",
-            &["-c", "printf effect > \"$1\"", "held-slot", effect.to_str().unwrap()]).unwrap();
-        let process=prepared.process().clone();
-        let fd2=fs::metadata(format!("/proc/{}/fd/2",process.pid)).unwrap();
-        assert_eq!(fd2.dev(),context.helper_gate.device);
-        assert_eq!(fd2.ino(),context.helper_gate.inode);
-        let marker=context.helper_gate.inflight_paths().unwrap().0;
-        fs::rename(&marker,marker.with_extension("saved")).unwrap();
+        let guard = acquire(&context, false).unwrap();
+        let effect = temp.path().join("must-not-run");
+        let mut prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "held-slot",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        let fd2 = fs::metadata(format!("/proc/{}/fd/2", process.pid)).unwrap();
+        assert_eq!(fd2.dev(), context.helper_gate.device);
+        assert_eq!(fd2.ino(), context.helper_gate.inode);
+        let marker = context.helper_gate.inflight_paths().unwrap().0;
+        fs::rename(&marker, marker.with_extension("saved")).unwrap();
         drop(guard);
-        let contender=File::open(&context.helper_gate.path).unwrap();
-        assert_eq!(flock(&contender,FlockOperation::NonBlockingLockExclusive).unwrap_err(),
-            rustix::io::Errno::WOULDBLOCK);
+        let contender = File::open(&context.helper_gate.path).unwrap();
+        assert_eq!(
+            flock(&contender, FlockOperation::NonBlockingLockExclusive).unwrap_err(),
+            rustix::io::Errno::WOULDBLOCK
+        );
         drop(prepared.child.stdin.take());
         assert!(!prepared.child.wait_output().unwrap().status.success());
         assert_reaped(process.pid);
-        flock(&contender,FlockOperation::NonBlockingLockExclusive).unwrap();
+        flock(&contender, FlockOperation::NonBlockingLockExclusive).unwrap();
         assert!(!effect.exists());
     }
 }

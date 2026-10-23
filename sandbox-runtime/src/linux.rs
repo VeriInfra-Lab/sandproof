@@ -45,8 +45,8 @@ mod uid_retirement;
 pub use cgroup::HostResources;
 pub use helper_gate::MAX_HELPER_MARKER_BYTES;
 pub use helper_gate::{
-    PreparedTrackedChild, RuntimeHelperGate, RuntimeHelperGuard, RuntimeProcessIdentity, RuntimeRouteSnapshot,
-    RuntimeRouteState,
+    PreparedTrackedChild, RuntimeHelperGate, RuntimeHelperGuard, RuntimeProcessIdentity,
+    RuntimeRouteSnapshot, RuntimeRouteState,
 };
 pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
