@@ -8,6 +8,16 @@ use sandproof_protocol::lifecycle::{
 use sandproof_protocol::{TenantId, internal::NodeIdentity};
 use serde::{Deserialize, Serialize};
 
+// Missing fields are not an implicit upgrade from an old developer format.
+// Explicit null is allowed where no application/confirmation exists yet.
+fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LifecycleInboxConfig {
@@ -82,6 +92,7 @@ pub(super) struct Entry {
     pub applied_deadline: Option<i64>,
     /// Actual native deadline read before that same renewal transaction.
     /// Kept even if its previously confirmed SDK predecessor is compacted.
+    #[serde(deserialize_with = "required_option")]
     pub previous_effective_end_at_ms: Option<i64>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,9 +108,11 @@ pub(super) struct Session {
     pub local: Option<InternalLocalBinding>,
     pub entries: Vec<Entry>,
     pub confirmed_terminal: Option<sandproof_protocol::lifecycle::TerminalLifecycleObservation>,
+    #[serde(deserialize_with = "required_option")]
     pub confirmed_renewal: Option<sandproof_protocol::lifecycle::RenewalConfirmation>,
     /// Greatest SDK version actually removed by the exact confirmation rule.
     /// This is not the latest accepted/confirmed version or a global key floor.
+    #[serde(deserialize_with = "required_option")]
     pub compacted_sdk_through: Option<u64>,
 }
 

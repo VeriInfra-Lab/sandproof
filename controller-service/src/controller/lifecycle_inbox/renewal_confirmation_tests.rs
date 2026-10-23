@@ -212,3 +212,34 @@ fn exact_prune_predicate_retains_public_current_unapplied_and_pinned_rows() {
     entry = original; entry.intent.request.binding.key = OperationKey { window: 11.try_into().unwrap(), ..entry.intent.request.binding.key };
     assert!(!discard_previous(&entry, &result, 3, false));
 }
+
+#[test]
+fn current_renewal_fields_require_explicit_null_instead_of_missing_old_format_fields() {
+    let dir = tempfile::tempdir().unwrap(); let mut journal = fixture::initialize(&dir.path().join("db"));
+    running(&mut journal);
+    let original = serde_json::to_value(saved(&journal)).unwrap();
+    for name in ["confirmed_renewal", "compacted_sdk_through"] {
+        let mut missing = original.clone();
+        assert!(missing["sessions"][0].as_object_mut().unwrap().remove(name).unwrap().is_null());
+        assert!(serde_json::from_value::<super::super::model::Inbox>(missing).is_err());
+    }
+    let mut missing = original.clone();
+    assert!(missing["sessions"][0]["entries"][0].as_object_mut().unwrap()
+        .remove("previous_effective_end_at_ms").unwrap().is_null());
+    assert!(serde_json::from_value::<super::super::model::Inbox>(missing).is_err());
+    assert!(serde_json::from_value::<super::super::model::Inbox>(original).is_ok());
+}
+
+#[test]
+fn current_renewal_store_refuses_prior_format_nineteen_without_mutation() {
+    let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("db");
+    let journal = fixture::initialize(&path);
+    assert_eq!(crate::LIFECYCLE_STORE_FORMAT_VERSION, 20, "run only the complete shared 8/20 candidate");
+    journal.journal.connection.execute("UPDATE controller_meta SET version=19 WHERE id=1", []).unwrap();
+    drop(journal); let before = std::fs::read(&path).unwrap();
+    let host = crate::controller::tests_support::host(4);
+    let maintenance = crate::controller::tests_support::lifecycle_application::maintenance();
+    assert!(matches!(ControllerJournal::preflight_complete(&path, "0123456789abcdef", &host, &maintenance), Err(JournalError::UnsupportedStore)));
+    assert!(matches!(ControllerJournal::open_complete(&path, "0123456789abcdef", host, maintenance, 0), Err(JournalError::UnsupportedStore)));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
