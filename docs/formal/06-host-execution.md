@@ -137,3 +137,6 @@ Node 从同一原 `HostEpochRegistration.policy` 绑定的 protected payload 取
 `observe_full_capture` 只为仍持原来源位置的未决 Full 工作核同一原 key、独立 profile/原输入及已有 manifest 摘要（若有），返回 `CheckedStoredCapture` 文件事实；不要求原 VMM 仍运行，不再次 Pause/Full，不从文件存在推出捕获 provenance、原 writer/helper/copy 退出或数据库接管。卸载后释放原位置的恢复 C 路径须按独立持久 bundle/pin 记录继续，不能依赖仍有旧 Occupied 位置，也不能把此未决 Full 观察误作通用恢复资格。
 
 当前冷启动链没有 Node snapshot-source Prepare 成功路径，T=0 仅限这条原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射；C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套 0 或删掉真实恢复状态。本批新增纯参数/配置/实际文件比较回归仍为受控数据，未获真实 VMM、完整 Full 预算或对应 Rust 证明结论。
+
+
+`NodeHost::observe_committed_capture(&CommittedCaptureExpectation)` 是材料已由原数据库登记后的只读入口。该 service 类型字段私有、没有 Deserialize 或公开构造，只保存原完整 Full 工作和已登记 manifest 摘要；Node 使用这两项独立期望与同一受保护 store/epoch、读取界检查原 key 和全部字节，不访问旧 Occupied 位置、launch secret 或活 VMM。未决工作仍使用前述 `observe_full_capture`。材料观察不提供恢复、pin、删除、访问、停止或退额许可，完整材料不自行产生来源或提交证明。当前原 journal 的持久接管及该类型提供方尚未实现，不能从 DTO、文件存在或测试替身构造成功凭证；消费接口可编译不表示卸载后重开已端到端接通。

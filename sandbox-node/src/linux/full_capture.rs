@@ -4,7 +4,7 @@ use super::capture::require_source_binding;
 use super::capture_profile::ProtectedCaptureProfile;
 use crate::{ProtectedHostEpochSource,full_snapshot::{self,ExpectedFullCapture,FullCaptureObservation,CheckedStoredCapture}};
 use sandbox_runtime::{FullCaptureLimits,OriginalPauseObservation,RuntimeProcessIdentity,snapshot_store::BundleReadLimits};
-use sandproof_controller_service::capture::{FullCaptureWorkRequest,PauseWorkRequest,SourceObservationRequirement,RawSourceObservation};
+use sandproof_controller_service::capture::{CommittedCaptureExpectation,FullCaptureWorkRequest,PauseWorkRequest,SourceObservationRequirement,RawSourceObservation};
 use sandproof_controller_service::templates::TemplateBinding;
 use sandproof_protocol::{ResourceId,lifecycle::{ContentDigest,VmCompatibility,WritableDrive}};
 use sha2::{Digest,Sha256};
@@ -134,6 +134,29 @@ impl LinuxWorker {
             &ExpectedFullCapture{resource_id:request.pause.source_resource.id.as_str(),source:&source,
                 binding:&request.pause.binding,compatibility:&expected.compatibility},manifest,read_limits(&expected))
     }
+}
+// This path deliberately has no worker, position, credential or live-source
+// input. The service-only expectation is the original durable material record.
+pub(crate) fn observe_committed_capture(profile:&ProtectedCaptureProfile,
+    expected:&CommittedCaptureExpectation)->NodeResult<CheckedStoredCapture> {
+    let request=expected.work();
+    require_committed_read_scope(request,profile.epoch.node(),profile.epoch.registration().policy,
+        BundleReadLimits{state_bytes:profile.state_bytes,memory_bytes:profile.memory_max,disk_bytes:profile.disk_bytes})?;
+    let source=RuntimeProcessIdentity{pid:request.pause.source.pid,
+        start_time_ticks:request.pause.source.start_time_ticks,boot_id:request.pause.source.boot_id.clone()};
+    full_snapshot::observe_stored_capture(&profile.layout,
+        &ExpectedFullCapture{resource_id:request.pause.source_resource.id.as_str(),source:&source,
+            binding:&request.pause.binding,compatibility:&request.compatibility},
+        Some(*expected.manifest_digest().as_bytes()),read_limits(request))
+}
+fn require_committed_read_scope(request:&FullCaptureWorkRequest,node:&sandproof_protocol::internal::NodeIdentity,
+    epoch:ContentDigest,caps:BundleReadLimits)->NodeResult<()> {
+    if !request.valid() || &request.pause.node!=node || request.compatibility.cpu!=epoch
+        || request.state_bytes>caps.state_bytes || request.memory_bytes>caps.memory_bytes
+        || request.disk_bytes>caps.disk_bytes {
+        return Err("committed capture differs from protected store epoch or read caps".into());
+    }
+    Ok(())
 }
 fn read_limits(request:&FullCaptureWorkRequest)->BundleReadLimits {
     BundleReadLimits{state_bytes:request.state_bytes,memory_bytes:request.memory_bytes,disk_bytes:request.disk_bytes}

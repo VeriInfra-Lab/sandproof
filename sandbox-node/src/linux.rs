@@ -32,6 +32,7 @@ type NodeResult<T> = Result<T, Box<dyn Error>>;
 mod capture;
 mod capture_profile;
 mod full_capture;
+pub(crate) use full_capture::observe_committed_capture;
 pub use capture_profile::ProtectedCaptureSettings;
 pub(crate) use capture_profile::ProtectedCaptureProfile;
 mod credentials;

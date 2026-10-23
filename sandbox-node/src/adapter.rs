@@ -166,6 +166,25 @@ impl NodeHost {
     }
 }
 
+impl NodeHost {
+    /// Reopen only the original journal's committed material expectation.
+    /// This does not consult an old position, launch credential or live VMM.
+    /// The journal provider is not implemented yet; this API grants no load,
+    /// delete, pin, access or resource-release permission.
+    /// # Errors
+    /// Missing protected profile, wrong epoch, altered or incomplete bytes
+    /// remain errors. No physical lifecycle action or repair follows.
+    pub fn observe_committed_capture(
+        &self,
+        expected: &sandproof_controller_service::capture::CommittedCaptureExpectation,
+    ) -> Result<crate::full_snapshot::CheckedStoredCapture, Box<dyn std::error::Error>> {
+        crate::linux::observe_committed_capture(
+            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,
+            expected,
+        )
+    }
+}
+
 impl WorkEvidence for NodeHost {
     type Evidence = HostObservation;
 }

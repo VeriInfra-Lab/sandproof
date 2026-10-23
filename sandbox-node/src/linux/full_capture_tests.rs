@@ -85,6 +85,28 @@ fn work_dto_cannot_replace_independent_profile_binding_or_any_copy_parameter() {
     assert!(require_expected_request(&changed,&expected).is_err());
 }
 #[test]
+fn committed_read_scope_binds_persisted_work_without_old_vm_state() {
+    let expected=request();
+    let caps=BundleReadLimits{state_bytes:expected.state_bytes,
+        memory_bytes:expected.memory_bytes,disk_bytes:expected.disk_bytes};
+    let node=&expected.pause.node;
+    let epoch=expected.compatibility.cpu;
+    assert!(require_committed_read_scope(&expected,node,epoch,caps).is_ok());
+    let mut foreign=expected.clone();
+    foreign.pause.node.node_generation+=1;
+    assert!(require_committed_read_scope(&foreign,node,epoch,caps).is_err());
+    foreign=expected.clone();foreign.compatibility.cpu=ContentDigest::from_sha256([9;32]);
+    assert!(require_committed_read_scope(&foreign,node,epoch,caps).is_err());
+    for field in ["state_bytes","memory_bytes","disk_bytes"] {
+        let mut altered=serde_json::to_value(&expected).unwrap();
+        altered[field]=json!(altered[field].as_u64().unwrap()+1);
+        let altered=serde_json::from_value(altered).unwrap();
+        assert!(require_committed_read_scope(&altered,node,epoch,caps).is_err(),"accepted {field}");
+    }
+    foreign=expected.clone();foreign.memory_bytes=0;
+    assert!(require_committed_read_scope(&foreign,node,epoch,caps).is_err());
+}
+#[test]
 fn protected_copy_settings_do_not_accept_unbounded_or_zero_values() {
     let good=ProtectedCaptureSettings{layout_parent:"/protected/layout".into(),layout_binding:ContentDigest::from_sha256([1;32]),
         state_copy_bytes:10_000_000,memory_copy_bytes:128*1_048_576,disk_copy_bytes:8192,api_timeout_ms:1000};
