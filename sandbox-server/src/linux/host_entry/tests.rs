@@ -19,7 +19,7 @@ fn host_settings() -> Value {
         "startup": {"workdir": "/home/user", "argv": [], "env_vars": {}, "user": "user"}
     });
     native["templates"] = json!({
-        "templates": [descriptor], "aliases": {"base": "base"},
+        "templates": [descriptor], "aliases": {"default": "base"},
         "compute_limits": {
             "max_vcpus_global": 2, "max_vcpus_per_tenant": 2,
             "max_memory_bytes_global": 536_870_912, "max_memory_bytes_per_tenant": 536_870_912
@@ -123,6 +123,9 @@ fn current_bootstrap_settings_reject_foreign_missing_and_old_shapes() {
 #[test]
 fn cache_is_one_reserved_source_not_a_static_availability_fallback() {
     let mut value = host_settings();
+    value["native"]["templates"]["aliases"] = json!({"base":"base"});
+    assert!(!check(value), "an alias cannot shadow the canonical template ID");
+    value = host_settings();
     value["template_registrations"] = json!([{ "revision":"base-r1","template_id":"base" }]);
     assert!(!check(value));
     value = host_settings();
