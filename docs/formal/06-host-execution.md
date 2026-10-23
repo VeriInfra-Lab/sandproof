@@ -70,7 +70,9 @@
 
 `Runtime::observe_original_configuration` 在已接受的原只读工作及关闭新准入条件下，沿原 PID/start/boot、claim、jail/cgroup 和保留目录 FD 读取。它只发送 GET，核对固定工具的原 instance、两次配置字节一致，并测量实际执行 inode 与原私有内核副本的字节摘要，观察原可写盘长度；前后仍须是同一来源。进程、文件、回复或上界不能确认时返回未决；错误不会 Pause、Full、Stop、创建或删除材料。返回类型私有构造，但只代表读取时的事实。
 
-该输出不验证完整设备 JSON、不认证 CPU/初始镜像兼容，也不授予捕获或停止许可。节点仍须与第一次 V3 Create 前的受保护 epoch、原 CreateOptions/template 和同一实际 BootPlan 对照；缺少事实不得填默认值。原可写盘仍在变化，当前长度不替代后续连续暂停区间内的完整测量。V5 接受回传后须重核原工作/版本并在原事务保存，同一责任接管成功后才发物理捕获许可；不在 SQL 事务内等待文件或 API I/O。manager 重启不能仅凭历史 epoch 观察继续启动，须重新核对当前受保护部署。当前只读组件不代表这些连接已经实现或证明。
+当前冷启动来源观察先将实际 GET `/vm/config` 按固定 Firecracker 1.16.1 的返回形状解析，再与启动实际使用的同一 `BootPlan` 对照：vCPU/RAM、内核路径和参数、单 rootfs 的可写/缓存/同步 I/O 配置、零或一个原网卡、MMDS 版本/地址/接口，以及不使用 balloon、hotplug、pmem、vsock、entropy。额外或重复字段、额外设备、未知配置、缺失必需字段均拒绝，不把观察值回填成期望值。固定返回投影的依据是 [VmmConfig::from](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/resources.rs)、[machine](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/machine_config.rs)、[drive](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/drive.rs)、[network](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/net.rs) 和 [MMDS](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/mmds.rs)。该检查不是任意 VMM 或恢复来源的通用兼容验证器；恢复批须按原候选来源和固定工具真实返回继续连接，不能用此冷启动检查直接背书多周期。
+
+特别是该固定工具的 GET 投影会将 custom CPU、logger、metrics 返回为 null，并隐藏 custom CPU 的 machine 字段；null 不能证明它们从未配置。原唯一启动路径、受保护工具字节及没有未登记 API 写者的部署条件仍不可省略。这个可见配置判断不认证 CPU/初始镜像兼容、编码堆界、捕获前物理预留，也不授予捕获或停止许可。节点仍须与第一次 Create 前的受保护 epoch、原 CreateOptions/template 和实际原文件测量对照；缺少事实不得填默认值。原可写盘仍在变化，当前长度不替代后续连续暂停区间内的完整测量。V5 接受回传后须重核原工作/版本并在原事务保存，同一责任接管成功后才发物理捕获许可；不在 SQL 事务内等待文件或 API I/O。manager 重启不能仅凭历史 epoch 观察继续启动，须重新核对当前受保护部署。当前只读组件不代表这些连接已经实现或证明。
 
 ### 原来源绑定的停止与退出观察
 
