@@ -118,6 +118,7 @@ fn operation_projection_keeps_binding_and_version_without_create_payload() {
     let audit = OperationAudit {
         center: &intent.center, binding: &intent.request.binding, retention: intent.retention,
         accepted_version: intent.accepted_version, operation: OperationKind::from(&intent.request.operation),
+        acceptance_time: AcceptanceTime::Sampled { at_ms: 10 },
         running: None, create_refusal: None, terminal: None,
     };
     let bytes = serde_json::to_string(&audit).unwrap();

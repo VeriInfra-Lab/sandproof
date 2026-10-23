@@ -187,18 +187,13 @@ impl CenterState {
                         || match retained.retention_started_at_ms {
                             Some(started) => {
                                 started < retained.recorded_at_ms
-                                    || session
-                                        .operations
-                                        .iter()
-                                        .any(|operation| operation.accepted_at_ms > started)
+                                    || !session.acceptance_times_not_after(started)
                                     || started.checked_add(self.bounds.result_retention_ms)
                                         != retained.retain_until_ms
                             }
                             None => {
                                 retained.retain_until_ms.is_some()
-                                    || !session.operations.iter().any(|operation| {
-                                        operation.accepted_at_ms > retained.recorded_at_ms
-                                    })
+                                    || session.acceptance_times_not_after(retained.recorded_at_ms)
                             }
                         }
                 })
@@ -264,6 +259,7 @@ impl CenterState {
                 let Some(prior) = previous.running.as_ref() else {
                     return false;
                 };
+                let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else { return false; };
                 let Ok(end) = u64::try_from(*end_at_ms) else {
                     return false;
                 };
@@ -278,12 +274,12 @@ impl CenterState {
                     && incarnation.get() == 1
                     && *timeout_secs > 0
                     && super::normalized_renewal_end(
-                        op.accepted_at_ms,
+                        accepted_at_ms,
                         *timeout_secs,
                         prior.max_end_at_ms,
                     ) == end
-                    && prior.end_at_ms > op.accepted_at_ms
-                    && prior.max_end_at_ms > op.accepted_at_ms
+                    && prior.end_at_ms > accepted_at_ms
+                    && prior.max_end_at_ms > accepted_at_ms
                     && op.terminal.is_none()
                     && op.running.as_ref().is_none_or(|facts| {
                         facts.matches_renewed(&origin.intent, intent)
@@ -309,6 +305,7 @@ impl CenterState {
                     && previous.running.is_some()
                     && source_incarnation.get() == 1
                     && capture.get() == 1
+                    && op.acceptance_time.sampled_at_ms().is_some()
                     && op.running.is_none()
                     && op.terminal.is_none()
             }
@@ -320,7 +317,7 @@ impl CenterState {
                 },
                 LifecycleOperation::Destroy {},
             ) => {
-                is_last
+                is_last && op.acceptance_time == super::AcceptanceTime::Unsampled
                     && *expected_version == previous.intent.accepted_version
                     && named == &request.binding.session
                     && !matches!(
@@ -341,6 +338,7 @@ impl CenterState {
     ) -> bool {
         let intent = &op.intent;
         let request = &intent.request;
+        let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else { return false; };
         match (&op.submission, &request.operation) {
             (
                 LifecycleSubmission::Create { parameters, .. },
@@ -359,7 +357,7 @@ impl CenterState {
                     && parameters.resources == create.resources
                     && parameters.options == create.options
                     && parameters.startup_timeout_ms > 0
-                    && op.accepted_at_ms.checked_add(parameters.startup_timeout_ms)
+                    && accepted_at_ms.checked_add(parameters.startup_timeout_ms)
                         == Some(create.startup_deadline_ms)
                     && parameters.timeout_ms == create.timeout_ms
                     && parameters.max_lifetime_ms == create.max_lifetime_ms

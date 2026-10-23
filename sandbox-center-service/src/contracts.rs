@@ -292,7 +292,6 @@ pub trait AuthorityPort: Send + 'static {
     fn accept_lifecycle_create_refusal(
         &mut self,
         _observation: &sandproof_protocol::lifecycle::CreateObservation,
-        _now_ms: u64,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
         Err(sandproof_center_core::DecisionError::Invalid.into())
     }

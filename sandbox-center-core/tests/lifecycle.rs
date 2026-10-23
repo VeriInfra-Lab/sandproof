@@ -8,6 +8,8 @@ mod fixture;
 use fixture::*;
 #[path = "lifecycle/refusal.rs"]
 mod refusal;
+#[path = "lifecycle/acceptance_time.rs"]
+mod acceptance_time;
 
 fn state() -> CenterState {
     CenterState::new(
@@ -298,13 +300,13 @@ fn recovery_refuses_corrupt_versions_keys_or_original_mapping() {
     let (accepted, _) = state()
         .accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10)
         .unwrap();
-    for field in ["accepted_version", "session", "accepted_at_ms"] {
+    for field in ["accepted_version", "session", "acceptance_time"] {
         let mut json = serde_json::to_value(&accepted).unwrap();
         let operation = &mut json["sandboxes"][0]["operations"][0];
         match field {
             "accepted_version" => operation["intent"][field] = 2.into(),
             "session" => operation["intent"]["request"]["binding"][field] = "sandbox-2".into(),
-            _ => operation[field] = 999.into(),
+            _ => operation[field] = serde_json::json!({"kind":"sampled","at_ms":999}),
         }
         let wrong: CenterState = serde_json::from_value(json).unwrap();
         assert!(!wrong.is_valid(), "corrupt {field} accepted");

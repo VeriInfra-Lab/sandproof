@@ -1,7 +1,7 @@
 //! Bounded allowlisted view of the already validated ORIGINAL control block.
 //! Not an authorizing port or another recovery/lifecycle implementation.
 use crate::entry::Envelope;
-use sandproof_center_core::{NodeRegistration, RetentionLane, SessionPhase};
+use sandproof_center_core::{AcceptanceTime, NodeRegistration, RetentionLane, SessionPhase};
 use sandproof_center_store::Revision;
 use sandproof_controller_service::CreateOptions;
 use sandproof_protocol::{
@@ -52,6 +52,7 @@ struct OperationAudit<'a> {
     binding: &'a OperationBinding,
     retention: RetentionBinding,
     accepted_version: u64,
+    acceptance_time: AcceptanceTime,
     operation: OperationKind,
     running: Option<&'a CurrentReadyFacts>,
     create_refusal: Option<CreateRefusalReason>,
@@ -117,6 +118,7 @@ pub fn view(envelope: &Envelope, revision: Revision) -> Result<AuditView<'_>, &'
                         binding: &operation.intent().request.binding,
                         retention: operation.intent().retention,
                         accepted_version: operation.intent().accepted_version,
+                        acceptance_time: operation.acceptance_time(),
                         operation: OperationKind::from(&operation.intent().request.operation),
                         running: operation.running(),
                         create_refusal: operation.create_refusal(),

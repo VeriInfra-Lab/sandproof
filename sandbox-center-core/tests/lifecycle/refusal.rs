@@ -23,7 +23,7 @@ fn exact_refusal_and_destroy_are_saved_together_without_early_refund() {
     let input = create("1", 1);
     let (creating, original) = state().accept_lifecycle(&owner, &input, 10).unwrap();
     let (terminating, destroy) = creating
-        .accept_lifecycle_create_refusal(&refused(&original), 20)
+        .accept_lifecycle_create_refusal(&refused(&original))
         .unwrap();
     assert_eq!(terminating.identity_frontiers(), (1, 2));
     assert_eq!(terminating.reserved(None, None), Some(resources(1)));
@@ -38,8 +38,8 @@ fn exact_refusal_and_destroy_are_saved_together_without_early_refund() {
     assert_eq!(record.operations()[1].intent(), &destroy);
     assert_eq!(record.operations()[1].create_refusal(), None);
     assert_eq!(
-        serde_json::to_value(&terminating).unwrap()["sandboxes"][0]["operations"][1]["accepted_at_ms"],
-        20
+        record.operations()[1].acceptance_time(),
+        sandproof_center_core::AcceptanceTime::Unsampled
     );
     assert_eq!(terminating.pending_lifecycle(), vec![destroy.clone()]);
 
@@ -77,24 +77,24 @@ fn exact_refusal_and_destroy_are_saved_together_without_early_refund() {
 }
 
 #[test]
-fn repeated_refusal_reuses_the_current_destroy_and_original_timestamp() {
+fn repeated_refusal_reuses_the_current_destroy_and_unsampled_time() {
     let owner = "1".try_into().unwrap();
     let (creating, original) = state()
         .accept_lifecycle(&owner, &create("1", 1), 10)
         .unwrap();
     let (terminating, destroy) = creating
-        .accept_lifecycle_create_refusal(&refused(&original), 20)
+        .accept_lifecycle_create_refusal(&refused(&original))
         .unwrap();
     let mut replay = refused(&original);
     // An observation taken before the concurrent Destroy is stale, even though
     // its original Create and refusal reason remain the same.
     assert_eq!(
-        terminating.accept_lifecycle_create_refusal(&replay, 40),
+        terminating.accept_lifecycle_create_refusal(&replay),
         Err(DecisionError::Stale)
     );
     replay.current_request = destroy.clone();
     assert_eq!(
-        terminating.accept_lifecycle_create_refusal(&replay, u64::MAX),
+        terminating.accept_lifecycle_create_refusal(&replay),
         Ok((terminating.clone(), destroy))
     );
     assert_eq!(terminating.identity_frontiers(), (1, 2));
@@ -112,14 +112,14 @@ fn exact_existing_destroy_accepts_the_cause_without_allocating_again() {
     let mut observation = refused(&original);
     observation.current_request = destroy.clone();
     let (saved, reused) = terminating
-        .accept_lifecycle_create_refusal(&observation, 20)
+        .accept_lifecycle_create_refusal(&observation)
         .unwrap();
     assert_eq!(reused, destroy);
     assert_eq!(saved.identity_frontiers(), terminating.identity_frontiers());
     assert_eq!(saved.reserved(None, None), terminating.reserved(None, None));
     assert_eq!(
-        serde_json::to_value(saved).unwrap()["sandboxes"][0]["operations"][1]["accepted_at_ms"],
-        15
+        saved.sandboxes()[0].operations()[1].acceptance_time(),
+        sandproof_center_core::AcceptanceTime::Unsampled
     );
 }
 
@@ -133,7 +133,7 @@ fn historical_running_cannot_be_relabelled_as_pre_admission_refusal() {
         .accept_lifecycle_create_observation(&observed(&original))
         .unwrap();
     assert_eq!(
-        running.accept_lifecycle_create_refusal(&refused(&original), 110),
+        running.accept_lifecycle_create_refusal(&refused(&original)),
         Err(DecisionError::Conflict)
     );
     assert_eq!(
@@ -156,7 +156,7 @@ fn pending_and_changed_original_are_not_definite_capacity_refusals() {
         let mut observation = refused(&original);
         observation.readiness = readiness;
         assert_eq!(
-            creating.accept_lifecycle_create_refusal(&observation, 20),
+            creating.accept_lifecycle_create_refusal(&observation),
             Err(DecisionError::Invalid)
         );
     }
@@ -166,13 +166,13 @@ fn pending_and_changed_original_are_not_definite_capacity_refusals() {
     };
     create.options.push(b' ');
     assert_eq!(
-        creating.accept_lifecycle_create_refusal(&changed, 20),
+        creating.accept_lifecycle_create_refusal(&changed),
         Err(DecisionError::Stale)
     );
     let mut historical = refused(&original);
     historical.historical_create_succeeded = true;
     assert_eq!(
-        creating.accept_lifecycle_create_refusal(&historical, 20),
+        creating.accept_lifecycle_create_refusal(&historical),
         Err(DecisionError::Invalid)
     );
     assert_eq!(creating.reserved(None, None), Some(resources(1)));
@@ -191,7 +191,7 @@ fn refusal_can_use_the_original_last_reserved_termination_number() {
         .unwrap();
     assert_eq!(creating.identity_frontiers(), (1, u64::MAX - 1));
     let (terminating, destroy) = creating
-        .accept_lifecycle_create_refusal(&refused(&original), 20)
+        .accept_lifecycle_create_refusal(&refused(&original))
         .unwrap();
     assert_eq!(terminating.identity_frontiers(), (1, u64::MAX));
     assert_eq!(destroy.request.binding.key.sequence.get(), u64::MAX);
@@ -200,7 +200,7 @@ fn refusal_can_use_the_original_last_reserved_termination_number() {
     let mut replay = refused(&original);
     replay.current_request = destroy.clone();
     assert_eq!(
-        terminating.accept_lifecycle_create_refusal(&replay, 30),
+        terminating.accept_lifecycle_create_refusal(&replay),
         Ok((terminating.clone(), destroy))
     );
 }

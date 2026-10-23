@@ -467,7 +467,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .authority
                 .lock()
                 .map_err(|_| PortError::OutcomeUnknown)?
-                .accept_lifecycle_create_refusal(&observation, self.now()?)
+                .accept_lifecycle_create_refusal(&observation)
             {
                 Ok(_) => Ok(true),
                 Err(AuthorityError::Decision(

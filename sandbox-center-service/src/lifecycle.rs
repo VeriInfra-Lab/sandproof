@@ -136,7 +136,6 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     crate::AuthorityPort::accept_lifecycle_create_refusal(
                         &mut *authority,
                         &observation,
-                        self.now()?,
                     )
                     .map_err(crate::application::authority_error)?;
                     return authority.query_public_lifecycle(&owner, session);

@@ -11,12 +11,11 @@ impl<S: AuthorityState> CenterAuthority<S> {
     pub fn accept_lifecycle_create_refusal(
         &mut self,
         observation: &sandproof_protocol::lifecycle::CreateObservation,
-        now_ms: u64,
     ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
         let (next, destroy) = self
             .state()?
-            .accept_lifecycle_create_refusal(observation, now_ms)?;
+            .accept_lifecycle_create_refusal(observation)?;
         if &next == self.state()? {
             self.snapshot()?;
         } else {
