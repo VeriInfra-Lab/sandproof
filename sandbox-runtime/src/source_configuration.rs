@@ -185,8 +185,10 @@ impl Runtime {
     /// Uses only GET and readonly file descriptors, without `Pause`/`Full`/`Stop`,
     /// chmod, new files or replacement-source adoption. The caller holds its
     /// original work/gate, then rechecks its version and commits these facts
-    /// against the protected epoch/template before any capture effect. It does not validate the device JSON or
-    /// certify image/CPU compatibility; the node must still do those checks.
+    /// against the protected epoch/template before any capture effect. Visible
+    /// device JSON must match the same BootPlan used at launch. Hidden custom
+    /// CPU/logger/metrics state, actual image provenance and CPU compatibility
+    /// still need the original protected deployment and writer checks.
     /// # Errors
     /// Unknown/missing/changed sources, files or replies remain unresolved. No
     /// error grants cleanup or implies that the unique original state is gone.
@@ -206,6 +208,8 @@ impl Runtime {
         if configuration.is_empty() || configuration.len() > limits.configuration_bytes {
             return Err(error("source configuration response budget"));
         }
+        super::super::boot_plan::BootPlan::for_runtime(&self.config)
+            .check_full_configuration(&configuration)?;
         let mut actual_executable = executable(expected.pid)?;
         let (executable_sha256, executable_stamp) =
             measure(&mut actual_executable, limits.executable_bytes)?;
