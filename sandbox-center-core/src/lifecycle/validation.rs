@@ -130,7 +130,7 @@ impl CenterState {
             || session.operations.len() > usize::from(self.bounds.operations_per_sandbox)
             || (!session.terminating()
                 && session.operations.len() >= usize::from(self.bounds.operations_per_sandbox))
-            || lane.current().map(|w| w.get()) != Some(origin.retention.window.get())
+            || lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(origin.retention.window.get())
             || !self.tenant_is_registered(&b.key.owner)
             || !self.nodes.iter().any(|node| node.identity == b.node)
             || session
@@ -209,40 +209,12 @@ impl CenterState {
         let Some(origin) = session.operations.first() else {
             return false;
         };
-        let Some(previous) = position
-            .checked_sub(1)
-            .and_then(|i| session.operations.get(i))
-        else {
-            return match (&op.submission, &request.operation) {
-                (
-                    LifecycleSubmission::Create { parameters, .. },
-                    LifecycleOperation::Create {
-                        create,
-                        target_incarnation,
-                    },
-                ) => {
-                    position == 0
-                        && request.binding.expected == ExpectedSession::Absent
-                        && target_incarnation.get() == 1
-                        && create.is_valid()
-                        && create.options.len() <= self.bounds.max_options_bytes as usize
-                        && parameters.template_revision == create.template_revision
-                        && parameters.template_digest == create.template_digest
-                        && parameters.resources == create.resources
-                        && parameters.options == create.options
-                        && parameters.startup_timeout_ms > 0
-                        && op.accepted_at_ms.checked_add(parameters.startup_timeout_ms)
-                            == Some(create.startup_deadline_ms)
-                        && parameters.timeout_ms == create.timeout_ms
-                        && parameters.max_lifetime_ms == create.max_lifetime_ms
-                        && op.terminal.is_none()
-                        && op
-                            .running
-                            .as_ref()
-                            .is_none_or(|facts| facts.matches_create(intent))
-                }
-                _ => false,
-            };
+        let previous = match position.checked_sub(1) {
+            Some(index) => session.operations.get(index),
+            None => None,
+        };
+        let Some(previous) = previous else {
+            return self.valid_lifecycle_create_record(op, position);
         };
         if request.binding.expected != ExpectedSession::Version(previous.intent.accepted_version) {
             return false;
@@ -329,6 +301,36 @@ impl CenterState {
                         LifecycleOperation::Destroy {}
                     )
                     && op.running.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    /// The same initial-record branch, kept separate from follow-up checks.
+    fn valid_lifecycle_create_record(&self, op: &LifecycleOperationRecord, position: usize) -> bool {
+        let intent = &op.intent;
+        let request = &intent.request;
+        match (&op.submission, &request.operation) {
+            (
+                LifecycleSubmission::Create { parameters, .. },
+                LifecycleOperation::Create { create, target_incarnation },
+            ) => {
+                position == 0
+                    && request.binding.expected == ExpectedSession::Absent
+                    && target_incarnation.get() == 1
+                    && create.is_valid()
+                    && create.options.len() <= self.bounds.max_options_bytes as usize
+                    && parameters.template_revision == create.template_revision
+                    && parameters.template_digest == create.template_digest
+                    && parameters.resources == create.resources
+                    && parameters.options == create.options
+                    && parameters.startup_timeout_ms > 0
+                    && op.accepted_at_ms.checked_add(parameters.startup_timeout_ms)
+                        == Some(create.startup_deadline_ms)
+                    && parameters.timeout_ms == create.timeout_ms
+                    && parameters.max_lifetime_ms == create.max_lifetime_ms
+                    && op.terminal.is_none()
+                    && op.running.as_ref().is_none_or(|facts| facts.matches_create(intent))
             }
             _ => false,
         }

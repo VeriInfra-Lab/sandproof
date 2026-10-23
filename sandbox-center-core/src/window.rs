@@ -107,7 +107,7 @@ impl CenterState {
                 {
                     count += 1;
                     valid = count <= 1
-                        && lane.current().map(|w| w.get())
+                        && lane.current().map(sandproof_protocol::internal::PositiveCounter::get)
                             == Some(first.intent().retention.window.get())
                         && lane.phase != LanePhase::Exhausted
                         && (lane.phase != LanePhase::ClosePending || terminal(record).is_some());
@@ -183,7 +183,7 @@ impl CenterState {
         }
         let lane_index = self.lane_index(&b.node, result.request.retention.slot)?;
         let lane = &self.retention_lanes[lane_index];
-        if lane.current().map(|w| w.get()) != Some(result.request.retention.window.get())
+        if lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(result.request.retention.window.get())
             || lane.phase == LanePhase::Exhausted
         {
             return Err(DecisionError::Stale);
@@ -242,7 +242,7 @@ impl CenterState {
                 Err(DecisionError::Stale)
             };
         }
-        if lane.current().map(|w| w.get()) != Some(retention.window.get())
+        if lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(retention.window.get())
             || lane.phase != LanePhase::ClosePending
         {
             return Err(DecisionError::Conflict);

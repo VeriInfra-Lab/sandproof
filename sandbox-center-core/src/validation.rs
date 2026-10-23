@@ -9,7 +9,7 @@ pub fn number(value: &str, prefix: &str, highwater: u64) -> Option<u64> {
 }
 impl CenterState {
     /// Full recovery validation. History/identity/lifetime checks are performed
-    /// by valid_lifecycle on the SINGLE canonical table, not removed.
+    /// by `valid_lifecycle` on the SINGLE canonical table, not removed.
     #[must_use]
     pub fn is_valid(&self) -> bool {
         let b = &self.bounds;

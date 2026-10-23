@@ -155,13 +155,10 @@ impl Sandbox {
             return SessionPhase::Creating;
         };
         match &operation.intent.request.operation {
-            LifecycleOperation::Create { .. } if operation.running.is_some() => {
+            LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. } if operation.running.is_some() => {
                 SessionPhase::Running
             }
             LifecycleOperation::Create { .. } => SessionPhase::Creating,
-            LifecycleOperation::Renew { .. } if operation.running.is_some() => {
-                SessionPhase::Running
-            }
             LifecycleOperation::Renew { .. } => SessionPhase::Renewing,
             LifecycleOperation::Destroy {} if self.released() => SessionPhase::Cleaned,
             LifecycleOperation::Destroy {} => SessionPhase::Terminating,
