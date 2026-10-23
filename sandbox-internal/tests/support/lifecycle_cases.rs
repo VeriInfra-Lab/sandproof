@@ -23,7 +23,8 @@ impl sandproof_internal::ValidationReceiver for Counted {
 impl sandproof_internal::DataReceiver for Counted {
     async fn receive_data(
         &self,
-        _: sandproof_protocol::internal::ControlIdentity,
+        _: sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
         _: Request<axum::body::Body>,
     ) -> hyper::Response<axum::body::Body> {
         hyper::Response::builder()

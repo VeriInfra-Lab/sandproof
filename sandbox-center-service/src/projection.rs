@@ -3,20 +3,21 @@
 use crate::application::tenant_id;
 use crate::{AuthorityPort, CenterApplication, HostPort, PublicTemplate, TemplateProvider};
 use sandproof_api::PortError;
-use sandproof_center_core::Sandbox;
+use sandproof_center_core::{CenterState, Sandbox, SessionPhase};
 use sandproof_controller_service::{
     CreateOptions,
     application::{InstanceDetail, InstanceInfo, InstancePage, ListSelection, Session},
 };
 use sandproof_protocol::internal::lifecycle::LifecycleRequest;
 use sandproof_protocol::numeric::bytes_to_mebibytes;
+use sandproof_protocol::lifecycle::{LifecycleAccessIdentity, LifecycleOperation, SessionId};
 use sandproof_protocol::{SandboxId, TenantId};
 
 /// Fresh routing proof data, derived from the same confirmed authority view.
 /// It is not a cache, a second token authority or a mutable routing registry.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DataRoute {
-    pub request: LifecycleRequest,
+    pub identity: LifecycleAccessIdentity,
     pub authorized_at_ms: u64,
     pub max_end_at_ms: u64,
 }
@@ -123,12 +124,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             &request.create.template_revision,
             &request.create.template_digest,
         )?;
-        self.detail_for_record(&tenant, record, template).map(Some)
+        self.detail_for_record(&view.state, &tenant, record, template).map(Some)
     }
     /// Caller must first authorize this record in the SAME fresh envelope.
     /// Public and protected build projections share the original DTO/token code.
     pub(crate) fn detail_for_record(
         &self,
+        state: &CenterState,
         tenant: &TenantId,
         record: &Sandbox,
         template: &PublicTemplate,
@@ -136,9 +138,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let request = &record.operations.first().ok_or(PortError::Busy)?.request;
         let options: CreateOptions =
             serde_json::from_slice(&request.create.options).map_err(|_| PortError::Busy)?;
+        let route = Self::route_for_record(state, record, self.now()?)?;
         Ok(InstanceDetail {
             info: Self::info(tenant, record, template)?,
-            envd_access_token: self.tokens.issue(&request.identity)?,
+            envd_access_token: self.tokens.issue(&route.identity)?,
             domain: self.config.domain.clone(),
             allow_internet_access: options.networking.as_ref().map(|n| n.allow_internet_access),
             network: options.networking.and_then(|n| n.network),
@@ -189,8 +192,14 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             let Some(first) = record.operations.first() else {
                 return Err(PortError::Busy);
             };
-            let matching = self.tokens.verify(&first.request.identity, token);
-            if matching && view.visible(record) && live(record, now) {
+            if !view.visible(record) || !live(record, now) { continue; }
+            let route = match Self::route_for_record(&view.state, record, now) {
+                Ok(route) => route,
+                Err(PortError::NotFound) => continue,
+                Err(error) => return Err(error),
+            };
+            let matching = self.tokens.verify(&route.identity, token);
+            if matching {
                 if result.is_some() {
                     return Err(PortError::Busy);
                 }
@@ -205,23 +214,37 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     ).emit();
                     return Err(PortError::Busy);
                 }
-                result = Some(Self::route_for_record(record, now)?);
+                result = Some(route);
             }
         }
         result.ok_or(PortError::NotFound)
     }
     /// Caller must authorize visibility/owner/token before using this helper.
-    pub(crate) fn route_for_record(record: &Sandbox, now: u64) -> Result<DataRoute, PortError> {
+    pub(crate) fn route_for_record(state: &CenterState, record: &Sandbox, now: u64) -> Result<DataRoute, PortError> {
         if !live(record, now) {
             return Err(PortError::NotFound);
         }
+        let first = record.operations.first().ok_or(PortError::Busy)?;
+        let session_id = SessionId::from_protocol_id(first.request.identity.sandbox_id.clone());
+        let session = state.lifecycle_session(&first.request.identity.tenant_id, &session_id)
+            .ok_or(PortError::NotFound)?;
+        if session.phase() != SessionPhase::Running {
+            return Err(PortError::NotFound);
+        }
+        let current = session.operations().last().ok_or(PortError::Busy)?.intent();
+        let LifecycleOperation::Create { target_incarnation, .. } = &current.request.operation else {
+            return Err(PortError::NotFound);
+        };
         Ok(DataRoute {
-            request: record
-                .operations
-                .last()
-                .ok_or(PortError::Busy)?
-                .request
-                .clone(),
+            identity: LifecycleAccessIdentity {
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
+                center: current.center.clone(),
+                node: current.request.binding.node.clone(),
+                session: session_id,
+                operation: current.request.binding.key.clone(),
+                accepted_version: current.accepted_version,
+                incarnation: *target_incarnation,
+            },
             authorized_at_ms: now,
             max_end_at_ms: record.max_end_at_ms.ok_or(PortError::Busy)?,
         })

@@ -11,6 +11,7 @@ use sandproof_protocol::{SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
 mod validation;
 mod ready;
+mod key;
 pub use sandproof_protocol::lifecycle::CreateParameters;
 
 /// Managed v3 receipts use a center acceptance sequence, never a host version.
@@ -175,7 +176,7 @@ impl CenterState {
     pub fn enable_lifecycle(
         self,
         center: CenterIdentity,
-        windows: Vec<LifecycleWindow>,
+        mut windows: Vec<LifecycleWindow>,
     ) -> Result<Self, DecisionError> {
         if !self.is_valid()
             || self.lifecycle.is_some()
@@ -186,6 +187,19 @@ impl CenterState {
             || center.deployment != self.deployment
         {
             return Err(DecisionError::Invalid);
+        }
+        // The protected registration supplies one explicit odd window per
+        // owner. The current SDK has no caller key and owns disjoint window 2.
+        // Both use the same persisted profile and original allocation frontier.
+        if windows.len() != self.tenants.len()
+            || windows.iter().any(|window| window.window.get() % 2 == 0)
+        {
+            return Err(DecisionError::Invalid);
+        }
+        let sdk = RequestWindowId::try_from(2).map_err(|_| DecisionError::Invalid)?;
+        for index in 0..self.tenants.len() {
+            let owner = windows[index].owner.clone();
+            windows.push(LifecycleWindow { owner, window: sdk });
         }
         let mut next = self;
         next.lifecycle = Some(LifecycleProfile {
@@ -238,6 +252,7 @@ impl CenterState {
                     )
                     .saturating_add(8192),
             )
+            .saturating_add(self.tenants.len().saturating_mul(2 * 512))
             .saturating_add(8192)
     }
     #[must_use]

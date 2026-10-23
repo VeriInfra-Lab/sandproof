@@ -8,14 +8,14 @@ mod tls;
 use sandbox_controller_core as core;
 use sandproof_api::admission::RequestAdmission;
 use sandproof_controller_service::{
-    AdmissionLimits, CheckpointProfile, ControllerJournal, LifecycleInboxConfig, NeverCrash,
+    AdmissionLimits, ControllerJournal, LifecycleInboxConfig, NeverCrash,
     application::{ApplicationConfig, ControllerApplication},
 };
 use sandproof_data_transport::TransferLimits;
 use sandproof_host_service::HostFacade;
 use sandproof_internal::{
     ClientTls, InternalClient, InternalServer, Limits, RegisteredEndpoint, ServerTls,
-    TransportError, diagnostic::RejectTemplateCache, lifecycle_v3::CenterPeerRegistration,
+    TransportError, diagnostic::RejectTemplateCache, lifecycle::CenterPeerRegistration,
 };
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterIdentity, ExpectedSession,
@@ -42,6 +42,7 @@ fn configuration() -> LifecycleInboxConfig {
         node,
         host_epoch: None,
         max_sessions: 2,
+        max_operations_per_session: 8,
         max_options_bytes: 1024,
         max_profile_bytes: 4096,
         max_manifest_bytes: 16384,
@@ -85,8 +86,7 @@ fn application(
     provision: bool,
 ) -> Arc<Application> {
     let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
-    let mut maintenance = local::complete_fixture::maintenance();
-    maintenance.checkpoint_profile = CheckpointProfile::FirstUnload;
+    let maintenance = local::complete_fixture::maintenance();
     let mut journal = ControllerJournal::open_complete(
         path,
         NAMESPACE,
@@ -97,7 +97,11 @@ fn application(
     .unwrap();
     if provision {
         journal
-            .initialize_lifecycle_inbox(configuration(), &mut NeverCrash)
+            .initialize_lifecycle_inbox(configuration(), sandproof_controller_service::capture::SourceObservationConfig {
+                max_work_bytes: 4096, max_configuration_bytes: 1024,
+                max_executable_bytes: 67_108_864, max_kernel_bytes: 268_435_456,
+                max_disk_bytes: 2 * 1024 * 1024,
+            }, &mut NeverCrash)
             .unwrap();
     }
     Arc::new(
@@ -176,7 +180,7 @@ async fn start(certs: &tls::Certificates, app: Arc<Application>, enabled: bool) 
     if enabled {
         let config = configuration();
         server = server
-            .with_lifecycle_v3(
+            .with_center_peer(
                 CenterPeerRegistration::new(config.center, config.node, vec![certs.center.pin()])
                     .unwrap(),
             )
@@ -224,17 +228,17 @@ async fn real_tls_records_original_application_once_and_survives_manager_reopen(
     // registration. Copying the correct accepted body cannot grant authority.
     let other = client(&certs, &certs.other, &running);
     assert_eq!(
-        other.record_lifecycle_v3(&intent).await,
+        other.record_lifecycle(&intent).await,
         Err(TransportError::Rejected)
     );
     assert!(app.lifecycle_work_state(&intent, &context()).is_err());
     let original = client(&certs, &certs.center, &running);
-    let recorded = original.record_lifecycle_v3(&intent).await.unwrap();
+    let recorded = original.record_lifecycle(&intent).await.unwrap();
     assert!(recorded.matches(&intent));
     assert!(recorded.current);
     assert!(!recorded.terminal);
     assert_eq!(
-        original.record_lifecycle_v3(&intent).await.unwrap(),
+        original.record_lifecycle(&intent).await.unwrap(),
         recorded
     );
     let stored = app.lifecycle_work_state(&intent, &context()).unwrap();
@@ -249,13 +253,13 @@ async fn real_tls_records_original_application_once_and_survives_manager_reopen(
     };
     create.timeout_ms -= 1;
     assert_eq!(
-        original.record_lifecycle_v3(&changed).await,
+        original.record_lifecycle(&changed).await,
         Err(TransportError::Rejected)
     );
     let mut foreign = intent.clone();
     foreign.center.center = "another-center".try_into().unwrap();
     assert_eq!(
-        original.record_lifecycle_v3(&foreign).await,
+        original.record_lifecycle(&foreign).await,
         Err(TransportError::Rejected)
     );
     assert_eq!(
@@ -283,7 +287,7 @@ async fn server_without_explicit_profile_never_acknowledges_recorded() {
     let running = start(&certs, app.clone(), false).await;
     let client = client(&certs, &certs.center, &running);
     assert_eq!(
-        client.record_lifecycle_v3(&request()).await,
+        client.record_lifecycle(&request()).await,
         Err(TransportError::Rejected)
     );
     assert!(app.lifecycle_work_state(&request(), &context()).is_err());

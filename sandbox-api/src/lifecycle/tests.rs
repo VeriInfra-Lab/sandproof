@@ -9,8 +9,19 @@ use tower::ServiceExt;
 
 const SECRET: &str = "public-lifecycle-fixture-only-api-key-0001";
 #[derive(Default)]
-struct Port(Mutex<Vec<(String, PublicCreateRequest)>>);
+struct Port(
+    Mutex<Vec<(String, PublicCreateRequest)>>,
+    Mutex<Vec<(String, SessionId, PublicDestroyRequest)>>,
+);
 impl LifecyclePort for Port {
+    fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: PublicDestroyRequest) -> Result<PublicAcceptance, PortError> {
+        self.1.lock().unwrap().push((owner.to_owned(), session.clone(), request.clone()));
+        Ok(PublicAcceptance {
+            session,
+            key: OperationKey { deployment: "fixture-deployment".try_into().unwrap(), owner: owner.try_into().unwrap(), window: request.window, sequence: request.sequence },
+            accepted_version: request.expected_version.checked_add(1).ok_or(PortError::Conflict)?,
+        })
+    }
     fn create_lifecycle(
         &self,
         owner: &str,
@@ -40,6 +51,29 @@ impl LifecyclePort for Port {
         Err(PortError::NotFound)
     }
 }
+
+#[tokio::test]
+async fn destroy_uses_authenticated_owner_and_complete_current_request() {
+    let port = Arc::new(Port::default());
+    let router = router_with_admission(port.clone(), vec![ApiCredential { tenant: "8".into(), secret: SECRET.into() }], Arc::new(RequestAdmission::default())).unwrap();
+    let value = PublicDestroyRequest { window: 2.try_into().unwrap(), sequence: 3.try_into().unwrap(), expected_version: 4 };
+    let call = |secret: &str, body: &serde_json::Value| Request::builder().method("POST")
+        .uri("/sandproof/lifecycle/sessions/original-session/destroy")
+        .header("x-api-key", secret).header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(body).unwrap())).unwrap();
+    let body = serde_json::to_value(&value).unwrap();
+    assert_eq!(router.clone().oneshot(call("wrong", &body)).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    let mut forged = body.clone(); forged["owner"] = "9".into();
+    assert_eq!(router.clone().oneshot(call(SECRET, &forged)).await.unwrap().status(), StatusCode::BAD_REQUEST);
+    assert!(port.1.lock().unwrap().is_empty());
+    let response = router.oneshot(call(SECRET, &body)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let bytes = axum::body::to_bytes(response.into_body(), MAX_JSON_BYTES).await.unwrap();
+    let accepted: PublicAcceptance = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(accepted.key.owner.as_str(), "8");
+    assert_eq!(accepted.accepted_version, 5);
+    assert_eq!(*port.1.lock().unwrap(), vec![("8".to_owned(), "original-session".try_into().unwrap(), value)]);
+}
 fn input() -> PublicCreateRequest {
     PublicCreateRequest {
         window: 1.try_into().unwrap(),
@@ -63,7 +97,7 @@ fn input() -> PublicCreateRequest {
 fn request(secret: &str, value: &serde_json::Value) -> Request<Body> {
     Request::builder()
         .method("POST")
-        .uri("/v3/lifecycle/create")
+        .uri("/sandproof/lifecycle/create")
         .header("x-api-key", secret)
         .header("content-type", "application/json")
         .body(Body::from(serde_json::to_vec(value).unwrap()))

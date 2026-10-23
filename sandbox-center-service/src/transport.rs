@@ -82,6 +82,17 @@ impl RegisteredHosts {
     }
 }
 impl HostPort for RegisteredHosts {
+    fn observe_lifecycle_terminal(
+        &self,
+        intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, PortError> {
+        let client = self.client(&intent.request.binding.node)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, client.observe_lifecycle_terminal(intent))
+                .await.map_err(|_| PortError::OutcomeUnknown)?.map_err(|_| PortError::OutcomeUnknown)
+        })
+    }
     fn observe_lifecycle_create(
         &self,
         intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
@@ -93,14 +104,14 @@ impl HostPort for RegisteredHosts {
                 .await.map_err(|_| PortError::Busy)?.map_err(|_| PortError::Busy)
         })
     }
-    fn record_lifecycle_v3(
+    fn record_lifecycle(
         &self,
         intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         deadline: Duration,
     ) -> Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, PortError> {
         let client = self.client(&intent.request.binding.node)?;
         self.runtime.block_on(async {
-            tokio::time::timeout(deadline, client.record_lifecycle_v3(intent))
+            tokio::time::timeout(deadline, client.record_lifecycle(intent))
                 .await
                 .map_err(|_| PortError::OutcomeUnknown)?
                 .map_err(|_| PortError::OutcomeUnknown)

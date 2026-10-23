@@ -11,6 +11,7 @@ mod manifest;
 mod observation;
 mod public;
 mod request;
+mod terminal;
 
 pub use access::{AccessIdentityError, LifecycleAccessIdentity};
 pub use authority::{
@@ -32,8 +33,10 @@ pub use public::{
     PublicSessionView, PublicUnloadRequest,
 };
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
+pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
 
 /// The only supported lifecycle wire format. Mismatches are refused.
 pub const PROTOCOL_VERSION: u16 = 3;
 pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
 pub const CREATE_OBSERVATION_PATH: &str = "/internal/lifecycle/create-observation";
+pub const TERMINAL_OBSERVATION_PATH: &str = "/internal/lifecycle/terminal-observation";

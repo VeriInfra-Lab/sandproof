@@ -11,12 +11,36 @@ use sandproof_controller_service::{
 use sandproof_protocol::{
     TenantId,
     lifecycle::{
-        AcceptedLifecycleIntent, OperationKey, PublicCreateRequest, PublicSessionPhase,
+        AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, OperationKey, PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase,
         PublicSessionView, PublicUnloadRequest, SessionId,
     },
 };
 
 impl SharedBusinessAuthority {
+    /// Persist termination without waiting for any host operation. Exact
+    /// replay returns the same intent; unknown CAS never means no effect.
+    /// # Errors
+    /// Owner, full input, expected version, window and authority must match.
+    pub fn accept_public_destroy(
+        &self,
+        owner: &TenantId,
+        session: SessionId,
+        request: &PublicDestroyRequest,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        check_public_window(request.window)?;
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority.decide(|current| {
+            let submission = LifecycleSubmission::Destroy {
+                key: key(&current.center, owner, request.window, request.sequence),
+                session,
+                expected_version: request.expected_version,
+            };
+            let (next, intent) = current.center.accept_lifecycle(owner, &submission, 0)?;
+            Ok((current.with_center(next), intent))
+        }).map_err(authority_error)
+    }
+
     /// # Errors
     /// Replays confirm the original full input before the current policy/clock.
     /// New requests check the protected descriptor in the SAME envelope as CAS.
@@ -27,18 +51,49 @@ impl SharedBusinessAuthority {
         policy: LifecyclePolicy,
         now: impl FnOnce() -> Result<u64, PortError>,
     ) -> Result<AcceptedLifecycleIntent, PortError> {
+        check_public_window(request.window)?;
+        self.accept_create_from(
+            owner, &request.parameters, policy, now,
+            CreateKeySource::Explicit(request.window, request.sequence),
+        )
+    }
+
+    /// SDK inputs have no caller replay key. Allocate only in this same
+    /// authoritative CAS; subsequent internal work keeps the accepted key.
+    /// # Errors
+    /// The same descriptor/policy/capacity checks as explicit creation apply.
+    pub fn accept_sdk_create(
+        &self,
+        owner: &TenantId,
+        parameters: &sandproof_protocol::lifecycle::CreateParameters,
+        policy: LifecyclePolicy,
+        now: impl FnOnce() -> Result<u64, PortError>,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        self.accept_create_from(owner, parameters, policy, now, CreateKeySource::AllocatedSdk)
+    }
+
+    fn accept_create_from(
+        &self,
+        owner: &TenantId,
+        parameters: &sandproof_protocol::lifecycle::CreateParameters,
+        policy: LifecyclePolicy,
+        now: impl FnOnce() -> Result<u64, PortError>,
+        source: CreateKeySource,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
         authority.snapshot_envelope().map_err(authority_error)?;
         authority
             .decide(|current| {
                 let submission = LifecycleSubmission::Create {
-                    key: key(&current.center, owner, request.window, request.sequence),
-                    parameters: request.parameters.clone(),
+                    key: match source {
+                        CreateKeySource::Explicit(window, sequence) => key(&current.center, owner, window, sequence),
+                        CreateKeySource::AllocatedSdk => current.center.next_sdk_operation_key(owner)?,
+                    },
+                    parameters: parameters.clone(),
                 };
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
-                let parameters = &request.parameters;
                 let template = current
                     .metadata
                     .bound(&parameters.template_revision, &parameters.template_digest)
@@ -111,30 +166,58 @@ impl SharedBusinessAuthority {
     }
 
     /// # Errors
-    /// Existing full replays are confirmed. A new unload remains closed until
-    /// the original application's current Ready observation is connected.
+    /// Return a confirmed full replay before any new host observation.
+    pub fn replay_public_unload(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        request: &PublicUnloadRequest,
+    ) -> Result<Option<AcceptedLifecycleIntent>, PortError> {
+        check_public_window(request.window)?;
+        let current = self.snapshot()?;
+        current.center.replay_lifecycle(owner, &LifecycleSubmission::Unload {
+            key: key(&current.center, owner, request.window, request.sequence),
+            session: session.clone(),
+            expected_version: request.expected_version,
+        }).map_err(|error| authority_error(error.into()))
+    }
+
+    /// # Errors
+    /// A new unload requires the same call's current observation. Its original
+    /// Create and the new intent are rechecked and saved by one business CAS.
     pub fn accept_public_unload(
         &self,
         owner: &TenantId,
         session: SessionId,
         request: &PublicUnloadRequest,
+        observation: &CreateObservation,
+        now_ms: u64,
     ) -> Result<AcceptedLifecycleIntent, PortError> {
+        check_public_window(request.window)?;
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
         authority.snapshot_envelope().map_err(authority_error)?;
         authority
             .decide(|current| {
                 let submission = LifecycleSubmission::Unload {
                     key: key(&current.center, owner, request.window, request.sequence),
-                    session,
+                    session: session.clone(),
                     expected_version: request.expected_version,
                 };
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
-                // Preserve the original new-key refusal order without saving
-                // its candidate. A historical Ready alone is insufficient.
-                let _ = current.center.accept_lifecycle(owner, &submission, 0)?;
-                Err(DecisionError::Unavailable.into())
+                let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
+                    return Err(DecisionError::Unavailable.into());
+                };
+                if observation.request.request.binding.key.owner != *owner
+                    || observation.request.request.binding.session != session
+                    || now_ms >= facts.end_at_ms
+                {
+                    return Err(DecisionError::Stale.into());
+                }
+                let observed = current.center.accept_lifecycle_create_observation(observation)?;
+                let (next, intent) = observed.accept_lifecycle(owner, &submission, now_ms)?;
+                Ok((current.with_center(next), intent))
             })
             .map_err(authority_error)
     }
@@ -174,6 +257,16 @@ impl SharedBusinessAuthority {
             phase,
         })
     }
+}
+
+#[derive(Clone, Copy)]
+enum CreateKeySource {
+    Explicit(sandproof_protocol::lifecycle::RequestWindowId, sandproof_protocol::lifecycle::RequestSequence),
+    AllocatedSdk,
+}
+
+fn check_public_window(window: sandproof_protocol::lifecycle::RequestWindowId) -> Result<(), PortError> {
+    if window.get() % 2 == 0 { Err(PortError::Invalid) } else { Ok(()) }
 }
 
 fn key(

@@ -75,7 +75,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 &anchor.original_create.create.template_revision,
                 &anchor.original_create.create.template_digest,
             )?;
-            let detail = self.detail_for_record(tenant, record, &template)?;
+            let detail = self.detail_for_record(&state.center, tenant, record, &template)?;
             Some(Session {
                 template_id: detail.info.template_id,
                 sandbox_id: detail.info.sandbox_id,
@@ -265,9 +265,15 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         let now = self.now()?;
         let mut result = None;
         for anchor in state.metadata.private_build_anchors() {
-            let matching = self.tokens.verify(&anchor.original_create.identity, token);
-            if matching && anchor.tenant == tenant {
-                let record = anchored(&state, anchor)?;
+            if anchor.tenant != tenant { continue; }
+            let record = anchored(&state, anchor)?;
+            let route = match Self::route_for_record(&state.center, record, now) {
+                Ok(route) => route,
+                Err(PortError::NotFound) => continue,
+                Err(error) => return Err(error),
+            };
+            let matching = self.tokens.verify(&route.identity, token);
+            if matching {
                 if !state
                     .center
                     .node_is_reachable(&anchor.original_create.identity.node, now)
@@ -282,7 +288,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 if result.is_some() {
                     return Err(PortError::Busy);
                 }
-                result = Some(Self::route_for_record(record, now)?);
+                result = Some(route);
             }
         }
         result.ok_or(PortError::NotFound)

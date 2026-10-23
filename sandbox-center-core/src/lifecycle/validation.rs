@@ -29,7 +29,7 @@ impl CenterState {
                 .required_block_bytes()
                 .saturating_add(self.lifecycle_required_bytes())
                 > 16 * 1024 * 1024
-            || profile.windows.len() != self.tenants.len()
+            || profile.windows.len() != self.tenants.len().saturating_mul(2)
             || profile.sessions.len() != self.sandboxes.len()
         {
             return false;
@@ -42,7 +42,15 @@ impl CenterState {
             if !self.tenant_is_registered(&window.owner)
                 || profile.windows[..index]
                     .iter()
-                    .any(|w| w.owner == window.owner)
+                    .any(|w| w.owner == window.owner && w.window == window.window)
+                || window.window.get() % 2 == 0 && window.window.get() != 2
+            {
+                return false;
+            }
+        }
+        for tenant in &self.tenants {
+            if profile.windows.iter().filter(|window| window.owner == tenant.tenant && window.window.get() % 2 == 1).count() != 1
+                || profile.windows.iter().filter(|window| window.owner == tenant.tenant && window.window.get() == 2).count() != 1
             {
                 return false;
             }

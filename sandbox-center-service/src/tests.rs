@@ -223,6 +223,26 @@ fn consume_reply_budget(budget: Duration) {
     );
 }
 impl AuthorityPort for MemoryAuthority {
+    fn create_current(
+        &mut self,
+        owner: &TenantId,
+        parameters: &sandproof_protocol::lifecycle::CreateParameters,
+        _: crate::LifecyclePolicy,
+        now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError> {
+        self.snapshot().map_err(crate::application::authority_error)?;
+        let key = self.state.next_sdk_operation_key(owner)
+            .map_err(|error| crate::application::authority_error(error.into()))?;
+        let submission = sandproof_center_core::LifecycleSubmission::Create { key, parameters: parameters.clone() };
+        let (state, intent) = self.state.accept_lifecycle(owner, &submission, now_ms)
+            .map_err(|error| crate::application::authority_error(error.into()))?;
+        self.state = state;
+        if self.unknown_create.load(Ordering::SeqCst) {
+            self.unreadable.store(true, Ordering::SeqCst);
+            return Err(PortError::OutcomeUnknown);
+        }
+        Ok(intent)
+    }
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
         self.retire_at_checkpoint(retired_destroy::Checkpoint::BeforeConfirmationSnapshot)?;
         self.retire_at_checkpoint(retired_destroy::Checkpoint::RetiredSnapshot)?;
@@ -978,10 +998,8 @@ fn connect_defaults_extend_only_after_host_confirmation_and_keep_public_token() 
         f.app
             .resolve_data_route(&original.envd_access_token)
             .unwrap()
-            .request
             .identity
-            .intent_version
-            .get(),
+            .accepted_version,
         3
     );
 }
@@ -1184,9 +1202,8 @@ fn public_tokens_are_instance_bound_and_do_not_route_after_kill_or_expiry() {
         f.app
             .resolve_data_route(&first.envd_access_token)
             .unwrap()
-            .request
             .identity
-            .tenant_id
+            .operation.owner
             .as_str(),
         "1"
     );
@@ -1360,7 +1377,6 @@ fn data_token_is_stable_on_same_deployment_restart_but_not_another_key_or_node_g
         .app
         .resolve_data_route(&session.envd_access_token)
         .unwrap()
-        .request
         .identity;
     let same = crate::token::Tokens::new(&[13; 32]).unwrap();
     assert_eq!(same.issue(&identity).unwrap(), session.envd_access_token);

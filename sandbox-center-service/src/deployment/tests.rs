@@ -96,7 +96,7 @@ impl Fixture {
         };
         let resources = json!({"instances":4,"cpu":4,"memory_bytes":516*1024*1024u64,"disk_bytes":4*1024*1024*1024u64});
         let config = json!({
-            "deployment_id":"assembly-fixture","bind":"127.0.0.1:3000","domain":"sandbox.test",
+            "deployment_id":"assembly-fixture","center_id":"center","bind":"127.0.0.1:3000","domain":"sandbox.test",
             "credentials":[{"tenant":1,"secret":"center-config-user-fixture-only-key-0001"}],
             "data_token_key":path("token.key"),"max_timeout_secs":300,"max_lifetime_secs":3600,
             "startup_timeout_secs":300,"reply_timeout_ms":1000,"poll_interval_ms":10,"expiry_scan_ms":1000,
@@ -207,6 +207,7 @@ fn documented_center_example_loads_with_operator_material_through_the_original_v
     let result = fixture.load(&example);
     assert!(result.is_ok(), "original validator: {:?}", result.err());
     for field in [
+        "center_id",
         "nodes",
         "artifact_service",
         "node_observation",

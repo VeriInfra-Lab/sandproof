@@ -41,7 +41,7 @@ impl WorkEvidence for FleetHost {
 }
 impl WorkExecution for FleetHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
         self.sandbox(action.command.command().sandbox())
@@ -56,14 +56,14 @@ impl WorkRecovery for FleetHost {
     }
 
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         Err(PortError::Busy)
@@ -71,7 +71,7 @@ impl WorkRecovery for FleetHost {
 }
 
 impl HostSlots for FleetHost {
-    fn bind_host_slot(&mut self, context: &HostSlotContext, allow: bool) -> Result<(), PortError> {
+    fn bind_host_slot(&self, context: &HostSlotContext, allow: bool) -> Result<(), PortError> {
         let mut hosts = self.hosts.lock().unwrap();
         let host = hosts.entry(context.position.0).or_insert_with(|| {
             let host = BoundedHost::default();
@@ -83,7 +83,7 @@ impl HostSlots for FleetHost {
         host.bind_host_slot(context, allow)
     }
 
-    fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
+    fn release_host_slot(&self, context: &HostSlotContext) -> Result<(), PortError> {
         self.sandbox(context.binding.sandbox)?
             .release_host_slot(context)
     }
@@ -121,7 +121,7 @@ impl HostCapacity for FleetHost {
 }
 
 impl LaunchConfiguration for FleetHost {
-    fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         self.sandbox(sandbox)?.put_secret(sandbox, token)
     }
 
@@ -510,7 +510,6 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
     // Explicit test-only envelope, matching the component workload rather than
     // recommending deployment values.
     let policy = MaintenanceConfig {
-        checkpoint_profile: sandproof_controller_service::CheckpointProfile::CreateKill,
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10_000,

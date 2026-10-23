@@ -4,6 +4,7 @@ use std::{ffi::OsString, path::PathBuf};
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Initialize(PathBuf),
+    ProvisionBootstrap(PathBuf),
     Serve(PathBuf),
     Audit(PathBuf),
     ObserveCenter(PathBuf),
@@ -19,7 +20,7 @@ pub(crate) fn parse(
     let result = match command.to_str() {
         Some("relay") => Command::Relay,
         Some("contract-versions") => Command::ContractVersions,
-        Some("initialize" | "serve" | "audit" | "observe-center") => {
+        Some("initialize" | "provision-bootstrap" | "serve" | "audit" | "observe-center") => {
             if arguments.next().as_deref() != Some(std::ffi::OsStr::new("--config")) {
                 return Err("host command requires --config /absolute/protected/config.json");
             }
@@ -29,6 +30,7 @@ pub(crate) fn parse(
             }
             match command.to_str() {
                 Some("initialize") => Command::Initialize(path),
+                Some("provision-bootstrap") => Command::ProvisionBootstrap(path),
                 Some("serve") => Command::Serve(path),
                 Some("observe-center") => Command::ObserveCenter(path),
                 _ => Command::Audit(path),
@@ -51,7 +53,7 @@ mod tests {
     }
     #[test]
     fn only_explicit_protected_host_commands_are_accepted() {
-        for command in ["initialize", "serve", "audit", "observe-center"] {
+        for command in ["initialize", "provision-bootstrap", "serve", "audit", "observe-center"] {
             assert!(parse(arguments(&[command, "--config", "/private/config"])).is_ok());
         }
         assert_eq!(parse(arguments(&["relay"])).unwrap(), Command::Relay);

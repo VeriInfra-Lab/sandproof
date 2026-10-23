@@ -5,7 +5,7 @@ use super::lifecycle::{LifecycleFact, LifecycleResponse, RESULT_CONFIRMATION_BOD
 use super::{InternalError, NodeIdentity};
 use serde::{Deserialize, Serialize};
 
-pub const WINDOW_CLOSE_PATH: &str = "/internal/v2/window-close";
+pub const WINDOW_CLOSE_PATH: &str = "/internal/window-close";
 /// A complete terminal response plus the fixed JSON wrapper, not a deletion list.
 pub const WINDOW_CLOSE_BODY_BYTES: usize = RESULT_CONFIRMATION_BODY_BYTES + 32;
 /// Future permanent per-slot frontier and COMPLETE recent terminal stamp.

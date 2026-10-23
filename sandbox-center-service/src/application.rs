@@ -29,6 +29,8 @@ pub struct CenterApplication<A: AuthorityPort, H: HostPort, T: TemplateProvider>
     pub(crate) tokens: Tokens,
     clock: Arc<dyn Clock>,
     pub(crate) lifecycle_observation_policy: Option<crate::NodeObservationPolicy>,
+    /// Execution-only budget, never an authoritative pending-work queue.
+    pub(crate) lifecycle_dispatch_slots: Arc<tokio::sync::Semaphore>,
 }
 enum AttemptError {
     SharedAuthority,
@@ -57,6 +59,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             tokens: Tokens::new(token_key)?,
             clock: Arc::new(SystemClock),
             lifecycle_observation_policy: None,
+            lifecycle_dispatch_slots: Arc::new(tokio::sync::Semaphore::new(4)),
         })
     }
     #[must_use]
@@ -142,27 +145,26 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         };
         options.validate().map_err(|_| PortError::Invalid)?;
         let now = self.now()?;
-        let binding = crate::create_binding::create_binding(
+        let parameters = crate::create_binding::create_parameters(
             &template,
             &options,
             timeout,
-            now,
             (&self.config).into(),
         )?;
         let admitted = self
             .authority
             .lock()
             .map_err(|_| PortError::Busy)?
-            .create(&tenant, binding, now);
+            .create_current(&tenant, &parameters, (&self.config).into(), now);
         // Drop the decision guard before diagnostic output, as for host I/O.
         let request = admitted.map_err(|error| {
             diagnostics::emit(
                 DiagnosticStage::CreateAdmission,
-                DiagnosticFailure::Authority(error),
+                DiagnosticFailure::Port(error),
             );
-            authority_error(error)
+            error
         })?;
-        self.wait_session(&request)
+        self.wait_current_session(&request)
     }
     /// # Errors
     /// Connect only extends the original lifetime; no original-now reset.
@@ -241,7 +243,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     pub(crate) fn wait(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError> {
         self.wait_until(request, self.reply_deadline()?)
     }
-    fn reply_deadline(&self) -> Result<Instant, PortError> {
+    pub(crate) fn reply_deadline(&self) -> Result<Instant, PortError> {
         Instant::now()
             .checked_add(self.config.reply_timeout)
             .ok_or(PortError::OutcomeUnknown)
@@ -360,7 +362,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             });
         result.cloned().ok_or(PortError::OutcomeUnknown)
     }
-    fn poll_pause(&self, deadline: Instant) {
+    pub(crate) fn poll_pause(&self, deadline: Instant) {
         std::thread::sleep(
             self.config
                 .poll_interval
@@ -602,7 +604,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     /// # Errors
     /// Shared authority faults stop the scan. Unknown host work stays pending.
     pub fn reconcile_once(&self) -> Result<usize, PortError> {
-        let managed_completed = self.reconcile_lifecycle_creates_once()?;
+        let managed_completed = self.reconcile_lifecycle_once()?;
         let now = self.now()?;
         let pending = {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;

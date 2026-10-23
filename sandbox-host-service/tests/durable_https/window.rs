@@ -43,10 +43,11 @@ impl LifecycleReceiver for LostCloseAck {
 impl DataReceiver for LostCloseAck {
     async fn receive_data(
         &self,
-        identity: ControlIdentity,
+        identity: sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
         request: Request<Body>,
     ) -> Response<Body> {
-        self.original.receive_data(identity, request).await
+        self.original.receive_data(identity, context, request).await
     }
 }
 impl ValidationReceiver for LostCloseAck {

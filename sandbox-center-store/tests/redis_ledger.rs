@@ -167,7 +167,8 @@ async fn committed_outbox_real_https_sqlite_and_lost_reply_preserve_one_operatio
     impl sandproof_internal::DataReceiver for LoseFirst {
         async fn receive_data(
             &self,
-            _: sandproof_protocol::internal::ControlIdentity,
+            _: sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+            _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
             _: axum::http::Request<axum::body::Body>,
         ) -> axum::http::Response<axum::body::Body> {
             // This storage/lifecycle fixture has no guest data handler, never a

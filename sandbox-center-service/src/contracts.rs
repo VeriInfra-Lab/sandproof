@@ -239,6 +239,15 @@ pub trait CommittedDriver: Send + Sync {
 /// Called from bounded blocking work, with NO center decision lock held.
 pub trait HostPort: Send + Sync + 'static {
     /// # Errors
+    /// Full Destroy result only; unsupported adapters cannot assert cleanup.
+    fn observe_lifecycle_terminal(
+        &self,
+        _intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, PortError> {
+        Err(PortError::Busy)
+    }
+    /// # Errors
     /// A missing/currently unavailable observation does not prove VM absence.
     fn observe_lifecycle_create(
         &self,
@@ -249,7 +258,7 @@ pub trait HostPort: Send + Sync + 'static {
     }
     /// # Errors
     /// One bounded recording call only. Default/unknown never acknowledges work.
-    fn record_lifecycle_v3(
+    fn record_lifecycle(
         &self,
         _intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         _deadline: Duration,
@@ -304,6 +313,16 @@ pub trait AuthorityPort: Send + 'static {
     /// Public visibility, lifecycle facts and immutable query bindings MUST
     /// share one freshly confirmed envelope. No second template read/fallback.
     fn public_snapshot(&mut self) -> Result<crate::PublicSnapshot, AuthorityError>;
+    /// SDK input normalization shares current admission and the original CAS.
+    /// # Errors
+    /// Unknown commit keeps the original accepted request, never a new key.
+    fn create_current(
+        &mut self,
+        owner: &TenantId,
+        parameters: &sandproof_protocol::lifecycle::CreateParameters,
+        policy: crate::LifecyclePolicy,
+        now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError>;
     /// # Errors
     /// Acceptance and the original outbox commit together.
     fn create(

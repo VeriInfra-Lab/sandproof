@@ -9,7 +9,7 @@ use sandproof_controller_service::application::{
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
-        Arc, Barrier,
+        Arc, Barrier, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
@@ -145,32 +145,32 @@ impl ActionGate {
 struct FakeHost {
     candidate_checks: Option<Arc<AtomicUsize>>,
     template_validation_error: Option<PortError>,
-    secrets: BTreeMap<u64, (String, BTreeMap<String, String>)>,
-    templates: BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>,
-    launch_error_once: Option<PortError>,
+    secrets: Mutex<BTreeMap<u64, (String, BTreeMap<String, String>)>>,
+    templates: Mutex<BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>>,
+    launch_error_once: Mutex<Option<PortError>>,
     token_error_once: AtomicBool,
     token_error_for: Option<core::SandboxId>,
     relay_calls: Option<Arc<AtomicUsize>>,
     free_bytes: u64,
     public_ipv4_ready: bool,
     incomplete_open_fence: bool,
-    prepare: PrepareObservation,
+    prepare: Mutex<PrepareObservation>,
     reclaim_prepare_error_for: Option<core::SandboxId>,
-    activation: ActivationObservation,
+    activation: Mutex<ActivationObservation>,
     activation_calls: Option<Arc<AtomicUsize>>,
-    recovered_actions: BTreeSet<RecoveredAction>,
-    stop: StopObservation,
-    reclaim_stop_error_once: Option<PortError>,
-    reclaim_stop_error_for: Option<core::SandboxId>,
+    recovered_actions: Mutex<BTreeSet<RecoveredAction>>,
+    stop: Mutex<StopObservation>,
+    reclaim_stop_error_once: Mutex<Option<PortError>>,
+    reclaim_stop_error_for: Mutex<Option<core::SandboxId>>,
     bad_stop_observation_for: Option<core::SandboxId>,
     bad_execute_for: Option<core::SandboxId>,
     unknown_stop_for: Option<core::SandboxId>,
-    incomplete_cleanup: bool,
+    incomplete_cleanup: AtomicBool,
     unknown_cleanup_for: Option<core::SandboxId>,
     stop_calls: Option<Arc<AtomicUsize>>,
     prepare_calls: Option<Arc<AtomicUsize>>,
     abort_calls: Option<Arc<AtomicUsize>>,
-    abort_receipt: AbortReceipt,
+    abort_receipt: Mutex<AbortReceipt>,
     stop_gate: Option<Arc<ActionGate>>,
     history_stop_gate: Option<(core::SandboxId, Arc<history_capacity::HostGate>)>,
     prepare_gate: Option<Arc<ActionGate>>,
@@ -181,32 +181,32 @@ impl Default for FakeHost {
         Self {
             candidate_checks: None,
             template_validation_error: None,
-            secrets: BTreeMap::new(),
-            templates: BTreeMap::new(),
-            launch_error_once: None,
+            secrets: Mutex::new(BTreeMap::new()),
+            templates: Mutex::new(BTreeMap::new()),
+            launch_error_once: Mutex::new(None),
             token_error_once: AtomicBool::new(false),
             token_error_for: None,
             relay_calls: None,
             free_bytes: 16 * 1024 * 1024 * 1024,
             public_ipv4_ready: false,
             incomplete_open_fence: false,
-            prepare: PrepareObservation::Missing,
+            prepare: Mutex::new(PrepareObservation::Missing),
             reclaim_prepare_error_for: None,
-            activation: ActivationObservation::Normal,
+            activation: Mutex::new(ActivationObservation::Normal),
             activation_calls: None,
-            recovered_actions: BTreeSet::new(),
-            stop: StopObservation::Normal,
-            reclaim_stop_error_once: None,
-            reclaim_stop_error_for: None,
+            recovered_actions: Mutex::new(BTreeSet::new()),
+            stop: Mutex::new(StopObservation::Normal),
+            reclaim_stop_error_once: Mutex::new(None),
+            reclaim_stop_error_for: Mutex::new(None),
             bad_stop_observation_for: None,
             bad_execute_for: None,
             unknown_stop_for: None,
-            incomplete_cleanup: false,
+            incomplete_cleanup: AtomicBool::new(false),
             unknown_cleanup_for: None,
             stop_calls: None,
             prepare_calls: None,
             abort_calls: None,
-            abort_receipt: AbortReceipt::Normal,
+            abort_receipt: Mutex::new(AbortReceipt::Normal),
             stop_gate: None,
             history_stop_gate: None,
             prepare_gate: None,
@@ -215,6 +215,14 @@ impl Default for FakeHost {
 }
 
 impl FakeHost {
+    // Only short fixture state updates are locked. The explicit slow gates in
+    // execute remain outside these locks, matching the shared Host interface.
+    fn prepare(&self) -> PrepareObservation { *self.prepare.lock().unwrap() }
+    fn activation(&self) -> ActivationObservation { *self.activation.lock().unwrap() }
+    fn stop(&self) -> StopObservation { *self.stop.lock().unwrap() }
+    fn recovered(&self, action: RecoveredAction) -> bool {
+        self.recovered_actions.lock().unwrap().contains(&action)
+    }
     fn injected_execute_receipt(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -261,7 +269,7 @@ impl WorkEvidence for FakeHost {
 }
 impl WorkExecution for FakeHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
         if let Some(receipt) = self.injected_execute_receipt(action) {
@@ -285,13 +293,13 @@ impl WorkExecution for FakeHost {
             if let Some(gate) = &self.prepare_gate {
                 gate.block();
             }
-            if self.prepare == PrepareObservation::LiveUnready {
+            if self.prepare() == PrepareObservation::LiveUnready {
                 return Ok(unknown_receipt(action));
             }
         }
         if matches!(action.command.command(), core::Command::ActivateVm { .. })
             && matches!(
-                self.activation,
+                self.activation(),
                 ActivationObservation::Incomplete | ActivationObservation::Unavailable
             )
         {
@@ -302,11 +310,11 @@ impl WorkExecution for FakeHost {
                 calls.fetch_add(1, Ordering::SeqCst);
             }
             assert!(matches!(
-                self.prepare,
+                self.prepare(),
                 PrepareObservation::LiveUnready | PrepareObservation::Reclaimed
             ));
-            self.prepare = PrepareObservation::Reclaimed;
-            if std::mem::replace(&mut self.abort_receipt, AbortReceipt::Normal)
+            *self.prepare.lock().unwrap() = PrepareObservation::Reclaimed;
+            if std::mem::replace(&mut *self.abort_receipt.lock().unwrap(), AbortReceipt::Normal)
                 == AbortReceipt::LostOnce
             {
                 return Ok(unknown_receipt(action));
@@ -330,7 +338,7 @@ impl WorkExecution for FakeHost {
             }
         }
         if matches!(
-            self.stop,
+            self.stop(),
             StopObservation::LoseReceipt
                 | StopObservation::LostThenObserved
                 | StopObservation::Incomplete
@@ -363,7 +371,7 @@ impl WorkRecovery for FakeHost {
                 }),
             });
         }
-        if self.prepare == PrepareObservation::Reclaimed
+        if self.prepare() == PrepareObservation::Reclaimed
             && matches!(action.command.command(), core::Command::PrepareVm { .. })
         {
             return Some(WorkReceipt {
@@ -375,7 +383,7 @@ impl WorkRecovery for FakeHost {
                 },
             });
         }
-        if (self.recovered_actions.contains(&RecoveredAction::OpenFence)
+        if (self.recovered(RecoveredAction::OpenFence)
             && matches!(
                 action.command.command(),
                 core::Command::InstallFence {
@@ -383,29 +391,27 @@ impl WorkRecovery for FakeHost {
                     ..
                 }
             ))
-            || (self.prepare == PrepareObservation::Successful
+            || (self.prepare() == PrepareObservation::Successful
                 && matches!(action.command.command(), core::Command::PrepareVm { .. }))
-            || (self.activation == ActivationObservation::Complete
+            || (self.activation() == ActivationObservation::Complete
                 && matches!(action.command.command(), core::Command::ActivateVm { .. }))
-            || (self.recovered_actions.contains(&RecoveredAction::Network)
+            || (self.recovered(RecoveredAction::Network)
                 && matches!(
                     action.command.command(),
                     core::Command::ConfigureNetwork { .. }
                 ))
-            || (self
-                .recovered_actions
-                .contains(&RecoveredAction::TerminalFence)
+            || (self.recovered(RecoveredAction::TerminalFence)
                 && matches!(
                     action.command.command(),
                     core::Command::InstallFence { terminal: true, .. }
                 ))
             || (matches!(
-                self.stop,
+                self.stop(),
                 StopObservation::ObservedAfterRestart | StopObservation::LostThenObserved
             ) && matches!(action.command.command(), core::Command::StopVm { .. }))
-            || (self.incomplete_cleanup
+            || (self.incomplete_cleanup.load(Ordering::SeqCst)
                 && matches!(action.command.command(), core::Command::CleanupVm { .. }))
-            || (self.prepare == PrepareObservation::Reclaimed
+            || (self.prepare() == PrepareObservation::Reclaimed
                 && matches!(action.command.command(), core::Command::AbortPrepare { .. }))
         {
             Some(WorkReceipt {
@@ -421,68 +427,68 @@ impl WorkRecovery for FakeHost {
     }
 
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         if self.reclaim_prepare_error_for == Some(action.command.command().sandbox()) {
             return Err(PortError::Busy);
         }
-        if self.prepare == PrepareObservation::Incomplete {
+        if self.prepare() == PrepareObservation::Incomplete {
             assert!(matches!(
                 action.command.command(),
                 core::Command::PrepareVm { .. }
             ));
-            self.prepare = PrepareObservation::Reclaimed;
+            *self.prepare.lock().unwrap() = PrepareObservation::Reclaimed;
         }
         Ok(())
     }
 
     fn reclaim_incomplete_network(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         assert!(matches!(
             action.command.command(),
             core::Command::ConfigureNetwork { .. }
         ));
-        self.recovered_actions.insert(RecoveredAction::Network);
+        self.recovered_actions.lock().unwrap().insert(RecoveredAction::Network);
         Ok(())
     }
 
     fn reclaim_incomplete_activation(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         assert!(matches!(
             action.command.command(),
             core::Command::ActivateVm { .. }
         ));
-        if self.activation == ActivationObservation::Unavailable {
+        if self.activation() == ActivationObservation::Unavailable {
             return Err(PortError::Busy);
         }
-        assert_eq!(self.activation, ActivationObservation::Incomplete);
+        assert_eq!(self.activation(), ActivationObservation::Incomplete);
         if let Some(calls) = &self.activation_calls {
             calls.fetch_add(1, Ordering::SeqCst);
         }
-        self.activation = ActivationObservation::Complete;
+        *self.activation.lock().unwrap() = ActivationObservation::Complete;
         Ok(())
     }
 
     fn reclaim_incomplete_terminal_fence(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         assert!(matches!(
             action.command.command(),
             core::Command::InstallFence { terminal: true, .. }
         ));
-        self.recovered_actions
+        self.recovered_actions.lock().unwrap()
             .insert(RecoveredAction::TerminalFence);
         Ok(())
     }
 
     fn reclaim_incomplete_open_fence(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         assert!(matches!(
@@ -492,49 +498,52 @@ impl WorkRecovery for FakeHost {
                 ..
             }
         ));
-        self.recovered_actions.insert(RecoveredAction::OpenFence);
+        self.recovered_actions.lock().unwrap().insert(RecoveredAction::OpenFence);
         Ok(())
     }
 
     fn reclaim_incomplete_stop(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         assert!(matches!(
             action.command.command(),
             core::Command::StopVm { .. }
         ));
-        if self.reclaim_stop_error_for == Some(action.command.command().sandbox()) {
-            self.reclaim_stop_error_for = None;
-            return Err(PortError::Busy);
+        {
+            let mut error_for = self.reclaim_stop_error_for.lock().unwrap();
+            if *error_for == Some(action.command.command().sandbox()) {
+                *error_for = None;
+                return Err(PortError::Busy);
+            }
         }
-        if let Some(error) = self.reclaim_stop_error_once.take() {
+        if let Some(error) = self.reclaim_stop_error_once.lock().unwrap().take() {
             return Err(error);
         }
-        if self.stop == StopObservation::Incomplete {
-            self.stop = StopObservation::ObservedAfterRestart;
+        if self.stop() == StopObservation::Incomplete {
+            *self.stop.lock().unwrap() = StopObservation::ObservedAfterRestart;
         }
         Ok(())
     }
 
     fn reclaim_incomplete_abort_prepare(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         assert!(matches!(
             action.command.command(),
             core::Command::AbortPrepare { .. }
         ));
-        assert_eq!(self.prepare, PrepareObservation::Reclaimed);
+        assert_eq!(self.prepare(), PrepareObservation::Reclaimed);
         Ok(())
     }
 
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         if matches!(action.command.command(), core::Command::CleanupVm { .. }) {
-            self.incomplete_cleanup = true;
+            self.incomplete_cleanup.store(true, Ordering::SeqCst);
         }
         Ok(())
     }
@@ -542,7 +551,7 @@ impl WorkRecovery for FakeHost {
 
 impl HostSlots for FakeHost {
     fn bind_host_slot(
-        &mut self,
+        &self,
         _: &sandproof_controller_service::HostSlotContext,
         _: bool,
     ) -> Result<(), PortError> {
@@ -550,7 +559,7 @@ impl HostSlots for FakeHost {
     }
 
     fn release_host_slot(
-        &mut self,
+        &self,
         _: &sandproof_controller_service::HostSlotContext,
     ) -> Result<(), PortError> {
         Ok(())
@@ -570,7 +579,7 @@ impl DataRelay for FakeHost {
     }
 
     fn spawn_data_relay(
-        &mut self,
+        &self,
         _: core::SandboxId,
         _: core::VmId,
         _: core::Generation,
@@ -614,12 +623,12 @@ impl HostCapacity for FakeHost {
 }
 
 impl LaunchConfiguration for FakeHost {
-    fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         self.put_launch_config(sandbox, token, &BTreeMap::new())
     }
 
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
-        Ok(self.secrets.contains_key(&sandbox.0))
+        Ok(self.secrets.lock().unwrap().contains_key(&sandbox.0))
     }
 
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
@@ -628,23 +637,23 @@ impl LaunchConfiguration for FakeHost {
         {
             return Err(PortError::Busy);
         }
-        self.secrets
+        self.secrets.lock().unwrap()
             .get(&sandbox.0)
             .map(|(token, _)| token.clone())
             .ok_or(PortError::Busy)
     }
 
     fn put_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<(), PortError> {
-        if let Some(error) = self.launch_error_once.take() {
+        if let Some(error) = self.launch_error_once.lock().unwrap().take() {
             return Err(error);
         }
         if self
-            .secrets
+            .secrets.lock().unwrap()
             .insert(sandbox.0, (token.to_owned(), env_vars.clone()))
             .is_some()
         {
@@ -658,7 +667,7 @@ impl LaunchConfiguration for FakeHost {
         sandbox: core::SandboxId,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<bool, PortError> {
-        match self.secrets.get(&sandbox.0) {
+        match self.secrets.lock().unwrap().get(&sandbox.0) {
             Some((_, stored)) if stored == env_vars => Ok(true),
             Some(_) => Err(PortError::Busy),
             None => Ok(false),
@@ -666,14 +675,14 @@ impl LaunchConfiguration for FakeHost {
     }
 
     fn put_bound_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         options: &sandproof_controller_service::CreateOptions,
     ) -> Result<(), PortError> {
         self.put_launch_config(sandbox, token, &options.env_vars)?;
         if let Some(template) = &options.template {
-            self.templates.insert(sandbox.0, template.clone());
+            self.templates.lock().unwrap().insert(sandbox.0, template.clone());
         }
         Ok(())
     }
@@ -683,7 +692,7 @@ impl LaunchConfiguration for FakeHost {
         sandbox: core::SandboxId,
         options: &sandproof_controller_service::CreateOptions,
     ) -> Result<bool, PortError> {
-        if self.templates.get(&sandbox.0) != options.template.as_ref() {
+        if self.templates.lock().unwrap().get(&sandbox.0) != options.template.as_ref() {
             return Err(PortError::Busy);
         }
         self.has_launch_config(sandbox, &options.env_vars)
@@ -859,14 +868,14 @@ fn due_unknown_prepare_fixture(
     let prepare_calls = Arc::new(AtomicUsize::new(0));
     let abort_calls = Arc::new(AtomicUsize::new(0));
     let mut host = FakeHost {
-        prepare: PrepareObservation::LiveUnready,
+        prepare: PrepareObservation::LiveUnready.into(),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         abort_calls: Some(Arc::clone(&abort_calls)),
-        abort_receipt: if lose_abort_receipt_once {
+        abort_receipt: Mutex::new(if lose_abort_receipt_once {
             AbortReceipt::LostOnce
         } else {
             AbortReceipt::Normal
-        },
+        }),
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
@@ -1011,7 +1020,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
     // A new controller process observes physical reclamation, records both
     // missing receipts, and publishes failure without repeating either action.
     let mut restarted_host = FakeHost {
-        prepare: PrepareObservation::Reclaimed,
+        prepare: PrepareObservation::Reclaimed.into(),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         abort_calls: Some(Arc::clone(&abort_calls)),
         ..FakeHost::default()
@@ -1240,7 +1249,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     admit_public_create(&mut journal);
     let calls = Arc::new(AtomicUsize::new(0));
     let mut host = FakeHost {
-        activation: ActivationObservation::Incomplete,
+        activation: ActivationObservation::Incomplete.into(),
         activation_calls: Some(Arc::clone(&calls)),
         public_ipv4_ready: true,
         ..FakeHost::default()
@@ -1268,7 +1277,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     drop(journal);
 
     let mut wrong_host = FakeHost {
-        activation: ActivationObservation::Incomplete,
+        activation: ActivationObservation::Incomplete.into(),
         activation_calls: Some(Arc::clone(&calls)),
         ..FakeHost::default()
     };
@@ -1362,7 +1371,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
         .unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let mut host = FakeHost {
-        activation: ActivationObservation::Incomplete,
+        activation: ActivationObservation::Incomplete.into(),
         activation_calls: Some(Arc::clone(&calls)),
         ..FakeHost::default()
     };
@@ -1430,7 +1439,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
         )
         .unwrap();
     let mut host = FakeHost {
-        activation: ActivationObservation::Unavailable,
+        activation: ActivationObservation::Unavailable.into(),
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
@@ -1724,7 +1733,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
     assert!(attempted.is_err());
     drop(journal);
     let mut host = FakeHost {
-        prepare: PrepareObservation::Successful,
+        prepare: PrepareObservation::Successful.into(),
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
@@ -1811,7 +1820,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
     drop(journal);
     let prepare_calls = Arc::new(AtomicUsize::new(0));
     let mut host = FakeHost {
-        prepare: PrepareObservation::Successful,
+        prepare: PrepareObservation::Successful.into(),
         reclaim_prepare_error_for: Some(core::SandboxId(1)),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
@@ -1853,7 +1862,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
     let mut host = FakeHost {
-        prepare: PrepareObservation::Successful,
+        prepare: PrepareObservation::Successful.into(),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
     };
@@ -1927,7 +1936,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
     ));
     drop(journal);
     let mut host = FakeHost {
-        prepare: PrepareObservation::Incomplete,
+        prepare: PrepareObservation::Incomplete.into(),
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
@@ -2020,7 +2029,7 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
+            stop: StopObservation::ObservedAfterRestart.into(),
             ..FakeHost::default()
         },
         config(),
@@ -2075,7 +2084,7 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
         },
         &mut |action| {
             FakeHost {
-                stop: StopObservation::Incomplete,
+                stop: StopObservation::Incomplete.into(),
                 ..FakeHost::default()
             }
             .execute(action)
@@ -2105,7 +2114,7 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
-            stop: StopObservation::Incomplete,
+            stop: StopObservation::Incomplete.into(),
             ..FakeHost::default()
         },
         config(),
@@ -2733,7 +2742,7 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
         assert_eq!(before.domain, configured.domain);
         drop(port);
         let host = FakeHost {
-            secrets: BTreeMap::from([(1, (created.envd_access_token.clone(), BTreeMap::new()))]),
+            secrets: BTreeMap::from([(1, (created.envd_access_token.clone(), BTreeMap::new()))]).into(),
             ..FakeHost::default()
         };
         let port = new_port(
@@ -2759,7 +2768,7 @@ fn foreign_detail_and_list_do_not_read_the_host_token() {
     drop(port);
     let host = FakeHost {
         token_error_once: AtomicBool::new(true),
-        secrets: BTreeMap::from([(1, (created.envd_access_token, BTreeMap::new()))]),
+        secrets: BTreeMap::from([(1, (created.envd_access_token, BTreeMap::new()))]).into(),
         ..FakeHost::default()
     };
     let port = new_port(
@@ -3053,7 +3062,7 @@ fn renewal_contending_with_expiry_cleanup_cannot_resurrect_the_instance() {
 fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
     use sandproof_controller_service::application::DataKind;
     let (_directory, port) = setup_with_host(FakeHost {
-        stop: StopObservation::LoseReceipt,
+        stop: StopObservation::LoseReceipt.into(),
         ..FakeHost::default()
     });
     let sandbox = port.create("1", request()).unwrap();
@@ -3077,7 +3086,7 @@ fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
 fn repeated_kill_observes_one_persisted_stop_without_a_new_operation() {
     let calls = Arc::new(AtomicUsize::new(0));
     let (directory, port) = setup_with_host(FakeHost {
-        stop: StopObservation::LostThenObserved,
+        stop: StopObservation::LostThenObserved.into(),
         stop_calls: Some(Arc::clone(&calls)),
         ..FakeHost::default()
     });
@@ -3127,8 +3136,8 @@ fn repeated_kill_observes_one_persisted_stop_without_a_new_operation() {
 async fn accepted_kill_recovery_error_is_unknown_and_reuses_the_original_stop() {
     let calls = Arc::new(AtomicUsize::new(0));
     let (directory, port) = setup_with_host(FakeHost {
-        stop: StopObservation::Incomplete,
-        reclaim_stop_error_once: Some(PortError::Busy),
+        stop: StopObservation::Incomplete.into(),
+        reclaim_stop_error_once: Some(PortError::Busy).into(),
         stop_calls: Some(Arc::clone(&calls)),
         ..FakeHost::default()
     });
@@ -3370,7 +3379,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
-            secrets: BTreeMap::from([(2, (survivor.envd_access_token.clone(), BTreeMap::new()))]),
+            secrets: BTreeMap::from([(2, (survivor.envd_access_token.clone(), BTreeMap::new()))]).into(),
             ..FakeHost::default()
         },
         policy,
@@ -3414,7 +3423,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
 async fn credential_write_failure_after_admission_is_unknown_and_recovers_without_recreate() {
     let prepare_calls = Arc::new(AtomicUsize::new(0));
     let (directory, port) = setup_with_host(FakeHost {
-        launch_error_once: Some(PortError::Busy),
+        launch_error_once: Some(PortError::Busy).into(),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
     });
@@ -3791,8 +3800,8 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     let port = new_port(
         journal,
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
-            reclaim_stop_error_for: Some(core::SandboxId(1)),
+            stop: StopObservation::ObservedAfterRestart.into(),
+            reclaim_stop_error_for: Some(core::SandboxId(1)).into(),
             ..FakeHost::default()
         },
         config(),
@@ -3831,7 +3840,7 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     let port = new_port(
         journal,
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
+            stop: StopObservation::ObservedAfterRestart.into(),
             ..FakeHost::default()
         },
         config(),
@@ -3859,7 +3868,7 @@ fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
     let port = new_port(
         journal,
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
+            stop: StopObservation::ObservedAfterRestart.into(),
             bad_stop_observation_for: Some(core::SandboxId(1)),
             ..FakeHost::default()
         },
@@ -3891,7 +3900,7 @@ fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
     let port = new_port(
         journal,
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
+            stop: StopObservation::ObservedAfterRestart.into(),
             ..FakeHost::default()
         },
         config(),
@@ -3942,7 +3951,7 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
     let port = new_port(
         journal,
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
+            stop: StopObservation::ObservedAfterRestart.into(),
             ..FakeHost::default()
         },
         config(),
@@ -4041,7 +4050,7 @@ fn corrupt_shared_journal_still_aborts_recovery() {
     let port = new_port(
         journal,
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
+            stop: StopObservation::ObservedAfterRestart.into(),
             ..FakeHost::default()
         },
         config(),
