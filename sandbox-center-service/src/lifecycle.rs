@@ -13,6 +13,16 @@ use sandproof_center_core::SessionPhase;
 
 impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority, H, T> {
     /// # Errors
+    /// No caller chooses another owner or resets the persisted window frontier.
+    pub fn lifecycle_request_window(&self, owner: &str) -> Result<sandproof_protocol::lifecycle::PublicRequestWindow, PortError> {
+        let owner = tenant_id(owner)?;
+        let current = self.snapshot()?;
+        Ok(sandproof_protocol::lifecycle::PublicRequestWindow {
+            window: current.public_request_window(&owner).map_err(|error|
+                crate::application::authority_error(error.into()))?,
+        })
+    }
+    /// # Errors
     /// Acceptance only; cleanup still requires original physical receipts.
     pub fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: &PublicDestroyRequest) -> Result<PublicAcceptance, PortError> {
         let owner = tenant_id(owner)?;
@@ -73,13 +83,20 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
     ) -> Result<PublicSessionView, PortError> {
         let owner = tenant_id(owner)?;
         let (intent, phase) = self.current_lifecycle_intent(&owner, session)?;
-        if matches!(phase, SessionPhase::Creating | SessionPhase::Running)
-            && matches!(intent.request.operation, LifecycleOperation::Create { .. })
+        if matches!(phase, SessionPhase::Creating | SessionPhase::Running | SessionPhase::Renewing)
+            && matches!(intent.request.operation, LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. })
         {
             // A local Running can already be committed while the center still
             // retains pending Create. Observe that same operation; never issue
             // another create or infer current readiness from saved history.
-            if let Ok(observation) = self.current_create_observation(&intent) {
+            let observation = match self.current_create_observation_attempt(&intent) {
+                Ok(observation) => Some(observation),
+                Err(crate::lifecycle_dispatch::CurrentObservationError::Shared(error)) => return Err(error),
+                Err(crate::lifecycle_dispatch::CurrentObservationError::Host(_)
+                    | crate::lifecycle_dispatch::CurrentObservationError::Superseded
+                    | crate::lifecycle_dispatch::CurrentObservationError::Deadline) => None,
+            };
+            if let Some(observation) = observation {
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(PortError::Busy);
                 };
@@ -118,6 +135,9 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
 }
 
 impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusinessAuthority, H, T> {
+    fn request_window(&self, owner: &str) -> Result<sandproof_protocol::lifecycle::PublicRequestWindow, PortError> {
+        self.application().lifecycle_request_window(owner)
+    }
     fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: PublicDestroyRequest) -> Result<PublicAcceptance, PortError> {
         self.application().destroy_lifecycle(owner, session, &request)
     }

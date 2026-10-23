@@ -62,8 +62,9 @@ impl<H: ValidationReceiver> ValidationReceiver for RejectTemplateCache<H> {
     async fn validation_evidence(
         &self,
         request: ValidationRequest,
+        context: AuthenticatedCenterContext,
     ) -> Result<ValidationEvidence, ReceiveError> {
-        self.0.validation_evidence(request).await
+        self.0.validation_evidence(request, context).await
     }
 }
 impl<H: Send + Sync + 'static> CacheReceiver for RejectTemplateCache<H> {

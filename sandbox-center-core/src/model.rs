@@ -1,6 +1,6 @@
-use sandproof_protocol::internal::lifecycle::{
-    LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES, Resources,
-};
+use sandproof_protocol::internal::lifecycle::{RESULT_CONFIRMATION_BODY_BYTES, Resources};
+use sandproof_protocol::lifecycle::{CenterIdentity, CurrentReadyFacts, LifecycleOperation,
+    TerminalLifecycleObservation, TerminalStatus};
 use sandproof_protocol::internal::window::RETENTION_LANE_BYTES;
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use sandproof_protocol::{DeploymentId, TenantId};
@@ -27,6 +27,9 @@ pub struct Bounds {
     /// Includes one operation slot reserved exclusively for destroy.
     pub operations_per_sandbox: u16,
     pub max_options_bytes: u32,
+    /// Public results remain in the same original row for this explicit period.
+    /// Independent of host native/build/Guest result retention; no default.
+    pub result_retention_ms: u64,
     pub platform: Resources,
 }
 impl Bounds {
@@ -102,46 +105,37 @@ pub struct NodeRegistration {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Operation {
-    pub request: LifecycleRequest,
-    /// None includes an unknown response: it stays eligible for SAME-request replay.
-    pub response: Option<LifecycleResponse>,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Sandbox {
-    pub operations: Vec<Operation>,
-    pub terminating: bool,
-    pub released: bool,
-    pub started_at_ms: Option<u64>,
-    pub end_at_ms: Option<u64>,
-    pub max_end_at_ms: Option<u64>,
-    pub observation_version: Option<PositiveCounter>,
+    /// The only operation history and lifetime authority for this session.
+    pub operations: Vec<crate::LifecycleOperationRecord>,
     /// Exact latest terminal result durably acknowledged by the host. This is
     /// not ordinary renewal compaction and never replaces cleanup evidence.
-    pub terminal_confirmation: Option<LifecycleResponse>,
+    pub terminal_confirmation: Option<TerminalLifecycleObservation>,
 }
 impl Sandbox {
-    pub(crate) fn renewal_anchor(&self) -> Option<usize> {
-        (self.operations.last()?.request.intent
-            == sandproof_protocol::internal::lifecycle::Intent::Destroy)
-            .then(|| {
-                self.operations.iter().rposition(|op| {
-                    op.response.as_ref().is_some_and(|r| {
-                        matches!(
-                            r.fact,
-                            sandproof_protocol::internal::lifecycle::LifecycleFact::Renewed { .. }
-                        )
-                    })
-                })
-            })
-            .flatten()
-    }
-    /// Detailed ordinary results can be dropped, but origin/current intent and
-    /// the last confirmed lifetime before destruction remain authoritative.
     #[must_use]
-    pub fn has_compaction_work(&self) -> bool {
-        self.operations.len() > 2 + usize::from(self.renewal_anchor().is_some())
+    pub fn terminating(&self) -> bool {
+        self.operations.last().is_some_and(|operation|
+            matches!(operation.intent().request.operation, LifecycleOperation::Destroy {}))
+    }
+    #[must_use]
+    pub fn released(&self) -> bool {
+        self.operations.last().and_then(|operation| operation.terminal())
+            .is_some_and(|result| result.status == TerminalStatus::Cleaned)
+    }
+    /// Historical lifetime, never sufficient by itself to authorize access.
+    #[must_use]
+    pub fn last_running(&self) -> Option<&CurrentReadyFacts> {
+        self.operations.iter().rev().find_map(|operation| operation.running.as_ref())
+    }
+    /// Only a result committed for the actual current Create/Renew can route.
+    #[must_use]
+    pub fn current_running(&self) -> Option<&CurrentReadyFacts> {
+        self.operations.last()?.running.as_ref()
+    }
+    #[must_use]
+    pub fn created_at_ms(&self) -> Option<u64> {
+        self.operations.first().map(|operation| operation.accepted_at_ms)
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,8 +150,7 @@ pub struct CenterState {
     pub(crate) sandbox_highwater: u64,
     pub(crate) operation_highwater: u64,
     pub(crate) sandboxes: Vec<Sandbox>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) lifecycle: Option<crate::LifecycleProfile>,
+    pub(crate) lifecycle: crate::LifecycleProfile,
 }
 impl CenterState {
     /// # Errors
@@ -167,6 +160,8 @@ impl CenterState {
         bounds: Bounds,
         nodes: Vec<NodeRegistration>,
         tenants: Vec<TenantBudget>,
+        center: CenterIdentity,
+        windows: Vec<crate::LifecycleWindow>,
     ) -> Result<Self, DecisionError> {
         // Validate the fixed future envelope BEFORE allocating the lane vector.
         if !(1..=256).contains(&bounds.max_nodes)
@@ -191,6 +186,7 @@ impl CenterState {
                 })
             })
             .collect();
+        let lifecycle = crate::LifecycleProfile::new(center, windows, &tenants)?;
         let state = Self {
             deployment,
             bounds,
@@ -200,7 +196,7 @@ impl CenterState {
             sandbox_highwater: 0,
             operation_highwater: 0,
             sandboxes: vec![],
-            lifecycle: None,
+            lifecycle,
         };
         if state.is_valid() {
             Ok(state)
@@ -272,29 +268,6 @@ impl CenterState {
         &self.sandboxes
     }
     #[must_use]
-    pub fn pending(&self) -> Vec<LifecycleRequest> {
-        self.sandboxes
-            .iter()
-            .filter(|s| !s.released)
-            .filter(|s| {
-                s.operations
-                    .first()
-                    .is_none_or(|op| !self.lifecycle_manages(&op.request.identity.sandbox_id))
-            })
-            .filter_map(|s| s.operations.last())
-            .filter(|op| {
-                op.response.as_ref().is_none_or(|r| {
-                    matches!(
-                        r.fact,
-                        sandproof_protocol::internal::lifecycle::LifecycleFact::Recorded
-                            | sandproof_protocol::internal::lifecycle::LifecycleFact::Stopped
-                    )
-                })
-            })
-            .map(|op| op.request.clone())
-            .collect()
-    }
-    #[must_use]
     pub fn reserved(
         &self,
         tenant: Option<&TenantId>,
@@ -302,16 +275,19 @@ impl CenterState {
     ) -> Option<Resources> {
         let mut sum = Resources::ZERO;
         for sandbox in &self.sandboxes {
-            if sandbox.released {
+            if sandbox.released() {
                 continue;
             }
             let Some(op) = sandbox.operations.first() else {
                 continue;
             };
-            if tenant.is_none_or(|t| &op.request.identity.tenant_id == t)
-                && node.is_none_or(|n| &op.request.identity.node == n)
+            if tenant.is_none_or(|t| &op.intent().request.binding.key.owner == t)
+                && node.is_none_or(|n| &op.intent().request.binding.node == n)
             {
-                sum = sum.checked_add(op.request.create.resources)?;
+                let LifecycleOperation::Create { create, .. } = &op.intent().request.operation else {
+                    return None;
+                };
+                sum = sum.checked_add(create.resources)?;
             }
         }
         Some(sum)
@@ -388,7 +364,7 @@ pub struct RetentionLane {
     pub(crate) retention_slot: u16,
     pub(crate) retired_through: u64,
     pub(crate) phase: LanePhase,
-    pub(crate) last_retired: Option<LifecycleResponse>,
+    pub(crate) last_retired: Option<TerminalLifecycleObservation>,
 }
 impl RetentionLane {
     #[must_use]
@@ -412,7 +388,7 @@ impl RetentionLane {
         self.phase
     }
     #[must_use]
-    pub const fn last_retired(&self) -> Option<&LifecycleResponse> {
+    pub const fn last_retired(&self) -> Option<&TerminalLifecycleObservation> {
         self.last_retired.as_ref()
     }
 }

@@ -6,6 +6,9 @@
 
 ## 实现范围
 
+当前唯一状态重构候选在原会话行中保存完整当前操作和结果，不再维护影子会话表或旧协议备用写入。
+窗口、结果保留与时间恢复的改动尚未通过完整消费者/抽取/证明验收；历史下述组件结论仅适用于其原冻结版本。
+
 同一 `CenterState` 中显式初始化有限 profile、owner 窗口及原操作映射。Create 原参数与
 派生请求同次保存，沿原编号/lane/预留分配；同键全文重放先于新时间、窗口、版本和阶段。
 Ready 只接受原规范意图及原寿命守卫；Unload 保留原资源，Destroy 可抢占并保留终止容量。
@@ -51,6 +54,12 @@ python3 verification/experiments/stage1-center/extract.py \
 三根分别调用生产 `next_lifecycle_version`、原操作记录 `replay` 和完整 `accept_lifecycle`，
 不复制业务算法。固定原 Charon/Aeneas、平台及工具摘要，保存全部原 LLBC 和生成文件；
 不手改生成 Lean、不添加自有业务 opaque、不关闭借用或内核检查。
+
+当前另有 `--profile terminal`，直接调用真实 `accept_lifecycle_terminal_observation`，覆盖同一生产图的
+校验、Cleaned 保存和保留期限决定，不复制实现。原 `accept` 根继续直接委托实际受理函数。
+两根供当前候选在证明机做最小预检；结果分别报告 Rust 编译、Charon、Aeneas 和实际 Lean 检查阶段。
+没有当前结果前不能沿用历史失败或成功。若前端失败但留下 IR，原脚本另保留 `partial.llbc`，
+它不作为完整生成物交给后端。
 
 首轮 version/replay 均完成原工具生成，但尚未运行 Lean 内核/实际文件服务或证明审计，
 不能称已证明。完整 accept 首轮在 Aeneas 循环预处理拒绝两层首匹配循环；拆为原序短路

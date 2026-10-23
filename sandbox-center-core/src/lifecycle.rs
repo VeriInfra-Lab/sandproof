@@ -1,11 +1,11 @@
-//! Opt-in lifecycle metadata inside the original center authority block.
-//! Allocation, reservations and host lanes stay in the original `CenterState`.
-use crate::{CenterState, DecisionError, NodeRole};
-use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleFact, LifecycleResponse};
+//! Current lifecycle decisions in the original center authority.
+//! One Sandbox row owns one bounded operation history; no shadow lifecycle table.
+use crate::{CenterState, DecisionError, NodeRole, Sandbox, TenantBudget};
+use sandproof_protocol::internal::lifecycle::CreateBinding;
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CaptureId, CenterIdentity, ExpectedSession, IncarnationId,
-    LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey, RequestWindowId,
-    SessionId,
+    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CurrentReadyFacts, ExpectedSession,
+    IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
+    RequestWindowId, SessionId, TerminalLifecycleObservation,
 };
 use sandproof_protocol::{SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
@@ -14,9 +14,8 @@ mod ready;
 mod key;
 pub use sandproof_protocol::lifecycle::CreateParameters;
 
-/// Managed v3 receipts use a center acceptance sequence, never a host version.
-/// Earlier experimental profile 1 is not migrated or reinterpreted.
-pub const LIFECYCLE_PROFILE_VERSION: u16 = 2;
+/// One supported current format. Missing registration is not a legacy profile.
+pub const LIFECYCLE_PROFILE_VERSION: u16 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -25,31 +24,24 @@ pub struct LifecycleWindow {
     pub window: RequestWindowId,
 }
 
-/// The normalized, complete submission. Owner is additionally checked against
-/// the separately authenticated caller; no public field selects a node or ID.
+/// Full original input. Absolute renewal deadlines are derived only on NEW admission.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LifecycleSubmission {
-    Create {
-        key: OperationKey,
-        parameters: CreateParameters,
+    Create { key: OperationKey, parameters: CreateParameters },
+    Unload { key: OperationKey, session: SessionId, expected_version: u64 },
+    Renew {
+        key: OperationKey, session: SessionId, expected_version: u64,
+        timeout_secs: u64, extend_only: bool,
     },
-    Unload {
-        key: OperationKey,
-        session: SessionId,
-        expected_version: u64,
-    },
-    Destroy {
-        key: OperationKey,
-        session: SessionId,
-        expected_version: u64,
-    },
+    Destroy { key: OperationKey, session: SessionId, expected_version: u64 },
 }
 impl LifecycleSubmission {
     #[must_use]
     pub const fn key(&self) -> &OperationKey {
         match self {
-            Self::Create { key, .. } | Self::Unload { key, .. } | Self::Destroy { key, .. } => key,
+            Self::Create { key, .. } | Self::Unload { key, .. }
+            | Self::Renew { key, .. } | Self::Destroy { key, .. } => key,
         }
     }
 }
@@ -59,8 +51,10 @@ impl LifecycleSubmission {
 pub enum SessionPhase {
     Creating,
     Running,
+    Renewing,
     Unloading,
     Terminating,
+    Cleaned,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,72 +62,97 @@ pub enum SessionPhase {
 pub struct LifecycleOperationRecord {
     pub(crate) submission: LifecycleSubmission,
     pub(crate) intent: AcceptedLifecycleIntent,
-    /// Only a checked original Ready result is currently supported. Unloaded
-    /// cannot be constructed from this legacy result representation.
-    pub(crate) ready: Option<LifecycleResponse>,
+    /// Original global allocation frontier, independent of a caller's key sequence.
+    pub(crate) allocation_number: u64,
+    pub(crate) accepted_at_ms: u64,
+    pub(crate) running: Option<CurrentReadyFacts>,
+    pub(crate) terminal: Option<RetainedTerminalResult>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RetainedTerminalResult {
+    pub(crate) result: TerminalLifecycleObservation,
+    pub(crate) recorded_at_ms: u64,
+    /// A temporary bad clock leaves this uninitialized. The same finishing
+    /// CAS may establish it ONCE after clock recovery; never refresh it.
+    pub(crate) retention_started_at_ms: Option<u64>,
+    /// None with a start means checked arithmetic exhausted; without a start
+    /// it means the actual Cleaned fact is awaiting a trustworthy clock.
+    pub(crate) retain_until_ms: Option<u64>,
 }
 impl LifecycleOperationRecord {
     #[must_use]
-    pub const fn intent(&self) -> &AcceptedLifecycleIntent {
-        &self.intent
+    pub const fn intent(&self) -> &AcceptedLifecycleIntent { &self.intent }
+    #[must_use]
+    pub const fn running(&self) -> Option<&CurrentReadyFacts> { self.running.as_ref() }
+    #[must_use]
+    pub fn terminal(&self) -> Option<&TerminalLifecycleObservation> {
+        self.terminal.as_ref().map(|retained| &retained.result)
     }
-    /// Actual same-key decision, shared by admission and the extracted proof.
     /// # Errors
-    /// A changed full submission is a conflict even if its operation key agrees.
-    pub fn replay(
-        &self,
-        submission: &LifecycleSubmission,
-    ) -> Result<AcceptedLifecycleIntent, DecisionError> {
-        if self.submission != *submission {
-            return Err(DecisionError::Conflict);
-        }
+    /// Reusing a key with any changed original field conflicts.
+    pub fn replay(&self, submission: &LifecycleSubmission)
+        -> Result<AcceptedLifecycleIntent, DecisionError>
+    {
+        if self.submission != *submission { return Err(DecisionError::Conflict); }
         Ok(self.intent.clone())
     }
 }
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LifecycleSession {
-    pub(crate) original_sandbox: SandboxId,
-    pub(crate) created_at_ms: u64,
-    pub(crate) operations: Vec<LifecycleOperationRecord>,
-}
-impl LifecycleSession {
-    #[expect(
-        clippy::manual_find,
-        reason = "Keep this original short-circuit loop separate for the fixed Aeneas frontend"
-    )]
+impl Sandbox {
+    #[expect(clippy::manual_find, reason = "Keep the real short-circuit loop extractable")]
     fn find_operation(&self, key: &OperationKey) -> Option<&LifecycleOperationRecord> {
         for operation in &self.operations {
-            if operation.intent.request.binding.key == *key {
-                return Some(operation);
-            }
+            if operation.intent.request.binding.key == *key { return Some(operation); }
         }
         None
     }
     #[must_use]
-    pub fn operations(&self) -> &[LifecycleOperationRecord] {
-        &self.operations
-    }
+    pub fn operations(&self) -> &[LifecycleOperationRecord] { &self.operations }
     #[must_use]
-    pub const fn original_sandbox(&self) -> &SandboxId {
-        &self.original_sandbox
+    pub fn original_sandbox(&self) -> Option<&SandboxId> {
+        Some(self.operations.first()?.intent.request.binding.session.as_protocol_id())
     }
     #[must_use]
     pub fn phase(&self) -> SessionPhase {
-        match self.operations.last() {
-            Some(op) => match op.intent.request.operation {
-                LifecycleOperation::Create { .. } if op.ready.is_some() => SessionPhase::Running,
-                LifecycleOperation::Create { .. } => SessionPhase::Creating,
-                LifecycleOperation::Destroy { .. } => SessionPhase::Terminating,
-                _ => SessionPhase::Unloading,
-            },
-            None => SessionPhase::Creating, // rejected by full state validation
+        let Some(operation) = self.operations.last() else { return SessionPhase::Creating; };
+        match &operation.intent.request.operation {
+            LifecycleOperation::Create { .. } if operation.running.is_some() => SessionPhase::Running,
+            LifecycleOperation::Create { .. } => SessionPhase::Creating,
+            LifecycleOperation::Renew { .. } if operation.running.is_some() => SessionPhase::Running,
+            LifecycleOperation::Renew { .. } => SessionPhase::Renewing,
+            LifecycleOperation::Destroy {} if self.released() => SessionPhase::Cleaned,
+            LifecycleOperation::Destroy {} => SessionPhase::Terminating,
+            LifecycleOperation::Unload { .. } | LifecycleOperation::Resume { .. } => SessionPhase::Unloading,
         }
     }
     #[must_use]
     pub fn current_version(&self) -> Option<u64> {
-        self.operations.last().map(|op| op.intent.accepted_version)
+        self.operations.last().map(|operation| operation.intent.accepted_version)
+    }
+    #[must_use]
+    pub fn result_retention_elapsed(&self, now_ms: u64) -> bool {
+        self.operations.last().and_then(|operation| operation.terminal.as_ref())
+            .is_some_and(|retained| retained.retain_until_ms.is_some_and(|until| now_ms >= until))
+    }
+    pub(crate) fn retention_deadline(&self, now_ms: u64, retention_ms: u64) -> Option<u64> {
+        if self.operations.iter().any(|operation| operation.accepted_at_ms > now_ms) { return None; }
+        now_ms.checked_add(retention_ms)
+    }
+    #[must_use]
+    pub fn termination_due(&self, now_ms: u64) -> bool {
+        if self.terminating() { return false; }
+        let Some(current) = self.operations.last() else { return false; };
+        let Some(origin) = self.operations.first() else { return false; };
+        let LifecycleOperation::Create { create, .. } = &origin.intent.request.operation else { return false; };
+        let Some(prior) = self.last_running() else { return now_ms >= create.startup_deadline_ms; };
+        let end = match &current.intent.request.operation {
+            LifecycleOperation::Renew { end_at_ms, extend_only, .. } => {
+                let Ok(target) = u64::try_from(*end_at_ms) else { return true; };
+                if *extend_only { prior.end_at_ms.max(target) } else { target }
+            }
+            _ => prior.end_at_ms,
+        };
+        now_ms >= end || now_ms >= prior.max_end_at_ms
     }
 }
 
@@ -142,377 +161,259 @@ impl LifecycleSession {
 pub struct LifecycleProfile {
     pub(crate) format_version: u16,
     pub(crate) center: CenterIdentity,
-    pub(crate) windows: Vec<LifecycleWindow>,
-    pub(crate) sessions: Vec<LifecycleSession>,
+    pub(crate) windows: Vec<LifecycleWindowState>,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LifecycleWindowState {
+    pub(crate) registration: LifecycleWindow,
+    /// None is checked public-window exhaustion, never absent registration.
+    pub(crate) current: Option<RequestWindowId>,
+}
+impl LifecycleWindowState {
+    pub(crate) fn contains_history(&self, key: &OperationKey) -> bool {
+        if key.owner != self.registration.owner { return false; }
+        let initial = self.registration.window.get();
+        if initial == 2 { return key.window.get() == 2; }
+        key.window.get() % 2 == 1 && key.window.get() >= initial
+            && self.current.is_none_or(|current| key.window.get() <= current.get())
+    }
+}
 impl LifecycleProfile {
-    fn find_operation(&self, key: &OperationKey) -> Option<&LifecycleOperationRecord> {
-        for session in &self.sessions {
-            if let Some(operation) = session.find_operation(key) {
-                return Some(operation);
-            }
-        }
-        None
-    }
-}
-
-/// Checks new-key expected-version arithmetic; it never classifies a replay.
-/// # Errors
-/// Stale versions and exhaustion are separate, and neither changes the state.
-pub fn next_lifecycle_version(expected: u64, current: u64) -> Result<u64, DecisionError> {
-    if expected != current {
-        return Err(DecisionError::Stale);
-    }
-    current.checked_add(1).ok_or(DecisionError::Exhausted)
-}
-
-impl CenterState {
-    /// Explicit fresh provisioning only, never a missing-storage recovery path.
-    /// This bounded slice has one protected window per registered owner, no
-    /// rotation/retirement or Resume. New operations fail before effects at cap.
-    /// # Errors
-    /// Existing histories/profile, incomplete owner windows and foreign centers reject.
-    pub fn enable_lifecycle(
-        self,
-        center: CenterIdentity,
-        mut windows: Vec<LifecycleWindow>,
-    ) -> Result<Self, DecisionError> {
-        if !self.is_valid()
-            || self.lifecycle.is_some()
-            || !self.sandboxes.is_empty()
-            || self.sandbox_highwater != 0
-            || self.operation_highwater != 0
-            || self.bounds.operations_per_sandbox < 3
-            || center.deployment != self.deployment
-        {
-            return Err(DecisionError::Invalid);
-        }
-        // The protected registration supplies one explicit odd window per
-        // owner. The current SDK has no caller key and owns disjoint window 2.
-        // Both use the same persisted profile and original allocation frontier.
-        if windows.len() != self.tenants.len()
-            || windows.iter().any(|window| window.window.get() % 2 == 0)
-        {
+    pub(crate) fn new(center: CenterIdentity, mut windows: Vec<LifecycleWindow>, tenants: &[TenantBudget])
+        -> Result<Self, DecisionError>
+    {
+        if windows.len() != tenants.len() || windows.iter().any(|window| window.window.get() % 2 == 0) {
             return Err(DecisionError::Invalid);
         }
         let sdk = RequestWindowId::try_from(2).map_err(|_| DecisionError::Invalid)?;
-        for index in 0..self.tenants.len() {
-            let owner = windows[index].owner.clone();
-            windows.push(LifecycleWindow { owner, window: sdk });
+        let original_count = windows.len();
+        for index in 0..original_count {
+            windows.push(LifecycleWindow { owner: windows[index].owner.clone(), window: sdk });
         }
-        let mut next = self;
-        next.lifecycle = Some(LifecycleProfile {
-            format_version: LIFECYCLE_PROFILE_VERSION,
-            center,
-            windows,
-            sessions: vec![],
-        });
-        if !next.is_valid() {
-            return Err(DecisionError::Invalid);
+        Ok(Self { format_version: LIFECYCLE_PROFILE_VERSION, center,
+            windows: windows.into_iter().map(|registration| LifecycleWindowState {
+                current: Some(registration.window), registration,
+            }).collect() })
+    }
+}
+
+/// # Errors
+/// A stale version and exhausted successor are distinct refusals.
+pub fn next_lifecycle_version(expected: u64, current: u64) -> Result<u64, DecisionError> {
+    if expected != current { return Err(DecisionError::Stale); }
+    current.checked_add(1).ok_or(DecisionError::Exhausted)
+}
+
+/// Preserve the existing SDK cap for even the largest positive second value.
+/// U128 can represent U64 seconds * 1000 plus a U64 clock without overflow.
+pub(crate) fn normalized_renewal_end(now_ms: u64, seconds: u64, maximum_ms: u64) -> u64 {
+    let requested = u128::from(now_ms) + u128::from(seconds) * 1000;
+    // The minimum is at most the original U64 maximum, so narrowing is exact.
+    u64::try_from(requested.min(u128::from(maximum_ms))).expect("bounded by original U64 maximum")
+}
+
+impl CenterState {
+    /// Persist due termination for all original rows, including private work.
+    /// This is a bounded pure candidate in the original business CAS, not host
+    /// cleanup, a second queue or permission to release any resource.
+    /// # Errors
+    /// Invalid state or exhausted reserved identity keeps the original authority.
+    pub fn terminate_expired(&self, now_ms: u64) -> Result<Self, DecisionError> {
+        if !self.is_valid() { return Err(DecisionError::Invalid); }
+        let due = self.sandboxes.iter().filter(|record| record.termination_due(now_ms))
+            .filter_map(|record| record.operations.first().map(|operation| (
+                operation.intent.request.binding.key.owner.clone(),
+                operation.intent.request.binding.session.clone(),
+            ))).collect::<Vec<_>>();
+        let mut next = self.clone();
+        for (owner, session) in due {
+            let current = next.lifecycle_session(&owner, &session).ok_or(DecisionError::Invalid)?;
+            let expected_version = current.current_version().ok_or(DecisionError::Invalid)?;
+            let key = next.next_sdk_operation_key(&owner)?;
+            let submission = LifecycleSubmission::Destroy { key, session, expected_version };
+            next = next.accept_lifecycle(&owner, &submission, now_ms)?.0;
         }
         Ok(next)
     }
-
     #[must_use]
-    pub const fn lifecycle_enabled(&self) -> bool {
-        self.lifecycle.is_some()
-    }
-    /// Raw persisted profile version, also available to the storage decoder
-    /// before domain validation. Absence retains the legacy host-version domain.
-    #[must_use]
-    pub fn lifecycle_profile_version(&self) -> Option<u16> {
-        self.lifecycle.as_ref().map(|profile| profile.format_version)
+    pub const fn lifecycle_profile_version(&self) -> u16 { self.lifecycle.format_version }
+    /// Current authenticated client's window. Exhaustion is explicit; no reset.
+    /// # Errors
+    /// An unknown owner cannot inspect another registration.
+    pub fn public_request_window(&self, owner: &TenantId) -> Result<Option<RequestWindowId>, DecisionError> {
+        if !self.is_valid() { return Err(DecisionError::Invalid); }
+        self.lifecycle.windows.iter().find(|window|
+            window.registration.owner == *owner && window.registration.window.get() % 2 == 1)
+            .map(|window| window.current).ok_or(DecisionError::NotFound)
     }
     #[must_use]
     pub fn required_authority_bytes(&self) -> usize {
-        self.bounds
-            .required_block_bytes()
-            .saturating_add(self.lifecycle_required_bytes())
-    }
-    /// Separate legacy projections from managed sessions; this is not an
-    /// authorization or a physical lifecycle observation.
-    #[must_use]
-    pub fn lifecycle_manages(&self, sandbox: &SandboxId) -> bool {
-        self.lifecycle
-            .as_ref()
-            .is_some_and(|p| p.sessions.iter().any(|s| s.original_sandbox == *sandbox))
+        self.bounds.required_block_bytes().saturating_add(self.lifecycle_required_bytes())
     }
     pub(crate) fn lifecycle_required_bytes(&self) -> usize {
-        if self.lifecycle.is_none() {
-            return 0;
-        }
-        usize::from(self.bounds.max_sandboxes)
-            .saturating_mul(
-                usize::from(self.bounds.operations_per_sandbox)
-                    .saturating_mul(
-                        (self.bounds.max_options_bytes as usize)
-                            .saturating_mul(8)
-                            .saturating_add(32768),
-                    )
-                    .saturating_add(8192),
-            )
-            .saturating_add(self.tenants.len().saturating_mul(2 * 512))
-            .saturating_add(8192)
+        usize::from(self.bounds.max_sandboxes).saturating_mul(
+            usize::from(self.bounds.operations_per_sandbox).saturating_mul(
+                (self.bounds.max_options_bytes as usize).saturating_mul(8).saturating_add(32768)
+            ).saturating_add(8192)
+        ).saturating_add(self.tenants.len().saturating_mul(2 * 512)).saturating_add(8192)
     }
     #[must_use]
-    pub fn lifecycle_session(
-        &self,
-        owner: &TenantId,
-        session: &SessionId,
-    ) -> Option<&LifecycleSession> {
-        self.lifecycle.as_ref()?.sessions.iter().find(|s| {
-            s.operations.first().is_some_and(|op| {
-                op.intent.request.binding.key.owner == *owner
-                    && op.intent.request.binding.session == *session
-            })
-        })
+    pub fn lifecycle_session(&self, owner: &TenantId, session: &SessionId) -> Option<&Sandbox> {
+        self.sandboxes.iter().find(|record| record.operations.first().is_some_and(|operation| {
+            operation.intent.request.binding.key.owner == *owner
+                && operation.intent.request.binding.session == *session
+        }))
     }
     #[must_use]
     pub fn pending_lifecycle(&self) -> Vec<AcceptedLifecycleIntent> {
-        self.lifecycle.as_ref().map_or_else(Vec::new, |p| {
-            p.sessions
-                .iter()
-                .filter_map(|s| s.operations.last())
-                .filter(|op| op.ready.is_none())
-                .map(|op| op.intent.clone())
-                .collect()
-        })
+        self.sandboxes.iter().filter_map(|record| {
+            let operation = record.operations.last()?;
+            if operation.running.is_some() { return None; }
+            if operation.terminal.as_ref().is_some_and(|retained|
+                retained.retention_started_at_ms.is_some() && record.terminal_confirmation.is_some())
+            { return None; }
+            Some(operation.intent.clone())
+        }).collect()
     }
-
-    /// Check the original full submission before reading a new clock/template
-    /// policy. Absence permits a new decision; changed input is a conflict.
-    /// # Errors
-    /// Invalid state, disabled profile or foreign authenticated owner rejects.
-    pub fn replay_lifecycle(
-        &self,
-        owner: &TenantId,
-        submission: &LifecycleSubmission,
-    ) -> Result<Option<AcceptedLifecycleIntent>, DecisionError> {
-        if !self.is_valid() {
-            return Err(DecisionError::Invalid);
+    fn find_lifecycle_operation(&self, key: &OperationKey) -> Option<&LifecycleOperationRecord> {
+        for record in &self.sandboxes {
+            if let Some(operation) = record.find_operation(key) { return Some(operation); }
         }
-        let profile = self.lifecycle.as_ref().ok_or(DecisionError::Invalid)?;
+        None
+    }
+    /// # Errors
+    /// Replay checks full original input before the new clock, phase or capacity.
+    pub fn replay_lifecycle(&self, owner: &TenantId, submission: &LifecycleSubmission)
+        -> Result<Option<AcceptedLifecycleIntent>, DecisionError>
+    {
+        if !self.is_valid() { return Err(DecisionError::Invalid); }
         if submission.key().owner != *owner || submission.key().deployment != self.deployment {
             return Err(DecisionError::NotFound);
         }
-        profile
-            .find_operation(submission.key())
-            .map(|op| op.replay(submission))
-            .transpose()
+        self.find_lifecycle_operation(submission.key()).map(|operation| operation.replay(submission)).transpose()
     }
-
-    /// Full-key replay is checked before current window/version/phase/time.
-    /// New Create uses the original allocator, lane and resource reservation.
     /// # Errors
-    /// All refusals leave this original state untouched; no host I/O occurs.
-    pub fn accept_lifecycle(
-        &self,
-        owner: &TenantId,
-        submission: &LifecycleSubmission,
-        now_ms: u64,
-    ) -> Result<(Self, AcceptedLifecycleIntent), DecisionError> {
-        if !self.is_valid() {
-            return Err(DecisionError::Invalid);
+    /// All refusals are pure. Allocation and intent are saved in the SAME authority CAS.
+    pub fn accept_lifecycle(&self, owner: &TenantId, submission: &LifecycleSubmission, now_ms: u64)
+        -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
+    {
+        if let Some(intent) = self.replay_lifecycle(owner, submission)? {
+            return Ok((self.clone(), intent));
         }
-        let profile = self.lifecycle.as_ref().ok_or(DecisionError::Invalid)?;
-        let key = submission.key();
-        if key.owner != *owner || key.deployment != self.deployment {
-            return Err(DecisionError::NotFound);
-        }
-        if let Some(operation) = profile.find_operation(key) {
-            return operation
-                .replay(submission)
-                .map(|intent| (self.clone(), intent));
-        }
-        if !profile
-            .windows
-            .iter()
-            .any(|w| w.owner == *owner && w.window == key.window)
-        {
-            return Err(DecisionError::Stale);
-        }
+        if !self.lifecycle.windows.iter().any(|window|
+            window.registration.owner == *owner && window.current == Some(submission.key().window))
+        { return Err(DecisionError::Stale); }
+        if submission.key().window.get() == 2
+            && Some(submission.key().sequence.get()) != self.operation_highwater.checked_add(1)
+        { return Err(DecisionError::Stale); }
         match submission {
-            LifecycleSubmission::Create { parameters, .. } => {
-                self.accept_lifecycle_create(submission, parameters, now_ms)
-            }
-            LifecycleSubmission::Unload {
-                session,
-                expected_version,
-                ..
-            } => {
-                self.accept_lifecycle_followup(submission, owner, session, *expected_version, false)
-            }
-            LifecycleSubmission::Destroy {
-                session,
-                expected_version,
-                ..
-            } => {
-                self.accept_lifecycle_followup(submission, owner, session, *expected_version, true)
-            }
+            LifecycleSubmission::Create { parameters, .. } =>
+                self.accept_lifecycle_create(submission, parameters, now_ms),
+            LifecycleSubmission::Unload { session, expected_version, .. }
+            | LifecycleSubmission::Renew { session, expected_version, .. }
+            | LifecycleSubmission::Destroy { session, expected_version, .. } =>
+                self.accept_lifecycle_followup(submission, owner, session, *expected_version, now_ms),
         }
     }
-
-    fn accept_lifecycle_create(
-        &self,
-        submission: &LifecycleSubmission,
-        parameters: &CreateParameters,
-        now_ms: u64,
-    ) -> Result<(Self, AcceptedLifecycleIntent), DecisionError> {
-        if parameters.startup_timeout_ms == 0 {
-            return Err(DecisionError::Invalid);
-        }
+    fn accept_lifecycle_create(&self, submission: &LifecycleSubmission, parameters: &CreateParameters, now_ms: u64)
+        -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
+    {
+        if parameters.startup_timeout_ms == 0 { return Err(DecisionError::Invalid); }
         let create = CreateBinding {
             template_revision: parameters.template_revision.clone(),
             template_digest: parameters.template_digest,
-            resources: parameters.resources,
-            options: parameters.options.clone(),
-            startup_deadline_ms: now_ms
-                .checked_add(parameters.startup_timeout_ms)
-                .ok_or(DecisionError::Exhausted)?,
-            timeout_ms: parameters.timeout_ms,
-            max_lifetime_ms: parameters.max_lifetime_ms,
+            resources: parameters.resources, options: parameters.options.clone(),
+            startup_deadline_ms: now_ms.checked_add(parameters.startup_timeout_ms).ok_or(DecisionError::Exhausted)?,
+            timeout_ms: parameters.timeout_ms, max_lifetime_ms: parameters.max_lifetime_ms,
         };
-        let (mut next, allocation) = self.create_for_role(
-            &submission.key().owner,
-            create.clone(),
-            now_ms,
-            NodeRole::Runtime,
-        )?;
-        let profile = next.lifecycle.as_mut().ok_or(DecisionError::Invalid)?;
+        // The original allocator returns current fields; it constructs no old wire request.
+        let allocation = self.allocate_session(&submission.key().owner, &create, now_ms, NodeRole::Runtime)?;
         let intent = AcceptedLifecycleIntent {
-            retention: sandproof_protocol::lifecycle::RetentionBinding {
-                slot: allocation.identity.retention_slot,
-                window: allocation.identity.request_window.get().try_into().map_err(|_| DecisionError::Invalid)?,
-            },
-            center: profile.center.clone(),
-            accepted_version: 1,
+            retention: allocation.retention, center: self.lifecycle.center.clone(), accepted_version: 1,
             request: LifecycleRequest {
                 binding: OperationBinding {
                     protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
-                    node: allocation.identity.node,
-                    session: SessionId::from_protocol_id(allocation.identity.sandbox_id.clone()),
-                    key: submission.key().clone(),
-                    expected: ExpectedSession::Absent,
+                    node: allocation.node, session: allocation.session,
+                    key: submission.key().clone(), expected: ExpectedSession::Absent,
                 },
                 operation: LifecycleOperation::Create {
-                    create,
-                    target_incarnation: IncarnationId::try_from(1)
-                        .map_err(|_| DecisionError::Invalid)?,
+                    create, target_incarnation: IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
                 },
             },
         };
-        profile.sessions.push(LifecycleSession {
-            original_sandbox: allocation.identity.sandbox_id,
-            created_at_ms: now_ms,
+        let mut next = self.clone();
+        next.sandbox_highwater = allocation.sandbox_number;
+        next.operation_highwater = allocation.operation_number;
+        next.sandboxes.push(Sandbox {
             operations: vec![LifecycleOperationRecord {
-                submission: submission.clone(),
-                intent: intent.clone(),
-                ready: None,
+                submission: submission.clone(), intent: intent.clone(),
+                allocation_number: allocation.operation_number, accepted_at_ms: now_ms,
+                running: None, terminal: None,
             }],
+            terminal_confirmation: None,
         });
-        if !next.is_valid() {
-            return Err(DecisionError::Invalid);
-        }
+        if !next.is_valid() { return Err(DecisionError::Invalid); }
         Ok((next, intent))
     }
-
-    fn accept_lifecycle_followup(
-        &self,
-        submission: &LifecycleSubmission,
-        owner: &TenantId,
-        session: &SessionId,
-        expected: u64,
-        destroy: bool,
-    ) -> Result<(Self, AcceptedLifecycleIntent), DecisionError> {
-        let previous = self
-            .lifecycle_session(owner, session)
-            .ok_or(DecisionError::NotFound)?;
+    fn accept_lifecycle_followup(&self, submission: &LifecycleSubmission, owner: &TenantId,
+        session: &SessionId, expected: u64, now_ms: u64)
+        -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
+    {
+        let index = self.index(owner, session.as_protocol_id())?;
+        let previous = &self.sandboxes[index];
         let prior = previous.operations.last().ok_or(DecisionError::Invalid)?;
         let version = next_lifecycle_version(expected, prior.intent.accepted_version)?;
+        let destroy = matches!(submission, LifecycleSubmission::Destroy { .. });
         let cap = usize::from(self.bounds.operations_per_sandbox);
-        if previous.operations.len() >= cap - usize::from(!destroy) {
-            return Err(DecisionError::Capacity);
-        }
-        if previous.phase() == SessionPhase::Terminating
-            || (!destroy && previous.phase() != SessionPhase::Running)
-        {
+        if previous.operations.len() >= cap - usize::from(!destroy) { return Err(DecisionError::Capacity); }
+        if previous.terminating() || (!destroy && previous.phase() != SessionPhase::Running) {
             return Err(DecisionError::Conflict);
         }
-        let original = previous.original_sandbox.clone();
+        let number = self.operation_highwater.checked_add(1).ok_or(DecisionError::Exhausted)?;
+        let remaining = self.sandboxes.iter().filter(|record| !record.released() && !record.terminating()).count() as u64
+            - u64::from(destroy);
+        if number.checked_add(remaining).is_none() { return Err(DecisionError::Exhausted); }
+        let incarnation = match &prior.intent.request.operation {
+            LifecycleOperation::Create { target_incarnation, .. } => *target_incarnation,
+            LifecycleOperation::Renew { incarnation, .. } => *incarnation,
+            _ if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
+            _ => return Err(DecisionError::Conflict),
+        };
         let mut request = prior.intent.request.clone();
         request.binding.key = submission.key().clone();
         request.binding.expected = ExpectedSession::Version(expected);
-        request.operation = if destroy {
-            LifecycleOperation::Destroy {}
-        } else {
-            LifecycleOperation::Unload {
-                source_incarnation: IncarnationId::try_from(1)
-                    .map_err(|_| DecisionError::Invalid)?,
+        request.operation = match submission {
+            LifecycleSubmission::Destroy { .. } => LifecycleOperation::Destroy {},
+            LifecycleSubmission::Unload { .. } => LifecycleOperation::Unload {
+                source_incarnation: incarnation,
                 capture: CaptureId::try_from(1).map_err(|_| DecisionError::Invalid)?,
+            },
+            LifecycleSubmission::Renew { timeout_secs, extend_only, .. } => {
+                let facts = prior.running.as_ref().ok_or(DecisionError::Conflict)?;
+                let end = normalized_renewal_end(now_ms, *timeout_secs, facts.max_end_at_ms);
+                if *timeout_secs == 0 || facts.end_at_ms <= now_ms || facts.max_end_at_ms <= now_ms {
+                    return Err(DecisionError::Conflict);
+                }
+                if !self.node_is_reachable(&request.binding.node, now_ms) { return Err(DecisionError::Unavailable); }
+                LifecycleOperation::Renew {
+                    incarnation, end_at_ms: i64::try_from(end).map_err(|_| DecisionError::Exhausted)?,
+                    extend_only: *extend_only,
+                }
             }
+            LifecycleSubmission::Create { .. } => return Err(DecisionError::Invalid),
         };
         let intent = AcceptedLifecycleIntent {
-            retention: prior.intent.retention,
-            request,
-            accepted_version: version,
-            center: prior.intent.center.clone(),
+            retention: prior.intent.retention, request,
+            accepted_version: version, center: prior.intent.center.clone(),
         };
-        let mut next = if destroy {
-            let index = self.index(owner, &original)?;
-            self.append_candidate(
-                index,
-                sandproof_protocol::internal::lifecycle::Intent::Destroy,
-            )?
-            .0
-        } else {
-            self.clone()
-        };
-        let target = next
-            .lifecycle
-            .as_mut()
-            .ok_or(DecisionError::Invalid)?
-            .sessions
-            .iter_mut()
-            .find(|s| s.original_sandbox == original)
-            .ok_or(DecisionError::NotFound)?;
-        target.operations.push(LifecycleOperationRecord {
-            submission: submission.clone(),
-            intent: intent.clone(),
-            ready: None,
+        let mut next = self.clone();
+        next.operation_highwater = number;
+        next.sandboxes[index].operations.push(LifecycleOperationRecord {
+            submission: submission.clone(), intent: intent.clone(), allocation_number: number,
+            accepted_at_ms: now_ms, running: None, terminal: None,
         });
-        if !next.is_valid() {
-            return Err(DecisionError::Invalid);
-        }
+        if !next.is_valid() { return Err(DecisionError::Invalid); }
         Ok((next, intent))
-    }
-
-    pub(crate) fn bind_lifecycle_ready(
-        &mut self,
-        response: &LifecycleResponse,
-    ) -> Result<(), DecisionError> {
-        let Some(profile) = self.lifecycle.as_mut() else {
-            return Ok(());
-        };
-        let Some(session) = profile
-            .sessions
-            .iter_mut()
-            .find(|s| s.original_sandbox == response.identity.sandbox_id)
-        else {
-            return Ok(());
-        };
-        let operation = session
-            .operations
-            .last_mut()
-            .ok_or(DecisionError::Invalid)?;
-        if !matches!(
-            operation.intent.request.operation,
-            LifecycleOperation::Create { .. }
-        ) || !matches!(response.fact, LifecycleFact::Ready { .. })
-        {
-            return Err(DecisionError::Stale);
-        }
-        operation.ready = Some(response.clone());
-        Ok(())
     }
 }

@@ -56,7 +56,8 @@ def extract(output, profile, tool_root):
             shutil.copy2(raw, output / "previous.llbc")
             raw.unlink()
         destination = "../../../artifacts/stage1-center/raw/" + profile + ".llbc"
-        root = {"version": "version_next", "replay": "replay", "accept": "accept"}[profile]
+        root = {"version": "version_next", "replay": "replay", "accept": "accept",
+                "terminal": "terminal_result"}[profile]
         run("charon", [str(charon), "cargo", "--preset=aeneas", "--error-on-warnings",
             "--sysroot", "default", "--include", "sandproof_center_core", "--include", "sandproof_protocol",
             "--start-from", "crate::" + root, "--dest-file", destination, "--", "--manifest-path",
@@ -80,6 +81,12 @@ def extract(output, profile, tool_root):
         record["success"] = True
     except BaseException as error:
         record.update(success=False, error=repr(error), traceback=traceback.format_exc())
+        # Failed frontends may still emit diagnostic IR. Preserve it without
+        # calling it complete or sending it to Aeneas as a successful input.
+        if "raw" in locals() and raw.is_file() and not raw.is_symlink():
+            if not (output / "original.llbc").exists():
+                shutil.copy2(raw, output / "partial.llbc")
+                record["partial_llbc_sha256"] = digest(output / "partial.llbc")
     record["seconds"] = time.monotonic() - started
     (output / "result.json").write_text(json.dumps(record, indent=2) + "\n")
     return record
@@ -88,7 +95,7 @@ def extract(output, profile, tool_root):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--profile", choices=("version", "replay", "accept"), required=True)
+    parser.add_argument("--profile", choices=("version", "replay", "accept", "terminal"), required=True)
     parser.add_argument("--tool-root", required=True, type=Path)
     args = parser.parse_args()
     result = extract(args.output, args.profile, args.tool_root)

@@ -50,6 +50,14 @@ pub struct PublicAcceptance {
     pub accepted_version: u64,
 }
 
+/// The authenticated owner's current public window. None means checked
+/// exhaustion; it is never permission to retry an unknown request with a new key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicRequestWindow {
+    pub window: Option<RequestWindowId>,
+}
+
 /// Only facts currently supported by the original center ledger. No Paused to
 /// Unloaded projection exists; that result needs a future checked host fact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,8 +65,10 @@ pub struct PublicAcceptance {
 pub enum PublicSessionPhase {
     Creating,
     Running,
+    Renewing,
     Unloading,
     Terminating,
+    Cleaned,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -7,7 +7,7 @@ use crate::status::{
     StatusRequest,
 };
 use crate::template::{
-    VALIDATION_PATH, VALIDATION_REQUEST_BODY_BYTES, VALIDATION_RESPONSE_BODY_BYTES,
+    VALIDATION_PATH, VALIDATION_RESPONSE_BODY_BYTES,
     ValidationEvidence, ValidationReceiver, ValidationRequest,
 };
 use crate::{CertificatePin, Limits, ProtectedHttp, ProtectedServer, ServerTls, TransportError};
@@ -113,6 +113,7 @@ impl ValidationReceiver for RejectLifecycle {
     async fn validation_evidence(
         &self,
         _: ValidationRequest,
+        _: AuthenticatedCenterContext,
     ) -> Result<ValidationEvidence, ReceiveError> {
         Err(ReceiveError::Unavailable)
     }
@@ -242,6 +243,7 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             || request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH
+            || request.uri().path() == VALIDATION_PATH
         {
             let call = if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH {
                 lifecycle::Call::CreateObservation
@@ -251,6 +253,8 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
                 lifecycle::Call::Confirm
             } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
                 lifecycle::Call::Close
+            } else if request.uri().path() == VALIDATION_PATH {
+                lifecycle::Call::Validation
             } else { lifecycle::Call::Record };
             let work = lifecycle::respond(request, peer, self.lifecycle.as_ref(), &*self.handler, call);
             return Ok(timeout(self.limits.request_timeout, work)
@@ -333,20 +337,16 @@ async fn management_route<
     node: NodeIdentity,
     handler: Arc<H>,
 ) -> Response<Full<Bytes>> {
-    let validation = request.uri().path() == VALIDATION_PATH;
     let cache = request.uri().path() == CACHE_PATH;
     let status_request = request.uri().path() == STATUS_PATH;
     let limit = if status_request {
         STATUS_REQUEST_BYTES
     } else if cache {
         CACHE_REQUEST_BYTES
-    } else if validation {
-        VALIDATION_REQUEST_BODY_BYTES
     } else {
         PROBE_BODY_BYTES
     };
-    let status = if (!validation
-        && !cache
+    let status = if (!cache
         && !status_request
         && request.uri().path() != PROBE_PATH)
         || request.uri().query().is_some()
@@ -388,9 +388,6 @@ async fn management_route<
     }
     if cache {
         return cache_template(&bytes, &node, &*handler).await;
-    }
-    if validation {
-        return validation_evidence(&bytes, &node, &*handler).await;
     }
     let Ok(request) = serde_json::from_slice::<ProbeRequest>(&bytes) else {
         return response(StatusCode::BAD_REQUEST, Bytes::new());
@@ -459,16 +456,16 @@ fn json_response(answer: &impl serde::Serialize, limit: usize) -> Response<Full<
 
 async fn validation_evidence<H: ValidationReceiver>(
     bytes: &[u8],
-    node: &NodeIdentity,
+    context: AuthenticatedCenterContext,
     handler: &H,
 ) -> Response<Full<Bytes>> {
     let Ok(request) = serde_json::from_slice::<ValidationRequest>(bytes) else {
         return response(StatusCode::BAD_REQUEST, Bytes::new());
     };
-    if request.validate(node).is_err() {
+    if request.validate_context(&context).is_err() {
         return response(StatusCode::CONFLICT, Bytes::new());
     }
-    match handler.validation_evidence(request.clone()).await {
+    match handler.validation_evidence(request.clone(), context).await {
         Ok(answer)
             if answer
                 .validate_for(&request.create, &request.terminal, &request.publication)

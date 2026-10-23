@@ -1,10 +1,18 @@
 //! Same original Redis CAS for canonical intent, original reservation and outbox.
 use super::{AuthorityError, AuthorityState, CenterAuthority};
-use sandproof_center_core::{LifecycleSession, LifecycleSubmission};
+use sandproof_center_core::{Sandbox, LifecycleSubmission};
 use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
 impl<S: AuthorityState> CenterAuthority<S> {
+    /// # Errors
+    /// Same original authority and business pins; no host I/O or public owner bypass.
+    pub fn terminate_expired(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self.state()?.terminate_expired(now_ms)?;
+        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        Ok(())
+    }
     /// # Errors
     /// A rejected decision writes nothing. Unknown CAS fences every projection;
     /// recovery reads/reaffirms this same block and replays the original key.
@@ -39,11 +47,11 @@ impl<S: AuthorityState> CenterAuthority<S> {
         &mut self,
         owner: &TenantId,
         session: &SessionId,
-    ) -> Result<Option<LifecycleSession>, AuthorityError> {
+    ) -> Result<Option<Sandbox>, AuthorityError> {
         Ok(self.snapshot()?.lifecycle_session(owner, session).cloned())
     }
 
-    /// Store one checked V3 observation with a center-owned receipt sequence.
+    /// Store one checked current observation in the original single session row.
     /// Sender/call/freshness conditions belong to the original caller; no host
     /// observation number is accepted or synthesized by this interface.
     /// # Errors
@@ -54,6 +62,20 @@ impl<S: AuthorityState> CenterAuthority<S> {
     ) -> Result<(), AuthorityError> {
         self.snapshot()?;
         let next = self.state()?.accept_lifecycle_create_observation(observation)?;
+        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        Ok(())
+    }
+
+    /// Save the real current terminal result before sending any confirmation.
+    /// # Errors
+    /// Unknown CAS fences the same block; recovery reuses its original deadline.
+    pub fn accept_lifecycle_terminal_observation(
+        &mut self,
+        result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self.state()?.accept_lifecycle_terminal_observation(result, now_ms)?;
         if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
         Ok(())
     }
