@@ -31,6 +31,15 @@ pub enum LifecycleOperation {
         target_incarnation: IncarnationId,
         manifest_digest: ContentDigest,
     },
+    /// A normalized absolute lifetime update for the original execution.
+    /// The center persists the full SDK input before computing this value.
+    /// The host rechecks current incarnation, expiry and original total limit;
+    /// neither replay nor a changed intent version starts a new execution.
+    Renew {
+        incarnation: IncarnationId,
+        end_at_ms: i64,
+        extend_only: bool,
+    },
     /// The original ledger chooses exact physical cleanup objects.
     Destroy {},
 }
@@ -71,6 +80,7 @@ impl LifecycleRequest {
             | (
                 LifecycleOperation::Unload { .. }
                 | LifecycleOperation::Resume { .. }
+                | LifecycleOperation::Renew { .. }
                 | LifecycleOperation::Destroy {},
                 ExpectedSession::Version(_),
             ) => {}
