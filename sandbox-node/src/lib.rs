@@ -35,7 +35,7 @@ mod linux;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    CredentialFault, HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus,
+    CredentialFault, ExecutionReport, HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus,
     LinuxObservation, LinuxWorker, NodeConfig, ObservedSlot, RouteCapacityExceeded,
 };
 

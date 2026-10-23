@@ -38,7 +38,6 @@ impl LinuxWorker {
         let worker = Self {
             config,
             host_lease,
-            last_error: None,
             validated_artifacts: Mutex::new(BTreeMap::new()),
         };
         // The SAME original reader rejects Initializing and validates every

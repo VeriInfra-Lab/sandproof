@@ -42,6 +42,7 @@ mod source_observation;
 mod source_process;
 use decisions::fence_can_advance;
 pub use readonly::LinuxObservation;
+pub use execution::ExecutionReport;
 #[path = "host_lease.rs"]
 mod host_lease;
 #[path = "host_slots.rs"]
@@ -236,7 +237,6 @@ impl Error for RouteCapacityExceeded {}
 pub struct LinuxWorker {
     config: NodeConfig,
     host_lease: host_lease::HostLease,
-    last_error: Option<String>,
     validated_artifacts: Mutex<BTreeMap<PathBuf, ArtifactStamp>>,
 }
 
@@ -393,7 +393,6 @@ impl LinuxWorker {
         let worker = Self {
             config,
             host_lease,
-            last_error: None,
             validated_artifacts: Mutex::new(BTreeMap::new()),
         };
         worker.initialize_host_slots()?;
@@ -406,11 +405,6 @@ impl LinuxWorker {
             firecracker: &self.config.firecracker,
             jailer: &self.config.jailer,
         }
-    }
-
-    #[must_use]
-    pub fn last_error(&self) -> Option<&str> {
-        self.last_error.as_deref()
     }
 
     fn sync_node_record(&self, path: &Path) -> NodeResult<()> {
