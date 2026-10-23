@@ -6,6 +6,9 @@
 //! boundaries. They do not replace the reducer in `sandbox-controller-core`,
 //! establish transaction durability, or certify any host observation.
 
+#[cfg(test)]
+extern crate self as sandproof_protocol;
+
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display};
