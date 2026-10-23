@@ -9,6 +9,8 @@
 mod engine;
 #[path = "business_authority/lifecycle_public.rs"]
 mod lifecycle_public;
+#[path = "business_authority/lifecycle_ready.rs"]
+mod lifecycle_ready;
 #[allow(
     dead_code,
     reason = "original worker fixture used to extract actual committed evidence"

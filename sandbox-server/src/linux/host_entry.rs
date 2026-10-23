@@ -10,7 +10,7 @@ use super::{
         open_journal, preflight_journal_configuration, private_root_path, validate_config,
         validate_physical_storage,
     },
-    reconcile::{audit_host_inventory, recover_before_serving},
+    reconcile::audit_host_inventory,
 };
 use cache::TemplateCache;
 use configuration::HostConfig;
@@ -20,7 +20,7 @@ use sandproof_controller_service::{
 };
 use sandproof_host_service::{DriverConfig, HostFacade};
 use sandproof_internal::{InternalServer, Limits, ServerTls, read_protected};
-use sandproof_node::{LinuxWorker, NodeHost};
+use sandproof_node::{LinuxWorker, NodeHost, ProtectedHostEpochSource};
 use sandproof_protocol::internal::NodeIdentity;
 use std::{error::Error, io::Write, net::SocketAddr, path::Path, sync::Arc};
 use tokio::sync::{oneshot, watch};
@@ -30,10 +30,24 @@ struct HostAuditView<'a> {
     schema_version: u16,
     versions: sandproof_protocol::internal::ContractVersions,
     #[serde(flatten)]
-    view: &'a sandproof_controller_service::InternalAudit,
+    view: &'a sandproof_controller_service::LifecycleAudit,
 }
 
 const MAX_CONFIG_BYTES: usize = 16 * 1024 * 1024;
+
+/// Explicit operator action only. It creates new protected material, never
+/// overwrites a registration and does not open or initialize the journal.
+pub(crate) fn provision_bootstrap(path: &Path) -> Result<(), Box<dyn Error>> {
+    let config = read_configuration(path)?;
+    let (contract, _) = config.validate_static()?;
+    let node = node_configuration(&config.native, contract.bounded);
+    let source = ProtectedHostEpochSource::at(config.protected_bootstrap_path)?;
+    let registration = source.provision(&config.inbox.node, &node)?;
+    let mut output = std::io::stdout().lock();
+    serde_json::to_writer(&mut output, &registration)?;
+    writeln!(output)?;
+    Ok(())
+}
 
 fn read_configuration(path: &Path) -> Result<HostConfig, Box<dyn Error>> {
     private_root_path(&std::env::current_exe()?)?;
@@ -71,13 +85,18 @@ pub(crate) fn initialize(path: &Path) -> Result<(), Box<dyn Error>> {
     let node_config = node_configuration(&config.native, contract.bounded.clone());
     let _physical = validate_physical_storage(&config.native, &node_config)?;
     let node = LinuxWorker::new(node_config)?;
+    let source = ProtectedHostEpochSource::at(config.protected_bootstrap_path.clone())?;
+    let registration = node.host_epoch_registration(&source, &config.inbox.node)?;
+    if config.inbox.host_epoch.as_ref() != Some(&registration) {
+        return Err("explicit host bootstrap registration does not match protected material".into());
+    }
     let mut journal = open_journal(
         config.native.database.clone(),
         &config.native.namespace,
         &contract,
     )?;
     audit_host_inventory(&node, &journal)?;
-    journal.initialize_internal_inbox(config.inbox, &mut NeverCrash)?;
+    journal.initialize_lifecycle_inbox(config.inbox, config.source_observation, &mut NeverCrash)?;
     Ok(())
 }
 
@@ -88,15 +107,22 @@ pub(crate) fn audit(path: &Path) -> Result<(), Box<dyn Error>> {
     let config = read_configuration(path)?;
     let (contract, _) = config.validate_static()?;
     validate_config(&config.native)?;
-    let view = ControllerJournal::audit_complete(
+    let view = ControllerJournal::audit_lifecycle_complete(
         &config.native.database,
         &config.native.namespace,
         &contract.bounded,
         &contract.maintenance,
         &config.inbox,
     )?;
+    if view.source_observation != config.source_observation {
+        return Err("stored source observation limits do not match protected configuration".into());
+    }
     let observation =
         LinuxWorker::inspect_existing(node_configuration(&config.native, contract.bounded))?;
+    let source = ProtectedHostEpochSource::at(config.protected_bootstrap_path)?;
+    if config.inbox.host_epoch.as_ref() != Some(&observation.host_epoch_registration(&source, &config.inbox.node)?) {
+        return Err("stored host bootstrap registration does not match protected material".into());
+    }
     observation.host_slot_inventory()?;
     let mut output = std::io::stdout().lock();
     serde_json::to_writer(
@@ -119,6 +145,7 @@ struct ActivatedHost {
     bind: SocketAddr,
     tls: ServerTls,
     limits: Limits,
+    center_peer: sandproof_internal::lifecycle::CenterPeerRegistration,
 }
 
 fn application(
@@ -131,7 +158,8 @@ fn application(
     let managed = application_config(&config.native, disk_bytes)?;
     let application = ControllerApplication::with_templates(
         journal,
-        NodeHost::new(node, physical, std::env::current_exe()?),
+        NodeHost::new(node, physical, std::env::current_exe()?)
+            .with_host_epoch_source(ProtectedHostEpochSource::at(config.protected_bootstrap_path.clone())?),
         managed,
         config
             .native
@@ -150,14 +178,18 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
     preflight_journal_configuration(&config.native, &contract)?;
     // The read-only original snapshot must find CURRENT authority and the
     // exact explicitly provisioned inbox BEFORE any activating constructor.
-    ControllerJournal::audit_complete(
+    let audit = ControllerJournal::audit_lifecycle_complete(
         &config.native.database,
         &config.native.namespace,
         &contract.bounded,
         &contract.maintenance,
         &config.inbox,
     )?;
+    if audit.source_observation != config.source_observation {
+        return Err("stored source observation limits do not match protected configuration".into());
+    }
     let tls = config.internal.tls.load()?;
+    let center_peer = config.internal.tls.center_registration(config.inbox.center.clone(), config.inbox.node.clone())?;
     let limits = config.internal.limits()?;
     let node_config = node_configuration(&config.native, contract.bounded.clone());
     let physical = validate_physical_storage(&config.native, &node_config)?;
@@ -172,8 +204,15 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
     }
     audit_host_inventory(&node, &journal)?;
     let application = application(&config, journal, node, physical, disk_bytes)?;
-    recover_before_serving(&application)?;
-    application.check_internal_authority(&config.inbox.node)?;
+    // Re-establish against the registration already stored by initialize.
+    // Reading today's file is never permission to replace that registration.
+    application.check_lifecycle_authority(&config.inbox)?;
+    application.check_lifecycle_source_observations(&config.source_observation)?;
+    application.establish_lifecycle_host_epoch()?;
+    // Register due termination/revocation in short transactions only. Slow
+    // recovery belongs to the bounded per-session driver after assembly; one
+    // unknown or large VM must not delay every other session's control path.
+    application.accept_due_work()?;
     let facade = HostFacade::new(
         Arc::clone(&application),
         contract.transfers.clone(),
@@ -190,7 +229,7 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
         templates: Arc::clone(&templates),
         compute: driver.compute,
         node: config.inbox.node.clone(),
-        retention_slots: config.inbox.max_sandboxes,
+        retention_slots: config.inbox.max_sessions,
     };
     Ok(ActivatedHost {
         receiver,
@@ -200,6 +239,7 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
         bind: config.internal.bind,
         tls,
         limits,
+        center_peer,
     })
 }
 
@@ -208,7 +248,8 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
 pub(crate) async fn serve(path: &Path) -> Result<(), Box<dyn Error>> {
     let host = assemble(path)?;
     let lifecycle = host.receiver.facade.lifecycle();
-    let server = InternalServer::new(host.tls, host.node, host.limits, host.receiver);
+    let server = InternalServer::new(host.tls, host.node, host.limits, host.receiver)
+        .with_center_peer(host.center_peer)?;
     let listener = tokio::net::TcpListener::bind(host.bind).await?;
     let (stop_server, server_shutdown) = oneshot::channel();
     let (stop_driver, driver_shutdown) = watch::channel(false);

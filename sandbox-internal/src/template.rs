@@ -16,7 +16,7 @@ use sandproof_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const VALIDATION_PATH: &str = "/internal/v2/template-validation-evidence";
+pub const VALIDATION_PATH: &str = "/internal/template-validation-evidence";
 pub const VALIDATION_REQUEST_BODY_BYTES: usize = LIFECYCLE_BODY_BYTES;
 /// The same cap bounds host encoding and client collection, not just chunks.
 pub const VALIDATION_RESPONSE_BODY_BYTES: usize = MAX_VALIDATION_CERTIFICATE_BYTES

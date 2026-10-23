@@ -456,7 +456,7 @@ fn missing_stop_receipt_is_not_ready_or_a_second_probe() {
         &directory,
         FakeHost {
             free_bytes: 16 * 1024 * 1024 * 1024,
-            stop: StopObservation::LoseReceipt,
+            stop: StopObservation::LoseReceipt.into(),
             prepare_calls: Some(calls.clone()),
             ..FakeHost::default()
         },
@@ -480,7 +480,7 @@ fn missing_stop_receipt_is_not_ready_or_a_second_probe() {
     let restarted = make_port(
         &directory,
         FakeHost {
-            stop: StopObservation::ObservedAfterRestart,
+            stop: StopObservation::ObservedAfterRestart.into(),
             ..FakeHost::default()
         },
         CandidateStore::new(registry, uid).unwrap(),
@@ -726,7 +726,7 @@ fn publication_offers_sealed_evidence_once_and_still_requires_validation_and_cle
         FakeHost {
             candidate_checks: Some(Arc::clone(&calls)),
             free_bytes: 16 * 1024 * 1024 * 1024,
-            stop: StopObservation::LoseReceipt,
+            stop: StopObservation::LoseReceipt.into(),
             ..FakeHost::default()
         },
         store,

@@ -1,8 +1,35 @@
+//! Current lifecycle client; transport failures never erase durable work.
 use super::{InternalClient, TransportError, timeout};
-use crate::lifecycle_v3::REQUEST_BODY_BYTES;
+use crate::lifecycle::REQUEST_BODY_BYTES;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RecordedLifecycleIntent};
 
 impl InternalClient {
+    /// Query only the exact original Destroy. Pending is not a release result.
+    /// # Errors
+    /// Wrong node/request, overload, timeout and changed response retain work.
+    pub async fn observe_lifecycle_terminal(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, TransportError> {
+        intent.request.validate(&self.endpoint.node).map_err(|_| TransportError::Rejected)?;
+        if !matches!(intent.request.operation, sandproof_protocol::lifecycle::LifecycleOperation::Destroy {}) {
+            return Err(TransportError::Rejected);
+        }
+        let _permit = self.calls.try_acquire().map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded = sandproof_controller_service::template_registry::evidence::encode_bounded(intent, REQUEST_BODY_BYTES)
+                .map_err(|_| TransportError::Rejected)?;
+            let bytes = self.exchange_bytes(
+                sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH,
+                encoded, REQUEST_BODY_BYTES, REQUEST_BODY_BYTES,
+            ).await?;
+            let view: sandproof_protocol::lifecycle::TerminalLifecycleObservation = serde_json::from_slice(&bytes)
+                .map_err(|_| TransportError::InvalidResponse)?;
+            if !view.matches_request(intent) { return Err(TransportError::InvalidResponse); }
+            Ok(view)
+        };
+        timeout(self.limits.request_timeout, work).await.map_err(|_| TransportError::Deadline)?
+    }
     /// Observe the original Create through the registered peer, without
     /// accepting another operation or requesting execution/credential repair.
     /// # Errors
@@ -20,7 +47,7 @@ impl InternalClient {
                 sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH,
                 encoded,
                 REQUEST_BODY_BYTES,
-                crate::lifecycle_v3::CREATE_OBSERVATION_BODY_BYTES,
+                crate::lifecycle::CREATE_OBSERVATION_BODY_BYTES,
             ).await?;
             let view: sandproof_protocol::lifecycle::CreateObservation = serde_json::from_slice(&bytes)
                 .map_err(|_| TransportError::InvalidResponse)?;
@@ -33,7 +60,7 @@ impl InternalClient {
     /// physical result is implied; even a successful receipt grants no release.
     /// # Errors
     /// Bounds, original node, transport or full echoed identity failures retain work.
-    pub async fn record_lifecycle_v3(
+    pub async fn record_lifecycle(
         &self,
         intent: &AcceptedLifecycleIntent,
     ) -> Result<RecordedLifecycleIntent, TransportError> {

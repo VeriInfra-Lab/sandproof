@@ -1,4 +1,4 @@
-//! Protected registration for the original TLS-verified peer value.
+//! Protected current-center registration for the original TLS-verified peer.
 use crate::{CertificatePin, TransportError};
 use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, CenterIdentity};

@@ -43,6 +43,24 @@ pub(crate) fn create_binding(
     now_ms: u64,
     policy: LifecyclePolicy,
 ) -> Result<CreateBinding, PortError> {
+    let parameters = create_parameters(template, options, timeout_secs, policy)?;
+    Ok(CreateBinding {
+        template_revision: parameters.template_revision,
+        template_digest: parameters.template_digest,
+        resources: parameters.resources,
+        options: parameters.options,
+        startup_deadline_ms: now_ms.checked_add(parameters.startup_timeout_ms).ok_or(PortError::Invalid)?,
+        timeout_ms: parameters.timeout_ms,
+        max_lifetime_ms: parameters.max_lifetime_ms,
+    })
+}
+
+pub(crate) fn create_parameters(
+    template: &PublicTemplate,
+    options: &CreateOptions,
+    timeout_secs: u64,
+    policy: LifecyclePolicy,
+) -> Result<sandproof_protocol::lifecycle::CreateParameters, PortError> {
     if !template.is_valid()
         || options.template.is_some()
         || timeout_secs == 0
@@ -54,7 +72,7 @@ pub(crate) fn create_binding(
         return Err(PortError::Invalid);
     }
     let shape = template.resources();
-    Ok(CreateBinding {
+    Ok(sandproof_protocol::lifecycle::CreateParameters {
         template_revision: template.revision().clone(),
         template_digest: template.digest(),
         resources: Resources {
@@ -64,11 +82,7 @@ pub(crate) fn create_binding(
             disk_bytes: shape.disk_bytes,
         },
         options: serde_json::to_vec(options).map_err(|_| PortError::Invalid)?,
-        startup_deadline_ms: now_ms
-            .checked_add(
-                seconds_to_milliseconds(policy.startup_timeout_secs).ok_or(PortError::Invalid)?,
-            )
-            .ok_or(PortError::Invalid)?,
+        startup_timeout_ms: seconds_to_milliseconds(policy.startup_timeout_secs).ok_or(PortError::Invalid)?,
         timeout_ms: seconds_to_milliseconds(timeout_secs).ok_or(PortError::Invalid)?,
         max_lifetime_ms: seconds_to_milliseconds(policy.max_lifetime_secs)
             .ok_or(PortError::Invalid)?,

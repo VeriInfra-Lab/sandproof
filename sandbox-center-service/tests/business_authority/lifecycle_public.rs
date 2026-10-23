@@ -16,7 +16,7 @@ fn policy() -> LifecyclePolicy {
         public_ipv4_enabled: false,
     }
 }
-fn request() -> PublicCreateRequest {
+pub(super) fn request() -> PublicCreateRequest {
     let template =
         PublicTemplate::from_binding(descriptor("base", None), "base-r1".try_into().unwrap())
             .unwrap();
@@ -41,7 +41,7 @@ fn request() -> PublicCreateRequest {
         },
     }
 }
-fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
+pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
     let mut state = envelope();
     state.center = state
         .center
@@ -305,7 +305,7 @@ async fn assert_public_views<P: sandproof_api::ControllerPort>(
     use axum::http::StatusCode;
     use sandproof_protocol::lifecycle::PublicSessionView;
     let path = format!(
-        "/v3/lifecycle/sessions/{}",
+        "/sandproof/lifecycle/sessions/{}",
         accepted.session.as_protocol_id().as_str()
     );
     let response = send_public(router, "GET", &path, OWNER_KEY, None).await;
@@ -352,7 +352,7 @@ async fn actual_public_http_port_commits_only_authenticated_full_input_and_repla
     .unwrap();
     let input = request();
     let value = serde_json::to_value(&input).unwrap();
-    let path = "/v3/lifecycle/create";
+    let path = "/sandproof/lifecycle/create";
     let before = business.snapshot().unwrap();
     assert_eq!(
         send_public(&router, "POST", path, "wrong", Some(&value))

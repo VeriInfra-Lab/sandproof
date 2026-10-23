@@ -33,10 +33,15 @@ fn host_settings() -> Value {
     json!({
         "native": native,
         "inbox": {
+            "center": {"deployment": "deployment-a", "center": "center-a"},
             "node": {"deployment_id": "deployment-a", "node_id": "host-a", "node_generation": 1},
-            "max_sandboxes": 2, "operations_per_sandbox": 4,
-            "max_options_bytes": 1024
+            "host_epoch": null,
+            "max_sessions": 2, "max_operations_per_session": 8, "max_options_bytes": 1024,
+            "max_profile_bytes": 4096, "max_manifest_bytes": 16384
         },
+        "protected_bootstrap_path": "/fixture/host-bootstrap.json",
+        "source_observation": {"max_work_bytes":4096,"max_configuration_bytes":1024,
+            "max_executable_bytes":67108864,"max_kernel_bytes":268435456,"max_disk_bytes":4096},
         "internal": {
             "bind": "127.0.0.1:3044", "max_connections": 10,
             "handshake_timeout_ms": 1000, "request_timeout_ms": 5000,
@@ -80,12 +85,35 @@ fn host_budget_retains_management_and_destroy_capacity() {
     for (path, value) in [
         ("/internal/max_connections", json!(8)),
         ("/internal/max_connections", json!(8193)),
-        ("/inbox/operations_per_sandbox", json!(3)),
+        ("/inbox/max_sessions", json!(0)),
+        ("/inbox/max_operations_per_session", json!(7)),
+        ("/inbox/max_operations_per_session", json!(129)),
+        ("/inbox/max_profile_bytes", json!(0)),
+        ("/inbox/max_manifest_bytes", json!(262145)),
         ("/internal/request_timeout_ms", json!(0)),
     ] {
         let mut settings = host_settings();
         *settings.pointer_mut(path).unwrap() = value;
         assert!(!check(settings));
+    }
+}
+
+#[test]
+fn current_bootstrap_settings_reject_foreign_missing_and_old_shapes() {
+    for (pointer, replacement) in [
+        ("/inbox/center/deployment", json!("another-deployment")),
+        ("/protected_bootstrap_path", json!("relative/bootstrap.json")),
+        ("/source_observation/max_work_bytes", json!(1023)),
+        ("/source_observation/max_configuration_bytes", json!(0)),
+    ] {
+        let mut value = host_settings();
+        *value.pointer_mut(pointer).unwrap() = replacement;
+        assert!(!check(value), "accepted invalid current input {pointer}");
+    }
+    for field in ["max_sandboxes", "operations_per_sandbox"] {
+        let mut value = host_settings();
+        value["inbox"][field] = json!(4);
+        assert!(!check(value), "accepted retired inbox field {field}");
     }
 }
 
@@ -105,8 +133,9 @@ fn cache_is_one_reserved_source_not_a_static_availability_fallback() {
 #[test]
 fn full_retained_inbox_requires_its_original_single_value_reservation() {
     let mut value = host_settings();
-    value["inbox"]["max_sandboxes"] = json!(5);
+    value["inbox"]["max_sessions"] = json!(5);
     value["inbox"]["max_options_bytes"] = json!(4096);
+    value["inbox"]["max_manifest_bytes"] = json!(32768);
     let config: HostConfig = serde_json::from_value(value.clone()).unwrap();
     let required = config.inbox.required_bytes();
     // The former single-host fixture's row cap is not a distributed inbox cap.
@@ -134,6 +163,8 @@ fn documented_host_example_uses_the_original_validator_and_rejects_missing_or_ol
     for field in [
         "native",
         "inbox",
+        "protected_bootstrap_path",
+        "source_observation",
         "internal",
         "template_cache",
         "artifact_source",

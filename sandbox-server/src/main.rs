@@ -22,6 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use cli::Command;
     match cli::parse(std::env::args_os().skip(1))? {
         Command::Initialize(path) => linux::host_entry::initialize(&path),
+        Command::ProvisionBootstrap(path) => linux::host_entry::provision_bootstrap(&path),
         Command::Serve(path) => linux::host_entry::serve(&path).await,
         Command::Audit(path) => linux::host_entry::audit(&path),
         Command::ObserveCenter(path) => linux::host_entry::observe_center(&path).await,

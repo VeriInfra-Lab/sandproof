@@ -69,7 +69,7 @@ struct Gateway {
     limits: TransferLimits,
 }
 type AuthorizedRoute = (
-    sandproof_protocol::internal::ControlIdentity,
+    sandproof_protocol::lifecycle::LifecycleAccessIdentity,
     sandproof_internal::InternalClient,
     tokio::time::Instant,
     Arc<RequestLease>,
@@ -85,7 +85,7 @@ async fn authorize(
     tokio::task::spawn_blocking(move || {
         let observed_at = tokio::time::Instant::now();
         let route = routes.resolve(&headers, &token)?;
-        let client = hosts.client(&route.request.identity.node)?;
+        let client = hosts.client(&route.identity.node)?;
         let remaining = route
             .max_end_at_ms
             .checked_sub(route.authorized_at_ms)
@@ -97,7 +97,7 @@ async fn authorize(
         // Return the same entry permit: successful authentication does not
         // remove bounded body preparation and dispatch from R1. Cancellation
         // still leaves actual blocking work owning it until that work exits.
-        Ok((route.request.identity, client, deadline, lease))
+        Ok((route.identity, client, deadline, lease))
     })
     .await
     .map_err(|_| PortError::Busy)?
@@ -200,7 +200,7 @@ impl Gateway {
         let instance = (
             identity.node.node_id.as_str().to_owned(),
             identity.node.node_generation.get(),
-            identity.sandbox_id.as_str().to_owned(),
+            identity.session.as_protocol_id().as_str().to_owned(),
         );
         let lease = match self.transfers.acquire(instance, control) {
             Ok(lease) => lease,

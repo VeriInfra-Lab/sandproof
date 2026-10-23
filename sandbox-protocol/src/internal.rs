@@ -29,11 +29,11 @@ impl ContractVersions {
         }
     }
 }
-pub const PROBE_PATH: &str = "/internal/v2/probe";
+pub const PROBE_PATH: &str = "/internal/probe";
 pub const PROBE_BODY_BYTES: usize = 4096;
 /// Namespace-specific data requests use the original envd URI after this prefix.
 /// The only routable destination is the node's original, authorized namespace.
-pub const DATA_PATH_PREFIX: &str = "/internal/v2/data";
+pub const DATA_PATH_PREFIX: &str = "/internal/data";
 pub const DATA_IDENTITY_HEADER: &str = "x-sandproof-control-identity";
 pub const DATA_IDENTITY_BYTES: usize = 2048;
 

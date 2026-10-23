@@ -7,10 +7,10 @@ pub const MAX_OPTIONS_BYTES: usize = 65_536;
 /// JSON byte arrays encode a byte in at most four bytes including separators.
 /// Fixed identity/shape allowance preserves the original option limit.
 pub const LIFECYCLE_BODY_BYTES: usize = 4 * MAX_OPTIONS_BYTES + 8192;
-pub const LIFECYCLE_PATH: &str = "/internal/v2/lifecycle";
+pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
 /// The center sends the EXACT result only after its durable commit. This is
 /// not a lifecycle intent, an arbitrary deletion list or a window-close proof.
-pub const RESULT_CONFIRMATION_PATH: &str = "/internal/v2/result-confirmation";
+pub const RESULT_CONFIRMATION_PATH: &str = "/internal/result-confirmation";
 pub const RESULT_CONFIRMATION_BODY_BYTES: usize = 8192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

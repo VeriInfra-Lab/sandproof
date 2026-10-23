@@ -254,7 +254,7 @@ async fn absent_foreign_and_wrong_role_client_certificates_cannot_reach_handler(
             raw_request(
                 running.address,
                 raw_config(&certs, identity),
-                http_request("/internal/v2/probe", encoded),
+                http_request("/internal/probe", encoded),
             )
             .await
             .is_err()
@@ -299,7 +299,7 @@ async fn receiving_boundary_rejects_old_generation_wrong_binding_and_version() {
             running.address,
             raw_config(&certs, Some(&certs.center)),
             http_request(
-                "/internal/v2/probe",
+                "/internal/probe",
                 Bytes::from(serde_json::to_vec(&request).unwrap()),
             ),
         )
@@ -324,29 +324,29 @@ async fn probe_rejects_unlisted_paths_methods_and_malformed_wire() {
     let body = Bytes::from(serde_json::to_vec(&request()).unwrap());
     let mut cases = vec![
         (
-            http_request("/internal/v2/execute", body.clone()),
+            http_request("/internal/execute", body.clone()),
             StatusCode::NOT_FOUND,
         ),
         (
-            http_request("/internal/v2/probe?url=private", body.clone()),
+            http_request("/internal/probe?url=private", body.clone()),
             StatusCode::NOT_FOUND,
         ),
         (
             http_request(
-                "/internal/v2/probe",
+                "/internal/probe",
                 Bytes::from_static(b"private-invalid-input"),
             ),
             StatusCode::BAD_REQUEST,
         ),
         (
-            http_request("/internal/v2/probe", Bytes::from(vec![b' '; 4097])),
+            http_request("/internal/probe", Bytes::from(vec![b' '; 4097])),
             StatusCode::PAYLOAD_TOO_LARGE,
         ),
     ];
-    let mut get = http_request("/internal/v2/probe", body.clone());
+    let mut get = http_request("/internal/probe", body.clone());
     *get.method_mut() = hyper::Method::GET;
     cases.push((get, StatusCode::METHOD_NOT_ALLOWED));
-    let mut compressed = http_request("/internal/v2/probe", body);
+    let mut compressed = http_request("/internal/probe", body);
     compressed
         .headers_mut()
         .insert("content-encoding", "gzip".parse().unwrap());
@@ -355,7 +355,7 @@ async fn probe_rejects_unlisted_paths_methods_and_malformed_wire() {
     unknown["url"] = "private-untrusted-target".into();
     cases.push((
         http_request(
-            "/internal/v2/probe",
+            "/internal/probe",
             Bytes::from(serde_json::to_vec(&unknown).unwrap()),
         ),
         StatusCode::BAD_REQUEST,
@@ -438,7 +438,7 @@ async fn chunked_request_without_length_cannot_bypass_the_body_budget() {
         .unwrap();
     let mut oversized_body = serde_json::to_vec(&request()).unwrap();
     oversized_body.resize(4097, b' ');
-    stream.write_all(b"POST /internal/v2/probe HTTP/1.1\r\nHost: host.test\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n1001\r\n").await.unwrap();
+    stream.write_all(b"POST /internal/probe HTTP/1.1\r\nHost: host.test\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n1001\r\n").await.unwrap();
     // Still valid JSON: removing Limited would publish a successful probe.
     stream.write_all(&oversized_body).await.unwrap();
     stream.write_all(b"\r\n0\r\n\r\n").await.unwrap();
@@ -577,7 +577,7 @@ async fn handshake_and_partial_http_deadlines_release_slots_without_sleeps() {
     let mut stream = raw_stream(running.address, raw_config(&certs, Some(&certs.center)))
         .await
         .unwrap();
-    stream.write_all(b"POST /internal/v2/probe HTTP/1.1\r\nHost: host.test\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{").await.unwrap();
+    stream.write_all(b"POST /internal/probe HTTP/1.1\r\nHost: host.test\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{").await.unwrap();
     stream.flush().await.unwrap();
     wait_for_active(&running.server, 1).await;
     tokio::time::pause();

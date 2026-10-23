@@ -13,10 +13,9 @@ use sandproof_internal::{
     template::{ValidationEvidence, ValidationRequest},
 };
 use sandproof_node::NodeHost;
-use sandproof_protocol::internal::{
-    ControlIdentity, NodeIdentity,
-    lifecycle::{LifecycleRequest, LifecycleResponse},
-    window::{WindowCloseAck, WindowCloseRequest},
+use sandproof_protocol::{
+    internal::NodeIdentity,
+    lifecycle::{AcceptedLifecycleIntent, AuthenticatedCenterContext, CreateObservation, LifecycleAccessIdentity, RecordedLifecycleIntent},
 };
 use std::sync::Arc;
 
@@ -28,23 +27,24 @@ pub(super) struct RegisteredHost {
     pub(super) retention_slots: u16,
 }
 impl LifecycleReceiver for RegisteredHost {
-    async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
-        self.facade.receive(request).await
+    async fn observe_terminal(&self, intent: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError> {
+        self.facade.observe_terminal(intent, context).await
     }
-    async fn confirm(&self, result: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
-        self.facade.confirm(result).await
+    async fn record_lifecycle(&self, intent: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<RecordedLifecycleIntent, ReceiveError> {
+        self.facade.record_lifecycle(intent, context).await
     }
-    async fn close(&self, request: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
-        self.facade.close(request).await
+    async fn observe_create(&self, intent: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<CreateObservation, ReceiveError> {
+        self.facade.observe_create(intent, context).await
     }
 }
 impl DataReceiver for RegisteredHost {
     async fn receive_data(
         &self,
-        identity: ControlIdentity,
+        identity: LifecycleAccessIdentity,
+        context: AuthenticatedCenterContext,
         request: Request<Body>,
     ) -> Response<Body> {
-        self.facade.receive_data(identity, request).await
+        self.facade.receive_data(identity, context, request).await
     }
 }
 impl ValidationReceiver for RegisteredHost {

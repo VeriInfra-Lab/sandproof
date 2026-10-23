@@ -17,27 +17,30 @@ use hyper::{
     Method, Request, Response, StatusCode,
     body::{Bytes, Incoming},
 };
-use sandproof_protocol::internal::lifecycle::{
-    LIFECYCLE_BODY_BYTES, LIFECYCLE_PATH, LifecycleRequest, LifecycleResponse,
-    RESULT_CONFIRMATION_BODY_BYTES, RESULT_CONFIRMATION_PATH,
-};
-use sandproof_protocol::internal::window::{
-    WINDOW_CLOSE_BODY_BYTES, WINDOW_CLOSE_PATH, WindowCloseAck, WindowCloseRequest,
-};
 use sandproof_protocol::internal::{
-    ControlIdentity, DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity,
+    DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity,
     PROBE_BODY_BYTES, PROBE_PATH, ProbeRequest, ProbeResponse,
 };
+use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use std::{convert::Infallible, sync::Arc};
 use tokio::{net::TcpListener, sync::Semaphore, sync::oneshot, sync::watch, time::timeout};
-mod lifecycle_v3;
+mod lifecycle;
 
 /// Effectful receiver after mutual authentication AND complete node binding.
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
+    /// Read the same current Destroy; unsupported fixtures cannot acknowledge
+    /// cleanup. The original provider retains all physical/material conditions.
+    fn observe_terminal(
+        &self,
+        _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError>> + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
     /// One original readonly Create observation; unsupported receivers refuse.
-    fn observe_create_v3(
+    fn observe_create(
         &self,
         _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
@@ -48,7 +51,7 @@ pub trait LifecycleReceiver: Send + Sync + 'static {
     }
     /// Persist only through the original application. Unsupported receivers
     /// cannot acknowledge an echo; even a successful record is not Ready.
-    fn record_v3(
+    fn record_lifecycle(
         &self,
         _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
@@ -57,22 +60,6 @@ pub trait LifecycleReceiver: Send + Sync + 'static {
     > + Send {
         std::future::ready(Err(ReceiveError::Unavailable))
     }
-    fn receive(
-        &self,
-        request: LifecycleRequest,
-    ) -> impl std::future::Future<Output = Result<LifecycleResponse, ReceiveError>> + Send;
-    /// Accept only an exact saved FINAL result after its center commit; no
-    /// fallback implementation can acknowledge unsupported durable compaction.
-    fn confirm(
-        &self,
-        result: LifecycleResponse,
-    ) -> impl std::future::Future<Output = Result<LifecycleResponse, ReceiveError>> + Send;
-    /// Close only a fully confirmed terminal window in the original durable
-    /// transaction. Missing support cannot fall back to an acknowledged echo.
-    fn close(
-        &self,
-        request: WindowCloseRequest,
-    ) -> impl std::future::Future<Output = Result<WindowCloseAck, ReceiveError>> + Send;
 }
 
 /// A data stream is authorized AGAIN by the original local application. Mutual
@@ -81,7 +68,8 @@ pub trait LifecycleReceiver: Send + Sync + 'static {
 pub trait DataReceiver: Send + Sync + 'static {
     fn receive_data(
         &self,
-        identity: ControlIdentity,
+        identity: LifecycleAccessIdentity,
+        context: AuthenticatedCenterContext,
         request: Request<Body>,
     ) -> impl std::future::Future<Output = Response<Body>> + Send;
 }
@@ -96,19 +84,14 @@ pub enum ReceiveError {
 
 /// Diagnostic receivers reject lifecycle calls; no public deployment fallback.
 pub struct RejectLifecycle;
-impl LifecycleReceiver for RejectLifecycle {
-    async fn receive(&self, _request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
-        Err(ReceiveError::Unavailable)
-    }
-    async fn confirm(&self, _: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
-        Err(ReceiveError::Unavailable)
-    }
-    async fn close(&self, _: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
-        Err(ReceiveError::Unavailable)
-    }
-}
+impl LifecycleReceiver for RejectLifecycle {}
 impl DataReceiver for RejectLifecycle {
-    async fn receive_data(&self, _: ControlIdentity, _: Request<Body>) -> Response<Body> {
+    async fn receive_data(
+        &self,
+        _: LifecycleAccessIdentity,
+        _: AuthenticatedCenterContext,
+        _: Request<Body>,
+    ) -> Response<Body> {
         sandproof_data_transport::response(StatusCode::SERVICE_UNAVAILABLE)
     }
 }
@@ -139,7 +122,7 @@ pub struct InternalServer<H> {
     limits: Limits,
     connections: Arc<Semaphore>,
     handler: Arc<H>,
-    lifecycle_v3: Option<crate::lifecycle_v3::CenterPeerRegistration>,
+    lifecycle: Option<crate::lifecycle::CenterPeerRegistration>,
 }
 
 impl<H> Clone for InternalServer<H> {
@@ -150,7 +133,7 @@ impl<H> Clone for InternalServer<H> {
             limits: self.limits,
             connections: Arc::clone(&self.connections),
             handler: Arc::clone(&self.handler),
-            lifecycle_v3: self.lifecycle_v3.clone(),
+            lifecycle: self.lifecycle.clone(),
         }
     }
 }
@@ -166,21 +149,21 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             limits,
             connections: Arc::new(Semaphore::new(limits.max_connections)),
             handler: Arc::new(handler),
-            lifecycle_v3: None,
+            lifecycle: None,
         }
     }
 
-    /// Explicit protected assembly only; ordinary v2 construction stays closed.
+    /// Bind the only lifecycle route to its protected current center.
     /// # Errors
     /// The original server node must match the protected peer registration.
-    pub fn with_lifecycle_v3(
+    pub fn with_center_peer(
         mut self,
-        registration: crate::lifecycle_v3::CenterPeerRegistration,
+        registration: crate::lifecycle::CenterPeerRegistration,
     ) -> Result<Self, TransportError> {
         if !registration.matches_node(&self.node) {
             return Err(TransportError::Configuration);
         }
-        self.lifecycle_v3 = Some(registration);
+        self.lifecycle = Some(registration);
         Ok(self)
     }
 
@@ -208,7 +191,7 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
                 node: self.node.clone(),
                 handler: Arc::clone(&self.handler),
                 limits: self.limits,
-                lifecycle_v3: self.lifecycle_v3.clone(),
+                lifecycle: self.lifecycle.clone(),
             },
         )
         .serve(listener, shutdown)
@@ -220,7 +203,7 @@ struct LifecycleHttp<H> {
     node: NodeIdentity,
     handler: Arc<H>,
     limits: Limits,
-    lifecycle_v3: Option<crate::lifecycle_v3::CenterPeerRegistration>,
+    lifecycle: Option<crate::lifecycle::CenterPeerRegistration>,
 }
 impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + StatusReceiver>
     ProtectedHttp for LifecycleHttp<H>
@@ -231,11 +214,25 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
         request: Request<Incoming>,
         streaming: watch::Sender<bool>,
     ) -> Result<Response<Body>, Infallible> {
+        if request.uri().path().starts_with(DATA_PATH_PREFIX) {
+            let Some(registration) = self.lifecycle.as_ref() else {
+                return Ok(sandproof_data_transport::response(StatusCode::SERVICE_UNAVAILABLE));
+            };
+            let Ok(context) = registration.context_for_verified_peer(peer) else {
+                return Ok(sandproof_data_transport::response(StatusCode::UNAUTHORIZED));
+            };
+            return Ok(receive_data(request, context, &*self.handler, streaming).await);
+        }
         if request.uri().path() == sandproof_protocol::lifecycle::LIFECYCLE_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
+            || request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
         {
-            let observation = request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH;
-            let work = lifecycle_v3::respond(request, peer, self.lifecycle_v3.as_ref(), &*self.handler, observation);
+            let call = if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH {
+                lifecycle::Call::CreateObservation
+            } else if request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH {
+                lifecycle::Call::TerminalObservation
+            } else { lifecycle::Call::Record };
+            let work = lifecycle::respond(request, peer, self.lifecycle.as_ref(), &*self.handler, call);
             return Ok(timeout(self.limits.request_timeout, work)
                 .await
                 .unwrap_or_else(|_| response(StatusCode::REQUEST_TIMEOUT, Bytes::new()))
@@ -246,7 +243,6 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             self.node.clone(),
             Arc::clone(&self.handler),
             self.limits,
-            streaming,
         )
         .await
     }
@@ -259,11 +255,7 @@ async fn route<
     node: NodeIdentity,
     handler: Arc<H>,
     limits: Limits,
-    streaming: watch::Sender<bool>,
 ) -> Result<Response<Body>, Infallible> {
-    if request.uri().path().starts_with(DATA_PATH_PREFIX) {
-        return Ok(receive_data(request, node, &*handler, streaming).await);
-    }
     let work = management_route(request, node, handler);
     Ok(timeout(limits.request_timeout, work)
         .await
@@ -273,7 +265,7 @@ async fn route<
 
 async fn receive_data<H: DataReceiver>(
     mut request: Request<Incoming>,
-    node: NodeIdentity,
+    context: AuthenticatedCenterContext,
     handler: &H,
     streaming: watch::Sender<bool>,
 ) -> Response<Body> {
@@ -285,12 +277,12 @@ async fn receive_data<H: DataReceiver>(
         if headers.next().is_some() || header.as_bytes().len() > DATA_IDENTITY_BYTES {
             return sandproof_data_transport::response(StatusCode::BAD_REQUEST);
         }
-        let Ok(identity) = serde_json::from_slice::<ControlIdentity>(header.as_bytes()) else {
+        let Ok(identity) = serde_json::from_slice::<LifecycleAccessIdentity>(header.as_bytes()) else {
             return sandproof_data_transport::response(StatusCode::BAD_REQUEST);
         };
         identity
     };
-    if identity.validate_node(&node).is_err() {
+    if identity.validate(&context).is_err() {
         return sandproof_data_transport::response(StatusCode::CONFLICT);
     }
     let path = request
@@ -311,7 +303,7 @@ async fn receive_data<H: DataReceiver>(
     request.headers_mut().remove("x-api-key");
     request.headers_mut().remove("x-access-token");
     let _ = streaming.send(true);
-    handler.receive_data(identity, request.map(Body::new)).await
+    handler.receive_data(identity, context, request.map(Body::new)).await
 }
 
 async fn management_route<
@@ -321,9 +313,6 @@ async fn management_route<
     node: NodeIdentity,
     handler: Arc<H>,
 ) -> Response<Full<Bytes>> {
-    let lifecycle = request.uri().path() == LIFECYCLE_PATH;
-    let confirmation = request.uri().path() == RESULT_CONFIRMATION_PATH;
-    let closing = request.uri().path() == WINDOW_CLOSE_PATH;
     let validation = request.uri().path() == VALIDATION_PATH;
     let cache = request.uri().path() == CACHE_PATH;
     let status_request = request.uri().path() == STATUS_PATH;
@@ -333,19 +322,10 @@ async fn management_route<
         CACHE_REQUEST_BYTES
     } else if validation {
         VALIDATION_REQUEST_BODY_BYTES
-    } else if closing {
-        WINDOW_CLOSE_BODY_BYTES
-    } else if confirmation {
-        RESULT_CONFIRMATION_BODY_BYTES
-    } else if lifecycle {
-        LIFECYCLE_BODY_BYTES
     } else {
         PROBE_BODY_BYTES
     };
-    let status = if (!lifecycle
-        && !confirmation
-        && !closing
-        && !validation
+    let status = if (!validation
         && !cache
         && !status_request
         && request.uri().path() != PROBE_PATH)
@@ -391,15 +371,6 @@ async fn management_route<
     }
     if validation {
         return validation_evidence(&bytes, &node, &*handler).await;
-    }
-    if closing {
-        return close_window(&bytes, &node, &*handler).await;
-    }
-    if confirmation {
-        return confirm_result(&bytes, &node, &*handler).await;
-    }
-    if lifecycle {
-        return receive_intent(&bytes, &node, &*handler).await;
     }
     let Ok(request) = serde_json::from_slice::<ProbeRequest>(&bytes) else {
         return response(StatusCode::BAD_REQUEST, Bytes::new());
@@ -447,71 +418,6 @@ async fn cache_template<H: CacheReceiver>(
         }
         Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
         Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
-            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
-        }
-    }
-}
-
-async fn receive_intent<H: LifecycleReceiver>(
-    bytes: &[u8],
-    node: &NodeIdentity,
-    handler: &H,
-) -> Response<Full<Bytes>> {
-    let Ok(request) = serde_json::from_slice::<LifecycleRequest>(bytes) else {
-        return response(StatusCode::BAD_REQUEST, Bytes::new());
-    };
-    if request.validate(node).is_err() {
-        return response(StatusCode::CONFLICT, Bytes::new());
-    }
-    let answer = handler.receive(request.clone()).await;
-    match answer {
-        Ok(answer) if answer.validate_for(&request).is_ok() => {
-            json_response(&answer, LIFECYCLE_BODY_BYTES)
-        }
-        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-        Ok(_) | Err(ReceiveError::Unavailable | ReceiveError::Capacity) => {
-            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
-        }
-    }
-}
-
-async fn confirm_result<H: LifecycleReceiver>(
-    bytes: &[u8],
-    node: &NodeIdentity,
-    handler: &H,
-) -> Response<Full<Bytes>> {
-    let Ok(result) = serde_json::from_slice::<LifecycleResponse>(bytes) else {
-        return response(StatusCode::BAD_REQUEST, Bytes::new());
-    };
-    if result.identity.validate_node(node).is_err() {
-        return response(StatusCode::CONFLICT, Bytes::new());
-    }
-    match handler.confirm(result.clone()).await {
-        Ok(answer) if answer == result => json_response(&answer, RESULT_CONFIRMATION_BODY_BYTES),
-        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-        Ok(_) | Err(ReceiveError::Unavailable | ReceiveError::Capacity) => {
-            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
-        }
-    }
-}
-
-async fn close_window<H: LifecycleReceiver>(
-    bytes: &[u8],
-    node: &NodeIdentity,
-    handler: &H,
-) -> Response<Full<Bytes>> {
-    let Ok(request) = serde_json::from_slice::<WindowCloseRequest>(bytes) else {
-        return response(StatusCode::BAD_REQUEST, Bytes::new());
-    };
-    if request.validate(node).is_err() {
-        return response(StatusCode::CONFLICT, Bytes::new());
-    }
-    match handler.close(request.clone()).await {
-        Ok(answer) if answer.validate_for(&request).is_ok() => {
-            json_response(&answer, WINDOW_CLOSE_BODY_BYTES)
-        }
-        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-        Ok(_) | Err(ReceiveError::Unavailable | ReceiveError::Capacity) => {
             response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
         }
     }

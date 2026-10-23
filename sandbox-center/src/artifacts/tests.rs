@@ -33,9 +33,8 @@ use sandproof_internal::{
     template::{ValidationEvidence, ValidationRequest},
 };
 use sandproof_protocol::internal::{
-    ControlIdentity, NodeIdentity,
-    lifecycle::{LifecycleRequest, LifecycleResponse, Resources},
-    window::{WindowCloseAck, WindowCloseRequest},
+    NodeIdentity,
+    lifecycle::Resources,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -452,24 +451,15 @@ impl CacheReceiver for VerifiedCache {
         })
     }
 }
-impl LifecycleReceiver for VerifiedCache {
-    async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
-        RejectLifecycle.receive(request).await
-    }
-    async fn confirm(&self, result: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
-        RejectLifecycle.confirm(result).await
-    }
-    async fn close(&self, request: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
-        RejectLifecycle.close(request).await
-    }
-}
+impl LifecycleReceiver for VerifiedCache {}
 impl DataReceiver for VerifiedCache {
     async fn receive_data(
         &self,
-        identity: ControlIdentity,
+        identity: sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
         request: axum::http::Request<axum::body::Body>,
     ) -> axum::http::Response<axum::body::Body> {
-        RejectLifecycle.receive_data(identity, request).await
+        RejectLifecycle.receive_data(identity, context, request).await
     }
 }
 impl ValidationReceiver for VerifiedCache {

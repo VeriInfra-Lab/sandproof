@@ -1,7 +1,6 @@
-//! Byte adapters for the explicitly versioned stateful lifecycle profile.
+//! Bounded byte adapters for the current lifecycle contract.
 //!
-//! This module does not install HTTP routes or authorize a driver. Existing v2
-//! endpoints retain their original parsing and behavior until v3 is wired in.
+//! A decoded value does not authorize execution or certify physical state.
 
 mod peer;
 pub use peer::CenterPeerRegistration;

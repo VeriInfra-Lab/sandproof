@@ -13,6 +13,23 @@ pub struct CurrentReadyFacts {
     pub observed_at_ms: u64,
 }
 impl CurrentReadyFacts {
+    /// Preserve the original execution and total lifetime after a normalized
+    /// update. Actual application of the current Renew is a separate journal
+    /// provider obligation; merely satisfying these values cannot prove it.
+    #[must_use]
+    pub fn matches_renewed(&self, original: &AcceptedLifecycleIntent, current: &AcceptedLifecycleIntent) -> bool {
+        let LifecycleOperation::Create { create, target_incarnation } = &original.request.operation else { return false; };
+        let LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } = &current.request.operation else { return false; };
+        let Ok(end) = u64::try_from(*end_at_ms) else { return false; };
+        *incarnation == *target_incarnation
+            && self.startup_deadline_ms == create.startup_deadline_ms
+            && self.started_at_ms <= self.startup_deadline_ms
+            && self.started_at_ms.checked_add(create.max_lifetime_ms) == Some(self.max_end_at_ms)
+            && self.started_at_ms <= self.observed_at_ms
+            && self.observed_at_ms < self.end_at_ms
+            && self.end_at_ms <= self.max_end_at_ms
+            && if *extend_only { self.end_at_ms >= end } else { self.end_at_ms == end }
+    }
     /// Shape and original-lifetime checks, not proof of physical observation.
     #[must_use]
     pub fn matches_create(&self, intent: &AcceptedLifecycleIntent) -> bool {
@@ -71,6 +88,18 @@ impl CreateObservation {
             return false;
         }
         if self.current_request != *original {
+            if matches!(self.current_request.request.operation, LifecycleOperation::Renew { .. }) {
+                if self.current_request.accepted_version <= original.accepted_version
+                    || self.current_request.accepted_version_for_request() != Some(self.current_request.accepted_version)
+                { return false; }
+                return match &self.readiness {
+                    CurrentCreateReadiness::Observed { facts } => self.historical_create_succeeded
+                        && facts.matches_renewed(original, &self.current_request),
+                    CurrentCreateReadiness::NotRunning | CurrentCreateReadiness::Expired
+                    | CurrentCreateReadiness::Pending => true,
+                    CurrentCreateReadiness::NotCurrent => false,
+                };
+            }
             return self.current_request.accepted_version > original.accepted_version
                 && self.readiness == CurrentCreateReadiness::NotCurrent;
         }

@@ -1,17 +1,24 @@
-//! Uses the original post-TLS peer value, not a header or a claimed certificate.
+//! Current lifecycle route bound to the original post-TLS peer value.
 use super::{
     BodyExt, Bytes, CertificatePin, Full, Incoming, LifecycleReceiver, Limited, Method,
     ReceiveError, Request, Response, StatusCode, json_response, response,
 };
-use crate::lifecycle_v3::{CenterPeerRegistration, REQUEST_BODY_BYTES, CREATE_OBSERVATION_BODY_BYTES};
+use crate::lifecycle::{CenterPeerRegistration, REQUEST_BODY_BYTES, CREATE_OBSERVATION_BODY_BYTES};
 use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
+
+#[derive(Clone, Copy)]
+pub(super) enum Call {
+    Record,
+    CreateObservation,
+    TerminalObservation,
+}
 
 pub(super) async fn respond<H: LifecycleReceiver>(
     request: Request<Incoming>,
     peer: CertificatePin,
     registration: Option<&CenterPeerRegistration>,
     handler: &H,
-    observation: bool,
+    call: Call,
 ) -> Response<Full<Bytes>> {
     let Some(registration) = registration else {
         return response(StatusCode::NOT_FOUND, Bytes::new());
@@ -57,14 +64,21 @@ pub(super) async fn respond<H: LifecycleReceiver>(
     if intent.validate(&context).is_err() {
         return response(StatusCode::CONFLICT, Bytes::new());
     }
-    if observation {
-        return match handler.observe_create_v3(intent.clone(), context).await {
+    if matches!(call, Call::CreateObservation) {
+        return match handler.observe_create(intent.clone(), context).await {
             Ok(view) if view.matches_request(&intent) => json_response(&view, CREATE_OBSERVATION_BODY_BYTES),
             Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
             Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
         };
     }
-    match handler.record_v3(intent.clone(), context).await {
+    if matches!(call, Call::TerminalObservation) {
+        return match handler.observe_terminal(intent.clone(), context).await {
+            Ok(view) if view.matches_request(&intent) => json_response(&view, REQUEST_BODY_BYTES),
+            Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+        };
+    }
+    match handler.record_lifecycle(intent.clone(), context).await {
         Ok(recorded) if recorded.matches(&intent) => json_response(&recorded, REQUEST_BODY_BYTES),
         Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
         Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {

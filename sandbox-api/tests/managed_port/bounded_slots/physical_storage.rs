@@ -8,7 +8,6 @@ use sandproof_controller_service::{CapacityConfig, ConsolePolicy, MaintenanceCon
 
 fn capacity() -> MaintenanceConfig {
     MaintenanceConfig {
-        checkpoint_profile: sandproof_controller_service::CheckpointProfile::CreateKill,
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10_000,

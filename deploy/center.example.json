@@ -1,5 +1,6 @@
 {
   "deployment_id": "example-deployment",
+  "center_id": "example-center",
   "bind": "127.0.0.1:3000",
   "domain": "example.invalid",
   "credentials": [

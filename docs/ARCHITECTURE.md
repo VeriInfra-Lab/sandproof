@@ -96,7 +96,7 @@ Redis、SQLite、文件提交和 VMM 动作不是一个事务。先登记计划/
 5. 首次制备原 `physical-profile` 与缓存 `.cache.lock`，均为 root/0600、空的普通单链接文件；缓存和原 DB/状态/监狱目录必须是本次空身份。不要覆盖现有协调文件、账本、缓存或失败现场。物理配置显式计费实例/清理、宿主缓存、中心模板与登记、Redis/AOF、二进制和控制材料；原 Rust 激活检查全峰值的两倍余量。Redis `maxmemory` 不限制 AOF 总大小，重写与观察也不能被称为长期硬磁盘上限；`service_data.peak_bytes` 是物理预留，不是对 Redis 的写入限额。部署者须为独立 Redis 受管根落实已批准的磁盘限额及 AOF/重写/备份峰值、恢复检查，不能截断 AOF 或削减原预算造通过，也不重挂载整个宿主文件系统。
 6. 原 VM cgroup 父目录 `/sys/fs/cgroup/sandproof-vms` 由可信 root 显式制备，必须在 `sandproof-host.service` 单元 cgroup **之外**，保持原 `host_resources` 与位置内存检查。服务控制内存/CPU及宿主总体余量使用同一批准服务预算和实际 cgroup 核验；这些单元不猜测 `MemoryMax` 或另外设磁盘默认值，上线前须明确配置相符的资源 drop-in。样例显式丢弃三服务 stdout/stderr 及 Redis 文件日志，放弃控制台诊断，不是已部署的监控；需要保留日志时须另审核有限收集/轮转及原物理预算，不把日志默认交给无限 journald。
 
-把审核后的配置和单位文件装入样例所示固定路径，先以部署主机的 `systemd-analyze verify` 检查单位，再执行以下**首次**顺序；命令不生成材料或修复缺失状态：
+把审核后的配置和单位文件装入样例所示固定路径，先以部署主机的 `systemd-analyze verify` 检查单位。宿主样例中的 `inbox.host_epoch: null` 只供首次制备使用，不能直接启动服务：先显式执行 `provision-bootstrap --config /var/lib/sandproof-host/control/host.json`。它在 `protected_bootstrap_path` 创建新的 root 只读登记材料，输出实际登记引用；不覆盖已有文件，不初始化数据库，也不启动 VM。部署者把输出的完整引用写入同一受保护配置的 `inbox.host_epoch` 后，再执行以下**首次**顺序。初始化核对该文件和现场，再将原引用持久绑定；后续启动、审计都拒绝缺失、改变或不匹配的登记，不用当前现场替换旧引用。这份宿主初始化登记不证明某个运行 VM 可以捕获或恢复。
 
 ```sh
 sudo systemctl start sandproof-redis.service

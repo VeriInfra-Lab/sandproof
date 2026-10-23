@@ -9,9 +9,9 @@ use sandproof_internal::{
     ClientTls, DataReceiver, InternalClient, InternalServer, LifecycleReceiver, Limits,
     ReceiveError, RegisteredEndpoint, ServerTls, TransportError,
 };
-use sandproof_protocol::internal::{
-    ControlIdentity, ProbeRequest,
-    lifecycle::{LifecycleRequest, LifecycleResponse},
+use sandproof_protocol::internal::ProbeRequest;
+use sandproof_protocol::lifecycle::{
+    AuthenticatedCenterContext, CenterIdentity, LifecycleAccessIdentity, OperationKey,
 };
 use std::{
     io,
@@ -50,35 +50,17 @@ impl sandproof_internal::ValidationReceiver for Streams {
         Err(ReceiveError::Unavailable)
     }
 }
-impl LifecycleReceiver for Streams {
-    async fn receive(&self, _: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
-        Err(ReceiveError::Unavailable)
-    }
-    async fn confirm(&self, _: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
-        Err(ReceiveError::Unavailable)
-    }
-    async fn close(
-        &self,
-        _: sandproof_protocol::internal::window::WindowCloseRequest,
-    ) -> Result<sandproof_protocol::internal::window::WindowCloseAck, ReceiveError> {
-        Err(ReceiveError::Unavailable)
-    }
-}
+impl LifecycleReceiver for Streams {}
 impl DataReceiver for Streams {
     async fn receive_data(
         &self,
-        identity: ControlIdentity,
+        identity: LifecycleAccessIdentity,
+        context: AuthenticatedCenterContext,
         request: Request<Body>,
     ) -> Response<Body> {
-        assert_eq!(
-            identity,
-            wire::request(
-                1,
-                1,
-                sandproof_protocol::internal::lifecycle::Intent::Create
-            )
-            .identity
-        );
+        assert_eq!(identity, self::identity());
+        assert_eq!(context.center(), &center());
+        assert_eq!(context.expected_node(), &wire::node("host-a"));
         assert_eq!(request.uri(), "/process.Process/Start?fixture=1");
         for secret in [
             "x-api-key",
@@ -116,7 +98,9 @@ impl Fixture {
             wire::node("host-a"),
             limits,
             sandproof_internal::diagnostic::RejectTemplateCache::new(Streams(Arc::clone(&senders))),
-        );
+        ).with_center_peer(sandproof_internal::lifecycle::CenterPeerRegistration::new(
+            center(), wire::node("host-a"), vec![certs.center.pin()],
+        ).unwrap()).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let client = InternalClient::new(
             ClientTls::new(
@@ -163,13 +147,28 @@ fn data_request() -> Request<Body> {
         .body(Body::empty())
         .unwrap()
 }
-fn identity() -> ControlIdentity {
-    wire::request(
-        1,
-        1,
-        sandproof_protocol::internal::lifecycle::Intent::Create,
-    )
-    .identity
+fn center() -> CenterIdentity {
+    CenterIdentity {
+        deployment: wire::node("host-a").deployment_id,
+        center: "center".try_into().unwrap(),
+    }
+}
+fn identity() -> LifecycleAccessIdentity {
+    let node = wire::node("host-a");
+    LifecycleAccessIdentity {
+        protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
+        center: center(),
+        operation: OperationKey {
+            deployment: node.deployment_id.clone(),
+            owner: "tenant-a".try_into().unwrap(),
+            window: 1.try_into().unwrap(),
+            sequence: 1.try_into().unwrap(),
+        },
+        node,
+        session: "sandbox-1".try_into().unwrap(),
+        accepted_version: 1,
+        incarnation: 1.try_into().unwrap(),
+    }
 }
 fn max_deadline() -> tokio::time::Instant {
     tokio::time::Instant::now() + Duration::from_mins(1)
@@ -296,6 +295,25 @@ async fn valid_center_certificate_cannot_select_another_registered_node() {
     drop(response);
     idle_client(&client).await;
     assert!(f.senders.lock().unwrap().is_empty());
+    f.stop().await;
+}
+
+#[tokio::test]
+async fn verified_sender_cannot_replace_the_protected_center_or_accepted_version() {
+    let f = Fixture::new().await;
+    let mut foreign = identity();
+    foreign.center.center = "other-center".try_into().unwrap();
+    let mut zero = identity();
+    zero.accepted_version = 0;
+    for identity in [foreign, zero] {
+        let response = f.client.stream_data(
+            &identity, data_request(), Arc::new(()), max_deadline(),
+        ).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        drop(response);
+        idle_client(&f.client).await;
+        assert!(f.senders.lock().unwrap().is_empty());
+    }
     f.stop().await;
 }
 

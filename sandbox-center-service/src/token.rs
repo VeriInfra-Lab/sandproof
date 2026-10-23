@@ -2,7 +2,7 @@
 //! Changing an intent (renewal) does not invalidate an existing SDK connection.
 use ring::hmac;
 use sandproof_api::PortError;
-use sandproof_protocol::internal::ControlIdentity;
+use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
 
 pub(crate) struct Tokens(hmac::Key);
 impl Tokens {
@@ -12,21 +12,24 @@ impl Tokens {
         }
         Ok(Self(hmac::Key::new(hmac::HMAC_SHA256, key)))
     }
-    fn message(identity: &ControlIdentity) -> Result<Vec<u8>, PortError> {
-        let mut message = b"sandproof/center/data-token/v1\0".to_vec();
+    fn message(identity: &LifecycleAccessIdentity) -> Result<Vec<u8>, PortError> {
+        let mut message = b"sandproof/center/data-token\0".to_vec();
         message.extend(
             serde_json::to_vec(&(
+                identity.center.deployment.as_str(),
+                identity.center.center.as_str(),
                 identity.node.deployment_id.as_str(),
                 identity.node.node_id.as_str(),
                 identity.node.node_generation.get(),
-                identity.tenant_id.as_str(),
-                identity.sandbox_id.as_str(),
+                identity.operation.owner.as_str(),
+                identity.session.as_protocol_id().as_str(),
+                identity.incarnation.get(),
             ))
             .map_err(|_| PortError::Busy)?,
         );
         Ok(message)
     }
-    pub(crate) fn issue(&self, identity: &ControlIdentity) -> Result<String, PortError> {
+    pub(crate) fn issue(&self, identity: &LifecycleAccessIdentity) -> Result<String, PortError> {
         const HEX: &[u8; 16] = b"0123456789abcdef";
         let tag = hmac::sign(&self.0, &Self::message(identity)?);
         Ok(tag
@@ -40,7 +43,7 @@ impl Tokens {
             })
             .collect())
     }
-    pub(crate) fn verify(&self, identity: &ControlIdentity, token: &str) -> bool {
+    pub(crate) fn verify(&self, identity: &LifecycleAccessIdentity, token: &str) -> bool {
         if token.len() != 64 {
             return false;
         }

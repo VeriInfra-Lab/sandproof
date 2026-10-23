@@ -20,6 +20,8 @@ use sandproof_internal::{
     check_protected_directory, read_protected,
 };
 use sandproof_protocol::DeploymentId;
+use sandproof_protocol::lifecycle::{CenterId, CenterIdentity, RequestWindowId};
+use sandproof_center_core::LifecycleWindow;
 use serde::Deserialize;
 use std::{
     collections::BTreeSet,
@@ -107,6 +109,7 @@ struct NodeFile {
 #[serde(deny_unknown_fields)]
 struct DeploymentFile {
     deployment_id: DeploymentId,
+    center_id: CenterId,
     bind: SocketAddr,
     domain: String,
     credentials: Vec<CredentialFile>,
@@ -384,12 +387,20 @@ impl CenterAssemblyInputs {
         if token_key.len() < 32 {
             return Err(invalid());
         }
+        let windows = file.tenants.iter().map(|tenant| Ok(LifecycleWindow {
+            owner: tenant.tenant.clone(),
+            window: RequestWindowId::try_from(1).map_err(|_| invalid())?,
+        })).collect::<Result<Vec<_>, AssemblyError>>()?;
         let registration = CenterState::new(
             file.deployment_id.clone(),
             file.bounds,
             file.nodes.iter().map(|n| n.registration.clone()).collect(),
             file.tenants,
         )
+        .and_then(|state| state.enable_lifecycle(CenterIdentity {
+            deployment: file.deployment_id.clone(),
+            center: file.center_id,
+        }, windows))
         .map_err(|_| invalid())?;
         let store = StoreConfig::new(
             file.deployment_id,
@@ -398,7 +409,7 @@ impl CenterAssemblyInputs {
             Duration::from_millis(file.redis.operation_timeout_ms),
         )
         .map_err(|_| invalid())?;
-        if registration.bounds().required_block_bytes() > file.redis.max_block_bytes {
+        if registration.required_authority_bytes() > file.redis.max_block_bytes {
             return Err(invalid());
         }
         let redis_endpoint =
