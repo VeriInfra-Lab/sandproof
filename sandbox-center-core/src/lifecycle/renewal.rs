@@ -194,10 +194,9 @@ impl CenterState {
                 }
                 cursor += 1;
             }
-            let sampled_max =
-                original
-                    .compacted_sampled_acceptance_max_ms
-                    .map_or(sampled, |old| old.max(sampled));
+            let sampled_max = original
+                .compacted_sampled_acceptance_max_ms
+                .map_or(sampled, |old| old.max(sampled));
             Some((retained, old.intent.accepted_version, sampled_max))
         } else {
             None

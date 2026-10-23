@@ -77,8 +77,7 @@ impl CenterState {
         index = 0;
         while index < self.tenants.len() {
             let tenant = &self.tenants[index];
-            if p
-                .windows
+            if p.windows
                 .iter()
                 .filter(|w| {
                     w.registration.owner == tenant.tenant && w.registration.window.get() % 2 == 1
@@ -294,11 +293,8 @@ impl CenterState {
             && *extend_only == *actual_extend
             && incarnation.get() == 1
             && *timeout_secs > 0
-            && super::normalized_renewal_end(
-                accepted_at_ms,
-                *timeout_secs,
-                prior.max_end_at_ms,
-            ) == end
+            && super::normalized_renewal_end(accepted_at_ms, *timeout_secs, prior.max_end_at_ms)
+                == end
             && previous_end > accepted_at_ms
             && previous_end > prior.started_at_ms
             && previous_end <= prior.max_end_at_ms
