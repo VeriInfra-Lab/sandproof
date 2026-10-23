@@ -1,4 +1,4 @@
-//! Real application mutex, SQLite and original workflow; controlled host effects.
+//! Real application mutex, `SQLite` and original workflow; controlled host effects.
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "support/lifecycle_application.rs"]
 mod lifecycle;
@@ -127,7 +127,7 @@ fn physical_health_sampling_does_not_block_terminal_intent_registration() {
     let record = std::thread::spawn(move || {
         recorded_tx
             .send(record_app.record_lifecycle_intent(&terminal, &lifecycle::context()))
-            .unwrap()
+            .unwrap();
     });
     assert!(
         recorded_rx
@@ -226,11 +226,15 @@ fn blocked_original_prepare_does_not_block_second_session_ready_or_destroy_accep
     assert!(terminal.terminal);
     release.0.take().unwrap().send(()).unwrap();
     worker.join().unwrap().unwrap();
+    assert_original_prepare_then_stop(&state, first_local.sandbox);
+}
+
+fn assert_original_prepare_then_stop(state: &Mutex<State>, sandbox: sandbox_controller_core::SandboxId) {
     let actions = &state.lock().unwrap().actions;
     assert_eq!(
         actions
             .iter()
-            .filter(|a| a.command.command().sandbox() == first_local.sandbox
+            .filter(|a| a.command.command().sandbox() == sandbox
                 && matches!(
                     a.command.command(),
                     sandbox_controller_core::Command::PrepareVm { .. }
@@ -241,7 +245,7 @@ fn blocked_original_prepare_does_not_block_second_session_ready_or_destroy_accep
     assert!(
         !actions
             .iter()
-            .any(|a| a.command.command().sandbox() == first_local.sandbox
+            .any(|a| a.command.command().sandbox() == sandbox
                 && matches!(
                     a.command.command(),
                     sandbox_controller_core::Command::ConfigureNetwork { .. }
@@ -251,7 +255,7 @@ fn blocked_original_prepare_does_not_block_second_session_ready_or_destroy_accep
     assert!(
         actions
             .iter()
-            .any(|a| a.command.command().sandbox() == first_local.sandbox
+            .any(|a| a.command.command().sandbox() == sandbox
                 && matches!(
                     a.command.command(),
                     sandbox_controller_core::Command::StopVm { .. }

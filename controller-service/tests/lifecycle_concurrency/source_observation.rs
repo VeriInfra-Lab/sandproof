@@ -7,7 +7,11 @@ use sandproof_controller_service::{
     capture::{RawSourceObservation, SourceObservationRequirement, SourceProcessIdentity},
 };
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation};
-use std::{path::Path, sync::{Arc, Mutex, mpsc}, time::Duration};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex, mpsc},
+    time::Duration,
+};
 
 struct SourceCase {
     application: Arc<ControllerApplication<TestHost>>,
@@ -19,21 +23,38 @@ impl SourceCase {
     fn new(path: &Path) -> Self {
         let physical = Arc::new(Mutex::new(State {
             epoch: TestEpoch::Matching,
-            source: Some(SourceProcessIdentity { pid: 1234, start_time_ticks: 5678, boot_id: "fixture-boot".into() }),
+            source: Some(SourceProcessIdentity {
+                pid: 1234,
+                start_time_ticks: 5678,
+                boot_id: "fixture-boot".into(),
+            }),
             ..State::default()
         }));
         let application = Arc::new(lifecycle::application(path, physical.clone(), true));
         let create = lifecycle::request();
-        application.record_lifecycle_intent(&create, &lifecycle::context()).unwrap();
+        application
+            .record_lifecycle_intent(&create, &lifecycle::context())
+            .unwrap();
         application.establish_lifecycle_host_epoch().unwrap();
         lifecycle::advance(&application).unwrap();
         let mut unload = super::destroy(create);
         unload.request.operation = LifecycleOperation::Unload {
-            source_incarnation: 101.try_into().unwrap(), capture: 1.try_into().unwrap(),
+            source_incarnation: 101.try_into().unwrap(),
+            capture: 1.try_into().unwrap(),
         };
-        application.record_lifecycle_intent(&unload, &lifecycle::context()).unwrap();
-        let work = application.prepare_lifecycle_source_work(&unload, &lifecycle::context()).unwrap().work;
-        Self { application, physical, unload, work }
+        application
+            .record_lifecycle_intent(&unload, &lifecycle::context())
+            .unwrap();
+        let work = application
+            .prepare_lifecycle_source_work(&unload, &lifecycle::context())
+            .unwrap()
+            .work;
+        Self {
+            application,
+            physical,
+            unload,
+            work,
+        }
     }
 }
 
@@ -43,7 +64,10 @@ fn raw(requirement: &SourceObservationRequirement) -> RawSourceObservation {
         resource: requirement.resource.clone(),
         source: requirement.source.clone(),
         configuration: br#"{"vcpu_count":1}"#.to_vec(),
-        executable_sha256: [11; 32], kernel_sha256: [12; 32], kernel_bytes: 1, disk_bytes: 1,
+        executable_sha256: [11; 32],
+        kernel_sha256: [12; 32],
+        kernel_bytes: 1,
+        disk_bytes: 1,
     }
 }
 
@@ -56,13 +80,23 @@ fn create_other(application: &Arc<ControllerApplication<TestHost>>) -> AcceptedL
     let app = application.clone();
     let (ready_tx, ready_rx) = mpsc::channel();
     let thread = std::thread::spawn(move || {
-        app.record_lifecycle_intent(&request, &lifecycle::context()).unwrap();
-        app.advance_lifecycle_create_with_verification(&request, &lifecycle::context(),
-            Some(lifecycle::fixture::template()), lifecycle::fixture::compute(), None).unwrap();
-        let result = app.observe_lifecycle_create(&request, &lifecycle::context()).unwrap();
+        app.record_lifecycle_intent(&request, &lifecycle::context())
+            .unwrap();
+        app.advance_lifecycle_create_with_verification(
+            &request,
+            &lifecycle::context(),
+            Some(lifecycle::fixture::template()),
+            lifecycle::fixture::compute(),
+            None,
+        )
+        .unwrap();
+        let result = app
+            .observe_lifecycle_create(&request, &lifecycle::context())
+            .unwrap();
         ready_tx.send(result).unwrap();
     });
-    let result = ready_rx.recv_timeout(Duration::from_secs(5))
+    let result = ready_rx
+        .recv_timeout(Duration::from_secs(5))
         .expect("another original Create and Ready must progress while source I/O is blocked");
     assert!(matches!(result.readiness, CreateReadiness::Observed(_)));
     assert_eq!(result.request, second);
@@ -84,30 +118,43 @@ fn late_source_is_rejected(terminal: bool) {
     }));
     let app = case.application.clone();
     let work = case.work.clone();
-    let observer = std::thread::spawn(move || app.observe_lifecycle_source_work(&work, &lifecycle::context()));
+    let observer =
+        std::thread::spawn(move || app.observe_lifecycle_source_work(&work, &lifecycle::context()));
     entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let other = create_other(&case.application);
-    let mut changed = super::destroy(case.unload.clone());
-    if !terminal {
-        changed.request.operation = LifecycleOperation::Renew {
-            incarnation: 101.try_into().unwrap(), end_at_ms: 90_010, extend_only: false,
-        };
+    let other_before = case.application.lifecycle_work_state(&other, &lifecycle::context()).unwrap();
+    if terminal {
+        let changed = super::destroy(case.unload.clone());
+        case.application.record_lifecycle_intent(&changed, &lifecycle::context()).unwrap();
+    } else {
+        case.physical.lock().unwrap().epoch = TestEpoch::WrongBoot;
+        assert!(case.application.establish_lifecycle_host_epoch().is_err());
     }
-    case.application.record_lifecycle_intent(&changed, &lifecycle::context()).unwrap();
     release.0.take().unwrap().send(()).unwrap();
-    assert!(matches!(observer.join().unwrap(), Err(JournalError::Conflict)));
-    assert!(matches!(case.application.observe_lifecycle_create(&other, &lifecycle::context()).unwrap().readiness, CreateReadiness::Observed(_)));
+    let result = observer.join().unwrap();
+    if terminal { assert!(matches!(result, Err(JournalError::Conflict))); }
+    else { assert!(matches!(result, Err(JournalError::UnresolvedAction))); }
+    assert_eq!(case.application.lifecycle_work_state(&other, &lifecycle::context()).unwrap(), other_before);
     assert_eq!(case.physical.lock().unwrap().source_calls, 1);
     drop(case.application);
     let reopened = lifecycle::open(&path);
-    let records = reopened.lifecycle_source_work(&lifecycle::config().node).unwrap();
+    let records = reopened
+        .lifecycle_source_work(&lifecycle::config().node)
+        .unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].work, case.work);
-    assert!(records[0].observation.is_none(), "late raw bytes must not overwrite the original source responsibility");
+    assert!(
+        records[0].observation.is_none(),
+        "late raw bytes must not overwrite the original source responsibility"
+    );
 }
 
 #[test]
-fn source_observation_stale_after_destroy_is_rejected() { late_source_is_rejected(true); }
+fn source_observation_stale_after_destroy_is_rejected() {
+    late_source_is_rejected(true);
+}
 
 #[test]
-fn source_observation_stale_after_version_change_is_rejected() { late_source_is_rejected(false); }
+fn source_observation_stale_after_host_epoch_change_is_rejected() {
+    late_source_is_rejected(false);
+}
