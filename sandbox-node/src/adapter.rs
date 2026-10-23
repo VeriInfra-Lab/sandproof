@@ -47,6 +47,43 @@ impl NodeHost {
     }
 }
 
+impl NodeHost {
+    /// Pause only the source of an already committed and claimed FreezeVm.
+    /// The service independently binds the full external operation to this
+    /// native action and supplies the requirement from the original saved work.
+    /// # Errors
+    /// Any failure may follow a physical Pause. Keep the original work/VM;
+    /// never translate the error into no effect, retry or Stop permission.
+    pub fn pause_original(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::PauseWorkRequest,
+        original_source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.pause_original(
+            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
+            action, request, original_source,
+        )
+    }
+
+    /// Observe the same original Pause without reissuing PATCH or Full.
+    /// A current Paused observation does not prove a prior Full worker ended.
+    /// # Errors
+    /// Running, exited, foreign and unknown sources remain unresolved here;
+    /// no cleanup, resource refund or Stop permission follows.
+    pub fn observe_pause_original(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::PauseWorkRequest,
+        original_source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.observe_pause_original(
+            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
+            action, request, original_source,
+        )
+    }
+}
+
 impl WorkEvidence for NodeHost {
     type Evidence = HostObservation;
 }

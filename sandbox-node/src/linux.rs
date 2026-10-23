@@ -29,6 +29,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
+mod capture;
 mod credentials;
 mod decisions;
 mod execution;
@@ -169,6 +170,11 @@ enum ObservedResult {
         namespace_inode: u64,
     },
     Activated {
+        pid: u32,
+        start_ticks: u64,
+        boot_id: String,
+    },
+    Frozen {
         pid: u32,
         start_ticks: u64,
         boot_id: String,
