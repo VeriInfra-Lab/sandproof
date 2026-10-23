@@ -12,6 +12,7 @@ mod manifest;
 mod observation;
 mod public;
 mod request;
+mod renewal;
 mod terminal;
 
 pub use access::{AccessIdentityError, LifecycleAccessIdentity};
@@ -37,6 +38,7 @@ pub use public::{
     PublicRequestWindow, PublicSessionPhase, PublicSessionView, PublicUnloadRequest,
 };
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
+pub use renewal::{ConfirmedRenewal, RenewalConfirmation};
 pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
 
 /// The only supported lifecycle wire format. Mismatches are refused.
@@ -48,3 +50,7 @@ pub const TERMINAL_OBSERVATION_PATH: &str = "/internal/lifecycle/terminal-observ
 pub const TERMINAL_RESULT_BODY_BYTES: usize = 8192;
 pub const RESULT_CONFIRMATION_PATH: &str = "/internal/lifecycle/result-confirmation";
 pub const WINDOW_CLOSE_PATH: &str = "/internal/lifecycle/window-close";
+/// Only the internal SDK's already-applied Renew may use this confirmation.
+pub const RENEWAL_CONFIRMATION_PATH: &str = "/internal/lifecycle/renewal-confirmation";
+/// Full fixed identities and a deadline, without Create options or a manifest.
+pub const RENEWAL_CONFIRMATION_BODY_BYTES: usize = 8192;
