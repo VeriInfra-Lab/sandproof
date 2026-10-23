@@ -94,7 +94,7 @@ pub(super) fn validate_session(session: &Session) -> Result<(), JournalError> {
 /// Exact adjacency remains required above the actually removed SDK frontier.
 /// A retained gap can only precede or reach the full saved confirmation.
 /// This does not authorize an arbitrary missing public/unknown row: only
-/// discard_previous can create these gaps, and its preservation must be proved.
+/// `discard_previous` can create these gaps, and its preservation must be proved.
 pub(super) fn follows_retained(
     session: &Session,
     previous: u64,
