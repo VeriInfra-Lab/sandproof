@@ -1,4 +1,5 @@
 //! Serial application boundary: journal decisions, host effects and revocations share one lock.
+mod lifecycle_source;
 
 use std::{
     collections::{BTreeMap, BTreeSet},

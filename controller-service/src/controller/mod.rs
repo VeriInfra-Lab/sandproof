@@ -32,6 +32,7 @@ pub use internal_inbox::{
 pub use lifecycle_inbox::{
     CreateReadiness, CreateReadinessPending, LifecycleCreateObservation, LifecycleInboxConfig,
     LifecycleReadyBasis, LifecycleReadyObservation, LifecycleWorkState, NativeCreateSnapshot,
+    SourceWork, SourceWorkRecord,
 };
 mod private_build;
 mod registry;

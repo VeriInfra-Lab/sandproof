@@ -1284,6 +1284,17 @@ impl LinuxWorker {
         })
     }
 
+    pub(super) fn original_source_context(
+        &self,
+        resource: &sandproof_protocol::ResourceRef,
+    ) -> NodeResult<HostSlotContext> {
+        select_original_source_context(
+            &self.config.namespace,
+            resource,
+            &self.read_host_positions()?,
+        )
+    }
+
     pub(super) fn physical_slot_for_vm(&self, vm: core::VmId) -> NodeResult<HostSlotId> {
         let row = self
             .read_host_positions()?
@@ -1312,6 +1323,33 @@ impl LinuxWorker {
         check_occupied_action(&self.read_host_positions()?, action)
     }
 }
+
+// Original read_host_positions already checks all position cells and VM
+// uniqueness. Keep lookup exact and unambiguous even for a damaged input.
+fn select_original_source_context(
+    namespace: &str,
+    resource: &sandproof_protocol::ResourceRef,
+    rows: &[HostPosition],
+) -> NodeResult<HostSlotContext> {
+    if resource.kind != sandproof_protocol::ResourceKind::Vm {
+        return Err("original source resource is not a VM".into());
+    }
+    let mut matches = rows.iter().filter(|row| {
+        resource.id.as_str() == format!("vm-{namespace}-{}", row.context.binding.vm.0)
+    });
+    let row = matches
+        .next()
+        .ok_or("original source has no occupied position")?;
+    if matches.next().is_some() {
+        return Err("ambiguous original source occupied position".into());
+    }
+    row.require_occupied(row.context.binding)?;
+    Ok(row.context)
+}
+
+#[cfg(test)]
+#[path = "source_context_tests.rs"]
+mod source_context_tests;
 
 fn check_occupied_action(
     rows: &[HostPosition],
