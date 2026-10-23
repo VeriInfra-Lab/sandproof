@@ -97,6 +97,22 @@ pub(super) fn retains_session(
         .any(|record| &record.work.request().request.binding.session == session))
 }
 
+/// Exact inbox rows used by source_work::snapshot::validate_record: the
+/// original Unload and first Create. The native/action/receipt snapshots are
+/// self-contained; they contain no SDK renewal-row reference. Keep the two
+/// full rows the real subsequent find calls consume, rather than treating a
+/// session-level retirement pin as a reference to every historical SDK row.
+pub(super) fn references_intent(
+    connection: &rusqlite::Connection,
+    intent: &AcceptedLifecycleIntent,
+) -> Result<bool, JournalError> {
+    let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    Ok(sources.records.iter().any(|record| {
+        record.work.anchor.request.request.binding.key == intent.request.binding.key
+            || record.work.anchor.create.request.binding.key == intent.request.binding.key
+    }))
+}
+
 impl ControllerJournal {
     /// Compare protected limits with the exact original stored source-work
     /// configuration. Missing/changed values are never repaired on startup.

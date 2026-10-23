@@ -56,6 +56,7 @@ impl ControllerJournal {
             end_at_ms
         };
         admission::write_lifetime_deadline(&tx, &self.namespace, local.sandbox, lifetime, end)?;
+        inbox.sessions[s].entries[e].previous_effective_end_at_ms = Some(lifetime.deadline_ms);
         inbox.sessions[s].entries[e].applied_deadline = Some(end);
         codec::save(&tx, &inbox)?;
         crashes.hit(CrashPoint::BeforeCommit)?;

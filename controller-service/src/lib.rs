@@ -12,6 +12,7 @@ extern crate self as sandproof_controller_service;
 
 pub mod application;
 pub mod capture;
+pub mod lifecycle_renewal;
 pub use application::BuildWindow;
 #[cfg(feature = "durable")]
 mod controller;

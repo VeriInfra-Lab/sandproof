@@ -131,26 +131,7 @@ pub(in crate::controller) fn validate(
                 return Err(JournalError::CorruptStore);
             }
         }
-        let mut applied = None;
-        for entry in &session.entries {
-            if let Some(end) = entry.applied_deadline {
-                let lifetime = super::super::admission::read_lifetime(
-                    connection,
-                    &namespace,
-                    local.sandbox,
-                    local.owner,
-                )
-                .map_err(|_| JournalError::CorruptStore)?
-                .ok_or(JournalError::CorruptStore)?;
-                if lifetime.started_at_ms.is_none_or(|start| end < start)
-                    || end > lifetime.max_deadline_ms
-                {
-                    return Err(JournalError::CorruptStore);
-                }
-                applied = Some(end);
-            }
-        }
-        if let Some(end) = applied {
+        if session.entries.iter().any(|entry| entry.applied_deadline.is_some()) {
             let lifetime = super::super::admission::read_lifetime(
                 connection,
                 &namespace,
@@ -159,9 +140,7 @@ pub(in crate::controller) fn validate(
             )
             .map_err(|_| JournalError::CorruptStore)?
             .ok_or(JournalError::CorruptStore)?;
-            if lifetime.deadline_ms != end {
-                return Err(JournalError::CorruptStore);
-            }
+            super::renewal_confirmation::validate_lifetimes(session, lifetime)?;
         }
     }
     Ok(())
