@@ -1,6 +1,5 @@
 //! Retired validation history must not pin a reclaimed host tenant mapping.
 use super::*;
-use sandproof_protocol::internal::window::WindowCloseAck;
 
 fn two_publication_authority(
     fixture: &Engine,
@@ -15,6 +14,11 @@ fn two_publication_authority(
         })
         .unwrap(),
     );
+    let registered = value["center"]["lifecycle"]["windows"].as_array().unwrap().clone();
+    for mut window in registered {
+        window["registration"]["owner"] = serde_json::json!("9");
+        value["center"]["lifecycle"]["windows"].as_array_mut().unwrap().push(window);
+    }
     let state: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(value).unwrap();
     assert!(state.is_valid());
     let (ledger, _) = RedisLedger::initialize(
@@ -29,40 +33,25 @@ fn two_publication_authority(
 
 fn settle_first(
     business: &SharedBusinessAuthority,
-) -> sandproof_protocol::internal::lifecycle::LifecycleResponse {
+) -> TerminalLifecycleObservation {
     let mut lifecycle = business.clone();
     business.begin_publication(candidate(), revision()).unwrap();
     cache_candidate(business);
     let create = business
-        .create_validation(&candidate().candidate_id, binding(), 0)
+        .create_validation(&candidate().candidate_id, &lifecycle_parameters(), 0)
         .unwrap();
     let (mapping, certificate) = local_certificate(true);
     business
-        .bind_local_validation(&candidate().candidate_id, &create.identity, &mapping)
+        .bind_local_validation(&candidate().candidate_id, &create, &mapping)
         .unwrap();
-    AuthorityPort::apply_response(
-        &mut lifecycle,
-        &wire::response(
-            &create,
-            1,
-            LifecycleFact::Ready {
-                started_at_ms: 10,
-                end_at_ms: 5010,
-                max_end_at_ms: 5010,
-            },
-        ),
-    )
+    AuthorityPort::accept_lifecycle_create_observation(&mut lifecycle, &observed_ready(&create))
     .unwrap();
-    let destroy = AuthorityPort::destroy(
-        &mut lifecycle,
-        &"8".try_into().unwrap(),
-        &create.identity.sandbox_id,
-    )
+    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &create)
     .unwrap();
-    let cleaned = wire::response(&destroy, 2, LifecycleFact::Cleaned);
-    AuthorityPort::apply_response(&mut lifecycle, &cleaned).unwrap();
+    let cleaned = cleaned_observation(&destroy);
+    AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned, 100).unwrap();
     business
-        .settle_validation(&candidate().candidate_id, &destroy.identity, certificate)
+        .settle_validation(&candidate().candidate_id, &cleaned, certificate)
         .unwrap();
     cleaned
 }
@@ -89,13 +78,14 @@ fn later_mapping(retire: bool, global_owner: u64, local_owner: u64, accepted: bo
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let business = two_publication_authority(&fixture, &proxy);
     let cleaned = settle_first(&business);
-    business.confirm_terminal(&cleaned).unwrap();
+    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned.clone() }).unwrap();
     if retire {
-        let close = business.begin_close(&cleaned).unwrap();
+        let close = business.begin_close(&cleaned, 200).unwrap();
         business
-            .apply_close_ack(&WindowCloseAck {
+            .apply_close_ack(&ClosedLifecycleWindow {
+                retired_through: close.terminal.request.retention.window,
                 terminal: close.terminal,
-            })
+            }, 200)
             .unwrap();
     }
     let before = business.snapshot().unwrap();
@@ -127,11 +117,11 @@ fn later_mapping(retire: bool, global_owner: u64, local_owner: u64, accepted: bo
             },
         )
         .unwrap();
-    let mut binding = binding();
-    binding.template_revision = revision;
-    binding.template_digest = digest;
+    let mut parameters = lifecycle_parameters();
+    parameters.template_revision = revision;
+    parameters.template_digest = digest;
     let create = business
-        .create_validation(&next.candidate_id, binding, 20)
+        .create_validation(&next.candidate_id, &parameters, 20)
         .unwrap();
     let mut local = local_certificate(true).0;
     local.owner = local_owner;
@@ -141,7 +131,7 @@ fn later_mapping(retire: bool, global_owner: u64, local_owner: u64, accepted: bo
     local.descriptor.kernel.path = "/host/cache/kernel".into();
     local.descriptor.rootfs.path = "/host/cache/rootfs".into();
     assert!(local.is_projection_of(&next.binding));
-    let result = business.bind_local_validation(&next.candidate_id, &create.identity, &local);
+    let result = business.bind_local_validation(&next.candidate_id, &create, &local);
     if accepted {
         result.unwrap();
     } else {

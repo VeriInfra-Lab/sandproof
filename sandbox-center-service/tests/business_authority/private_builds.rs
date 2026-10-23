@@ -5,7 +5,7 @@ use sandproof_api::{BuildPort, BuildSettlementRequest, BuildVmRequest};
 use sandproof_center_service::business::{BuildParameters, PrivateBuildConfig};
 use sandproof_center_service::{CenterBuildPort, TemplateProvider};
 use sandproof_internal::cache::{CacheAvailability, CacheRequest};
-use sandproof_protocol::internal::{lifecycle::Intent, window::WindowCloseAck};
+use sandproof_protocol::lifecycle::{CreateObservation, CreateRefusalReason, CurrentCreateReadiness, CreateParameters, LifecycleOperation};
 use std::sync::Arc;
 
 fn provision(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
@@ -94,8 +94,8 @@ fn provision_with_policy(
         .unwrap();
     business
 }
-fn create_binding() -> CreateBinding {
-    CreateBinding {
+fn create_parameters() -> CreateParameters {
+    CreateParameters {
         template_revision: "builder-r1".try_into().unwrap(),
         template_digest: descriptor("builder-base", None).canonical_digest().unwrap(),
         resources: resources(1),
@@ -107,7 +107,7 @@ fn create_binding() -> CreateBinding {
             ..CreateOptions::default()
         })
         .unwrap(),
-        startup_deadline_ms: 1000,
+        startup_timeout_ms: 1000,
         timeout_ms: 5000,
         max_lifetime_ms: 5000,
     }
@@ -122,17 +122,13 @@ fn parameters() -> BuildParameters {
 fn confirm_build_cleanup(
     business: &SharedBusinessAuthority,
     lifecycle: &mut SharedBusinessAuthority,
-    create: &sandproof_protocol::internal::lifecycle::LifecycleRequest,
-) -> sandproof_protocol::internal::lifecycle::LifecycleResponse {
-    let destroy = AuthorityPort::destroy(
-        lifecycle,
-        &create.identity.tenant_id,
-        &create.identity.sandbox_id,
-    )
+    create: &AcceptedLifecycleIntent,
+) -> TerminalLifecycleObservation {
+    let destroy = AuthorityPort::destroy_bound_create(lifecycle, create)
     .unwrap();
-    let cleaned = wire::response(&destroy, 1, LifecycleFact::Cleaned);
-    AuthorityPort::apply_response(lifecycle, &cleaned).unwrap();
-    business.confirm_terminal(&cleaned).unwrap();
+    let cleaned = cleaned_observation(&destroy);
+    AuthorityPort::accept_lifecycle_terminal_observation(lifecycle, &cleaned, 100).unwrap();
+    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned.clone() }).unwrap();
     cleaned
 }
 
@@ -153,7 +149,7 @@ fn actual_private_admit_unknown_is_one_hidden_global_builder_create_and_closed_w
             &window.request_window,
             &candidate().candidate_id,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             0
         ),
         Err(PortError::OutcomeUnknown)
@@ -167,8 +163,8 @@ fn actual_private_admit_unknown_is_one_hidden_global_builder_create_and_closed_w
         .unwrap()
         .unwrap()
         .original_create;
-    assert_eq!(original.identity.node, wire::node("builder-a"));
-    assert_eq!(original.identity.sandbox_id.as_str(), "sandbox-1");
+    assert_eq!(original.request.binding.node, wire::node("builder-a"));
+    assert_eq!(original.request.binding.session.as_protocol_id().as_str(), "sandbox-1");
     let view = AuthorityPort::public_snapshot(&mut lifecycle).unwrap();
     assert!(!view.visible(&view.state.sandboxes()[0]));
     let repeated = business
@@ -177,7 +173,7 @@ fn actual_private_admit_unknown_is_one_hidden_global_builder_create_and_closed_w
             &window.request_window,
             &candidate().candidate_id,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             1,
         )
         .unwrap();
@@ -192,7 +188,7 @@ fn actual_private_admit_unknown_is_one_hidden_global_builder_create_and_closed_w
             &window.request_window,
             &candidate().candidate_id,
             &changed,
-            create_binding(),
+            &create_parameters(),
             1
         ),
         Err(PortError::Conflict)
@@ -208,7 +204,7 @@ fn actual_private_admit_unknown_is_one_hidden_global_builder_create_and_closed_w
             &window.request_window,
             &unknown,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             2
         ),
         Err(PortError::Conflict)
@@ -232,7 +228,7 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
             &window.request_window,
             &candidate().candidate_id,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             0,
         )
         .unwrap();
@@ -245,19 +241,19 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
             &tenant,
             &window.request_window,
             &candidate().candidate_id,
-            Some(&original.identity.sandbox_id)
+            Some(original.request.binding.session.as_protocol_id())
         ),
         Err(PortError::Conflict)
     );
     let destroy =
-        AuthorityPort::destroy(&mut lifecycle, &tenant, &original.identity.sandbox_id).unwrap();
-    assert_eq!(destroy.intent, Intent::Destroy);
-    let cleaned = wire::response(&destroy, 1, LifecycleFact::Cleaned);
-    AuthorityPort::apply_response(&mut lifecycle, &cleaned).unwrap();
-    business.confirm_terminal(&cleaned).unwrap();
+        AuthorityPort::destroy_bound_create(&mut lifecycle, &original).unwrap();
+    assert_eq!(destroy.request.operation, LifecycleOperation::Destroy {});
+    let cleaned = cleaned_observation(&destroy);
+    AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned, 100).unwrap();
+    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned.clone() }).unwrap();
     // No close request can escape before the private build has acknowledged
     // settlement, even though physical cleanup is already durably confirmed.
-    assert_eq!(business.begin_close(&cleaned), Err(PortError::Conflict));
+    assert_eq!(business.begin_close(&cleaned, 200), Err(PortError::Conflict));
     assert!(business.snapshot().is_ok());
     proxy.lose_after(1);
     assert_eq!(
@@ -265,7 +261,7 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
             &tenant,
             &window.request_window,
             &candidate().candidate_id,
-            Some(&original.identity.sandbox_id)
+            Some(original.request.binding.session.as_protocol_id())
         ),
         Err(PortError::OutcomeUnknown)
     );
@@ -278,15 +274,16 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
             .settlement
             .is_some()
     );
-    let close = business.begin_close(&cleaned).unwrap();
-    let acknowledgement = WindowCloseAck {
+    let close = business.begin_close(&cleaned, 200).unwrap();
+    let acknowledgement = ClosedLifecycleWindow {
+        retired_through: close.terminal.request.retention.window,
         terminal: close.terminal.clone(),
     };
     // Original apply_close_ack consumes its already confirmed view; unlike
     // settlement it commits directly, without a preceding fresh-view write.
     proxy.lose_after(0);
     assert_eq!(
-        business.apply_close_ack(&acknowledgement),
+        business.apply_close_ack(&acknowledgement, 200),
         Err(PortError::OutcomeUnknown)
     );
     AuthorityPort::recover(&mut lifecycle).unwrap();
@@ -309,7 +306,7 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
             &window.request_window,
             &candidate().candidate_id,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             2
         ),
         Err(PortError::Conflict)
@@ -317,7 +314,7 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
 }
 
 #[test]
-fn capacity_refused_builder_settles_exact_create_after_window_close_and_terminal_confirmation() {
+fn capacity_refused_builder_settles_original_create_after_exact_destroy_cleanup_and_confirmation() {
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let business = provision(&fixture, &proxy);
@@ -329,19 +326,23 @@ fn capacity_refused_builder_settles_exact_create_after_window_close_and_terminal
             &window.request_window,
             &candidate().candidate_id,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             0,
         )
         .unwrap();
     let mut lifecycle = business.clone();
-    let refused = wire::response(&original, 1, LifecycleFact::NotAccepted);
-    AuthorityPort::apply_response(&mut lifecycle, &refused).unwrap();
+    let refusal = CreateObservation { request: original.clone(), current_request: original.clone(), historical_create_succeeded: false,
+        readiness: CurrentCreateReadiness::Refused { reason: CreateRefusalReason::Capacity } };
+    let destroy = AuthorityPort::accept_lifecycle_create_refusal(&mut lifecycle, &refusal).unwrap();
+    assert_eq!(business.snapshot().unwrap().center.reserved(None, None), Some(resources(1)));
+    let refused = cleaned_observation(&destroy);
+    AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &refused, 100).unwrap();
     let settle = || {
         business.settle_build(
             &tenant,
             &window.request_window,
             &candidate().candidate_id,
-            Some(&original.identity.sandbox_id),
+            Some(original.request.binding.session.as_protocol_id()),
         )
     };
     assert_eq!(settle(), Err(PortError::Conflict));
@@ -349,10 +350,10 @@ fn capacity_refused_builder_settles_exact_create_after_window_close_and_terminal
         .close_build_window(&tenant, &window.request_window, 1)
         .unwrap();
     assert_eq!(settle(), Err(PortError::Conflict));
-    business.confirm_terminal(&refused).unwrap();
-    // The original pre-admission receipt releases resources, but not its
-    // business pin. A lost settlement reply fences both views until recovery.
-    assert_eq!(business.begin_close(&refused), Err(PortError::Conflict));
+    business.confirm_terminal(&ConfirmedLifecycleResult { result: refused.clone() }).unwrap();
+    // Only original Destroy/Cleaned releases resources. The independent
+    // business pin remains until settlement; its lost reply fences recovery.
+    assert_eq!(business.begin_close(&refused, 200), Err(PortError::Conflict));
     proxy.lose_after(1);
     assert_eq!(settle(), Err(PortError::OutcomeUnknown));
     assert!(business.snapshot().is_err());
@@ -361,18 +362,19 @@ fn capacity_refused_builder_settles_exact_create_after_window_close_and_terminal
     let anchor = &settled.metadata.private_build_anchors()[0];
     assert_eq!(anchor.original_create, original);
     assert_eq!(anchor.settlement.as_ref(), Some(&refused));
-    assert_eq!(settled.center.sandboxes()[0].operations.len(), 1);
+    assert_eq!(settled.center.sandboxes()[0].operations().len(), 2);
     assert_eq!(settled.center.reserved(None, None), Some(Resources::ZERO));
     let mut unconfirmed = serde_json::to_value(&settled).unwrap();
     unconfirmed["center"]["sandboxes"][0]["terminal_confirmation"] = serde_json::Value::Null;
     let invalid: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(unconfirmed).unwrap();
     assert!(!invalid.is_valid());
-    let close = business.begin_close(&refused).unwrap();
+    let close = business.begin_close(&refused, 200).unwrap();
     assert_eq!(close.terminal, refused);
     business
-        .apply_close_ack(&WindowCloseAck {
+        .apply_close_ack(&ClosedLifecycleWindow {
+            retired_through: close.terminal.request.retention.window,
             terminal: close.terminal,
-        })
+        }, 200)
         .unwrap();
     let retired = business.snapshot().unwrap();
     assert!(retired.center.sandboxes().is_empty());
@@ -396,7 +398,7 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
             &first_window.request_window,
             &candidate().candidate_id,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             0,
         )
         .unwrap();
@@ -406,18 +408,18 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
             &peer_window.request_window,
             &peer_job,
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             0,
         )
         .unwrap();
-    assert_ne!(pinned.identity.retention_slot, peer.identity.retention_slot);
+    assert_ne!(pinned.retention.slot, peer.retention.slot);
     let mut lifecycle = business.clone();
     business
         .close_build_window(&tenant, &first_window.request_window, 1)
         .unwrap();
     let pinned_cleaned = confirm_build_cleanup(&business, &mut lifecycle, &pinned);
     assert_eq!(
-        business.begin_close(&pinned_cleaned),
+        business.begin_close(&pinned_cleaned, 200),
         Err(PortError::Conflict)
     );
     let original = business
@@ -438,14 +440,15 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
             &tenant,
             &peer_window.request_window,
             &peer_job,
-            Some(&peer.identity.sandbox_id),
+            Some(peer.request.binding.session.as_protocol_id()),
         )
         .unwrap();
-    let close = business.begin_close(&peer_cleaned).unwrap();
+    let close = business.begin_close(&peer_cleaned, 200).unwrap();
     business
-        .apply_close_ack(&WindowCloseAck {
+        .apply_close_ack(&ClosedLifecycleWindow {
+            retired_through: close.terminal.request.retention.window,
             terminal: close.terminal,
-        })
+        }, 200)
         .unwrap();
     let retained = business.snapshot().unwrap();
     assert_eq!(retained.center.sandboxes().len(), 1);
@@ -456,7 +459,7 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
     assert_eq!(
         retained
             .center
-            .lane(&pinned.identity.node, pinned.identity.retention_slot)
+            .lane(&pinned.request.binding.node, pinned.retention.slot)
             .unwrap()
             .retired_through(),
         0
@@ -474,12 +477,12 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
             &next_window.request_window,
             &format!("{:032x}", 3),
             &parameters(),
-            create_binding(),
+            &create_parameters(),
             2,
         )
         .unwrap();
-    assert_eq!(next.identity.retention_slot, peer.identity.retention_slot);
-    assert_eq!(next.identity.request_window.get(), 2);
+    assert_eq!(next.retention.slot, peer.retention.slot);
+    assert_eq!(next.retention.window.get(), 2);
 }
 
 fn assert_private_route_health(
@@ -493,7 +496,7 @@ fn assert_private_route_health(
         .center
         .nodes()
         .iter()
-        .find(|node| node.identity == routed.request.identity.node)
+        .find(|node| node.identity == routed.identity.node)
         .unwrap()
         .clone();
     business.refresh_node(&node.identity, 0, node.free).unwrap();
@@ -556,8 +559,8 @@ fn actual_private_driver_reuses_global_lifecycle_and_original_token_but_never_pu
     let routed = app
         .resolve_private_data_route("8", &session.envd_access_token)
         .unwrap();
-    assert_eq!(routed.request.identity.node, wire::node("builder-a"));
-    assert_eq!(routed.request.identity.sandbox_id.as_str(), vm.sandbox_id);
+    assert_eq!(routed.identity.node, wire::node("builder-a"));
+    assert_eq!(routed.identity.session.as_protocol_id().as_str(), vm.sandbox_id);
     assert_private_route_health(&business, &routed, |tenant| {
         app.resolve_private_data_route(tenant, &session.envd_access_token)
     });
@@ -621,7 +624,7 @@ fn actual_builder_policy_does_not_widen_runtime_network_or_lifetime_limits() {
     assert_eq!(vm.state, "Running");
     let snapshot = business.snapshot().unwrap();
     let original = &snapshot.metadata.private_build_anchors()[0].original_create;
-    assert_eq!(original.identity.node, wire::node("builder-a"));
+    assert_eq!(original.request.binding.node, wire::node("builder-a"));
     assert_eq!(original.create.timeout_ms, 600_000);
     assert_eq!(original.create.max_lifetime_ms, 900_000);
     assert_eq!(original.create.startup_deadline_ms, 60_000);

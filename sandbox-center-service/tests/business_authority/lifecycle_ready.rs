@@ -5,10 +5,6 @@ use sandproof_center_core::SessionPhase;
 use sandproof_center_service::business::{BusinessTemplates, SharedBusinessAuthority};
 use sandproof_center_service::{CenterApplication, CenterConfig, HostPort, NodeObservationPolicy};
 use sandproof_controller_service::application::{ApplicationError, Clock};
-use sandproof_protocol::internal::{
-    lifecycle::{LifecycleRequest, LifecycleResponse},
-    window::{WindowCloseAck, WindowCloseRequest},
-};
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, CurrentReadyFacts,
     LifecycleOperation, PublicDestroyRequest, PublicSessionPhase, PublicUnloadRequest,
@@ -150,15 +146,7 @@ impl HostPort for Host {
             terminal: matches!(intent.request.operation, LifecycleOperation::Destroy {}),
         })
     }
-    fn send(&self, _: &LifecycleRequest, _: Duration) -> Result<LifecycleResponse, PortError> {
-        panic!("removed lifecycle dispatch must not run")
-    }
-    fn confirm(&self, _: &LifecycleResponse, _: Duration) -> Result<LifecycleResponse, PortError> {
-        panic!("removed lifecycle confirmation must not run")
-    }
-    fn close(&self, _: &WindowCloseRequest, _: Duration) -> Result<WindowCloseAck, PortError> {
-        panic!("removed lifecycle window route must not run")
-    }
+
 }
 type Application = CenterApplication<
     SharedBusinessAuthority,

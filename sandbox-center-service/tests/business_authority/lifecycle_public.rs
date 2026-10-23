@@ -1,10 +1,9 @@
 //! Original Redis business envelope; cache observations are controlled inputs.
 //! No VM/Ready/Unloaded or manager-process acceptance is claimed by this fixture.
 use super::*;
-use sandproof_center_core::LifecycleWindow;
 use sandproof_center_service::LifecyclePolicy;
 use sandproof_protocol::lifecycle::{
-    CenterIdentity, CreateParameters, PublicCreateRequest, PublicSessionPhase,
+    CreateParameters, PublicCreateRequest, PublicSessionPhase,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -42,20 +41,7 @@ pub(super) fn request() -> PublicCreateRequest {
     }
 }
 pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
-    let mut state = envelope();
-    state.center = state
-        .center
-        .enable_lifecycle(
-            CenterIdentity {
-                deployment: engine::deployment(),
-                center: "center".try_into().unwrap(),
-            },
-            vec![LifecycleWindow {
-                owner: "8".try_into().unwrap(),
-                window: 1.try_into().unwrap(),
-            }],
-        )
-        .unwrap();
+    let state = envelope();
     let (ledger, _) = RedisLedger::initialize(
         engine::endpoint(proxy.address),
         Engine::config(state.required_block_bytes()),
