@@ -82,7 +82,8 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         session: &SessionId,
     ) -> Result<PublicSessionView, PortError> {
         let owner = tenant_id(owner)?;
-        let (intent, phase) = self.current_lifecycle_intent(&owner, session)?;
+        let (intent, phase) = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
+            .public_lifecycle_intent(&owner, session)?;
         if matches!(phase, SessionPhase::Creating | SessionPhase::Running | SessionPhase::Renewing)
             && matches!(intent.request.operation, LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. })
         {
@@ -108,11 +109,8 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 // Commit/reaffirm first, then inspect a fresh authority under
                 // the same short lock. A newer unload/termination cannot be
                 // overwritten by the result of the detached observation.
-                let state = crate::AuthorityPort::snapshot(&mut *authority)
-                    .map_err(crate::application::authority_error)?;
-                let record = state.lifecycle_session(&owner, session).ok_or(PortError::NotFound)?;
-                let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent();
-                if current != &intent || record.phase() != SessionPhase::Running
+                let (current, phase) = authority.public_lifecycle_intent(&owner, session)?;
+                if current != intent || phase != SessionPhase::Running
                     || self.now()? >= facts.end_at_ms
                 {
                     return Err(PortError::Busy);

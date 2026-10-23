@@ -5,12 +5,10 @@ use sandbox_controller_core::maintenance::windows::{WindowId, WindowLimits, Wind
 use sandproof_api::PortError;
 use sandproof_protocol::{
     ResourceId, TenantId,
-    internal::lifecycle::{
-        LIFECYCLE_BODY_BYTES, RESULT_CONFIRMATION_BODY_BYTES,
-    },
 };
+use sandproof_internal::lifecycle::REQUEST_BODY_BYTES;
 use serde::{Deserialize, Serialize};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, TerminalLifecycleObservation};
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, TerminalLifecycleObservation, TERMINAL_RESULT_BODY_BYTES};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,7 +33,7 @@ impl PrivateBuildConfig {
         // Explicit complete original create, future exact Destroy and Cleaned
         // plus framing. Window frontier/state is independently reserved below.
         self.max_anchors
-            .saturating_mul(2 * LIFECYCLE_BODY_BYTES + RESULT_CONFIRMATION_BODY_BYTES + 4096)
+            .saturating_mul(REQUEST_BODY_BYTES + TERMINAL_RESULT_BODY_BYTES + 4096)
             .saturating_add(
                 usize::try_from(self.windows.max_open_windows())
                     .unwrap_or(usize::MAX)

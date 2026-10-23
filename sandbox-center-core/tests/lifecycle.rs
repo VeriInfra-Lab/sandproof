@@ -54,6 +54,27 @@ fn state() -> CenterState {
     )
     .unwrap()
 }
+
+#[test]
+fn protected_builder_role_uses_original_allocator_without_runtime_replay() {
+    let mut encoded = serde_json::to_value(state()).unwrap();
+    encoded["nodes"][0]["role"] = serde_json::json!("builder");
+    let initial: CenterState = serde_json::from_value(encoded).unwrap();
+    assert!(initial.is_valid());
+    let owner = "1".try_into().unwrap();
+    let input = create("1", 1);
+    assert_eq!(initial.accept_lifecycle(&owner, &input, 10), Err(DecisionError::Unavailable));
+    let (accepted, intent) = initial.accept_builder_lifecycle(&owner, &input, 10).unwrap();
+    assert!(accepted.is_valid());
+    assert_eq!(accepted.identity_frontiers(), (1, 1));
+    assert_eq!(accepted.reserved(None, None), Some(resources(1)));
+    assert_eq!(accepted.accept_builder_lifecycle(&owner, &input, u64::MAX), Ok((accepted.clone(), intent.clone())));
+    assert_eq!(accepted.accept_lifecycle(&owner, &input, 10), Err(DecisionError::Conflict));
+    let runtime = state();
+    let (runtime, _) = runtime.accept_lifecycle(&owner, &input, 10).unwrap();
+    assert_eq!(runtime.accept_builder_lifecycle(&owner, &input, 10), Err(DecisionError::Conflict));
+    assert_eq!(accepted.accept_builder_lifecycle(&owner, &followup(&intent, 2, true), 10), Err(DecisionError::Invalid));
+}
 fn create(owner: &str, sequence: u64) -> LifecycleSubmission {
     let binding = binding();
     LifecycleSubmission::Create {

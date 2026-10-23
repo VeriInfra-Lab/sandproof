@@ -15,7 +15,7 @@ use sandproof_controller_service::{
 };
 use sandproof_protocol::{
     SandboxId, TenantId,
-    internal::lifecycle::{Intent, LifecycleFact},
+    lifecycle::LifecycleOperation,
 };
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ fn anchored<'a>(state: &'a Envelope, anchor: &GlobalBuildAnchor) -> Result<&'a S
             record
                 .operations
                 .first()
-                .is_some_and(|first| first.request == anchor.original_create)
+                .is_some_and(|first| first.intent() == &anchor.original_create)
         })
         .ok_or(PortError::NotFound)
 }
@@ -67,14 +67,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         let session = if crate::projection::live(record, now) {
             if !state
                 .center
-                .node_is_reachable(&anchor.original_create.identity.node, now)
+                .node_is_reachable(&anchor.original_create.request.binding.node, now)
             {
                 return Err(PortError::Busy);
             }
-            let template = state.metadata.bound(
-                &anchor.original_create.create.template_revision,
-                &anchor.original_create.create.template_digest,
-            )?;
+            let LifecycleOperation::Create { create, .. } = &anchor.original_create.request.operation else {
+                return Err(PortError::OutcomeUnknown);
+            };
+            let template = state.metadata.bound(&create.template_revision, &create.template_digest)?;
             let detail = self.detail_for_record(&state.center, tenant, record, &template)?;
             Some(Session {
                 template_id: detail.info.template_id,
@@ -87,11 +87,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         } else {
             None
         };
-        let state = if record.released {
+        let state = if record.released() {
             "Destroyed"
-        } else if record.terminating {
+        } else if record.terminating() {
             "Revoking"
-        } else if record.started_at_ms.is_some() {
+        } else if record.last_running().is_some() {
             "Running"
         } else {
             "Starting"
@@ -99,12 +99,10 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         Ok(BuildStatus {
             sandbox_id: anchor
                 .original_create
-                .identity
-                .sandbox_id
-                .as_str()
+                .request.binding.session.as_protocol_id().as_str()
                 .to_owned(),
             state: state.into(),
-            cleanup_complete: record.released,
+            cleanup_complete: record.released(),
             session,
         }
         .into())
@@ -140,7 +138,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .templates
             .bound(&private.builder_revision, &private.builder_digest)?;
         let now = self.now()?;
-        let binding = crate::create_binding::create_binding(
+        let binding = crate::create_binding::create_parameters(
             &template,
             &CreateOptions {
                 networking: Some(CreateNetworking {
@@ -150,7 +148,6 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 ..CreateOptions::default()
             },
             input.timeout,
-            now,
             private.policy,
         )?;
         let parameters = BuildParameters {
@@ -167,7 +164,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 record
                     .operations
                     .first()
-                    .is_some_and(|first| first.request == request)
+                    .is_some_and(|first| first.intent() == &request)
             })
             .ok_or(PortError::OutcomeUnknown)?;
         // A terminal retry must query its original tombstone, not dispatch the
@@ -175,9 +172,9 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         if record
             .operations
             .last()
-            .is_some_and(|last| last.request == request)
+            .is_some_and(|last| last.intent() == &request)
         {
-            self.wait(&request)?;
+            self.wait_current_running(&request)?;
         }
         self.builder_status(&tenant, window, id)
             .map_err(|_| PortError::OutcomeUnknown)
@@ -241,16 +238,12 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .private_build_anchors()
             .iter()
             .find(|anchor| {
-                anchor.tenant == tenant && anchor.original_create.identity.sandbox_id == sandbox
+                anchor.tenant == tenant && anchor.original_create.request.binding.session.as_protocol_id() == &sandbox
             })
             .ok_or(PortError::NotFound)?;
         anchored(&state, anchor)?;
-        let request = self.destroy_exact(&tenant, &sandbox)?;
-        let response = self.wait(&request)?;
-        if request.intent != Intent::Destroy || response.fact != LifecycleFact::Cleaned {
-            return Err(PortError::OutcomeUnknown);
-        }
-        Ok(())
+        let request = self.destroy_exact(&anchor.original_create)?;
+        self.wait_current_terminal(&request)
     }
     /// Caller must have authenticated the private backend credential FIRST.
     /// # Errors
@@ -276,7 +269,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             if matching {
                 if !state
                     .center
-                    .node_is_reachable(&anchor.original_create.identity.node, now)
+                    .node_is_reachable(&anchor.original_create.request.binding.node, now)
                 {
                     sandproof_controller_service::application::fault::FaultRecord::application(
                         sandproof_controller_service::application::fault::FaultStage::CenterNodeFreshness,

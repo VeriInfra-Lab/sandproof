@@ -223,16 +223,15 @@ pub trait CommittedDriver: Send + Sync {
     /// Only an already committed exact request is driven. Unknown preserves it.
     /// Trusted assembly supplies the exact original request already accepted
     /// by this application's authority, not a caller-constructed lookalike.
-    /// A retired terminal receipt rechecks its complete control identity; it
-    /// does not retain/revalidate the canonical create body or reopen a window.
-    fn drive_committed(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError>;
+    /// This performs one bounded attempt; later reconciliation uses the same
+    /// complete packet rather than creating another operation.
+    fn drive_committed(&self, request: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) -> Result<(), PortError>;
     /// # Errors
     /// Commits/reuses the original Destroy through the original authority.
     fn destroy_exact(
         &self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, PortError>;
+        original_create: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError>;
 }
 
 /// One high-level network attempt; no automatic new operation/VM allocation.
@@ -302,6 +301,15 @@ pub trait HostPort: Send + Sync + 'static {
 /// Tests inject storage faults while using the same pure `CenterState`
 /// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
+    /// Protected workflow termination of its exact original accepted Create.
+    /// Public owner/visibility checks remain at their original public entry.
+    /// # Errors
+    /// Missing, changed or unsupported originals cannot allocate termination.
+    fn destroy_bound_create(
+        &mut self, _original: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
+        Err(sandproof_center_core::DecisionError::Invalid.into())
+    }
     /// # Errors
     /// Expiry sets current termination in the original CAS, including private rows.
     fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError>;

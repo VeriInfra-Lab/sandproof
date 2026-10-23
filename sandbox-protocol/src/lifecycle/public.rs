@@ -16,6 +16,22 @@ pub struct CreateParameters {
     pub timeout_ms: u64,
     pub max_lifetime_ms: u64,
 }
+impl CreateParameters {
+    /// Derive the absolute startup deadline only for a new admission. Full
+    /// original relative input remains the replay authority in the caller.
+    #[must_use]
+    pub fn binding_at(&self, now_ms: u64) -> Option<crate::internal::lifecycle::CreateBinding> {
+        Some(crate::internal::lifecycle::CreateBinding {
+            template_revision: self.template_revision.clone(),
+            template_digest: self.template_digest,
+            resources: self.resources,
+            options: self.options.clone(),
+            startup_deadline_ms: now_ms.checked_add(self.startup_timeout_ms)?,
+            timeout_ms: self.timeout_ms,
+            max_lifetime_ms: self.max_lifetime_ms,
+        })
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

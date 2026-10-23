@@ -17,6 +17,39 @@ use sandproof_protocol::{
 };
 
 impl SharedBusinessAuthority {
+    pub(crate) fn public_lifecycle_intent(&self, owner: &TenantId, session: &SessionId)
+        -> Result<(AcceptedLifecycleIntent, SessionPhase), PortError>
+    {
+        let current = self.snapshot()?;
+        if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+            return Err(PortError::NotFound);
+        }
+        let record = current.center.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
+        let intent = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent().clone();
+        Ok((intent, record.phase()))
+    }
+    pub(super) fn accept_bound_destroy(
+        &self, original: &AcceptedLifecycleIntent,
+    ) -> Result<AcceptedLifecycleIntent, sandproof_center_store::authority::AuthorityError> {
+        let mut authority = self.0.lock().map_err(|_| sandproof_center_store::authority::AuthorityError::RecoveryRequired)?;
+        authority.snapshot_envelope()?;
+        authority.decide(|current| {
+            let binding = &original.request.binding;
+            let record = current.center.lifecycle_session(&binding.key.owner, &binding.session)
+                .ok_or(DecisionError::NotFound)?;
+            if record.operations().first().is_none_or(|first| first.intent() != original) {
+                return Err(DecisionError::Conflict.into());
+            }
+            let prior = record.operations().last().ok_or(DecisionError::Invalid)?.intent();
+            if record.terminating() { return Ok((current.clone(), prior.clone())); }
+            let submission = LifecycleSubmission::Destroy {
+                key: current.center.next_sdk_operation_key(&binding.key.owner)?,
+                session: binding.session.clone(), expected_version: prior.accepted_version,
+            };
+            let (center, intent) = current.center.accept_lifecycle(&binding.key.owner, &submission, 0)?;
+            Ok((current.with_center(center), intent))
+        })
+    }
     /// # Errors
     /// Public owner/visibility, current version and key allocation share one CAS.
     pub(super) fn accept_sdk_followup(
@@ -63,6 +96,9 @@ impl SharedBusinessAuthority {
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
         authority.snapshot_envelope().map_err(authority_error)?;
         authority.decide(|current| {
+            if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+                return Err(DecisionError::NotFound.into());
+            }
             let submission = LifecycleSubmission::Destroy {
                 key: key(&current.center, owner, request.window, request.sequence),
                 session,
@@ -207,6 +243,9 @@ impl SharedBusinessAuthority {
     ) -> Result<Option<AcceptedLifecycleIntent>, PortError> {
         check_public_window(request.window)?;
         let current = self.snapshot()?;
+        if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+            return Err(PortError::NotFound);
+        }
         current.center.replay_lifecycle(owner, &LifecycleSubmission::Unload {
             key: key(&current.center, owner, request.window, request.sequence),
             session: session.clone(),
@@ -230,6 +269,9 @@ impl SharedBusinessAuthority {
         authority.snapshot_envelope().map_err(authority_error)?;
         authority
             .decide(|current| {
+                if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+                    return Err(DecisionError::NotFound.into());
+                }
                 let submission = LifecycleSubmission::Unload {
                     key: key(&current.center, owner, request.window, request.sequence),
                     session: session.clone(),
@@ -261,19 +303,8 @@ impl SharedBusinessAuthority {
         owner: &TenantId,
         session: &SessionId,
     ) -> Result<PublicSessionView, PortError> {
-        let record = self
-            .0
-            .lock()
-            .map_err(|_| PortError::OutcomeUnknown)?
-            .query_lifecycle(owner, session)
-            .map_err(authority_error)?
-            .ok_or(PortError::NotFound)?;
-        let current = record
-            .operations()
-            .last()
-            .ok_or(PortError::OutcomeUnknown)?
-            .intent();
-        let phase = match record.phase() {
+        let (current, phase) = self.public_lifecycle_intent(owner, session)?;
+        let phase = match phase {
             SessionPhase::Creating => PublicSessionPhase::Creating,
             // The ledger retains a historical Ready. A current publishable
             // Running needs the original host observation provider, still

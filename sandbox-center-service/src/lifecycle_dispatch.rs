@@ -96,6 +96,26 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         }
     }
 
+    /// Private workflows share the original current observation/commit path,
+    /// without using the public visibility projection to obtain their result.
+    pub(crate) fn wait_current_running(&self, intent: &AcceptedLifecycleIntent) -> Result<(), PortError> {
+        let deadline = self.reply_deadline()?;
+        loop {
+            time_left(deadline)?;
+            let observed = self.reconcile_lifecycle_intent(intent, deadline)?;
+            let state = self.snapshot()?;
+            let record = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
+                .ok_or(PortError::OutcomeUnknown)?;
+            let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?;
+            if current.intent() != intent || record.terminating() { return Err(PortError::OutcomeUnknown); }
+            if observed && record.phase() == SessionPhase::Running {
+                let facts = current.running().ok_or(PortError::OutcomeUnknown)?;
+                if self.now()? < facts.end_at_ms { time_left(deadline)?; return Ok(()); }
+            }
+            self.poll_pause(deadline);
+        }
+    }
+
     pub(crate) fn wait_current_terminal(&self, intent: &AcceptedLifecycleIntent) -> Result<(), PortError> {
         let deadline = self.reply_deadline()?;
         loop {
@@ -175,7 +195,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         })
     }
 
-    fn reconcile_lifecycle_intent(&self, intent: &AcceptedLifecycleIntent, deadline: Instant) -> Result<bool, PortError> {
+    pub(crate) fn reconcile_lifecycle_intent(&self, intent: &AcceptedLifecycleIntent, deadline: Instant) -> Result<bool, PortError> {
         // Recheck immediately before detached dispatch. A fresh snapshot is
         // mandatory even when another worker has just fenced the authority.
         let (current, _) = match self.current_lifecycle_intent(&intent.request.binding.key.owner, &intent.request.binding.session) {

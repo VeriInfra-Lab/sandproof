@@ -44,15 +44,7 @@ pub(crate) fn create_binding(
     policy: LifecyclePolicy,
 ) -> Result<CreateBinding, PortError> {
     let parameters = create_parameters(template, options, timeout_secs, policy)?;
-    Ok(CreateBinding {
-        template_revision: parameters.template_revision,
-        template_digest: parameters.template_digest,
-        resources: parameters.resources,
-        options: parameters.options,
-        startup_deadline_ms: now_ms.checked_add(parameters.startup_timeout_ms).ok_or(PortError::Invalid)?,
-        timeout_ms: parameters.timeout_ms,
-        max_lifetime_ms: parameters.max_lifetime_ms,
-    })
+    parameters.binding_at(now_ms).ok_or(PortError::Invalid)
 }
 
 pub(crate) fn create_parameters(

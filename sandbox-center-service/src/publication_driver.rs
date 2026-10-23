@@ -4,10 +4,7 @@ use crate::{
 };
 use sandproof_api::PortError;
 use sandproof_center_core::CenterState;
-use sandproof_protocol::{
-    SandboxId, TenantId,
-    internal::lifecycle::{LifecycleRequest, LifecycleResponse},
-};
+use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
 
 impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CommittedDriver
     for CenterApplication<A, H, T>
@@ -21,18 +18,17 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CommittedDriver
     fn snapshot(&self) -> Result<CenterState, PortError> {
         Self::snapshot(self)
     }
-    fn drive_committed(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError> {
-        self.wait(request)
+    fn drive_committed(&self, request: &AcceptedLifecycleIntent) -> Result<(), PortError> {
+        self.reconcile_lifecycle_intent(request, self.reply_deadline()?).map(|_| ())
     }
     fn destroy_exact(
         &self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, PortError> {
+        original_create: &AcceptedLifecycleIntent,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
         self.authority
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .destroy(tenant, sandbox)
+            .destroy_bound_create(original_create)
             .map_err(crate::application::authority_error)
     }
 }

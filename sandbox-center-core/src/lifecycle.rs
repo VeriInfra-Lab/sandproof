@@ -1,7 +1,6 @@
 //! Current lifecycle decisions in the original center authority.
 //! One Sandbox row owns one bounded operation history; no shadow lifecycle table.
 use crate::{CenterState, DecisionError, NodeRole, Sandbox, TenantBudget};
-use sandproof_protocol::internal::lifecycle::CreateBinding;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CaptureId, CenterIdentity, CurrentReadyFacts, ExpectedSession,
     IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
@@ -300,7 +299,25 @@ impl CenterState {
     pub fn accept_lifecycle(&self, owner: &TenantId, submission: &LifecycleSubmission, now_ms: u64)
         -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
     {
+        self.accept_lifecycle_for_role(owner, submission, now_ms, NodeRole::Runtime)
+    }
+    /// Protected private-build admission, using the same original allocator.
+    /// No public request can select this role.
+    /// # Errors
+    /// Only a Create may enter this role; replay retains its actual node role.
+    pub fn accept_builder_lifecycle(&self, owner: &TenantId, submission: &LifecycleSubmission, now_ms: u64)
+        -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
+    {
+        if !matches!(submission, LifecycleSubmission::Create { .. }) { return Err(DecisionError::Invalid); }
+        self.accept_lifecycle_for_role(owner, submission, now_ms, NodeRole::Builder)
+    }
+    fn accept_lifecycle_for_role(&self, owner: &TenantId, submission: &LifecycleSubmission,
+        now_ms: u64, role: NodeRole) -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
+    {
         if let Some(intent) = self.replay_lifecycle(owner, submission)? {
+            if matches!(submission, LifecycleSubmission::Create { .. })
+                && !self.nodes.iter().any(|node| node.identity == intent.request.binding.node && node.role == role)
+            { return Err(DecisionError::Conflict); }
             return Ok((self.clone(), intent));
         }
         if !self.lifecycle.windows.iter().any(|window|
@@ -311,26 +328,21 @@ impl CenterState {
         { return Err(DecisionError::Stale); }
         match submission {
             LifecycleSubmission::Create { parameters, .. } =>
-                self.accept_lifecycle_create(submission, parameters, now_ms),
+                self.accept_lifecycle_create(submission, parameters, now_ms, role),
             LifecycleSubmission::Unload { session, expected_version, .. }
             | LifecycleSubmission::Renew { session, expected_version, .. }
             | LifecycleSubmission::Destroy { session, expected_version, .. } =>
                 self.accept_lifecycle_followup(submission, owner, session, *expected_version, now_ms),
         }
     }
-    fn accept_lifecycle_create(&self, submission: &LifecycleSubmission, parameters: &CreateParameters, now_ms: u64)
+    fn accept_lifecycle_create(&self, submission: &LifecycleSubmission, parameters: &CreateParameters,
+        now_ms: u64, role: NodeRole)
         -> Result<(Self, AcceptedLifecycleIntent), DecisionError>
     {
         if parameters.startup_timeout_ms == 0 { return Err(DecisionError::Invalid); }
-        let create = CreateBinding {
-            template_revision: parameters.template_revision.clone(),
-            template_digest: parameters.template_digest,
-            resources: parameters.resources, options: parameters.options.clone(),
-            startup_deadline_ms: now_ms.checked_add(parameters.startup_timeout_ms).ok_or(DecisionError::Exhausted)?,
-            timeout_ms: parameters.timeout_ms, max_lifetime_ms: parameters.max_lifetime_ms,
-        };
+        let create = parameters.binding_at(now_ms).ok_or(DecisionError::Exhausted)?;
         // The original allocator returns current fields; it constructs no old wire request.
-        let allocation = self.allocate_session(&submission.key().owner, &create, now_ms, NodeRole::Runtime)?;
+        let allocation = self.allocate_session(&submission.key().owner, &create, now_ms, role)?;
         let intent = AcceptedLifecycleIntent {
             retention: allocation.retention, center: self.lifecycle.center.clone(), accepted_version: 1,
             request: LifecycleRequest {
