@@ -30,7 +30,7 @@ fn host_settings() -> Value {
         "metadata_bytes":282_624,"inode_budget":19});
     native["bounded_host"]["physical_storage"]["host_template_caches"] = json!([cache.clone()]);
     native["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"] = json!(128);
-    json!({
+    let mut value = json!({
         "native": native,
         "inbox": {
             "center": {"deployment": "deployment-a", "center": "center-a"},
@@ -54,7 +54,17 @@ fn host_settings() -> Value {
             "download_timeout_ms":60000,"idle_timeout_ms":10000,
             "tls":{"identity_chain":["/private/host.der"],"private_key":"/private/host.key",
                 "roots":["/private/root.der"],"artifact_leaves":["/private/artifact.der"]}}
-    })
+    });
+    // The current inbox is one bounded SQL value. Size this controlled
+    // deployment from its actual schema, without increasing the total SQL cap.
+    let inbox: sandproof_controller_service::LifecycleInboxConfig =
+        serde_json::from_value(value["inbox"].clone()).unwrap();
+    let original_value_cap = value["native"]["maintenance"]["capacity"]["max_sql_value_bytes"]
+        .as_u64()
+        .unwrap();
+    value["native"]["maintenance"]["capacity"]["max_sql_value_bytes"] =
+        json!(original_value_cap.max(u64::try_from(inbox.required_bytes()).unwrap()));
+    value
 }
 
 fn check(value: Value) -> bool {
