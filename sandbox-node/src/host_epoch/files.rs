@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
-    io::{self, Read},
+    io::{self, Read, Write},
     os::unix::fs::{FileTypeExt, MetadataExt},
     path::{Path, PathBuf},
 };
@@ -129,6 +129,75 @@ impl CheckedFile {
         Ok(())
     }
 }
+/// Explicit, create-only operator publication. No serve/recovery caller invokes
+/// this function, and uncertain failures never remove or replace the new file.
+pub(super) fn write_new_payload(path: &Path, bytes: &[u8]) -> Result<()> {
+    if rustix::process::geteuid().as_raw() != 0 {
+        return Err(error("bootstrap provisioning requires original root identity"));
+    }
+    let parent_path = path.parent().ok_or_else(|| error("bootstrap parent missing"))?;
+    let leaf = path.file_name().ok_or_else(|| error("bootstrap filename missing"))?;
+    sandbox_runtime::check_trusted_path(parent_path)?;
+    let parent = File::from(
+        rfs::open(
+            parent_path,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(io::Error::from)?,
+    );
+    recheck_parent(parent_path, &parent)?;
+    let file = write_owned_payload(&parent, leaf, bytes, 0)?;
+    recheck_parent(parent_path, &parent)?;
+    let checked = CheckedFile::payload(path)?;
+    if Stamp::read(&file.metadata()?) != checked.stamp || checked.bytes != bytes {
+        return Err(error("published bootstrap file differs from original descriptor"));
+    }
+    checked.recheck()?;
+    Ok(())
+}
+
+fn recheck_parent(path: &Path, parent: &File) -> Result<()> {
+    sandbox_runtime::check_trusted_path(path)?;
+    let held = parent.metadata()?;
+    let named = fs::symlink_metadata(path)?;
+    if !held.is_dir() || held.uid() != 0 || held.mode() & 0o022 != 0
+        || held.dev() != named.dev() || held.ino() != named.ino()
+        || !named.is_dir() || named.file_type().is_symlink()
+    {
+        return Err(error("bootstrap parent changed"));
+    }
+    Ok(())
+}
+
+fn write_owned_payload(parent: &File, leaf: &std::ffi::OsStr, bytes: &[u8], owner: u32) -> Result<File> {
+    let metadata = parent.metadata()?;
+    let mut components = Path::new(leaf).components();
+    if bytes.is_empty() || bytes.len() > Kind::Payload.maximum() as usize
+        || !metadata.is_dir() || metadata.uid() != owner || metadata.mode() & 0o022 != 0
+        || !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+    {
+        return Err(error("invalid bootstrap publication parent, name or length"));
+    }
+    let mut file = File::from(
+        rfs::openat(parent, leaf,
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::RUSR,
+        ).map_err(io::Error::from)?,
+    );
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.uid() != owner || metadata.nlink() != 1
+        || metadata.mode() & 0o7777 != 0o400 || metadata.len() != bytes.len() as u64
+    {
+        return Err(error("new bootstrap file metadata differs"));
+    }
+    parent.sync_all()?;
+    Ok(file)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ToolIdentity {
@@ -235,6 +304,49 @@ mod tests {
         let owner = file.metadata().unwrap().uid();
         (root, path, owner)
     }
+    #[test]
+    fn explicit_publication_is_create_only_private_and_reopenable() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let parent = File::open(directory.path()).unwrap();
+        let owner = parent.metadata().unwrap().uid();
+        let leaf = std::ffi::OsStr::new("bootstrap");
+        let bytes = b"actual publication bytes";
+        let file = write_owned_payload(&parent, leaf, bytes, owner).unwrap();
+        let path = directory.path().join(leaf);
+        let checked = CheckedFile::read_owned(&path, owner, Kind::Payload).unwrap();
+        assert_eq!(checked.bytes, bytes);
+        assert_eq!(checked.stamp, Stamp::read(&file.metadata().unwrap()));
+        assert!(write_owned_payload(&parent, leaf, b"replacement", owner).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        fs::hard_link(&path, directory.path().join("alias")).unwrap();
+        assert!(write_owned_payload(&parent, leaf, b"replacement", owner).is_err());
+        assert!(CheckedFile::read_owned(&path, owner, Kind::Payload).is_err());
+    }
+
+    #[test]
+    fn publication_rejects_bad_parent_name_size_or_symlink_without_overwrite() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let parent = File::open(directory.path()).unwrap();
+        let owner = parent.metadata().unwrap().uid();
+        for leaf in ["", "..", "../escape", "/absolute", "sub/leaf"] {
+            assert!(write_owned_payload(&parent, std::ffi::OsStr::new(leaf), b"bytes", owner).is_err());
+        }
+        let leaf = std::ffi::OsStr::new("bootstrap");
+        assert!(write_owned_payload(&parent, leaf, b"", owner).is_err());
+        assert!(write_owned_payload(&parent, leaf, &vec![0; 1024 * 1024 + 1], owner).is_err());
+        assert!(write_owned_payload(&parent, leaf, b"bytes", owner.wrapping_add(1)).is_err());
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(write_owned_payload(&parent, leaf, b"bytes", owner).is_err());
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+        fs::write(directory.path().join("original"), b"retained").unwrap();
+        symlink("original", directory.path().join(leaf)).unwrap();
+        assert!(write_owned_payload(&parent, leaf, b"replacement", owner).is_err());
+        assert_eq!(fs::read(directory.path().join("original")).unwrap(), b"retained");
+    }
+
     #[test]
     fn leaf_reader_hashes_real_bytes_and_rejects_wrong_owner_mode_and_links() {
         let (root, path, owner) = fixture(0o400);

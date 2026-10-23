@@ -225,6 +225,19 @@ fn root_protected_bootstrap_roundtrip_uses_real_host_facts_without_a_vm() {
             registration: registration.clone()
         }
     );
+    assert_eq!(source.registration(&node(), inputs).unwrap(), registration);
+    let provisioned_path = root.path().join("provisioned.json");
+    let provisioned = ProtectedHostEpochSource::at(provisioned_path.clone()).unwrap();
+    let actual = provisioned.provision_inputs(&node(), inputs).unwrap();
+    assert_eq!(actual, registration);
+    assert_eq!(fs::read(&provisioned_path).unwrap(), bytes);
+    assert!(provisioned.provision_inputs(&node(), inputs).is_err());
+    assert_eq!(fs::read(&provisioned_path).unwrap(), bytes);
+    let other = NodeIdentity {
+        node_generation: PositiveCounter::try_from(2).unwrap(),
+        ..node()
+    };
+    assert!(provisioned.registration(&other, inputs).is_err());
     let replaceable = root.path().join("replaceable");
     fs::create_dir(&replaceable).unwrap();
     fs::set_permissions(

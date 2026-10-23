@@ -200,7 +200,14 @@ fn slow_artifact_hash_does_not_hold_shared_cache_or_block_another_artifact() {
     let node = worker(directory.path());
     let (entered, waiting) = mpsc::channel();
     let (release, resume) = mpsc::channel();
+    struct ResumeOnDrop(mpsc::Sender<()>);
+    impl Drop for ResumeOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.send(());
+        }
+    }
     std::thread::scope(|scope| {
+        let release = ResumeOnDrop(release);
         let node = &node;
         let first = scope.spawn(move || {
             node.validate_artifact_with(&binding.rootfs, |file| {
@@ -212,17 +219,14 @@ fn slow_artifact_hash_does_not_hold_shared_cache_or_block_another_artifact() {
         });
         waiting.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
         let cache_available = node.validated_artifacts.try_lock().is_ok();
-        // Always release the barrier before asserting, so a rejected mutant
-        // cannot strand a scoped worker and turn an assertion into a hang.
-        if !cache_available {
-            release.send(()).unwrap();
-            first.join().unwrap();
-            panic!("slow hash held the shared artifact cache lock");
-        }
-        let other = node.validate_artifact(&binding.kernel);
-        release.send(()).unwrap();
-        assert!(other.is_ok());
-        assert!(first.join().unwrap());
+        // A failing cache-lock mutant must not block the second hash. The
+        // guard also releases the worker on every panic/timeout return path.
+        let other = cache_available.then(|| node.validate_artifact(&binding.kernel).is_ok());
+        drop(release);
+        let first_succeeded = first.join().unwrap();
+        assert!(cache_available, "slow hash held the shared artifact cache lock");
+        assert_eq!(other, Some(true));
+        assert!(first_succeeded);
     });
     directory.close().unwrap();
 }

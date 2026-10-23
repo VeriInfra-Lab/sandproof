@@ -407,6 +407,19 @@ impl LinuxWorker {
         }
     }
 
+    /// Read the existing protected bootstrap and verify its actual host facts.
+    /// Only explicit service initialization may persist this registration;
+    /// restarting serve must compare the original stored registration instead.
+    /// # Errors
+    /// Rejects changed host facts, unsafe or replaced files and foreign bindings.
+    pub fn host_epoch_registration(
+        &self,
+        source: &crate::ProtectedHostEpochSource,
+        node: &sandproof_protocol::internal::NodeIdentity,
+    ) -> Result<sandproof_controller_service::capture::HostEpochRegistration, RuntimeError> {
+        source.registration(node, self.host_bootstrap_inputs())
+    }
+
     fn sync_node_record(&self, path: &Path) -> NodeResult<()> {
         node_staging::cleanup(&self.config, path)?;
         File::open(path.parent().ok_or("node record parent")?)?.sync_all()?;
