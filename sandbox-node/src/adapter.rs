@@ -48,7 +48,7 @@ impl NodeHost {
 }
 
 impl NodeHost {
-    /// Pause only the source of an already committed and claimed FreezeVm.
+    /// Pause only the source of an already committed and claimed `FreezeVm`.
     /// The service independently binds the full external operation to this
     /// native action and supplies the requirement from the original saved work.
     /// # Errors

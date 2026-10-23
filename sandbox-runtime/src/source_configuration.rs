@@ -186,7 +186,7 @@ impl Runtime {
     /// chmod, new files or replacement-source adoption. The caller holds its
     /// original work/gate, then rechecks its version and commits these facts
     /// against the protected epoch/template before any capture effect. Visible
-    /// device JSON must match the same BootPlan used at launch. Hidden custom
+    /// device JSON must match the same `BootPlan` used at launch. Hidden custom
     /// CPU/logger/metrics state, actual image provenance and CPU compatibility
     /// still need the original protected deployment and writer checks.
     /// # Errors

@@ -42,13 +42,10 @@ fn covered(allowed: &[u32], observed: &[u32]) -> bool {
     let mut a = 0;
     let mut o = 0;
     while a < allowed.len() && o < observed.len() {
-        if allowed[a] == observed[o] {
-            o += 1;
-            a += 1;
-        } else if allowed[a] < observed[o] {
-            a += 1;
-        } else {
-            return false;
+        match allowed[a].cmp(&observed[o]) {
+            std::cmp::Ordering::Equal => { o += 1; a += 1; }
+            std::cmp::Ordering::Less => { a += 1; }
+            std::cmp::Ordering::Greater => return false,
         }
     }
     o == observed.len()

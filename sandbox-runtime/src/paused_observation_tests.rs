@@ -8,6 +8,11 @@ use std::{
     thread,
 };
 
+struct FinishOnDrop(std::sync::mpsc::Sender<()>);
+impl Drop for FinishOnDrop {
+    fn drop(&mut self) { let _ = self.0.send(()); }
+}
+
 const ID: &str = "paused-read-test";
 fn identity() -> RuntimeProcessIdentity {
     RuntimeProcessIdentity::capture(std::process::id()).unwrap()
@@ -176,7 +181,7 @@ fn wrong_uid_or_gid_and_a_different_process_endpoint_are_refused_before_get() {
     use std::process::{Command, Stdio};
     let _serial = super::super::super::PROCESS_TEST_LOCK.lock().unwrap();
     let mut child = crate::OwnedChild::spawn(
-        &mut Command::new("/bin/sh")
+        Command::new("/bin/sh")
             .args(["-c", "IFS= read -r finish", "peer-source", "--id", ID])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -189,13 +194,13 @@ fn wrong_uid_or_gid_and_a_different_process_endpoint_are_refused_before_get() {
         let root = tempfile::tempdir().unwrap();
         let listener = UnixListener::bind(root.path().join("api.socket")).unwrap();
         let server = serve(listener, http(&reply("Paused")), || {});
-        let (source, expected_uid, expected_gid) = match variant {
+        let (source, expected_owner, expected_group) = match variant {
             0 => (identity(), uid.checked_add(1).unwrap(), gid),
             1 => (identity(), uid, gid.checked_add(1).unwrap()),
             _ => (other.clone(), uid, gid),
         };
         assert!(matches!(
-            query(&frame(root.path(), source), expected_uid, expected_gid),
+            query(&frame(root.path(), source), expected_owner, expected_group),
             Err(RuntimeError::IdentityMismatch(_))
         ));
         assert!(server.join().unwrap().is_empty());
@@ -217,10 +222,10 @@ fn live_pidfd_with_missing_proc_or_wrong_start_is_not_execution_exit() {
     let mut status = read_proc(source.pid).unwrap().unwrap();
     status.start_time_ticks += 1;
     assert!(matches!(
-        known_exit(&fd, Some(status), &source),
+        known_exit(&fd, Some(&status), &source),
         Err(RuntimeError::IdentityMismatch(_))
     ));
-    assert!(!known_exit(&fd, read_proc(source.pid).unwrap(), &source).unwrap());
+    assert!(!known_exit(&fd, read_proc(source.pid).unwrap().as_ref(), &source).unwrap());
 }
 
 #[test]
@@ -229,17 +234,12 @@ fn silent_connected_peer_is_unknown_and_does_not_produce_a_paused_handle() {
     let root = tempfile::tempdir().unwrap();
     let listener = UnixListener::bind(root.path().join("api.socket")).unwrap();
     let (done_tx, done_rx) = mpsc::channel();
-    struct FinishOnDrop(mpsc::Sender<()>);
-    impl Drop for FinishOnDrop {
-        fn drop(&mut self) {
-            let _ = self.0.send(());
-        }
-    }
     let done = FinishOnDrop(done_tx);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut bytes = [0_u8; 128];
-        stream.read(&mut bytes).unwrap();
+        let mut first = [0_u8; 1];
+        stream.read_exact(&mut first).unwrap();
+        assert_eq!(first[0], b'G');
         done_rx.recv().unwrap();
     });
     let (uid, gid) = owners();
@@ -256,7 +256,7 @@ fn original_pidfd_confirms_execution_exit_after_exact_child_is_reaped() {
     use std::process::{Command, Stdio};
     let _serial = super::super::super::PROCESS_TEST_LOCK.lock().unwrap();
     let mut child = crate::OwnedChild::spawn(
-        &mut Command::new("/bin/sh")
+        Command::new("/bin/sh")
             .args(["-c", "IFS= read -r finish", "exit-source", "--id", ID])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -266,7 +266,7 @@ fn original_pidfd_confirms_execution_exit_after_exact_child_is_reaped() {
     let source = RuntimeProcessIdentity::capture(child.id()).unwrap();
     let pid = Pid::from_raw(i32::try_from(source.pid).unwrap()).unwrap();
     let fd = pidfd_open(pid, PidfdFlags::empty()).unwrap();
-    assert!(!known_exit(&fd, read_proc(source.pid).unwrap(), &source).unwrap());
+    assert!(!known_exit(&fd, read_proc(source.pid).unwrap().as_ref(), &source).unwrap());
     drop(child.stdin.take());
     child.wait().unwrap();
     assert!(known_exit(&fd, None, &source).unwrap());

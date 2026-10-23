@@ -2,6 +2,7 @@
 //! None of these fixtures asserts actual VMM/XSAVE or CPU-epoch continuity.
 use super::*;
 use crate::linux::PROCESS_TEST_LOCK;
+use std::io::Write;
 use std::{
     os::unix::fs::OpenOptionsExt,
     process::{Child, Command, Stdio},
@@ -108,7 +109,6 @@ fn bounded_metadata_reads_reject_oversize_and_symlink() {
     let path = dir.path().join("status");
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true).mode(0o600);
-    use std::io::Write;
     options
         .open(&path)
         .unwrap()
