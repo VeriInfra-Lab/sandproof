@@ -246,7 +246,10 @@ impl SharedBusinessAuthority {
                     key: current.center.next_sdk_operation_key(tenant)?,
                     parameters: lifecycle_parameters.clone(),
                 };
-                let (center, create) = current.center.accept_builder_lifecycle(tenant, &submission, now_ms)?;
+                let (center, create) =
+                    current
+                        .center
+                        .accept_builder_lifecycle(tenant, &submission, now_ms)?;
                 if !super::super::RegistryMetadata::request_fits(&create)
                     || !builds.matches_parameters(&current.metadata, &create, parameters)
                 {
@@ -318,7 +321,16 @@ impl SharedBusinessAuthority {
                         Err(DecisionError::Conflict.into())
                     };
                 };
-                if sandbox != Some(anchor.original_create.request.binding.session.as_protocol_id()) {
+                if sandbox
+                    != Some(
+                        anchor
+                            .original_create
+                            .request
+                            .binding
+                            .session
+                            .as_protocol_id(),
+                    )
+                {
                     return Err(DecisionError::Conflict.into());
                 }
                 if anchor.settlement.is_none() {

@@ -179,15 +179,16 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
             .ok_or(PortError::OutcomeUnknown)?;
         let original = sandbox.operations[0].intent();
         let current = sandbox.operations.last().ok_or(PortError::OutcomeUnknown)?;
-        if matches!(current.intent().request.operation, LifecycleOperation::Create { .. }) {
+        if matches!(
+            current.intent().request.operation,
+            LifecycleOperation::Create { .. }
+        ) {
             // A transport timeout is not a failed VM. Only original Ready or
             // the original startup deadline authorizes ending this validation.
             let LifecycleOperation::Create { create, .. } = &original.request.operation else {
                 return Err(PortError::OutcomeUnknown);
             };
-            if current.running().is_none()
-                && driver.now_ms()? < create.startup_deadline_ms
-            {
+            if current.running().is_none() && driver.now_ms()? < create.startup_deadline_ms {
                 return Ok(false);
             }
             let destroy = driver.destroy_exact(&link.create)?;

@@ -19,7 +19,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CommittedDriver
         Self::snapshot(self)
     }
     fn drive_committed(&self, request: &AcceptedLifecycleIntent) -> Result<(), PortError> {
-        self.reconcile_lifecycle_intent(request, self.reply_deadline()?).map(|_| ())
+        self.reconcile_lifecycle_intent(request, self.reply_deadline()?)
+            .map(|_| ())
     }
     fn destroy_exact(
         &self,

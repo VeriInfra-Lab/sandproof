@@ -3,12 +3,12 @@ mod authority;
 mod validation;
 use sandbox_controller_core::maintenance::windows::{WindowId, WindowLimits, WindowState};
 use sandproof_api::PortError;
-use sandproof_protocol::{
-    ResourceId, TenantId,
-};
 use sandproof_internal::lifecycle::REQUEST_BODY_BYTES;
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, TERMINAL_RESULT_BODY_BYTES, TerminalLifecycleObservation,
+};
+use sandproof_protocol::{ResourceId, TenantId};
 use serde::{Deserialize, Serialize};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, TerminalLifecycleObservation, TERMINAL_RESULT_BODY_BYTES};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -63,7 +63,8 @@ pub(crate) fn create_parameters(
             disk_bytes: shape.disk_bytes,
         },
         options: serde_json::to_vec(options).map_err(|_| PortError::Invalid)?,
-        startup_timeout_ms: seconds_to_milliseconds(policy.startup_timeout_secs).ok_or(PortError::Invalid)?,
+        startup_timeout_ms: seconds_to_milliseconds(policy.startup_timeout_secs)
+            .ok_or(PortError::Invalid)?,
         timeout_ms: seconds_to_milliseconds(timeout_secs).ok_or(PortError::Invalid)?,
         max_lifetime_ms: seconds_to_milliseconds(policy.max_lifetime_secs)
             .ok_or(PortError::Invalid)?,

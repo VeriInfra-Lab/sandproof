@@ -98,9 +98,16 @@ impl Fixture {
             wire::node("host-a"),
             limits,
             sandproof_internal::diagnostic::RejectTemplateCache::new(Streams(Arc::clone(&senders))),
-        ).with_center_peer(sandproof_internal::lifecycle::CenterPeerRegistration::new(
-            center(), wire::node("host-a"), vec![certs.center.pin()],
-        ).unwrap()).unwrap();
+        )
+        .with_center_peer(
+            sandproof_internal::lifecycle::CenterPeerRegistration::new(
+                center(),
+                wire::node("host-a"),
+                vec![certs.center.pin()],
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let client = InternalClient::new(
             ClientTls::new(
@@ -306,9 +313,11 @@ async fn verified_sender_cannot_replace_the_protected_center_or_accepted_version
     let mut zero = identity();
     zero.accepted_version = 0;
     for identity in [foreign, zero] {
-        let response = f.client.stream_data(
-            &identity, data_request(), Arc::new(()), max_deadline(),
-        ).await.unwrap();
+        let response = f
+            .client
+            .stream_data(&identity, data_request(), Arc::new(()), max_deadline())
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         drop(response);
         idle_client(&f.client).await;

@@ -165,9 +165,15 @@ impl HostPort for Host {
 }
 type Templates = BusinessTemplates<Candidates, Evidence>;
 pub(super) fn template_provider(authority: &SharedBusinessAuthority) -> Templates {
-    BusinessTemplates::new(authority.clone(), Candidates(authority.clone()), Evidence {
-        authority: authority.clone(), admitted: false,
-    }).unwrap()
+    BusinessTemplates::new(
+        authority.clone(),
+        Candidates(authority.clone()),
+        Evidence {
+            authority: authority.clone(),
+            admitted: false,
+        },
+    )
+    .unwrap()
 }
 type Application = CenterApplication<SharedBusinessAuthority, Host, Templates>;
 pub(super) fn application(

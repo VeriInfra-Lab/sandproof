@@ -13,7 +13,7 @@ impl ValidationEvidencePort for RegisteredHosts {
         deadline: Duration,
     ) -> Result<ValidationEvidence, PortError> {
         let client = self
-            .client(&request.create.node)
+            .client(&request.create.request.binding.node)
             .map_err(|_| PortError::OutcomeUnknown)?;
         self.runtime.block_on(async {
             tokio::time::timeout(deadline, client.validation_evidence(request))

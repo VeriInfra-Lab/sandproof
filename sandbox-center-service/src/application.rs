@@ -193,7 +193,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     .map_err(authority_error)?
             } else {
                 authority
-                    .renew_current(&tenant, &sandbox, u64::try_from(seconds).map_err(|_| PortError::Invalid)?, false, now)
+                    .renew_current(
+                        &tenant,
+                        &sandbox,
+                        u64::try_from(seconds).map_err(|_| PortError::Invalid)?,
+                        false,
+                        now,
+                    )
                     .map_err(authority_error)?
             }
         };
@@ -219,10 +225,16 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         self.wait_current_terminal(&request)
     }
     pub(crate) fn reply_deadline(&self) -> Result<Instant, PortError> {
-        Instant::now().checked_add(self.config.reply_timeout).ok_or(PortError::OutcomeUnknown)
+        Instant::now()
+            .checked_add(self.config.reply_timeout)
+            .ok_or(PortError::OutcomeUnknown)
     }
     pub(crate) fn poll_pause(&self, deadline: Instant) {
-        std::thread::sleep(self.config.poll_interval.min(deadline.saturating_duration_since(Instant::now())));
+        std::thread::sleep(
+            self.config
+                .poll_interval
+                .min(deadline.saturating_duration_since(Instant::now())),
+        );
     }
     /// Trusted assembly explicitly stops new creates; public callers never
     /// choose a host or issue a retention lane.
@@ -264,7 +276,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             match authority.begin_close(&terminal, self.now()?) {
                 Ok(_)
                 | Err(AuthorityError::Decision(
-                    DecisionError::Conflict | DecisionError::Stale | DecisionError::NotFound | DecisionError::Unavailable,
+                    DecisionError::Conflict
+                    | DecisionError::Stale
+                    | DecisionError::NotFound
+                    | DecisionError::Unavailable,
                 )) => {}
                 Err(error) => return Err(authority_error(error)),
             }
@@ -281,7 +296,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         for request in requests {
             // No authority guard survives network I/O. Lost/wrong replies leave
             // the same durable ClosePending package available after restart.
-            let Ok(ack) = self.hosts.close_lifecycle_window(&request, self.config.reply_timeout) else {
+            let Ok(ack) = self
+                .hosts
+                .close_lifecycle_window(&request, self.config.reply_timeout)
+            else {
                 continue;
             };
             if !ack.matches(&request) {
@@ -301,8 +319,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     /// Shared authority faults stop the scan. Unknown host work stays pending.
     pub fn reconcile_once(&self) -> Result<usize, PortError> {
         let now = self.now()?;
-        self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
-            .expire_current(now).map_err(authority_error)?;
+        self.authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .expire_current(now)
+            .map_err(authority_error)?;
         let completed = self.reconcile_lifecycle_once()?;
         // Only already-committed close work is sent here. New close admission
         // remains after publication reconciliation and its original pin veto.

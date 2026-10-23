@@ -203,14 +203,27 @@ fn lifecycle_changed_full_input_never_commits_and_corrupt_or_missing_block_never
 }
 
 // Controlled input to the V3 save contract, not physical-host evidence.
-fn observed(intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) -> sandproof_protocol::lifecycle::CreateObservation {
-    use sandproof_protocol::lifecycle::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation};
-    let LifecycleOperation::Create { create, .. } = &intent.request.operation else { unreachable!() };
+fn observed(
+    intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+) -> sandproof_protocol::lifecycle::CreateObservation {
+    use sandproof_protocol::lifecycle::{
+        CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation,
+    };
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+        unreachable!()
+    };
     CreateObservation {
-        request: intent.clone(), current_request: intent.clone(), historical_create_succeeded: true,
-        readiness: CurrentCreateReadiness::Observed { facts: CurrentReadyFacts {
-            started_at_ms: 100, end_at_ms: 200, max_end_at_ms: 600,
-            startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: 100,
-        } },
+        request: intent.clone(),
+        current_request: intent.clone(),
+        historical_create_succeeded: true,
+        readiness: CurrentCreateReadiness::Observed {
+            facts: CurrentReadyFacts {
+                started_at_ms: 100,
+                end_at_ms: 200,
+                max_end_at_ms: 600,
+                startup_deadline_ms: create.startup_deadline_ms,
+                observed_at_ms: 100,
+            },
+        },
     }
 }

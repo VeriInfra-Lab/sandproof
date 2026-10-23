@@ -1,6 +1,6 @@
 //! Same original Redis CAS for canonical intent, original reservation and outbox.
 use super::{AuthorityError, AuthorityState, CenterAuthority};
-use sandproof_center_core::{Sandbox, LifecycleSubmission};
+use sandproof_center_core::{LifecycleSubmission, Sandbox};
 use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
@@ -10,7 +10,11 @@ impl<S: AuthorityState> CenterAuthority<S> {
     pub fn terminate_expired(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
         self.snapshot()?;
         let next = self.state()?.terminate_expired(now_ms)?;
-        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        if &next == self.state()? {
+            self.snapshot()?;
+        } else {
+            self.commit_center(next)?;
+        }
         Ok(())
     }
     /// # Errors
@@ -61,8 +65,14 @@ impl<S: AuthorityState> CenterAuthority<S> {
         observation: &sandproof_protocol::lifecycle::CreateObservation,
     ) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        let next = self.state()?.accept_lifecycle_create_observation(observation)?;
-        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        let next = self
+            .state()?
+            .accept_lifecycle_create_observation(observation)?;
+        if &next == self.state()? {
+            self.snapshot()?;
+        } else {
+            self.commit_center(next)?;
+        }
         Ok(())
     }
 
@@ -75,8 +85,14 @@ impl<S: AuthorityState> CenterAuthority<S> {
         now_ms: u64,
     ) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        let next = self.state()?.accept_lifecycle_terminal_observation(result, now_ms)?;
-        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        let next = self
+            .state()?
+            .accept_lifecycle_terminal_observation(result, now_ms)?;
+        if &next == self.state()? {
+            self.snapshot()?;
+        } else {
+            self.commit_center(next)?;
+        }
         Ok(())
     }
 }

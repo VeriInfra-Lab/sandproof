@@ -13,10 +13,7 @@ use sandproof_controller_service::{
     BuildWindow, CreateNetworking, CreateOptions,
     application::{BuildStatus, Session},
 };
-use sandproof_protocol::{
-    SandboxId, TenantId,
-    lifecycle::LifecycleOperation,
-};
+use sandproof_protocol::{SandboxId, TenantId, lifecycle::LifecycleOperation};
 use std::sync::Arc;
 
 pub struct CenterBuildPort<H: HostPort, T: TemplateProvider>(
@@ -71,10 +68,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             {
                 return Err(PortError::Busy);
             }
-            let LifecycleOperation::Create { create, .. } = &anchor.original_create.request.operation else {
+            let LifecycleOperation::Create { create, .. } =
+                &anchor.original_create.request.operation
+            else {
                 return Err(PortError::OutcomeUnknown);
             };
-            let template = state.metadata.bound(&create.template_revision, &create.template_digest)?;
+            let template = state
+                .metadata
+                .bound(&create.template_revision, &create.template_digest)?;
             let detail = self.detail_for_record(&state.center, tenant, record, &template)?;
             Some(Session {
                 template_id: detail.info.template_id,
@@ -99,7 +100,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         Ok(BuildStatus {
             sandbox_id: anchor
                 .original_create
-                .request.binding.session.as_protocol_id().as_str()
+                .request
+                .binding
+                .session
+                .as_protocol_id()
+                .as_str()
                 .to_owned(),
             state: state.into(),
             cleanup_complete: record.released(),
@@ -238,7 +243,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .private_build_anchors()
             .iter()
             .find(|anchor| {
-                anchor.tenant == tenant && anchor.original_create.request.binding.session.as_protocol_id() == &sandbox
+                anchor.tenant == tenant
+                    && anchor
+                        .original_create
+                        .request
+                        .binding
+                        .session
+                        .as_protocol_id()
+                        == &sandbox
             })
             .ok_or(PortError::NotFound)?;
         anchored(&state, anchor)?;
@@ -258,7 +270,9 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         let now = self.now()?;
         let mut result = None;
         for anchor in state.metadata.private_build_anchors() {
-            if anchor.tenant != tenant { continue; }
+            if anchor.tenant != tenant {
+                continue;
+            }
             let record = anchored(&state, anchor)?;
             let route = match Self::route_for_record(&state.center, record, now) {
                 Ok(route) => route,

@@ -11,73 +11,129 @@ use sandproof_controller_service::{
 use sandproof_protocol::{
     TenantId,
     lifecycle::{
-        AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, OperationKey, PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase,
-        PublicSessionView, PublicUnloadRequest, SessionId,
+        AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, OperationKey,
+        PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase, PublicSessionView,
+        PublicUnloadRequest, SessionId,
     },
 };
 
 impl SharedBusinessAuthority {
-    pub(crate) fn public_lifecycle_intent(&self, owner: &TenantId, session: &SessionId)
-        -> Result<(AcceptedLifecycleIntent, SessionPhase), PortError>
-    {
+    pub(crate) fn public_lifecycle_intent(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+    ) -> Result<(AcceptedLifecycleIntent, SessionPhase), PortError> {
         let current = self.snapshot()?;
-        if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+        if current
+            .metadata
+            .private_sandboxes()
+            .contains(session.as_protocol_id())
+        {
             return Err(PortError::NotFound);
         }
-        let record = current.center.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
-        let intent = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent().clone();
+        let record = current
+            .center
+            .lifecycle_session(owner, session)
+            .ok_or(PortError::NotFound)?;
+        let intent = record
+            .operations()
+            .last()
+            .ok_or(PortError::OutcomeUnknown)?
+            .intent()
+            .clone();
         Ok((intent, record.phase()))
     }
     pub(super) fn accept_bound_destroy(
-        &self, original: &AcceptedLifecycleIntent,
+        &self,
+        original: &AcceptedLifecycleIntent,
     ) -> Result<AcceptedLifecycleIntent, sandproof_center_store::authority::AuthorityError> {
-        let mut authority = self.0.lock().map_err(|_| sandproof_center_store::authority::AuthorityError::RecoveryRequired)?;
+        let mut authority = self
+            .0
+            .lock()
+            .map_err(|_| sandproof_center_store::authority::AuthorityError::RecoveryRequired)?;
         authority.snapshot_envelope()?;
         authority.decide(|current| {
             let binding = &original.request.binding;
-            let record = current.center.lifecycle_session(&binding.key.owner, &binding.session)
+            let record = current
+                .center
+                .lifecycle_session(&binding.key.owner, &binding.session)
                 .ok_or(DecisionError::NotFound)?;
-            if record.operations().first().is_none_or(|first| first.intent() != original) {
+            if record
+                .operations()
+                .first()
+                .is_none_or(|first| first.intent() != original)
+            {
                 return Err(DecisionError::Conflict.into());
             }
-            let prior = record.operations().last().ok_or(DecisionError::Invalid)?.intent();
-            if record.terminating() { return Ok((current.clone(), prior.clone())); }
+            let prior = record
+                .operations()
+                .last()
+                .ok_or(DecisionError::Invalid)?
+                .intent();
+            if record.terminating() {
+                return Ok((current.clone(), prior.clone()));
+            }
             let submission = LifecycleSubmission::Destroy {
                 key: current.center.next_sdk_operation_key(&binding.key.owner)?,
-                session: binding.session.clone(), expected_version: prior.accepted_version,
+                session: binding.session.clone(),
+                expected_version: prior.accepted_version,
             };
-            let (center, intent) = current.center.accept_lifecycle(&binding.key.owner, &submission, 0)?;
+            let (center, intent) =
+                current
+                    .center
+                    .accept_lifecycle(&binding.key.owner, &submission, 0)?;
             Ok((current.with_center(center), intent))
         })
     }
     /// # Errors
     /// Public owner/visibility, current version and key allocation share one CAS.
     pub(super) fn accept_sdk_followup(
-        &self, owner: &TenantId, sandbox: &sandproof_protocol::SandboxId,
-        renewal: Option<(u64, bool)>, now_ms: u64,
+        &self,
+        owner: &TenantId,
+        sandbox: &sandproof_protocol::SandboxId,
+        renewal: Option<(u64, bool)>,
+        now_ms: u64,
     ) -> Result<AcceptedLifecycleIntent, sandproof_center_store::authority::AuthorityError> {
-        let mut authority = self.0.lock().map_err(|_| sandproof_center_store::authority::AuthorityError::RecoveryRequired)?;
+        let mut authority = self
+            .0
+            .lock()
+            .map_err(|_| sandproof_center_store::authority::AuthorityError::RecoveryRequired)?;
         authority.snapshot_envelope()?;
         authority.decide(|current| {
             if current.metadata.private_sandboxes().contains(sandbox) {
                 return Err(DecisionError::NotFound.into());
             }
             let session = SessionId::from_protocol_id(sandbox.clone());
-            let record = current.center.lifecycle_session(owner, &session).ok_or(DecisionError::NotFound)?;
-            let prior = record.operations().last().ok_or(DecisionError::Invalid)?.intent();
+            let record = current
+                .center
+                .lifecycle_session(owner, &session)
+                .ok_or(DecisionError::NotFound)?;
+            let prior = record
+                .operations()
+                .last()
+                .ok_or(DecisionError::Invalid)?
+                .intent();
             if renewal.is_none() && record.terminating() {
                 return Ok((current.clone(), prior.clone()));
             }
             let key = current.center.next_sdk_operation_key(owner)?;
             let submission = match renewal {
                 Some((timeout_secs, extend_only)) => LifecycleSubmission::Renew {
-                    key, session, expected_version: prior.accepted_version, timeout_secs, extend_only,
+                    key,
+                    session,
+                    expected_version: prior.accepted_version,
+                    timeout_secs,
+                    extend_only,
                 },
                 None => LifecycleSubmission::Destroy {
-                    key, session, expected_version: prior.accepted_version,
+                    key,
+                    session,
+                    expected_version: prior.accepted_version,
                 },
             };
-            let (center, intent) = current.center.accept_lifecycle(owner, &submission, now_ms)?;
+            let (center, intent) = current
+                .center
+                .accept_lifecycle(owner, &submission, now_ms)?;
             Ok((current.with_center(center), intent))
         })
     }
@@ -95,18 +151,24 @@ impl SharedBusinessAuthority {
         check_public_window(request.window)?;
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
         authority.snapshot_envelope().map_err(authority_error)?;
-        authority.decide(|current| {
-            if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
-                return Err(DecisionError::NotFound.into());
-            }
-            let submission = LifecycleSubmission::Destroy {
-                key: key(&current.center, owner, request.window, request.sequence),
-                session,
-                expected_version: request.expected_version,
-            };
-            let (next, intent) = current.center.accept_lifecycle(owner, &submission, 0)?;
-            Ok((current.with_center(next), intent))
-        }).map_err(authority_error)
+        authority
+            .decide(|current| {
+                if current
+                    .metadata
+                    .private_sandboxes()
+                    .contains(session.as_protocol_id())
+                {
+                    return Err(DecisionError::NotFound.into());
+                }
+                let submission = LifecycleSubmission::Destroy {
+                    key: key(&current.center, owner, request.window, request.sequence),
+                    session,
+                    expected_version: request.expected_version,
+                };
+                let (next, intent) = current.center.accept_lifecycle(owner, &submission, 0)?;
+                Ok((current.with_center(next), intent))
+            })
+            .map_err(authority_error)
     }
 
     /// # Errors
@@ -121,7 +183,10 @@ impl SharedBusinessAuthority {
     ) -> Result<AcceptedLifecycleIntent, PortError> {
         check_public_window(request.window)?;
         self.accept_create_from(
-            owner, &request.parameters, policy, now,
+            owner,
+            &request.parameters,
+            policy,
+            now,
             CreateKeySource::Explicit(request.window, request.sequence),
         )
     }
@@ -137,7 +202,13 @@ impl SharedBusinessAuthority {
         policy: LifecyclePolicy,
         now: impl FnOnce() -> Result<u64, PortError>,
     ) -> Result<AcceptedLifecycleIntent, PortError> {
-        self.accept_create_from(owner, parameters, policy, now, CreateKeySource::AllocatedSdk)
+        self.accept_create_from(
+            owner,
+            parameters,
+            policy,
+            now,
+            CreateKeySource::AllocatedSdk,
+        )
     }
 
     fn accept_create_from(
@@ -154,8 +225,12 @@ impl SharedBusinessAuthority {
             .decide(|current| {
                 let submission = LifecycleSubmission::Create {
                     key: match source {
-                        CreateKeySource::Explicit(window, sequence) => key(&current.center, owner, window, sequence),
-                        CreateKeySource::AllocatedSdk => current.center.next_sdk_operation_key(owner)?,
+                        CreateKeySource::Explicit(window, sequence) => {
+                            key(&current.center, owner, window, sequence)
+                        }
+                        CreateKeySource::AllocatedSdk => {
+                            current.center.next_sdk_operation_key(owner)?
+                        }
                     },
                     parameters: parameters.clone(),
                 };
@@ -243,14 +318,24 @@ impl SharedBusinessAuthority {
     ) -> Result<Option<AcceptedLifecycleIntent>, PortError> {
         check_public_window(request.window)?;
         let current = self.snapshot()?;
-        if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+        if current
+            .metadata
+            .private_sandboxes()
+            .contains(session.as_protocol_id())
+        {
             return Err(PortError::NotFound);
         }
-        current.center.replay_lifecycle(owner, &LifecycleSubmission::Unload {
-            key: key(&current.center, owner, request.window, request.sequence),
-            session: session.clone(),
-            expected_version: request.expected_version,
-        }).map_err(|error| authority_error(error.into()))
+        current
+            .center
+            .replay_lifecycle(
+                owner,
+                &LifecycleSubmission::Unload {
+                    key: key(&current.center, owner, request.window, request.sequence),
+                    session: session.clone(),
+                    expected_version: request.expected_version,
+                },
+            )
+            .map_err(|error| authority_error(error.into()))
     }
 
     /// # Errors
@@ -269,7 +354,11 @@ impl SharedBusinessAuthority {
         authority.snapshot_envelope().map_err(authority_error)?;
         authority
             .decide(|current| {
-                if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+                if current
+                    .metadata
+                    .private_sandboxes()
+                    .contains(session.as_protocol_id())
+                {
                     return Err(DecisionError::NotFound.into());
                 }
                 let submission = LifecycleSubmission::Unload {
@@ -289,7 +378,9 @@ impl SharedBusinessAuthority {
                 {
                     return Err(DecisionError::Stale.into());
                 }
-                let observed = current.center.accept_lifecycle_create_observation(observation)?;
+                let observed = current
+                    .center
+                    .accept_lifecycle_create_observation(observation)?;
                 let (next, intent) = observed.accept_lifecycle(owner, &submission, now_ms)?;
                 Ok((current.with_center(next), intent))
             })
@@ -326,12 +417,21 @@ impl SharedBusinessAuthority {
 
 #[derive(Clone, Copy)]
 enum CreateKeySource {
-    Explicit(sandproof_protocol::lifecycle::RequestWindowId, sandproof_protocol::lifecycle::RequestSequence),
+    Explicit(
+        sandproof_protocol::lifecycle::RequestWindowId,
+        sandproof_protocol::lifecycle::RequestSequence,
+    ),
     AllocatedSdk,
 }
 
-fn check_public_window(window: sandproof_protocol::lifecycle::RequestWindowId) -> Result<(), PortError> {
-    if window.get() % 2 == 0 { Err(PortError::Invalid) } else { Ok(()) }
+fn check_public_window(
+    window: sandproof_protocol::lifecycle::RequestWindowId,
+) -> Result<(), PortError> {
+    if window.get() % 2 == 0 {
+        Err(PortError::Invalid)
+    } else {
+        Ok(())
+    }
 }
 
 fn key(

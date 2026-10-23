@@ -20,10 +20,18 @@ impl<H> RejectTemplateCache<H> {
     }
 }
 impl<H: LifecycleReceiver> LifecycleReceiver for RejectTemplateCache<H> {
-    async fn confirm_terminal(&self, result: sandproof_protocol::lifecycle::TerminalLifecycleObservation, context: sandproof_protocol::lifecycle::AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
+    async fn confirm_terminal(
+        &self,
+        result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
         self.0.confirm_terminal(result, context).await
     }
-    async fn close_window(&self, request: sandproof_protocol::lifecycle::LifecycleWindowClose, context: sandproof_protocol::lifecycle::AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError> {
+    async fn close_window(
+        &self,
+        request: sandproof_protocol::lifecycle::LifecycleWindowClose,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError> {
         self.0.close_window(request, context).await
     }
     async fn observe_terminal(

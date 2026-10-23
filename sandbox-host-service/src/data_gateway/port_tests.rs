@@ -159,22 +159,35 @@ async fn native_identity_binds_original_guest_secret_through_body_preparation() 
     ));
     let create = lifecycle::request();
     let context = lifecycle::context();
-    application.record_lifecycle_intent(&create, &context).unwrap();
+    application
+        .record_lifecycle_intent(&create, &context)
+        .unwrap();
     application.establish_lifecycle_host_epoch().unwrap();
     application
         .advance_recorded_lifecycle_create_with_verification(
-            &create, context.expected_node(), Some(local::template()), local::compute(), None,
+            &create,
+            context.expected_node(),
+            Some(local::template()),
+            local::compute(),
+            None,
         )
         .unwrap();
-    let sandproof_protocol::lifecycle::LifecycleOperation::Create { target_incarnation, .. } =
-        &create.request.operation else { unreachable!() };
+    let sandproof_protocol::lifecycle::LifecycleOperation::Create {
+        target_incarnation, ..
+    } = &create.request.operation
+    else {
+        unreachable!()
+    };
     let native = NativeDataPort {
         application,
         identity: LifecycleAccessIdentity {
             protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
-            center: create.center.clone(), node: create.request.binding.node.clone(),
-            session: create.request.binding.session.clone(), operation: create.request.binding.key.clone(),
-            accepted_version: create.accepted_version, incarnation: *target_incarnation,
+            center: create.center.clone(),
+            node: create.request.binding.node.clone(),
+            session: create.request.binding.session.clone(),
+            operation: create.request.binding.key.clone(),
+            accepted_version: create.accepted_version,
+            incarnation: *target_incarnation,
         },
         context,
     };

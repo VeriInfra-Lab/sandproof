@@ -9,8 +9,8 @@ mod model;
 mod validation;
 mod window;
 pub use lifecycle::{
-    CreateParameters, LifecycleOperationRecord, LifecycleProfile,
-    LifecycleSubmission, LifecycleWindow, SessionPhase, next_lifecycle_version, LIFECYCLE_PROFILE_VERSION,
+    CreateParameters, LIFECYCLE_PROFILE_VERSION, LifecycleOperationRecord, LifecycleProfile,
+    LifecycleSubmission, LifecycleWindow, SessionPhase, next_lifecycle_version,
 };
 pub use model::*;
 /// Pure syntax/frontier check used by recovery; it grants no authority.

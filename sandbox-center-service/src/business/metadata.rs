@@ -12,15 +12,15 @@ use sandproof_controller_service::{
     },
     templates::TemplateCatalog,
 };
+use sandproof_internal::lifecycle::REQUEST_BODY_BYTES;
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, LifecycleOperation, TERMINAL_RESULT_BODY_BYTES,
+};
 use sandproof_protocol::{
     ResourceId, TenantId,
-    internal::lifecycle::{
-        CreateBinding, Resources,
-    },
+    internal::lifecycle::{CreateBinding, Resources},
 };
-use sandproof_internal::lifecycle::REQUEST_BODY_BYTES;
 use serde::{Deserialize, Serialize};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation, TERMINAL_RESULT_BODY_BYTES};
 
 /// Explicit engineering certificate limit, not a public request parameter.
 /// The final record separately reserves the protocol's entire create-request
@@ -98,10 +98,15 @@ impl RegistryMetadata {
                     .map(|link| link.create.request.binding.session.as_protocol_id().clone())
             })
             .chain(self.private_builds.iter().flat_map(|builds| {
-                builds
-                    .anchors
-                    .iter()
-                    .map(|anchor| anchor.original_create.request.binding.session.as_protocol_id().clone())
+                builds.anchors.iter().map(|anchor| {
+                    anchor
+                        .original_create
+                        .request
+                        .binding
+                        .session
+                        .as_protocol_id()
+                        .clone()
+                })
             }))
             .collect()
     }
@@ -177,39 +182,75 @@ impl RegistryMetadata {
         serde_json::to_vec(request).is_ok_and(|bytes| bytes.len() <= REQUEST_BODY_BYTES)
     }
     fn validation_valid(&self, entry: &GlobalPublication, center: &CenterState) -> bool {
-        let Some(link) = &entry.validation else { return true; };
+        let Some(link) = &entry.validation else {
+            return true;
+        };
         let original = &link.create;
         let binding = &original.request.binding;
-        if &binding.node.deployment_id != center.deployment() || &original.center != center.center_identity() { return false; }
-        let Some(lane) = center.lane(&binding.node, original.retention.slot) else { return false; };
-        if link.settlement.is_none() && lane.phase() == LanePhase::ClosePending
+        if &binding.node.deployment_id != center.deployment()
+            || &original.center != center.center_identity()
+        {
+            return false;
+        }
+        let Some(lane) = center.lane(&binding.node, original.retention.slot) else {
+            return false;
+        };
+        if link.settlement.is_none()
+            && lane.phase() == LanePhase::ClosePending
             && lane.current().map(|window| window.get()) == Some(original.retention.window.get())
-        { return false; }
+        {
+            return false;
+        }
         // Find the unique logical session first. Changed live owner/node must
         // not be treated as absence by comparing only an expected whole packet.
-        let live = center.sandboxes().iter().find(|record| record.operations().first()
-            .is_some_and(|first| first.intent().request.binding.session == binding.session));
+        let live = center.sandboxes().iter().find(|record| {
+            record
+                .operations()
+                .first()
+                .is_some_and(|first| first.intent().request.binding.session == binding.session)
+        });
         if let Some(saved) = &link.settlement {
             if !saved.is_valid_for(link)
                 || (live.is_none() && lane.retired_through() < original.retention.window.get())
-            { return false; }
-            let LifecycleOperation::Create { create, .. } = &original.request.operation else { return false; };
-            if !self.validation_tenant(entry, create).is_ok_and(|tenant|
-                tenant == original.request.binding.key.owner)
-            { return false; }
-            return live.is_none_or(|record|
-                record.operations().first().is_some_and(|first| first.intent() == original)
-                && record.operations().last().is_some_and(|last|
-                    super::publication::terminal_request(original, &saved.cleaned).as_ref()
-                        == Some(last.intent()) && last.terminal() == Some(&saved.cleaned))
-                && (saved.admission != super::ValidationAdmission::NotAdmitted
-                    || record.terminal_confirmation.as_ref() == Some(&saved.cleaned)));
+            {
+                return false;
+            }
+            let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+                return false;
+            };
+            if !self
+                .validation_tenant(entry, create)
+                .is_ok_and(|tenant| tenant == original.request.binding.key.owner)
+            {
+                return false;
+            }
+            return live.is_none_or(|record| {
+                record
+                    .operations()
+                    .first()
+                    .is_some_and(|first| first.intent() == original)
+                    && record.operations().last().is_some_and(|last| {
+                        super::publication::terminal_request(original, &saved.cleaned).as_ref()
+                            == Some(last.intent())
+                            && last.terminal() == Some(&saved.cleaned)
+                    })
+                    && (saved.admission != super::ValidationAdmission::NotAdmitted
+                        || record.terminal_confirmation.as_ref() == Some(&saved.cleaned))
+            });
         }
-        let Some(record) = live else { return false; };
-        let Some(first) = record.operations().first() else { return false; };
-        let LifecycleOperation::Create { create, .. } = &first.intent().request.operation else { return false; };
+        let Some(record) = live else {
+            return false;
+        };
+        let Some(first) = record.operations().first() else {
+            return false;
+        };
+        let LifecycleOperation::Create { create, .. } = &first.intent().request.operation else {
+            return false;
+        };
         first.intent() == original
-            && self.validation_tenant(entry, create).is_ok_and(|tenant| tenant == binding.key.owner)
+            && self
+                .validation_tenant(entry, create)
+                .is_ok_and(|tenant| tenant == binding.key.owner)
     }
     fn structurally_valid(&self) -> bool {
         if self.catalog.validate().is_err()
@@ -252,15 +293,13 @@ impl RegistryMetadata {
                         !serde_json::to_vec(certificate)
                             .is_ok_and(|bytes| bytes.len() <= self.budget.max_certificate_bytes)
                     })
-                || entry
-                    .validation
-                    .as_ref()
-                    .is_some_and(|link| {
-                        !Self::request_fits(&link.create)
-                            || link.settlement.as_ref().is_some_and(|saved|
-                                !serde_json::to_vec(&saved.cleaned)
-                                    .is_ok_and(|bytes| bytes.len() <= TERMINAL_RESULT_BODY_BYTES))
-                    })
+                || entry.validation.as_ref().is_some_and(|link| {
+                    !Self::request_fits(&link.create)
+                        || link.settlement.as_ref().is_some_and(|saved| {
+                            !serde_json::to_vec(&saved.cleaned)
+                                .is_ok_and(|bytes| bytes.len() <= TERMINAL_RESULT_BODY_BYTES)
+                        })
+                })
             {
                 return false;
             }
@@ -334,9 +373,11 @@ impl BusinessMetadata for RegistryMetadata {
                 if previous.create.request.binding.node == link.create.request.binding.node
                     && let (Some(a), Some(b)) = (&previous.local, &link.local)
                     && (a.sandbox == b.sandbox
-                        || (previous.create.request.binding.key.owner != link.create.request.binding.key.owner
+                        || (previous.create.request.binding.key.owner
+                            != link.create.request.binding.key.owner
                             && a.owner == b.owner)
-                        || (previous.create.request.binding.key.owner == link.create.request.binding.key.owner
+                        || (previous.create.request.binding.key.owner
+                            == link.create.request.binding.key.owner
                             && a.owner != b.owner
                             && !validation_retired(previous, center)
                             && !validation_retired(link, center)))
@@ -378,13 +419,15 @@ impl BusinessMetadata for RegistryMetadata {
 fn validation_retired(link: &super::ValidationLink, center: &CenterState) -> bool {
     link.settlement.is_some()
         && center
-            .lane(&link.create.request.binding.node, link.create.retention.slot)
+            .lane(
+                &link.create.request.binding.node,
+                link.create.retention.slot,
+            )
             .is_some_and(|lane| lane.retired_through() >= link.create.retention.window.get())
         && !center.sandboxes().iter().any(|sandbox| {
-            sandbox
-                .operations
-                .first()
-                .is_some_and(|first| first.intent().request.binding.session == link.create.request.binding.session)
+            sandbox.operations.first().is_some_and(|first| {
+                first.intent().request.binding.session == link.create.request.binding.session
+            })
         })
 }
 fn registry_error(error: &JournalError) -> PortError {

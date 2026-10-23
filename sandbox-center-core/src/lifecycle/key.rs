@@ -15,10 +15,15 @@ impl CenterState {
         }
         let profile = &self.lifecycle;
         let window = RequestWindowId::try_from(2).map_err(|_| DecisionError::Invalid)?;
-        if !profile.windows.iter().any(|registered| registered.registration.owner == *owner && registered.current == Some(window)) {
+        if !profile.windows.iter().any(|registered| {
+            registered.registration.owner == *owner && registered.current == Some(window)
+        }) {
             return Err(DecisionError::Stale);
         }
-        let sequence = self.operation_highwater.checked_add(1).ok_or(DecisionError::Exhausted)?;
+        let sequence = self
+            .operation_highwater
+            .checked_add(1)
+            .ok_or(DecisionError::Exhausted)?;
         Ok(OperationKey {
             deployment: self.deployment.clone(),
             owner: owner.clone(),

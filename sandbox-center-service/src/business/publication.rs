@@ -5,8 +5,10 @@ use sandproof_controller_service::template_registry::{
 };
 use sandproof_protocol::{
     ResourceId,
-    lifecycle::{AcceptedLifecycleIntent, ExpectedSession, LifecycleOperation,
-        TerminalLifecycleObservation, TerminalStatus},
+    lifecycle::{
+        AcceptedLifecycleIntent, ExpectedSession, LifecycleOperation, TerminalLifecycleObservation,
+        TerminalStatus,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -41,8 +43,7 @@ impl ValidationSettlement {
     pub(super) fn is_valid_for(&self, link: &ValidationLink) -> bool {
         let create = &link.create;
         let cleaned = &self.cleaned;
-        if link.terminal.as_ref() != Some(&cleaned.request)
-        {
+        if link.terminal.as_ref() != Some(&cleaned.request) {
             return false;
         }
         terminal_request(create, cleaned).is_some()
@@ -60,14 +61,21 @@ pub(super) fn terminal_request(
     let terminal = &result.request;
     let binding = &terminal.request.binding;
     if !matches!(create.request.operation, LifecycleOperation::Create { .. })
-        || origin.expected != ExpectedSession::Absent || create.accepted_version != 1
+        || origin.expected != ExpectedSession::Absent
+        || create.accepted_version != 1
         || create.accepted_version_for_request() != Some(1)
-        || create.request.validate(&origin.node).is_err() || !create.retention.valid_for(4096)
-        || result.status != TerminalStatus::Cleaned || !result.matches_request(terminal)
-        || terminal.center != create.center || terminal.retention != create.retention
-        || binding.node != origin.node || binding.key.owner != origin.key.owner
-        || binding.key.deployment != origin.key.deployment || binding.session != origin.session
-        || binding.key == origin.key || terminal.accepted_version <= create.accepted_version
+        || create.request.validate(&origin.node).is_err()
+        || !create.retention.valid_for(4096)
+        || result.status != TerminalStatus::Cleaned
+        || !result.matches_request(terminal)
+        || terminal.center != create.center
+        || terminal.retention != create.retention
+        || binding.node != origin.node
+        || binding.key.owner != origin.key.owner
+        || binding.key.deployment != origin.key.deployment
+        || binding.session != origin.session
+        || binding.key == origin.key
+        || terminal.accepted_version <= create.accepted_version
         || terminal.request.validate(&origin.node).is_err()
     {
         return None;

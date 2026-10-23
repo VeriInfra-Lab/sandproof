@@ -48,7 +48,9 @@ impl DataReceiver for Observed {
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
         request: Request<axum::body::Body>,
     ) -> Response<axum::body::Body> {
-        RejectLifecycle.receive_data(identity, context, request).await
+        RejectLifecycle
+            .receive_data(identity, context, request)
+            .await
     }
 }
 impl ValidationReceiver for Observed {

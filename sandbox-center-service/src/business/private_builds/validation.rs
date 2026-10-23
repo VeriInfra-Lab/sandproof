@@ -62,9 +62,13 @@ impl PrivateBuilds {
                     .is_some_and(|window| owner(&anchor.tenant).ok() != Some(window.tenant()))
                 || create.request.binding.key.owner != anchor.tenant
                 || create.request.binding.node.deployment_id != *center.deployment()
-                || create.accepted_version != 1 || create.accepted_version_for_request() != Some(1)
+                || create.accepted_version != 1
+                || create.accepted_version_for_request() != Some(1)
                 || !matches!(create.request.operation, LifecycleOperation::Create { .. })
-                || create.request.validate(&create.request.binding.node).is_err()
+                || create
+                    .request
+                    .validate(&create.request.binding.node)
+                    .is_err()
                 || &create.center != center.center_identity()
                 || !RegistryMetadata::request_fits(create)
                 || !self.matches_parameters(metadata, create, &anchor.parameters)
@@ -119,7 +123,9 @@ impl PrivateBuilds {
         intent: &AcceptedLifecycleIntent,
         parameters: &super::BuildParameters,
     ) -> bool {
-        let LifecycleOperation::Create { create, .. } = &intent.request.operation else { return false; };
+        let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+            return false;
+        };
         let Ok(options) = serde_json::from_slice::<CreateOptions>(&create.options) else {
             return false;
         };
@@ -169,8 +175,7 @@ impl PrivateBuilds {
                         anchor.original_create.retention.slot,
                     )
                     .is_none_or(|lane| {
-                        lane.retired_through()
-                            < anchor.original_create.retention.window.get()
+                        lane.retired_through() < anchor.original_create.retention.window.get()
                     })
         });
         next
