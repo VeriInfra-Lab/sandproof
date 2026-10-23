@@ -40,6 +40,17 @@ pub struct PausedOriginalVm {
     original: OriginalVmSource,
 }
 
+impl PausedOriginalVm {
+    #[must_use]
+    pub fn resource_id(&self) -> &str {
+        &self.original.resource_id
+    }
+    #[must_use]
+    pub fn source(&self) -> &RuntimeProcessIdentity {
+        &self.original.identity
+    }
+}
+
 // A live original identity without implying that it is paused.
 struct OriginalVmSource {
     resource_id: String,

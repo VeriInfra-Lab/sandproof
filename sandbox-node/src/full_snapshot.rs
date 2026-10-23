@@ -15,7 +15,7 @@ mod observation;
 pub use observation::{CheckedStoredCapture, observe_stored_capture};
 #[path = "full_snapshot_execution.rs"]
 mod execution;
-pub use execution::{FullCaptureObservation, capture_original};
+pub use execution::{FullCaptureObservation, capture_paused_original};
 
 type SealResult<T> = Result<T, Box<dyn Error>>;
 

@@ -54,7 +54,7 @@
 
 ### 原捕获动作与已发布材料观察
 
-`full_snapshot::capture_original` 串接真实的原 VM Pause、Full、Seal，随后重开原 bundle 核对文件，再确认原 VM 仍暂停；只返回 `FullCaptureObservation`，没有停止、释放、登记恢复资格或激活副作用。调用方必须提供原已持久工作、当前围栏、预算与无写者条件。捕获/发布后错误仍可能已有材料，不得换键重捕获。原 `WorkExecution` 接线及持久 Stop 工作由 V5 提供；本组件不等于实际 unload 已完成。
+`Runtime::pause_original_vm` 与 `full_snapshot::capture_paused_original` 分成两个实际动作，供 V5 在两段之间持久提交原暂停确认与 Full 工作；后者只对独立核对的原 `PausedOriginalVm` 执行 Full、Seal，随后重开原 bundle 核对文件，再确认原 VM 仍暂停。它不重发 Pause，只返回 `FullCaptureObservation`，没有停止、释放、登记恢复资格或激活副作用。调用方必须提供原已持久工作、当前围栏、预算与无写者条件。捕获/发布后错误仍可能已有材料，不得换键重捕获。原 `WorkExecution` 接线及持久 Stop 工作由 V5 提供；本组件不等于实际 unload 已完成。
 
 `SnapshotLayout::open_capture_bundle` 和 `full_snapshot::observe_stored_capture` 只读取原发布键，通过保留 FD 检查受保护原目录、完整白名单、root/0400/单链接/长度及实际字节摘要；节点严格核对原 CaptureBinding、受保护 profile、manifest 与全部测量。已有回执摘要必须相同；尚未取得回执时返回的只是待 V5 对账的物理事实，不能凭完整文件赋予资格。它不再次 Pause/Full，也不制造原 VM 的历史来源证明。
 
