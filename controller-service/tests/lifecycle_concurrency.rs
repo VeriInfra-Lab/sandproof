@@ -229,7 +229,10 @@ fn blocked_original_prepare_does_not_block_second_session_ready_or_destroy_accep
     assert_original_prepare_then_stop(&state, first_local.sandbox);
 }
 
-fn assert_original_prepare_then_stop(state: &Mutex<State>, sandbox: sandbox_controller_core::SandboxId) {
+fn assert_original_prepare_then_stop(
+    state: &Mutex<State>,
+    sandbox: sandbox_controller_core::SandboxId,
+) {
     let actions = &state.lock().unwrap().actions;
     assert_eq!(
         actions

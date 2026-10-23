@@ -105,7 +105,11 @@ fn create_other(application: &Arc<ControllerApplication<TestHost>>) -> AcceptedL
 }
 
 #[derive(Clone, Copy)]
-enum SourceChange { Unchanged, Destroy, HostEpoch }
+enum SourceChange {
+    Unchanged,
+    Destroy,
+    HostEpoch,
+}
 
 fn source_observation_concurrent_change(change: SourceChange) {
     let directory = tempfile::tempdir().unwrap();
@@ -125,17 +129,22 @@ fn source_observation_concurrent_change(change: SourceChange) {
         std::thread::spawn(move || app.observe_lifecycle_source_work(&work, &lifecycle::context()));
     entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let other = create_other(&case.application);
-    let other_before = case.application.lifecycle_work_state(&other, &lifecycle::context()).unwrap();
+    let other_before = case
+        .application
+        .lifecycle_work_state(&other, &lifecycle::context())
+        .unwrap();
     match change {
-        SourceChange::Unchanged => {},
+        SourceChange::Unchanged => {}
         SourceChange::Destroy => {
             let changed = super::destroy(case.unload.clone());
-            case.application.record_lifecycle_intent(&changed, &lifecycle::context()).unwrap();
-        },
+            case.application
+                .record_lifecycle_intent(&changed, &lifecycle::context())
+                .unwrap();
+        }
         SourceChange::HostEpoch => {
             case.physical.lock().unwrap().epoch = TestEpoch::WrongBoot;
             assert!(case.application.establish_lifecycle_host_epoch().is_err());
-        },
+        }
     }
     release.0.take().unwrap().send(()).unwrap();
     let result = observer.join().unwrap();
@@ -144,11 +153,16 @@ fn source_observation_concurrent_change(change: SourceChange) {
             let record = result.unwrap();
             assert_eq!(record.work, case.work);
             assert_eq!(record.observation, Some(raw(case.work.requirement())));
-        },
+        }
         SourceChange::Destroy => assert!(matches!(result, Err(JournalError::Conflict))),
         SourceChange::HostEpoch => assert!(matches!(result, Err(JournalError::UnresolvedAction))),
     }
-    assert_eq!(case.application.lifecycle_work_state(&other, &lifecycle::context()).unwrap(), other_before);
+    assert_eq!(
+        case.application
+            .lifecycle_work_state(&other, &lifecycle::context())
+            .unwrap(),
+        other_before
+    );
     assert_eq!(case.physical.lock().unwrap().source_calls, 1);
     drop(case.application);
     let reopened = lifecycle::open(&path);
@@ -160,7 +174,10 @@ fn source_observation_concurrent_change(change: SourceChange) {
     if matches!(change, SourceChange::Unchanged) {
         assert_eq!(records[0].observation, Some(raw(case.work.requirement())));
     } else {
-        assert!(records[0].observation.is_none(), "late raw bytes must not overwrite the original source responsibility");
+        assert!(
+            records[0].observation.is_none(),
+            "late raw bytes must not overwrite the original source responsibility"
+        );
     }
 }
 
