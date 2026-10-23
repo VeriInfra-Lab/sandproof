@@ -159,7 +159,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             timeout_secs: input.timeout,
             allow_internet_access: input.allow_internet_access,
         };
-        let request = business.accept_build(&tenant, window, id, &parameters, binding, now)?;
+        let request = business.accept_build(&tenant, window, id, &parameters, &binding, now)?;
         let current = business.snapshot().map_err(|_| PortError::OutcomeUnknown)?;
         let record = current
             .center

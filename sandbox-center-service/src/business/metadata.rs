@@ -197,7 +197,8 @@ impl RegistryMetadata {
         };
         if link.settlement.is_none()
             && lane.phase() == LanePhase::ClosePending
-            && lane.current().map(|window| window.get()) == Some(original.retention.window.get())
+            && lane.current().map(sandproof_center_store::Revision::get)
+                == Some(original.retention.window.get())
         {
             return false;
         }

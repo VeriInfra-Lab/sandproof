@@ -118,7 +118,7 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
             let binding = validation_binding(&value.metadata, record, driver)?;
             match self.authority.create_validation(
                 &candidate.publication.candidate_id,
-                binding,
+                &binding,
                 driver.now_ms()?,
             ) {
                 Ok(request) => {

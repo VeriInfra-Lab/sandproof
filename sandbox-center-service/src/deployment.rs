@@ -335,6 +335,33 @@ fn validate_templates(
     Ok(())
 }
 
+fn lifecycle_registration(
+    center: CenterIdentity,
+    bounds: Bounds,
+    nodes: &[NodeFile],
+    tenants: Vec<TenantBudget>,
+) -> Result<CenterState, AssemblyError> {
+    let windows = tenants
+        .iter()
+        .map(|tenant| {
+            Ok(LifecycleWindow {
+                owner: tenant.tenant.clone(),
+                window: RequestWindowId::try_from(1)
+                    .map_err(|_| AssemblyError::InvalidConfiguration)?,
+            })
+        })
+        .collect::<Result<Vec<_>, AssemblyError>>()?;
+    CenterState::new(
+        center.deployment.clone(),
+        bounds,
+        nodes.iter().map(|node| node.registration.clone()).collect(),
+        tenants,
+        center,
+        windows,
+    )
+    .map_err(|_| AssemblyError::InvalidConfiguration)
+}
+
 impl CenterAssemblyInputs {
     /// Load root/service-account-protected configuration and DER TLS material.
     /// The center cannot accept host `database`, jailer, UID or VM configuration;
@@ -387,28 +414,15 @@ impl CenterAssemblyInputs {
         if token_key.len() < 32 {
             return Err(invalid());
         }
-        let windows = file
-            .tenants
-            .iter()
-            .map(|tenant| {
-                Ok(LifecycleWindow {
-                    owner: tenant.tenant.clone(),
-                    window: RequestWindowId::try_from(1).map_err(|_| invalid())?,
-                })
-            })
-            .collect::<Result<Vec<_>, AssemblyError>>()?;
-        let registration = CenterState::new(
-            file.deployment_id.clone(),
-            file.bounds,
-            file.nodes.iter().map(|n| n.registration.clone()).collect(),
-            file.tenants,
+        let registration = lifecycle_registration(
             CenterIdentity {
                 deployment: file.deployment_id.clone(),
                 center: file.center_id,
             },
-            windows,
-        )
-        .map_err(|_| invalid())?;
+            file.bounds,
+            &file.nodes,
+            file.tenants,
+        )?;
         let store = StoreConfig::new(
             file.deployment_id,
             file.redis.max_block_bytes,

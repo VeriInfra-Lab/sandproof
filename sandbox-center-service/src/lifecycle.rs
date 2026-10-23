@@ -64,7 +64,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
     pub fn unload_lifecycle(
         &self,
         owner: &str,
-        session: SessionId,
+        session: &SessionId,
         request: &PublicUnloadRequest,
     ) -> Result<PublicAcceptance, PortError> {
         let owner = tenant_id(owner)?;
@@ -72,11 +72,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .authority
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .replay_public_unload(&owner, &session, request)?
+            .replay_public_unload(&owner, session, request)?
         {
             return Ok(acceptance(intent));
         }
-        let (current, phase) = self.current_lifecycle_intent(&owner, &session)?;
+        let (current, phase) = self.current_lifecycle_intent(&owner, session)?;
         if !matches!(phase, SessionPhase::Creating | SessionPhase::Running) {
             return Err(PortError::Conflict);
         }
@@ -210,7 +210,7 @@ impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusine
         request: PublicUnloadRequest,
     ) -> Result<PublicAcceptance, PortError> {
         self.application()
-            .unload_lifecycle(owner, session, &request)
+            .unload_lifecycle(owner, &session, &request)
     }
     fn query_lifecycle(
         &self,

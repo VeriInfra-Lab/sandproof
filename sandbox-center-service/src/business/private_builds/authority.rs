@@ -200,7 +200,7 @@ impl SharedBusinessAuthority {
         external: &str,
         build_id: &str,
         parameters: &BuildParameters,
-        lifecycle_parameters: CreateParameters,
+        lifecycle_parameters: &CreateParameters,
         now_ms: u64,
     ) -> Result<AcceptedLifecycleIntent, PortError> {
         if !valid_candidate_id(build_id) {
