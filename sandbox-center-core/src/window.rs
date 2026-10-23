@@ -83,7 +83,8 @@ impl CenterState {
                 let node = &self.nodes[node_index];
                 valid = lane.retention_slot != 0
                     && lane.retention_slot <= node.retention_slots
-                    && identities.insert((lane.node.node_id.as_str().to_owned(), lane.retention_slot))
+                    && identities
+                        .insert((lane.node.node_id.as_str().to_owned(), lane.retention_slot))
                     && (lane.phase == LanePhase::Exhausted) == lane.current().is_none()
                     && valid_last_retired(lane, self);
                 if valid {
