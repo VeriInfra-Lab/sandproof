@@ -5,6 +5,24 @@ use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
 impl<S: AuthorityState> CenterAuthority<S> {
+    /// Persist only the original Host's exact renewal acknowledgement. The
+    /// complete same envelope still validates business references before CAS.
+    /// # Errors
+    /// Unknown commits fence reads; no cached-only confirmation may prune.
+    pub fn confirm_lifecycle_renewal(
+        &mut self,
+        acknowledgement: &sandproof_protocol::lifecycle::ConfirmedRenewal,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self.state()?.confirm_lifecycle_renewal(acknowledgement)?;
+        if &next == self.state()? {
+            self.snapshot()?;
+        } else {
+            self.commit_center(next)?;
+        }
+        Ok(())
+    }
+
     /// Persist the original refusal and allocated Destroy in the same CAS.
     /// # Errors
     /// Unknown commit fences all reads; no quota or cleanup fact is fabricated.

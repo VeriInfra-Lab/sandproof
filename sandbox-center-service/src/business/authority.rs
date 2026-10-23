@@ -587,6 +587,15 @@ impl AuthorityPort for SharedBusinessAuthority {
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .accept_lifecycle_create_observation(observation)
     }
+    fn confirm_lifecycle_renewal(
+        &mut self,
+        acknowledgement: &sandproof_protocol::lifecycle::ConfirmedRenewal,
+    ) -> Result<(), AuthorityError> {
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
+            .confirm_lifecycle_renewal(acknowledgement)
+    }
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
         self.0
             .lock()

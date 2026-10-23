@@ -139,6 +139,14 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         intent: &AcceptedLifecycleIntent,
     ) -> Result<sandproof_controller_service::application::Session, PortError> {
         let deadline = self.reply_deadline()?;
+        self.wait_current_session_before(intent, deadline)
+    }
+
+    pub(crate) fn wait_current_session_before(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        deadline: Instant,
+    ) -> Result<sandproof_controller_service::application::Session, PortError> {
         loop {
             time_left(deadline)?;
             self.reconcile_lifecycle_intent(intent, deadline)?;
@@ -429,13 +437,25 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 Err(error) => Err(authority_error(error)),
             };
         }
-        match self
+        let saved = self
             .authority
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .accept_lifecycle_create_observation(&observation)
-        {
-            Ok(()) => Ok(true),
+            .accept_lifecycle_create_observation(&observation);
+        // The temporary decision guard above is dropped before the Host ACK.
+        // A saved applied result remains queryable if its confirmation is lost.
+        match saved {
+            Ok(()) => match self.confirm_pending_sdk_renewal_before(
+                &intent.request.binding.key.owner,
+                &intent.request.binding.session,
+                deadline,
+            ) {
+                Ok(_) => Ok(true),
+                Err(CurrentObservationError::Shared(error)) => Err(error),
+                Err(CurrentObservationError::Host(_)
+                    | CurrentObservationError::Superseded
+                    | CurrentObservationError::Deadline) => Ok(true),
+            },
             Err(AuthorityError::Decision(
                 DecisionError::Stale
                 | DecisionError::Conflict
@@ -450,6 +470,69 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 Err(authority_error(error))
             }
         }
+    }
+
+    pub(crate) fn confirm_prior_sdk_renewal_before(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        deadline: Instant,
+    ) -> Result<(), PortError> {
+        // Public SDK calls must not confirm hidden builder/validation work
+        // before their original owner and visibility admission checks.
+        let public = self.authority.lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .public_snapshot().map_err(authority_error)?;
+        if public.hidden_sandboxes.contains(session.as_protocol_id())
+            || public.state.lifecycle_session(owner, session).is_none()
+        {
+            return Err(PortError::NotFound);
+        }
+        self.confirm_pending_sdk_renewal_before(owner, session, deadline)
+            .map_err(CurrentObservationError::into_port)?;
+        Ok(())
+    }
+
+    fn confirm_pending_sdk_renewal_before(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        deadline: Instant,
+    ) -> Result<bool, CurrentObservationError> {
+        time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
+        let state = self.snapshot().map_err(CurrentObservationError::Shared)?;
+        let record = state.lifecycle_session(owner, session)
+            .ok_or(CurrentObservationError::Host(PortError::NotFound))?;
+        let Some(intent) = record.unconfirmed_sdk_renewal() else {
+            return Ok(false);
+        };
+        // This exact result was committed by the original observation CAS.
+        // The independent Host port must check its own full applied SQL row.
+        let result = state.lifecycle_renewal_confirmation(intent).map_err(|error| {
+            if error == DecisionError::Unavailable {
+                CurrentObservationError::Host(PortError::Busy)
+            } else {
+                CurrentObservationError::Shared(authority_error(error.into()))
+            }
+        })?;
+        let budget = time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
+        let ack = self.hosts.confirm_lifecycle_renewal(&result, budget)
+            .map_err(CurrentObservationError::Host)?;
+        if !ack.matches(&result) {
+            return Err(CurrentObservationError::Host(PortError::OutcomeUnknown));
+        }
+        let saved = self.authority.lock()
+            .map_err(|_| CurrentObservationError::Shared(PortError::OutcomeUnknown))?
+            .confirm_lifecycle_renewal(&ack);
+        match saved {
+            Ok(()) => {}
+            Err(AuthorityError::Decision(
+                DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
+            )) => return Err(CurrentObservationError::Superseded),
+            Err(error) => return Err(CurrentObservationError::Shared(authority_error(error))),
+        }
+        time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
+        Ok(true)
     }
 
     fn reconcile_terminal(

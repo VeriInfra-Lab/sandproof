@@ -334,6 +334,15 @@ pub trait AuthorityPort: Send + 'static {
         Err(sandproof_center_core::DecisionError::Invalid.into())
     }
     /// # Errors
+    /// Only the original authenticated Host acknowledgement can enter the
+    /// same business CAS; an unsupported authority never confirms an echo.
+    fn confirm_lifecycle_renewal(
+        &mut self,
+        _acknowledgement: &sandproof_protocol::lifecycle::ConfirmedRenewal,
+    ) -> Result<(), AuthorityError> {
+        Err(sandproof_center_core::DecisionError::Unavailable.into())
+    }
+    /// # Errors
     /// Save the original completed fact and fixed retention in the same authority.
     fn accept_lifecycle_terminal_observation(
         &mut self,

@@ -168,6 +168,12 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let tenant = tenant_id(tenant)?;
         let sandbox: SandboxId = sandbox.try_into().map_err(|_| PortError::NotFound)?;
         let duration = normalized_duration(command.timeout, &self.config)?;
+        let deadline = self.reply_deadline()?;
+        self.confirm_prior_sdk_renewal_before(
+            &tenant,
+            &sandproof_protocol::lifecycle::SessionId::from_protocol_id(sandbox.clone()),
+            deadline,
+        )?;
         let now = self.now()?;
         let request = {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
@@ -175,7 +181,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .renew_current(&tenant, &sandbox, duration, true, now)
                 .map_err(authority_error)?
         };
-        self.wait_current_session(&request)
+        self.wait_current_session_before(&request, deadline)
     }
     /// # Errors
     /// Ordinary lifetime changes succeed only after the host commits them.
@@ -191,6 +197,12 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .map_err(authority_error)?;
             return Ok(());
         }
+        let deadline = self.reply_deadline()?;
+        self.confirm_prior_sdk_renewal_before(
+            &tenant,
+            &sandproof_protocol::lifecycle::SessionId::from_protocol_id(sandbox.clone()),
+            deadline,
+        )?;
         let now = self.now()?;
         let request = {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
@@ -204,7 +216,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 )
                 .map_err(authority_error)?
         };
-        self.wait_current_session(&request).map(|_| ())
+        self.wait_current_session_before(&request, deadline).map(|_| ())
     }
     /// # Errors
     /// Success requires exact Cleaned evidence, not an absent heartbeat.
