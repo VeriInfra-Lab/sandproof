@@ -105,17 +105,24 @@ impl<H: ControllerHost> ControllerApplication<H> {
     ) -> Result<(LifecycleWorkState, i64), ApplicationError> {
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let now_ms = self.clock.now_ms()?;
-        let before = inner.journal.lifecycle_work_state(intent, context).map_err(map_journal)?;
+        let before = inner
+            .journal
+            .lifecycle_work_state(intent, context)
+            .map_err(map_journal)?;
         let result = inner
             .journal
             .apply_lifecycle_renew(intent, context, now_ms, &mut NeverCrash);
         let revoke = match &result {
             Ok((state, effective_end)) if state.current && *effective_end <= now_ms => state.local,
             Err(crate::AdmissionError::Journal(JournalError::CommitUncertain(_)))
-                if before.current && !before.terminal
+                if before.current
+                    && !before.terminal
                     && matches!(intent.request.operation,
                         LifecycleOperation::Renew { end_at_ms, extend_only: false, .. }
-                            if end_at_ms <= now_ms) => before.local,
+                            if end_at_ms <= now_ms) =>
+            {
+                before.local
+            }
             _ => None,
         };
         if let Some(local) = revoke {
@@ -456,51 +463,115 @@ mod tests {
     fn running_data() -> RunningData {
         use std::sync::atomic::AtomicI64;
         let directory = tempfile::tempdir().unwrap();
-        let state = Arc::new(Mutex::new(State { epoch: TestEpoch::Matching, ..State::default() }));
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            ..State::default()
+        }));
         let clock = Arc::new(fixture::fixture::TestClock(AtomicI64::new(10)));
-        let app = fixture::application(&directory.path().join("db"), state, true).with_clock(clock.clone());
+        let app = fixture::application(&directory.path().join("db"), state, true)
+            .with_clock(clock.clone());
         let create = fixture::request();
-        app.record_lifecycle_intent(&create, &fixture::context()).unwrap();
+        app.record_lifecycle_intent(&create, &fixture::context())
+            .unwrap();
         app.establish_lifecycle_host_epoch().unwrap();
         fixture::advance(&app).unwrap();
-        RunningData { app, clock, create, _directory: directory }
+        RunningData {
+            app,
+            clock,
+            create,
+            _directory: directory,
+        }
     }
-    fn renewal_of(create: &AcceptedLifecycleIntent, version: u64, end_at_ms: i64, extend_only: bool) -> AcceptedLifecycleIntent {
-        let LifecycleOperation::Create { target_incarnation: incarnation, .. } = create.request.operation else { panic!() };
-        let mut renew = create.clone(); renew.accepted_version = version;
+    fn renewal_of(
+        create: &AcceptedLifecycleIntent,
+        version: u64,
+        end_at_ms: i64,
+        extend_only: bool,
+    ) -> AcceptedLifecycleIntent {
+        let LifecycleOperation::Create {
+            target_incarnation: incarnation,
+            ..
+        } = create.request.operation
+        else {
+            panic!()
+        };
+        let mut renew = create.clone();
+        renew.accepted_version = version;
         renew.request.binding.expected = ExpectedSession::Version(version - 1);
         renew.request.binding.key.sequence = version.try_into().unwrap();
-        renew.request.operation = LifecycleOperation::Renew { incarnation, end_at_ms, extend_only };
+        renew.request.operation = LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms,
+            extend_only,
+        };
         renew
     }
-    fn data_identity(intent: &AcceptedLifecycleIntent, create: &AcceptedLifecycleIntent) -> sandproof_protocol::lifecycle::LifecycleAccessIdentity {
-        let LifecycleOperation::Create { target_incarnation: incarnation, .. } = create.request.operation else { panic!() };
+    fn data_identity(
+        intent: &AcceptedLifecycleIntent,
+        create: &AcceptedLifecycleIntent,
+    ) -> sandproof_protocol::lifecycle::LifecycleAccessIdentity {
+        let LifecycleOperation::Create {
+            target_incarnation: incarnation,
+            ..
+        } = create.request.operation
+        else {
+            panic!()
+        };
         sandproof_protocol::lifecycle::LifecycleAccessIdentity {
             protocol_version: intent.request.binding.protocol_version,
-            center: intent.center.clone(), node: intent.request.binding.node.clone(),
-            session: intent.request.binding.session.clone(), operation: intent.request.binding.key.clone(),
-            accepted_version: intent.accepted_version, incarnation,
+            center: intent.center.clone(),
+            node: intent.request.binding.node.clone(),
+            session: intent.request.binding.session.clone(),
+            operation: intent.request.binding.key.clone(),
+            accepted_version: intent.accepted_version,
+            incarnation,
         }
     }
 
     #[test]
     fn extend_only_with_a_past_requested_end_does_not_revoke_a_future_effective_lease() {
         use std::sync::atomic::Ordering;
-        let RunningData { app, clock, create, _directory } = running_data();
+        let RunningData {
+            app,
+            clock,
+            create,
+            _directory,
+        } = running_data();
         let context = fixture::context();
-        let (permit, _) = app.lifecycle_data_authorization(&data_identity(&create, &create), &context, crate::application::DataKind::FileRead).unwrap();
+        let (permit, _) = app
+            .lifecycle_data_authorization(
+                &data_identity(&create, &create),
+                &context,
+                crate::application::DataKind::FileRead,
+            )
+            .unwrap();
         let renew = renewal_of(&create, 2, 50, true);
         app.record_lifecycle_intent(&renew, &context).unwrap();
         clock.0.store(100, Ordering::SeqCst);
-        assert_eq!(app.apply_lifecycle_renew(&renew, &context).unwrap().1, 60_010);
+        assert_eq!(
+            app.apply_lifecycle_renew(&renew, &context).unwrap().1,
+            60_010
+        );
         assert!(!*permit.revocation.borrow());
-        assert!(app.lifecycle_data_authorization(&data_identity(&renew, &create), &context, crate::application::DataKind::FileRead).is_ok());
+        assert!(
+            app.lifecycle_data_authorization(
+                &data_identity(&renew, &create),
+                &context,
+                crate::application::DataKind::FileRead
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn old_applied_expiring_renewal_cannot_revoke_a_new_current_data_lease() {
         use std::sync::atomic::Ordering;
-        let RunningData { app, clock, create, _directory } = running_data();
+        let RunningData {
+            app,
+            clock,
+            create,
+            _directory,
+        } = running_data();
         let context = fixture::context();
         let old = renewal_of(&create, 2, 50, false);
         app.record_lifecycle_intent(&old, &context).unwrap();
@@ -509,15 +580,31 @@ mod tests {
         let current = renewal_of(&create, 3, 1_000, false);
         app.record_lifecycle_intent(&current, &context).unwrap();
         clock.0.store(30, Ordering::SeqCst);
-        assert_eq!(app.apply_lifecycle_renew(&current, &context).unwrap().1, 1_000);
+        assert_eq!(
+            app.apply_lifecycle_renew(&current, &context).unwrap().1,
+            1_000
+        );
         let identity = data_identity(&current, &create);
-        let (permit, _) = app.lifecycle_data_authorization(&identity, &context, crate::application::DataKind::FileRead).unwrap();
+        let (permit, _) = app
+            .lifecycle_data_authorization(
+                &identity,
+                &context,
+                crate::application::DataKind::FileRead,
+            )
+            .unwrap();
         clock.0.store(100, Ordering::SeqCst);
         let (history, effective_end) = app.apply_lifecycle_renew(&old, &context).unwrap();
         assert!(!history.current);
         assert_eq!(effective_end, 50);
         assert!(!*permit.revocation.borrow());
-        assert!(app.lifecycle_data_authorization(&identity, &context, crate::application::DataKind::FileRead).is_ok());
+        assert!(
+            app.lifecycle_data_authorization(
+                &identity,
+                &context,
+                crate::application::DataKind::FileRead
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -527,38 +614,87 @@ mod tests {
         use std::sync::atomic::{AtomicI64, Ordering};
         for unknown in [None, Some(false), Some(true)] {
             let dir = tempfile::tempdir().unwrap();
-            let state = Arc::new(Mutex::new(State { epoch: TestEpoch::Matching, ..State::default() }));
+            let state = Arc::new(Mutex::new(State {
+                epoch: TestEpoch::Matching,
+                ..State::default()
+            }));
             let clock = Arc::new(fixture::fixture::TestClock(AtomicI64::new(10)));
-            let app = fixture::application(&dir.path().join("db"), state.clone(), true).with_clock(clock.clone());
-            let create = fixture::request(); let context = fixture::context();
+            let app = fixture::application(&dir.path().join("db"), state.clone(), true)
+                .with_clock(clock.clone());
+            let create = fixture::request();
+            let context = fixture::context();
             app.record_lifecycle_intent(&create, &context).unwrap();
             app.establish_lifecycle_host_epoch().unwrap();
             let local = fixture::advance(&app).unwrap().local.unwrap();
-            let LifecycleOperation::Create { target_incarnation: incarnation, .. } = create.request.operation else { panic!() };
+            let LifecycleOperation::Create {
+                target_incarnation: incarnation,
+                ..
+            } = create.request.operation
+            else {
+                panic!()
+            };
             let identity = LifecycleAccessIdentity {
                 protocol_version: create.request.binding.protocol_version,
-                center: create.center.clone(), node: create.request.binding.node.clone(),
-                session: create.request.binding.session.clone(), operation: create.request.binding.key.clone(),
-                accepted_version: create.accepted_version, incarnation,
+                center: create.center.clone(),
+                node: create.request.binding.node.clone(),
+                session: create.request.binding.session.clone(),
+                operation: create.request.binding.key.clone(),
+                accepted_version: create.accepted_version,
+                incarnation,
             };
-            let (permit, _) = app.lifecycle_data_authorization(&identity, &context, DataKind::FileRead).unwrap();
+            let (permit, _) = app
+                .lifecycle_data_authorization(&identity, &context, DataKind::FileRead)
+                .unwrap();
             assert!(!*permit.revocation.borrow());
-            let mut renew = create.clone(); renew.accepted_version = 2;
+            let mut renew = create.clone();
+            renew.accepted_version = 2;
             renew.request.binding.expected = ExpectedSession::Version(1);
             renew.request.binding.key.sequence = 2.try_into().unwrap();
-            renew.request.operation = LifecycleOperation::Renew { incarnation, end_at_ms: 50, extend_only: false };
+            renew.request.operation = LifecycleOperation::Renew {
+                incarnation,
+                end_at_ms: 50,
+                extend_only: false,
+            };
             app.record_lifecycle_intent(&renew, &context).unwrap();
             clock.0.store(100, Ordering::SeqCst);
-            if let Some(durable) = unknown { crate::ControllerJournal::fail_next_lifecycle_commit(durable); }
+            if let Some(durable) = unknown {
+                crate::ControllerJournal::fail_next_lifecycle_commit(durable);
+            }
             let result = app.apply_lifecycle_renew(&renew, &context);
-            if unknown.is_some() { assert_eq!(result, Err(ApplicationError::OutcomeUnknown)); }
-            else { assert_eq!(result.unwrap().1, 50); }
-            assert!(*permit.revocation.borrow(), "existing data must receive immediate expiry, including unknown commit");
+            if unknown.is_some() {
+                assert_eq!(result, Err(ApplicationError::OutcomeUnknown));
+            } else {
+                assert_eq!(result.unwrap().1, 50);
+            }
+            assert!(
+                *permit.revocation.borrow(),
+                "existing data must receive immediate expiry, including unknown commit"
+            );
             let inner = app.inner.lock().unwrap();
-            let lifetime = inner.journal.live_lifetime(&sandbox_controller_core::Actor::Tenant(local.owner), local.sandbox, 20).unwrap();
-            assert_eq!(lifetime.deadline_ms, if unknown == Some(false) { 60_010 } else { 50 });
-            assert!(inner.journal.world().unwrap().sandbox_record(local.sandbox).is_some());
-            assert!(state.lock().unwrap().actions.iter().all(|action| !matches!(action.command.command(), sandbox_controller_core::Command::StopVm { .. })));
+            let lifetime = inner
+                .journal
+                .live_lifetime(
+                    &sandbox_controller_core::Actor::Tenant(local.owner),
+                    local.sandbox,
+                    20,
+                )
+                .unwrap();
+            assert_eq!(
+                lifetime.deadline_ms,
+                if unknown == Some(false) { 60_010 } else { 50 }
+            );
+            assert!(
+                inner
+                    .journal
+                    .world()
+                    .unwrap()
+                    .sandbox_record(local.sandbox)
+                    .is_some()
+            );
+            assert!(state.lock().unwrap().actions.iter().all(|action| !matches!(
+                action.command.command(),
+                sandbox_controller_core::Command::StopVm { .. }
+            )));
         }
     }
 

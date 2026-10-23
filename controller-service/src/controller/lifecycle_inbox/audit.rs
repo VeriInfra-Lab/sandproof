@@ -5,7 +5,10 @@ use crate::{
     LifecycleInboxConfig,
 };
 use sandbox_controller_core as core;
-use sandproof_protocol::{internal::NodeIdentity, lifecycle::{OperationBinding, TerminalLifecycleObservation}};
+use sandproof_protocol::{
+    internal::NodeIdentity,
+    lifecycle::{OperationBinding, TerminalLifecycleObservation},
+};
 use serde::Serialize;
 
 #[cfg(test)]
@@ -68,7 +71,9 @@ pub(in crate::controller) fn snapshot(
                 terminal: session.terminal,
                 confirmed_terminal: if entry.intent.accepted_version == session.current_version {
                     session.confirmed_terminal.clone()
-                } else { None },
+                } else {
+                    None
+                },
                 local: session.local,
                 local_operation: entry.local_operation,
             })
