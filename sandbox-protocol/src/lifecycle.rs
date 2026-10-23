@@ -21,7 +21,7 @@ pub use authority::{
 pub use digest::ContentDigest;
 pub use identity::{
     CaptureId, ExpectedSession, IncarnationId, OperationBinding, OperationKey, RequestSequence,
-    RequestWindowId, SessionId,
+    RequestWindowId, RetentionBinding, RetentionWindowId, SessionId,
 };
 pub use manifest::{
     CaptureBinding, MANIFEST_FORMAT_VERSION, MAX_WRITABLE_DRIVES, ManifestError, SnapshotFile,

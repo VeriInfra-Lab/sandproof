@@ -67,6 +67,25 @@ counter_role!(IncarnationId);
 counter_role!(CaptureId);
 counter_role!(RequestWindowId);
 counter_role!(RequestSequence);
+counter_role!(RetentionWindowId);
+
+/// Center-selected finite history position and its non-reused use generation.
+/// This is neither a client's request window nor a native execution HostSlot.
+/// It is fixed for every intent/result of one session by the original allocator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionBinding {
+    pub slot: u16,
+    pub window: RetentionWindowId,
+}
+impl RetentionBinding {
+    /// Position shape only. Registration, current use, close prerequisites and
+    /// the persisted retired-through frontier remain real journal obligations.
+    #[must_use]
+    pub const fn valid_for(self, max_slots: u16) -> bool {
+        self.slot > 0 && self.slot <= max_slots
+    }
+}
 
 /// Full persisted request key; owner is supplied by authentication, not a body.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
