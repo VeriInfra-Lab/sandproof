@@ -5,6 +5,7 @@
 
 mod access;
 mod authority;
+mod confirmation;
 mod digest;
 mod identity;
 mod manifest;
@@ -18,6 +19,7 @@ pub use authority::{
     AcceptedIntentError, AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterId,
     CenterIdentity, RecordedLifecycleIntent,
 };
+pub use confirmation::{ClosedLifecycleWindow, ConfirmedLifecycleResult, LifecycleWindowClose};
 pub use digest::ContentDigest;
 pub use identity::{
     CaptureId, ExpectedSession, IncarnationId, OperationBinding, OperationKey, RequestSequence,
@@ -40,3 +42,7 @@ pub const PROTOCOL_VERSION: u16 = 3;
 pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
 pub const CREATE_OBSERVATION_PATH: &str = "/internal/lifecycle/create-observation";
 pub const TERMINAL_OBSERVATION_PATH: &str = "/internal/lifecycle/terminal-observation";
+/// Terminal envelopes carry no Create options; fixed full identities fit here.
+pub const TERMINAL_RESULT_BODY_BYTES: usize = 8192;
+pub const RESULT_CONFIRMATION_PATH: &str = "/internal/lifecycle/result-confirmation";
+pub const WINDOW_CLOSE_PATH: &str = "/internal/lifecycle/window-close";
