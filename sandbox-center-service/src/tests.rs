@@ -27,9 +27,10 @@ fn physical_observation_has_bounded_freshness_and_clock_skew() {
 use super::*;
 use sandproof_api::{ControllerPort, CreateRequest, ListQuery, PortError};
 use sandproof_center_core::{
-    AvailableTemplate, Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget,
+    AvailableTemplate, Bounds, CenterState, LifecycleSubmission, LifecycleWindow, NodeMode,
+    NodeRegistration, TenantBudget,
 };
-use sandproof_center_store::{StoreError, authority::AuthorityError};
+use sandproof_center_store::authority::AuthorityError;
 use sandproof_controller_service::{
     application::{Clock, ConnectCommand, CreateCommand},
     templates::ResourceShape,
@@ -37,11 +38,15 @@ use sandproof_controller_service::{
 use sandproof_protocol::internal::{
     NodeIdentity,
     lifecycle::{
-        CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
+        Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
     },
     window::{WindowCloseAck, WindowCloseRequest},
 };
 use sandproof_protocol::{SandboxId, TenantId};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, CenterIdentity, ClosedLifecycleWindow, ConfirmedLifecycleResult,
+    CreateObservation, LifecycleWindowClose, SessionId, TerminalLifecycleObservation,
+};
 use std::{
     sync::{
         Arc, Mutex,
@@ -162,6 +167,10 @@ fn state() -> CenterState {
         node_id: "host".try_into().unwrap(),
         node_generation: 1.try_into().unwrap(),
     };
+    let center = CenterIdentity {
+        deployment: identity.deployment_id.clone(),
+        center: "center".try_into().unwrap(),
+    };
     CenterState::new(
         identity.deployment_id.clone(),
         Bounds {
@@ -170,6 +179,7 @@ fn state() -> CenterState {
             max_sandboxes: 8,
             operations_per_sandbox: 8,
             max_options_bytes: 4096,
+            result_retention_ms: RESULT_RETENTION_MS,
             platform: resources(8),
         },
         vec![NodeRegistration {
@@ -196,11 +206,16 @@ fn state() -> CenterState {
                 limit: resources(8),
             },
         ],
+        center,
+        ["1", "2"].into_iter().map(|owner| LifecycleWindow {
+            owner: owner.try_into().unwrap(), window: 9.try_into().unwrap(),
+        }).collect(),
     )
     .unwrap()
 }
 struct MemoryAuthority {
     state: CenterState,
+    clock: TestClock,
     hidden_sandboxes: Vec<SandboxId>,
     query_templates: Vec<PublicTemplate>,
     unreadable: Arc<AtomicBool>,
@@ -209,6 +224,36 @@ struct MemoryAuthority {
     projection_reads: u64,
     fence_after_stale: bool,
     retirement_step: Option<retired_destroy::RetirementStep>,
+}
+const RESULT_RETENTION_MS: u64 = 100;
+impl MemoryAuthority {
+    fn accept_current_followup(
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
+        renewal: Option<(u64, bool)>,
+        now_ms: u64,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        self.snapshot()?;
+        if self.hidden_sandboxes.contains(sandbox) {
+            return Err(sandproof_center_core::DecisionError::NotFound.into());
+        }
+        let session = SessionId::from_protocol_id(sandbox.clone());
+        let record = self.state.lifecycle_session(owner, &session)
+            .ok_or(sandproof_center_core::DecisionError::NotFound)?;
+        let prior = record.operations().last().ok_or(sandproof_center_core::DecisionError::Invalid)?.intent();
+        if renewal.is_none() && record.terminating() { return Ok(prior.clone()); }
+        let key = self.state.next_sdk_operation_key(owner)?;
+        let submission = match renewal {
+            Some((timeout_secs, extend_only)) => LifecycleSubmission::Renew {
+                key, session, expected_version: prior.accepted_version, timeout_secs, extend_only,
+            },
+            None => LifecycleSubmission::Destroy { key, session, expected_version: prior.accepted_version },
+        };
+        let (next, intent) = self.state.accept_lifecycle(owner, &submission, now_ms)?;
+        self.state = next;
+        Ok(intent)
+    }
 }
 enum ProjectionStep {
     Health(u64),
@@ -278,48 +323,44 @@ impl AuthorityPort for MemoryAuthority {
             templates: self.query_templates.clone(),
         })
     }
-    fn create(
-        &mut self,
-        tenant: &TenantId,
-        binding: CreateBinding,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
+    fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        let (state, request) = self.state.create(tenant, binding, now)?;
-        self.state = state;
-        if self.unknown_create.load(Ordering::SeqCst) {
-            self.unreadable.store(true, Ordering::SeqCst);
-            return Err(AuthorityError::Store(StoreError::OutcomeUnknown));
-        }
-        Ok(request)
+        self.state = self.state.terminate_expired(now_ms)?;
+        Ok(())
     }
-    fn renew(
+    fn renew_current(
         &mut self,
         tenant: &TenantId,
         sandbox: &SandboxId,
-        end: u64,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.snapshot()?;
-        let (state, request) = self.state.renew(tenant, sandbox, end, now)?;
-        self.state = state;
-        Ok(request)
+        timeout_secs: u64,
+        extend_only: bool,
+        now_ms: u64,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        self.accept_current_followup(tenant, sandbox, Some((timeout_secs, extend_only)), now_ms)
     }
-    fn destroy(
+    fn destroy_current(
         &mut self,
         tenant: &TenantId,
         sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.snapshot()?;
-        let (state, request) = self.state.destroy(tenant, sandbox)?;
-        self.state = state;
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        let request = self.accept_current_followup(tenant, sandbox, None, 0)?;
         self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterDestroyAccepted)?;
         Ok(request)
     }
-    fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+    fn accept_lifecycle_create_refusal(
+        &mut self, observation: &CreateObservation,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
-        match self.state.apply_response(response) {
-            Ok(next) => self.state = next,
+        let (next, destroy) = self.state.accept_lifecycle_create_refusal(observation)?;
+        self.state = next;
+        Ok(destroy)
+    }
+    fn accept_lifecycle_create_observation(&mut self, observation: &CreateObservation)
+        -> Result<(), AuthorityError>
+    {
+        self.snapshot()?;
+        match self.state.accept_lifecycle_create_observation(observation) {
+            Ok(next) => { self.state = next; Ok(()) }
             Err(error) => {
                 if error == sandproof_center_core::DecisionError::Stale {
                     self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterStaleApply)?;
@@ -327,17 +368,27 @@ impl AuthorityPort for MemoryAuthority {
                 if self.fence_after_stale && error == sandproof_center_core::DecisionError::Stale {
                     self.unreadable.store(true, Ordering::SeqCst);
                 }
+                Err(error.into())
+            }
+        }
+    }
+    fn accept_lifecycle_terminal_observation(&mut self, response: &TerminalLifecycleObservation, now_ms: u64)
+        -> Result<(), AuthorityError>
+    {
+        self.snapshot()?;
+        match self.state.accept_lifecycle_terminal_observation(response, now_ms) {
+            Ok(next) => self.state = next,
+            Err(error) => {
+                if error == sandproof_center_core::DecisionError::Stale {
+                    self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterStaleApply)?;
+                    if self.fence_after_stale { self.unreadable.store(true, Ordering::SeqCst); }
+                }
                 return Err(error.into());
             }
         }
         Ok(())
     }
-    fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        self.snapshot()?;
-        self.state = self.state.compact_confirmed(response)?;
-        Ok(())
-    }
-    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+    fn confirm_terminal(&mut self, response: &ConfirmedLifecycleResult) -> Result<(), AuthorityError> {
         self.snapshot()?;
         self.state = self.state.confirm_terminal(response)?;
         Ok(())
@@ -349,19 +400,20 @@ impl AuthorityPort for MemoryAuthority {
     }
     fn begin_close(
         &mut self,
-        terminal: &LifecycleResponse,
-    ) -> Result<WindowCloseRequest, AuthorityError> {
+        terminal: &TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<LifecycleWindowClose, AuthorityError> {
         self.snapshot()?;
-        let (state, request) = self.state.begin_close(terminal)?;
+        let (state, request) = self.state.begin_close(terminal, now_ms)?;
         self.state = state;
         Ok(request)
     }
-    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
+    fn close_batch(&mut self, _now_ms: u64) -> Result<Vec<LifecycleWindowClose>, AuthorityError> {
         Ok(self.snapshot()?.pending_closes())
     }
-    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError> {
+    fn apply_close_ack(&mut self, ack: &ClosedLifecycleWindow, now_ms: u64) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        self.state = self.state.apply_close_ack(ack)?;
+        self.state = self.state.apply_close_ack(ack, now_ms)?;
         Ok(())
     }
     fn recover(&mut self) -> Result<(), AuthorityError> {
@@ -558,6 +610,35 @@ fn confirmation_uses_remaining_attempt_budget_without_resetting_original_wait() 
             .all(|budget| *budget < f.app.config.reply_timeout)
     );
 }
+struct UnavailableClock;
+impl Clock for UnavailableClock {
+    fn now_ms(&self) -> Result<i64, PortError> { Err(PortError::OutcomeUnknown) }
+}
+
+#[test]
+fn nonpositive_timeout_persists_original_destroy_when_clock_is_unavailable() {
+    for seconds in [-1, 0] {
+        let mut f = fixture();
+        let session = f.app.create("1", command()).unwrap();
+        let calls = f.host.calls.load(Ordering::SeqCst);
+        let app = Arc::try_unwrap(f.app).ok().expect("one application owner");
+        f.app = Arc::new(app.with_clock(Arc::new(UnavailableClock)));
+        assert_eq!(f.app.set_timeout("1", &session.sandbox_id, 1), Err(PortError::OutcomeUnknown));
+        assert_eq!(f.app.snapshot().unwrap().identity_frontiers(), (1, 1));
+        assert_eq!(f.app.set_timeout("1", &session.sandbox_id, seconds), Ok(()));
+        let state = f.app.snapshot().unwrap();
+        assert_eq!(state.identity_frontiers(), (1, 2));
+        assert_eq!(state.reserved(None, None), Some(resources(1)));
+        let record = &state.sandboxes()[0];
+        assert!(record.terminating());
+        assert!(!record.released());
+        assert_eq!(record.operations().last().unwrap().acceptance_time(), sandproof_center_core::AcceptanceTime::Unsampled);
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), calls);
+        assert_eq!(f.app.set_timeout("1", &session.sandbox_id, seconds), Ok(()));
+        assert_eq!(f.app.snapshot().unwrap(), state);
+    }
+}
+
 fn config() -> CenterConfig {
     CenterConfig {
         domain: "example.invalid".into(),
@@ -825,6 +906,7 @@ fn fixture() -> Fixture {
         CenterApplication::new(
             MemoryAuthority {
                 state: state(),
+                clock: clock.clone(),
                 hidden_sandboxes: Vec::new(),
                 query_templates: vec![template()],
                 unreadable: Arc::clone(&unreadable),
@@ -842,7 +924,9 @@ fn fixture() -> Fixture {
             &[13; 32],
         )
         .unwrap()
-        .with_clock(Arc::new(clock.clone())),
+        .with_clock(Arc::new(clock.clone()))
+        .with_lifecycle_observation_policy(NodeObservationPolicy { health_window_ms: 1000, max_clock_skew_ms: 10 })
+        .unwrap(),
     );
     Fixture {
         app,
