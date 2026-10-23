@@ -252,32 +252,59 @@ Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、V
 
 ### 当前同步封套切片与正式入口接线范围
 
-实际生产方法是 `AcceptedLifecycleIntent::validate` 和 `RecordedLifecycleIntent::matches`。
-在 `c7d329a1f4a8ef606fb9807279c73a7e081d7ae1` 的隔离源码中，固定原 Charon/Aeneas 的两个透明委托
-已完成 16 份实际 Lean 文件、51 项证明审计；仅改完整 intent 比较为 session 比较的真实 Rust 错误版
-完成 12 份实际文件、5 项审计，并明确否定同一 `FullRecordContract`。两版独立模型和合法输入见证
-逐字相同。普通测试机 的七组原生断言、错误版同一断言拒绝与恢复后通过由原组件记录核对；
-这些数量含辅助引理，不能解释为独立业务保证的数量，也不能背书整个异步调用者。
+本组件已检查的真实 Rust 候选为 `6751508c0862194d0100bedd7eece8514f8a8344`。
+原 `stage1-protocol` 的 request 视图保留四个透明入口：`request_validate`、`replay_matches`、
+`accepted_validate`、`recorded_matches`；后两项分别委托生产 `AcceptedLifecycleIntent::validate`
+和 `RecordedLifecycleIntent::matches`。不并存私有 CurrentEnvelope 库，不增加翻译器或独立解释器。
+当前结论来自本候选的实际生成体与原记录，不能仅沿用早期私有原型的结论。
 
-当前接线把该切片收回原 `stage1-protocol` 的 request 视图，保留原 `request_validate/replay_matches`
-并增加 `accepted_validate/recorded_matches`；不并存私有 CurrentEnvelope 库。
-唯一 [ValidationModel](../SandboxModel/Lifecycle/Protocol/ValidationModel.lean) 补齐当前真实 Renew 分支，
-[ReplayEquality](../SandboxModel/Lifecycle/Protocol/ReplayEquality.lean) 保留通用全文重放并连接完整封套字段。
-[Accepted](../SandboxModel/Lifecycle/Protocol/Accepted.lean) 对应原拒绝顺序及成功条件；
-[Recorded](../SandboxModel/Lifecycle/Protocol/Recorded.lean) 对应完整 intent 相等、允许的版本关系和 current 标志关系。
-相等的请求不等于合法请求，matches 不推出 validate 成功；terminal 的真实性不由 matches 保证。
-retention 只检查 slot 形状范围，不证明当前窗口仍可用，也不要求操作 key 的 window 等于 retention window。
+唯一 [ValidationModel](../SandboxModel/Lifecycle/Protocol/ValidationModel.lean) 不导入生成函数，
+[ReplayContract](../SandboxModel/Lifecycle/Protocol/ReplayContract.lean) 描述全文相等；正确版与错误版
+使用逐字相同的独立规格和输入见证。已证明的范围如下：
 
-[组件入口](../verification/experiments/stage1-protocol/README.md) 登记完整保留证明文件、原三种 Rust 变体、
-两条既有通用合同反例及新增 session-only 封套反例；普通测试侧保留执行当时完整确定性归档，
-证明侧用当前归档核对相关输入仍一致，再与历史原生归档/原记录连接实际生成体；
-无关文档变化可复用组件，但当前文档仍由强制 functional 入口检查。三个 profile 的完整 IR/生成物必须共同重采集比较，
-冻结输入匹配和正确版证明只是门槛的一部分。接线代码存在不表示已取得该候选的完整入口成功回执；
-精确候选、原失败、实际验收和共享入口阻断以组件记录及对应 PR 为准，不能沿用上述私有切片背书新生成体。
+| 真实入口 | 精确性质 | 不由该性质提供 |
+|---|---|---|
+| `request_validate` | Create/Unload/Resume/Renew/Destroy 的全部成功条件及六类首错；协议版本为 3，先核节点、部署和 expected 形状，再进入操作守卫 | 已解码值到真实输入字节的对应、授权和当前账本事实 |
+| `replay_matches` | 任意两个完整请求值相等，当且仅当返回真；包含 Renew 全部字段、options 每个字节及完整摘要 | 相等的请求不因此合法、已授权或已经耐久处理 |
+| `accepted_validate` | 按原顺序核对独立 context 的 center、部署、内层请求、slot 范围和 accepted 版本。Absent 要求版本为 1；Version(v) 要求 checked_add(v,1) 成功并等于 accepted 版本，耗尽不回绕 | context 确实来自原认证连接/注册、窗口可用和已持久受理 |
+| `recorded_matches` | 完整原 intent 相等、current_session_version 不小于 accepted_version，且 current 恰好等于两版本是否相等 | validate 成功、terminal 的真实性、真实账本中的 current 状态或执行/释放资格 |
 
-该 V3 切片复用四项既有 [A6 标准模型](formal/dependencies.md#a6-v3-同步协议的字符串与完整字节视图)。
-实际 bytes/Serde、认证连接到独立 context、完整调用者的顺序/取消、handler/账本/耐久回执真实性，
-以及预算、保留前沿、资源退出/Ready/VM/release 的连接仍开放；不因此宣称 V0、V3 或系统闭环完成。
+原请求首错依次为 UnsupportedVersion、ForeignNode、ForeignDeployment、InvalidExpectation；
+随后 Create 分支可返回 InvalidCreate，Resume 分支可返回 InvalidIncarnation。
+Renew 仍要求 Version 形状，但纯守卫不比较 end_at_ms 与当前时间或业务截止；
+原负期限接受见证已保留，寿命政策由业务处理证明。Retention 只检查 slot 为 1..4096，
+不证明当前窗口仍可用，也不要求操作 key 的 window 等于 retention window。
+[Accepted](../SandboxModel/Lifecycle/Protocol/Accepted.lean) 与
+[Recorded](../SandboxModel/Lifecycle/Protocol/Recorded.lean) 分别连接上述顺序与完整匹配合同。
+
+本候选的实际检查与复用范围：
+
+- 原三视图正向检查完成 47 次实际文件检查，去重后为 38 个文件。`2229bdfc` 的重新抽取保留完整
+  LLBC，生成 Lean、模板和 translation 逐字相同；LLBC 仅原无序 short_names 表的排列不同，
+  其它全部 AST 字段相同。到 `6751508c` 的 42 个实际抽取输入及 38 个证明文件均未变，
+  因此复用原正向记录，没有重复运行正向内核检查。
+- `6751508c` 在普通测试机的原完整单组件检查通过：两包共 113 项测试，零失败/忽略，包含封套七组；
+  八个原阶段全部通过。四个真实单表达式错误版均实际编译成功，被各自未改的原断言以 101 拒绝，
+  恢复原源码后重新编译并通过同一断言；四份完整源码均恢复，独立 native_case 收据已保留。
+- 同一候选在证明机完成四种真实 Rust 错误版与六份形式模板：same-incarnation 的顺序见证和完整守卫合同否定，
+  key-only-replay 的固定 pair 和通用全文重放合同否定，skip-capture-binding 的原 manifest 反例，
+  session-only-envelope 对正确版同一 FullRecordContract 的否定。原 95 条入口命令全部成功，
+  87 次实际文件诊断完整、非陈旧且无警告/错误；耗时 526.279 秒。审计包含辅助引理，不是独立系统性质计数。
+
+四反例原结果摘要为 `021fdd3f0844fba956683285c02cf2f59cf3aaf71fe03c02a28f4cc24411c9ec`；
+候选、源码归档、原生收据、正向复用和原服务返回均在组件原记录中相互绑定并经独立复核。
+`0e981ae9` 的旧格式测试失败和 `9fcda217` 的测试辅助 Clippy 失败继续保留，后续成功未改写原失败。
+
+该 V3 同步组件复用四项既有 [A6 标准模型](formal/dependencies.md#a6-v3-同步协议的字符串与完整字节视图)：
+String.eq、Vec.is_empty、Bool.ne 和 Option.eq；封套的 Option 实例为 U64，字典调用/失败保持条件明确登记。
+固定 Rust 编译器、原 Charon/Aeneas 翻译和模型与标准库的对应仍属显式信任条件，Lean 内核检查未关闭。
+实际 bytes/Serde、TLS/注册到独立 context、完整调用者的顺序/取消、handler/账本/耐久回执真实性，
+以及正常分配之外的 OOM/abort、资源 Drop/unwind、预算、保留前沿和 VM/release 连接不在本组件结论内。
+
+[组件入口](../verification/experiments/stage1-protocol/README.md) 仍要求当前完整共享 native seal 和当前
+functional 文档检查。上述独立单组件收据及六份形式反例没有补造 complete.json；
+`verify-stage1-protocol.sh` 与 `verify-controller.sh` 尚未取得本候选的完整成功记录。
+本节不宣称 V0、完整 V3、V1/V2 账本或系统闭环已完成。
 
 ### 同步协议的历史局部证明与适用边界
 
