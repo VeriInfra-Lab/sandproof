@@ -3,45 +3,65 @@
 mod execution;
 #[path = "durable_https/internal_data.rs"]
 mod internal_data;
-#[allow(dead_code, reason = "shared component assembly and original host fixture")]
+#[allow(
+    dead_code,
+    reason = "shared component assembly and original host fixture"
+)]
 #[path = "durable_https/support.rs"]
 mod local;
+#[path = "../../sandbox-internal/tests/support/tls.rs"]
+mod tls;
 #[path = "durable_https/validation.rs"]
 mod validation;
 #[path = "durable_https/window.rs"]
 mod window;
-#[path = "../../sandbox-internal/tests/support/tls.rs"]
-mod tls;
 use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits};
 use sandproof_data_transport::TransferLimits;
 use sandproof_host_service::{HostFacade, HostLifecycle};
 use sandproof_internal::{
-    ClientTls, InternalClient, InternalServer, LifecycleReceiver, Limits,
-    RegisteredEndpoint, ServerTls, lifecycle::CenterPeerRegistration,
+    ClientTls, InternalClient, InternalServer, LifecycleReceiver, Limits, RegisteredEndpoint,
+    ServerTls, lifecycle::CenterPeerRegistration,
 };
 use sandproof_protocol::lifecycle::{CurrentCreateReadiness, TerminalStatus};
-use std::{sync::{Arc, Mutex, atomic::AtomicI64}, time::Duration};
+use std::{
+    sync::{Arc, Mutex, atomic::AtomicI64},
+    time::Duration,
+};
 use tokio::{net::TcpListener, sync::oneshot};
 
-fn facade(application: Arc<sandproof_controller_service::application::ControllerApplication<local::TestHost>>) -> HostFacade<local::TestHost> {
-    HostFacade::new(application, TransferLimits {
-        file_upload_bytes: 1024,
-        file_download_bytes: 1024,
-        command_input_bytes: 1024,
-        rpc_request_bytes: 1024,
-        rpc_response_bytes: 1024,
-        max_transfers: 3,
-        max_transfers_per_vm: 2,
-        control_reserve: 1,
-        request_idle_seconds: 5,
-        file_idle_seconds: 5,
-        write_idle_seconds: 5,
-    }, RequestAdmission::new(RequestAdmissionLimits {
-        max_pending_requests: 4, control_reserve: 1,
-    }).unwrap()).unwrap()
+fn facade(
+    application: Arc<
+        sandproof_controller_service::application::ControllerApplication<local::TestHost>,
+    >,
+) -> HostFacade<local::TestHost> {
+    HostFacade::new(
+        application,
+        TransferLimits {
+            file_upload_bytes: 1024,
+            file_download_bytes: 1024,
+            command_input_bytes: 1024,
+            rpc_request_bytes: 1024,
+            rpc_response_bytes: 1024,
+            max_transfers: 3,
+            max_transfers_per_vm: 2,
+            control_reserve: 1,
+            request_idle_seconds: 5,
+            file_idle_seconds: 5,
+            write_idle_seconds: 5,
+        },
+        RequestAdmission::new(RequestAdmissionLimits {
+            max_pending_requests: 4,
+            control_reserve: 1,
+        })
+        .unwrap(),
+    )
+    .unwrap()
 }
 
-async fn changed_requests_are_refused(client: &InternalClient, create: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) {
+async fn changed_requests_are_refused(
+    client: &InternalClient,
+    create: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+) {
     for variant in 0..7 {
         let mut changed = create.clone();
         match variant {
@@ -53,7 +73,10 @@ async fn changed_requests_are_refused(client: &InternalClient, create: &sandproo
             5 => changed.request.binding.key.owner = "other-owner".try_into().unwrap(),
             _ => changed.request.binding.node.node_generation = 2.try_into().unwrap(),
         }
-        assert!(client.record_lifecycle(&changed).await.is_err(), "changed request variant {variant}");
+        assert!(
+            client.record_lifecycle(&changed).await.is_err(),
+            "changed request variant {variant}"
+        );
     }
 }
 
@@ -78,13 +101,22 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
         assert!(recorded.matches(&create));
         assert_eq!(recorded.current, provision);
         changed_requests_are_refused(&client, &create).await;
-        assert!(client.record_lifecycle(&destroy).await.unwrap().matches(&destroy));
+        assert!(
+            client
+                .record_lifecycle(&destroy)
+                .await
+                .unwrap()
+                .matches(&destroy)
+        );
         // No local admission took place. The original durable Destroy fence,
         // rather than the transport, establishes that no native work is owed.
         local::drive(&inbox).await;
         let cleaned = client.observe_lifecycle_terminal(&destroy).await.unwrap();
         assert_eq!(cleaned.status, TerminalStatus::Cleaned);
-        assert_eq!(client.observe_lifecycle_terminal(&destroy).await.unwrap(), cleaned);
+        assert_eq!(
+            client.observe_lifecycle_terminal(&destroy).await.unwrap(),
+            cleaned
+        );
         let old_create = client.record_lifecycle(&create).await.unwrap();
         assert_eq!(old_create.intent, create);
         assert!(!old_create.current);
@@ -93,7 +125,12 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
         let mut late = create.clone();
         late.request.binding.key.sequence = 3.try_into().unwrap();
         assert!(client.record_lifecycle(&late).await.is_err());
-        assert!(application.lifecycle_pending_creates(&local::config().node).unwrap().is_empty());
+        assert!(
+            application
+                .lifecycle_pending_creates(&local::config().node)
+                .unwrap()
+                .is_empty()
+        );
         assert!(state.lock().unwrap().actions.is_empty());
         assert_eq!(client.active_calls(), 0);
         stop.send(()).unwrap();
@@ -111,28 +148,73 @@ async fn cancelled_caller_keeps_actual_blocking_work_budget_until_host_exits() {
     let app = local::application(&dir.path().join("db"), state.clone(), clock, true);
     let inbox = HostLifecycle::new(app.clone());
     let create = local::request();
-    inbox.record_lifecycle(create.clone(), local::context()).await.unwrap();
+    inbox
+        .record_lifecycle(create.clone(), local::context())
+        .await
+        .unwrap();
     let (entered, ready) = std::sync::mpsc::channel();
     let (release, wait) = std::sync::mpsc::channel();
     state.lock().unwrap().block_prepare = Some((entered, wait));
     let worker = inbox.clone();
     let current = create.clone();
-    let caller = tokio::spawn(async move { worker.advance(current, Some(local::template()), local::compute()).await });
-    tokio::task::spawn_blocking(move || ready.recv_timeout(Duration::from_secs(15)).unwrap()).await.unwrap();
+    let caller = tokio::spawn(async move {
+        worker
+            .advance(current, Some(local::template()), local::compute())
+            .await
+    });
+    tokio::task::spawn_blocking(move || ready.recv_timeout(Duration::from_secs(15)).unwrap())
+        .await
+        .unwrap();
     caller.abort();
     let _ = caller.await;
     assert_eq!(inbox.active_work(), 1);
     // The real callback still holds its work permit. Independent control
     // capacity nevertheless accepts Destroy; recording cannot free that work.
     let destroy = local::destroy(&create);
-    assert!(inbox.record_lifecycle(destroy.clone(), local::context()).await.unwrap().matches(&destroy));
+    assert!(
+        inbox
+            .record_lifecycle(destroy.clone(), local::context())
+            .await
+            .unwrap()
+            .matches(&destroy)
+    );
     assert_eq!(inbox.active_work(), 1);
-    assert_eq!(inbox.observe_terminal(destroy.clone(), local::context()).await.unwrap().status, TerminalStatus::Pending);
+    assert_eq!(
+        inbox
+            .observe_terminal(destroy.clone(), local::context())
+            .await
+            .unwrap()
+            .status,
+        TerminalStatus::Pending
+    );
     release.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
-        while inbox.active_work() != 0 { tokio::task::yield_now().await; }
-    }).await.unwrap();
-    assert_eq!(state.lock().unwrap().actions.iter().filter(|a| matches!(a.command.command(), sandbox_controller_core::Command::PrepareVm { .. })).count(), 1);
+        while inbox.active_work() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        state
+            .lock()
+            .unwrap()
+            .actions
+            .iter()
+            .filter(|a| matches!(
+                a.command.command(),
+                sandbox_controller_core::Command::PrepareVm { .. }
+            ))
+            .count(),
+        1
+    );
     local::drive(&inbox).await;
-    assert_eq!(inbox.observe_terminal(destroy, local::context()).await.unwrap().status, TerminalStatus::Cleaned);
+    assert_eq!(
+        inbox
+            .observe_terminal(destroy, local::context())
+            .await
+            .unwrap()
+            .status,
+        TerminalStatus::Cleaned
+    );
 }

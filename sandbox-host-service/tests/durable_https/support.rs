@@ -1,8 +1,8 @@
 //! Test assembly only. Current full messages use the original application.
 #[path = "../../../controller-service/tests/support/lifecycle_application.rs"]
 pub mod current;
-pub use current::{config, context, request};
 pub use current::fixture::{State, TestClock, TestHost, complete_fixture, compute, template};
+pub use current::{config, context, request};
 use sandproof_controller_service::{
     InternalTemplate,
     application::{ApplicationError, ControllerApplication},
@@ -11,16 +11,22 @@ use sandproof_host_service::{DriverConfig, HostLifecycle, TemplateSource};
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, ExpectedSession, LifecycleAccessIdentity, LifecycleOperation,
 };
-use std::{path::Path, sync::{Arc, Mutex}, time::Duration};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 pub fn state() -> State {
     State {
         epoch: current::fixture::TestEpoch::Matching,
-        source: Some(sandproof_controller_service::capture::SourceProcessIdentity {
-            pid: 1234,
-            start_time_ticks: 5678,
-            boot_id: "fixture-boot".into(),
-        }),
+        source: Some(
+            sandproof_controller_service::capture::SourceProcessIdentity {
+                pid: 1234,
+                start_time_ticks: 5678,
+                boot_id: "fixture-boot".into(),
+            },
+        ),
         ..State::default()
     }
 }
@@ -46,7 +52,8 @@ pub fn audit(path: &Path) -> sandproof_controller_service::LifecycleAudit {
         &complete_fixture::host(path, "0123456789abcdef", 64, 2 * 1024 * 1024, reserve),
         &current::maintenance(),
         &config(),
-    ).unwrap()
+    )
+    .unwrap()
 }
 
 pub fn application_with_host_config(
@@ -62,7 +69,9 @@ pub fn application_with_host_config(
     Arc::new(app)
 }
 
-pub fn create_mut(request: &mut AcceptedLifecycleIntent) -> &mut sandproof_protocol::internal::lifecycle::CreateBinding {
+pub fn create_mut(
+    request: &mut AcceptedLifecycleIntent,
+) -> &mut sandproof_protocol::internal::lifecycle::CreateBinding {
     let LifecycleOperation::Create { create, .. } = &mut request.request.operation else {
         panic!("expected original Create fixture")
     };
@@ -73,7 +82,9 @@ pub fn destroy(original: &AcceptedLifecycleIntent) -> AcceptedLifecycleIntent {
     let mut next = original.clone();
     next.accepted_version += 1;
     next.request.binding.expected = ExpectedSession::Version(original.accepted_version);
-    next.request.binding.key.sequence = (original.request.binding.key.sequence.get() + 1).try_into().unwrap();
+    next.request.binding.key.sequence = (original.request.binding.key.sequence.get() + 1)
+        .try_into()
+        .unwrap();
     next.request.operation = LifecycleOperation::Destroy {};
     next
 }
@@ -102,9 +113,14 @@ pub fn access(intent: &AcceptedLifecycleIntent) -> LifecycleAccessIdentity {
 
 pub struct Templates;
 impl TemplateSource for Templates {
-    fn bound(&self, binding: &sandproof_protocol::internal::lifecycle::CreateBinding) -> Result<InternalTemplate, ApplicationError> {
+    fn bound(
+        &self,
+        binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
+    ) -> Result<InternalTemplate, ApplicationError> {
         let candidate = template();
-        if candidate.revision != binding.template_revision || candidate.digest != binding.template_digest {
+        if candidate.revision != binding.template_revision
+            || candidate.digest != binding.template_digest
+        {
             return Err(ApplicationError::NotFound);
         }
         Ok(candidate)
@@ -112,9 +128,15 @@ impl TemplateSource for Templates {
 }
 
 pub fn driver_config() -> DriverConfig {
-    DriverConfig { node: config().node, compute: compute(), interval: Duration::from_millis(100) }
+    DriverConfig {
+        node: config().node,
+        compute: compute(),
+        interval: Duration::from_millis(100),
+    }
 }
 
 pub async fn drive(host: &HostLifecycle<TestHost>) {
-    host.drive_once(driver_config(), Arc::new(Templates)).await.unwrap();
+    host.drive_once(driver_config(), Arc::new(Templates))
+        .await
+        .unwrap();
 }
