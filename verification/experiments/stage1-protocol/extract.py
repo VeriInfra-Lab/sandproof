@@ -59,6 +59,10 @@ def extract(output, profiles, tool_root):
             if sha(tool_root / relative) != expected[name]['binary_sha256']:
                 raise ValueError('fixed tool binary mismatch: ' + name)
         record['tools'] = {n: expected[n] for n in ['charon', 'aeneas']}
+        allocated_target = os.environ.get('CARGO_TARGET_DIR')
+        if (not allocated_target or not Path(allocated_target).is_absolute()
+                or not Path(allocated_target).is_dir()):
+            raise ValueError('allocated absolute formal CARGO_TARGET_DIR is required')
         record['environment'] = {k: os.environ.get(k) for k in [
             'CARGO_HOME', 'CARGO_TARGET_DIR', 'CARGO_NET_OFFLINE', 'CARGO_BUILD_JOBS',
             'RUSTUP_HOME', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'TMPDIR']}
@@ -77,6 +81,18 @@ def extract(output, profiles, tool_root):
                 shutil.copy2(raw, folder / 'previous.llbc')
                 raw.unlink()
             destination = '../../../artifacts/stage1-protocol/raw/' + name + '.llbc'
+            # A fresh workspace-wrapper fingerprint recompiles the wrapper,
+            # but a dependency outside that workspace can remain cached.
+            # Refresh only our two packages in the allocated target; preserve
+            # all third-party dependency artifacts and the original outputs.
+            refresh = ['rustup', 'run', expected['extraction_frontend'], 'cargo', 'clean',
+                       '--manifest-path', 'Cargo.toml', '--target', expected['target'],
+                       '-p', 'sandproof-protocol', '-p', 'sandproof-stage1-protocol-extract',
+                       '--locked', '--offline']
+            step = run(folder, 'refresh-own', refresh, cwd=crate)
+            row['steps'].append(step)
+            if step['exit_code']:
+                raise RuntimeError('own-package refresh failed: ' + name)
             argv = [str(tool_root / 'aeneas/charon/bin/charon'), 'cargo',
                     '--preset=aeneas', '--error-on-warnings', '--sysroot', 'default',
                     '--include', 'sandproof_protocol']
@@ -99,7 +115,7 @@ def extract(output, profiles, tool_root):
                 package = tomllib.loads(manifest.read_text())['package']
                 expected_compile_line = f"Compiling {package['name']} v{package['version']} ({manifest.parent})"
                 if expected_compile_line not in observed:
-                    raise ValueError('original Charon did not recompile actual own package: ' + package['name'])
+                    raise ValueError(name + ': original Charon did not recompile actual own package: ' + package['name'])
                 own.append(package['name'])
             row['own_compilation_observed'] = own
             if not raw.is_file():

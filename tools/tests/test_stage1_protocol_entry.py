@@ -418,7 +418,9 @@ class ExtractionControlFlowTests(unittest.TestCase):
             with self.subTest(target=target), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 tool_root = root/'tools'
-                environment = {'target': 'fixture-target'}
+                environment = {'target': 'fixture-target', 'extraction_frontend': 'fixed-fixture-frontend'}
+                allocated = root/'allocated-target'
+                allocated.mkdir()
                 for name, relative in [('charon', 'aeneas/charon/bin/charon'), ('aeneas', 'aeneas/bin/aeneas')]:
                     binary = tool_root/relative
                     binary.parent.mkdir(parents=True, exist_ok=True)
@@ -436,6 +438,13 @@ class ExtractionControlFlowTests(unittest.TestCase):
                 def compiler(argv, **kwargs):
                     name = Path(argv[0]).name
                     calls.append(name)
+                    if name == 'rustup':
+                        self.assertEqual(argv, ['rustup', 'run', 'fixed-fixture-frontend', 'cargo', 'clean',
+                            '--manifest-path', 'Cargo.toml', '--target', 'fixture-target',
+                            '-p', 'sandproof-protocol', '-p', 'sandproof-stage1-protocol-extract',
+                            '--locked', '--offline'])
+                        self.assertEqual(kwargs['cwd'], root/'verification/experiments/stage1-protocol')
+                        return types.SimpleNamespace(returncode=0)
                     if name == 'charon':
                         text = ('   Compiling sandproof-protocol v0.1.0 ('+str(root/'sandbox-protocol')+')\n'
                                 '   Compiling sandproof-stage1-protocol-extract v0.1.0 ('
@@ -453,14 +462,15 @@ class ExtractionControlFlowTests(unittest.TestCase):
                 with mock.patch.object(extractor, 'ROOT', root), \
                         mock.patch.object(extractor, 'inputs', return_value={}), \
                         mock.patch.object(extractor.subprocess, 'run', side_effect=compiler), \
+                        mock.patch.dict(os.environ, {'CARGO_TARGET_DIR': str(allocated)}), \
                         mock.patch.dict(sys.modules, {'check_foundations_extraction': digest}):
                     result = extractor.extract(root/'output', ['request'], tool_root)
                 self.assertFalse(result['success'])
                 if target == 'fixture-target':
-                    self.assertEqual(calls, ['charon', 'aeneas'])
+                    self.assertEqual(calls, ['rustup', 'charon', 'aeneas'])
                     self.assertIn('Aeneas failed', result['error'])
                 else:
-                    self.assertEqual(calls, ['charon'])
+                    self.assertEqual(calls, ['rustup', 'charon'])
                     self.assertIn('raw target does not match', result['error'])
                 self.assertNotIn('TypeError', result['error'])
 
