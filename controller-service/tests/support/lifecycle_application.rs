@@ -119,7 +119,26 @@ pub fn application_with_configuration(
     provision: bool,
     inbox: LifecycleInboxConfig,
 ) -> ControllerApplication<TestHost> {
-    let mut journal = open(path);
+    let reserve = complete_fixture::CLEANUP_BYTES + 1000;
+    application_with_host_configuration(
+        path,
+        state,
+        provision,
+        inbox,
+        complete_fixture::host(path, NS, 64, 2 * 1024 * 1024, reserve),
+    )
+}
+
+/// A component can select its original protected physical pool registration.
+/// All inbox, source and application checks are the same as the default fixture.
+pub fn application_with_host_configuration(
+    path: &Path,
+    state: Arc<Mutex<State>>,
+    provision: bool,
+    inbox: LifecycleInboxConfig,
+    host: sandproof_controller_service::BoundedHostConfig,
+) -> ControllerApplication<TestHost> {
+    let mut journal = ControllerJournal::open_complete(path, NS, host, maintenance(), 0).unwrap();
     if provision {
         journal
             .initialize_lifecycle_inbox(inbox, source_limits(), &mut NeverCrash)
