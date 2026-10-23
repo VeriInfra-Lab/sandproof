@@ -97,8 +97,8 @@ def extract(output, profiles, tool_root):
             own = []
             for manifest in (ROOT / 'sandbox-protocol/Cargo.toml', crate / 'Cargo.toml'):
                 package = tomllib.loads(manifest.read_text())['package']
-                expected = f"Compiling {package['name']} v{package['version']} ({manifest.parent})"
-                if expected not in observed:
+                expected_compile_line = f"Compiling {package['name']} v{package['version']} ({manifest.parent})"
+                if expected_compile_line not in observed:
                     raise ValueError('original Charon did not recompile actual own package: ' + package['name'])
                 own.append(package['name'])
             row['own_compilation_observed'] = own

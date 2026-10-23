@@ -12,6 +12,7 @@ import sys
 import subprocess
 import tarfile
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -29,6 +30,7 @@ def load(name, path):
 archive = load('stage1_archive_under_test', HERE/'archive.py')
 formal = load('stage1_formal_under_test', HERE/'formal.py')
 component = load('stage1_component_under_test', HERE/'component.py')
+extractor = load('stage1_extractor_under_test', HERE/'extract.py')
 
 
 class CommittedArchiveTests(unittest.TestCase):
@@ -406,6 +408,62 @@ class NativePhaseAdmissionTests(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError):
                         formal.check_native_phase(folder, row, mutation, 'build', 'assertion', True)
+
+
+class ExtractionControlFlowTests(unittest.TestCase):
+    def test_compile_log_check_keeps_environment_dictionary_and_rejects_foreign_target(self):
+        # Synthetic compiler output only; deliberately fail before any Lean
+        # generation. This tests admission/control flow, never tool validity.
+        for target in ('fixture-target', 'foreign-target'):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                tool_root = root/'tools'
+                environment = {'target': 'fixture-target'}
+                for name, relative in [('charon', 'aeneas/charon/bin/charon'), ('aeneas', 'aeneas/bin/aeneas')]:
+                    binary = tool_root/relative
+                    binary.parent.mkdir(parents=True, exist_ok=True)
+                    binary.write_bytes(b'synthetic-not-a-tool')
+                    environment[name] = {'binary_sha256': extractor.sha(binary)}
+                for path, name in [('sandbox-protocol', 'sandproof-protocol'),
+                                   ('verification/experiments/stage1-protocol', 'sandproof-stage1-protocol-extract')]:
+                    manifest = root/path/'Cargo.toml'
+                    manifest.parent.mkdir(parents=True, exist_ok=True)
+                    manifest.write_text('[package]\nname="'+name+'"\nversion="0.1.0"\n')
+                config = root/'verification/foundations-environment.json'
+                config.write_text(json.dumps(environment))
+                calls = []
+
+                def compiler(argv, **kwargs):
+                    name = Path(argv[0]).name
+                    calls.append(name)
+                    if name == 'charon':
+                        text = ('   Compiling sandproof-protocol v0.1.0 ('+str(root/'sandbox-protocol')+')\n'
+                                '   Compiling sandproof-stage1-protocol-extract v0.1.0 ('
+                                +str(root/'verification/experiments/stage1-protocol')+')\n')
+                        kwargs['stdout'].write(text.encode())
+                        raw = root/'artifacts/stage1-protocol/raw/request.llbc'
+                        raw.parent.mkdir(parents=True)
+                        raw.write_text(json.dumps({'has_errors': False, 'translated': {
+                            'options': {'dest_file': '../../../artifacts/stage1-protocol/raw/request.llbc'},
+                            'target_information': [{'key': target}]}}))
+                        return types.SimpleNamespace(returncode=0)
+                    return types.SimpleNamespace(returncode=1)  # Never generate or prove.
+
+                digest = types.ModuleType('check_foundations_extraction')
+                digest.llbc_digest = lambda _: '0'*64
+                with mock.patch.object(extractor, 'ROOT', root), \
+                        mock.patch.object(extractor, 'inputs', return_value={}), \
+                        mock.patch.object(extractor.subprocess, 'run', side_effect=compiler), \
+                        mock.patch.dict(sys.modules, {'check_foundations_extraction': digest}):
+                    result = extractor.extract(root/'output', ['request'], tool_root)
+                self.assertFalse(result['success'])
+                if target == 'fixture-target':
+                    self.assertEqual(calls, ['charon', 'aeneas'])
+                    self.assertIn('Aeneas failed', result['error'])
+                else:
+                    self.assertEqual(calls, ['charon'])
+                    self.assertIn('raw target does not match', result['error'])
+                self.assertNotIn('TypeError', result['error'])
 
 
 class ProtocolInventoryTests(unittest.TestCase):
