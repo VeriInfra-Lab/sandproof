@@ -83,9 +83,11 @@ impl BootPlan {
     /// against another copy of the GET or a caller-supplied manifest profile.
     /// Uses only the cold-launch profile currently sent by configure; this is
     /// not a general validator for arbitrary restored or external VMMs.
-    pub(super) fn check_full_configuration(&self, bytes: &[u8]) -> Result<(), RuntimeError> {
+    pub(crate) fn check_full_configuration(&self, bytes: &[u8]) -> Result<(), RuntimeError> {
         if bytes.is_empty() || bytes.len() > 1_048_576 {
-            return Err(RuntimeError::Protocol("source configuration response budget"));
+            return Err(RuntimeError::Protocol(
+                "source configuration response budget",
+            ));
         }
         let actual: FullConfiguration = serde_json::from_slice(bytes)?;
         let expected = FullConfiguration {
@@ -123,21 +125,27 @@ impl BootPlan {
                 ipv4_address: "169.254.169.254".into(),
                 imds_compat: false,
             }),
-            network_interfaces: self.network.iter().map(|net| Network {
-                iface_id: net.iface_id.clone(),
-                host_dev_name: net.host_dev_name.clone(),
-                guest_mac: net.guest_mac.clone(),
-                mtu: (),
-                rx_rate_limiter: (),
-                tx_rate_limiter: (),
-            }).collect(),
+            network_interfaces: self
+                .network
+                .iter()
+                .map(|net| Network {
+                    iface_id: net.iface_id.clone(),
+                    host_dev_name: net.host_dev_name.clone(),
+                    guest_mac: net.guest_mac.clone(),
+                    mtu: (),
+                    rx_rate_limiter: (),
+                    tx_rate_limiter: (),
+                })
+                .collect(),
             vsock: (),
             entropy: (),
             pmem: Vec::new(),
             memory_hotplug: (),
         };
         if actual != expected {
-            return Err(RuntimeError::IdentityMismatch("source configuration differs from original boot plan"));
+            return Err(RuntimeError::IdentityMismatch(
+                "source configuration differs from original boot plan",
+            ));
         }
         Ok(())
     }

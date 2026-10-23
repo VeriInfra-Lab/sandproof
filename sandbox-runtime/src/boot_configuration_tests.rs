@@ -87,7 +87,10 @@ fn changed_machine_boot_drive_network_and_mmds_fields_are_refused() {
         ("/drives/0/socket", json!("/socket")),
         ("/network-interfaces/0/iface_id", json!("eth1")),
         ("/network-interfaces/0/host_dev_name", json!("tap1")),
-        ("/network-interfaces/0/guest_mac", json!("06:00:ac:10:00:03")),
+        (
+            "/network-interfaces/0/guest_mac",
+            json!("06:00:ac:10:00:03"),
+        ),
         ("/network-interfaces/0/mtu", json!(1500)),
         ("/network-interfaces/0/rx_rate_limiter", json!({})),
         ("/network-interfaces/0/tx_rate_limiter", json!({})),
@@ -108,7 +111,15 @@ fn changed_machine_boot_drive_network_and_mmds_fields_are_refused() {
 #[test]
 fn unsupported_extra_devices_unknown_fields_and_duplicate_keys_are_refused() {
     let config = config(true);
-    for field in ["balloon", "cpu-config", "logger", "metrics", "vsock", "entropy", "memory-hotplug"] {
+    for field in [
+        "balloon",
+        "cpu-config",
+        "logger",
+        "metrics",
+        "vsock",
+        "entropy",
+        "memory-hotplug",
+    ] {
         let mut changed = wire(true);
         changed[field] = json!({});
         assert!(check(&config, &changed).is_err(), "accepted {field}");
@@ -119,12 +130,30 @@ fn unsupported_extra_devices_unknown_fields_and_duplicate_keys_are_refused() {
         changed[field].as_array_mut().unwrap().push(extra);
         assert!(check(&config, &changed).is_err(), "accepted extra {field}");
         changed[field] = json!([]);
-        assert!(check(&config, &changed).is_err(), "accepted missing {field}");
+        assert!(
+            check(&config, &changed).is_err(),
+            "accepted missing {field}"
+        );
     }
-    for pointer in ["", "/boot-source", "/machine-config", "/drives/0", "/network-interfaces/0", "/mmds-config"] {
+    for pointer in [
+        "",
+        "/boot-source",
+        "/machine-config",
+        "/drives/0",
+        "/network-interfaces/0",
+        "/mmds-config",
+    ] {
         let mut changed = wire(true);
-        changed.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), json!(null));
-        assert!(check(&config, &changed).is_err(), "accepted extra field at {pointer}");
+        changed
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert("extra".into(), json!(null));
+        assert!(
+            check(&config, &changed).is_err(),
+            "accepted extra field at {pointer}"
+        );
     }
     let mut changed = wire(true);
     changed["pmem"] = json!([null]);
@@ -136,7 +165,11 @@ fn unsupported_extra_devices_unknown_fields_and_duplicate_keys_are_refused() {
     ] {
         let changed = original.replacen(old, duplicate, 1);
         assert_ne!(changed, original);
-        assert!(BootPlan::for_runtime(&config).check_full_configuration(changed.as_bytes()).is_err());
+        assert!(
+            BootPlan::for_runtime(&config)
+                .check_full_configuration(changed.as_bytes())
+                .is_err()
+        );
     }
 }
 
@@ -146,10 +179,23 @@ fn malformed_truncated_and_missing_required_reply_fields_are_refused() {
     for bytes in [b"".as_slice(), b"{", b"null", b"[]"] {
         assert!(plan.check_full_configuration(bytes).is_err());
     }
-    assert!(plan.check_full_configuration(&vec![b' '; 1_048_577]).is_err());
-    for field in ["boot-source", "machine-config", "drives", "network-interfaces", "balloon", "memory-hotplug"] {
+    assert!(
+        plan.check_full_configuration(&vec![b' '; 1_048_577])
+            .is_err()
+    );
+    for field in [
+        "boot-source",
+        "machine-config",
+        "drives",
+        "network-interfaces",
+        "balloon",
+        "memory-hotplug",
+    ] {
         let mut changed = wire(true);
         changed.as_object_mut().unwrap().remove(field);
-        assert!(check(&config(true), &changed).is_err(), "accepted missing {field}");
+        assert!(
+            check(&config(true), &changed).is_err(),
+            "accepted missing {field}"
+        );
     }
 }

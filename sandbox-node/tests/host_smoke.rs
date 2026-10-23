@@ -315,23 +315,22 @@ fn create_and_kill_use_real_host_receipts() {
     let request = test_create_request(&config);
     admit_for_test(&config, &mut journal, &worker, request);
     worker.put_secret(sandbox, &token).unwrap();
-    let lost =
-        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
-            let receipt = worker.execute(action)?;
-            if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
-                assert_eq!(worker.observe_action(action).unwrap(), receipt);
-            }
-            if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
-                return Ok(WorkReceipt {
-                    identity: action.identity.clone(),
-                    outcome: WorkOutcome::Unknown {
-                        reason: UnknownReason::ObservationUnavailable,
-                        last_observation: None,
-                    },
-                });
-            }
-            Ok(receipt)
-        });
+    let lost = finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        let receipt = worker.execute(action)?;
+        if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
+            assert_eq!(worker.observe_action(action).unwrap(), receipt);
+        }
+        if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+            return Ok(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
+        Ok(receipt)
+    });
     assert!(
         matches!(lost, Err(JournalError::UnresolvedAction)),
         "{lost:?}"
@@ -368,9 +367,7 @@ fn create_and_kill_use_real_host_receipts() {
             repeated_prepare |= matches!(action.command.command(), core::Command::PrepareVm { .. });
             worker.execute(action)
         })
-        .unwrap_or_else(|error| {
-            panic!("resumed create failed: {error}")
-        });
+        .unwrap_or_else(|error| panic!("resumed create failed: {error}"));
     assert!(!repeated_prepare);
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
@@ -498,14 +495,11 @@ fn create_and_kill_use_real_host_receipts() {
         1
     );
     let mut repeated_stop = false;
-    let killed =
-        finish_accepted_kill(&mut journal, sandbox, core::OperationId(2), &mut |action| {
-            repeated_stop |= matches!(action.command.command(), core::Command::StopVm { .. });
-            worker.execute(action)
-        })
-        .unwrap_or_else(|error| {
-            panic!("resumed kill failed: {error}")
-        });
+    let killed = finish_accepted_kill(&mut journal, sandbox, core::OperationId(2), &mut |action| {
+        repeated_stop |= matches!(action.command.command(), core::Command::StopVm { .. });
+        worker.execute(action)
+    })
+    .unwrap_or_else(|error| panic!("resumed kill failed: {error}"));
     assert!(!repeated_stop);
     assert_eq!(
         killed.sandbox_record(sandbox).unwrap().phase,
