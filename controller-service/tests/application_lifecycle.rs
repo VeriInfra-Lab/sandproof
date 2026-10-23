@@ -98,7 +98,7 @@ impl WorkEvidence for TestHost {
 }
 impl WorkExecution for TestHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
         #[cfg(feature = "contention-diagnostics")]
@@ -113,7 +113,7 @@ impl WorkExecution for TestHost {
 }
 impl TestHost {
     fn execute_work(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<support::FakeHostEvidence>, WorkerTransportError> {
         self.state.lock().unwrap().actions.push(action.clone());
@@ -148,14 +148,14 @@ impl WorkRecovery for TestHost {
     }
 
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
     }
 
     fn reclaim_incomplete_activation(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         // Only the recorded exact action is observed below, never executed again.
@@ -163,7 +163,7 @@ impl WorkRecovery for TestHost {
     }
 
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
@@ -171,11 +171,11 @@ impl WorkRecovery for TestHost {
 }
 
 impl HostSlots for TestHost {
-    fn bind_host_slot(&mut self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
+    fn bind_host_slot(&self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
         Ok(())
     }
 
-    fn release_host_slot(&mut self, _: &HostSlotContext) -> Result<(), ApplicationError> {
+    fn release_host_slot(&self, _: &HostSlotContext) -> Result<(), ApplicationError> {
         Ok(())
     }
 }
@@ -193,7 +193,7 @@ impl DataRelay for TestHost {
     }
 
     fn spawn_data_relay(
-        &mut self,
+        &self,
         _: core::SandboxId,
         _: core::VmId,
         _: core::Generation,
@@ -224,7 +224,7 @@ impl HostCapacity for TestHost {
 
 impl LaunchConfiguration for TestHost {
     fn put_secret(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
     ) -> Result<(), ApplicationError> {
@@ -264,13 +264,13 @@ impl WorkRecovery for RecoveryOnly {
         None
     }
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
     }
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)

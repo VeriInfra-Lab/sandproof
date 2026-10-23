@@ -252,7 +252,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .map_err(|error| map_unknown_journal(error, FaultStage::AcceptedState, context))?;
         if super::recovery::bind_recovery_slots(
             journal,
-            host,
+            host.as_ref(),
             &world,
             Some(sandbox),
             &BTreeSet::new(),

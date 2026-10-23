@@ -85,7 +85,7 @@ impl WorkEvidence for TestHost {
 }
 impl WorkExecution for TestHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
         let mut state = self.0.lock().unwrap();
@@ -132,29 +132,29 @@ impl WorkRecovery for TestHost {
         })
     }
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
     }
     fn reclaim_incomplete_activation(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Ok(())
     }
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Ok(())
     }
 }
 impl HostSlots for TestHost {
-    fn bind_host_slot(&mut self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
+    fn bind_host_slot(&self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
         Ok(())
     }
-    fn release_host_slot(&mut self, _: &HostSlotContext) -> Result<(), ApplicationError> {
+    fn release_host_slot(&self, _: &HostSlotContext) -> Result<(), ApplicationError> {
         if self.0.lock().unwrap().release_unknown {
             Err(ApplicationError::Busy)
         } else {
@@ -228,7 +228,7 @@ impl HostCapacity for TestHost {
     }
 }
 impl LaunchConfiguration for TestHost {
-    fn put_secret(&mut self, _: core::SandboxId, _: &str) -> Result<(), ApplicationError> {
+    fn put_secret(&self, _: core::SandboxId, _: &str) -> Result<(), ApplicationError> {
         Err(ApplicationError::Invalid)
     }
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
@@ -249,7 +249,7 @@ impl LaunchConfiguration for TestHost {
             .ok_or(ApplicationError::Busy)
     }
     fn put_bound_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         options: &CreateOptions,
