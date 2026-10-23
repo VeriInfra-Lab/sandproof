@@ -250,4 +250,60 @@ mod tests {
             Err(CodecError::Manifest(ManifestError::BindingMismatch))
         ));
     }
+
+    #[test]
+    fn terminal_wire_budget_preserves_full_retention_and_does_not_default_old_envelopes() {
+        use sandproof_protocol::lifecycle::{
+            AcceptedLifecycleIntent, CenterIdentity, ClosedLifecycleWindow,
+            ConfirmedLifecycleResult, LifecycleWindowClose, RetentionBinding,
+            TerminalLifecycleObservation, TerminalStatus, TERMINAL_RESULT_BODY_BYTES,
+        };
+        let longest = "x".repeat(128);
+        let mut request = request();
+        request.binding.node.deployment_id = longest.as_str().try_into().unwrap();
+        request.binding.node.node_id = longest.as_str().try_into().unwrap();
+        request.binding.node.node_generation = u64::MAX.try_into().unwrap();
+        request.binding.session = longest.as_str().try_into().unwrap();
+        request.binding.key.deployment = longest.as_str().try_into().unwrap();
+        request.binding.key.owner = longest.as_str().try_into().unwrap();
+        request.binding.key.window = u64::MAX.try_into().unwrap();
+        request.binding.key.sequence = u64::MAX.try_into().unwrap();
+        request.binding.expected = ExpectedSession::Version(u64::MAX - 1);
+        request.operation = LifecycleOperation::Destroy {};
+        let result = TerminalLifecycleObservation {
+            request: AcceptedLifecycleIntent {
+                center: CenterIdentity {
+                    deployment: request.binding.node.deployment_id.clone(),
+                    center: longest.as_str().try_into().unwrap(),
+                },
+                request,
+                accepted_version: u64::MAX,
+                retention: RetentionBinding { slot: 4096, window: 7.try_into().unwrap() },
+            },
+            status: TerminalStatus::Cleaned,
+        };
+        let close = LifecycleWindowClose { terminal: result.clone() };
+        let ack = ClosedLifecycleWindow { terminal: result.clone(), retired_through: 7.try_into().unwrap() };
+        for bytes in [
+            encode_bounded(&result, TERMINAL_RESULT_BODY_BYTES).unwrap(),
+            encode_bounded(&close, TERMINAL_RESULT_BODY_BYTES).unwrap(),
+            encode_bounded(&ack, TERMINAL_RESULT_BODY_BYTES).unwrap(),
+        ] {
+            assert!(bytes.len() < TERMINAL_RESULT_BODY_BYTES);
+        }
+        let bytes = encode_bounded(&ack, TERMINAL_RESULT_BODY_BYTES).unwrap();
+        let decoded: ClosedLifecycleWindow = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decoded, ack);
+        assert!(decoded.matches(&close));
+        let mut newer = decoded;
+        newer.retired_through = 8.try_into().unwrap();
+        assert!(!newer.matches(&close), "a newer frontier cannot acknowledge this close");
+        let mut pending = result.clone();
+        pending.status = TerminalStatus::Pending;
+        assert!(!ConfirmedLifecycleResult { result: pending.clone() }.matches(&pending));
+        assert!(!LifecycleWindowClose { terminal: pending }.is_terminal_result());
+        let mut old = serde_json::to_value(result).unwrap();
+        old["request"].as_object_mut().unwrap().remove("retention");
+        assert!(serde_json::from_value::<TerminalLifecycleObservation>(old).is_err());
+    }
 }

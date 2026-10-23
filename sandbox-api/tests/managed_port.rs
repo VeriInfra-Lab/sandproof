@@ -28,7 +28,7 @@ mod managed;
 use managed::ManagedPort;
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, CreateAdmission, HostEvidence, NeverCrash,
-    WorkerTransportError, finish_admitted_create_v1, kill_v1,
+    WorkerTransportError, finish_admitted_create, kill,
 };
 use sandproof_protocol::{
     FailureCode, ResourceEvidence, ResourceRef, UnknownReason, WorkAction, WorkOutcome, WorkReceipt,
@@ -881,7 +881,7 @@ fn due_unknown_prepare_fixture(
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
         }),
         Err(sandproof_controller_service::JournalError::UnresolvedAction)
@@ -1062,7 +1062,7 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
     let sandbox = core::SandboxId(1);
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             FakeHost {
                 incomplete_open_fence: true,
                 ..FakeHost::default()
@@ -1138,7 +1138,7 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
     let sandbox = core::SandboxId(1);
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             if matches!(
                 action.command.command(),
                 core::Command::ConfigureNetwork { .. }
@@ -1257,7 +1257,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
         });
     assert!(matches!(
@@ -1378,7 +1378,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
         }),
         Err(sandproof_controller_service::JournalError::UnresolvedAction)
@@ -1445,7 +1445,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
         }),
         Err(sandproof_controller_service::JournalError::UnresolvedAction)
@@ -1493,7 +1493,7 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
     let sandbox = core::SandboxId(1);
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             let outcome = match action.command.command() {
                 core::Command::ConfigureNetwork { .. } => WorkOutcome::DefinitiveFailure {
                     code: FailureCode::InvalidResource,
@@ -1659,7 +1659,7 @@ fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
     // loses its descriptor; recovery must not replace the recorded identity.
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
-        finish_admitted_create_v1::<Evidence, _>(
+        finish_admitted_create::<Evidence, _>(
             &mut journal,
             sandbox,
             core::OperationId(1),
@@ -1717,7 +1717,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
         .unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let attempted =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
                 Ok(WorkReceipt::<Evidence> {
                     identity: action.identity.clone(),
@@ -1794,7 +1794,7 @@ fn two_unknown_prepares() -> (TempDir, ControllerJournal) {
             .unwrap();
         register_test_credential(&mut journal, sandbox, &format!("{id:064x}"));
         let attempted =
-            finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
                 if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
                     Ok(WorkReceipt::<Evidence> {
                         identity: action.identity.clone(),
@@ -1917,7 +1917,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
         .unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
                 Ok(WorkReceipt::<Evidence> {
                     identity: action.identity.clone(),
@@ -1983,7 +1983,7 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
 
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
-    let lost = kill_v1(
+    let lost = kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -2075,7 +2075,7 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
 
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
-    let pending = kill_v1(
+    let pending = kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -2171,7 +2171,7 @@ fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
 
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
-    let result = kill_v1(
+    let result = kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -2251,7 +2251,7 @@ fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
     admit_public_create(&mut journal);
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let result =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             match action.command.command() {
                 core::Command::ConfigureNetwork { .. } => Ok(WorkReceipt::<Evidence> {
                     identity: action.identity.clone(),
@@ -2512,7 +2512,7 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
         )
         .unwrap();
     register_test_credential(&mut journal, core::SandboxId(1), &token);
-    finish_admitted_create_v1(
+    finish_admitted_create(
         &mut journal,
         core::SandboxId(1),
         core::OperationId(1),
@@ -3765,7 +3765,7 @@ fn two_unknown_stops() -> (TempDir, ControllerJournal) {
     let mut journal =
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     for (sandbox, tenant) in [(1, 1), (2, 2)] {
-        let result = kill_v1(
+        let result = kill(
             &mut journal,
             core::KillRequest {
                 actor: core::Actor::Tenant(core::TenantId(tenant)),

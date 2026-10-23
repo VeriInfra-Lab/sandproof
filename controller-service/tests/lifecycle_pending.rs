@@ -49,6 +49,7 @@ fn busy_first_candidate_does_not_prevent_second_from_original_finite_batch_advan
     let first = v3::request();
     let mut second = first.clone();
     second.request.binding.session = "session-b".try_into().unwrap();
+    second.retention.slot = 2;
     second.request.binding.key.owner = "account-beta".try_into().unwrap();
     for request in [&first, &second] {
         app.record_lifecycle_intent(request, &v3::context())

@@ -452,7 +452,7 @@ fn source_18_missing_shapes_hash_budget_node_vm_and_17_stray_table_fail_closed()
         }
         drop(db);
         let reserve = v3::fixture::complete_fixture::CLEANUP_BYTES + 1000;
-        let maintenance = v3::fixture::complete_fixture::maintenance();
+        let maintenance = v3::maintenance();
         assert!(
             ControllerJournal::open_complete(
                 &path,

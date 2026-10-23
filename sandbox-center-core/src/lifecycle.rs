@@ -381,6 +381,10 @@ impl CenterState {
         )?;
         let profile = next.lifecycle.as_mut().ok_or(DecisionError::Invalid)?;
         let intent = AcceptedLifecycleIntent {
+            retention: sandproof_protocol::lifecycle::RetentionBinding {
+                slot: allocation.identity.retention_slot,
+                window: allocation.identity.request_window.get().try_into().map_err(|_| DecisionError::Invalid)?,
+            },
             center: profile.center.clone(),
             accepted_version: 1,
             request: LifecycleRequest {
@@ -449,6 +453,7 @@ impl CenterState {
             }
         };
         let intent = AcceptedLifecycleIntent {
+            retention: prior.intent.retention,
             request,
             accepted_version: version,
             center: prior.intent.center.clone(),

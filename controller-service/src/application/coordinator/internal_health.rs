@@ -42,7 +42,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             return Err(ApplicationError::Invalid);
         }
         let pool = profile.pool(&namespace).map_err(map_journal)?;
-        host.validate_physical_storage(profile, &pool)?;
+        host.validate_physical_storage(profile, pool)?;
         if host.available_disk_bytes()? < profile.peak_bytes().map_err(map_journal)? {
             return Err(ApplicationError::QuotaExceeded);
         }
@@ -95,7 +95,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .as_ref()
             .ok_or(ApplicationError::Busy)?;
         let pool = profile.pool(&namespace).map_err(map_journal)?;
-        host.validate_physical_storage(profile, &pool)?;
+        host.validate_physical_storage(profile, pool)?;
         let disk = host
             .available_disk_bytes()?
             .saturating_sub(profile.peak_bytes().map_err(map_journal)?);

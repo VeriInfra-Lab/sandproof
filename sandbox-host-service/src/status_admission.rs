@@ -1,4 +1,4 @@
-//! One bounded status waiter on the original serialized work gate.
+//! One bounded health waiter on the observation budget, outside work/control.
 use sandproof_controller_service::application::ApplicationError;
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};

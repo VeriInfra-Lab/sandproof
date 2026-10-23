@@ -224,12 +224,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
             {
                 Ok(())
             }
-            Some(_) => Err(ApplicationError::OutcomeUnknown),
             None if unclaimed => inner
                 .journal
                 .register_data_credential(sandbox, generation, digest, &mut NeverCrash)
                 .map_err(map_journal),
-            None => Err(ApplicationError::OutcomeUnknown),
+            Some(_) | None => Err(ApplicationError::OutcomeUnknown),
         }
     }
 
@@ -283,7 +282,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                     core::workflow::WorkflowStep::Apply(input) => {
                         inner
                             .journal
-                            .apply(input, &mut NeverCrash)
+                            .apply(*input, &mut NeverCrash)
                             .map_err(map_journal)?;
                         continue;
                     }
@@ -409,7 +408,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
     }
 }
 
-fn local_routes_dropped<H: ControllerHost>(inner: &Inner<H>, sandbox: core::SandboxId) -> bool {
+pub(super) fn local_routes_dropped<H: ControllerHost>(
+    inner: &Inner<H>,
+    sandbox: core::SandboxId,
+) -> bool {
     inner
         .data_revocations
         .get(&sandbox.0)

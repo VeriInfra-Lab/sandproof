@@ -135,8 +135,16 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         node: NodeIdentity,
         cache: sandproof_controller_service::physical_storage::PhysicalTemplateCache,
     ) -> Result<(), ApplicationError> {
-        self.blocking(move |app| app.validate_internal_cache_storage(&node, &cache))
-            .await
+        let permit = Arc::clone(&self.observations)
+            .try_acquire_owned()
+            .map_err(|_| ApplicationError::Busy)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.validate_internal_cache_storage(&node, &cache)
+        })
+        .await
+        .map_err(|_| ApplicationError::OutcomeUnknown)?
     }
 
     /// Startup/periodic reconciliation even if the center is disconnected.
@@ -210,6 +218,50 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> {
+    async fn confirm_terminal(
+        &self,
+        result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
+        let permit = Arc::clone(&self.control)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.confirm_lifecycle_terminal(&result, &context)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+
+    async fn close_window(
+        &self,
+        request: sandproof_protocol::lifecycle::LifecycleWindowClose,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError> {
+        let permit = Arc::clone(&self.control)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.close_lifecycle_window(&request, &context)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+
     async fn observe_terminal(
         &self,
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,

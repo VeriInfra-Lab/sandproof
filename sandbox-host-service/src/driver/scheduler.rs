@@ -65,7 +65,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                 report.unavailable += 1;
                 continue;
             };
-            if workers.len() >= self.max_work + 1 {
+            if workers.len() > self.max_work {
                 report.unavailable += 1;
                 continue;
             }
@@ -74,8 +74,8 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
             let config = config.clone();
             workers.spawn(async move {
                 let node = config.node.clone();
-                let result = host
-                    .execute_blocking(permit, move |app| match candidate {
+                host.execute_blocking(permit, move |app| {
+                    let result = match candidate {
                         Candidate::Create(intent) => {
                             let LifecycleOperation::Create { create, .. } =
                                 &intent.request.operation
@@ -99,19 +99,19 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                         Candidate::Renew(intent) => app
                             .apply_recorded_lifecycle_renew(&intent, &config.node)
                             .map(|_| true),
-                    })
-                    .await;
-                match result {
-                    Ok(value) => Ok(value),
-                    Err(_) => {
-                        host.blocking(move |app| {
+                    };
+                    if let Ok(value) = result {
+                        Ok(value)
+                    } else {
+                            // Classify against the original authority while this
+                            // actual callback still owns its work permit. Failed
+                            // local work must not compete again for control slots.
                             app.check_internal_authority(&node)
-                                .map_err(|_| ApplicationError::OutcomeUnknown)
-                        })
-                        .await?;
-                        Ok(false)
+                                .map_err(|_| ApplicationError::OutcomeUnknown)?;
+                            Ok(false)
                     }
-                }
+                })
+                .await
             });
         }
         Ok(report)
@@ -130,9 +130,10 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         let mut workers = JoinSet::new();
         let mut report = self.schedule(&config, templates, &mut workers).await?;
         while let Some(result) = workers.join_next().await {
-            match result.map_err(|_| ApplicationError::OutcomeUnknown)?? {
-                true => report.advanced += 1,
-                false => report.unavailable += 1,
+            if result.map_err(|_| ApplicationError::OutcomeUnknown)?? {
+                report.advanced += 1;
+            } else {
+                report.unavailable += 1;
             }
         }
         Ok(report)

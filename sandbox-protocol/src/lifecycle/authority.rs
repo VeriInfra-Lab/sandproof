@@ -1,6 +1,6 @@
 //! Center acceptance values and the explicitly trusted authenticated binding.
 //! None of these values proves that a request was durably accepted or executed.
-use super::{ExpectedSession, LifecycleRequest, ValidationError};
+use super::{ExpectedSession, LifecycleRequest, RetentionBinding, ValidationError};
 use crate::internal::NodeIdentity;
 use crate::{ContractError, DeploymentId};
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,7 @@ pub struct AcceptedLifecycleIntent {
     pub request: LifecycleRequest,
     pub accepted_version: u64,
     pub center: CenterIdentity,
+    pub retention: RetentionBinding,
 }
 
 /// Confirmed original-journal reception only. These fields are not a VM
@@ -95,13 +96,15 @@ pub enum AcceptedIntentError {
     ForeignDeployment,
     Request(ValidationError),
     InvalidAcceptedVersion,
+    InvalidRetention,
 }
 
 impl AcceptedLifecycleIntent {
     /// Checks the actual envelope against separately supplied boundary facts.
     /// The caller still proves original durable admission and all phase rules.
     /// # Errors
-    /// Rejects sender/deployment, the ordered request guard, or a wrong successor.
+    /// Rejects sender/deployment, the ordered request guard, an invalid retained
+    /// position, or a wrong successor. Actual host capacity is checked there.
     pub fn validate(
         &self,
         context: &AuthenticatedCenterContext,
@@ -115,6 +118,9 @@ impl AcceptedLifecycleIntent {
         self.request
             .validate(context.expected_node())
             .map_err(AcceptedIntentError::Request)?;
+        if !self.retention.valid_for(4096) {
+            return Err(AcceptedIntentError::InvalidRetention);
+        }
         if self.accepted_version_for_request() != Some(self.accepted_version) {
             return Err(AcceptedIntentError::InvalidAcceptedVersion);
         }
@@ -149,6 +155,7 @@ mod tests {
         };
         (
             AcceptedLifecycleIntent {
+                retention: RetentionBinding { slot: 1, window: 1.try_into().unwrap() },
                 center: center.clone(),
                 accepted_version: version,
                 request: LifecycleRequest {
@@ -206,5 +213,20 @@ mod tests {
             value.validate(&context),
             Err(AcceptedIntentError::InvalidAcceptedVersion)
         );
+    }
+
+    #[test]
+    fn retained_position_is_explicit_and_its_window_never_defaults_from_client_key() {
+        let (mut value, context) = intent(1);
+        for slot in [0, 4097] {
+            value.retention.slot = slot;
+            assert_eq!(value.validate(&context), Err(AcceptedIntentError::InvalidRetention));
+        }
+        value.retention.slot = 4096;
+        value.retention.window = u64::MAX.try_into().unwrap();
+        assert_eq!(value.validate(&context), Ok(()));
+        let mut encoded = serde_json::to_value(value).unwrap();
+        encoded.as_object_mut().unwrap().remove("retention");
+        assert!(serde_json::from_value::<AcceptedLifecycleIntent>(encoded).is_err());
     }
 }

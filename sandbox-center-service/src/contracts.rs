@@ -239,6 +239,16 @@ pub trait CommittedDriver: Send + Sync {
 /// Called from bounded blocking work, with NO center decision lock held.
 pub trait HostPort: Send + Sync + 'static {
     /// # Errors
+    /// The original center must have durably saved the exact result first.
+    fn confirm_lifecycle_terminal(&self, _result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation, _deadline: Duration) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, PortError> {
+        Err(PortError::OutcomeUnknown)
+    }
+    /// # Errors
+    /// Unsupported/unknown cannot acknowledge a retired retained position.
+    fn close_lifecycle_window(&self, _request: &sandproof_protocol::lifecycle::LifecycleWindowClose, _deadline: Duration) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, PortError> {
+        Err(PortError::OutcomeUnknown)
+    }
+    /// # Errors
     /// Full Destroy result only; unsupported adapters cannot assert cleanup.
     fn observe_lifecycle_terminal(
         &self,

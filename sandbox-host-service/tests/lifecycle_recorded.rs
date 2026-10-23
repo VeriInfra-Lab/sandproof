@@ -57,6 +57,10 @@ fn context() -> AuthenticatedCenterContext {
 fn request() -> AcceptedLifecycleIntent {
     let config = configuration();
     AcceptedLifecycleIntent {
+        retention: sandproof_protocol::lifecycle::RetentionBinding {
+            slot: 1,
+            window: 1.try_into().unwrap(),
+        },
         center: config.center,
         accepted_version: 1,
         request: LifecycleRequest {

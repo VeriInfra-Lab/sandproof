@@ -139,6 +139,11 @@ impl CenterState {
         original: &crate::Sandbox,
     ) -> bool {
         let request = &operation.intent.request;
+        if operation.intent.retention.slot != origin.identity.retention_slot
+            || operation.intent.retention.window.get() != origin.identity.request_window.get()
+        {
+            return false;
+        }
         match (&operation.submission, &request.operation) {
             (
                 LifecycleSubmission::Create { parameters, .. },

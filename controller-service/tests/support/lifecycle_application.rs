@@ -49,6 +49,10 @@ pub fn context() -> AuthenticatedCenterContext {
 }
 pub fn request() -> AcceptedLifecycleIntent {
     AcceptedLifecycleIntent {
+        retention: sandproof_protocol::lifecycle::RetentionBinding {
+            slot: 1,
+            window: 1.try_into().unwrap(),
+        },
         center: config().center,
         accepted_version: 1,
         request: LifecycleRequest {
@@ -73,7 +77,7 @@ pub fn request() -> AcceptedLifecycleIntent {
 }
 pub fn open(path: &Path) -> ControllerJournal {
     let reserve = complete_fixture::CLEANUP_BYTES + 1000;
-    let maintenance = complete_fixture::maintenance();
+    let maintenance = maintenance();
     ControllerJournal::open_complete(
         path,
         NS,
@@ -82,6 +86,14 @@ pub fn open(path: &Path) -> ControllerJournal {
         0,
     )
     .unwrap()
+}
+
+// Explicit component deployment for bounded operation history plus permanent
+// per-position retirement stamps. Production capacity checks are unchanged.
+pub fn maintenance() -> sandproof_controller_service::MaintenanceConfig {
+    let mut limits = complete_fixture::maintenance();
+    limits.capacity.as_mut().unwrap().max_sql_value_bytes = 1024 * 1024;
+    limits
 }
 pub fn source_limits() -> sandproof_controller_service::capture::SourceObservationConfig {
     sandproof_controller_service::capture::SourceObservationConfig {
@@ -98,10 +110,19 @@ pub fn application(
     state: Arc<Mutex<State>>,
     provision: bool,
 ) -> ControllerApplication<TestHost> {
+    application_with_configuration(path, state, provision, config())
+}
+
+pub fn application_with_configuration(
+    path: &Path,
+    state: Arc<Mutex<State>>,
+    provision: bool,
+    inbox: LifecycleInboxConfig,
+) -> ControllerApplication<TestHost> {
     let mut journal = open(path);
     if provision {
         journal
-            .initialize_lifecycle_inbox(config(), source_limits(), &mut NeverCrash)
+            .initialize_lifecycle_inbox(inbox, source_limits(), &mut NeverCrash)
             .unwrap();
     }
     let reserve = complete_fixture::CLEANUP_BYTES + 1000;

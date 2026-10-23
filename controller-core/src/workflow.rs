@@ -1,5 +1,6 @@
 //! One durable decision at a time. This module performs no host I/O and never
 //! returns a replacement World for the caller to write after a slow operation.
+use crate::effect::outcome_is_unresolved as effect_unresolved;
 use crate::{
     Command, ControllerInput, EffectInput, EffectOrigin, EffectStatus, LogicalEffectResult,
     OperationKey, OperationKind, OperationStatus, Phase, PublicationInput, SandboxId,
@@ -8,11 +9,15 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkflowStep {
-    Apply(ControllerInput),
+    Apply(Box<ControllerInput>),
     Claim,
     PublishRunning,
     Complete,
     Blocked,
+}
+
+fn apply(input: ControllerInput) -> WorkflowStep {
+    WorkflowStep::Apply(Box::new(input))
 }
 
 fn scheduled(world: &World, command: &Command) -> bool {
@@ -39,37 +44,54 @@ fn failed_create(world: &World, sandbox: SandboxId) -> Option<ControllerInput> {
     let mut result = None;
     while index < world.effect_ids().len() && result.is_none() {
         let effect = &world.effect_ids()[index];
-        if let Some(logical) = world.logical_effect(&effect.logical)
-            && logical.origin == EffectOrigin::Operation(key)
-            && logical.current_attempt == effect.attempt
-            && let Some(EffectStatus::Acknowledged(crate::EffectOutcome::Failed(failure))) =
-                world.effect_status(effect)
-        {
-            if logical.result.is_none() {
-                let input = if failure.retryable() && logical.remaining_retries > 0 {
-                    EffectInput::Retry(effect.logical.clone(), failure)
-                } else {
-                    EffectInput::FinalizeFailure(effect.logical.clone(), failure)
-                };
-                result = Some(ControllerInput::Effect(input));
-            } else if logical.result
-                == Some(LogicalEffectResult::Failed {
-                    attempt: effect.attempt,
-                    failure: failure,
-                })
-            {
-                result = Some(ControllerInput::Request(crate::Request::Compensate(
-                    crate::CompensationRequest {
-                        sandbox,
-                        failure: failure,
-                        evidence: Some(effect.clone()),
-                    },
-                )));
-            }
-        }
+        result = failed_create_effect(world, key, effect);
         index += 1;
     }
     result
+}
+
+// A single real production decision, shared by the scan and its extraction.
+// Keeping the first matching effect remains the scan's only ordering rule.
+fn failed_create_effect(
+    world: &World,
+    key: OperationKey,
+    effect: &crate::EffectId,
+) -> Option<ControllerInput> {
+    let logical = world.logical_effect(&effect.logical)?;
+    if logical.origin != EffectOrigin::Operation(key) || logical.current_attempt != effect.attempt {
+        return None;
+    }
+    let Some(EffectStatus::Acknowledged(crate::EffectOutcome::Failed(failure))) =
+        world.effect_status(effect)
+    else {
+        return None;
+    };
+    if logical.result.is_none() {
+        let logical_id = effect.logical.clone();
+        if failure.retryable() && logical.remaining_retries > 0 {
+            return Some(ControllerInput::Effect(EffectInput::Retry(
+                logical_id, failure,
+            )));
+        }
+        return Some(ControllerInput::Effect(EffectInput::FinalizeFailure(
+            logical_id, failure,
+        )));
+    }
+    if logical.result
+        == Some(LogicalEffectResult::Failed {
+            attempt: effect.attempt,
+            failure,
+        })
+    {
+        return Some(ControllerInput::Request(crate::Request::Compensate(
+            crate::CompensationRequest {
+                sandbox: key.sandbox,
+                failure,
+                evidence: Some(effect.clone()),
+            },
+        )));
+    }
+    None
 }
 
 fn unresolved(world: &World, sandbox: SandboxId) -> bool {
@@ -77,11 +99,7 @@ fn unresolved(world: &World, sandbox: SandboxId) -> bool {
     let mut found = false;
     while index < world.effect_ids().len() && !found {
         let effect = &world.effect_ids()[index];
-        found = effect.command().sandbox() == sandbox
-            && matches!(
-                world.effect_status(effect),
-                Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
-            );
+        found = effect.command().sandbox() == sandbox && effect_unresolved(world, effect);
         index += 1;
     }
     found
@@ -118,8 +136,8 @@ fn cleanup_vm(
     let mut result = None;
     while index < resources.vms.len() && result.is_none() {
         let vm = resources.vms[index];
-        if !matches!(world.vm_record(vm), Some(record) if record.status == VmStatus::Reclaimed) {
-            if !scheduled(
+        if !vm_reclaimed(world, vm) {
+            if scheduled(
                 world,
                 &Command::CleanupVm {
                     sandbox,
@@ -127,11 +145,11 @@ fn cleanup_vm(
                     vm,
                 },
             ) {
-                result = Some(WorkflowStep::Apply(ControllerInput::Scheduler(
+                result = Some(WorkflowStep::Blocked);
+            } else {
+                result = Some(apply(ControllerInput::Scheduler(
                     SchedulerInput::CleanupVm(sandbox, generation, vm),
                 )));
-            } else {
-                result = Some(WorkflowStep::Blocked);
             }
         }
         index += 1;
@@ -149,9 +167,9 @@ fn cleanup(world: &World, sandbox: SandboxId, generation: crate::Generation) -> 
     let mut found = false;
     while index < resources.slots.len() && !found {
         let slot = resources.slots[index];
-        if !matches!(world.slot_record(slot), Some(record) if record.reclaimed) {
+        if !slot_reclaimed(world, slot) {
             found = true;
-            if !scheduled(
+            if scheduled(
                 world,
                 &Command::CleanupSlot {
                     sandbox,
@@ -159,16 +177,30 @@ fn cleanup(world: &World, sandbox: SandboxId, generation: crate::Generation) -> 
                     slot,
                 },
             ) {
-                result = WorkflowStep::Apply(ControllerInput::Scheduler(
-                    SchedulerInput::CleanupSlot(sandbox, generation, slot),
-                ));
-            } else {
                 result = WorkflowStep::Blocked;
+            } else {
+                result = apply(ControllerInput::Scheduler(SchedulerInput::CleanupSlot(
+                    sandbox, generation, slot,
+                )));
             }
         }
         index += 1;
     }
     result
+}
+
+fn vm_reclaimed(world: &World, vm: crate::VmId) -> bool {
+    let Some(record) = world.vm_record(vm) else {
+        return false;
+    };
+    record.status == VmStatus::Reclaimed
+}
+
+fn slot_reclaimed(world: &World, slot: crate::NetSlotId) -> bool {
+    let Some(record) = world.slot_record(slot) else {
+        return false;
+    };
+    record.reclaimed
 }
 
 /// Select one synchronous input from the current committed state. The service
@@ -182,7 +214,7 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         return WorkflowStep::Blocked;
     };
     if let Some(input) = failed_create(world, sandbox) {
-        return WorkflowStep::Apply(input);
+        return apply(input);
     }
     let key = OperationKey {
         sandbox,
@@ -195,7 +227,7 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         && operation.kind == OperationKind::Create
         && plan.vm.is_none()
     {
-        return WorkflowStep::Apply(ControllerInput::Scheduler(SchedulerInput::ReserveStartup(
+        return apply(ControllerInput::Scheduler(SchedulerInput::ReserveStartup(
             key,
         )));
     }
@@ -203,11 +235,6 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         return WorkflowStep::Claim;
     }
     if record.phase == Phase::Starting && operation.kind == OperationKind::Create {
-        if plan.vm.is_none() {
-            return WorkflowStep::Apply(ControllerInput::Scheduler(
-                SchedulerInput::ReserveStartup(key),
-            ));
-        }
         let (Some(vm), Some(slot)) = (plan.vm, plan.slot) else {
             return WorkflowStep::Blocked;
         };
@@ -220,9 +247,9 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
             source: plan.restore_from,
         };
         if !scheduled(world, &prepare) {
-            return WorkflowStep::Apply(ControllerInput::Scheduler(
-                SchedulerInput::DispatchPrepare(sandbox, vm, slot),
-            ));
+            return apply(ControllerInput::Scheduler(SchedulerInput::DispatchPrepare(
+                sandbox, vm, slot,
+            )));
         }
         if unresolved(world, sandbox) {
             return WorkflowStep::Blocked;
@@ -258,7 +285,7 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
             slot,
         };
         if !scheduled(world, &command) {
-            return WorkflowStep::Apply(ControllerInput::Scheduler(SchedulerInput::AbortPrepare(
+            return apply(ControllerInput::Scheduler(SchedulerInput::AbortPrepare(
                 sandbox,
                 record.generation,
                 vm,
@@ -276,7 +303,7 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         Some(failure) => PublicationInput::Failed(sandbox, failure),
         None => PublicationInput::Destroyed(sandbox),
     };
-    WorkflowStep::Apply(ControllerInput::Publication(publication))
+    apply(ControllerInput::Publication(publication))
 }
 
 fn stop_next(
@@ -289,21 +316,21 @@ fn stop_next(
     let mut result = None;
     while index < plan.stop_vms.len() && result.is_none() {
         let vm = plan.stop_vms[index];
-        if let Some(machine) = world.vm_record(vm)
-            && !matches!(machine.status, VmStatus::Stopped | VmStatus::Reclaimed)
-        {
+        if vm_needs_stop(world, vm) {
             let command = Command::StopVm {
                 sandbox,
                 epoch: record.epoch,
                 generation: record.generation,
                 vm,
             };
-            if !scheduled(world, &command) {
-                result = Some(WorkflowStep::Apply(ControllerInput::Scheduler(
-                    SchedulerInput::StopVm(sandbox, record.generation, vm),
-                )));
-            } else {
+            if scheduled(world, &command) {
                 result = Some(WorkflowStep::Blocked);
+            } else {
+                result = Some(apply(ControllerInput::Scheduler(SchedulerInput::StopVm(
+                    sandbox,
+                    record.generation,
+                    vm,
+                ))));
             }
         }
         index += 1;
@@ -311,17 +338,20 @@ fn stop_next(
     result
 }
 
+fn vm_needs_stop(world: &World, vm: crate::VmId) -> bool {
+    let Some(record) = world.vm_record(vm) else {
+        return false;
+    };
+    let status = record.status;
+    status != VmStatus::Stopped && status != VmStatus::Reclaimed
+}
+
 fn retire_next(world: &World, sandbox: SandboxId) -> Option<WorkflowStep> {
     let mut index = 0;
     let mut result = None;
     while index < world.effect_ids().len() && result.is_none() {
         let effect = &world.effect_ids()[index];
-        if effect.command().sandbox() == sandbox
-            && matches!(
-                world.effect_status(effect),
-                Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
-            )
-        {
+        if effect.command().sandbox() == sandbox && effect_unresolved(world, effect) {
             result = Some(WorkflowStep::Blocked);
             if let Some(command) = crate::terminal::activation_stop_current(world, effect) {
                 let logical = crate::LogicalEffectId { command };
@@ -330,7 +360,7 @@ fn retire_next(world: &World, sandbox: SandboxId) -> Option<WorkflowStep> {
                         logical,
                         attempt: row.current_attempt,
                     };
-                    result = Some(WorkflowStep::Apply(ControllerInput::Effect(
+                    result = Some(apply(ControllerInput::Effect(
                         EffectInput::RetireActivation {
                             activation: effect.clone(),
                             stop,
