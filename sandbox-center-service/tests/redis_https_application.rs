@@ -4,16 +4,16 @@
 
 #[allow(
     dead_code,
-    reason = "one shared fixed Redis fixture across component suites"
-)]
-#[path = "../../sandbox-center-store/tests/support/engine.rs"]
-mod engine;
-#[allow(
-    dead_code,
     reason = "selected original application component scenarios"
 )]
 #[path = "../../controller-service/tests/support/lifecycle_application.rs"]
 mod current;
+#[allow(
+    dead_code,
+    reason = "one shared fixed Redis fixture across component suites"
+)]
+#[path = "../../sandbox-center-store/tests/support/engine.rs"]
+mod engine;
 use current::fixture as local;
 #[path = "redis_https_application/query_snapshot.rs"]
 mod query_snapshot;
@@ -27,7 +27,8 @@ use axum::{
 };
 use sandproof_api::{ApiCredential, PortError};
 use sandproof_center_core::{
-    AvailableTemplate, Bounds, CenterState, LifecycleWindow, NodeMode, NodeRegistration, TenantBudget,
+    AvailableTemplate, Bounds, CenterState, LifecycleWindow, NodeMode, NodeRegistration,
+    TenantBudget,
 };
 use sandproof_center_service::{
     CenterApplication, CenterConfig, CenterPort, RegisteredHost, RegisteredHosts,
@@ -50,16 +51,17 @@ use sandproof_controller_service::{
 use sandproof_host_service::{DriverConfig, HostLifecycle, TemplateSource};
 use sandproof_internal::{
     ClientTls, DataReceiver, InternalClient, InternalServer, LifecycleReceiver, Limits,
-    ReceiveError, RegisteredEndpoint, ServerTls,
-    lifecycle::CenterPeerRegistration,
+    ReceiveError, RegisteredEndpoint, ServerTls, lifecycle::CenterPeerRegistration,
 };
 use sandproof_protocol::{
     TenantId,
     internal::lifecycle::{CreateBinding, Resources},
-    lifecycle::{AcceptedLifecycleIntent, AuthenticatedCenterContext, ClosedLifecycleWindow,
+    lifecycle::{
+        AcceptedLifecycleIntent, AuthenticatedCenterContext, ClosedLifecycleWindow,
         ConfirmedLifecycleResult, ConfirmedRenewal, CreateObservation, CurrentCreateReadiness,
-        LifecycleOperation, LifecycleWindowClose, RecordedLifecycleIntent,
-        RenewalConfirmation, TerminalLifecycleObservation},
+        LifecycleOperation, LifecycleWindowClose, RecordedLifecycleIntent, RenewalConfirmation,
+        TerminalLifecycleObservation,
+    },
 };
 use serde_json::{Value, json};
 use std::{
@@ -127,10 +129,18 @@ struct Reception {
     loss_observed: Arc<Notify>,
 }
 impl LifecycleReceiver for Reception {
-    async fn record_lifecycle(&self, request: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<RecordedLifecycleIntent, ReceiveError> {
+    async fn record_lifecycle(
+        &self,
+        request: AcceptedLifecycleIntent,
+        context: AuthenticatedCenterContext,
+    ) -> Result<RecordedLifecycleIntent, ReceiveError> {
         self.host.record_lifecycle(request, context).await
     }
-    async fn observe_create(&self, request: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<CreateObservation, ReceiveError> {
+    async fn observe_create(
+        &self,
+        request: AcceptedLifecycleIntent,
+        context: AuthenticatedCenterContext,
+    ) -> Result<CreateObservation, ReceiveError> {
         let result = self.host.observe_create(request, context).await?;
         if matches!(result.readiness, CurrentCreateReadiness::Observed { .. })
             && self.reply_loss.load(Ordering::SeqCst)
@@ -141,16 +151,32 @@ impl LifecycleReceiver for Reception {
             Ok(result)
         }
     }
-    async fn observe_terminal(&self, request: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<TerminalLifecycleObservation, ReceiveError> {
+    async fn observe_terminal(
+        &self,
+        request: AcceptedLifecycleIntent,
+        context: AuthenticatedCenterContext,
+    ) -> Result<TerminalLifecycleObservation, ReceiveError> {
         self.host.observe_terminal(request, context).await
     }
-    async fn confirm_terminal(&self, result: TerminalLifecycleObservation, context: AuthenticatedCenterContext) -> Result<ConfirmedLifecycleResult, ReceiveError> {
+    async fn confirm_terminal(
+        &self,
+        result: TerminalLifecycleObservation,
+        context: AuthenticatedCenterContext,
+    ) -> Result<ConfirmedLifecycleResult, ReceiveError> {
         self.host.confirm_terminal(result, context).await
     }
-    async fn confirm_renewal(&self, result: RenewalConfirmation, context: AuthenticatedCenterContext) -> Result<ConfirmedRenewal, ReceiveError> {
+    async fn confirm_renewal(
+        &self,
+        result: RenewalConfirmation,
+        context: AuthenticatedCenterContext,
+    ) -> Result<ConfirmedRenewal, ReceiveError> {
         self.host.confirm_renewal(result, context).await
     }
-    async fn close_window(&self, request: LifecycleWindowClose, context: AuthenticatedCenterContext) -> Result<ClosedLifecycleWindow, ReceiveError> {
+    async fn close_window(
+        &self,
+        request: LifecycleWindowClose,
+        context: AuthenticatedCenterContext,
+    ) -> Result<ClosedLifecycleWindow, ReceiveError> {
         self.host.close_window(request, context).await
     }
 }
@@ -239,8 +265,16 @@ fn initial_state(templates: &Templates) -> CenterState {
             },
         ],
         current::config().center,
-        vec![LifecycleWindow { owner: "1".try_into().unwrap(), window: 1.try_into().unwrap() },
-             LifecycleWindow { owner: "2".try_into().unwrap(), window: 1.try_into().unwrap() }],
+        vec![
+            LifecycleWindow {
+                owner: "1".try_into().unwrap(),
+                window: 1.try_into().unwrap(),
+            },
+            LifecycleWindow {
+                owner: "2".try_into().unwrap(),
+                window: 1.try_into().unwrap(),
+            },
+        ],
     )
     .unwrap()
 }
@@ -282,18 +316,39 @@ fn initial_envelope(templates: &Templates) -> Envelope {
     }
 }
 
-fn protected_server(certificate: &tls::Certificates, receiver: Reception) -> InternalServer<sandproof_internal::diagnostic::RejectTemplateCache<Reception>> {
+fn protected_server(
+    certificate: &tls::Certificates,
+    receiver: Reception,
+) -> InternalServer<sandproof_internal::diagnostic::RejectTemplateCache<Reception>> {
     InternalServer::new(
-        ServerTls::new(certificate.host.material(), vec![certificate.ca.der().clone()], vec![certificate.center.pin()]).unwrap(),
-        local::wire::node("host-a"), internal_limits(),
+        ServerTls::new(
+            certificate.host.material(),
+            vec![certificate.ca.der().clone()],
+            vec![certificate.center.pin()],
+        )
+        .unwrap(),
+        local::wire::node("host-a"),
+        internal_limits(),
         sandproof_internal::diagnostic::RejectTemplateCache::new(receiver),
-    ).with_center_peer(CenterPeerRegistration::new(
-        current::config().center, local::wire::node("host-a"), vec![certificate.center.pin()],
-    ).unwrap()).unwrap()
+    )
+    .with_center_peer(
+        CenterPeerRegistration::new(
+            current::config().center,
+            local::wire::node("host-a"),
+            vec![certificate.center.pin()],
+        )
+        .unwrap(),
+    )
+    .unwrap()
 }
 
 fn running(state: &CenterState) -> &sandproof_protocol::lifecycle::CurrentReadyFacts {
-    state.sandboxes()[0].operations().last().unwrap().running().unwrap()
+    state.sandboxes()[0]
+        .operations()
+        .last()
+        .unwrap()
+        .running()
+        .unwrap()
 }
 
 impl Fixture {
@@ -312,28 +367,38 @@ impl Fixture {
         let directory = tempfile::tempdir().unwrap();
         let physical = Arc::new(Mutex::new(local::State {
             epoch: local::TestEpoch::Matching,
-            source: Some(sandproof_controller_service::capture::SourceProcessIdentity {
-                pid: 1234, start_time_ticks: 5678, boot_id: "fixture-boot".into(),
-            }),
+            source: Some(
+                sandproof_controller_service::capture::SourceProcessIdentity {
+                    pid: 1234,
+                    start_time_ticks: 5678,
+                    boot_id: "fixture-boot".into(),
+                },
+            ),
             ..local::State::default()
         }));
         let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
-        let application = Arc::new(current::application_with_configuration(
-            &directory.path().join("host.db"),
-            Arc::clone(&physical),
-            true,
-            current::config(),
-        ).with_clock(clock.clone()));
+        let application = Arc::new(
+            current::application_with_configuration(
+                &directory.path().join("host.db"),
+                Arc::clone(&physical),
+                true,
+                current::config(),
+            )
+            .with_clock(clock.clone()),
+        );
         application.establish_lifecycle_host_epoch().unwrap();
         let host = HostLifecycle::new(application);
         let certificate = tls::certificates();
         let reply_loss = Arc::new(AtomicBool::new(false));
         let loss_observed = Arc::new(Notify::new());
-        let server = protected_server(&certificate, Reception {
+        let server = protected_server(
+            &certificate,
+            Reception {
                 host: host.clone(),
                 reply_loss: Arc::clone(&reply_loss),
                 loss_observed: Arc::clone(&loss_observed),
-            });
+            },
+        );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = listener.local_addr().unwrap();
         let (server_stop, shutdown) = oneshot::channel();
@@ -343,7 +408,17 @@ impl Fixture {
         let cache = Arc::new(templates.clone());
         // Same production driver, including its bounded workers across ticks.
         let driver = tokio::spawn(async move {
-            worker.run_driver(DriverConfig { node: local::wire::node("host-a"), compute: local::compute(), interval: Duration::from_millis(100) }, cache, shutdown).await
+            worker
+                .run_driver(
+                    DriverConfig {
+                        node: local::wire::node("host-a"),
+                        compute: local::compute(),
+                        interval: Duration::from_millis(100),
+                    },
+                    cache,
+                    shutdown,
+                )
+                .await
         });
         Self {
             engine,
@@ -413,7 +488,12 @@ impl Fixture {
             )
             .unwrap()
             .with_clock(Arc::clone(&self.clock)
-                as Arc<dyn sandproof_controller_service::application::Clock>),
+                as Arc<dyn sandproof_controller_service::application::Clock>)
+            .with_lifecycle_observation_policy(sandproof_center_service::NodeObservationPolicy {
+                health_window_ms: 5000,
+                max_clock_skew_ms: 100,
+            })
+            .unwrap(),
         )
     }
     async fn stop(self) {
@@ -423,8 +503,13 @@ impl Fixture {
         self.server.await.unwrap().unwrap();
         assert_eq!(self.host.active_work(), 0);
         let physical = self.physical.lock().unwrap();
-        assert!(physical.bound_slots.iter().all(|bound| physical.released_slots.contains(bound)),
-            "every original bound position must have its exact release call");
+        assert!(
+            physical
+                .bound_slots
+                .iter()
+                .all(|bound| physical.released_slots.contains(bound)),
+            "every original bound position must have its exact release call"
+        );
     }
     fn preparations(&self) -> usize {
         self.physical
@@ -586,7 +671,8 @@ async fn center_http_lifecycle_uses_real_redis_https_and_original_host_driver() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn lost_current_ready_observation_then_center_reopen_preserves_original_execution_and_lifetime() {
+async fn lost_current_ready_observation_then_center_reopen_preserves_original_execution_and_lifetime()
+ {
     let fixture = Fixture::new().await;
     fixture.reply_loss.store(true, Ordering::SeqCst);
     let application = fixture.application();
@@ -609,11 +695,16 @@ async fn lost_current_ready_observation_then_center_reopen_preserves_original_ex
     assert!(before.sandboxes()[0].operations()[0].running().is_none());
     assert_eq!(before.pending_lifecycle().len(), 1);
     let original = before.sandboxes()[0].operations()[0].intent().clone();
-    let LifecycleOperation::Create { create, .. } = &original.request.operation else { panic!("original Create required") };
+    let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+        panic!("original Create required")
+    };
     assert_eq!(before.reserved(None, None), Some(create.resources));
-    let observed = fixture.host.observe_create(original.clone(), current::context()).await.unwrap();
-    let CurrentCreateReadiness::Observed { facts } = observed.readiness
-    else {
+    let observed = fixture
+        .host
+        .observe_create(original.clone(), current::context())
+        .await
+        .unwrap();
+    let CurrentCreateReadiness::Observed { facts } = observed.readiness else {
         panic!("original committed execution must remain observable after reply loss");
     };
     assert_eq!(fixture.preparations(), 1);
@@ -636,7 +727,10 @@ async fn lost_current_ready_observation_then_center_reopen_preserves_original_ex
         send(
             &recovered_router,
             "GET",
-            &format!("/sandboxes/{}", original.request.binding.session.as_protocol_id().as_str()),
+            &format!(
+                "/sandboxes/{}",
+                original.request.binding.session.as_protocol_id().as_str()
+            ),
             ALICE,
             None
         )
@@ -648,7 +742,10 @@ async fn lost_current_ready_observation_then_center_reopen_preserves_original_ex
         send(
             &recovered_router,
             "DELETE",
-            &format!("/sandboxes/{}", original.request.binding.session.as_protocol_id().as_str()),
+            &format!(
+                "/sandboxes/{}",
+                original.request.binding.session.as_protocol_id().as_str()
+            ),
             ALICE,
             None
         )
@@ -689,27 +786,49 @@ async fn blocked_original_prepare_allows_other_ready_and_destroy_without_duplica
         .unwrap();
     // Keep the production normal/control budgets. B must cross real HTTP,
     // Redis, TLS, original journal and run_driver while A's Prepare is held.
-    let (status, other) = send(&router, "POST", "/v2/sandboxes", BOB,
-        Some(json!({"templateID":"base","timeout":60,"allow_internet_access":false}))).await;
+    let (status, other) = send(
+        &router,
+        "POST",
+        "/v2/sandboxes",
+        BOB,
+        Some(json!({"templateID":"base","timeout":60,"allow_internet_access":false})),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED, "{other}");
-    assert!(!create.is_finished(), "A must still be held at its original Prepare");
+    assert!(
+        !create.is_finished(),
+        "A must still be held at its original Prepare"
+    );
     assert_eq!(fixture.preparations(), 2);
-    assert_eq!(send(&router, "DELETE", &format!("/sandboxes/{}", other["sandboxID"].as_str().unwrap()), BOB, None).await.0, StatusCode::NO_CONTENT);
-    assert!(!create.is_finished(), "B cleanup must not release A's Prepare");
+    assert_eq!(
+        send(
+            &router,
+            "DELETE",
+            &format!("/sandboxes/{}", other["sandboxID"].as_str().unwrap()),
+            BOB,
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        !create.is_finished(),
+        "B cleanup must not release A's Prepare"
+    );
     release.0.take().unwrap().send(()).unwrap();
     let (status, created) = create.await.unwrap();
     assert_eq!(status, StatusCode::CREATED, "{created}");
     let state = application.snapshot().unwrap();
     assert_eq!(state.sandboxes().len(), 2);
-    let original = state.sandboxes().iter().find(|s| s.original_sandbox().unwrap().as_str() == created["sandboxID"].as_str().unwrap()).unwrap();
+    let original = state
+        .sandboxes()
+        .iter()
+        .find(|s| s.original_sandbox().unwrap().as_str() == created["sandboxID"].as_str().unwrap())
+        .unwrap();
     assert_eq!(original.operations().len(), 1);
     assert_eq!(fixture.preparations(), 2);
-    let prepared: Vec<_> = {
-        let state = fixture.physical.lock().unwrap();
-        state.actions.iter().filter(|a| matches!(a.command.command(), sandbox_controller_core::Command::PrepareVm { .. })).map(|a| a.command.command().sandbox()).collect()
-    };
-    assert_eq!(prepared.len(), 2);
-    assert_ne!(prepared[0], prepared[1], "each original sandbox is prepared once");
+    assert_two_original_prepares(&fixture.physical);
     let sandbox = created["sandboxID"].as_str().unwrap();
     assert_eq!(
         send(
@@ -731,9 +850,20 @@ async fn blocked_original_prepare_allows_other_ready_and_destroy_without_duplica
     fixture.stop().await;
 }
 
+fn assert_two_original_prepares(physical: &Mutex<local::State>) {
+    let state = physical.lock().unwrap();
+    let prepared: Vec<_> = state.actions.iter().filter(|a| matches!(
+        a.command.command(), sandbox_controller_core::Command::PrepareVm { .. }
+    )).map(|a| a.command.command().sandbox()).collect();
+    assert_eq!(prepared.len(), 2);
+    assert_ne!(prepared[0], prepared[1], "each original sandbox is prepared once");
+}
+
 struct Release(Option<std::sync::mpsc::Sender<()>>);
 impl Drop for Release {
     fn drop(&mut self) {
-        if let Some(sender) = self.0.take() { let _ = sender.send(()); }
+        if let Some(sender) = self.0.take() {
+            let _ = sender.send(());
+        }
     }
 }
