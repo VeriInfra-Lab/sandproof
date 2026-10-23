@@ -17,9 +17,10 @@ impl CenterState {
     }
     #[must_use]
     pub fn lane(&self, node: &NodeIdentity, slot: u16) -> Option<&RetentionLane> {
-        self.retention_lanes
-            .iter()
-            .find(|lane| lane.node == *node && lane.retention_slot == slot)
+        // Reuse the same first-match index query. Unlike slice::Iter::find,
+        // its predicate does not borrow an already borrowed iterator item.
+        let index = self.lane_index(node, slot).ok()?;
+        self.retention_lanes.get(index)
     }
     fn lane_index(&self, node: &NodeIdentity, slot: u16) -> Result<usize, DecisionError> {
         self.retention_lanes
@@ -74,7 +75,8 @@ impl CenterState {
         let mut valid = true;
         while valid && index < self.retention_lanes.len() {
             let lane = &self.retention_lanes[index];
-            if let Some(node) = self.nodes.iter().find(|node| node.identity == lane.node) {
+            if let Some(node_index) = self.nodes.iter().position(|node| node.identity == lane.node) {
+                let node = &self.nodes[node_index];
                 valid = lane.retention_slot != 0
                     && lane.retention_slot <= node.retention_slots
                     && identities.insert((lane.node.node_id.as_str(), lane.retention_slot))
