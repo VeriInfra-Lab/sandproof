@@ -1,7 +1,9 @@
 //! V3 identity/order on the original controller connection and writer lease.
 //! The original reducer/admission/outbox remains the local phase authority.
+mod access;
 pub(in crate::controller) mod audit;
 mod codec;
+mod renewal;
 pub use audit::{LifecycleAudit, LifecycleAuditOperation};
 mod model;
 mod pending;
@@ -12,8 +14,8 @@ mod tests;
 
 use super::{ControllerJournal, identity, internal_inbox, transaction::WorldTransaction};
 use crate::{
-    AdmissionError, CheckpointProfile, CrashInjector, CrashPoint, CreateAdmission,
-    InternalAdmission, InternalLocalBinding, JournalError,
+    AdmissionError, CrashInjector, CrashPoint, CreateAdmission, InternalAdmission,
+    InternalLocalBinding, JournalError,
 };
 pub(super) use codec::{charged_bytes, validate};
 use model::{Inbox, Owner};
@@ -128,23 +130,22 @@ impl ControllerJournal {
         Ok(observation)
     }
 
-    /// Explicit protected provisioning of an empty, complete `FirstUnload` store.
-    /// Existing V2/partial V3 stores are not migrated or silently reinterpreted.
+    /// Explicit protected provisioning of the current complete empty store.
+    /// Inbox and source limits commit together; old formats are not migrated.
     /// # Errors
     /// Refuses changed identity, live objects, unsupported profile or reserve.
     pub fn initialize_lifecycle_inbox(
         &mut self,
         config: LifecycleInboxConfig,
+        source: crate::capture::SourceObservationConfig,
         crashes: &mut impl CrashInjector,
     ) -> Result<(), JournalError> {
-        if !config.valid() || !self.world()?.sandbox_records().is_empty() {
+        if !config.valid() || !source.valid() || !self.world()?.sandbox_records().is_empty() {
             return Err(JournalError::UnsupportedStore);
         }
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         if codec::load(&tx)?.is_some()
             || super::internal_inbox::configuration_snapshot(&tx)?.is_some()
-            || super::checkpoint::config(&tx)?
-                .is_none_or(|c| c.checkpoint_profile != CheckpointProfile::FirstUnload)
         {
             return Err(JournalError::UnsupportedStore);
         }
@@ -171,9 +172,10 @@ impl ControllerJournal {
                 i64::try_from(reserve).map_err(|_| JournalError::MaintenanceCapacity)?
             ],
         )?;
+        source_work::initialize(&tx, source, &inbox.config)?;
         tx.execute(
             "UPDATE controller_meta SET version=?1 WHERE id=1",
-            [crate::LIFECYCLE_INBOX_FORMAT_VERSION],
+            [crate::LIFECYCLE_STORE_FORMAT_VERSION],
         )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;

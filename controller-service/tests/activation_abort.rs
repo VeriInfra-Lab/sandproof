@@ -4,7 +4,7 @@ use support::*;
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, JournalError,
-    NeverCrash, finish_admitted_create_v1, finish_compensating_create_v1,
+    NeverCrash, finish_admitted_create, finish_compensating_create,
 };
 use sandproof_protocol::{UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 use tempfile::TempDir;
@@ -53,7 +53,7 @@ fn setup() -> (TempDir, ControllerJournal, WorkAction<core::EffectId>) {
         .admit_create(request, 0, 300, 2_000, limits(), &mut NeverCrash)
         .unwrap();
     assert!(matches!(
-        finish_admitted_create_v1(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
+        finish_admitted_create(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
             if matches!(action.command.command(), core::Command::ActivateVm { .. }) {
                 Ok(unknown(action))
             } else {
@@ -134,7 +134,7 @@ fn terminal_activation_stops_without_initializing_and_releases_quota_only_after_
         1
     );
     let mut calls = Vec::new();
-    finish_compensating_create_v1(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
+    finish_compensating_create(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
         assert!(!matches!(
             action.command.command(),
             core::Command::ActivateVm { .. } | core::Command::PrepareVm { .. }
@@ -174,7 +174,7 @@ fn uncertain_or_mismatched_stop_keeps_activation_terminal_and_quota_held() {
     journal.abort_due_startups(1_000, &mut NeverCrash).unwrap();
     let mut stopped = None;
     assert!(matches!(
-        finish_compensating_create_v1(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
+        finish_compensating_create(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
             if matches!(action.command.command(), core::Command::StopVm { .. }) {
                 stopped = Some(action.clone());
                 return Ok(unknown(action));
@@ -217,7 +217,7 @@ fn uncertain_or_mismatched_stop_keeps_activation_terminal_and_quota_held() {
         Err(AdmissionError::QuotaExceeded)
     ));
     journal.complete(&success(&stop), &mut NeverCrash).unwrap();
-    finish_compensating_create_v1(&mut journal, SANDBOX, CREATE_OP, &mut worker).unwrap();
+    finish_compensating_create(&mut journal, SANDBOX, CREATE_OP, &mut worker).unwrap();
     assert_reclaimed(&journal, &activation.command);
 }
 
@@ -245,10 +245,10 @@ fn retirement_transaction_is_atomic_replayable_and_preserves_missing_receipt() {
         );
         assert_eq!(retired, point == CrashPoint::AfterCommit);
         reopened.apply(input, &mut NeverCrash).unwrap();
-        finish_compensating_create_v1(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
+        finish_compensating_create(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
         assert_reclaimed(&reopened, &activation.command);
         let before = reopened.world().unwrap();
-        finish_compensating_create_v1(&mut reopened, SANDBOX, CREATE_OP, &mut |_action| -> Result<
+        finish_compensating_create(&mut reopened, SANDBOX, CREATE_OP, &mut |_action| -> Result<
             WorkReceipt<FakeHostEvidence>,
             _,
         > {
@@ -281,7 +281,7 @@ fn restart_recovers_terminal_fence_stop_and_cleanup_windows_without_second_activ
         journal.abort_due_startups(1_000, &mut NeverCrash).unwrap();
         let mut lost = None;
         assert!(matches!(
-            finish_compensating_create_v1(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
+            finish_compensating_create(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
                 let selected = matches!(
                     (target, action.command.command()),
                     ("fence", core::Command::InstallFence { terminal: true, .. })
@@ -302,7 +302,7 @@ fn restart_recovers_terminal_fence_stop_and_cleanup_windows_without_second_activ
         reopened
             .complete(&success(&lost.unwrap()), &mut NeverCrash)
             .unwrap();
-        finish_compensating_create_v1(&mut reopened, SANDBOX, CREATE_OP, &mut |action| {
+        finish_compensating_create(&mut reopened, SANDBOX, CREATE_OP, &mut |action| {
             assert!(!matches!(
                 action.command.command(),
                 core::Command::ActivateVm { .. } | core::Command::PrepareVm { .. }
@@ -368,7 +368,7 @@ fn terminal_intent_is_atomic_and_late_activation_cannot_complete_it() {
             Err(JournalError::ObsoleteReceipt)
         ));
         assert_eq!(reopened.world().unwrap(), before);
-        finish_compensating_create_v1(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
+        finish_compensating_create(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
         assert_reclaimed(&reopened, &activation.command);
     }
 }

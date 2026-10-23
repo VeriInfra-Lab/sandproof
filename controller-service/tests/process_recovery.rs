@@ -3,8 +3,8 @@ use support::*;
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    CrashInjector, CrashPoint, JournalError, NeverCrash, finish_accepted_kill_v1,
-    finish_admitted_create_v1,
+    CrashInjector, CrashPoint, JournalError, NeverCrash, finish_accepted_kill,
+    finish_admitted_create,
 };
 use tempfile::TempDir;
 
@@ -196,14 +196,13 @@ fn process_exit_recovers_commits_and_never_repeats_an_uncertain_host_action() {
                 1
             );
             let mut repeated_prepare = false;
-            let running =
-                finish_admitted_create_v1(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
-                    if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
-                        repeated_prepare = true;
-                    }
-                    worker(action)
-                })
-                .unwrap();
+            let running = finish_admitted_create(&mut journal, SANDBOX, CREATE_OP, &mut |action| {
+                if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+                    repeated_prepare = true;
+                }
+                worker(action)
+            })
+            .unwrap();
             assert!(!repeated_prepare, "recovery must not launch the VM twice");
             assert_eq!(
                 running.sandbox_record(SANDBOX).unwrap().phase,
@@ -225,7 +224,7 @@ fn process_exit_recovers_commits_and_never_repeats_an_uncertain_host_action() {
                 1
             );
             let mut repeated_stop = false;
-            let destroyed = finish_accepted_kill_v1(
+            let destroyed = finish_accepted_kill(
                 &mut journal,
                 SANDBOX,
                 core::OperationId(101),

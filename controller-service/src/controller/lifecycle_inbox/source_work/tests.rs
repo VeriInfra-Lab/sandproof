@@ -44,7 +44,7 @@ fn bootstrap(journal: &mut ControllerJournal) {
         )
         .unwrap();
 }
-fn running17(path: &Path) -> (ControllerJournal, Arc<Mutex<State>>) {
+fn running_source(path: &Path) -> (ControllerJournal, Arc<Mutex<State>>) {
     let state = Arc::new(Mutex::new(State {
         epoch: TestEpoch::Matching,
         source: Some(SourceProcessIdentity {
@@ -65,10 +65,7 @@ fn running17(path: &Path) -> (ControllerJournal, Arc<Mutex<State>>) {
     (journal, state)
 }
 fn ready(path: &Path) -> (ControllerJournal, Arc<Mutex<State>>) {
-    let (mut journal, state) = running17(path);
-    journal
-        .enable_lifecycle_source_observations(config(), &mut NeverCrash)
-        .unwrap();
+    let (mut journal, state) = running_source(path);
     journal
         .record_lifecycle_intent(&unload(), &v3::context(), &mut NeverCrash)
         .unwrap();
@@ -93,58 +90,35 @@ fn observation(requirement: &SourceObservationRequirement) -> RawSourceObservati
 }
 
 #[test]
-fn source_opt_in_preserves_original_17_json_and_reserves_empty_18_same_transaction() {
+fn source_and_inbox_initialize_atomically_with_exact_immutable_limits() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (mut journal, _) = running17(&path);
-    let before: Vec<u8> = journal
-        .journal
-        .connection
-        .query_row(
-            "SELECT state_json FROM controller_lifecycle_inbox",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
+    let mut journal = v3::open(&path);
+    let before = journal.world().unwrap();
     journal
-        .enable_lifecycle_source_observations(config(), &mut NeverCrash)
+        .initialize_lifecycle_inbox(v3::config(), config(), &mut NeverCrash)
         .unwrap();
-    assert_eq!(
-        before,
-        journal
-            .journal
-            .connection
-            .query_row(
-                "SELECT state_json FROM controller_lifecycle_inbox",
-                [],
-                |r| r.get::<_, Vec<u8>>(0)
-            )
-            .unwrap()
-    );
-    assert_eq!(
-        journal
-            .journal
-            .connection
-            .query_row("SELECT version FROM controller_meta", [], |r| r
-                .get::<_, i64>(0))
-            .unwrap(),
-        18
-    );
+    assert_eq!(journal.world().unwrap(), before);
     assert!(
         journal
             .lifecycle_source_work(&v3::config().node)
             .unwrap()
             .is_empty()
     );
-    assert!(
-        !journal
-            .world()
-            .unwrap()
-            .sandbox_record(sandbox_controller_core::SandboxId(1))
-            .unwrap()
-            .terminal
-    );
-    let reserved_bytes: i64 = journal
+    journal
+        .check_lifecycle_source_observations(&config())
+        .unwrap();
+    let mut changed = config();
+    changed.max_configuration_bytes += 1;
+    assert!(matches!(
+        journal.check_lifecycle_source_observations(&changed),
+        Err(JournalError::UnsupportedStore)
+    ));
+    assert!(matches!(
+        journal.initialize_lifecycle_inbox(v3::config(), config(), &mut NeverCrash),
+        Err(JournalError::UnsupportedStore)
+    ));
+    let reserve: i64 = journal
         .journal
         .connection
         .query_row(
@@ -153,49 +127,45 @@ fn source_opt_in_preserves_original_17_json_and_reserves_empty_18_same_transacti
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(
-        u64::try_from(reserved_bytes).unwrap(),
-        config().required_bytes(2)
-    );
-    journal
-        .enable_lifecycle_source_observations(config(), &mut NeverCrash)
-        .unwrap();
-    let mut changed = config();
-    changed.max_configuration_bytes += 1;
-    assert!(matches!(
-        journal.enable_lifecycle_source_observations(changed, &mut NeverCrash),
-        Err(JournalError::Conflict)
-    ));
+    assert_eq!(u64::try_from(reserve).unwrap(), config().required_bytes(2));
     drop(journal);
-    assert!(
-        v3::open(&path)
-            .lifecycle_source_work(&v3::config().node)
-            .unwrap()
-            .is_empty()
-    );
+    v3::open(&path)
+        .check_lifecycle_source_observations(&config())
+        .unwrap();
 }
 
 #[test]
-fn source_enable_unknown_commit_recovers_actual_17_or_empty_18_without_fabricated_work() {
+fn source_and_inbox_unknown_commit_recovers_both_or_neither_without_fabricated_work() {
     for durable in [false, true] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
-        let (mut journal, _) = running17(&path);
+        let mut journal = v3::open(&path);
         transaction::fail_next_commit(durable);
         assert!(matches!(
-            journal.enable_lifecycle_source_observations(config(), &mut NeverCrash),
+            journal.initialize_lifecycle_inbox(v3::config(), config(), &mut NeverCrash),
             Err(JournalError::CommitUncertain(_))
         ));
         drop(journal);
         let mut journal = v3::open(&path);
-        let version: i64 = journal
-            .journal
-            .connection
-            .query_row("SELECT version FROM controller_meta", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(version, if durable { 18 } else { 17 });
+        for table in ["controller_lifecycle_inbox", "controller_source_work"] {
+            let exists: bool = journal
+                .journal
+                .connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name=?1)",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, durable, "{table}");
+        }
+        if !durable {
+            journal
+                .initialize_lifecycle_inbox(v3::config(), config(), &mut NeverCrash)
+                .unwrap();
+        }
         journal
-            .enable_lifecycle_source_observations(config(), &mut NeverCrash)
+            .check_lifecycle_source_observations(&config())
             .unwrap();
         assert!(
             journal
@@ -482,8 +452,7 @@ fn source_18_missing_shapes_hash_budget_node_vm_and_17_stray_table_fail_closed()
         }
         drop(db);
         let reserve = v3::fixture::complete_fixture::CLEANUP_BYTES + 1000;
-        let mut maintenance = v3::fixture::complete_fixture::maintenance();
-        maintenance.checkpoint_profile = crate::CheckpointProfile::FirstUnload;
+        let maintenance = v3::fixture::complete_fixture::maintenance();
         assert!(
             ControllerJournal::open_complete(
                 &path,
@@ -540,77 +509,77 @@ fn old_or_modified_owner_vm_generation_or_full_key_cannot_store_facts() {
 }
 
 #[test]
-fn source_feature_exports_closed_17_positive_and_18_rejection_fixtures() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("db");
-    let (mut journal, _) = running17(&path);
-    drop(journal);
-    let export = std::env::var_os("SANDPROOF_SOURCE_WORK_EXPORT_DIR").map(std::path::PathBuf::from);
-    if let Some(export) = &export {
-        std::fs::create_dir(export).unwrap();
-        assert!(!path.with_file_name("db-wal").exists());
-        std::fs::copy(&path, export.join("format17.db")).unwrap();
-    }
-    journal = v3::open(&path);
-    journal
-        .enable_lifecycle_source_observations(config(), &mut NeverCrash)
-        .unwrap();
-    drop(journal);
-    if let Some(export) = export {
-        assert!(!path.with_file_name("db-wal").exists());
-        std::fs::copy(&path, export.join("format18.db")).unwrap();
+fn current_source_store_rejects_old_or_unknown_tags_without_changing_bytes() {
+    for version in [0, 17, 19] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (journal, _) = running_source(&path);
+        drop(journal);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute("UPDATE controller_meta SET version=?1", [version])
+            .unwrap();
+        drop(conn);
         let reserve = v3::fixture::complete_fixture::CLEANUP_BYTES + 1000;
-        let mut maintenance = v3::fixture::complete_fixture::maintenance();
-        maintenance.checkpoint_profile = crate::CheckpointProfile::FirstUnload;
-        std::fs::write(
-            export.join("maintenance.json"),
-            serde_json::to_vec(&maintenance).unwrap(),
-        )
-        .unwrap();
-        std::fs::write(
-            export.join("host.json"),
-            serde_json::to_vec(&v3::fixture::complete_fixture::host(
+        let host = v3::fixture::complete_fixture::host(
+            &path,
+            "0123456789abcdef",
+            64,
+            2 * 1024 * 1024,
+            reserve,
+        );
+        assert!(
+            ControllerJournal::preflight_complete(
                 &path,
                 "0123456789abcdef",
-                64,
-                2 * 1024 * 1024,
-                reserve,
-            ))
-            .unwrap(),
-        )
-        .unwrap();
+                &host,
+                &v3::fixture::complete_fixture::maintenance()
+            )
+            .is_err()
+        );
+        assert!(
+            ControllerJournal::open_complete(
+                &path,
+                "0123456789abcdef",
+                host,
+                v3::fixture::complete_fixture::maintenance(),
+                0
+            )
+            .is_err()
+        );
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT version FROM controller_meta", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            version
+        );
     }
 }
 
 #[test]
-fn source_enable_capacity_rejection_keeps_17_and_no_partial_table() {
+fn source_capacity_rejection_leaves_no_partial_inbox_or_source_table() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (mut journal, _) = running17(&path);
+    let mut journal = v3::open(&path);
+    let before = journal.world().unwrap();
     let mut excessive = config();
     excessive.max_configuration_bytes = 1_048_576;
     assert!(matches!(
-        journal.enable_lifecycle_source_observations(excessive, &mut NeverCrash),
+        journal.initialize_lifecycle_inbox(v3::config(), excessive, &mut NeverCrash),
         Err(JournalError::MaintenanceCapacity)
     ));
-    assert_eq!(
-        journal
-            .journal
-            .connection
-            .query_row("SELECT version FROM controller_meta", [], |r| r
-                .get::<_, i64>(0))
-            .unwrap(),
-        17
-    );
-    assert!(
-        !journal
-            .journal
-            .connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='controller_source_work')",
-                [],
-                |r| r.get::<_, bool>(0)
-            )
-            .unwrap()
-    );
+    assert_eq!(journal.world().unwrap(), before);
+    for table in ["controller_lifecycle_inbox", "controller_source_work"] {
+        assert!(
+            !journal
+                .journal
+                .connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name=?1)",
+                    [table],
+                    |r| r.get::<_, bool>(0)
+                )
+                .unwrap()
+        );
+    }
 }

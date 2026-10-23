@@ -13,6 +13,142 @@ use v3::fixture::{self, State, TestEpoch};
 use v3::{advance, application, context, open, request};
 
 #[test]
+fn renewal_keeps_original_create_and_replays_exact_deadline_without_revival() {
+    use sandproof_controller_service::{
+        CreateReadiness, application::DataKind, capture::SourceProcessIdentity,
+    };
+    use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
+    use std::sync::atomic::{AtomicI64, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(State {
+        epoch: TestEpoch::Matching,
+        source: Some(SourceProcessIdentity {
+            pid: 1234,
+            start_time_ticks: 5678,
+            boot_id: "fixture-boot".into(),
+        }),
+        ..State::default()
+    }));
+    let clock = Arc::new(fixture::TestClock(AtomicI64::new(10)));
+    let app = application(&path, state.clone(), true).with_clock(clock.clone());
+    let create = request();
+    app.record_lifecycle_intent(&create, &context()).unwrap();
+    app.establish_lifecycle_host_epoch().unwrap();
+    let original = advance(&app).unwrap().local.unwrap();
+    let startup_calls = state.lock().unwrap().actions.len();
+    let mut renew = create.clone();
+    renew.accepted_version = 2;
+    renew.request.binding.expected = ExpectedSession::Version(1);
+    renew.request.binding.key.sequence = 2.try_into().unwrap();
+    let LifecycleOperation::Create {
+        target_incarnation: incarnation,
+        ..
+    } = create.request.operation
+    else {
+        panic!()
+    };
+    renew.request.operation = LifecycleOperation::Renew {
+        incarnation,
+        end_at_ms: 120_010,
+        extend_only: false,
+    };
+    app.record_lifecycle_intent(&renew, &context()).unwrap();
+    assert!(matches!(
+        app.observe_lifecycle_create(&create, &context())
+            .unwrap()
+            .readiness,
+        CreateReadiness::NotCurrent
+    ));
+    let (work, end) = app.apply_lifecycle_renew(&renew, &context()).unwrap();
+    assert_eq!(work.local, Some(original));
+    assert_eq!(end, 120_010);
+    clock.0.store(20, Ordering::SeqCst);
+    assert_eq!(
+        app.apply_lifecycle_renew(&renew, &context()).unwrap().1,
+        end
+    );
+    let observed = app.observe_lifecycle_create(&create, &context()).unwrap();
+    assert_eq!(observed.request, create);
+    assert_eq!(observed.current_request, renew);
+    let CreateReadiness::Observed(ready) = observed.readiness else {
+        panic!("original physical Create remains current after applied renewal")
+    };
+    assert_eq!(ready.started_at_ms, 10);
+    assert_eq!(ready.end_at_ms, 120_010);
+    assert_eq!(ready.max_end_at_ms, 300_010);
+    let access = LifecycleAccessIdentity {
+        protocol_version: renew.request.binding.protocol_version,
+        center: renew.center.clone(),
+        node: renew.request.binding.node.clone(),
+        session: renew.request.binding.session.clone(),
+        operation: renew.request.binding.key.clone(),
+        accepted_version: renew.accepted_version,
+        incarnation,
+    };
+    drop(
+        app.lifecycle_data_authorization(&access, &context(), DataKind::FileRead)
+            .unwrap(),
+    );
+    let mut extended = renew.clone();
+    extended.accepted_version = 3;
+    extended.request.binding.expected = ExpectedSession::Version(2);
+    extended.request.binding.key.sequence = 3.try_into().unwrap();
+    extended.request.operation = LifecycleOperation::Renew {
+        incarnation,
+        end_at_ms: 60_010,
+        extend_only: true,
+    };
+    app.record_lifecycle_intent(&extended, &context()).unwrap();
+    assert_eq!(
+        app.apply_lifecycle_renew(&extended, &context()).unwrap().1,
+        120_010
+    );
+    assert!(matches!(
+        app.lifecycle_data_authorization(&access, &context(), DataKind::FileRead),
+        Err(ApplicationError::NotFound)
+    ));
+    let mut excessive = extended.clone();
+    excessive.accepted_version = 4;
+    excessive.request.binding.expected = ExpectedSession::Version(3);
+    excessive.request.binding.key.sequence = 4.try_into().unwrap();
+    excessive.request.operation = LifecycleOperation::Renew {
+        incarnation,
+        end_at_ms: 400_010,
+        extend_only: false,
+    };
+    app.record_lifecycle_intent(&excessive, &context()).unwrap();
+    assert_eq!(
+        app.apply_lifecycle_renew(&excessive, &context()),
+        Err(ApplicationError::Invalid)
+    );
+    let mut late = excessive.clone();
+    late.accepted_version = 5;
+    late.request.binding.expected = ExpectedSession::Version(4);
+    late.request.binding.key.sequence = 5.try_into().unwrap();
+    late.request.operation = LifecycleOperation::Renew {
+        incarnation,
+        end_at_ms: 200_010,
+        extend_only: false,
+    };
+    app.record_lifecycle_intent(&late, &context()).unwrap();
+    clock.0.store(120_010, Ordering::SeqCst);
+    assert_eq!(
+        app.apply_lifecycle_renew(&late, &context()),
+        Err(ApplicationError::NotFound)
+    );
+    // Historical replay says only that this update committed, not that it is
+    // current or the VM is alive; a new unapplied update cannot revive expiry.
+    assert!(
+        !app.apply_lifecycle_renew(&renew, &context())
+            .unwrap()
+            .0
+            .current
+    );
+    assert_eq!(startup_calls, state.lock().unwrap().actions.len());
+}
+
+#[test]
 fn original_application_records_queries_and_starts_through_one_journal() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");

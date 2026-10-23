@@ -21,6 +21,7 @@ pub struct LifecycleAuditOperation {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LifecycleAudit {
     pub node: NodeIdentity,
+    pub source_observation: crate::capture::SourceObservationConfig,
     pub operations: Vec<LifecycleAuditOperation>,
     pub native: Vec<InternalNativeAudit>,
     pub host_slots: Vec<(HostSlotContext, core::maintenance::slots::HostSlotPhase)>,
@@ -79,6 +80,7 @@ pub(in crate::controller) fn snapshot(
         .collect();
     Ok(LifecycleAudit {
         node: inbox.config.node,
+        source_observation: super::source_work::configuration_snapshot(connection)?,
         operations,
         native,
         host_slots,

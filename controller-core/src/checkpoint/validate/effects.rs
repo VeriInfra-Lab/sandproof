@@ -1,12 +1,12 @@
+use super::unload;
 use super::{
     Command, EffectId, EffectOrigin, EffectOutcome, EffectStatus, Generation, LogicalEffectId,
     LogicalEffectResult, NetSlotId, OperationKind, OperationPlan, OperationStatus, Reject,
     SandboxId, StopCoverage, VmId, World, effect, record, reserved_slot, reserved_vm, terminal,
     unique,
 };
-use super::{Profile, unload};
 
-pub(super) fn validate(world: &World, profile: Profile) -> Result<(), Reject> {
+pub(super) fn validate(world: &World) -> Result<(), Reject> {
     unique(&world.effect_keys)?;
     unique(&world.inflight)?;
     if world.effect_keys.len() != world.effects.entries().len()
@@ -20,7 +20,7 @@ pub(super) fn validate(world: &World, profile: Profile) -> Result<(), Reject> {
         return Err(Reject::InvalidEffect);
     }
     for (id, logical) in world.logical_effects.entries() {
-        command(world, &id.command, logical.origin, profile)?;
+        command(world, &id.command, logical.origin)?;
         if logical
             .current_attempt
             .checked_add(logical.remaining_retries)
@@ -126,12 +126,7 @@ fn command_origin<'a>(
     })
 }
 
-fn command(
-    world: &World,
-    command: &Command,
-    origin: EffectOrigin,
-    profile: Profile,
-) -> Result<(), Reject> {
+fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(), Reject> {
     let sandbox = command.sandbox();
     let row = record(world, sandbox)?;
     let plan = command_origin(world, command, origin)?;
@@ -139,7 +134,7 @@ fn command(
         Command::InstallFence {
             epoch, terminal, ..
         } => {
-            fence_command(world, row, plan, *epoch, *terminal, profile)?;
+            fence_command(world, row, plan, *epoch, *terminal)?;
         }
         Command::PrepareVm {
             generation,
@@ -207,7 +202,7 @@ fn command(
             }
         }
         Command::StopVm { generation, vm, .. } => {
-            stop_command(world, row.terminal, plan, *generation, *vm, profile)?;
+            stop_command(world, row.terminal, plan, *generation, *vm)?;
         }
         Command::CleanupVm { generation, vm, .. } => {
             if plan.is_some() {
@@ -226,7 +221,7 @@ fn command(
         Command::FreezeVm { .. }
         | Command::SealSnapshot { .. }
         | Command::CommitSnapshot { .. } => {
-            snapshot_command(world, command, plan, profile)?;
+            snapshot_command(world, command, plan)?;
         }
     }
     Ok(())
@@ -236,11 +231,7 @@ fn snapshot_command(
     world: &World,
     command: &Command,
     plan: Option<&OperationPlan>,
-    profile: Profile,
 ) -> Result<(), Reject> {
-    if profile != Profile::FirstUnload {
-        return Err(Reject::UnsupportedSnapshotHistory);
-    }
     unload::command(world, command, plan.ok_or(Reject::InvalidEffect)?)
 }
 
@@ -250,16 +241,12 @@ fn stop_command(
     plan: Option<&OperationPlan>,
     generation: Generation,
     vm: VmId,
-    profile: Profile,
 ) -> Result<(), Reject> {
     let plan = plan.ok_or(Reject::InvalidEffect)?;
     if !plan.stop_vms.contains(&vm) || plan.generation != generation {
         return Err(Reject::InvalidEffect);
     }
     if !terminal {
-        if profile != Profile::FirstUnload {
-            return Err(Reject::InvalidEffect);
-        }
         unload::stop_plan(world, plan, vm)?;
     }
     vm_reference(world, plan.key.sandbox, vm, generation)
@@ -271,14 +258,13 @@ fn fence_command(
     plan: Option<&OperationPlan>,
     epoch: u64,
     terminal: bool,
-    profile: Profile,
 ) -> Result<(), Reject> {
     let origin = plan.ok_or(Reject::InvalidEffect)?;
     let operation = world
         .operation_record(origin.key)
         .ok_or(Reject::InvalidEffect)?;
     let opening_kind = operation.operation.kind == OperationKind::Create
-        || (profile == Profile::FirstUnload && operation.operation.kind == OperationKind::Pause);
+        || operation.operation.kind == OperationKind::Pause;
     if (!terminal && !opening_kind)
         || epoch == 0
         || epoch > row.epoch
@@ -358,7 +344,7 @@ fn historical_success(world: &World, command: &Command) -> Result<(), Reject> {
 }
 
 fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<(), Reject> {
-    let command = terminal::activation_stop(id).ok_or(Reject::InvalidEffect)?;
+    let command = terminal::activation_stop_covered(id, coverage).ok_or(Reject::InvalidEffect)?;
     let stop = EffectId {
         logical: LogicalEffectId {
             command: command.clone(),
@@ -379,14 +365,22 @@ fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<
         && coverage.operation.sandbox == command.sandbox()
         && row.terminal
         && row.epoch == coverage.epoch
-        && ledger.operation.kind == OperationKind::Create
-        && matches!(
-            ledger.operation.status,
-            OperationStatus::Compensating(_) | OperationStatus::Failed(_)
-        )
+        && match ledger.operation.kind {
+            OperationKind::Create => matches!(
+                ledger.operation.status,
+                OperationStatus::Compensating(_) | OperationStatus::Failed(_)
+            ),
+            OperationKind::Kill => matches!(
+                ledger.operation.status,
+                OperationStatus::Pending
+                    | OperationStatus::OutcomeUnknown
+                    | OperationStatus::Succeeded
+            ),
+            OperationKind::Pause | OperationKind::Resume => false,
+        }
         && stop_logical.current_attempt == coverage.attempt
         && stop_logical.origin == EffectOrigin::Operation(coverage.operation)
-        && activation.origin == stop_logical.origin
+        && terminal::activation_coverage_origin(world, id, coverage)
         && activation.current_attempt == id.attempt
         && activation.result
             == Some(LogicalEffectResult::RetiredByStop {

@@ -4,7 +4,7 @@
 use super::{ControllerJournal, identity, storage, transaction::WorldTransaction};
 use crate::templates::ComputeLimits;
 use crate::{CrashInjector, CrashPoint, JournalError};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use sandbox_controller_core as core;
 use sandproof_protocol::numeric::seconds_to_milliseconds;
 
@@ -120,7 +120,7 @@ fn checked_deadline(now_ms: i64, seconds: u64) -> Result<i64, AdmissionError> {
 }
 
 pub(super) fn read_lifetime(
-    tx: &Transaction<'_>,
+    tx: &rusqlite::Connection,
     namespace: &str,
     sandbox: core::SandboxId,
     owner: core::TenantId,

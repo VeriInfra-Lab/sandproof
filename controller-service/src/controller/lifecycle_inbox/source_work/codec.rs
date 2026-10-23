@@ -1,5 +1,5 @@
 use super::{SourceObservationConfig, SourceWorkRecord};
-use crate::{ControllerJournal, CrashInjector, CrashPoint, JournalError};
+use crate::JournalError;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -25,7 +25,7 @@ pub(super) fn load(connection: &Connection) -> Result<Option<Sources>, JournalEr
         [],
         |r| r.get(0),
     )?;
-    if version != crate::SOURCE_WORK_FORMAT_VERSION {
+    if version != crate::LIFECYCLE_STORE_FORMAT_VERSION {
         return if exists {
             Err(JournalError::CorruptStore)
         } else {
@@ -102,46 +102,29 @@ pub(super) fn save(
     Ok(())
 }
 
-pub(super) fn enable(
-    journal: &mut ControllerJournal,
+pub(super) fn initialize(
+    connection: &Connection,
     config: SourceObservationConfig,
-    crashes: &mut impl CrashInjector,
+    inbox: &super::super::LifecycleInboxConfig,
 ) -> Result<(), JournalError> {
     if !config.valid() {
         return Err(JournalError::UnsupportedInput);
     }
-    let tx = super::super::WorldTransaction::begin(
-        &mut journal.journal.connection,
-        &journal.committed_world,
-    )?;
-    let inbox = super::super::codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
-    if let Some(existing) = load(&tx)? {
-        return if existing.config == config {
-            Ok(())
-        } else {
-            Err(JournalError::Conflict)
-        };
-    }
-    let version: i64 = tx.query_row("SELECT version FROM controller_meta WHERE id=1", [], |r| {
-        r.get(0)
-    })?;
-    if version != crate::LIFECYCLE_INBOX_FORMAT_VERSION {
-        return Err(JournalError::UnsupportedStore);
-    }
-    let reserve = config.required_bytes(inbox.config.max_sessions);
-    let cap = super::super::super::capacity::config(&tx)?.ok_or(JournalError::CorruptStore)?;
+    let reserve = config.required_bytes(inbox.max_sessions);
+    let cap =
+        super::super::super::capacity::config(connection)?.ok_or(JournalError::CorruptStore)?;
     if reserve > cap.max_sql_value_bytes || reserve > 16 * 1024 * 1024 {
         return Err(JournalError::MaintenanceCapacity);
     }
     let sources = Sources {
         config,
-        node: inbox.config.node,
-        max_sessions: inbox.config.max_sessions,
+        node: inbox.node.clone(),
+        max_sessions: inbox.max_sessions,
         records: vec![],
     };
     let bytes = serde_json::to_vec(&sources)?;
-    tx.execute_batch(TABLE)?;
-    tx.execute(
+    connection.execute_batch(TABLE)?;
+    connection.execute(
         "INSERT INTO controller_source_work VALUES(1,?1,?2,?3)",
         params![
             bytes,
@@ -149,13 +132,7 @@ pub(super) fn enable(
             i64::try_from(reserve).map_err(|_| JournalError::MaintenanceCapacity)?
         ],
     )?;
-    tx.execute(
-        "UPDATE controller_meta SET version=?1 WHERE id=1",
-        [crate::SOURCE_WORK_FORMAT_VERSION],
-    )?;
-    crashes.hit(CrashPoint::BeforeCommit)?;
-    tx.commit()?;
-    crashes.hit(CrashPoint::AfterCommit)
+    Ok(())
 }
 
 pub(in crate::controller) fn validate(

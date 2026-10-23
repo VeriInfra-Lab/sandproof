@@ -97,11 +97,17 @@ fn application(
     .unwrap();
     if provision {
         journal
-            .initialize_lifecycle_inbox(configuration(), sandproof_controller_service::capture::SourceObservationConfig {
-                max_work_bytes: 4096, max_configuration_bytes: 1024,
-                max_executable_bytes: 67_108_864, max_kernel_bytes: 268_435_456,
-                max_disk_bytes: 2 * 1024 * 1024,
-            }, &mut NeverCrash)
+            .initialize_lifecycle_inbox(
+                configuration(),
+                sandproof_controller_service::capture::SourceObservationConfig {
+                    max_work_bytes: 4096,
+                    max_configuration_bytes: 1024,
+                    max_executable_bytes: 67_108_864,
+                    max_kernel_bytes: 268_435_456,
+                    max_disk_bytes: 2 * 1024 * 1024,
+                },
+                &mut NeverCrash,
+            )
             .unwrap();
     }
     Arc::new(
@@ -237,10 +243,7 @@ async fn real_tls_records_original_application_once_and_survives_manager_reopen(
     assert!(recorded.matches(&intent));
     assert!(recorded.current);
     assert!(!recorded.terminal);
-    assert_eq!(
-        original.record_lifecycle(&intent).await.unwrap(),
-        recorded
-    );
+    assert_eq!(original.record_lifecycle(&intent).await.unwrap(), recorded);
     let stored = app.lifecycle_work_state(&intent, &context()).unwrap();
     assert_eq!(stored.intent, intent);
     assert!(

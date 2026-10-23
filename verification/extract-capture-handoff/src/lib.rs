@@ -55,3 +55,19 @@ pub fn compensate(
 ) -> Result<sandbox_controller_core::Decision, sandbox_controller_core::Reject> {
     sandbox_controller_core::handle_compensation(world, input)
 }
+
+/// Preflight the production small-step selector, including its actual World
+/// queries. This is not a replacement algorithm or a completed proof root.
+pub fn workflow_next_step(
+    world: &sandbox_controller_core::World,
+    sandbox: sandbox_controller_core::SandboxId,
+) -> sandbox_controller_core::workflow::WorkflowStep {
+    sandbox_controller_core::workflow::next_step(world, sandbox)
+}
+
+pub fn startup_dispatch_revoked(
+    world: &sandbox_controller_core::World,
+    command: &sandbox_controller_core::Command,
+) -> bool {
+    sandbox_controller_core::effect::startup_dispatch_revoked(world, command)
+}

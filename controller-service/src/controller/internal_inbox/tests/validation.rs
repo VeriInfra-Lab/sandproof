@@ -51,7 +51,7 @@ fn finish(
         .local
         .unwrap();
     if activate {
-        crate::finish_admitted_create_v1_timed(
+        crate::finish_admitted_create_timed(
             journal,
             local.sandbox,
             local.operation,
@@ -77,7 +77,7 @@ fn finish(
         .record_internal_intent(&destroy, &mut NeverCrash)
         .unwrap();
     if activate {
-        crate::finish_accepted_kill_v1(
+        crate::finish_accepted_kill(
             journal,
             local.sandbox,
             core::OperationId(2),
@@ -85,7 +85,7 @@ fn finish(
         )
         .unwrap();
     } else {
-        crate::finish_compensating_create_v1(
+        crate::finish_compensating_create(
             journal,
             local.sandbox,
             local.operation,

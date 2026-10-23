@@ -117,16 +117,14 @@ impl ControllerJournal {
                 10
                 | 11
                 | crate::INTERNAL_INBOX_FORMAT_VERSION
-                | crate::LIFECYCLE_INBOX_FORMAT_VERSION
-                | crate::SOURCE_WORK_FORMAT_VERSION,
+                | crate::LIFECYCLE_STORE_FORMAT_VERSION,
                 3,
             ) => Ok(true),
             (
                 1..=9
                 | 11
                 | crate::INTERNAL_INBOX_FORMAT_VERSION
-                | crate::LIFECYCLE_INBOX_FORMAT_VERSION
-                | crate::SOURCE_WORK_FORMAT_VERSION,
+                | crate::LIFECYCLE_STORE_FORMAT_VERSION,
                 0,
             ) => Ok(false),
             _ => Err(JournalError::CorruptStore),

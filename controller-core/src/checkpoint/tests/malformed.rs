@@ -9,7 +9,7 @@ fn reject(mut checkpoint: Checkpoint, mutate: impl FnOnce(&mut CheckpointWire)) 
 fn rejects_unknown_version_and_invalid_or_exhausted_record_budgets() {
     let checkpoint = capture(&enabled(), LIMITS).unwrap();
     reject(checkpoint.clone(), |wire| {
-        wire.version = UNLOAD_CHECKPOINT_VERSION + 1;
+        wire.version = CHECKPOINT_VERSION + 1;
     });
     for limits in [
         CheckpointLimits {
@@ -180,7 +180,7 @@ fn free_tombstones_may_outlive_sandbox_but_occupied_or_releasing_cannot() {
 }
 
 #[test]
-fn v1_rejects_all_snapshot_and_pause_resume_surfaces_without_discarding_them() {
+fn current_schema_rejects_unbound_snapshot_references_and_preserves_real_pause() {
     let (world, _) = live();
     let checkpoint = capture(&world, LIMITS).unwrap();
     let source = RestoreSource {
@@ -219,7 +219,7 @@ fn v1_rejects_all_snapshot_and_pause_resume_surfaces_without_discarding_them() {
     .unwrap()
     .next;
     assert_eq!(
-        capture(&paused, LIMITS),
-        Err(CheckpointReject::UnsupportedSnapshotHistory)
+        restore(capture(&paused, LIMITS).unwrap(), LIMITS).unwrap(),
+        paused
     );
 }

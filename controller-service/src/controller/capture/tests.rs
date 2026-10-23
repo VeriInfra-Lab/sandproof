@@ -1,5 +1,5 @@
 use super::*;
-use crate::{NeverCrash, finish_admitted_create_v1};
+use crate::{NeverCrash, finish_admitted_create};
 use sandproof_protocol::{ResourceEvidence, ResourceRef};
 use serde::{Deserialize, Serialize};
 
@@ -74,7 +74,7 @@ fn running(
             &mut NeverCrash,
         )
         .unwrap();
-    finish_admitted_create_v1(
+    finish_admitted_create(
         &mut journal,
         SID,
         core::OperationId(1),

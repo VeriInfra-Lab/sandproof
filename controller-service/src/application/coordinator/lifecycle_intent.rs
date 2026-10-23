@@ -1,7 +1,7 @@
 //! V3 enters the original application owner, journal and host workflow.
 use super::{
     ApplicationError, ControllerApplication, ControllerHost, Inner, JournalError, NeverCrash,
-    map_admission, map_journal, recover_locked, release_reclaimed_slots,
+    map_admission, map_journal,
 };
 use crate::{
     InternalTemplate, LifecycleWorkState, template_registry::CandidateVerification,
@@ -12,9 +12,40 @@ use sandproof_protocol::lifecycle::{
 };
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Apply or replay the exact recorded lifetime update under original SQL
+    /// authority. The saved result is historical, never a current Ready claim.
+    /// # Errors
+    /// Original owner, clock, lifetime, full-key and current-order checks apply.
+    pub fn apply_lifecycle_renew(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<(LifecycleWorkState, i64), ApplicationError> {
+        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        inner
+            .journal
+            .apply_lifecycle_renew(intent, context, self.clock.now_ms()?, &mut NeverCrash)
+            .map_err(map_admission)
+    }
+
+    /// Exact current Destroy query. No execution or release is performed here.
+    /// # Errors
+    /// Refuses stale, foreign or unrecorded requests and uncertain authority.
+    pub fn lifecycle_destroy_cleaned(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<bool, JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?
+            .journal
+            .lifecycle_destroy_cleaned(intent, context)
+    }
+
     /// Read the original Create result and this call's current running facts.
-    /// Keeps the original application lock, closes every SQL snapshot before
-    /// bounded Host I/O, then rechecks all original objects and stored values.
+    /// Closes the SQL snapshot and releases the application lock before bounded
+    /// Host I/O, then rechecks all original objects and stored values.
     /// It never executes/reclaims work, changes timeouts or repairs credentials.
     /// # Errors
     /// Invalid full binding, corrupt authority or unavailable clock stays explicit.
@@ -23,20 +54,45 @@ impl<H: ControllerHost> ControllerApplication<H> {
         intent: &AcceptedLifecycleIntent,
         context: &AuthenticatedCenterContext,
     ) -> Result<crate::LifecycleCreateObservation, JournalError> {
+        let (candidate, host, before) = {
+            let inner = self
+                .inner
+                .lock()
+                .map_err(|_| JournalError::ControllerBusy)?;
+            let now = self
+                .clock
+                .now_ms()
+                .map_err(|_| JournalError::UnresolvedAction)?;
+            let candidate = inner
+                .journal
+                .lifecycle_ready_candidate::<H::Evidence>(intent, context, now)?;
+            if !candidate.can_probe() {
+                return Ok(candidate.view);
+            }
+            let local = candidate.view.local.ok_or(JournalError::CorruptStore)?;
+            let generation = candidate
+                .view
+                .native
+                .as_ref()
+                .ok_or(JournalError::CorruptStore)?
+                .generation;
+            let before =
+                super::data_credentials::verify_target(&inner, local.sandbox, generation).is_ok();
+            (candidate, std::sync::Arc::clone(&inner.host), before)
+        };
+        let probes = if before {
+            candidate
+                .actions
+                .iter()
+                .map(|action| host.observe(action))
+                .collect()
+        } else {
+            vec![]
+        };
         let inner = self
             .inner
             .lock()
             .map_err(|_| JournalError::ControllerBusy)?;
-        let now = self
-            .clock
-            .now_ms()
-            .map_err(|_| JournalError::UnresolvedAction)?;
-        let candidate = inner
-            .journal
-            .lifecycle_ready_candidate::<H::Evidence>(intent, context, now)?;
-        if !candidate.can_probe() {
-            return Ok(candidate.view);
-        }
         let local = candidate.view.local.ok_or(JournalError::CorruptStore)?;
         let generation = candidate
             .view
@@ -44,17 +100,6 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .as_ref()
             .ok_or(JournalError::CorruptStore)?
             .generation;
-        let before =
-            super::data_credentials::verify_target(&inner, local.sandbox, generation).is_ok();
-        let probes = if before {
-            candidate
-                .actions
-                .iter()
-                .map(|action| inner.host.observe(action))
-                .collect()
-        } else {
-            vec![]
-        };
         let credentials = before
             && super::data_credentials::verify_target(&inner, local.sandbox, generation).is_ok();
         let now = self
@@ -82,7 +127,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let result = inner
             .journal
             .record_lifecycle_intent(intent, context, &mut NeverCrash);
-        if matches!(intent.request.operation, LifecycleOperation::Destroy {}) {
+        if matches!(
+            intent.request.operation,
+            LifecycleOperation::Destroy {} | LifecycleOperation::Unload { .. }
+        ) {
             match &result {
                 Ok(state) => {
                     if let Some(local) = state.local {
@@ -148,9 +196,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         compute: ComputeLimits,
         verification: Option<&CandidateVerification>,
     ) -> Result<LifecycleWorkState, ApplicationError> {
-        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        let state = inner
-            .journal
+        let state = self
             .lifecycle_work_state(intent, context)
             .map_err(map_journal)?;
         let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
@@ -159,40 +205,107 @@ impl<H: ControllerHost> ControllerApplication<H> {
         if !state.current || state.terminal {
             return Ok(state);
         }
-        if !inner.journal.startup_epoch_ready().map_err(map_journal)? {
-            return Err(ApplicationError::Busy);
-        }
+        let Some(_session) = self.acquire_lifecycle_session(intent, context)? else {
+            return self
+                .lifecycle_work_state(intent, context)
+                .map_err(map_journal);
+        };
         if state.local.is_none() {
-            let admission = self
-                .prepare_lifecycle_admission_locked(
-                    &mut inner,
-                    create,
-                    &intent.request.binding.key.owner,
-                    template.ok_or(ApplicationError::Busy)?,
-                    compute,
-                    verification,
-                )?
-                .ok_or(ApplicationError::QuotaExceeded)?;
-            inner
+            let admission = self.prepare_current_admission(
+                create,
+                &intent.request.binding.key.owner,
+                template.ok_or(ApplicationError::Busy)?,
+                compute,
+                verification,
+            )?;
+            let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            // Full current intent and all native reservations are checked again
+            // after template/file I/O; no prior World is written back.
+            let current = inner
                 .journal
-                .admit_lifecycle_create(intent, context, admission, &mut NeverCrash)
-                .map_err(map_admission)?;
+                .lifecycle_work_state(intent, context)
+                .map_err(map_journal)?;
+            if !current.current || current.terminal {
+                return Ok(current);
+            }
+            if current.local.is_none() {
+                inner
+                    .journal
+                    .admit_lifecycle_create(intent, context, admission, &mut NeverCrash)
+                    .map_err(map_admission)?;
+            }
         }
-        let local = inner
-            .journal
+        let state = self
             .lifecycle_work_state(intent, context)
-            .map_err(map_journal)?
-            .local
-            .ok_or(ApplicationError::Busy)?;
-        inner
-            .journal
-            .abort_due_startups(self.clock.now_ms()?, &mut NeverCrash)
-            .map_err(map_admission)?;
-        recover_locked(&mut inner, Some(local.sandbox), self.clock.as_ref())?;
-        release_reclaimed_slots(&mut inner)?;
-        inner
-            .journal
-            .lifecycle_work_state(intent, context)
+            .map_err(map_journal)?;
+        if let Some(local) = state.local {
+            self.advance_current_workflow(local.sandbox)?;
+        }
+        self.lifecycle_work_state(intent, context)
             .map_err(map_journal)
+    }
+
+    fn prepare_current_admission(
+        &self,
+        binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
+        owner: &sandproof_protocol::TenantId,
+        template: InternalTemplate,
+        compute: ComputeLimits,
+        verification: Option<&CandidateVerification>,
+    ) -> Result<crate::InternalAdmission, ApplicationError> {
+        let host = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            if !inner.journal.startup_epoch_ready().map_err(map_journal)? {
+                return Err(ApplicationError::Busy);
+            }
+            std::sync::Arc::clone(&inner.host)
+        };
+        let mut options: crate::CreateOptions =
+            serde_json::from_slice(&binding.options).map_err(|_| ApplicationError::Invalid)?;
+        options.template = Some(template.local.clone());
+        let network = options.networking.as_ref();
+        let policy = super::super::selected_policy(&super::super::CreateCommand {
+            template_id: String::new(),
+            timeout: None,
+            metadata: None,
+            env_vars: None,
+            allow_internet_access: network.and_then(|value| value.allow_internet_access),
+            network: network.and_then(|value| value.network.clone()),
+        })?;
+        if policy != sandbox_controller_core::NetworkPolicy::DenyAll {
+            if !self.config.public_ipv4_enabled {
+                return Err(ApplicationError::Invalid);
+            }
+            if !host.public_ipv4_ready()? {
+                return Err(ApplicationError::Busy);
+            }
+        }
+        if let Some(verification) = verification {
+            host.cache_candidate_verification(&template.local, verification);
+        }
+        host.validate_template(&template.local)?;
+        let mut admission = crate::InternalAdmission {
+            now_ms: self.clock.now_ms()?,
+            limits: self.config.limits,
+            compute,
+            template,
+            file_policy_digest: self.config.file_policy_digest,
+        };
+        admission
+            .validate_create_binding(binding, owner)
+            .map_err(map_admission)?;
+        let required = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            self.internal_physical_admission_bytes(
+                &inner,
+                &options,
+                admission.template.local.resources.disk_bytes,
+            )?
+        };
+        if host.available_disk_bytes()? < required {
+            return Err(ApplicationError::QuotaExceeded);
+        }
+        admission.now_ms = self.clock.now_ms()?;
+        Ok(admission)
     }
 }

@@ -1,7 +1,7 @@
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, CrashInjector, DispatchResult,
-    HostEvidence, JournalError, NeverCrash, WorkerTransportError, finish_admitted_create_v1,
+    HostEvidence, JournalError, NeverCrash, WorkerTransportError, finish_admitted_create,
 };
 use sandproof_protocol::{ResourceEvidence, ResourceRef, WorkAction, WorkOutcome, WorkReceipt};
 use serde::{Deserialize, Serialize};
@@ -78,7 +78,7 @@ where
         AdmissionError::Journal(error) => error,
         _ => JournalError::UnsupportedInput,
     })?;
-    finish_admitted_create_v1(journal, sandbox, operation, worker)
+    finish_admitted_create(journal, sandbox, operation, worker)
 }
 
 pub const NAMESPACE: &str = "0123456789abcdef";

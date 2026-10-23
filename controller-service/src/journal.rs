@@ -245,8 +245,7 @@ pub(crate) fn require_current_controller_store(
     // Their existing recovery validation still checks every enabled feature.
     if !(7..=11).contains(&version)
         && version != crate::INTERNAL_INBOX_FORMAT_VERSION
-        && version != crate::LIFECYCLE_INBOX_FORMAT_VERSION
-        && version != crate::SOURCE_WORK_FORMAT_VERSION
+        && version != crate::LIFECYCLE_STORE_FORMAT_VERSION
     {
         return Err(JournalError::UnsupportedStore);
     }

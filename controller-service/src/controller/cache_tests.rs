@@ -1,6 +1,6 @@
 //! Differential checks compare checkpoint/tail recovery with the committed memo.
 use super::*;
-use crate::{AdmissionError, AdmissionLimits, NeverCrash, finish_admitted_create_v1_timed};
+use crate::{AdmissionError, AdmissionLimits, NeverCrash, finish_admitted_create_timed};
 use rusqlite::types::Value;
 use sandproof_protocol::{ResourceRef, UnknownReason};
 use serde::Deserialize;
@@ -128,7 +128,7 @@ fn snapshot(j: &ControllerJournal) -> Vec<(String, Vec<Vec<Value>>)> {
 fn ready_to_publish(j: &mut ControllerJournal) {
     admit(j, 1, &mut NeverCrash).unwrap();
     assert!(
-        finish_admitted_create_v1_timed(
+        finish_admitted_create_timed(
             j,
             core::SandboxId(1),
             core::OperationId(1),
@@ -749,7 +749,7 @@ fn every_registry_commit_preserves_world_but_queries_read_current_sql() {
         &mut NeverCrash,
     )
     .unwrap();
-    finish_admitted_create_v1_timed(
+    finish_admitted_create_timed(
         &mut j,
         core::SandboxId(1),
         core::OperationId(1),
@@ -759,7 +759,7 @@ fn every_registry_commit_preserves_world_but_queries_read_current_sql() {
     .unwrap();
     parity(&j);
     sql_only(&mut j, |j| j.mark_template_checked(1, &value.candidate_id));
-    crate::kill_v1(
+    crate::kill(
         &mut j,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),

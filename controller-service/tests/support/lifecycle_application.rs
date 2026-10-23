@@ -8,7 +8,7 @@ pub mod fixture;
 use fixture::{State, TestClock, TestHost, complete_fixture};
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    CheckpointProfile, ControllerJournal, LifecycleInboxConfig, NeverCrash,
+    ControllerJournal, LifecycleInboxConfig, NeverCrash,
     application::{ApplicationConfig, ApplicationError, ControllerApplication},
     capture::HostEpochRegistration,
 };
@@ -37,6 +37,7 @@ pub fn config() -> LifecycleInboxConfig {
             policy: ContentDigest::from_sha256([7; 32]),
         }),
         max_sessions: 2,
+        max_operations_per_session: 8,
         max_options_bytes: 1024,
         max_profile_bytes: 4096,
         max_manifest_bytes: 16384,
@@ -72,8 +73,7 @@ pub fn request() -> AcceptedLifecycleIntent {
 }
 pub fn open(path: &Path) -> ControllerJournal {
     let reserve = complete_fixture::CLEANUP_BYTES + 1000;
-    let mut maintenance = complete_fixture::maintenance();
-    maintenance.checkpoint_profile = CheckpointProfile::FirstUnload;
+    let maintenance = complete_fixture::maintenance();
     ControllerJournal::open_complete(
         path,
         NS,
@@ -83,6 +83,16 @@ pub fn open(path: &Path) -> ControllerJournal {
     )
     .unwrap()
 }
+pub fn source_limits() -> sandproof_controller_service::capture::SourceObservationConfig {
+    sandproof_controller_service::capture::SourceObservationConfig {
+        max_work_bytes: 32_768,
+        max_configuration_bytes: 1024,
+        max_executable_bytes: 1024 * 1024,
+        max_kernel_bytes: 1024 * 1024,
+        max_disk_bytes: 1024 * 1024,
+    }
+}
+
 pub fn application(
     path: &Path,
     state: Arc<Mutex<State>>,
@@ -91,7 +101,7 @@ pub fn application(
     let mut journal = open(path);
     if provision {
         journal
-            .initialize_lifecycle_inbox(config(), &mut NeverCrash)
+            .initialize_lifecycle_inbox(config(), source_limits(), &mut NeverCrash)
             .unwrap();
     }
     let reserve = complete_fixture::CLEANUP_BYTES + 1000;

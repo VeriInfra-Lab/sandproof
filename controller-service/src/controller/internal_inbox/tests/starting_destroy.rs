@@ -20,7 +20,7 @@ fn partial_prepare(
         .local
         .unwrap();
     assert!(matches!(
-        crate::finish_admitted_create_v1_timed(
+        crate::finish_admitted_create_timed(
             journal,
             local.sandbox,
             local.operation,
@@ -176,7 +176,7 @@ fn destroy_of_partial_prepare_keeps_original_abort_plan_and_requires_exact_relea
         accepted
     );
     let mut commands = Vec::new();
-    crate::finish_compensating_create_v1(
+    crate::finish_compensating_create(
         &mut journal,
         local.sandbox,
         local.operation,
@@ -295,7 +295,7 @@ fn lost_abort_result_is_observed_after_restart_not_executed_as_a_new_prepare() {
         .record_internal_intent(&destroy, &mut NeverCrash)
         .unwrap();
     assert!(matches!(
-        crate::finish_compensating_create_v1(
+        crate::finish_compensating_create(
             &mut journal,
             local.sandbox,
             local.operation,
@@ -333,7 +333,7 @@ fn lost_abort_result_is_observed_after_restart_not_executed_as_a_new_prepare() {
             .reconcile_observed(&abort, &workflow_fixture::worker(&abort).unwrap())
             .unwrap()
     );
-    crate::finish_compensating_create_v1(
+    crate::finish_compensating_create(
         &mut journal,
         local.sandbox,
         local.operation,

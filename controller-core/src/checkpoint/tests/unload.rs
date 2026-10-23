@@ -5,8 +5,8 @@ fn advance(world: &World, input: ControllerInput) -> World {
     let next = handle_controller(world, input)
         .unwrap_or_else(|e| panic!("{label}: {e:?}"))
         .next;
-    let image = capture_unload(&next, LIMITS).unwrap_or_else(|e| panic!("{label}: {e:?}"));
-    assert_eq!(image.0.version, UNLOAD_CHECKPOINT_VERSION);
+    let image = capture(&next, LIMITS).unwrap_or_else(|e| panic!("{label}: {e:?}"));
+    assert_eq!(image.0.version, CHECKPOINT_VERSION);
     assert_eq!(restore(image, LIMITS).unwrap(), next);
     next
 }
@@ -106,7 +106,7 @@ fn commit_planned() -> World {
 }
 
 #[test]
-fn each_real_pause_microstep_roundtrips_without_widening_schema_one() {
+fn each_real_pause_microstep_roundtrips_in_the_only_current_schema() {
     let world = drain(&commit_planned());
     let source = target(&world);
     let world = advance(
@@ -118,14 +118,14 @@ fn each_real_pause_microstep_roundtrips_without_widening_schema_one() {
         Phase::Paused
     );
     assert_eq!(
-        capture(&world, LIMITS),
-        Err(CheckpointReject::UnsupportedSnapshotHistory)
+        restore(capture(&world, LIMITS).unwrap(), LIMITS).unwrap(),
+        world
     );
-    let mut wrong_version = capture_unload(&world, LIMITS).unwrap();
-    wrong_version.0.version = CHECKPOINT_VERSION;
+    let mut wrong_version = capture(&world, LIMITS).unwrap();
+    wrong_version.0.version = 1;
     assert_eq!(
         restore(wrong_version, LIMITS),
-        Err(CheckpointReject::UnsupportedSnapshotHistory)
+        Err(CheckpointReject::UnsupportedVersion)
     );
 }
 
@@ -173,7 +173,7 @@ fn commit_unknown_and_ordinary_failure_keep_original_resources_after_restore() {
 #[test]
 fn corrupt_snapshot_owner_manifest_and_future_frontiers_are_rejected() {
     let world = drain(&commit_planned());
-    let base = capture_unload(&world, LIMITS).unwrap();
+    let base = capture(&world, LIMITS).unwrap();
     for variant in 0..4 {
         let mut image = base.clone();
         match variant {
@@ -192,7 +192,7 @@ fn corrupt_snapshot_owner_manifest_and_future_frontiers_are_rejected() {
 #[test]
 fn reserved_id_is_not_a_registered_source_or_stop_permission() {
     let world = sealed();
-    let mut image = capture_unload(&world, LIMITS).unwrap();
+    let mut image = capture(&world, LIMITS).unwrap();
     let (_, plan) = image
         .0
         .operation_plans

@@ -490,7 +490,7 @@ fn internal_inbox_ready_fact_uses_original_publication_time_and_survives_lost_re
             .local
             .unwrap();
         let mut calls = 0;
-        crate::finish_admitted_create_v1_timed(
+        crate::finish_admitted_create_timed(
             &mut j,
             local.sandbox,
             local.operation,
@@ -543,7 +543,7 @@ fn internal_inbox_stopped_is_not_cleaned_until_exact_physical_release_and_detail
         .unwrap()
         .local
         .unwrap();
-    crate::finish_admitted_create_v1_timed(
+    crate::finish_admitted_create_timed(
         &mut j,
         local.sandbox,
         local.operation,
@@ -558,7 +558,7 @@ fn internal_inbox_stopped_is_not_cleaned_until_exact_physical_release_and_detail
         ..r.clone()
     };
     j.record_internal_intent(&destroy, &mut NeverCrash).unwrap();
-    crate::finish_accepted_kill_v1(
+    crate::finish_accepted_kill(
         &mut j,
         local.sandbox,
         core::OperationId(2),
@@ -628,7 +628,7 @@ fn internal_inbox_destroy_and_native_terminal_commit_together_even_during_uncert
             .unwrap()
             .local
             .unwrap();
-        let result = crate::finish_admitted_create_v1_timed(
+        let result = crate::finish_admitted_create_timed(
             &mut j,
             local.sandbox,
             local.operation,
@@ -683,7 +683,7 @@ fn internal_inbox_destroy_and_native_terminal_commit_together_even_during_uncert
             core::OperationId(2)
         );
         assert!(
-            crate::finish_admitted_create_v1_timed(
+            crate::finish_admitted_create_timed(
                 &mut j,
                 local.sandbox,
                 local.operation,

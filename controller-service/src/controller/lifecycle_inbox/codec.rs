@@ -14,27 +14,20 @@ pub(in crate::controller) fn load(connection: &Connection) -> Result<Option<Inbo
         [],
         |r| r.get(0),
     )?;
-    if source_table != (version == crate::SOURCE_WORK_FORMAT_VERSION) {
+    if source_table != (version == crate::LIFECYCLE_STORE_FORMAT_VERSION) {
         return Err(JournalError::CorruptStore);
     }
     if !exists {
-        return if matches!(
-            version,
-            crate::LIFECYCLE_INBOX_FORMAT_VERSION | crate::SOURCE_WORK_FORMAT_VERSION
-        ) {
+        return if matches!(version, crate::LIFECYCLE_STORE_FORMAT_VERSION) {
             Err(JournalError::CorruptStore)
         } else {
             Ok(None)
         };
     }
-    if !matches!(
-        version,
-        crate::LIFECYCLE_INBOX_FORMAT_VERSION | crate::SOURCE_WORK_FORMAT_VERSION
-    ) {
+    if !matches!(version, crate::LIFECYCLE_STORE_FORMAT_VERSION) {
         return Err(JournalError::CorruptStore);
     }
-    if super::super::checkpoint::config(connection)?.is_none_or(|c|c.checkpoint_profile!=crate::CheckpointProfile::FirstUnload)
-        || connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_internal_inbox')",[],|r|r.get::<_,bool>(0))?
+    if connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_internal_inbox')",[],|r|r.get::<_,bool>(0))?
     {return Err(JournalError::CorruptStore);}
     let cap = super::super::capacity::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
     let (length, reserve): (i64, i64) = connection.query_row(
@@ -133,6 +126,38 @@ pub(in crate::controller) fn validate(
                     })
                     .is_none()
             {
+                return Err(JournalError::CorruptStore);
+            }
+        }
+        let mut applied = None;
+        for entry in &session.entries {
+            if let Some(end) = entry.applied_deadline {
+                let lifetime = super::super::admission::read_lifetime(
+                    connection,
+                    &namespace,
+                    local.sandbox,
+                    local.owner,
+                )
+                .map_err(|_| JournalError::CorruptStore)?
+                .ok_or(JournalError::CorruptStore)?;
+                if lifetime.started_at_ms.is_none_or(|start| end < start)
+                    || end > lifetime.max_deadline_ms
+                {
+                    return Err(JournalError::CorruptStore);
+                }
+                applied = Some(end);
+            }
+        }
+        if let Some(end) = applied {
+            let lifetime = super::super::admission::read_lifetime(
+                connection,
+                &namespace,
+                local.sandbox,
+                local.owner,
+            )
+            .map_err(|_| JournalError::CorruptStore)?
+            .ok_or(JournalError::CorruptStore)?;
+            if lifetime.deadline_ms != end {
                 return Err(JournalError::CorruptStore);
             }
         }

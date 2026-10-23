@@ -40,9 +40,13 @@ fn config() -> DriverConfig {
 fn matching_host() -> Arc<Mutex<local::fixture::State>> {
     Arc::new(Mutex::new(local::fixture::State {
         epoch: local::fixture::TestEpoch::Matching,
-        source: Some(sandproof_controller_service::capture::SourceProcessIdentity {
-            pid: 1234, start_time_ticks: 5678, boot_id: "fixture-boot".into(),
-        }),
+        source: Some(
+            sandproof_controller_service::capture::SourceProcessIdentity {
+                pid: 1234,
+                start_time_ticks: 5678,
+                boot_id: "fixture-boot".into(),
+            },
+        ),
         ..local::fixture::State::default()
     }))
 }
@@ -237,13 +241,30 @@ async fn native_running_without_original_source_stays_historical_and_not_current
     app.establish_lifecycle_host_epoch().unwrap();
     let host = HostLifecycle::new(app.clone());
     let request = local::request();
-    host.record_v3(request.clone(), local::context()).await.unwrap();
-    assert_eq!(host.drive_once(config(), Arc::new(Templates)).await.unwrap(), DriveReport {
-        scanned: 1, advanced: 1, unavailable: 0,
-    });
-    let view = app.observe_lifecycle_create(&request, &local::context()).unwrap();
-    assert_eq!(view.historical_result, Some(sandbox_controller_core::OperationResult::Running(1)));
-    assert_eq!(view.readiness, CreateReadiness::Pending(
-        sandproof_controller_service::CreateReadinessPending::OriginalEvidenceMissing,
-    ));
+    host.record_v3(request.clone(), local::context())
+        .await
+        .unwrap();
+    assert_eq!(
+        host.drive_once(config(), Arc::new(Templates))
+            .await
+            .unwrap(),
+        DriveReport {
+            scanned: 1,
+            advanced: 1,
+            unavailable: 0,
+        }
+    );
+    let view = app
+        .observe_lifecycle_create(&request, &local::context())
+        .unwrap();
+    assert_eq!(
+        view.historical_result,
+        Some(sandbox_controller_core::OperationResult::Running(1))
+    );
+    assert_eq!(
+        view.readiness,
+        CreateReadiness::Pending(
+            sandproof_controller_service::CreateReadinessPending::OriginalEvidenceMissing,
+        )
+    );
 }

@@ -37,22 +37,20 @@ pub use host_contract::{
 pub const INTERNAL_INBOX_FORMAT_VERSION: i64 =
     sandproof_protocol::internal::HOST_STORE_FORMAT_VERSION;
 
-// Local SQLite feature gate; independent of protocol and checkpoint versions.
+// Only the current fully initialized lifecycle store may serve requests.
 #[cfg(feature = "durable")]
-pub(crate) const LIFECYCLE_INBOX_FORMAT_VERSION: i64 = 17;
-#[cfg(feature = "durable")]
-pub(crate) const SOURCE_WORK_FORMAT_VERSION: i64 = 18;
+pub(crate) const LIFECYCLE_STORE_FORMAT_VERSION: i64 = 18;
 
 #[cfg(feature = "durable")]
 pub use controller::{
-    BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProfile,
-    CheckpointProgress, ControllerJournal, CreateAdmission, CreateReadiness,
-    CreateReadinessPending, HostReleaseWitness, InternalAdmission, InternalAudit,
-    InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
-    InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState,
-    LifecycleAudit, LifecycleAuditOperation, LifecycleCreateObservation, LifecycleInboxConfig,
-    LifecycleReadyBasis, LifecycleReadyObservation, LifecycleWorkState, Lifetime,
-    MaintenanceConfig, NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
+    BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProgress,
+    ControllerJournal, CreateAdmission, CreateReadiness, CreateReadinessPending,
+    HostReleaseWitness, InternalAdmission, InternalAudit, InternalAuditOperation,
+    InternalCreateResult, InternalInboxConfig, InternalLocalBinding, InternalNativeAudit,
+    InternalRetentionLane, InternalTemplate, InternalWorkState, LifecycleAudit,
+    LifecycleAuditOperation, LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
+    LifecycleReadyObservation, LifecycleWorkState, Lifetime, MaintenanceConfig,
+    NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
 };
 
 #[cfg(feature = "durable")]
@@ -64,8 +62,8 @@ pub use journal::{
 };
 #[cfg(feature = "durable")]
 pub use workflow::{
-    finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
-    finish_compensating_create_v1, kill_v1,
+    finish_accepted_kill, finish_admitted_create, finish_admitted_create_timed,
+    finish_compensating_create, kill,
 };
 
 #[cfg(feature = "durable")]

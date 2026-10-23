@@ -67,11 +67,7 @@ fn observed(
             native_ready_fact(tx, namespace, &world, local)
         }
         Intent::Destroy if record.phase == core::Phase::Destroyed => {
-            if !admission::accounted(&world, local.sandbox, record)
-                && checkpoint::release_witnesses(tx, &world)?
-                    .iter()
-                    .any(|w| w.context.binding.sandbox == local.sandbox)
-            {
+            if native_cleaned(tx, &world, local)? {
                 Ok(Some(LifecycleFact::Cleaned))
             } else {
                 // Original Destroyed publication already requires exact stop
@@ -81,6 +77,26 @@ fn observed(
         }
         _ => Ok(None),
     }
+}
+
+// Shared current native predicate, not a cached wire success. Physical release
+// remains historical evidence even when the same position is later reused.
+pub(in crate::controller) fn native_cleaned(
+    connection: &rusqlite::Connection,
+    world: &core::World,
+    local: super::InternalLocalBinding,
+) -> Result<bool, JournalError> {
+    let record = world
+        .sandbox_record(local.sandbox)
+        .ok_or(JournalError::CorruptStore)?;
+    if record.owner != local.owner {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(record.phase == core::Phase::Destroyed
+        && !admission::accounted(world, local.sandbox, record)
+        && checkpoint::release_witnesses(connection, world)?
+            .iter()
+            .any(|w| w.context.binding.sandbox == local.sandbox))
 }
 
 impl ControllerJournal {

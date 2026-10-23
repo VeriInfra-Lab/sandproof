@@ -12,34 +12,15 @@ mod maintenance;
 mod resources;
 mod unload;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Profile {
-    CreateKill,
-    FirstUnload,
-}
-
 pub(super) fn world(world: &World) -> Result<(), Reject> {
-    world_with_profile(world, Profile::CreateKill)
-}
-
-pub(super) fn unload_world(world: &World) -> Result<(), Reject> {
-    world_with_profile(world, Profile::FirstUnload)
-}
-
-fn world_with_profile(world: &World, profile: Profile) -> Result<(), Reject> {
-    if profile == Profile::CreateKill && !world.snapshots.entries().is_empty() {
-        return Err(Reject::UnsupportedSnapshotHistory);
-    }
     for (sandbox, record) in world.sandboxes.entries() {
-        sandbox_record(world, *sandbox, record, profile)?;
+        sandbox_record(world, *sandbox, record)?;
     }
-    operations(world, profile)?;
-    resources::validate(world, profile)?;
-    effects::validate(world, profile)?;
-    if profile == Profile::FirstUnload {
-        unload::snapshots(world)?;
-    }
-    maintenance::validate(world, profile)
+    operations(world)?;
+    resources::validate(world)?;
+    effects::validate(world)?;
+    unload::snapshots(world)?;
+    maintenance::validate(world)
 }
 
 fn unique<T: PartialEq>(values: &[T]) -> Result<(), Reject> {
@@ -57,28 +38,8 @@ fn record(world: &World, sandbox: SandboxId) -> Result<&SandboxRecord, Reject> {
         .ok_or(Reject::InvalidReference)
 }
 
-fn no_snapshot_ledger(ledger: &OperationLedgerRecord) -> Result<(), Reject> {
-    if matches!(
-        ledger.operation.kind,
-        OperationKind::Pause | OperationKind::Resume
-    ) || matches!(
-        ledger.input,
-        OperationInput::Pause { .. } | OperationInput::Resume { .. }
-    ) || matches!(ledger.result, Some(OperationResult::Paused(_)))
-    {
-        return Err(Reject::UnsupportedSnapshotHistory);
-    }
-    Ok(())
-}
-
-fn ledger_shape(
-    key: OperationKey,
-    ledger: &OperationLedgerRecord,
-    profile: Profile,
-) -> Result<(), Reject> {
-    if profile == Profile::CreateKill {
-        no_snapshot_ledger(ledger)?;
-    } else if ledger.operation.kind == OperationKind::Pause {
+fn ledger_shape(key: OperationKey, ledger: &OperationLedgerRecord) -> Result<(), Reject> {
+    if ledger.operation.kind == OperationKind::Pause {
         return unload::ledger(key, ledger);
     } else if ledger.operation.kind == OperationKind::Resume {
         return Err(Reject::UnsupportedSnapshotHistory);
@@ -118,13 +79,12 @@ fn ledger_shape(
         || ledger.operation.epoch
             != match ledger.operation.kind {
                 OperationKind::Create => 1,
-                OperationKind::Kill if profile == Profile::FirstUnload => {
+                OperationKind::Kill => {
                     if !(2..=3).contains(&ledger.operation.epoch) {
                         return Err(Reject::InvalidLedger);
                     }
                     ledger.operation.epoch
                 }
-                OperationKind::Kill => 2,
                 OperationKind::Pause | OperationKind::Resume => {
                     unreachable!("snapshot kinds rejected")
                 }
@@ -135,17 +95,8 @@ fn ledger_shape(
     Ok(())
 }
 
-fn sandbox_record(
-    world: &World,
-    sandbox: SandboxId,
-    value: &SandboxRecord,
-    profile: Profile,
-) -> Result<(), Reject> {
-    if value.restore_from.is_some()
-        || (profile == Profile::CreateKill
-            && (value.durable_snapshot.is_some()
-                || matches!(value.phase, Phase::Pausing | Phase::Paused)))
-    {
+fn sandbox_record(world: &World, sandbox: SandboxId, value: &SandboxRecord) -> Result<(), Reject> {
+    if value.restore_from.is_some() {
         return Err(Reject::UnsupportedSnapshotHistory);
     }
     let operation = value.current_operation.ok_or(Reject::InvalidLedger)?;
@@ -154,10 +105,8 @@ fn sandbox_record(
         operation: operation.id,
     };
     let ledger = world.operation_record(key).ok_or(Reject::InvalidLedger)?;
-    ledger_shape(key, ledger, profile)?;
-    if profile == Profile::FirstUnload {
-        unload::record_sources(world, sandbox, value)?;
-    }
+    ledger_shape(key, ledger)?;
+    unload::record_sources(world, sandbox, value)?;
     if value.generation != 1 || value.epoch != operation.epoch || operation != ledger.operation {
         return Err(Reject::InvalidLedger);
     }
@@ -187,9 +136,9 @@ fn sandbox_record(
             return Err(Reject::InvalidResource);
         }
     }
-    authority(world, sandbox, value, &value.desired, profile)?;
-    authority(world, sandbox, value, &value.effective, profile)?;
-    sandbox_phase(world, sandbox, value, operation, profile)
+    authority(world, sandbox, value, &value.desired)?;
+    authority(world, sandbox, value, &value.effective)?;
+    sandbox_phase(world, sandbox, value, operation)
 }
 
 fn sandbox_phase(
@@ -197,7 +146,6 @@ fn sandbox_phase(
     sandbox: SandboxId,
     value: &SandboxRecord,
     operation: crate::Operation,
-    profile: Profile,
 ) -> Result<(), Reject> {
     let valid_phase = match value.phase {
         Phase::Starting => {
@@ -244,11 +192,10 @@ fn sandbox_phase(
                         | (OperationKind::Create, OperationStatus::Failed(_))
                 )
         }
-        Phase::Pausing | Phase::Paused if profile == Profile::FirstUnload => {
+        Phase::Pausing | Phase::Paused => {
             unload::phase(world, sandbox, value, operation)?;
             true
         }
-        Phase::Pausing | Phase::Paused => false,
     };
     if !valid_phase {
         return Err(Reject::InvalidAuthority);
@@ -280,17 +227,13 @@ fn authority(
     sandbox: SandboxId,
     row: &SandboxRecord,
     authority: &Authority,
-    profile: Profile,
 ) -> Result<(), Reject> {
     match authority {
         Authority::Closed => Ok(()),
         Authority::Paused {
             sandbox: found,
             source,
-        } if profile == Profile::FirstUnload => {
-            unload::paused_authority(world, sandbox, row, *found, *source)
-        }
-        Authority::Paused { .. } => Err(Reject::UnsupportedSnapshotHistory),
+        } => unload::paused_authority(world, sandbox, row, *found, *source),
         Authority::Running {
             sandbox: found,
             generation,
@@ -391,9 +334,9 @@ fn running_evidence(world: &World, sandbox: SandboxId, row: &SandboxRecord) -> R
     Ok(())
 }
 
-fn operations(world: &World, profile: Profile) -> Result<(), Reject> {
+fn operations(world: &World) -> Result<(), Reject> {
     for (key, ledger) in world.operations.entries() {
-        ledger_shape(*key, ledger, profile)?;
+        ledger_shape(*key, ledger)?;
         let row = record(world, key.sandbox)?;
         let plan = world.operation_plan(*key).ok_or(Reject::InvalidReference)?;
         if ledger.operation.epoch > row.epoch
@@ -444,26 +387,19 @@ fn operations(world: &World, profile: Profile) -> Result<(), Reject> {
         if creates != 1 || kills > 1 {
             return Err(Reject::InvalidLedger);
         }
-        if profile == Profile::FirstUnload {
-            unload::operation_history(world, *sandbox)?;
-        }
+        unload::operation_history(world, *sandbox)?;
     }
     for (key, plan) in world.operation_plans.entries() {
-        plan_record(world, *key, plan, profile)?;
+        plan_record(world, *key, plan)?;
     }
     Ok(())
 }
 
-fn plan_record(
-    world: &World,
-    key: OperationKey,
-    plan: &OperationPlan,
-    profile: Profile,
-) -> Result<(), Reject> {
+fn plan_record(world: &World, key: OperationKey, plan: &OperationPlan) -> Result<(), Reject> {
     let ledger = world
         .operation_record(key)
         .ok_or(Reject::InvalidReference)?;
-    if profile == Profile::FirstUnload && ledger.operation.kind == OperationKind::Pause {
+    if ledger.operation.kind == OperationKind::Pause {
         return unload::plan(world, key, plan);
     }
     if plan.restore_from.is_some() || plan.target_snapshot.is_some() || plan.capture.is_some() {

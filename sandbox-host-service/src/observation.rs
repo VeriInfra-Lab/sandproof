@@ -21,7 +21,10 @@ pub(super) fn project(view: LifecycleCreateObservation) -> CreateObservation {
     CreateObservation {
         request: view.request,
         current_request: view.current_request,
-        historical_create_succeeded: matches!(view.historical_result, Some(sandbox_controller_core::OperationResult::Running(_))),
+        historical_create_succeeded: matches!(
+            view.historical_result,
+            Some(sandbox_controller_core::OperationResult::Running(_))
+        ),
         readiness,
     }
 }

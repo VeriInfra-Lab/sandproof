@@ -413,6 +413,29 @@ pub fn finalize_logical_failure(
     next
 }
 
+/// Startup commands are never newly issued after a terminal intent. A late
+/// receipt is a separate transition and cannot serve as dispatch permission.
+#[must_use]
+pub fn startup_dispatch_revoked(world: &World, command: &Command) -> bool {
+    let startup = matches!(
+        command,
+        Command::InstallFence {
+            terminal: false,
+            ..
+        } | Command::PrepareVm { .. }
+            | Command::ConfigureNetwork { .. }
+            | Command::ActivateVm { .. }
+            | Command::ApplyFilePolicy { .. }
+    );
+    if !startup {
+        return false;
+    }
+    match world.sandbox_record(command.sandbox()) {
+        Some(record) => record.terminal,
+        None => false,
+    }
+}
+
 /// Dispatch the current attempt, rejecting new capture work after revocation.
 /// Capture checks and commit uncertainty extend the historical reducer.
 ///
@@ -425,6 +448,9 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
         Some(EffectStatus::Committed | EffectStatus::OutcomeUnknown) => {
+            if startup_dispatch_revoked(world, id.command()) {
+                return Err(EffectReject::NotDispatchable);
+            }
             if matches!(
                 id.command(),
                 Command::FreezeVm { .. }
@@ -471,6 +497,7 @@ pub fn handle_effect_receipt(
                     .sandboxes
                     .get(&id.command().sandbox())
                     .is_some_and(|record| record.terminal)
+                && !crate::terminal::startup_effect_in_current_abort(world, &id)
             {
                 return Err(EffectReject::NotAwaitingResult);
             }

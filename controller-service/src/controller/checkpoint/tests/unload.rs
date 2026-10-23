@@ -1,12 +1,10 @@
 //! Original journal/reducer/outbox/receipt/recovery component checks. Host
 //! observations are synthetic; this does not enable a physical unload route.
 use super::*;
-use crate::{CheckpointProfile, DispatchResult};
+use crate::DispatchResult;
 
 fn policy() -> MaintenanceConfig {
-    let mut policy = maintenance_config();
-    policy.checkpoint_profile = CheckpointProfile::FirstUnload;
-    policy
+    maintenance_config()
 }
 fn open_unload(path: &std::path::Path) -> ControllerJournal {
     ControllerJournal::open_complete(path, NS, host_config(4), policy(), 1000).unwrap()
@@ -172,10 +170,9 @@ fn original_sqlite_pause_history_checkpoint_prune_reopen_and_query_are_preserved
         assert_eq!(world.sandbox_record(core::SandboxId(2)), Some(&other));
     }
     drop(journal);
-    assert!(
-        ControllerJournal::open_complete(&path, NS, host_config(4), maintenance_config(), 1000)
-            .is_err()
-    );
+    let mut wrong = maintenance_config();
+    wrong.retention_ms += 1;
+    assert!(ControllerJournal::open_complete(&path, NS, host_config(4), wrong, 1000).is_err());
 }
 
 #[test]

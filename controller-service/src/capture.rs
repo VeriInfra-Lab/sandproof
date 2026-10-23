@@ -6,7 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 mod source;
+mod work;
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
+pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 
 /// Reference to the protected, versioned `HostBootstrap` payload registered before
 /// the first V3 VM starts. `policy` hashes that actual immutable registration

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{NeverCrash, finish_admitted_create_v1, kill_v1};
+use crate::{NeverCrash, finish_admitted_create};
 use sandproof_protocol::{ResourceEvidence, ResourceRef, WorkAction, WorkOutcome, WorkReceipt};
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
@@ -61,7 +61,7 @@ fn success(
     })
 }
 fn start(journal: &mut ControllerJournal, id: u64) {
-    finish_admitted_create_v1(
+    finish_admitted_create(
         journal,
         core::SandboxId(id),
         core::OperationId(1),
@@ -70,7 +70,7 @@ fn start(journal: &mut ControllerJournal, id: u64) {
     .unwrap();
 }
 fn kill(journal: &mut ControllerJournal, id: u64) {
-    kill_v1(
+    crate::kill(
         journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),

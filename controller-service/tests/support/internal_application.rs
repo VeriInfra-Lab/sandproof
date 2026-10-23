@@ -66,6 +66,10 @@ pub struct State {
     pub configurations: BTreeMap<u64, (String, CreateOptions)>,
     pub lose_activation: bool,
     pub block_prepare: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub block_release: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub block_health: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub released_slots: Vec<HostSlotContext>,
+    pub bound_slots: Vec<HostSlotContext>,
     pub release_unknown: bool,
     pub disk_available: Option<u64>,
     pub template_error: Option<ApplicationError>,
@@ -93,10 +97,12 @@ impl WorkExecution for TestHost {
         if matches!(action.command.command(), core::Command::PrepareVm { .. })
             && let Some((entered, release)) = state.block_prepare.take()
         {
+            drop(state);
             entered.send(()).unwrap();
             release
                 .recv_timeout(std::time::Duration::from_secs(15))
                 .unwrap();
+            state = self.0.lock().unwrap();
         }
         if state.lose_activation
             && matches!(action.command.command(), core::Command::ActivateVm { .. })
@@ -151,13 +157,29 @@ impl WorkRecovery for TestHost {
     }
 }
 impl HostSlots for TestHost {
-    fn bind_host_slot(&self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
+    fn bind_host_slot(&self, context: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
+        let mut state = self.0.lock().unwrap();
+        state.bound_slots.push(*context);
+        if state.released_slots.contains(context) {
+            return Err(ApplicationError::Busy);
+        }
         Ok(())
     }
-    fn release_host_slot(&self, _: &HostSlotContext) -> Result<(), ApplicationError> {
-        if self.0.lock().unwrap().release_unknown {
+    fn release_host_slot(&self, context: &HostSlotContext) -> Result<(), ApplicationError> {
+        let blocked = self.0.lock().unwrap().block_release.take();
+        if let Some((entered, release)) = blocked {
+            entered.send(()).unwrap();
+            release
+                .recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap();
+        }
+        let mut state = self.0.lock().unwrap();
+        if state.release_unknown {
             Err(ApplicationError::Busy)
         } else {
+            if !state.released_slots.contains(context) {
+                state.released_slots.push(*context);
+            }
             Ok(())
         }
     }
@@ -224,6 +246,13 @@ impl HostCapacity for TestHost {
         profile: &PhysicalStorageProfile,
         _: &PhysicalPool,
     ) -> Result<(), ApplicationError> {
+        let blocked = self.0.lock().unwrap().block_health.take();
+        if let Some((entered, release)) = blocked {
+            entered.send(()).unwrap();
+            release
+                .recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap();
+        }
         profile.validate().map_err(|_| ApplicationError::Busy)
     }
 }

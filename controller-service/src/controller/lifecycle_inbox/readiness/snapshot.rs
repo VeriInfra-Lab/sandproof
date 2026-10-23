@@ -176,13 +176,12 @@ pub(in crate::controller) fn base_snapshot(
         return Err(JournalError::UnsupportedInput);
     }
     let session = &inbox.sessions[s];
-    let current_request = session
+    let current_entry = session
         .entries
         .iter()
         .find(|entry| entry.intent.accepted_version == session.current_version)
-        .ok_or(JournalError::CorruptStore)?
-        .intent
-        .clone();
+        .ok_or(JournalError::CorruptStore)?;
+    let current_request = current_entry.intent.clone();
     let local = session.local;
     let native = local
         .and_then(|local| {
@@ -230,7 +229,26 @@ pub(in crate::controller) fn base_snapshot(
             })
         })
         .and_then(|record| record.result);
-    let readiness = if current_request == *intent {
+    let applied_renewal = match (
+        &intent.request.operation,
+        &current_request.request.operation,
+    ) {
+        (
+            LifecycleOperation::Create {
+                target_incarnation, ..
+            },
+            LifecycleOperation::Renew { incarnation, .. },
+        ) => {
+            target_incarnation == incarnation
+                && current_entry.applied_deadline.is_some()
+                && current_entry.applied_deadline
+                    == native
+                        .as_ref()
+                        .and_then(|n| n.lifetime.map(|lifetime| lifetime.deadline_ms))
+        }
+        _ => false,
+    };
+    let readiness = if current_request == *intent || applied_renewal {
         CreateReadiness::Pending(CreateReadinessPending::NoLocalMapping)
     } else {
         CreateReadiness::NotCurrent
@@ -362,6 +380,7 @@ impl ControllerJournal {
         let world = self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
         self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
         let mut candidate = base_snapshot(&tx, &self.namespace, &world, intent, context)?;
         fill_candidate::<E>(&mut candidate, &tx, &self.namespace, &world, now_ms)?;
         self.committed_world.check_identity(&tx)?;
