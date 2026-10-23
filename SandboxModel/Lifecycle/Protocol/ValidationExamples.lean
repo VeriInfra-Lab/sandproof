@@ -36,8 +36,8 @@ theorem destroy_accepted : request_validate destroyRequest node = .ok (.Ok ()) :
   apply (validate_accepts_iff destroyRequest node).mpr
   simp [ValidRequest, headersOK, expectationOK, operationOK, destroyRequest, binding, node]
 theorem renew_accepted :
-    request_validate ⟨binding, .Renew 1#u64 (-1#i64) false⟩ node = .ok (.Ok ()) := by
-  apply validate_accepts_iff.mpr
+    request_validate ⟨binding, .Renew 1#u64 ((-1)#i64) false⟩ node = .ok (.Ok ()) := by
+  apply (validate_accepts_iff _ node).mpr
   simp [ValidRequest, headersOK, expectationOK, operationOK, binding, node]
 
 end Examples
