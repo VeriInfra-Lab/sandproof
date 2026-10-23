@@ -398,7 +398,10 @@ fn capacity_refused_builder_settles_original_create_after_exact_destroy_cleanup_
     let mut unconfirmed = serde_json::to_value(&settled).unwrap();
     unconfirmed["center"]["sandboxes"][0]["terminal_confirmation"] = serde_json::Value::Null;
     let invalid: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(unconfirmed).unwrap();
-    assert!(invalid.center.is_valid(), "Cleaned may legitimately await acknowledgement at the core layer");
+    assert!(
+        invalid.center.is_valid(),
+        "Cleaned may legitimately await acknowledgement at the core layer"
+    );
     assert!(!invalid.is_valid());
     let close = business.begin_close(&refused, 200).unwrap();
     assert_eq!(close.terminal, refused);
@@ -509,7 +512,6 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
             .is_none()
     );
     assert_next_builder_uses_retired_lane(&business, &tenant, &peer);
-
 }
 
 fn assert_next_builder_uses_retired_lane(

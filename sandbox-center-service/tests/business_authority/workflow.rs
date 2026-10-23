@@ -497,8 +497,18 @@ fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmati
         PublicationState::Checking
     );
     let pending = authority.snapshot().unwrap();
-    assert_eq!(pending.center.reserved(None, None), Some(super::resources(1)));
-    assert!(pending.center.sandboxes()[0].operations().last().unwrap().terminal().is_none());
+    assert_eq!(
+        pending.center.reserved(None, None),
+        Some(super::resources(1))
+    );
+    assert!(
+        pending.center.sandboxes()[0]
+            .operations()
+            .last()
+            .unwrap()
+            .terminal()
+            .is_none()
+    );
     assert_eq!(pending.center.identity_frontiers(), (1, 2));
     // First progress saved the original Destroy; this background pass drives
     // that same intent. Its lost confirmation must still prevent settlement.
@@ -549,6 +559,27 @@ fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmati
         .unwrap();
     assert_eq!(templates.reconcile_once(&app).unwrap(), 1);
     let settled = authority.snapshot().unwrap();
+    assert_confirmed_refusal_settlement(&settled);
+    clock.0.fetch_add(100, Ordering::SeqCst);
+    app.retire_terminal_history_once().unwrap();
+    let retired = authority.snapshot().unwrap();
+    assert!(retired.center.sandboxes().is_empty());
+    assert!(retired.is_valid());
+    assert_eq!(
+        retired.metadata.registry().records()[0].value().state,
+        PublicationState::Failed
+    );
+    let mut forged = serde_json::to_value(retired).unwrap();
+    forged["metadata"]["registry"]["records"][0]["validation"]["settlement"]["admission"] =
+        serde_json::json!("admitted");
+    let invalid: sandproof_center_store::business::BusinessEnvelope<super::RegistryMetadata> =
+        serde_json::from_value(forged).unwrap();
+    assert!(!invalid.is_valid());
+}
+
+fn assert_confirmed_refusal_settlement(
+    settled: &sandproof_center_store::business::BusinessEnvelope<super::RegistryMetadata>,
+) {
     let sandbox = &settled.center.sandboxes()[0];
     assert_eq!(sandbox.operations().len(), 2);
     assert!(matches!(
@@ -574,25 +605,10 @@ fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmati
     assert_eq!(&saved.cleaned, response);
     assert_eq!(saved.admission, ValidationAdmission::NotAdmitted);
 
-    let mut without_confirmation = serde_json::to_value(&settled).unwrap();
+    let mut without_confirmation = serde_json::to_value(settled).unwrap();
     without_confirmation["center"]["sandboxes"][0]["terminal_confirmation"] =
         serde_json::Value::Null;
     let invalid: sandproof_center_store::business::BusinessEnvelope<super::RegistryMetadata> =
         serde_json::from_value(without_confirmation).unwrap();
-    assert!(!invalid.is_valid());
-    clock.0.fetch_add(100, Ordering::SeqCst);
-    app.retire_terminal_history_once().unwrap();
-    let retired = authority.snapshot().unwrap();
-    assert!(retired.center.sandboxes().is_empty());
-    assert!(retired.is_valid());
-    assert_eq!(
-        retired.metadata.registry().records()[0].value().state,
-        PublicationState::Failed
-    );
-    let mut forged = serde_json::to_value(retired).unwrap();
-    forged["metadata"]["registry"]["records"][0]["validation"]["settlement"]["admission"] =
-        serde_json::json!("admitted");
-    let invalid: sandproof_center_store::business::BusinessEnvelope<super::RegistryMetadata> =
-        serde_json::from_value(forged).unwrap();
     assert!(!invalid.is_valid());
 }
