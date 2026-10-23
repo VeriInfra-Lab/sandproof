@@ -548,3 +548,25 @@ fn startup_expiry_preserves_both_owner_rows_and_their_reserved_destroy_capacity(
     assert!(terminating.sandboxes().iter().all(|record| record.terminating() && !record.released()));
     assert_eq!(terminating.reserved(None, None), Some(resources(2)));
 }
+
+#[test]
+fn recovery_rejects_malformed_lanes_duplicate_occupancy_and_changed_frontiers() {
+    let (first, _) = state().accept_lifecycle(&"1".try_into().unwrap(), &create("1", 1), 10).unwrap();
+    let (both, _) = first.accept_lifecycle(&"2".try_into().unwrap(), &create("2", 1), 10).unwrap();
+    assert!(both.is_valid());
+    for case in ["zero_slot", "duplicate_occupancy", "wrong_frontier", "empty_operations"] {
+        let mut value = serde_json::to_value(&both).unwrap();
+        match case {
+            "zero_slot" => value["retention_lanes"][0]["retention_slot"] = 0.into(),
+            "duplicate_occupancy" => {
+                let slot = value["sandboxes"][0]["operations"][0]["intent"]["retention"]["slot"].clone();
+                value["sandboxes"][1]["operations"][0]["intent"]["retention"]["slot"] = slot;
+            }
+            "wrong_frontier" => value["sandboxes"][0]["operations"][0]["intent"]["retention"]["window"] = 2.into(),
+            "empty_operations" => value["sandboxes"][0]["operations"] = serde_json::json!([]),
+            _ => unreachable!(),
+        }
+        let invalid: CenterState = serde_json::from_value(value).unwrap();
+        assert!(!invalid.is_valid(), "invalid lane case accepted: {case}");
+    }
+}
