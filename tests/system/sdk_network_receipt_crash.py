@@ -105,7 +105,7 @@ def exercise(args: argparse.Namespace) -> None:
             claim = root / "jails/.claims" / f"vm-{namespace}-0"
             assert (claim / "uplink-prepared.json").is_file()
             create_identity = original_create_identity(services, metadata)
-            native_id = services.native_id_for(create_identity["sandbox_id"])
+            native_id = services.native_id_for(create_identity['binding']['session'])
             assert native_id == f"sb-{namespace}-1"
 
             process = services.processes.start("host-0")
@@ -113,7 +113,7 @@ def exercise(args: argparse.Namespace) -> None:
             status, body = fetch(opener, api_url, "GET", "/v2/sandboxes", api_key)
             items = json.loads(body)
             assert status == 200 and len(items) == 1 and items[0]["state"] == "running", items
-            assert items[0]["sandboxID"] == create_identity["sandbox_id"]
+            assert items[0]["sandboxID"] == create_identity['binding']['session']
             assert vm_identity(root, namespace, 0) == identity, "recovery created a second VM"
             sandbox = Sandbox.connect(items[0]["sandboxID"], **options)
             assert guest_ping(sandbox, "11.22.33.1"), "allowed route lost on recovery"

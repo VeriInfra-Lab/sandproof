@@ -120,7 +120,11 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
         processes.children = {"center": Mock(poll=Mock(return_value=None))}
         services = SimpleNamespace(processes=processes,
             center_config={"deployment_id": "synthetic-deployment"})
-        original = {"sandbox_id": "synthetic-global-id"}
+        original = dict(binding=dict(protocol_version=3, session='synthetic-global-id',
+            node=dict(deployment_id='synthetic-deployment',node_id='host',node_generation=1),
+            key=dict(deployment='synthetic-deployment',owner='1',window=1,sequence=1),
+            expected=dict(state='absent')),center=dict(deployment='synthetic-deployment',center='center'),
+            retention=dict(slot=1,window=1),accepted_version=1)
         marker = {"fault_intent": "synthetic-intent"}
         with patch("_center_host_services.find_runtime_create", return_value=original) as lookup:
             self.assertEqual(faults.original_create_identity(services, marker), original)

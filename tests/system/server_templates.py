@@ -260,7 +260,7 @@ def exercise(args):
             {'templateID':'small-r1','allow_internet_access':False,'metadata':marker})[0]>=500
         assert_refusal_unchanged(before, idle_snapshot(database))
         original = original_create_identity(services,marker)
-        assert fetch(opener,url,'DELETE','/sandboxes/'+original['sandbox_id'],key)[0]==204
+        assert fetch(opener,url,'DELETE','/sandboxes/'+original['binding']['session'],key)[0]==204
         with cached_rootfs.open("r+b") as image:
             image.write(original_byte)
             image.flush()

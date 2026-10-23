@@ -122,7 +122,7 @@ def exercise(args: argparse.Namespace) -> None:
             "metadata": metadata,
         }), process, 87)
         identity = original_create_identity(services, metadata)
-        native_id = services.native_id_for(identity["sandbox_id"])
+        native_id = services.native_id_for(identity['binding']['session'])
         claim = root / "jails/.claims" / vm_name
         record = json.loads((claim / "record.json").read_text())
         pid, ticks = record["pid"], record["start_time_ticks"]

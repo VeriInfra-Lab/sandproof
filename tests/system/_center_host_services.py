@@ -27,7 +27,7 @@ from tools.ci_e2e_artifacts import tls_material_files
 from tools.ci_e2e_prepare import bounded_json_command
 from tools.check_kvm_host import trusted_path
 from tools.system_acceptance import private_path
-from tools.runtime_create_recovery import find_runtime_create, terminal_result
+from tools.runtime_create_recovery import find_runtime_create, original_create_identity, terminal_result
 
 
 BLOCK_BYTES = 16 * 1024**2
@@ -388,14 +388,18 @@ def launch(binary, config, log, record, *, uid=0, gid=0, action='serve', env=Non
 
 def local_binding(audit, sandbox, *, expected_node):
     """Map a GLOBAL ID through the original checked inbox, never parse its suffix."""
-    if audit.get('node') != expected_node:
-        raise ValueError('foreign host audit')
+    if (audit.get('node') != expected_node
+            or type(audit.get('schema_version')) is not int or audit['schema_version'] != 2):
+        raise ValueError('foreign or noncurrent host audit')
     rows = [row for row in audit['operations']
-            if row['current'] is True and row['identity']['sandbox_id'] == sandbox]
+            if row['current'] is True and row['binding']['session'] == sandbox]
     if len(rows) != 1 or rows[0]['local'] is None:
         raise ValueError('exact current global/native mapping unknown')
     row = rows[0]
-    if row['identity']['node'] != expected_node or row['response']['identity'] != row['identity']:
+    if (row['binding']['node'] != expected_node
+            or type(row['binding']['protocol_version']) is not int
+            or row['binding']['protocol_version'] != 3
+            or type(row['accepted_version']) is not int or not 0 < row['accepted_version'] < 2**64):
         raise ValueError('host audit identity mismatch')
     return row['local']
 

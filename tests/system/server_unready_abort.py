@@ -151,7 +151,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert process.wait(timeout=30) == 86, "debug exit after exact abort did not fire"
         interrupted_host_request(lambda: request.result(timeout=45), process)
         identity = original_create_identity(services, metadata)
-        native_id = services.native_id_for(identity["sandbox_id"])
+        native_id = services.native_id_for(identity['binding']['session'])
         assert process_start_ticks(pid) != ticks, "exact VMM survived durable abort"
         marker = claim / "failed-prepare.json"
         assert marker.is_file(), "physical reclaim marker missing before receipt"

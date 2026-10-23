@@ -396,7 +396,7 @@ def exercise(args):
         saved = deployment.validation_snapshot(pending)
         identities = deployment.center_snapshot()['sandbox_highwater']
         assert publication_status(pending)['state'] == 'checking'
-        assert saved['started_at_ms'] is not None, 'original Ready fact was never committed'
+        assert saved['last_running'] is not None, 'original Ready fact was never committed'
         process = restart_host()
         deadline = time.monotonic() + 20
         while publication_status(pending)["state"] == "checking":
@@ -443,8 +443,8 @@ def exercise(args):
         saved = deployment.validation_snapshot(pending)
         identities = deployment.center_snapshot()['sandbox_highwater']
         assert publication_status(pending)['state'] == 'checking'
-        assert saved['started_at_ms'] is None, 'unconfirmed activation became an original Ready fact'
-        sandbox_id = saved['create']['identity']['sandbox_id']
+        assert saved['last_running'] is None, 'unconfirmed activation became an original Ready fact'
+        sandbox_id = saved['create']['binding']['session']
         native_id = deployment.native_id(sandbox_id)
         local = int(native_id.rsplit('-',1)[1])
         record = next(
@@ -478,7 +478,7 @@ def exercise(args):
             from _center_host_services import find_runtime_create
             identity = find_runtime_create(deployment.center_snapshot(),correlation,
                                            deployment=services.center_config['deployment_id'])
-            sandbox_id = identity['sandbox_id']
+            sandbox_id = identity['binding']['session']
             native_id = deployment.native_id(sandbox_id)
             local = int(native_id.rsplit('-',1)[1])
             records = [json.loads(path.read_text()) for path in (root / "0/state/startup").glob("*.json")]
@@ -547,7 +547,7 @@ def exercise(args):
             services.wait_ready(for_admission=False)
             if list(root.glob("builder-intent-*.json")):
                 deployment.close_builders()
-            identities = [record['create']['identity']['sandbox_id']
+            identities = [record['create']['binding']['session']
                           for record in deployment.center_snapshot()['sandboxes']
                           if record['private'] is False and record['released'] is False]
             for identity in identities:

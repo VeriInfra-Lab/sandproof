@@ -377,8 +377,8 @@ async def exercise(args):
             assert idle_snapshot(database)["frontiers"][("sandbox", "")] == before_id + 1
             original_create=original_create_identity(services,marker)
             services.processes.stop('host-0')
-            ident=services.native_id_for(original_create['sandbox_id'])
-            local=services.local_for(original_create['sandbox_id'])
+            ident=services.native_id_for(original_create['binding']['session'])
+            local=services.local_for(original_create['binding']['session'])
             assert local==before_id+1,'original accepted boot request allocated another native identity'
             process=services.processes.start('host-0')
             services.wait_ready(for_admission=False)
@@ -388,12 +388,12 @@ async def exercise(args):
             assert (root / "jails/.claims" / name / "failed-prepare.json").is_file()
             failed_identity = json.loads((root / "jails/.claims" / name / "record.json").read_text())
             failed_identity["network_inode"] = json.loads((root / "jails/.claims" / name / "network.json").read_text())["namespace_inode"]
-            evidence.append({"sandbox_id":original_create['sandbox_id'],"native_id":ident,
+            evidence.append({"sandbox_id":original_create['binding']['session'],"native_id":ident,
                              "template_id": bad_templates[index // 2]["template_id"],
                              "host": failed_identity})
             # An HTTP failure is not cleanup. Destroy this exact original global
             # request through the public authenticated path, then inspect native.
-            assert httpx.delete(url+'/sandboxes/'+original_create['sandbox_id'],headers={'X-API-Key':key},
+            assert httpx.delete(url+'/sandboxes/'+original_create['binding']['session'],headers={'X-API-Key':key},
                                 timeout=180,trust_env=False).status_code==204
             deadline = time.monotonic() + 150
             while not terminal_cleanup_confirmed(database, ident):
