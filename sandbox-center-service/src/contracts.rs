@@ -237,6 +237,15 @@ pub trait CommittedDriver: Send + Sync {
 /// Called from bounded blocking work, with NO center decision lock held.
 pub trait HostPort: Send + Sync + 'static {
     /// # Errors
+    /// A full exact persisted result is required; unsupported ports stay unknown.
+    fn confirm_lifecycle_renewal(
+        &self,
+        _result: &sandproof_protocol::lifecycle::RenewalConfirmation,
+        _deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, PortError> {
+        Err(PortError::OutcomeUnknown)
+    }
+    /// # Errors
     /// The original center must have durably saved the exact result first.
     fn confirm_lifecycle_terminal(
         &self,

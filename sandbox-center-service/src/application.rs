@@ -149,12 +149,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .map_err(|_| PortError::Busy)?
             .create_current(&tenant, &parameters, (&self.config).into(), now);
         // Drop the decision guard before diagnostic output, as for host I/O.
-        let request = admitted.map_err(|error| {
+        let request = admitted.inspect_err(|error| {
             diagnostics::emit(
                 DiagnosticStage::CreateAdmission,
-                DiagnosticFailure::Port(error),
+                DiagnosticFailure::Port(*error),
             );
-            error
         })?;
         self.wait_current_session(&request)
     }

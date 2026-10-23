@@ -254,7 +254,7 @@ fn unload_during_detached_observation_prevents_returning_old_running() {
         expected_version: 1,
     };
     let unload = app
-        .unload_lifecycle("8", accepted.session.clone(), &request)
+        .unload_lifecycle("8", &accepted.session, &request)
         .unwrap();
     release.complete();
     assert_eq!(query.join().unwrap(), Err(PortError::Conflict));
@@ -264,7 +264,7 @@ fn unload_during_detached_observation_prevents_returning_old_running() {
     // The full replay needs no new physical observation after the phase moves.
     host.ready.store(false, Ordering::SeqCst);
     assert_eq!(
-        app.unload_lifecycle("8", accepted.session, &request)
+        app.unload_lifecycle("8", &accepted.session, &request)
             .unwrap(),
         unload
     );

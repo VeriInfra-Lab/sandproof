@@ -236,7 +236,7 @@ impl SharedBusinessAuthority {
     pub fn create_validation(
         &self,
         candidate: &str,
-        parameters: CreateParameters,
+        parameters: &CreateParameters,
         now_ms: u64,
     ) -> Result<AcceptedLifecycleIntent, PortError> {
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;

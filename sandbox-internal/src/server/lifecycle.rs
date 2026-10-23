@@ -14,6 +14,7 @@ pub(super) enum Call {
     Confirm,
     Close,
     Validation,
+    RenewalConfirm,
 }
 
 pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
@@ -37,6 +38,8 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     }
     let limit = if matches!(call, Call::Validation) {
         crate::template::VALIDATION_REQUEST_BODY_BYTES
+    } else if matches!(call, Call::RenewalConfirm) {
+        sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_BODY_BYTES
     } else if matches!(call, Call::Confirm | Call::Close) {
         sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES
     } else {
@@ -67,6 +70,9 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     };
     if matches!(call, Call::Validation) {
         return super::validation_evidence(&body.to_bytes(), context, handler).await;
+    }
+    if matches!(call, Call::RenewalConfirm) {
+        return renewal_command(&body.to_bytes(), context, handler).await;
     }
     if matches!(call, Call::Confirm | Call::Close) {
         return terminal_command(&body.to_bytes(), context, handler, call).await;
@@ -103,6 +109,25 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
         Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
             response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
         }
+    }
+}
+
+async fn renewal_command<H: LifecycleReceiver>(
+    bytes: &[u8],
+    context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    use sandproof_protocol::lifecycle::{RenewalConfirmation, RENEWAL_CONFIRMATION_BODY_BYTES};
+    let Ok(result) = serde_json::from_slice::<RenewalConfirmation>(bytes) else {
+        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    };
+    if result.request.validate(&context).is_err() || !result.is_sdk_renewal() {
+        return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    match handler.confirm_renewal(result.clone(), context).await {
+        Ok(ack) if ack.matches(&result) => json_response(&ack, RENEWAL_CONFIRMATION_BODY_BYTES),
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
     }
 }
 

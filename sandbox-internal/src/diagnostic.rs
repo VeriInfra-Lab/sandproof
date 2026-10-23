@@ -20,6 +20,13 @@ impl<H> RejectTemplateCache<H> {
     }
 }
 impl<H: LifecycleReceiver> LifecycleReceiver for RejectTemplateCache<H> {
+    async fn confirm_renewal(
+        &self,
+        result: sandproof_protocol::lifecycle::RenewalConfirmation,
+        context: AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, ReceiveError> {
+        self.0.confirm_renewal(result, context).await
+    }
     async fn confirm_terminal(
         &self,
         result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,

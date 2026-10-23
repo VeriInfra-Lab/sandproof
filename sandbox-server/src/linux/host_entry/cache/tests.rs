@@ -4,8 +4,9 @@ use super::*;
     dead_code,
     reason = "original fixture includes lifecycle/recovery test capabilities"
 )]
-#[path = "../../../../../controller-service/tests/support/internal_application.rs"]
-mod local;
+#[path = "../../../../../controller-service/tests/support/lifecycle_application.rs"]
+mod current;
+use current::fixture as local;
 #[path = "../../../../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 use axum::body::Body;
@@ -15,7 +16,10 @@ use sandproof_host_service::DriverConfig;
 use sandproof_internal::{
     CertificatePin, ClientTls, LifecycleReceiver, Limits, ProtectedHttp, ProtectedServer, ServerTls,
 };
-use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact, LifecycleRequest};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, CurrentCreateReadiness, ExpectedSession, LifecycleOperation,
+    LifecycleWindowClose, TerminalStatus,
+};
 use std::{
     convert::Infallible,
     sync::atomic::{AtomicI64, AtomicUsize, Ordering},
@@ -119,20 +123,16 @@ async fn fixture(block: bool) -> Fixture {
         .open(root.join(".cache.lock"))
         .unwrap();
     let config = cache_config(root);
-    let host = Arc::new(Mutex::new(local::State::default()));
+    let host = Arc::new(Mutex::new(local::State {
+        epoch: local::TestEpoch::Matching,
+        ..local::State::default()
+    }));
     let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
-    let app = local::application_with_cache_config(
+    let app = cache_application(
         &directory.path().join("db"),
         Arc::clone(&host),
         Arc::clone(&clock),
-        true,
-        sandproof_controller_service::InternalInboxConfig {
-            node: local::wire::node("host-a"),
-            max_sandboxes: 2,
-            operations_per_sandbox: 4,
-            max_options_bytes: 1024,
-        },
-        Some(config.clone()),
+        config.clone(),
     );
     let (kernel, rootfs, request) = assets();
     let certificates = tls::certificates_with_dual_roles();
@@ -715,6 +715,87 @@ fn driver_config() -> DriverConfig {
     }
 }
 
+fn cache_application(
+    path: &Path,
+    state: Arc<Mutex<local::State>>,
+    clock: Arc<local::TestClock>,
+    cache: PhysicalTemplateCache,
+) -> Arc<sandproof_controller_service::application::ControllerApplication<local::TestHost>> {
+    use sandproof_controller_service::{
+        AdmissionLimits, ControllerJournal, NeverCrash,
+        application::{ApplicationConfig, ControllerApplication},
+    };
+    let namespace = "0123456789abcdef";
+    let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
+    let mut host =
+        local::complete_fixture::host(path, namespace, 64, 2 * 1024 * 1024, reserve);
+    let physical = host.physical_storage.as_mut().unwrap();
+    physical.filesystem_overhead_inodes += cache.inode_budget;
+    physical.host_template_caches = vec![cache];
+    let mut journal =
+        ControllerJournal::open_complete(path, namespace, host, current::maintenance(), 0)
+            .unwrap();
+    journal
+        .initialize_lifecycle_inbox(current::config(), current::source_limits(), &mut NeverCrash)
+        .unwrap();
+    Arc::new(
+        ControllerApplication::new(
+            journal,
+            local::TestHost(state),
+            ApplicationConfig {
+                public_ipv4_enabled: false,
+                limits: AdmissionLimits {
+                    max_active_global: 64,
+                    max_active_per_tenant: 64,
+                    max_disk_bytes_global: reserve + 2 * 1024 * 1024,
+                    max_disk_bytes_per_tenant: 2 * 1024 * 1024,
+                    cleanup_reserve_bytes: reserve,
+                    max_timeout_secs: 300,
+                    max_lifetime_secs: 300,
+                    startup_timeout_secs: 300,
+                },
+                disk_bytes: 4096,
+                file_policy_digest: sandbox_controller_core::PolicyDigest(1),
+                cpu_count: 1,
+                memory_mb: 128,
+                disk_size_mb: 1,
+                envd_version: "fixed-envd".into(),
+                domain: "example.invalid".into(),
+            },
+        )
+        .with_clock(clock),
+    )
+}
+
+fn cache_create(f: &Fixture) -> AcceptedLifecycleIntent {
+    let mut intent = current::request();
+    let LifecycleOperation::Create { create, .. } = &mut intent.request.operation else {
+        unreachable!("original current fixture is Create")
+    };
+    create.template_revision = f.request.revision.clone();
+    create.template_digest = f.request.digest;
+    intent
+}
+
+fn create_binding(intent: &AcceptedLifecycleIntent) -> &CreateBinding {
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+        unreachable!("cache source retains the original Create")
+    };
+    create
+}
+
+async fn assert_current_ready(
+    lifecycle: &HostLifecycle<local::TestHost>,
+    create: &AcceptedLifecycleIntent,
+) {
+    let observed = lifecycle
+        .observe_create(create.clone(), current::context())
+        .await
+        .unwrap();
+    assert!(observed.matches_request(create));
+    assert!(matches!(observed.readiness, CurrentCreateReadiness::Observed { .. }));
+}
+
 #[tokio::test]
 #[ignore = "root-owned protected cache and real Linux TLS component"]
 async fn cached_verification_reaches_original_admission_without_bypassing_node_validation() {
@@ -724,18 +805,19 @@ async fn cached_verification_reaches_original_admission_without_bypassing_node_v
         .await
         .unwrap();
     let lifecycle = f.cache.lifecycle.clone();
-    let mut create = local::request();
-    create.create.template_revision = f.request.revision.clone();
-    create.create.template_digest = f.request.digest;
-    assert!(f.cache.verification(&create.create).is_some());
-    let mut wrong = create.create.clone();
+    let create = cache_create(&f);
+    assert!(f.cache.verification(create_binding(&create)).is_some());
+    let mut wrong = create_binding(&create).clone();
     wrong.template_digest[0] ^= 1;
     assert!(f.cache.verification(&wrong).is_none());
-    wrong = create.create.clone();
+    wrong = create_binding(&create).clone();
     wrong.template_revision = "other-revision".try_into().unwrap();
     assert!(f.cache.verification(&wrong).is_none());
 
-    lifecycle.receive(create.clone()).await.unwrap();
+    lifecycle
+        .record_lifecycle(create.clone(), current::context())
+        .await
+        .unwrap();
     f.host.lock().unwrap().template_error = Some(ApplicationError::Invalid);
     let report = lifecycle
         .drive_once(driver_config(), Arc::clone(&f.cache))
@@ -756,10 +838,7 @@ async fn cached_verification_reaches_original_admission_without_bypassing_node_v
         .drive_once(driver_config(), Arc::clone(&f.cache))
         .await
         .unwrap();
-    assert!(matches!(
-        lifecycle.receive(create.clone()).await.unwrap().fact,
-        LifecycleFact::Ready { .. }
-    ));
+    assert_current_ready(&lifecycle, &create).await;
     assert_eq!(f.host.lock().unwrap().template_checks, 2);
     assert_eq!(f.host.lock().unwrap().cached_verifications, 2);
     finish_original_destroy(&lifecycle, Arc::clone(&f.cache), create).await;
@@ -770,23 +849,37 @@ async fn cached_verification_reaches_original_admission_without_bypassing_node_v
 async fn finish_original_destroy(
     lifecycle: &HostLifecycle<local::TestHost>,
     templates: Arc<TemplateCache<local::TestHost>>,
-    mut destroy: LifecycleRequest,
+    mut destroy: AcceptedLifecycleIntent,
 ) {
-    destroy.intent = Intent::Destroy;
-    destroy.identity.operation_id = "operation-2".try_into().unwrap();
-    destroy.identity.intent_version = 2.try_into().unwrap();
-    lifecycle.receive(destroy.clone()).await.unwrap();
+    destroy.request.operation = LifecycleOperation::Destroy {};
+    destroy.request.binding.key.sequence = 2.try_into().unwrap();
+    destroy.request.binding.expected = ExpectedSession::Version(1);
+    destroy.accepted_version = 2;
+    lifecycle
+        .record_lifecycle(destroy.clone(), current::context())
+        .await
+        .unwrap();
     lifecycle
         .drive_once(driver_config(), templates)
         .await
         .unwrap();
-    let cleaned = lifecycle.receive(destroy).await.unwrap();
-    assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
-    lifecycle.confirm(cleaned.clone()).await.unwrap();
-    lifecycle
-        .close(sandproof_protocol::internal::window::WindowCloseRequest::new(cleaned))
+    let cleaned = lifecycle
+        .observe_terminal(destroy.clone(), current::context())
         .await
         .unwrap();
+    assert!(cleaned.matches_request(&destroy));
+    assert_eq!(cleaned.status, TerminalStatus::Cleaned);
+    let confirmed = lifecycle
+        .confirm_terminal(cleaned.clone(), current::context())
+        .await
+        .unwrap();
+    assert!(confirmed.matches(&cleaned));
+    let close = LifecycleWindowClose { terminal: cleaned };
+    let closed = lifecycle
+        .close_window(close.clone(), current::context())
+        .await
+        .unwrap();
+    assert!(closed.matches(&close));
 }
 
 #[tokio::test]
@@ -799,18 +892,16 @@ async fn cache_missing_or_partial_manifest_fences_material_but_preserves_origina
             .await
             .unwrap();
         let lifecycle = f.cache.lifecycle.clone();
-        let mut create = local::request();
-        create.create.template_revision = f.request.revision.clone();
-        create.create.template_digest = f.request.digest;
-        lifecycle.receive(create.clone()).await.unwrap();
+        let create = cache_create(&f);
+        lifecycle
+            .record_lifecycle(create.clone(), current::context())
+            .await
+            .unwrap();
         lifecycle
             .drive_once(driver_config(), Arc::clone(&f.cache))
             .await
             .unwrap();
-        assert!(matches!(
-            lifecycle.receive(create.clone()).await.unwrap().fact,
-            LifecycleFact::Ready { .. }
-        ));
+        assert_current_ready(&lifecycle, &create).await;
         let mut interrupted = f.request.clone();
         interrupted.revision = "interrupted-revision".try_into().unwrap();
         interrupted.descriptor.revision = "r2".into();
@@ -845,7 +936,7 @@ async fn cache_missing_or_partial_manifest_fences_material_but_preserves_origina
             Err(ReceiveError::Unavailable)
         );
         assert!(matches!(
-            fenced.bound(&create.create),
+            fenced.bound(create_binding(&create)),
             Err(ApplicationError::Busy)
         ));
         assert_eq!(f.requests.load(Ordering::SeqCst), 2);

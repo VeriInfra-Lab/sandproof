@@ -161,8 +161,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             if current != intent || record.phase() == SessionPhase::Terminating {
                 return Err(PortError::OutcomeUnknown);
             }
-            if record.phase() == SessionPhase::Running {
-                if let Some(session) = self
+            if record.phase() == SessionPhase::Running
+                && let Some(session) = self
                     .session_attempt(
                         intent.request.binding.key.owner.as_str(),
                         intent.request.binding.session.as_protocol_id().as_str(),
@@ -171,12 +171,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                         diagnostics::emit(
                             DiagnosticStage::SessionProjection,
                             DiagnosticFailure::Port(*error),
-                        )
+                        );
                     })?
-                {
-                    time_left(deadline)?;
-                    return Ok(session);
-                }
+            {
+                time_left(deadline)?;
+                return Ok(session);
             }
             self.poll_pause(deadline);
         }
@@ -196,7 +195,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 diagnostics::emit(
                     DiagnosticStage::SendSnapshot,
                     DiagnosticFailure::Port(*error),
-                )
+                );
             })?;
             let record = state
                 .lifecycle_session(
@@ -246,7 +245,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 diagnostics::emit(
                     DiagnosticStage::RetiredSnapshot,
                     DiagnosticFailure::Port(*error),
-                )
+                );
             })?;
             let Some(record) = state.lifecycle_session(
                 &intent.request.binding.key.owner,
@@ -296,7 +295,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             diagnostics::emit(
                 DiagnosticStage::SendSnapshot,
                 DiagnosticFailure::Port(*error),
-            )
+            );
         })?;
         let record = state
             .lifecycle_session(owner, session)
@@ -347,12 +346,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     }
                     Ok::<usize, PortError>(completed)
                 });
-                match work {
-                    Ok(worker) => workers.push(worker),
-                    Err(_) => {
-                        result = Err(PortError::OutcomeUnknown);
-                        break;
-                    }
+                if let Ok(worker) = work {
+                    workers.push(worker);
+                } else {
+                    result = Err(PortError::OutcomeUnknown);
+                    break;
                 }
             }
             // Always join all started work, including after another worker's
@@ -394,52 +392,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             return Ok(false);
         }
         if matches!(intent.request.operation, LifecycleOperation::Destroy {}) {
-            let Ok(result) = self
-                .hosts
-                .observe_lifecycle_terminal(intent, time_left(deadline)?)
-            else {
-                return Ok(false);
-            };
-            if !result.matches_request(intent)
-                || result.status != sandproof_protocol::lifecycle::TerminalStatus::Cleaned
-            {
-                return Ok(false);
-            }
-            // Persist the actual completed fact BEFORE sending any result
-            // confirmation. Unknown CAS prevents the acknowledgement call.
-            let saved = self
-                .authority
-                .lock()
-                .map_err(|_| PortError::OutcomeUnknown)?
-                .accept_lifecycle_terminal_observation(&result, self.now()?);
-            match saved {
-                Ok(()) => {}
-                Err(AuthorityError::Decision(
-                    DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
-                )) => return Ok(false),
-                Err(error) => return Err(authority_error(error)),
-            }
-            let Ok(confirmed) = self
-                .hosts
-                .confirm_lifecycle_terminal(&result, time_left(deadline)?)
-            else {
-                return Ok(false);
-            };
-            if !confirmed.matches(&result) {
-                return Ok(false);
-            }
-            return match self
-                .authority
-                .lock()
-                .map_err(|_| PortError::OutcomeUnknown)?
-                .confirm_terminal(&confirmed)
-            {
-                Ok(()) => Ok(true),
-                Err(AuthorityError::Decision(
-                    DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
-                )) => Ok(false),
-                Err(error) => Err(authority_error(error)),
-            };
+            return self.reconcile_terminal(intent, deadline);
         }
         // All current intents use the same durable receiver. Recording Unload
         // or Destroy cannot publish physical completion or retire the outbox;
@@ -496,6 +449,59 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 );
                 Err(authority_error(error))
             }
+        }
+    }
+
+    fn reconcile_terminal(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        deadline: Instant,
+    ) -> Result<bool, PortError> {
+        let Ok(result) = self
+            .hosts
+            .observe_lifecycle_terminal(intent, time_left(deadline)?)
+        else {
+            return Ok(false);
+        };
+        if !result.matches_request(intent)
+            || result.status != sandproof_protocol::lifecycle::TerminalStatus::Cleaned
+        {
+            return Ok(false);
+        }
+        // Persist the actual completed fact BEFORE sending any result
+        // confirmation. Unknown CAS prevents the acknowledgement call.
+        let saved = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .accept_lifecycle_terminal_observation(&result, self.now()?);
+        match saved {
+            Ok(()) => {}
+            Err(AuthorityError::Decision(
+                DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
+            )) => return Ok(false),
+            Err(error) => return Err(authority_error(error)),
+        }
+        let Ok(confirmed) = self
+            .hosts
+            .confirm_lifecycle_terminal(&result, time_left(deadline)?)
+        else {
+            return Ok(false);
+        };
+        if !confirmed.matches(&result) {
+            return Ok(false);
+        }
+        match self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .confirm_terminal(&confirmed)
+        {
+            Ok(()) => Ok(true),
+            Err(AuthorityError::Decision(
+                DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
+            )) => Ok(false),
+            Err(error) => Err(authority_error(error)),
         }
     }
 }

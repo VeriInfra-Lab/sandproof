@@ -353,7 +353,7 @@ impl SharedBusinessAuthority {
     pub fn accept_public_unload(
         &self,
         owner: &TenantId,
-        session: SessionId,
+        session: &SessionId,
         request: &PublicUnloadRequest,
         observation: &CreateObservation,
         now_ms: u64,
@@ -382,7 +382,7 @@ impl SharedBusinessAuthority {
                     return Err(DecisionError::Unavailable.into());
                 };
                 if observation.request.request.binding.key.owner != *owner
-                    || observation.request.request.binding.session != session
+                    || &observation.request.request.binding.session != session
                     || now_ms >= facts.end_at_ms
                 {
                     return Err(DecisionError::Stale.into());
@@ -428,7 +428,7 @@ impl SharedBusinessAuthority {
             create_refusal: record
                 .operations()
                 .first()
-                .and_then(|first| first.create_refusal()),
+                .and_then(sandproof_center_core::LifecycleOperationRecord::create_refusal),
         })
     }
 }
@@ -445,7 +445,7 @@ enum CreateKeySource {
 fn check_public_window(
     window: sandproof_protocol::lifecycle::RequestWindowId,
 ) -> Result<(), PortError> {
-    if window.get() % 2 == 0 {
+    if window.get().is_multiple_of(2) {
         Err(PortError::Invalid)
     } else {
         Ok(())

@@ -27,6 +27,13 @@ pub(super) struct RegisteredHost {
     pub(super) retention_slots: u16,
 }
 impl LifecycleReceiver for RegisteredHost {
+    async fn confirm_renewal(
+        &self,
+        result: sandproof_protocol::lifecycle::RenewalConfirmation,
+        context: AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, ReceiveError> {
+        self.facade.confirm_renewal(result, context).await
+    }
     async fn confirm_terminal(&self, result: sandproof_protocol::lifecycle::TerminalLifecycleObservation, context: AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
         self.facade.confirm_terminal(result, context).await
     }
