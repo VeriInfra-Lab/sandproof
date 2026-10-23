@@ -450,9 +450,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 &intent.request.binding.session,
                 deadline,
             ) {
-                Ok(_) => Ok(true),
                 Err(CurrentObservationError::Shared(error)) => Err(error),
-                Err(
+                Ok(_)
+                | Err(
                     CurrentObservationError::Host(_)
                     | CurrentObservationError::Superseded
                     | CurrentObservationError::Deadline,
