@@ -1381,7 +1381,9 @@ fn check_occupied_action(
         | core::Command::CleanupVm { vm, .. } => (Some(*vm), None),
         core::Command::CleanupSlot { slot, .. } => (None, Some(*slot)),
         core::Command::InstallFence { .. } | core::Command::ApplyFilePolicy { .. } => (None, None),
-        core::Command::CommitSnapshot { .. } => return Err("unsupported bounded host command".into()),
+        core::Command::CommitSnapshot { .. } => {
+            return Err("unsupported bounded host command".into());
+        }
     };
     if vm.is_some_and(|vm| vm != binding.vm) || network.is_some_and(|slot| slot != binding.network)
     {

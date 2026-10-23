@@ -271,8 +271,13 @@ fn root_protected_bootstrap_roundtrip_uses_real_host_facts_without_a_vm() {
 
 fn write_synthetic_tool(path: &Path) {
     let mut file = fs::OpenOptions::new()
-        .write(true).create_new(true).mode(0o700).open(path).unwrap();
-    file.write_all(b"synthetic tool bytes, never executed").unwrap();
+        .write(true)
+        .create_new(true)
+        .mode(0o700)
+        .open(path)
+        .unwrap();
+    file.write_all(b"synthetic tool bytes, never executed")
+        .unwrap();
 }
 
 fn root_fixture_begin(path: &Path) -> PathBuf {

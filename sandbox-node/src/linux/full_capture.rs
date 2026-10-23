@@ -25,9 +25,9 @@ const SNAPSHOT_FORMAT: u16 = 10; // Fixed FC 1.16.1 SNAPSHOT_VERSION=10.0.0.
 
 fn hex(bytes: &[u8; 32]) -> String {
     use std::fmt::Write as _;
-    let mut output=String::with_capacity(64);
+    let mut output = String::with_capacity(64);
     for byte in bytes {
-        write!(&mut output,"{byte:02x}").expect("writing to a String cannot fail");
+        write!(&mut output, "{byte:02x}").expect("writing to a String cannot fail");
     }
     output
 }
