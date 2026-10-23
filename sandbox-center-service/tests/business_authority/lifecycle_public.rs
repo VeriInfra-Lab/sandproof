@@ -2,9 +2,7 @@
 //! No VM/Ready/Unloaded or manager-process acceptance is claimed by this fixture.
 use super::*;
 use sandproof_center_service::LifecyclePolicy;
-use sandproof_protocol::lifecycle::{
-    CreateParameters, PublicCreateRequest, PublicSessionPhase,
-};
+use sandproof_protocol::lifecycle::{CreateParameters, PublicCreateRequest, PublicSessionPhase};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn policy() -> LifecyclePolicy {

@@ -14,10 +14,16 @@ fn two_publication_authority(
         })
         .unwrap(),
     );
-    let registered = value["center"]["lifecycle"]["windows"].as_array().unwrap().clone();
+    let registered = value["center"]["lifecycle"]["windows"]
+        .as_array()
+        .unwrap()
+        .clone();
     for mut window in registered {
         window["registration"]["owner"] = serde_json::json!("9");
-        value["center"]["lifecycle"]["windows"].as_array_mut().unwrap().push(window);
+        value["center"]["lifecycle"]["windows"]
+            .as_array_mut()
+            .unwrap()
+            .push(window);
     }
     let state: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(value).unwrap();
     assert!(state.is_valid());
@@ -31,9 +37,7 @@ fn two_publication_authority(
     SharedBusinessAuthority::new(CenterAuthority::attach(ledger).unwrap())
 }
 
-fn settle_first(
-    business: &SharedBusinessAuthority,
-) -> TerminalLifecycleObservation {
+fn settle_first(business: &SharedBusinessAuthority) -> TerminalLifecycleObservation {
     let mut lifecycle = business.clone();
     business.begin_publication(candidate(), revision()).unwrap();
     cache_candidate(business);
@@ -45,9 +49,8 @@ fn settle_first(
         .bind_local_validation(&candidate().candidate_id, &create, &mapping)
         .unwrap();
     AuthorityPort::accept_lifecycle_create_observation(&mut lifecycle, &observed_ready(&create))
-    .unwrap();
-    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &create)
-    .unwrap();
+        .unwrap();
+    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &create).unwrap();
     let cleaned = cleaned_observation(&destroy);
     AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned, 100).unwrap();
     business
@@ -78,14 +81,21 @@ fn later_mapping(retire: bool, global_owner: u64, local_owner: u64, accepted: bo
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let business = two_publication_authority(&fixture, &proxy);
     let cleaned = settle_first(&business);
-    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned.clone() }).unwrap();
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: cleaned.clone(),
+        })
+        .unwrap();
     if retire {
         let close = business.begin_close(&cleaned, 200).unwrap();
         business
-            .apply_close_ack(&ClosedLifecycleWindow {
-                retired_through: close.terminal.request.retention.window,
-                terminal: close.terminal,
-            }, 200)
+            .apply_close_ack(
+                &ClosedLifecycleWindow {
+                    retired_through: close.terminal.request.retention.window,
+                    terminal: close.terminal,
+                },
+                200,
+            )
             .unwrap();
     }
     let before = business.snapshot().unwrap();

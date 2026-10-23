@@ -146,7 +146,6 @@ impl HostPort for Host {
             terminal: matches!(intent.request.operation, LifecycleOperation::Destroy {}),
         })
     }
-
 }
 type Application = CenterApplication<
     SharedBusinessAuthority,
@@ -198,15 +197,11 @@ fn original_current_observation_publishes_running_and_history_alone_does_not() {
         PublicSessionPhase::Running
     );
     let before = app.snapshot().unwrap();
-    let original_receipt = before.sandboxes()[0].observation_version;
     assert_eq!(
         app.query_lifecycle("8", &accepted.session).unwrap().phase,
         PublicSessionPhase::Running
     );
-    assert_eq!(
-        app.snapshot().unwrap().sandboxes()[0].observation_version,
-        original_receipt
-    );
+    assert_eq!(app.snapshot().unwrap(), before);
     assert_eq!(host.observations.load(Ordering::SeqCst), 2);
     host.ready.store(false, Ordering::SeqCst);
     assert_eq!(
@@ -277,7 +272,7 @@ fn expiration_while_observation_is_detached_cannot_publish_running_or_release() 
     release.complete();
     assert_eq!(query.join().unwrap(), Err(PortError::Busy));
     assert_eq!(app.snapshot().unwrap(), original);
-    assert!(!original.sandboxes()[0].released);
+    assert!(!original.sandboxes()[0].released());
 }
 
 #[test]
@@ -395,7 +390,7 @@ fn destroy_is_committed_while_observation_waits_and_never_revived_by_old_ready()
     let view = app.query_lifecycle("8", &accepted.session).unwrap();
     assert_eq!(view.phase, PublicSessionPhase::Terminating);
     assert_eq!(view.operation, termination.key);
-    assert!(!app.snapshot().unwrap().sandboxes()[0].released);
+    assert!(!app.snapshot().unwrap().sandboxes()[0].released());
     let observations = host.observations.load(Ordering::SeqCst);
     assert_eq!(app.reconcile_once(), Ok(0));
     assert_eq!(host.recordings.load(Ordering::SeqCst), 1);
@@ -404,5 +399,5 @@ fn destroy_is_committed_while_observation_waits_and_never_revived_by_old_ready()
     // recording it cannot free the original resources or retire the history.
     let state = app.snapshot().unwrap();
     assert_eq!(state.pending_lifecycle().len(), 1);
-    assert!(!state.sandboxes()[0].released);
+    assert!(!state.sandboxes()[0].released());
 }

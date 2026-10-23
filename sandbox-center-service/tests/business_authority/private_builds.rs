@@ -5,7 +5,10 @@ use sandproof_api::{BuildPort, BuildSettlementRequest, BuildVmRequest};
 use sandproof_center_service::business::{BuildParameters, PrivateBuildConfig};
 use sandproof_center_service::{CenterBuildPort, TemplateProvider};
 use sandproof_internal::cache::{CacheAvailability, CacheRequest};
-use sandproof_protocol::lifecycle::{CreateObservation, CreateRefusalReason, CurrentCreateReadiness, CreateParameters, LifecycleOperation};
+use sandproof_protocol::lifecycle::{
+    CreateObservation, CreateParameters, CreateRefusalReason, CurrentCreateReadiness,
+    LifecycleOperation,
+};
 use std::sync::Arc;
 
 fn provision(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
@@ -124,11 +127,14 @@ fn confirm_build_cleanup(
     lifecycle: &mut SharedBusinessAuthority,
     create: &AcceptedLifecycleIntent,
 ) -> TerminalLifecycleObservation {
-    let destroy = AuthorityPort::destroy_bound_create(lifecycle, create)
-    .unwrap();
+    let destroy = AuthorityPort::destroy_bound_create(lifecycle, create).unwrap();
     let cleaned = cleaned_observation(&destroy);
     AuthorityPort::accept_lifecycle_terminal_observation(lifecycle, &cleaned, 100).unwrap();
-    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned.clone() }).unwrap();
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: cleaned.clone(),
+        })
+        .unwrap();
     cleaned
 }
 
@@ -164,7 +170,10 @@ fn actual_private_admit_unknown_is_one_hidden_global_builder_create_and_closed_w
         .unwrap()
         .original_create;
     assert_eq!(original.request.binding.node, wire::node("builder-a"));
-    assert_eq!(original.request.binding.session.as_protocol_id().as_str(), "sandbox-1");
+    assert_eq!(
+        original.request.binding.session.as_protocol_id().as_str(),
+        "sandbox-1"
+    );
     let view = AuthorityPort::public_snapshot(&mut lifecycle).unwrap();
     assert!(!view.visible(&view.state.sandboxes()[0]));
     let repeated = business
@@ -245,15 +254,21 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
         ),
         Err(PortError::Conflict)
     );
-    let destroy =
-        AuthorityPort::destroy_bound_create(&mut lifecycle, &original).unwrap();
+    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &original).unwrap();
     assert_eq!(destroy.request.operation, LifecycleOperation::Destroy {});
     let cleaned = cleaned_observation(&destroy);
     AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned, 100).unwrap();
-    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned.clone() }).unwrap();
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: cleaned.clone(),
+        })
+        .unwrap();
     // No close request can escape before the private build has acknowledged
     // settlement, even though physical cleanup is already durably confirmed.
-    assert_eq!(business.begin_close(&cleaned, 200), Err(PortError::Conflict));
+    assert_eq!(
+        business.begin_close(&cleaned, 200),
+        Err(PortError::Conflict)
+    );
     assert!(business.snapshot().is_ok());
     proxy.lose_after(1);
     assert_eq!(
@@ -331,10 +346,19 @@ fn capacity_refused_builder_settles_original_create_after_exact_destroy_cleanup_
         )
         .unwrap();
     let mut lifecycle = business.clone();
-    let refusal = CreateObservation { request: original.clone(), current_request: original.clone(), historical_create_succeeded: false,
-        readiness: CurrentCreateReadiness::Refused { reason: CreateRefusalReason::Capacity } };
+    let refusal = CreateObservation {
+        request: original.clone(),
+        current_request: original.clone(),
+        historical_create_succeeded: false,
+        readiness: CurrentCreateReadiness::Refused {
+            reason: CreateRefusalReason::Capacity,
+        },
+    };
     let destroy = AuthorityPort::accept_lifecycle_create_refusal(&mut lifecycle, &refusal).unwrap();
-    assert_eq!(business.snapshot().unwrap().center.reserved(None, None), Some(resources(1)));
+    assert_eq!(
+        business.snapshot().unwrap().center.reserved(None, None),
+        Some(resources(1))
+    );
     let refused = cleaned_observation(&destroy);
     AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &refused, 100).unwrap();
     let settle = || {
@@ -350,10 +374,17 @@ fn capacity_refused_builder_settles_original_create_after_exact_destroy_cleanup_
         .close_build_window(&tenant, &window.request_window, 1)
         .unwrap();
     assert_eq!(settle(), Err(PortError::Conflict));
-    business.confirm_terminal(&ConfirmedLifecycleResult { result: refused.clone() }).unwrap();
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: refused.clone(),
+        })
+        .unwrap();
     // Only original Destroy/Cleaned releases resources. The independent
     // business pin remains until settlement; its lost reply fences recovery.
-    assert_eq!(business.begin_close(&refused, 200), Err(PortError::Conflict));
+    assert_eq!(
+        business.begin_close(&refused, 200),
+        Err(PortError::Conflict)
+    );
     proxy.lose_after(1);
     assert_eq!(settle(), Err(PortError::OutcomeUnknown));
     assert!(business.snapshot().is_err());
@@ -371,10 +402,13 @@ fn capacity_refused_builder_settles_original_create_after_exact_destroy_cleanup_
     let close = business.begin_close(&refused, 200).unwrap();
     assert_eq!(close.terminal, refused);
     business
-        .apply_close_ack(&ClosedLifecycleWindow {
-            retired_through: close.terminal.request.retention.window,
-            terminal: close.terminal,
-        }, 200)
+        .apply_close_ack(
+            &ClosedLifecycleWindow {
+                retired_through: close.terminal.request.retention.window,
+                terminal: close.terminal,
+            },
+            200,
+        )
         .unwrap();
     let retired = business.snapshot().unwrap();
     assert!(retired.center.sandboxes().is_empty());
@@ -445,10 +479,13 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
         .unwrap();
     let close = business.begin_close(&peer_cleaned, 200).unwrap();
     business
-        .apply_close_ack(&ClosedLifecycleWindow {
-            retired_through: close.terminal.request.retention.window,
-            terminal: close.terminal,
-        }, 200)
+        .apply_close_ack(
+            &ClosedLifecycleWindow {
+                retired_through: close.terminal.request.retention.window,
+                terminal: close.terminal,
+            },
+            200,
+        )
         .unwrap();
     let retained = business.snapshot().unwrap();
     assert_eq!(retained.center.sandboxes().len(), 1);
@@ -560,7 +597,10 @@ fn actual_private_driver_reuses_global_lifecycle_and_original_token_but_never_pu
         .resolve_private_data_route("8", &session.envd_access_token)
         .unwrap();
     assert_eq!(routed.identity.node, wire::node("builder-a"));
-    assert_eq!(routed.identity.session.as_protocol_id().as_str(), vm.sandbox_id);
+    assert_eq!(
+        routed.identity.session.as_protocol_id().as_str(),
+        vm.sandbox_id
+    );
     assert_private_route_health(&business, &routed, |tenant| {
         app.resolve_private_data_route(tenant, &session.envd_access_token)
     });
@@ -625,10 +665,12 @@ fn actual_builder_policy_does_not_widen_runtime_network_or_lifetime_limits() {
     let snapshot = business.snapshot().unwrap();
     let original = &snapshot.metadata.private_build_anchors()[0].original_create;
     assert_eq!(original.request.binding.node, wire::node("builder-a"));
-    assert_eq!(original.create.timeout_ms, 600_000);
-    assert_eq!(original.create.max_lifetime_ms, 900_000);
-    assert_eq!(original.create.startup_deadline_ms, 60_000);
-    let options: CreateOptions = serde_json::from_slice(&original.create.options).unwrap();
+    let LifecycleOperation::Create { create, .. } = &original.request.operation else { unreachable!() };
+    assert_eq!(create.timeout_ms, 600_000);
+    assert_eq!(create.max_lifetime_ms, 900_000);
+    // The controlled application clock is 1ms at admission.
+    assert_eq!(create.startup_deadline_ms, 60_001);
+    let options: CreateOptions = serde_json::from_slice(&create.options).unwrap();
     assert_eq!(
         options.networking.unwrap().allow_internet_access,
         Some(true)

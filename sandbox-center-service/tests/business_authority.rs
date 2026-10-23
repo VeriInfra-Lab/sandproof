@@ -56,7 +56,10 @@ use sandproof_controller_service::{
 use sandproof_protocol::{
     ResourceId,
     internal::lifecycle::{CreateBinding, Resources},
-    lifecycle::{AcceptedLifecycleIntent, TerminalLifecycleObservation, TerminalStatus, ConfirmedLifecycleResult, ClosedLifecycleWindow},
+    lifecycle::{
+        AcceptedLifecycleIntent, ClosedLifecycleWindow, ConfirmedLifecycleResult,
+        TerminalLifecycleObservation,
+    },
 };
 use std::collections::BTreeMap;
 
@@ -150,19 +153,45 @@ fn lifecycle_parameters() -> sandproof_protocol::lifecycle::CreateParameters {
         max_lifetime_ms: binding.max_lifetime_ms,
     }
 }
-fn observed_ready(original: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) -> sandproof_protocol::lifecycle::CreateObservation {
-    use sandproof_protocol::lifecycle::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation};
-    let LifecycleOperation::Create { create, .. } = &original.request.operation else { unreachable!() };
-    CreateObservation { request: original.clone(), current_request: original.clone(), historical_create_succeeded: true,
-        readiness: CurrentCreateReadiness::Observed { facts: CurrentReadyFacts { started_at_ms: 10,
-            end_at_ms: 10 + create.timeout_ms, max_end_at_ms: 10 + create.max_lifetime_ms,
-            startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: 10 } } }
+fn observed_ready(
+    original: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+) -> sandproof_protocol::lifecycle::CreateObservation {
+    use sandproof_protocol::lifecycle::{
+        CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation,
+    };
+    let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+        unreachable!()
+    };
+    CreateObservation {
+        request: original.clone(),
+        current_request: original.clone(),
+        historical_create_succeeded: true,
+        readiness: CurrentCreateReadiness::Observed {
+            facts: CurrentReadyFacts {
+                started_at_ms: 10,
+                end_at_ms: 10 + create.timeout_ms,
+                max_end_at_ms: 10 + create.max_lifetime_ms,
+                startup_deadline_ms: create.startup_deadline_ms,
+                observed_at_ms: 10,
+            },
+        },
+    }
 }
-fn cleaned_observation(destroy: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent) -> sandproof_protocol::lifecycle::TerminalLifecycleObservation {
-    sandproof_protocol::lifecycle::TerminalLifecycleObservation { request: destroy.clone(), status: sandproof_protocol::lifecycle::TerminalStatus::Cleaned }
+fn cleaned_observation(
+    destroy: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+) -> sandproof_protocol::lifecycle::TerminalLifecycleObservation {
+    sandproof_protocol::lifecycle::TerminalLifecycleObservation {
+        request: destroy.clone(),
+        status: sandproof_protocol::lifecycle::TerminalStatus::Cleaned,
+    }
 }
 fn validation_policy() -> sandproof_center_service::LifecyclePolicy {
-    sandproof_center_service::LifecyclePolicy { max_timeout_secs: 5, max_lifetime_secs: 5, startup_timeout_secs: 1, public_ipv4_enabled: false }
+    sandproof_center_service::LifecyclePolicy {
+        max_timeout_secs: 5,
+        max_lifetime_secs: 5,
+        startup_timeout_secs: 1,
+        public_ipv4_enabled: false,
+    }
 }
 fn envelope() -> BusinessEnvelope<RegistryMetadata> {
     let metadata = RegistryMetadata::new(
@@ -221,8 +250,14 @@ fn envelope() -> BusinessEnvelope<RegistryMetadata> {
                 tenant: "8".try_into().unwrap(),
                 limit: resources(2),
             }],
-            sandproof_protocol::lifecycle::CenterIdentity { deployment: engine::deployment(), center: "center".try_into().unwrap() },
-            vec![sandproof_center_core::LifecycleWindow { owner: "8".try_into().unwrap(), window: 1.try_into().unwrap() }],
+            sandproof_protocol::lifecycle::CenterIdentity {
+                deployment: engine::deployment(),
+                center: "center".try_into().unwrap(),
+            },
+            vec![sandproof_center_core::LifecycleWindow {
+                owner: "8".try_into().unwrap(),
+                window: 1.try_into().unwrap(),
+            }],
         )
         .unwrap(),
         metadata,
@@ -239,11 +274,28 @@ fn authority(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessA
     .unwrap();
     SharedBusinessAuthority::new(CenterAuthority::attach(ledger).unwrap())
 }
-fn cached_base_parameters(business: &SharedBusinessAuthority) -> sandproof_protocol::lifecycle::CreateParameters {
+fn cached_base_parameters(
+    business: &SharedBusinessAuthority,
+) -> sandproof_protocol::lifecycle::CreateParameters {
     let descriptor = descriptor("base", None);
-    let template = PublicTemplate::from_binding(descriptor.clone(), "base-r1".try_into().unwrap()).unwrap();
-    let request = sandproof_internal::cache::CacheRequest { node: wire::node("host-a"), revision: template.revision().clone(), digest: template.digest(), descriptor };
-    business.register_cache(&request, &sandproof_internal::cache::CacheAvailability { node: request.node.clone(), revision: request.revision.clone(), digest: request.digest }).unwrap();
+    let template =
+        PublicTemplate::from_binding(descriptor.clone(), "base-r1".try_into().unwrap()).unwrap();
+    let request = sandproof_internal::cache::CacheRequest {
+        node: wire::node("host-a"),
+        revision: template.revision().clone(),
+        digest: template.digest(),
+        descriptor,
+    };
+    business
+        .register_cache(
+            &request,
+            &sandproof_internal::cache::CacheAvailability {
+                node: request.node.clone(),
+                revision: request.revision.clone(),
+                digest: request.digest,
+            },
+        )
+        .unwrap();
     let mut parameters = lifecycle_parameters();
     parameters.template_revision = request.revision;
     parameters.template_digest = request.digest;
@@ -306,7 +358,13 @@ fn actual_unknown_metadata_and_coupled_create_fence_both_adapters_then_reaffirm_
     assert!(business.snapshot().is_err());
     assert!(AuthorityPort::snapshot(&mut lifecycle).is_err());
     assert!(matches!(
-        AuthorityPort::create_current(&mut lifecycle, &"8".try_into().unwrap(), &lifecycle_parameters(), validation_policy(), 0),
+        AuthorityPort::create_current(
+            &mut lifecycle,
+            &"8".try_into().unwrap(),
+            &lifecycle_parameters(),
+            validation_policy(),
+            0
+        ),
         Err(PortError::OutcomeUnknown)
     ));
     AuthorityPort::recover(&mut lifecycle).unwrap();
@@ -317,7 +375,10 @@ fn actual_unknown_metadata_and_coupled_create_fence_both_adapters_then_reaffirm_
     let record = &recovered.metadata.registry().records()[0];
     assert_eq!(record.value().binding.guest, candidate().binding.guest);
     assert_eq!(&record.validation().unwrap().create, original);
-    assert_eq!(original.request.binding.session.as_protocol_id().as_str(), "sandbox-1");
+    assert_eq!(
+        original.request.binding.session.as_protocol_id().as_str(),
+        "sandbox-1"
+    );
     assert_eq!(original.request.binding.key.sequence.get(), 1);
     assert_eq!(recovered.center.reserved(None, None), Some(resources(1)));
     assert_validation_projection_enforced(&recovered);
@@ -338,13 +399,26 @@ fn assert_validation_projection_enforced(state: &BusinessEnvelope<RegistryMetada
         // Preserve consistency of the original input and accepted intent, so
         // this exercises the protected metadata binding, not a malformed row.
         let (field, value) = match case {
-            0 => ("resources", { let mut resources = operation["submission"]["parameters"]["resources"].clone(); resources["cpu"] = serde_json::json!(2); resources }),
+            0 => ("resources", {
+                let mut resources = operation["submission"]["parameters"]["resources"].clone();
+                resources["cpu"] = serde_json::json!(2);
+                resources
+            }),
             1 => ("timeout_ms", serde_json::json!(4000)),
             _ => {
-                let mut options: CreateOptions = serde_json::from_slice(&binding().options).unwrap();
-                if case == 2 { options.env_vars.insert("KEY".into(), "not-a-validation-option".into()); }
-                else { options.networking.as_mut().unwrap().allow_internet_access = Some(true); }
-                ("options", serde_json::to_value(serde_json::to_vec(&options).unwrap()).unwrap())
+                let mut options: CreateOptions =
+                    serde_json::from_slice(&binding().options).unwrap();
+                if case == 2 {
+                    options
+                        .env_vars
+                        .insert("KEY".into(), "not-a-validation-option".into());
+                } else {
+                    options.networking.as_mut().unwrap().allow_internet_access = Some(true);
+                }
+                (
+                    "options",
+                    serde_json::to_value(serde_json::to_vec(&options).unwrap()).unwrap(),
+                )
             }
         };
         operation["submission"]["parameters"][field] = value.clone();
@@ -432,9 +506,8 @@ fn original_local_certificate_exact_global_mapping_and_cleaned_fact_are_all_requ
     let (mapping, certificate) = local_certificate(true);
     bind_exact_mapping(&business, &create, &mapping);
     AuthorityPort::accept_lifecycle_create_observation(&mut lifecycle, &observed_ready(&create))
-    .unwrap();
-    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &create)
-    .unwrap();
+        .unwrap();
+    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &create).unwrap();
     assert!(
         business
             .settle_validation(
@@ -444,7 +517,11 @@ fn original_local_certificate_exact_global_mapping_and_cleaned_fact_are_all_requ
             )
             .is_err()
     );
-    AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned_observation(&destroy), 100)
+    AuthorityPort::accept_lifecycle_terminal_observation(
+        &mut lifecycle,
+        &cleaned_observation(&destroy),
+        100,
+    )
     .unwrap();
     let mut foreign = cleaned_observation(&destroy);
     foreign.request.request.binding.node.node_id = "host-b".try_into().unwrap();
@@ -477,20 +554,26 @@ fn original_failed_create_certificate_remains_bound_after_same_envelope_retireme
     business
         .bind_local_validation(&candidate().candidate_id, &create, &mapping)
         .unwrap();
-    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &create)
-    .unwrap();
+    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &create).unwrap();
     let cleaned = cleaned_observation(&destroy);
     AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned, 100).unwrap();
     assert_unsettled_close_veto(&business, &cleaned);
     business
-        .settle_validation(&candidate().candidate_id, &cleaned_observation(&destroy), certificate)
+        .settle_validation(
+            &candidate().candidate_id,
+            &cleaned_observation(&destroy),
+            certificate,
+        )
         .unwrap();
     let close = business.begin_close(&cleaned, 200).unwrap();
     business
-        .apply_close_ack(&ClosedLifecycleWindow {
-            retired_through: close.terminal.request.retention.window,
-            terminal: close.terminal,
-        }, 200)
+        .apply_close_ack(
+            &ClosedLifecycleWindow {
+                retired_through: close.terminal.request.retention.window,
+                terminal: close.terminal,
+            },
+            200,
+        )
         .unwrap();
     let retired = business.snapshot().unwrap();
     assert!(retired.is_valid());
@@ -518,31 +601,50 @@ fn unsettled_validation_pins_only_its_exact_lane_without_fencing_healthy_sibling
         .create_validation(&candidate().candidate_id, &lifecycle_parameters(), 0)
         .unwrap();
     let peer_parameters = cached_base_parameters(&business);
-    let peer = AuthorityPort::create_current(&mut lifecycle, &tenant, &peer_parameters, validation_policy(), 0).unwrap();
-    assert_ne!(
-        validation.retention.slot,
-        peer.retention.slot
-    );
-    let destroy =
-        AuthorityPort::destroy_bound_create(&mut lifecycle, &validation).unwrap();
+    let peer = AuthorityPort::create_current(
+        &mut lifecycle,
+        &tenant,
+        &peer_parameters,
+        validation_policy(),
+        0,
+    )
+    .unwrap();
+    assert_ne!(validation.retention.slot, peer.retention.slot);
+    let destroy = AuthorityPort::destroy_bound_create(&mut lifecycle, &validation).unwrap();
     let pinned = cleaned_observation(&destroy);
     AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &pinned, 100).unwrap();
-    business.confirm_terminal(&ConfirmedLifecycleResult { result: pinned.clone() }).unwrap();
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: pinned.clone(),
+        })
+        .unwrap();
     assert_eq!(business.begin_close(&pinned, 200), Err(PortError::Conflict));
     // A pure, known business veto must not turn into an authority fault.
     assert!(business.snapshot().is_ok());
     let original = AuthorityPort::snapshot(&mut lifecycle).unwrap().sandboxes()[0].clone();
-    let destroy_peer =
-        AuthorityPort::destroy_current(&mut lifecycle, &tenant, peer.request.binding.session.as_protocol_id()).unwrap();
+    let destroy_peer = AuthorityPort::destroy_current(
+        &mut lifecycle,
+        &tenant,
+        peer.request.binding.session.as_protocol_id(),
+    )
+    .unwrap();
     let cleaned_peer = cleaned_observation(&destroy_peer);
-    AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned_peer, 100).unwrap();
-    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned_peer.clone() }).unwrap();
+    AuthorityPort::accept_lifecycle_terminal_observation(&mut lifecycle, &cleaned_peer, 100)
+        .unwrap();
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: cleaned_peer.clone(),
+        })
+        .unwrap();
     let close = business.begin_close(&cleaned_peer, 200).unwrap();
     business
-        .apply_close_ack(&ClosedLifecycleWindow {
-            retired_through: close.terminal.request.retention.window,
-            terminal: close.terminal,
-        }, 200)
+        .apply_close_ack(
+            &ClosedLifecycleWindow {
+                retired_through: close.terminal.request.retention.window,
+                terminal: close.terminal,
+            },
+            200,
+        )
         .unwrap();
     let retained = business.snapshot().unwrap();
     assert_eq!(retained.center.sandboxes(), std::slice::from_ref(&original));
@@ -550,15 +652,19 @@ fn unsettled_validation_pins_only_its_exact_lane_without_fencing_healthy_sibling
     assert_eq!(
         retained
             .center
-            .lane(
-                &validation.request.binding.node,
-                validation.retention.slot
-            )
+            .lane(&validation.request.binding.node, validation.retention.slot)
             .unwrap()
             .retired_through(),
         0
     );
-    let next = AuthorityPort::create_current(&mut lifecycle, &tenant, &peer_parameters, validation_policy(), 0).unwrap();
+    let next = AuthorityPort::create_current(
+        &mut lifecycle,
+        &tenant,
+        &peer_parameters,
+        validation_policy(),
+        0,
+    )
+    .unwrap();
     assert_eq!(next.retention.slot, peer.retention.slot);
     assert_eq!(next.retention.window.get(), 2);
     let public = AuthorityPort::public_snapshot(&mut lifecycle).unwrap();
@@ -617,13 +723,14 @@ fn settle_then_retire(
     certificate: ValidationCertificate,
 ) {
     let mut lifecycle = business.clone();
-    assert_unsettled_close_veto(
-        business,
-        &cleaned_observation(destroy),
-    );
+    assert_unsettled_close_veto(business, &cleaned_observation(destroy));
     proxy.lose_after(1);
     assert_eq!(
-        business.settle_validation(&candidate().candidate_id, &cleaned_observation(destroy), certificate),
+        business.settle_validation(
+            &candidate().candidate_id,
+            &cleaned_observation(destroy),
+            certificate
+        ),
         Err(PortError::OutcomeUnknown)
     );
     assert!(business.snapshot().is_err());
@@ -661,7 +768,11 @@ fn assert_unsettled_close_veto(
             .unwrap()
             .is_valid()
     );
-    business.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned.clone() }).unwrap();
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: cleaned.clone(),
+        })
+        .unwrap();
     assert_eq!(business.begin_close(cleaned, 200), Err(PortError::Conflict));
     let retained = business.snapshot().unwrap();
     assert_eq!(retained.center.sandboxes().len(), 1);
@@ -669,7 +780,10 @@ fn assert_unsettled_close_veto(
     assert_eq!(
         retained
             .center
-            .lane(&cleaned.request.request.binding.node, cleaned.request.retention.slot)
+            .lane(
+                &cleaned.request.request.binding.node,
+                cleaned.request.retention.slot
+            )
             .unwrap()
             .phase(),
         sandproof_center_core::LanePhase::Open
@@ -719,8 +833,7 @@ fn assert_settlement_tampering_refused(state: &BusinessEnvelope<RegistryMetadata
                     serde_json::json!(4000);
             }
             2 => {
-                link["create"]["request"]["binding"]["key"]["owner"] =
-                    serde_json::json!("9");
+                link["create"]["request"]["binding"]["key"]["owner"] = serde_json::json!("9");
             }
             3 => {
                 link["settlement"]["cleaned"]["request"]["request"]["binding"]["node"]["node_generation"] =
@@ -728,21 +841,23 @@ fn assert_settlement_tampering_refused(state: &BusinessEnvelope<RegistryMetadata
             }
             4 => link["settlement"]["cleaned"]["status"] = serde_json::json!("pending"),
             5 => {
-                link["create"]["accepted_version"] =
-                    serde_json::json!(2);
+                link["create"]["accepted_version"] = serde_json::json!(2);
             }
             6 => link["local"]["create_operation"] = serde_json::json!(999),
-            7 => link["settlement"]["cleaned"]["request"]["retention"]["window"] = serde_json::json!(2),
+            7 => {
+                link["settlement"]["cleaned"]["request"]["retention"]["window"] =
+                    serde_json::json!(2)
+            }
             8 => link["settlement"] = serde_json::Value::Null,
             9 => {
                 altered["center"]["nodes"][0]["identity"]["node_generation"] = serde_json::json!(2);
             }
             10 => {
-                link["create"]["retention"]["slot"] =
-                    serde_json::json!(2);
+                link["create"]["retention"]["slot"] = serde_json::json!(2);
             }
             11 => {
-                link["settlement"]["cleaned"]["request"]["retention"]["slot"] = serde_json::json!(2);
+                link["settlement"]["cleaned"]["request"]["retention"]["slot"] =
+                    serde_json::json!(2);
             }
             12 => {
                 link["local"]["descriptor"]["guest"]["configuration"]["sha256"] =

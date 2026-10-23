@@ -17,7 +17,15 @@ use sandproof_controller_service::{
     },
 };
 use sandproof_internal::template::ValidationRequest;
-use sandproof_protocol::{TenantId, lifecycle::{AcceptedLifecycleIntent, ClosedLifecycleWindow, ConfirmedLifecycleResult, CreateObservation, CreateRefusalReason, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation, LifecycleWindowClose, RecordedLifecycleIntent, TerminalLifecycleObservation, TerminalStatus}};
+use sandproof_protocol::{
+    TenantId,
+    lifecycle::{
+        AcceptedLifecycleIntent, ClosedLifecycleWindow, ConfirmedLifecycleResult,
+        CreateObservation, CreateRefusalReason, CurrentCreateReadiness, CurrentReadyFacts,
+        LifecycleOperation, LifecycleWindowClose, RecordedLifecycleIntent,
+        TerminalLifecycleObservation, TerminalStatus,
+    },
+};
 use std::{
     sync::{
         Arc,
@@ -60,7 +68,13 @@ impl ValidationEvidencePort for Evidence {
     ) -> Result<ValidationEvidence, PortError> {
         let state = self.authority.snapshot()?;
         let record = &state.center.sandboxes()[0];
-        let cleaned = record.operations().last().unwrap().terminal().unwrap().clone();
+        let cleaned = record
+            .operations()
+            .last()
+            .unwrap()
+            .terminal()
+            .unwrap()
+            .clone();
         assert_eq!(cleaned, request.terminal);
         assert_eq!(cleaned.status, TerminalStatus::Cleaned);
         let outcome = if self.admitted {
@@ -95,41 +109,114 @@ pub(super) struct Host {
     clock: Arc<Time>,
 }
 impl HostPort for Host {
-    fn record_lifecycle(&self, request: &AcceptedLifecycleIntent, _: Duration) -> Result<RecordedLifecycleIntent, PortError> {
+    fn record_lifecycle(
+        &self,
+        request: &AcceptedLifecycleIntent,
+        _: Duration,
+    ) -> Result<RecordedLifecycleIntent, PortError> {
         let state = self.authority.snapshot()?;
-        let record = state.center.lifecycle_session(&request.request.binding.key.owner, &request.request.binding.session).unwrap();
+        let record = state
+            .center
+            .lifecycle_session(
+                &request.request.binding.key.owner,
+                &request.request.binding.session,
+            )
+            .unwrap();
         assert_eq!(record.operations().last().unwrap().intent(), request);
         let mut view = self.authority.clone();
         let public = sandproof_center_service::AuthorityPort::public_snapshot(&mut view).unwrap();
-        let record = public.state.lifecycle_session(&request.request.binding.key.owner, &request.request.binding.session).unwrap();
+        let record = public
+            .state
+            .lifecycle_session(
+                &request.request.binding.key.owner,
+                &request.request.binding.session,
+            )
+            .unwrap();
         assert!(!public.visible(record));
-        Ok(RecordedLifecycleIntent { intent: request.clone(), current_session_version: request.accepted_version, current: true,
-            terminal: matches!(request.request.operation, LifecycleOperation::Destroy {}) })
+        Ok(RecordedLifecycleIntent {
+            intent: request.clone(),
+            current_session_version: request.accepted_version,
+            current: true,
+            terminal: matches!(request.request.operation, LifecycleOperation::Destroy {}),
+        })
     }
-    fn observe_lifecycle_create(&self, original: &AcceptedLifecycleIntent, _: Duration) -> Result<CreateObservation, PortError> {
+    fn observe_lifecycle_create(
+        &self,
+        original: &AcceptedLifecycleIntent,
+        _: Duration,
+    ) -> Result<CreateObservation, PortError> {
         let state = self.authority.snapshot()?;
-        let record = state.center.lifecycle_session(&original.request.binding.key.owner, &original.request.binding.session).unwrap();
+        let record = state
+            .center
+            .lifecycle_session(
+                &original.request.binding.key.owner,
+                &original.request.binding.session,
+            )
+            .unwrap();
         let current = record.operations().last().unwrap().intent();
         assert_eq!(current, original, "publication does not issue Renew");
-        let LifecycleOperation::Create { create, .. } = &original.request.operation else { unreachable!() };
+        let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+            unreachable!()
+        };
         let readiness = if self.admitted {
-            CurrentCreateReadiness::Observed { facts: CurrentReadyFacts { started_at_ms: 1, end_at_ms: 1 + create.timeout_ms,
-                max_end_at_ms: 1 + create.max_lifetime_ms, startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: self.clock.0.load(Ordering::SeqCst) } }
+            CurrentCreateReadiness::Observed {
+                facts: CurrentReadyFacts {
+                    started_at_ms: 1,
+                    end_at_ms: 1 + create.timeout_ms,
+                    max_end_at_ms: 1 + create.max_lifetime_ms,
+                    startup_deadline_ms: create.startup_deadline_ms,
+                    observed_at_ms: self.clock.0.load(Ordering::SeqCst),
+                },
+            }
         } else if self.capacity_refusal {
-            CurrentCreateReadiness::Refused { reason: CreateRefusalReason::Capacity }
-        } else { CurrentCreateReadiness::Pending };
-        Ok(CreateObservation { request: original.clone(), current_request: current.clone(), historical_create_succeeded: self.admitted, readiness })
+            CurrentCreateReadiness::Refused {
+                reason: CreateRefusalReason::Capacity,
+            }
+        } else {
+            CurrentCreateReadiness::Pending
+        };
+        Ok(CreateObservation {
+            request: original.clone(),
+            current_request: current.clone(),
+            historical_create_succeeded: self.admitted,
+            readiness,
+        })
     }
-    fn observe_lifecycle_terminal(&self, original: &AcceptedLifecycleIntent, _: Duration) -> Result<TerminalLifecycleObservation, PortError> {
-        assert!(matches!(original.request.operation, LifecycleOperation::Destroy {}));
-        Ok(TerminalLifecycleObservation { request: original.clone(), status: TerminalStatus::Cleaned })
+    fn observe_lifecycle_terminal(
+        &self,
+        original: &AcceptedLifecycleIntent,
+        _: Duration,
+    ) -> Result<TerminalLifecycleObservation, PortError> {
+        assert!(matches!(
+            original.request.operation,
+            LifecycleOperation::Destroy {}
+        ));
+        Ok(TerminalLifecycleObservation {
+            request: original.clone(),
+            status: TerminalStatus::Cleaned,
+        })
     }
-    fn confirm_lifecycle_terminal(&self, result: &TerminalLifecycleObservation, _: Duration) -> Result<ConfirmedLifecycleResult, PortError> {
-        if self.capacity_refusal { return Err(PortError::OutcomeUnknown); }
-        Ok(ConfirmedLifecycleResult { result: result.clone() })
+    fn confirm_lifecycle_terminal(
+        &self,
+        result: &TerminalLifecycleObservation,
+        _: Duration,
+    ) -> Result<ConfirmedLifecycleResult, PortError> {
+        if self.capacity_refusal {
+            return Err(PortError::OutcomeUnknown);
+        }
+        Ok(ConfirmedLifecycleResult {
+            result: result.clone(),
+        })
     }
-    fn close_lifecycle_window(&self, request: &LifecycleWindowClose, _: Duration) -> Result<ClosedLifecycleWindow, PortError> {
-        Ok(ClosedLifecycleWindow { retired_through: request.terminal.request.retention.window, terminal: request.terminal.clone() })
+    fn close_lifecycle_window(
+        &self,
+        request: &LifecycleWindowClose,
+        _: Duration,
+    ) -> Result<ClosedLifecycleWindow, PortError> {
+        Ok(ClosedLifecycleWindow {
+            retired_through: request.terminal.request.retention.window,
+            terminal: request.terminal.clone(),
+        })
     }
 }
 
@@ -189,7 +276,11 @@ fn application_with_refusal(
     )
     .unwrap()
     .with_clock(clock.clone())
-    .with_lifecycle_observation_policy(sandproof_center_service::NodeObservationPolicy { health_window_ms: 1000, max_clock_skew_ms: 10 }).unwrap();
+    .with_lifecycle_observation_policy(sandproof_center_service::NodeObservationPolicy {
+        health_window_ms: 1000,
+        max_clock_skew_ms: 10,
+    })
+    .unwrap();
     (templates, app, clock)
 }
 
@@ -264,7 +355,13 @@ fn actual_publication_uses_original_driver_and_queries_aliases_exact_bindings() 
     assert!(matches!(
         app.get(
             "8",
-            validation.operations()[0].intent().request.binding.session.as_protocol_id().as_str()
+            validation.operations()[0]
+                .intent()
+                .request
+                .binding
+                .session
+                .as_protocol_id()
+                .as_str()
         ),
         Err(PortError::NotFound)
     ));
@@ -290,18 +387,43 @@ fn assert_ready_instance_projection(
         0,
     )
     .unwrap();
-    let LifecycleOperation::Create { create, .. } = &request.request.operation else { unreachable!() };
-    let ready = CreateObservation { request: request.clone(), current_request: request.clone(), historical_create_succeeded: true,
-        readiness: CurrentCreateReadiness::Observed { facts: CurrentReadyFacts { started_at_ms: 1, end_at_ms: 1 + create.timeout_ms,
-            max_end_at_ms: 1 + create.max_lifetime_ms, startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: 1 } } };
-    sandproof_center_service::AuthorityPort::accept_lifecycle_create_observation(&mut lifecycle, &ready).unwrap();
+    let LifecycleOperation::Create { create, .. } = &request.request.operation else {
+        unreachable!()
+    };
+    let ready = CreateObservation {
+        request: request.clone(),
+        current_request: request.clone(),
+        historical_create_succeeded: true,
+        readiness: CurrentCreateReadiness::Observed {
+            facts: CurrentReadyFacts {
+                started_at_ms: 1,
+                end_at_ms: 1 + create.timeout_ms,
+                max_end_at_ms: 1 + create.max_lifetime_ms,
+                startup_deadline_ms: create.startup_deadline_ms,
+                observed_at_ms: 1,
+            },
+        },
+    };
+    sandproof_center_service::AuthorityPort::accept_lifecycle_create_observation(
+        &mut lifecycle,
+        &ready,
+    )
+    .unwrap();
     clock.0.store(2, Ordering::SeqCst);
     let before: u64 = fixture.revision().parse().unwrap();
-    let detail = app.get("8", request.request.binding.session.as_protocol_id().as_str()).unwrap();
+    let detail = app
+        .get(
+            "8",
+            request.request.binding.session.as_protocol_id().as_str(),
+        )
+        .unwrap();
     assert_eq!(detail.info.template_id, immutable);
     assert_eq!(fixture.revision().parse::<u64>().unwrap() - before, 1);
     assert_eq!(
-        app.get("9", request.request.binding.session.as_protocol_id().as_str()),
+        app.get(
+            "9",
+            request.request.binding.session.as_protocol_id().as_str()
+        ),
         Err(PortError::NotFound)
     );
 }
@@ -361,7 +483,8 @@ fn actual_never_admitted_candidate_cleanup_settles_failed_then_allows_window_ret
 }
 
 #[test]
-fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmation_before_settlement() {
+fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmation_before_settlement()
+ {
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let authority = authority(&fixture, &proxy);
@@ -376,8 +499,14 @@ fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmati
     let settled = authority.snapshot().unwrap();
     let sandbox = &settled.center.sandboxes()[0];
     assert_eq!(sandbox.operations().len(), 2);
-    assert!(matches!(sandbox.operations()[0].intent().request.operation, LifecycleOperation::Create { .. }));
-    assert_eq!(sandbox.operations()[0].create_refusal(), Some(CreateRefusalReason::Capacity));
+    assert!(matches!(
+        sandbox.operations()[0].intent().request.operation,
+        LifecycleOperation::Create { .. }
+    ));
+    assert_eq!(
+        sandbox.operations()[0].create_refusal(),
+        Some(CreateRefusalReason::Capacity)
+    );
     let response = sandbox.operations()[1].terminal().unwrap();
     assert_eq!(response.status, TerminalStatus::Cleaned);
     assert!(sandbox.terminal_confirmation.is_none());
@@ -395,7 +524,10 @@ fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmati
 
     let mut wrong = response.clone();
     wrong.request.accepted_version += 1;
-    assert_eq!(authority.confirm_terminal(&ConfirmedLifecycleResult { result: wrong }), Err(PortError::Conflict));
+    assert_eq!(
+        authority.confirm_terminal(&ConfirmedLifecycleResult { result: wrong }),
+        Err(PortError::Conflict)
+    );
     assert!(
         authority.snapshot().unwrap().center.sandboxes()[0]
             .terminal_confirmation
@@ -403,13 +535,23 @@ fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmati
     );
     // Deliver the late original host acknowledgement through the protected
     // authority entry, not by retrying publication or allocating a new create.
-    authority.confirm_terminal(&ConfirmedLifecycleResult { result: response.clone() }).unwrap();
+    authority
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: response.clone(),
+        })
+        .unwrap();
     assert_eq!(templates.reconcile_once(&app).unwrap(), 1);
     let settled = authority.snapshot().unwrap();
     let sandbox = &settled.center.sandboxes()[0];
     assert_eq!(sandbox.operations().len(), 2);
-    assert!(matches!(sandbox.operations()[0].intent().request.operation, LifecycleOperation::Create { .. }));
-    assert_eq!(sandbox.operations()[0].create_refusal(), Some(CreateRefusalReason::Capacity));
+    assert!(matches!(
+        sandbox.operations()[0].intent().request.operation,
+        LifecycleOperation::Create { .. }
+    ));
+    assert_eq!(
+        sandbox.operations()[0].create_refusal(),
+        Some(CreateRefusalReason::Capacity)
+    );
     let response = sandbox.operations()[1].terminal().unwrap();
     assert_eq!(response.status, TerminalStatus::Cleaned);
     assert_eq!(sandbox.terminal_confirmation.as_ref(), Some(response));
