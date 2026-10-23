@@ -1,11 +1,13 @@
 use super::*;
 
 #[test]
-fn legacy_claim_is_not_upgraded_and_preserves_its_serialized_shape() {
-    let bytes = br#"{"resource_id":"original","pid":71,"start_time_ticks":93}"#;
-    let legacy: ProcessRecord = serde_json::from_slice(bytes).unwrap();
-    assert!(legacy.source_identity().unwrap().is_none());
-    assert_eq!(serde_json::to_vec(&legacy).unwrap(), bytes);
+fn current_claim_requires_boot_identity_and_refuses_older_or_null_bytes() {
+    for bytes in [
+        br#"{"resource_id":"original","pid":71,"start_time_ticks":93}"#.as_slice(),
+        br#"{"resource_id":"original","pid":71,"start_time_ticks":93,"boot_id":null}"#.as_slice(),
+    ] {
+        assert!(serde_json::from_slice::<ProcessRecord>(bytes).is_err());
+    }
 }
 
 #[test]
@@ -15,14 +17,14 @@ fn new_claim_retains_exact_original_boot_and_rejects_corruption() {
         resource_id: "original".into(),
         pid: source.pid,
         start_time_ticks: source.start_time_ticks,
-        boot_id: Some(source.boot_id.clone()),
+        boot_id: source.boot_id.clone(),
     };
     let saved = serde_json::to_vec(&record).unwrap();
     let restored: ProcessRecord = serde_json::from_slice(&saved).unwrap();
-    assert_eq!(restored.source_identity().unwrap(), Some(source));
+    assert_eq!(restored.source_identity().unwrap(), source);
     for boot_id in ["", "boot", "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"] {
         let invalid = ProcessRecord {
-            boot_id: Some(boot_id.into()),
+            boot_id: boot_id.into(),
             ..record.clone()
         };
         assert!(invalid.source_identity().is_err());
@@ -42,7 +44,7 @@ fn valid_foreign_boot_never_selects_the_current_process_with_the_same_pid() {
         resource_id: "original".into(),
         pid: source.pid,
         start_time_ticks: source.start_time_ticks,
-        boot_id: Some(alternate.into()),
+        boot_id: alternate.into(),
     };
     assert!(verified_process(&record).unwrap().is_none());
     assert!(source.is_alive().unwrap());

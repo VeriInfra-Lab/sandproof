@@ -2,7 +2,7 @@
 
 本组件对应 [V6 详细计划](../../../docs/formal/06-host-execution.md)，使用生产 `sandbox-runtime` 和 `sandbox-node` 源码，不创建替代控制器。
 
-`capture_original` 调用原 Pause/Full/Seal 并验证原 VM 仍 Paused，结果只表示材料事实。`observe_stored_capture` 重开同一原捕获键并校验目录/FD、所有原文件字节和 manifest，不发捕获或停止动作。文件观察、V5 持久接管和允许停止是不同事实；真实生产派发必须接 V5 的原持久工作。
+`Runtime::pause_original_vm` 单独执行原 Pause；V5 持久登记后，唯一 `capture_paused_original` 入口接原私有 paused 句柄执行 Full/Seal 并验证原 VM 仍 Paused，结果只表示材料事实。`observe_stored_capture` 重开同一原捕获键并校验目录/FD、所有原文件字节和 manifest，不发捕获或停止动作。文件观察、V5 持久接管和允许停止是不同事实；真实生产派发必须接 V5 的原持久工作。
 
 普通检查只在规定 Linux 普通测试环境、原普通重锁下运行：
 

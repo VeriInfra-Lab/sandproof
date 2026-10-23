@@ -54,7 +54,7 @@
 
 ### 原捕获动作与已发布材料观察
 
-`full_snapshot::capture_original` 串接真实的原 VM Pause、Full、Seal，随后重开原 bundle 核对文件，再确认原 VM 仍暂停；只返回 `FullCaptureObservation`，没有停止、释放、登记恢复资格或激活副作用。调用方必须提供原已持久工作、当前围栏、预算与无写者条件。捕获/发布后错误仍可能已有材料，不得换键重捕获。原 `WorkExecution` 接线及持久 Stop 工作由 V5 提供；本组件不等于实际 unload 已完成。
+`Runtime::pause_original_vm` 与 `full_snapshot::capture_paused_original` 分成两个实际动作，供 V5 在两段之间持久提交原暂停确认与 Full 工作；后者只对独立核对的原 `PausedOriginalVm` 执行 Full、Seal，随后重开原 bundle 核对文件，再确认原 VM 仍暂停。它不重发 Pause，只返回 `FullCaptureObservation`，没有停止、释放、登记恢复资格或激活副作用。调用方必须提供原已持久工作、当前围栏、预算与无写者条件。捕获/发布后错误仍可能已有材料，不得换键重捕获。原 `WorkExecution` 接线及持久 Stop 工作由 V5 提供；本组件不等于实际 unload 已完成。
 
 `SnapshotLayout::open_capture_bundle` 和 `full_snapshot::observe_stored_capture` 只读取原发布键，通过保留 FD 检查受保护原目录、完整白名单、root/0400/单链接/长度及实际字节摘要；节点严格核对原 CaptureBinding、受保护 profile、manifest 与全部测量。已有回执摘要必须相同；尚未取得回执时返回的只是待 V5 对账的物理事实，不能凭完整文件赋予资格。它不再次 Pause/Full，也不制造原 VM 的历史来源证明。
 
@@ -64,9 +64,7 @@
 
 新的 VM claim 在原 launch gate 开放前持久保存 `ProcessRecord.boot_id`，它来自同一被记录 PID/启动 ticks 的宿主 kernel boot identity。新 Prepared/Activated 回执经原 claim、PID/ticks、jail/cgroup 检查后保留该字段；不是从 manifest、guest 或恢复时的全局 boot 值补造旧身份。`HostEvidence::source_process_identity(command, expected_resource)` 同时核原 command 和调用者从原 action 独立取得的完整 resource，再原样投影来源，不能传自己的 resource 自比。owner/operation/原工作与多份回执来源一致仍由 V5 的原持久事务建立；动作前仍须重核原进程，getter 不保证未来存活。
 
-原 claim 与 Prepared/Activated 的 boot 字段采用 default/skip-none。新读取器可读旧缺字段记录，并保持 None 的原序列化形状；这些记录没有可认证捕获来源，不从缺字段推断进程退出。此往返不保证旧代码保留或校验新的 Some 字段：原缺少相应字段的解码路径可能忽略该字段。本批不提供滚动混合版本或旧库自动升级保证；不能因为旧解码器能读就声明其认证了来源。提供者/解码版本和实际适用范围由类型登记与 V5 接线维护。新字段计入退休清单的最大序列化预算；缺失/格式损坏/冲突不得变成释放或 Stop 许可。
-
-本批普通回归覆盖真实字段保留、旧字节往返、错误 command/独立 resource、非法 boot 和原 claim 的 boot 不同不得选中当前同 PID 的进程；整个进程记录/系统调用/回执/SQLite 的机器对应仍是后续义务，不把字段测试记成整个来源链证明。
+当前唯一 claim 与 Prepared/Activated 回执格式必须保存原 boot 字符串。缺失或 null 的旧开发字节直接拒绝，不保留旧形状往返、不补当前 boot、不收养或迁移旧库。字段齐全仍须核对完整 command、独立 resource、PID/start/boot 和当前原进程；解析成功不表示来源或执行资格已成立。新部署使用隔离数据，历史实现和证据只从 Git 查阅。整个进程记录/系统调用/回执/SQLite 的机器对应仍是后续义务，不把字段回归记成完整来源链证明。
 
 ### 捕获前原配置的只读事实
 
@@ -99,3 +97,6 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 
 
 正式初始化从 `LinuxWorker::host_epoch_registration` 取得既有受保护文件的完整 SHA-256、boot 和原节点/namespace 绑定，并重新核对同一 provider 的真实宿主信息。`ProtectedHostEpochSource::provision` 仅供显式操作者命令生成全新当前格式文件：原父目录 FD 下 create-new、root/0400、全字节写入及文件/目录同步；不覆盖、修复或自动升级。错误可留下未登记文件，不能把错误当“没有写入”。服务重启必须核对已存原 registration，不能用这次观察自动改写旧值。实际工具字节与固定 Firecracker/jailer 语义的对应、完整宿主 proc/sys 视图及 epoch 内配置不变仍是部署条件；该接口不产生快照兼容、捕获预算或停止许可。正式 CLI/初始化/重启连接和本批验收由唯一服务装配完成，单个生成函数不代表这些连接已经通过。
+
+
+重启后 `Runtime::observe_original_pause_state` 只观察持久工作指定的原来源：原 claim、PID/启动 ticks/boot、宿主 PID/user namespace、jail/cgroup 与保留目录必须匹配，GET 使用该目录下同一个 Unix 连接并核对实际 peer PID/UID/GID。Paused 只返回此次观察的私有句柄，Running 保留未决责任，Exited 需要原记录一致及内核退出依据；API/格式/权限/连接/超时错误和单纯 proc 路径缺失都不生成 Paused/Exited。观察没有 PATCH、Full、Stop、重新初始化或位置释放。Exited 也不证明旧捕获 worker 已结束，管理重启不能据此无条件重发 Full。该观察与后续分段捕获接线属于本批运行组件，尚待真实固定 VMM endpoint 和完整卸载验收，不声称获得新机器证明。

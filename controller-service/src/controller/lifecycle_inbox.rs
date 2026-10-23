@@ -1,6 +1,8 @@
 //! V3 identity/order on the original controller connection and writer lease.
 //! The original reducer/admission/outbox remains the local phase authority.
+pub(in crate::controller) mod audit;
 mod codec;
+pub use audit::{LifecycleAudit, LifecycleAuditOperation};
 mod model;
 mod pending;
 mod readiness;

@@ -188,6 +188,28 @@ impl ControllerJournal {
             },
         )
     }
+
+    /// Inspect the sole current lifecycle store without a writer lease or host
+    /// effects. Old, partial, foreign and changed configurations are rejected.
+    /// # Errors
+    /// Requires the same complete snapshot and format checks as normal open.
+    pub fn audit_lifecycle_complete(
+        path: impl AsRef<std::path::Path>,
+        namespace: &str,
+        host: &super::super::BoundedHostConfig,
+        maintenance: &MaintenanceConfig,
+        inbox: &crate::LifecycleInboxConfig,
+    ) -> Result<crate::LifecycleAudit, JournalError> {
+        read_complete_snapshot(
+            path.as_ref(),
+            namespace,
+            host,
+            maintenance,
+            |connection, world| {
+                super::super::lifecycle_inbox::audit::snapshot(connection, world, inbox)
+            },
+        )
+    }
 }
 
 fn read_complete_snapshot<T>(

@@ -23,7 +23,7 @@ mod linux;
 pub use linux::{
     CLAIM_RECORD_NAMES, CapturedFullSnapshot, ConsolePolicy, FullCaptureLimits, HostResources,
     JailObservation, MAX_CLAIM_RECORD_BYTES, MAX_HELPER_MARKER_BYTES, Observation,
-    OriginalConfigurationObservation, PausedOriginalVm, PublishedFullCapture, RetirementManifest,
+    OriginalConfigurationObservation, OriginalPauseObservation, PausedOriginalVm, PublishedFullCapture, RetirementManifest,
     Runtime, RuntimeConfig, RuntimeError, RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot,
     RuntimeObservationConfig, RuntimePhysicalObserver, RuntimeProcessIdentity,
     RuntimeRouteSnapshot, RuntimeRouteState, SnapshotLayout, SourceConfigurationLimits, VmState,

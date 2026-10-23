@@ -5,23 +5,20 @@ use super::{
 use sandbox_runtime::RuntimeProcessIdentity;
 
 impl LinuxWorker {
-    /// Legacy claims are deliberately not upgraded using the current boot.
+    /// The current claim must retain its original boot; never synthesize it.
     pub(super) fn source_boot_id(
         &self,
         sandbox: core::SandboxId,
         vm: core::VmId,
         observed: &Observation,
-    ) -> NodeResult<Option<String>> {
-        let Some(source) = self
+    ) -> NodeResult<String> {
+        let source = self
             .runtime(sandbox, vm)?
-            .source_process_identity(&self.vm_name(vm))?
-        else {
-            return Ok(None);
-        };
+            .source_process_identity(&self.vm_name(vm))?;
         if source.pid != observed.pid || source.start_time_ticks != observed.start_time_ticks {
             return Err("original VM source differs from successful observation".into());
         }
-        Ok(Some(source.boot_id))
+        Ok(source.boot_id)
     }
 }
 
@@ -44,7 +41,7 @@ impl HostObservation {
                 ObservedResult::Prepared {
                     pid,
                     start_ticks,
-                    boot_id: Some(boot),
+                    boot_id: boot,
                 },
                 core::Command::PrepareVm { .. },
             )
@@ -52,7 +49,7 @@ impl HostObservation {
                 ObservedResult::Activated {
                     pid,
                     start_ticks,
-                    boot_id: Some(boot),
+                    boot_id: boot,
                 },
                 core::Command::ActivateVm { .. },
             ) => (*pid, *start_ticks, boot.clone()),
@@ -98,13 +95,13 @@ mod tests {
             ObservedResult::Activated {
                 pid: 71,
                 start_ticks: 93,
-                boot_id: Some(BOOT.into()),
+                boot_id: BOOT.into(),
             }
         } else {
             ObservedResult::Prepared {
                 pid: 71,
                 start_ticks: 93,
-                boot_id: Some(BOOT.into()),
+                boot_id: BOOT.into(),
             }
         };
         HostObservation {
@@ -149,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_receipt_has_no_certified_source_and_preserves_its_original_bytes() {
+    fn current_receipt_rejects_missing_or_null_original_boot() {
         #[derive(Serialize)]
         enum LegacyResult {
             Prepared { pid: u32, start_ticks: u64 },
@@ -180,19 +177,11 @@ mod tests {
                 result,
             })
             .unwrap();
-            let legacy: HostObservation = serde_json::from_slice(&bytes).unwrap();
-            assert!(legacy.validates(&original.command));
-            assert!(
-                legacy
-                    .recorded_source_identity(&original.command, &original.resource)
-                    .is_none()
-            );
-            assert!(
-                legacy
-                    .source_process_identity(&original.command, &original.resource)
-                    .is_none()
-            );
-            assert_eq!(serde_json::to_vec(&legacy).unwrap(), bytes);
+            assert!(serde_json::from_slice::<HostObservation>(&bytes).is_err());
+            let mut null = serde_json::to_value(&original).unwrap();
+            let kind = if activated { "Activated" } else { "Prepared" };
+            null["result"][kind]["boot_id"] = serde_json::Value::Null;
+            assert!(serde_json::from_value::<HostObservation>(null).is_err());
         }
     }
 
@@ -223,7 +212,7 @@ mod tests {
         for bad in ["", "current", "01234567-89AB-CDEF-0123-456789ABCDEF"] {
             let mut invalid = fixture(false);
             if let ObservedResult::Prepared { boot_id, .. } = &mut invalid.result {
-                *boot_id = Some(bad.into());
+                *boot_id = bad.into();
             }
             assert!(
                 invalid

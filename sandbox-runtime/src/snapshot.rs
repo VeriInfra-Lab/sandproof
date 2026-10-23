@@ -40,6 +40,17 @@ pub struct PausedOriginalVm {
     original: OriginalVmSource,
 }
 
+impl PausedOriginalVm {
+    #[must_use]
+    pub fn resource_id(&self) -> &str {
+        &self.original.resource_id
+    }
+    #[must_use]
+    pub fn source(&self) -> &RuntimeProcessIdentity {
+        &self.original.identity
+    }
+}
+
 // A live original identity without implying that it is paused.
 struct OriginalVmSource {
     resource_id: String,
@@ -177,7 +188,7 @@ impl Runtime {
         validate_id(id)?;
         let record = self.read_record(id)?;
         if record.pid != expected.pid
-            || record.boot_id.as_ref() != Some(&expected.boot_id)
+            || record.boot_id != expected.boot_id
             || record.start_time_ticks != expected.start_time_ticks
             || !expected.is_alive()?
         {
@@ -233,7 +244,7 @@ impl Runtime {
     ) -> Result<(), RuntimeError> {
         let record = self.read_record(&source.resource_id)?;
         if record.pid != source.identity.pid
-            || record.boot_id.as_ref() != Some(&source.identity.boot_id)
+            || record.boot_id != source.identity.boot_id
             || record.start_time_ticks != source.identity.start_time_ticks
             || !source.identity.is_alive()?
             || verified_process(&record)?.is_none()
@@ -354,3 +365,8 @@ impl Runtime {
 #[path = "source_configuration.rs"]
 mod source_configuration;
 pub use source_configuration::{OriginalConfigurationObservation, SourceConfigurationLimits};
+
+
+#[path = "paused_observation.rs"]
+mod paused_observation;
+pub use paused_observation::OriginalPauseObservation;

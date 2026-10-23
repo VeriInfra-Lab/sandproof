@@ -687,7 +687,7 @@ mod tests {
                 resource_id: ID.to_owned(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
-                boot_id: None,
+                boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
             },
         )
         .unwrap();
@@ -715,7 +715,7 @@ mod tests {
                 resource_id: ID.into(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
-                boot_id: None,
+                boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
             },
         )
         .unwrap();
@@ -811,7 +811,7 @@ mod tests {
                     resource_id: BOUNDED_ID.into(),
                     pid: i32::MAX as u32,
                     start_time_ticks: 1,
-                    boot_id: None,
+                    boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
                 },
             )
             .unwrap();
