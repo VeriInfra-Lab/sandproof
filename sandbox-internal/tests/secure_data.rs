@@ -46,6 +46,7 @@ impl sandproof_internal::ValidationReceiver for Streams {
     async fn validation_evidence(
         &self,
         _: sandproof_internal::template::ValidationRequest,
+        _: AuthenticatedCenterContext,
     ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
         Err(ReceiveError::Unavailable)
     }

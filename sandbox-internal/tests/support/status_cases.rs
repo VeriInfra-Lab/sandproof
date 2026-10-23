@@ -57,8 +57,9 @@ impl ValidationReceiver for Observed {
     async fn validation_evidence(
         &self,
         request: sandproof_internal::template::ValidationRequest,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
-        RejectLifecycle.validation_evidence(request).await
+        RejectLifecycle.validation_evidence(request, context).await
     }
 }
 impl CacheReceiver for Observed {
