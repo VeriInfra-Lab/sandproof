@@ -4,6 +4,7 @@ use sandproof_center_core::{
 };
 use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
+use sandproof_protocol::lifecycle::TerminalLifecycleObservation;
 
 pub fn version_next(expected: u64, current: u64) -> Result<u64, DecisionError> {
     sandproof_center_core::next_lifecycle_version(expected, current)
@@ -21,4 +22,14 @@ pub fn accept(
     now_ms: u64,
 ) -> Result<(CenterState, AcceptedLifecycleIntent), DecisionError> {
     state.accept_lifecycle(owner, submission, now_ms)
+}
+
+/// Direct production call-through, including actual recovery validation,
+/// first-result storage, one-time retention initialization and refusal rules.
+pub fn terminal_result(
+    state: &CenterState,
+    result: &TerminalLifecycleObservation,
+    now_ms: u64,
+) -> Result<CenterState, DecisionError> {
+    state.accept_lifecycle_terminal_observation(result, now_ms)
 }

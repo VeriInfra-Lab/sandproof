@@ -13,9 +13,9 @@ impl CenterState {
         if !self.is_valid() || !self.tenant_is_registered(owner) {
             return Err(DecisionError::Invalid);
         }
-        let profile = self.lifecycle.as_ref().ok_or(DecisionError::Invalid)?;
+        let profile = &self.lifecycle;
         let window = RequestWindowId::try_from(2).map_err(|_| DecisionError::Invalid)?;
-        if !profile.windows.iter().any(|registered| registered.owner == *owner && registered.window == window) {
+        if !profile.windows.iter().any(|registered| registered.registration.owner == *owner && registered.current == Some(window)) {
             return Err(DecisionError::Stale);
         }
         let sequence = self.operation_highwater.checked_add(1).ok_or(DecisionError::Exhausted)?;

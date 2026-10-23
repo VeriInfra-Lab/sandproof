@@ -1,7 +1,7 @@
 use crate::effect::effect_succeeded_check;
 use crate::model::{
-    Command, Event, OperationKey, OperationKind, OperationStatus, Phase,
-    RestoreSource, SandboxRecord, SnapshotStage, WorkerFence, World,
+    Command, Event, OperationKey, OperationKind, OperationStatus, Phase, RestoreSource,
+    SandboxRecord, SnapshotStage, WorkerFence, World,
 };
 use crate::request::Decision;
 use crate::transition::{
@@ -103,9 +103,7 @@ pub fn only_uncertain_prepare_for_abort(world: &World, sandbox: SandboxId) -> bo
     let mut index = 0;
     while index < world.effect_ids().len() && valid {
         let id = &world.effect_ids()[index];
-        if id.command().sandbox() == sandbox
-            && crate::effect::outcome_is_unresolved(world, id)
-        {
+        if id.command().sandbox() == sandbox && crate::effect::outcome_is_unresolved(world, id) {
             seen = true;
             valid = *id.command() == expected;
         }

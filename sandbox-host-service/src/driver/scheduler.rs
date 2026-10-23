@@ -103,12 +103,12 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                     if let Ok(value) = result {
                         Ok(value)
                     } else {
-                            // Classify against the original authority while this
-                            // actual callback still owns its work permit. Failed
-                            // local work must not compete again for control slots.
-                            app.check_internal_authority(&node)
-                                .map_err(|_| ApplicationError::OutcomeUnknown)?;
-                            Ok(false)
+                        // Classify against the original authority while this
+                        // actual callback still owns its work permit. Failed
+                        // local work must not compete again for control slots.
+                        app.check_internal_authority(&node)
+                            .map_err(|_| ApplicationError::OutcomeUnknown)?;
+                        Ok(false)
                     }
                 })
                 .await

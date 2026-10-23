@@ -2,9 +2,8 @@
 use super::{Publication, ValidationCertificate, evidence};
 use crate::{CreateOptions, JournalError, templates::TemplateBinding};
 use sandbox_controller_core::{OperationId, SandboxId};
-use sandproof_protocol::internal::{
-    ControlIdentity,
-    lifecycle::{LifecycleFact, LifecycleResponse},
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, LifecycleOperation, TerminalLifecycleObservation, TerminalStatus,
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,8 +51,8 @@ impl LocalValidationBinding {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationEvidence {
-    pub create: ControlIdentity,
-    pub cleaned: LifecycleResponse,
+    pub create: AcceptedLifecycleIntent,
+    pub cleaned: TerminalLifecycleObservation,
     pub outcome: ValidationOutcome,
 }
 /// No admission is an explicit authenticated original fence attestation, not
@@ -81,33 +80,49 @@ impl ValidationEvidence {
     /// Wrong global pairing, local origin or original evidence cannot settle.
     pub fn validate_for(
         &self,
-        create: &ControlIdentity,
-        terminal: &ControlIdentity,
+        create: &AcceptedLifecycleIntent,
+        terminal: &TerminalLifecycleObservation,
         publication: &Publication,
     ) -> Result<(), JournalError> {
         super::state::validate_begin(publication)?;
-        let no_admission = self.cleaned.fact == LifecycleFact::NotAccepted
-            && create == terminal
-            && matches!(self.outcome, ValidationOutcome::NotAdmitted);
-        let destroyed = self.cleaned.fact == LifecycleFact::Cleaned
-            && terminal.intent_version.get() > create.intent_version.get()
-            && terminal.operation_id != create.operation_id;
+        let original = &create.request.binding;
+        let final_request = &terminal.request;
+        let final_binding = &final_request.request.binding;
+        let LifecycleOperation::Create {
+            create: parameters, ..
+        } = &create.request.operation
+        else {
+            return Err(JournalError::Conflict);
+        };
         if self.create != *create
-            || self.cleaned.identity != *terminal
-            || !(no_admission || destroyed)
-            || create.validate_node(&terminal.node).is_err()
-            || create.node != terminal.node
-            || create.tenant_id != terminal.tenant_id
-            || create.sandbox_id != terminal.sandbox_id
-            || create.request_window != terminal.request_window
-            || create.retention_slot != terminal.retention_slot
-            || create.intent_version.get() != 1
+            || self.cleaned != *terminal
+            || terminal.status != TerminalStatus::Cleaned
+            || !terminal.matches_request(final_request)
+            || !matches!(
+                final_request.request.operation,
+                LifecycleOperation::Destroy {}
+            )
+            || create.accepted_version != 1
+            || final_request.accepted_version <= create.accepted_version
+            || create.center != final_request.center
+            || create.retention != final_request.retention
+            || original.node != final_binding.node
+            || original.session != final_binding.session
+            || original.key.owner != final_binding.key.owner
+            || original.key == final_binding.key
+            || create.request.validate(&final_binding.node).is_err()
+            || final_request.request.validate(&original.node).is_err()
             || publication
                 .binding
                 .owner
                 .map(|owner| owner.to_string())
                 .as_deref()
-                != Some(create.tenant_id.as_str())
+                != Some(original.key.owner.as_str())
+            || publication
+                .binding
+                .canonical_digest()
+                .map_err(|_| JournalError::Conflict)?
+                != parameters.template_digest
         {
             return Err(JournalError::Conflict);
         }

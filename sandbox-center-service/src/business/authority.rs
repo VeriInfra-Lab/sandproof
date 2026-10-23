@@ -130,7 +130,7 @@ impl SharedBusinessAuthority {
     /// Preserve an exact acknowledgement obtained from the authenticated host.
     /// # Errors
     /// Nonterminal or changed results cannot authorize window removal.
-    pub fn confirm_terminal(&self, response: &LifecycleResponse) -> Result<(), PortError> {
+    pub fn confirm_terminal(&self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), PortError> {
         self.0
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
@@ -142,22 +142,23 @@ impl SharedBusinessAuthority {
     /// Unconfirmed or active windows refuse; no host I/O executes under the lock.
     pub fn begin_close(
         &self,
-        terminal: &LifecycleResponse,
-    ) -> Result<WindowCloseRequest, PortError> {
+        terminal: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::LifecycleWindowClose, PortError> {
         self.0
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .begin_close(terminal)
+            .begin_close(terminal, now_ms)
             .map_err(authority_error)
     }
     /// Apply authenticated exact close evidence to the SAME business envelope.
     /// # Errors
     /// Unsettled business references veto deletion; commit faults fence both views.
-    pub fn apply_close_ack(&self, acknowledgement: &WindowCloseAck) -> Result<(), PortError> {
+    pub fn apply_close_ack(&self, acknowledgement: &sandproof_protocol::lifecycle::ClosedLifecycleWindow, now_ms: u64) -> Result<(), PortError> {
         self.0
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .apply_close_ack(acknowledgement)
+            .apply_close_ack(acknowledgement, now_ms)
             .map_err(authority_error)
     }
     /// Accept already checked protected metadata before sealing artifacts.
@@ -500,6 +501,26 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
     }
 }
 impl AuthorityPort for SharedBusinessAuthority {
+    fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
+        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?.terminate_expired(now_ms)
+    }
+    fn accept_lifecycle_terminal_observation(
+        &mut self, result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation, now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?
+            .accept_lifecycle_terminal_observation(result, now_ms)
+    }
+    fn renew_current(
+        &mut self, owner: &TenantId, sandbox: &SandboxId,
+        timeout_secs: u64, extend_only: bool, now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
+        self.accept_sdk_followup(owner, sandbox, Some((timeout_secs, extend_only)), now_ms)
+    }
+    fn destroy_current(
+        &mut self, owner: &TenantId, sandbox: &SandboxId,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
+        self.accept_sdk_followup(owner, sandbox, None, 0)
+    }
     fn create_current(
         &mut self,
         owner: &TenantId,
@@ -586,7 +607,7 @@ impl AuthorityPort for SharedBusinessAuthority {
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .compact_confirmed(response)
     }
-    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+    fn confirm_terminal(&mut self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
@@ -600,24 +621,25 @@ impl AuthorityPort for SharedBusinessAuthority {
     }
     fn begin_close(
         &mut self,
-        terminal: &LifecycleResponse,
-    ) -> Result<WindowCloseRequest, AuthorityError> {
+        terminal: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::LifecycleWindowClose, AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
-            .begin_close(terminal)
+            .begin_close(terminal, now_ms)
     }
-    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
+    fn close_batch(&mut self, now_ms: u64) -> Result<Vec<sandproof_protocol::lifecycle::LifecycleWindowClose>, AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
-            .close_batch()
+            .close_batch(now_ms)
     }
-    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError> {
+    fn apply_close_ack(&mut self, ack: &sandproof_protocol::lifecycle::ClosedLifecycleWindow, now_ms: u64) -> Result<(), AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
-            .apply_close_ack(ack)
+            .apply_close_ack(ack, now_ms)
     }
     fn recover(&mut self) -> Result<(), AuthorityError> {
         self.0

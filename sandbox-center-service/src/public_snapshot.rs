@@ -30,14 +30,8 @@ impl PublicSnapshot {
     }
     #[must_use]
     pub fn visible(&self, record: &Sandbox) -> bool {
-        record.operations.first().is_some_and(|operation| {
-            !self
-                .state
-                .lifecycle_manages(&operation.request.identity.sandbox_id)
-                && !self
-                    .hidden_sandboxes
-                    .contains(&operation.request.identity.sandbox_id)
-        })
+        record.operations.first().is_some_and(|operation|
+            !self.hidden_sandboxes.contains(operation.intent().request.binding.session.as_protocol_id()))
     }
     /// # Errors
     /// Private validation objects and foreign owners are indistinguishable from

@@ -9,7 +9,6 @@ mod confirmation;
 mod facts;
 mod model;
 mod renewal;
-mod validation;
 mod window;
 use super::{ControllerJournal, capacity, transaction::WorldTransaction};
 use crate::{CrashInjector, CrashPoint, JournalError};

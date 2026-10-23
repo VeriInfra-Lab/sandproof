@@ -13,8 +13,6 @@ mod capacity_rejection;
 mod renewal;
 #[path = "tests/starting_destroy.rs"]
 mod starting_destroy;
-#[path = "tests/validation.rs"]
-mod validation;
 #[path = "tests/window.rs"]
 mod window;
 

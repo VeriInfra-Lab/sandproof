@@ -414,9 +414,12 @@ pub fn finalize_logical_failure(
 }
 
 fn is_startup_command(command: &Command) -> bool {
-    matches!(command,
-        Command::InstallFence { terminal: false, .. }
-            | Command::PrepareVm { .. }
+    matches!(
+        command,
+        Command::InstallFence {
+            terminal: false,
+            ..
+        } | Command::PrepareVm { .. }
             | Command::ConfigureNetwork { .. }
             | Command::ActivateVm { .. }
             | Command::ApplyFilePolicy { .. }
