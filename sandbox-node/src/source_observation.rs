@@ -16,16 +16,18 @@ pub(super) fn observe(
 ) -> Result<RawSourceObservation> {
     let protected = protected.ok_or("original protected bootstrap source unavailable")?;
     let allowed_cpus = protected.original_cpu_domain(
-        &requirement.node, &requirement.host_bootstrap, worker.host_bootstrap_inputs(),
+        &requirement.node,
+        &requirement.host_bootstrap,
+        worker.host_bootstrap_inputs(),
     )?;
     checked_collection(
         requirement,
         || {
             protected.observe_original(
-                    &requirement.node,
-                    &requirement.host_bootstrap,
-                    worker.host_bootstrap_inputs(),
-                )?;
+                &requirement.node,
+                &requirement.host_bootstrap,
+                worker.host_bootstrap_inputs(),
+            )?;
             Ok(())
         },
         || worker.collect_original_source(requirement, &allowed_cpus),

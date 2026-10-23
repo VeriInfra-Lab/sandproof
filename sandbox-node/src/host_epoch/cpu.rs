@@ -27,7 +27,9 @@ pub(super) struct CpuDomain {
 }
 
 impl CpuDomain {
-    pub(super) fn allowed_cpus(&self) -> &[u32] { &self.manager_allowed }
+    pub(super) fn allowed_cpus(&self) -> &[u32] {
+        &self.manager_allowed
+    }
 }
 
 fn number(value: &str) -> Result<u32> {

@@ -19,7 +19,9 @@ impl LinuxWorker {
             || {
                 let runtime = self.runtime(context.binding.sandbox, context.binding.vm)?;
                 runtime.verify_original_cpu_domain(
-                    requirement.resource.id.as_str(), &expected, allowed_cpus,
+                    requirement.resource.id.as_str(),
+                    &expected,
+                    allowed_cpus,
                 )?;
                 let measured = runtime.observe_original_configuration(
                     requirement.resource.id.as_str(),
@@ -34,7 +36,9 @@ impl LinuxWorker {
                     );
                 }
                 runtime.verify_original_cpu_domain(
-                    requirement.resource.id.as_str(), &expected, allowed_cpus,
+                    requirement.resource.id.as_str(),
+                    &expected,
+                    allowed_cpus,
                 )?;
                 let source = measured.source();
                 Ok(RawSourceObservation {
