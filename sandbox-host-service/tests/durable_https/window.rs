@@ -133,7 +133,11 @@ async fn retired_confirmation_only_replays_exact(
 ) {
     let before = local::audit(path);
     assert_eq!(
-        client.confirm_lifecycle_terminal(terminal).await.unwrap().result,
+        client
+            .confirm_lifecycle_terminal(terminal)
+            .await
+            .unwrap()
+            .result,
         *terminal
     );
     assert_eq!(local::audit(path), before);
