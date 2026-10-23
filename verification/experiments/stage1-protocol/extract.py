@@ -9,11 +9,12 @@ import shutil
 import re
 import sys
 import time
+import tomllib
 import traceback
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILES = {
-    'request': ['request_validate', 'replay_matches'],
+    'request': ['request_validate', 'replay_matches', 'accepted_validate', 'recorded_matches'],
     'manifest': ['manifest_validate'],
     'carriers': ['capture_from_u64', 'capture_value', 'capture_next', 'digest_roundtrip'],
 }
@@ -88,6 +89,19 @@ def extract(output, profiles, tool_root):
             row['steps'].append(step)
             if step['exit_code']:
                 raise RuntimeError('Charon failed: ' + name)
+            # The fixed Charon uses a fresh workspace fingerprint. Still require
+            # evidence that both actual own packages were compiled this run,
+            # rather than treating a newly written LLBC as source freshness.
+            observed = {re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
+                        for line in (folder / 'charon.log').read_text().splitlines()}
+            own = []
+            for manifest in (ROOT / 'sandbox-protocol/Cargo.toml', crate / 'Cargo.toml'):
+                package = tomllib.loads(manifest.read_text())['package']
+                expected = f"Compiling {package['name']} v{package['version']} ({manifest.parent})"
+                if expected not in observed:
+                    raise ValueError('original Charon did not recompile actual own package: ' + package['name'])
+                own.append(package['name'])
+            row['own_compilation_observed'] = own
             if not raw.is_file():
                 raise ValueError('Charon did not create the new fixed raw destination')
             shutil.copy2(raw, llbc)
@@ -118,7 +132,9 @@ def extract(output, profiles, tool_root):
             for template in generated.rglob('*External_Template.lean'):
                 external += re.findall(r'^axiom\s+([A-Za-z0-9_.]+)', template.read_text(), re.M)
             allowed = {
-                'request': {'alloc.string.String.Insts.CoreCmpPartialEqString.eq', 'alloc.vec.Vec.is_empty'},
+                'request': {'alloc.string.String.Insts.CoreCmpPartialEqString.eq', 'alloc.vec.Vec.is_empty',
+                            'Bool.Insts.CoreCmpPartialEqBool.ne',
+                            'core.option.Option.Insts.CoreCmpPartialEqOption.eq'},
                 'manifest': {'core.str.Str.len', 'core.str.Str.is_empty', 'core.str.Str.as_bytes',
                              'Str.Insts.AllocBorrowToOwnedString.to_owned',
                              'alloc.string.String.Insts.CoreCmpPartialEqString.eq',

@@ -35,6 +35,11 @@ theorem resume_accepted : request_validate (resume 1#u64 2#u64) node = .ok (.Ok 
 theorem destroy_accepted : request_validate destroyRequest node = .ok (.Ok ()) := by
   apply (validate_accepts_iff destroyRequest node).mpr
   simp [ValidRequest, headersOK, expectationOK, operationOK, destroyRequest, binding, node]
+theorem renew_accepted :
+    request_validate ⟨binding, .Renew 1#u64 (-1#i64) false⟩ node = .ok (.Ok ()) := by
+  apply validate_accepts_iff.mpr
+  simp [ValidRequest, headersOK, expectationOK, operationOK, binding, node]
+
 end Examples
 end SandboxModel.Stage1Protocol.Validation
 
@@ -42,3 +47,5 @@ end SandboxModel.Stage1Protocol.Validation
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.unload_accepted
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.resume_accepted
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.destroy_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.renew_accepted

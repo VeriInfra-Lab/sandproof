@@ -79,6 +79,11 @@ theorem validate_total (request : LifecycleRequest) (node : NodeIdentity) :
     ∃ result, request_validate request node = .ok result :=
   ⟨expectedResult request node, validate_refines request node⟩
 
+theorem validate_body_refines (request : LifecycleRequest) (node : NodeIdentity) :
+    LifecycleRequest.validate request node = .ok (expectedResult request node) := by
+  change request_validate request node = .ok (expectedResult request node)
+  exact validate_refines request node
+
 end SandboxModel.Stage1Protocol.Validation
 
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.resources_positive
@@ -93,3 +98,5 @@ end SandboxModel.Stage1Protocol.Validation
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.validate_error_iff
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.validate_complete
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.validate_total
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.validate_body_refines

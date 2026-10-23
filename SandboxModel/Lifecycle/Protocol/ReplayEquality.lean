@@ -1,4 +1,4 @@
-import SandproofStage1Request.Funs
+import SandboxModel.Lifecycle.Protocol.Library
 import SandboxModel.Lifecycle.Protocol.ReplayContract
 import SandboxModel.ProofAuditCommand
 
@@ -125,7 +125,9 @@ theorem operation_eq (a b : LifecycleOperation) :
       CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
       PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
       sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
-      array_eq, ok_and]
+      array_eq, ok_and,
+      core.cmp.impls.PartialEqI64.eq, core.cmp.impls.PartialEqBool.eq,
+      lift, Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
 
 theorem request_eq (a b : LifecycleRequest) :
     LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq a b =
@@ -134,6 +136,40 @@ theorem request_eq (a b : LifecycleRequest) :
   cases a; cases b
   simp [LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq,
     binding_eq, operation_eq, ok_and, LifecycleRequest.mk.injEq]
+
+
+open sandproof_protocol.lifecycle.authority
+
+theorem center_eq (a b : CenterIdentity) :
+    CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq a b =
+      .ok (by classical exact decide (a = b)) := by
+  classical
+  cases a; cases b
+  simp [CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq,
+    CenterId.Insts.CoreCmpPartialEqCenterId.eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    ok_and, CenterIdentity.mk.injEq]
+
+theorem retention_eq (a b : RetentionBinding) :
+    RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq a b =
+      .ok (by classical exact decide (a = b)) := by
+  classical
+  cases a; cases b
+  simp [RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq,
+    RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq,
+    PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    ok_and, RetentionBinding.mk.injEq]
+
+theorem accepted_eq (a b : AcceptedLifecycleIntent) :
+    AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq a b =
+      .ok (by classical exact decide (a = b)) := by
+  classical
+  cases a; cases b
+  simp [AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq,
+    request_eq, center_eq, retention_eq, ok_and, AcceptedLifecycleIntent.mk.injEq,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
 
 theorem replay_complete : FullReplayContract replay_matches := by
   intro request original
@@ -153,17 +189,37 @@ theorem replay_rejects_iff (request original : LifecycleRequest) :
 end SandboxModel.Stage1Protocol.Replay
 
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.bytes_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.array_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.vec_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.ok_and
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.resources_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.create_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.node_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.key_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.expected_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.binding_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.operation_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.request_eq
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Replay.center_eq
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Replay.retention_eq
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Replay.accepted_eq
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.replay_complete
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.replay_accepts_iff
+
 #audit_controller_proof SandboxModel.Stage1Protocol.Replay.replay_rejects_iff

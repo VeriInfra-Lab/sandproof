@@ -1,4 +1,4 @@
-"""Scoped original-tool replay and actual-file checks; not the full V0 acceptance."""
+"""All retained Stage1 protocol views and actual Rust mutants; not whole V0 acceptance."""
 from pathlib import Path
 import argparse
 import contextlib
@@ -19,13 +19,49 @@ ROOT = Path(__file__).resolve().parents[3]
 HERE = ROOT / 'verification/experiments/stage1-protocol'
 LIBRARY = Path('verification/aeneas/stage1-protocol')
 PROOFS = Path('SandboxModel/Lifecycle/Protocol')
-POSITIVE = ['Model', 'Carriers', 'RequestValues', 'Request', 'LoopWitness',
-            'ManifestWitnesses', 'Manifest']
-NEGATIVE = {
-    'same-incarnation': ('NegativeResume', ['Model', 'RequestValues'], 2),
-    'key-only-replay': ('NegativeReplay', ['Model', 'RequestValues'], 2),
-    'skip-capture-binding': ('NegativeManifest', ['Model', 'LoopWitness', 'ManifestWitnesses'], 25),
+POSITIVE_BY_PROFILE = {
+    'carriers': ['Model', 'Carriers'],
+    'request': ['Model', 'Library', 'ReplayContract', 'ReplayEquality',
+                'ValidationModel', 'Validation', 'ValidationExamples',
+                'RequestValues', 'Request', 'EnvelopeValues', 'Accepted', 'Recorded'],
+    'manifest': ['Model', 'LoopWitness', 'ManifestWitnesses', 'Manifest'],
 }
+POSITIVE = sorted({n for names in POSITIVE_BY_PROFILE.values() for n in names})
+NEGATIVE = {
+    'same-incarnation': dict(imports=['Model', 'RequestValues', 'ValidationModel'],
+        templates=['NegativeResume', 'NegativeValidation'], contracts=['Model', 'ValidationModel']),
+    'key-only-replay': dict(imports=['Model', 'RequestValues', 'ReplayContract'],
+        templates=['NegativeReplay', 'NegativeFullReplay'], contracts=['Model', 'ReplayContract']),
+    'skip-capture-binding': dict(imports=['Model', 'LoopWitness', 'ManifestWitnesses'],
+        templates=['NegativeManifest'], contracts=['Model']),
+    'session-only-envelope': dict(imports=['Model', 'ValidationModel', 'EnvelopeValues'],
+        templates=['NegativeSessionOnly'], contracts=['ValidationModel', 'EnvelopeValues']),
+}
+
+
+def component_files(project, names, profile, extra=()):
+    # The existing resolver includes the entire local Lean import closure,
+    # including retained helpers not imported by any public root.
+    resolver = load_module('stage1_original_closure', project / 'tools/proof_batch.py')
+    seeds = [str(PROOFS / (name + '.lean')) for name in names]
+    seeds += [str(p.relative_to(project)) for p in sorted((project / LIBRARY / profile).rglob('*.lean'))
+              if '_Template' not in p.name]
+    seeds += list(extra)
+    return sorted(resolver.closure(project, seeds))
+
+
+def check_inventory(project, frozen):
+    actual = {p.stem for p in (project / PROOFS).glob('*.lean')}
+    if actual != set(POSITIVE) or frozen['positive_files'] != POSITIVE_BY_PROFILE:
+        raise ValueError('unregistered or missing retained protocol proof file')
+
+
+def check_actual(project, names, profile, folder, env, run, expected, extra=()):
+    files = component_files(project, names, profile, extra)
+    actual = actual_files(project, files, folder, env, run)
+    if sorted(actual['audits']) != sorted(expected):
+        raise ValueError('actual complete proof dependency inventory differs')
+    return actual
 
 
 def sha(path):
@@ -75,6 +111,85 @@ def actual_files(project, files, output, env, run):
     return dict(files=before, audits=expected, service_log_sha256=sha(physical / 'service.log'))
 
 
+def reconstruct_native_source(native_tar, mutation, row, destination):
+    """Rebuild equal bytes in this component's work, never in sealed evidence."""
+    source = Path(mutation['source'])
+    if source.is_absolute() or '..' in source.parts:
+        raise ValueError('unsafe registered mutation source')
+    member = native_tar.getmember(str(source))
+    if not member.isfile():
+        raise ValueError('native original mutation source is not a regular file')
+    original = native_tar.extractfile(member).read()
+    before, after = mutation['old'].encode(), mutation['new'].encode()
+    if original.count(before) != 1:
+        raise ValueError('ambiguous original native mutation source')
+    rebuilt = original.replace(before, after, 1)
+    if (hashlib.sha256(original).hexdigest() != row['original_source_sha256']
+            or hashlib.sha256(rebuilt).hexdigest() != row['wrong_source_sha256']):
+        raise ValueError('reconstructed native wrong source differs')
+    destination.mkdir(mode=0o700, parents=True)
+    file = destination / 'mutation.rs'
+    with file.open('xb') as stream:
+        stream.write(rebuilt)
+    return dict(kind='equal-byte reconstruction; original retained on native host',
+                file=str(file), sha256=sha(file), original_sha256=hashlib.sha256(original).hexdigest())
+
+
+def check_native_phase(folder, row, mutation, build, assertion, wrong):
+    build_key = 'compiler_artifacts' if build == 'build' else build + '_compiler_artifacts'
+    hashes_key = 'compiled_sha256' if build == 'build' else build + '_compiled_sha256'
+    log_name = 'assertions' if assertion == 'assertion' else assertion
+    for key, file in ((build, build + '.log'), (assertion, log_name + '.log')):
+        if sha(folder / file) != row[key]['log_sha256']:
+            raise ValueError('original native phase log differs: ' + key)
+    if row[build]['exit_code'] != 0 or row[assertion]['exit_code'] != (101 if wrong else 0):
+        raise ValueError('native compile or exact assertion result differs')
+    expected_sources = {'sandproof_protocol': 'sandbox-protocol/src/lib.rs',
+                        mutation['target']: mutation['test_source']}
+    artifacts = row[build_key]
+    observed = []
+    for line in (folder / (build + '.log')).read_text().splitlines():
+        if line.startswith('{'):
+            item = json.loads(line)
+            if item.get('reason') == 'compiler-artifact' and item['target']['name'] in expected_sources:
+                observed.append(item)
+    if observed != artifacts or len(artifacts) != 2 or not row[hashes_key]:
+        raise ValueError('native actual compiler records or preserved artifact inventory differ')
+    prefixes, names = set(), set()
+    for item in artifacts:
+        name = item['target']['name']
+        source = str(item['target']['src_path'])
+        suffix = expected_sources[name]
+        if item['fresh'] is not False or not source.endswith('/' + suffix):
+            raise ValueError('native own artifact is stale or from another source')
+        prefix = source[:-len(suffix)]
+        if item['manifest_path'] != prefix + 'sandbox-protocol/Cargo.toml':
+            raise ValueError('native actual manifest/source differs')
+        is_test = name == mutation['target']
+        if (item['profile']['test'] is not is_test or
+                ('test' if is_test else 'lib') not in item['target']['kind']):
+            raise ValueError('native artifact kind/profile differs')
+        if is_test:
+            executable = item['executable']
+            if (not executable or Path(executable).name not in row[hashes_key]
+                    or row[assertion]['argv'] != [executable, mutation['test'],
+                        '--exact', '--nocapture', '--test-threads=1']):
+                raise ValueError('native assertion is not bound to the actual test program')
+        prefixes.add(prefix)
+        names.add(name)
+    if len(prefixes) != 1 or names != set(expected_sources):
+        raise ValueError('native library and test do not share one original source')
+    text = (folder / (log_name + '.log')).read_text()
+    if wrong:
+        if (mutation.get('failure_message', 'assertion') not in text
+                or 'test result: FAILED. 0 passed; 1 failed; 0 ignored;' not in text
+                or not re.search(r'^\s*' + re.escape(mutation['test']) + r'\s*$', text, re.M)):
+            raise ValueError('compiled wrong implementation was not rejected by the original exact assertion')
+    elif ('test result: ok. 1 passed; 0 failed; 0 ignored;' not in text
+          or 'test ' + mutation['test'] + ' ... ok' not in text):
+        raise ValueError('native original/restored exact assertion did not pass')
+
+
 def replay(output, archive, native, native_archive, selected):
     output.mkdir(mode=0o700, parents=True)
     started = time.monotonic()
@@ -102,6 +217,7 @@ def replay(output, archive, native, native_archive, selected):
 
     try:
         check_inputs(ROOT)
+        check_inventory(ROOT, frozen)
         if 'correct' in selected:
             folder = output / 'correct'
             folder.mkdir(mode=0o700)
@@ -109,21 +225,34 @@ def replay(output, archive, native, native_archive, selected):
                                         '--output', str(folder / 'extraction')])
             sys.path.insert(0, str(ROOT))
             from tools.check_foundations_extraction import llbc_digest
+            extracted = json.loads((folder / 'extraction/result.json').read_text())
+            if (extracted.get('success') is not True or extracted.get('sources_unchanged') is not True
+                    or extracted['source_sha256'] != frozen['extraction_inputs']
+                    or set(extracted['profiles']) != set(POSITIVE_BY_PROFILE)
+                    or set(frozen['generations']) != set(POSITIVE_BY_PROFILE)):
+                raise ValueError('incomplete three-profile generation or source inventory')
             for profile, expected in frozen['generations'].items():
                 fresh = folder / 'extraction' / profile
                 if (llbc_digest(json.loads((fresh / 'original.llbc').read_text())) != expected['llbc']
                         or llbc_digest(json.loads((ROOT / LIBRARY / profile / 'original.llbc').read_text())) != expected['llbc']):
                     raise ValueError('complete original IR differs: ' + profile)
+                generated = {str(p.relative_to(fresh / 'generated')): sha(p)
+                             for p in sorted((fresh / 'generated').rglob('*')) if p.is_file()}
+                if generated != dict(expected['generated'], **expected['templates']):
+                    raise ValueError('missing, extra or changed original generation: ' + profile)
                 for name, digest in expected['generated'].items():
-                    if sha(fresh / 'generated' / name) != digest or sha(ROOT / LIBRARY / profile / name) != digest:
-                        raise ValueError('unmodified generated output differs: ' + name)
-            files = [str(PROOFS / (name + '.lean')) for name in POSITIVE]
-            files += [n for p in ['carriers', 'request', 'manifest'] for n in generated_files(p)]
-            run(ROOT, folder, 'build', ['lake', 'build', *['SandboxModel.Lifecycle.Protocol.' + n for n in POSITIVE]])
-            actual = actual_files(ROOT, files, folder, env, run)
-            if len(actual['audits']) != 38:
-                raise ValueError('correct component requires exactly 38 audit declarations')
-            record['cases']['correct'] = dict(complete=True, **actual)
+                    if sha(ROOT / LIBRARY / profile / name) != digest:
+                        raise ValueError('retained original output differs: ' + name)
+            record['extraction_inputs'] = extracted['source_sha256']
+            views = {}
+            for profile, names in POSITIVE_BY_PROFILE.items():
+                view = folder / profile
+                view.mkdir(mode=0o700)
+                run(ROOT, view, 'build', ['lake', 'build', *[
+                    'SandboxModel.Lifecycle.Protocol.' + n for n in names]])
+                views[profile] = check_actual(ROOT, names, profile, view, env, run,
+                    frozen['audits']['positive'][profile])
+            record['cases']['correct'] = dict(complete=True, views=views)
         wrong = [name for name in selected if name != 'correct']
         if wrong:
             if archive is None or native is None or native_archive is None:
@@ -138,21 +267,49 @@ def replay(output, archive, native, native_archive, selected):
                     entry = native_tar.getmember(file)
                     if not entry.isfile() or hashlib.sha256(native_tar.extractfile(entry).read()).hexdigest() != digest:
                         raise ValueError('native baseline source differs: ' + file)
-            for row in native_record['variants']:
-                folder = native.parent / row['name']
-                if (row['build']['exit_code'] != 0 or row['assertion']['exit_code'] != 101
-                        or row.get('rejected_by_unchanged_assertion') is not True
-                        or sha(folder / 'build.log') != row['build']['log_sha256']
-                        or sha(folder / 'assertions.log') != row['assertion']['log_sha256']
-                        or sha(folder / 'mutation.rs') != row['wrong_source_sha256']):
-                    raise ValueError('original native mutation evidence missing or changed')
-                if any(item['fresh'] is not False for item in row['compiler_artifacts']):
-                    raise ValueError('native actual compiler artifact was stale')
+            mutations = load_module('stage1_native_mutations', HERE / 'negative_native.py').MUTATIONS
+            expected_mutations = {m['name']: m for m in mutations}
+            rows = native_record['variants']
+            if (len(rows) != len(expected_mutations)
+                    or {row['name'] for row in rows} != set(expected_mutations)):
+                raise ValueError('missing or duplicated original native mutation')
+            with tarfile.open(native_archive) as native_tar:
+                expected_snapshot = {}
+                for member in native_tar.getmembers():
+                    path = Path(member.name)
+                    if (path.is_absolute() or '..' in path.parts or not member.isfile()
+                            or member.name in expected_snapshot):
+                        raise ValueError('native canonical archive has invalid or duplicate input')
+                    expected_snapshot[member.name] = dict(
+                        sha256=hashlib.sha256(native_tar.extractfile(member).read()).hexdigest(),
+                        mode=member.mode & 0o777)
+                for row in rows:
+                    mutation = expected_mutations[row['name']]
+                    if any(row.get(k) != v for k, v in mutation.items()):
+                        raise ValueError('native mutation differs from registered single expression')
+                    reconstructed = reconstruct_native_source(native_tar, mutation, row,
+                        output / 'native-source-reconstruction' / row['name'])
+                    folder = native.parent / row['name']
+                    saved = folder / 'mutation.rs'
+                    if saved.exists() and sha(saved) != row['wrong_source_sha256']:
+                        raise ValueError('preserved original native mutation source differs')
+                    for build, assertion, wrong_phase in (
+                            ('baseline_build', 'baseline_assertion', False),
+                            ('build', 'assertion', True),
+                            ('restored_build', 'restored_assertion', False)):
+                        check_native_phase(folder, row, mutation, build, assertion, wrong_phase)
+                    if (row.get('rejected_by_unchanged_assertion') is not True
+                            or row.get('source_changes_after_restore') != {}
+                            or row.get('restored_source_sha256') != row['original_source_sha256']
+                            or row.get('target_final_state') != 'correct-restored-build-verified'
+                            or row['test_source_sha256'] != expected_snapshot[mutation['test_source']]['sha256']
+                            or json.loads((folder / 'source-before.json').read_text()) != expected_snapshot):
+                        raise ValueError('native original/test/full-source restoration evidence differs')
+                    row['formal_source_evidence'] = reconstructed
             record['native_evidence'] = dict(record_sha256=sha(native),
                 original_archive_sha256=sha(native_archive),
                 baseline_rust_inputs=frozen['native_rust_inputs'])
             native_rows = {v['name']: v for v in native_record['variants']}
-            mutations = load_module('stage1_native_mutations', HERE / 'negative_native.py').MUTATIONS
             for mutation in mutations:
                 name = mutation['name']
                 if name not in wrong:
@@ -208,22 +365,28 @@ def replay(output, archive, native, native_archive, selected):
                         before_sha256=before, after_sha256=sha(witness),
                         original_reference=old_loop, actual_reference=new_loop, replacements=6,
                         scope='proof helper references for actual binding-mismatch branch only')
-                proof, imports, count = NEGATIVE[name]
-                relative = 'artifacts/stage1-protocol/' + proof + '.lean'
-                (project / relative).parent.mkdir(parents=True, exist_ok=True)
-                (project / relative).write_bytes((HERE / (proof + '.lean.in')).read_bytes())
-                targets = ['SandboxModel.Lifecycle.Protocol.' + n for n in imports]
+                config = NEGATIVE[name]
+                for contract in config['contracts']:
+                    if ((project / PROOFS / (contract + '.lean')).read_bytes()
+                            != (ROOT / PROOFS / (contract + '.lean')).read_bytes()):
+                        raise ValueError('wrong case changed the independent contract/witness: ' + contract)
+                targets = ['SandboxModel.Lifecycle.Protocol.' + n for n in config['imports']]
                 targets += ['SandproofStage1' + profile.title()]
                 run(project, folder, 'build', ['lake', 'build', *targets])
-                files = [str(PROOFS / (n + '.lean')) for n in imports]
-                files += generated_files(profile)
-                files += [relative]
-                actual = actual_files(project, files, folder, env, run)
-                if len(actual['audits']) != count:
-                    raise ValueError('wrong-case exact audit inventory differs')
+                proofs = {}
+                for proof in config['templates']:
+                    view = folder / proof
+                    view.mkdir(mode=0o700)
+                    relative = 'artifacts/stage1-protocol/' + proof + '.lean'
+                    (project / relative).parent.mkdir(parents=True, exist_ok=True)
+                    (project / relative).write_bytes((HERE / (proof + '.lean.in')).read_bytes())
+                    proofs[proof] = check_actual(project, config['imports'], profile, view, env, run,
+                        frozen['audits']['negative'][proof], [relative])
                 record['cases'][name] = dict(complete=True, rust_sha256=sha(source),
                     model_sha256=sha(project / PROOFS / 'Model.lean'),
-                    proof_adaptation=proof_adaptation, **actual)
+                    contract_sha256={n: sha(project / PROOFS / (n + '.lean')) for n in config['contracts']},
+                    native_source_evidence=native_rows[name]['formal_source_evidence'],
+                    proof_adaptation=proof_adaptation, proofs=proofs)
                 (output / 'progress.json').write_text(json.dumps(record, indent=2)+'\n')
         check_inputs(ROOT)
         record['complete'] = True

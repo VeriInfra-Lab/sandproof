@@ -250,6 +250,35 @@ Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、V
 当前 Ready、新 Unload 和完整 Unloaded 均尚未接通；正式 profile 不默认启用。
 内部到期仅有设计，未实施前不能启用该 profile；Resume/GC 和真实部署输入仍开放。
 
+### 当前同步封套切片与正式入口接线范围
+
+实际生产方法是 `AcceptedLifecycleIntent::validate` 和 `RecordedLifecycleIntent::matches`。
+在 `c7d329a1f4a8ef606fb9807279c73a7e081d7ae1` 的隔离源码中，固定原 Charon/Aeneas 的两个透明委托
+已完成 16 份实际 Lean 文件、51 项证明审计；仅改完整 intent 比较为 session 比较的真实 Rust 错误版
+完成 12 份实际文件、5 项审计，并明确否定同一 `FullRecordContract`。两版独立模型和合法输入见证
+逐字相同。普通测试机 的七组原生断言、错误版同一断言拒绝与恢复后通过由原组件记录核对；
+这些数量含辅助引理，不能解释为独立业务保证的数量，也不能背书整个异步调用者。
+
+当前接线把该切片收回原 `stage1-protocol` 的 request 视图，保留原 `request_validate/replay_matches`
+并增加 `accepted_validate/recorded_matches`；不并存私有 CurrentEnvelope 库。
+唯一 [ValidationModel](../SandboxModel/Lifecycle/Protocol/ValidationModel.lean) 补齐当前真实 Renew 分支，
+[ReplayEquality](../SandboxModel/Lifecycle/Protocol/ReplayEquality.lean) 保留通用全文重放并连接完整封套字段。
+[Accepted](../SandboxModel/Lifecycle/Protocol/Accepted.lean) 对应原拒绝顺序及成功条件；
+[Recorded](../SandboxModel/Lifecycle/Protocol/Recorded.lean) 对应完整 intent 相等、允许的版本关系和 current 标志关系。
+相等的请求不等于合法请求，matches 不推出 validate 成功；terminal 的真实性不由 matches 保证。
+retention 只检查 slot 形状范围，不证明当前窗口仍可用，也不要求操作 key 的 window 等于 retention window。
+
+[组件入口](../verification/experiments/stage1-protocol/README.md) 登记完整保留证明文件、原三种 Rust 变体、
+两条既有通用合同反例及新增 session-only 封套反例；普通测试侧保留执行当时完整确定性归档，
+证明侧用当前归档核对相关输入仍一致，再与历史原生归档/原记录连接实际生成体；
+无关文档变化可复用组件，但当前文档仍由强制 functional 入口检查。三个 profile 的完整 IR/生成物必须共同重采集比较，
+冻结输入匹配和正确版证明只是门槛的一部分。接线代码存在不表示已取得该候选的完整入口成功回执；
+精确候选、原失败、实际验收和共享入口阻断以组件记录及对应 PR 为准，不能沿用上述私有切片背书新生成体。
+
+该 V3 切片复用四项既有 [A6 标准模型](formal/dependencies.md#a6-v3-同步协议的字符串与完整字节视图)。
+实际 bytes/Serde、认证连接到独立 context、完整调用者的顺序/取消、handler/账本/耐久回执真实性，
+以及预算、保留前沿、资源退出/Ready/VM/release 的连接仍开放；不因此宣称 V0、V3 或系统闭环完成。
+
 ### 同步协议的历史局部证明与适用边界
 
 [草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的生产 Rust 适用

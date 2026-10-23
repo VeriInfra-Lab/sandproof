@@ -3,8 +3,9 @@
 //! Only transparent calls to actual production protocol methods.
 use sandproof_protocol::internal::{InternalError, NodeIdentity};
 use sandproof_protocol::lifecycle::{
-    CaptureBinding, CaptureId, ContentDigest, LifecycleRequest, ManifestError, SnapshotManifest,
-    ValidationError, VmCompatibility,
+    AcceptedIntentError, AcceptedLifecycleIntent, AuthenticatedCenterContext, CaptureBinding,
+    CaptureId, ContentDigest, LifecycleRequest, ManifestError, RecordedLifecycleIntent,
+    SnapshotManifest, ValidationError, VmCompatibility,
 };
 
 pub fn request_validate(
@@ -16,6 +17,20 @@ pub fn request_validate(
 
 pub fn replay_matches(request: &LifecycleRequest, original: &LifecycleRequest) -> bool {
     request.replay_matches(original)
+}
+
+pub fn accepted_validate(
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> Result<(), AcceptedIntentError> {
+    intent.validate(context)
+}
+
+pub fn recorded_matches(
+    recorded: &RecordedLifecycleIntent,
+    original: &AcceptedLifecycleIntent,
+) -> bool {
+    recorded.matches(original)
 }
 
 pub fn manifest_validate(

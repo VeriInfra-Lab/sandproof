@@ -22,19 +22,23 @@ PROOFS = Path('SandboxModel/Lifecycle/Protocol')
 LIBRARY = Path('verification/aeneas/stage1-protocol/request')
 # Preserve the original extractor's source paths, without editing its output.
 VIRTUAL_ROOT = Path('/home/zn/u333-5tuoxof8/std-mutex-source')
-POSITIVE = ['ReplayContract', 'ReplayEquality']
+POSITIVE = ['Library', 'ReplayContract', 'ReplayEquality']
 NEGATIVE = ['ReplayContract', 'Model', 'RequestValues']
 AUDITS = ['bytes_eq', 'array_eq', 'vec_eq', 'ok_and', 'resources_eq',
           'create_eq', 'node_eq', 'key_eq', 'expected_eq', 'binding_eq',
           'operation_eq', 'request_eq', 'replay_complete',
-          'replay_accepts_iff', 'replay_rejects_iff']
+          'replay_accepts_iff', 'replay_rejects_iff', 'center_eq', 'retention_eq', 'accepted_eq']
 REPLAY_AUDITS = ['SandboxModel.Stage1Protocol.Replay.' + n for n in AUDITS]
+REPLAY_AUDITS += ['SandboxModel.Stage1Protocol.Library.' + n for n in
+    ('bool_ne_model_exact', 'option_some_calls_original_dictionary',
+     'option_mismatch_calls_no_dictionary', 'option_u64_eq')]
 VALIDATION_AUDITS = ['SandboxModel.Stage1Protocol.Validation.' + n for n in
     ['resources_positive', 'checked_add_present', 'ok_unless', 'create_valid',
      'ok_ite', 'validate_refines', 'expected_success_iff', 'expected_error_iff',
-     'validate_accepts_iff', 'validate_error_iff', 'validate_complete', 'validate_total']]
+     'validate_accepts_iff', 'validate_error_iff', 'validate_complete', 'validate_total',
+     'validate_body_refines']]
 EXAMPLE_AUDITS = ['SandboxModel.Stage1Protocol.Validation.Examples.' + n for n in
-                  ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted']]
+                  ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted', 'renew_accepted']]
 PROPERTIES = {
     'replay': dict(kind='stage1-full-replay-local-formal', mutation='key-only-replay',
         positive=POSITIVE, negative=NEGATIVE, common_files=[],

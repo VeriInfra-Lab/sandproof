@@ -321,11 +321,27 @@ V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议
 ### A6 v3 同步协议的字符串与完整字节视图
 
 本登记限 [v3 的三组实际抽取根](../../verification/experiments/stage1-protocol/src/lib.rs)。
-Carriers 没有新增外部函数；Request 只使用完整 String 相等和 Vec::is_empty；
+Carriers 没有新增外部函数；Request 的四个透明调用根使用完整 String 相等、
+Vec::is_empty、固定 bool 的不等比较及 Option 相等；
 Manifest 的准确七项为 String::eq/deref、Vec::is_empty、str::len/is_empty/as_bytes、
 str::to_owned。自有请求、路径/profile、文件名/数量/总长和 capture 绑定检查保留真实生成体，
 不能把这些决定作为库假设。精确原始 IR、外部清单、完整导入和源摘要在
 [模块冻结](../../verification/experiments/stage1-protocol/frozen.json)检查。
+
+Request 新调用点复用既有 A6 布尔/Option 模型，不新增自有业务假设：
+
+| 实际符号 | 准确保证与调用条件 |
+|---|---|
+| `alloc.string.String.Insts.CoreCmpPartialEqString.eq` | 比较完整原字符串，保持所有字符；不截断或规范化。复用 Foundations 原模型 |
+| `alloc.vec.Vec.is_empty` | 判断原有限逻辑向量是否为空；不据此推出物理分配、所有权或资源已释放 |
+| `Bool.Insts.CoreCmpPartialEqBool.ne` | 两个固定布尔值不相等时且仅此时返回真，覆盖四种布尔组合；不是任意用户 `PartialEq` 的规律 |
+| `core.option.Option.Insts.CoreCmpPartialEqOption.eq` | None/None 为真；构造器不同时为假且不调用元素比较；Some/Some 恰好调用传入比较字典并保留其失败。封套版本检查的实际字典为固定 `core.cmp.PartialEqU64`，不假定任意字典正确 |
+
+这些命名连接见原 request 视图的 `FunsExternal`；纯模型规律见
+[Library](../../SandboxModel/Lifecycle/Protocol/Library.lean)。Bool/Option 复用现有 Network/共享状态定义；
+它们与固定 Rust 标准库符合仍是 A6 条件。请求/封套校验、所有字段相等、版本/retention 判断及首错顺序
+仍由真实生成函数的对应证明承担，不能藏进上述四项保证。模板中的 `axiom` 仅是原工具输出证据，
+实际证明不导入模板，也不添加自定义公理。
 
 除 as_bytes 外，命名适配只转发已有固定 A6 字符串/容器模型与原内核检查的字面量构造。
 新增的 `str::as_bytes` 表示连接要求：输入是有效、有限且长度可表示的原 Rust str；
