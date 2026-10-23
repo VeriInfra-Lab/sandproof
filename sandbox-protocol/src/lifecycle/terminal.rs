@@ -24,6 +24,7 @@ impl TerminalLifecycleObservation {
         self.request == *request
             && matches!(request.request.operation, LifecycleOperation::Destroy {})
             && request.accepted_version > 0
+            && request.retention.valid_for(4096)
             && request.accepted_version_for_request() == Some(request.accepted_version)
     }
 }

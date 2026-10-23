@@ -30,6 +30,20 @@ mod lifecycle;
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
+    fn confirm_terminal(
+        &self,
+        _result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError>> + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
+    fn close_window(
+        &self,
+        _request: sandproof_protocol::lifecycle::LifecycleWindowClose,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError>> + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
     /// Read the same current Destroy; unsupported fixtures cannot acknowledge
     /// cleanup. The original provider retains all physical/material conditions.
     fn observe_terminal(
@@ -226,11 +240,17 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
         if request.uri().path() == sandproof_protocol::lifecycle::LIFECYCLE_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
+            || request.uri().path() == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
+            || request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH
         {
             let call = if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH {
                 lifecycle::Call::CreateObservation
             } else if request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH {
                 lifecycle::Call::TerminalObservation
+            } else if request.uri().path() == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH {
+                lifecycle::Call::Confirm
+            } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
+                lifecycle::Call::Close
             } else { lifecycle::Call::Record };
             let work = lifecycle::respond(request, peer, self.lifecycle.as_ref(), &*self.handler, call);
             return Ok(timeout(self.limits.request_timeout, work)
