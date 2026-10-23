@@ -7,7 +7,7 @@
 mod v3;
 use sandbox_controller_core as core;
 use sandproof_controller_service::{JournalError, application::ApplicationError};
-use sandproof_protocol::lifecycle::{ExpectedSession, LifecycleOperation};
+use sandproof_protocol::lifecycle::{CreateRefusalReason, ExpectedSession, LifecycleOperation};
 use std::sync::{Arc, Mutex};
 use v3::fixture::{self, State, TestEpoch};
 use v3::{advance, application, context, open, request};
@@ -271,19 +271,127 @@ fn original_application_capacity_and_template_veto_never_allocate_or_launch() {
     let app = application(&path, state.clone(), true);
     app.record_lifecycle_intent(&request(), &context()).unwrap();
     app.establish_lifecycle_host_epoch().unwrap();
-    assert_eq!(advance(&app), Err(ApplicationError::QuotaExceeded));
-    assert!(
-        app.lifecycle_work_state(&request(), &context())
+    let refused = advance(&app).unwrap();
+    assert_eq!(refused.intent, request());
+    assert_eq!(refused.refusal, Some(CreateRefusalReason::Capacity));
+    assert!(refused.local.is_none());
+    assert_eq!(
+        app.observe_lifecycle_create(&request(), &context())
             .unwrap()
-            .local
-            .is_none()
+            .readiness,
+        sandproof_controller_service::CreateReadiness::Refused {
+            reason: CreateRefusalReason::Capacity
+        }
     );
     state.lock().unwrap().disk_available = None;
     state.lock().unwrap().template_error = Some(ApplicationError::Invalid);
-    assert_eq!(advance(&app), Err(ApplicationError::Invalid));
+    assert_eq!(advance(&app).unwrap(), refused);
     assert!(state.lock().unwrap().actions.is_empty());
+    let checks = state.lock().unwrap().template_checks;
     drop(app);
     assert!(open(&path).world().unwrap().sandbox_records().is_empty());
+    let app = application(&path, state.clone(), false);
+    assert_eq!(advance(&app).unwrap(), refused);
+    assert_eq!(state.lock().unwrap().template_checks, checks);
+    drop(app);
+
+    // Independent dependency/template failures remain their actual errors, not
+    // the permanent capacity refusal created by the preceding exact sample.
+    for error in [
+        ApplicationError::Invalid,
+        ApplicationError::Busy,
+        ApplicationError::OutcomeUnknown,
+        ApplicationError::QuotaExceeded,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            template_error: Some(error),
+            ..State::default()
+        }));
+        let app = application(&path, state.clone(), true);
+        app.record_lifecycle_intent(&request(), &context()).unwrap();
+        app.establish_lifecycle_host_epoch().unwrap();
+        assert_eq!(advance(&app), Err(error));
+        let saved = app.lifecycle_work_state(&request(), &context()).unwrap();
+        assert_eq!(saved.refusal, None);
+        assert!(saved.local.is_none());
+        assert!(state.lock().unwrap().actions.is_empty());
+        drop(app);
+        assert!(open(&path).world().unwrap().sandbox_records().is_empty());
+    }
+}
+
+#[test]
+fn unavailable_physical_sample_is_not_a_capacity_refusal() {
+    for error in [
+        ApplicationError::Busy,
+        ApplicationError::OutcomeUnknown,
+        ApplicationError::QuotaExceeded,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            disk_probe: Some(Box::new(move || Err(error))),
+            ..State::default()
+        }));
+        let app = application(&path, state.clone(), true);
+        app.record_lifecycle_intent(&request(), &context()).unwrap();
+        app.establish_lifecycle_host_epoch().unwrap();
+        assert_eq!(advance(&app), Err(error));
+        let saved = app.lifecycle_work_state(&request(), &context()).unwrap();
+        assert!(saved.refusal.is_none() && saved.local.is_none());
+        assert_eq!(
+            app.lifecycle_pending_creates(&request().request.binding.node)
+                .unwrap(),
+            vec![request()]
+        );
+        assert!(state.lock().unwrap().actions.is_empty());
+    }
+}
+
+#[test]
+fn destroy_during_physical_capacity_sample_wins_without_false_refusal_or_launch() {
+    use std::sync::mpsc;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let state = Arc::new(Mutex::new(State {
+        epoch: TestEpoch::Matching,
+        disk_probe: Some(Box::new(move || {
+            entered_tx.send(()).unwrap();
+            release_rx
+                .recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap();
+            Ok(0)
+        })),
+        ..State::default()
+    }));
+    let app = Arc::new(application(&path, state.clone(), true));
+    app.record_lifecycle_intent(&request(), &context()).unwrap();
+    app.establish_lifecycle_host_epoch().unwrap();
+    let task = {
+        let app = app.clone();
+        std::thread::spawn(move || advance(&app))
+    };
+    entered_rx
+        .recv_timeout(std::time::Duration::from_secs(15))
+        .unwrap();
+    let mut destroy = request();
+    destroy.accepted_version = 2;
+    destroy.request.binding.expected = ExpectedSession::Version(1);
+    destroy.request.binding.key.sequence = 2.try_into().unwrap();
+    destroy.request.operation = LifecycleOperation::Destroy {};
+    app.record_lifecycle_intent(&destroy, &context()).unwrap();
+    release_tx.send(()).unwrap();
+    let result = task.join().unwrap().unwrap();
+    assert!(!result.current && result.terminal);
+    assert!(result.refusal.is_none() && result.local.is_none());
+    assert!(app.lifecycle_destroy_cleaned(&destroy, &context()).unwrap());
+    assert!(state.lock().unwrap().actions.is_empty());
 }
 
 #[test]

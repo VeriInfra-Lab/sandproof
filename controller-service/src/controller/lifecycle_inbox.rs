@@ -10,6 +10,7 @@ pub use audit::{LifecycleAudit, LifecycleAuditOperation};
 mod model;
 mod pending;
 mod readiness;
+mod refusal;
 pub(in crate::controller) mod source_work;
 #[cfg(test)]
 mod tests;
@@ -290,7 +291,7 @@ impl ControllerJournal {
         let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
             return Err(JournalError::UnsupportedInput.into());
         };
-        if !state.current || state.terminal || state.local.is_some() {
+        if !state.current || state.terminal || state.refusal.is_some() || state.local.is_some() {
             return Ok(state);
         }
         internal_inbox::validate_binding_and_time(create, &admission)?;
@@ -321,7 +322,7 @@ impl ControllerJournal {
             owner,
             operation: core::OperationId(1),
         };
-        self.admit_with_compute(
+        let admitted = self.admit_with_compute(
             core::CreateRequest {
                 actor: core::Actor::Tenant(owner),
                 owner,
@@ -353,7 +354,21 @@ impl ControllerJournal {
                 },
             )),
             crashes,
-        )?;
+        );
+        match admitted {
+            // This is a definite original admission failure before effects.
+            // The failed original transaction has rolled back. Persist the
+            // refusal only after rechecking the same current full Create in
+            // the original writer transaction. Unknown commits never enter it.
+            Err(AdmissionError::QuotaExceeded) => {
+                return self
+                    .refuse_lifecycle_create_capacity(intent, context, crashes)
+                    .map_err(AdmissionError::from);
+            }
+            other => {
+                other?;
+            }
+        }
         self.lifecycle_work_state(intent, context)
             .map_err(AdmissionError::from)
     }
@@ -389,6 +404,7 @@ pub(super) fn attach_create(
     let mut inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
     let (s, e) = inbox.find(&a.intent)?.ok_or(JournalError::Conflict)?;
     if inbox.sessions[s].terminal
+        || inbox.sessions[s].refusal.is_some()
         || inbox.sessions[s].current_version != a.intent.accepted_version
         || inbox.sessions[s].local.is_some()
     {
@@ -447,10 +463,17 @@ pub(super) fn check_admission(
     tx: &rusqlite::Connection,
     a: Option<&internal_inbox::AdmissionAttachment>,
 ) -> Result<(), JournalError> {
-    if codec::load(tx)?.is_some()
-        && !matches!(a, Some(internal_inbox::AdmissionAttachment::Lifecycle(_)))
-    {
-        return Err(JournalError::UnsupportedInput);
+    if let Some(inbox) = codec::load(tx)? {
+        let Some(internal_inbox::AdmissionAttachment::Lifecycle(attachment)) = a else {
+            return Err(JournalError::UnsupportedInput);
+        };
+        let (s, e) = inbox
+            .find(&attachment.intent)?
+            .ok_or(JournalError::Conflict)?;
+        let state = inbox.state(s, e);
+        if !state.current || state.terminal || state.refusal.is_some() || state.local.is_some() {
+            return Err(JournalError::Conflict);
+        }
     }
     Ok(())
 }

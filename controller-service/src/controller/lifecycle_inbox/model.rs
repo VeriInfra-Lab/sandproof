@@ -2,8 +2,8 @@
 //! in the original World; these rows do not invent another phase authority.
 use crate::{InternalLocalBinding, JournalError};
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterIdentity, ExpectedSession,
-    IncarnationId, LifecycleOperation, SessionId,
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterIdentity, CreateRefusalReason,
+    ExpectedSession, IncarnationId, LifecycleOperation, SessionId,
 };
 use sandproof_protocol::{TenantId, internal::NodeIdentity};
 use serde::{Deserialize, Serialize};
@@ -65,6 +65,8 @@ pub struct LifecycleWorkState {
     pub current_session_version: u64,
     pub current: bool,
     pub terminal: bool,
+    /// Original pre-admission refusal; no release or refund permission.
+    pub refusal: Option<CreateRefusalReason>,
     pub local: Option<InternalLocalBinding>,
     pub local_operation: Option<sandbox_controller_core::OperationId>,
 }
@@ -85,6 +87,7 @@ pub(super) struct Session {
     pub owner: TenantId,
     pub current_version: u64,
     pub terminal: bool,
+    pub refusal: Option<CreateRefusalReason>,
     pub incarnation: Option<IncarnationId>,
     pub local: Option<InternalLocalBinding>,
     pub entries: Vec<Entry>,
@@ -184,6 +187,7 @@ impl Inbox {
             current_session_version: session.current_version,
             current: entry.intent.accepted_version == session.current_version,
             terminal: session.terminal,
+            refusal: session.refusal,
             local: session.local,
             local_operation: entry.local_operation,
         }
@@ -287,6 +291,26 @@ impl Inbox {
                             .is_some_and(|prior| prior.sandbox == local.sandbox)
                     })
             })
+        {
+            return Err(JournalError::CorruptStore);
+        }
+        if session.refusal.is_some()
+            && (session.local.is_some()
+                || session.entries.first().is_none_or(|entry| {
+                    entry.intent.accepted_version != 1
+                        || !matches!(
+                            entry.intent.request.operation,
+                            LifecycleOperation::Create { .. }
+                        )
+                })
+                || session.entries.iter().any(|entry| {
+                    entry.local_operation.is_some()
+                        || entry.applied_deadline.is_some()
+                        || !matches!(
+                            entry.intent.request.operation,
+                            LifecycleOperation::Create { .. } | LifecycleOperation::Destroy {}
+                        )
+                }))
         {
             return Err(JournalError::CorruptStore);
         }
@@ -496,6 +520,7 @@ impl Inbox {
             owner: request.binding.key.owner.clone(),
             current_version: intent.accepted_version,
             terminal,
+            refusal: None,
             incarnation,
             local: None,
             entries: vec![Entry {

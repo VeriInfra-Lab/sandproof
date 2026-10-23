@@ -11,6 +11,15 @@ use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
 };
 
+enum PreparedCurrentAdmission {
+    Ready(Box<crate::InternalAdmission>),
+    CapacityRefused {
+        request: Box<AcceptedLifecycleIntent>,
+        available_disk_bytes: u64,
+        required_disk_bytes: u64,
+    },
+}
+
 impl<H: ControllerHost> ControllerApplication<H> {
     /// Persist the full authenticated center confirmation, after our original
     /// journal independently verifies the terminal fact.
@@ -272,10 +281,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let state = self
             .lifecycle_work_state(intent, context)
             .map_err(map_journal)?;
-        let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+        let LifecycleOperation::Create { .. } = &intent.request.operation else {
             return Err(ApplicationError::Invalid);
         };
-        if !state.current || state.terminal {
+        if !state.current || state.terminal || state.refusal.is_some() {
             return Ok(state);
         }
         let Some(_session) = self.acquire_lifecycle_session(intent, context)? else {
@@ -285,8 +294,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         };
         if state.local.is_none() {
             let admission = self.prepare_current_admission(
-                create,
-                &intent.request.binding.key.owner,
+                intent,
                 template.ok_or(ApplicationError::Busy)?,
                 compute,
                 verification,
@@ -298,9 +306,25 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .journal
                 .lifecycle_work_state(intent, context)
                 .map_err(map_journal)?;
-            if !current.current || current.terminal {
+            if !current.current || current.terminal || current.refusal.is_some() {
                 return Ok(current);
             }
+            let admission = match admission {
+                PreparedCurrentAdmission::Ready(admission) => *admission,
+                PreparedCurrentAdmission::CapacityRefused {
+                    request,
+                    available_disk_bytes,
+                    required_disk_bytes,
+                } => {
+                    if request.as_ref() != intent || available_disk_bytes >= required_disk_bytes {
+                        return Err(ApplicationError::OutcomeUnknown);
+                    }
+                    return inner
+                        .journal
+                        .refuse_lifecycle_create_capacity(&request, context, &mut NeverCrash)
+                        .map_err(map_journal);
+                }
+            };
             if current.local.is_none() {
                 inner
                     .journal
@@ -320,12 +344,18 @@ impl<H: ControllerHost> ControllerApplication<H> {
 
     fn prepare_current_admission(
         &self,
-        binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
-        owner: &sandproof_protocol::TenantId,
+        intent: &AcceptedLifecycleIntent,
         template: InternalTemplate,
         compute: ComputeLimits,
         verification: Option<&CandidateVerification>,
-    ) -> Result<crate::InternalAdmission, ApplicationError> {
+    ) -> Result<PreparedCurrentAdmission, ApplicationError> {
+        let LifecycleOperation::Create {
+            create: binding, ..
+        } = &intent.request.operation
+        else {
+            return Err(ApplicationError::Invalid);
+        };
+        let owner = &intent.request.binding.key.owner;
         let host = {
             let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             if !inner.journal.startup_epoch_ready().map_err(map_journal)? {
@@ -375,11 +405,18 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 admission.template.local.resources.disk_bytes,
             )?
         };
-        if host.available_disk_bytes()? < required {
-            return Err(ApplicationError::QuotaExceeded);
+        let available_disk_bytes = host.available_disk_bytes()?;
+        if available_disk_bytes < required {
+            // Bind this exact negative sample at its origin. Host errors,
+            // template failures and Busy never enter this variant.
+            return Ok(PreparedCurrentAdmission::CapacityRefused {
+                request: Box::new(intent.clone()),
+                available_disk_bytes,
+                required_disk_bytes: required,
+            });
         }
         admission.now_ms = self.clock.now_ms()?;
-        Ok(admission)
+        Ok(PreparedCurrentAdmission::Ready(Box::new(admission)))
     }
 }
 

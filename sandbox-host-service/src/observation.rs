@@ -8,6 +8,7 @@ pub(super) fn project(view: LifecycleCreateObservation) -> CreateObservation {
         CreateReadiness::NotRunning => CurrentCreateReadiness::NotRunning,
         CreateReadiness::Expired => CurrentCreateReadiness::Expired,
         CreateReadiness::Pending(_) => CurrentCreateReadiness::Pending,
+        CreateReadiness::Refused { reason } => CurrentCreateReadiness::Refused { reason },
         CreateReadiness::Observed(observed) => CurrentCreateReadiness::Observed {
             facts: CurrentReadyFacts {
                 started_at_ms: observed.started_at_ms,

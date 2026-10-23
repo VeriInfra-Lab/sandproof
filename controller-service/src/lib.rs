@@ -32,14 +32,14 @@ pub use host_contract::{
     HostEvidence, HostSlotContext, WorkerTransportError,
 };
 
-/// Current original host metadata format when the authenticated inbox is
-/// explicitly provisioned. Older experimental formats are refused, not upgraded.
-pub const INTERNAL_INBOX_FORMAT_VERSION: i64 =
-    sandproof_protocol::internal::HOST_STORE_FORMAT_VERSION;
+// Original inbox remains only while its assertions move to the current path.
+// It must not inherit the serving format from the shared compatibility report.
+pub const INTERNAL_INBOX_FORMAT_VERSION: i64 = 16;
 
 // Only the current fully initialized lifecycle store may serve requests.
 #[cfg(feature = "durable")]
-pub(crate) const LIFECYCLE_STORE_FORMAT_VERSION: i64 = 18;
+pub(crate) const LIFECYCLE_STORE_FORMAT_VERSION: i64 =
+    sandproof_protocol::internal::HOST_STORE_FORMAT_VERSION;
 
 #[cfg(feature = "durable")]
 pub use controller::{
