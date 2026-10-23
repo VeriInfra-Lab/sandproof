@@ -10,7 +10,7 @@ fn running(journal: &mut ControllerJournal) -> (LifecycleRequest, InternalLocalB
         .unwrap()
         .local
         .unwrap();
-    crate::finish_admitted_create_v1_timed(
+    crate::finish_admitted_create_timed(
         journal,
         local.sandbox,
         local.operation,

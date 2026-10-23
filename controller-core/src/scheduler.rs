@@ -87,49 +87,51 @@ pub fn only_uncertain_prepare_for_abort(world: &World, sandbox: SandboxId) -> bo
     else {
         return false;
     };
+    let (Some(vm), Some(slot)) = (plan.vm, plan.slot) else {
+        return false;
+    };
+    let expected = Command::PrepareVm {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+        slot,
+        source: plan.restore_from,
+    };
     let mut seen = false;
-    for id in world.effect_ids() {
-        if id.command().sandbox() != sandbox
-            || !matches!(
+    let mut valid = true;
+    let mut index = 0;
+    while index < world.effect_ids().len() && valid {
+        let id = &world.effect_ids()[index];
+        if id.command().sandbox() == sandbox
+            && matches!(
                 world.effect_status(id),
                 Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
             )
         {
-            continue;
+            seen = true;
+            valid = *id.command() == expected;
         }
-        seen = true;
-        if *id.command()
-            != (Command::PrepareVm {
-                sandbox,
-                epoch: plan.epoch,
-                generation: plan.generation,
-                vm: match plan.vm {
-                    Some(vm) => vm,
-                    None => return false,
-                },
-                slot: match plan.slot {
-                    Some(slot) => slot,
-                    None => return false,
-                },
-                source: plan.restore_from,
-            })
-        {
-            return false;
-        }
+        index += 1;
     }
-    seen
+    seen && valid
 }
 
 #[must_use]
 pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
     let sandbox = command.sandbox();
     if crate::terminal::only_uncertain_activation_for_abort(world, sandbox) {
-        return world.effect_ids().iter().any(|id| {
-            crate::terminal::activation_in_current_abort(world, id)
-                && (crate::terminal::activation_stop(id).as_ref() == Some(command)
+        let mut index = 0;
+        let mut found = false;
+        while index < world.effect_ids().len() && !found {
+            let id = &world.effect_ids()[index];
+            found = crate::terminal::activation_in_current_abort(world, id)
+                && (crate::terminal::activation_stop_current(world, id).as_ref() == Some(command)
                     || matches!(command, Command::InstallFence { epoch, terminal: true, .. }
-                        if world.sandboxes.get(&sandbox).is_some_and(|record| record.epoch == *epoch)))
-        });
+                        if matches!(world.sandboxes.get(&sandbox), Some(record) if record.epoch == *epoch)));
+            index += 1;
+        }
+        return found;
     }
     if !only_uncertain_prepare_for_abort(world, sandbox) {
         return false;

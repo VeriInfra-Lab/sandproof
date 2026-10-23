@@ -1,4 +1,4 @@
-//! Versioned, checked current-state checkpoints for the V1 create/kill core.
+//! Checked current-state checkpoints using one supported storage format.
 //!
 //! This is a recovery boundary, not an arbitrary `World` deserializer. The
 //! opaque wire value cannot expose a World until `restore` checks its bounds,
@@ -6,8 +6,9 @@
 //! allocation cursors, unknown work and maintenance tombstones. It does not
 //! discard history: the checked retirement reducer must compact it first.
 //!
-//! V1 deliberately excludes pause/resume and every snapshot reference. This
-//! validator checks structure under the trusted-storage/host contracts; it is
+//! Pause/capture state uses the same format and validation as startup and kill.
+//! Resume remains disabled until its explicit source/incarnation rules are
+//! connected. This validator checks structure under the host contracts; it is
 //! not a proof of historical reachability or authenticity of host evidence.
 //! Record bounds alone do not establish a byte bound. The service must bound
 //! encoded input BEFORE parsing and use a bounded writer when encoding, then
@@ -34,11 +35,7 @@ use crate::{
     World,
 };
 
-pub const CHECKPOINT_VERSION: u16 = 1;
-/// Explicit schema for first-generation capture/unload, not center module V2.
-/// Resume and subsequent running generations are deliberately unsupported.
-pub const UNLOAD_CHECKPOINT_VERSION: u16 = 2;
-
+pub const CHECKPOINT_VERSION: u16 = 2;
 /// Explicit aggregate record and nested-reference budgets. Neither value may
 /// be zero. Strings and encoded bytes require a separate service-side bound.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -224,27 +221,13 @@ impl CheckpointWire {
     }
 }
 
-/// Capture a structurally valid, already-compacted V1 World, preserving order.
+/// Capture a structurally valid, already-compacted World, preserving order.
 /// # Errors
 /// Rejects unsupported lifecycle history, invalid references or exceeded bounds.
 pub fn capture(world: &World, limits: CheckpointLimits) -> Result<Checkpoint, CheckpointReject> {
     bounds::world(world, limits)?;
     validate::world(world)?;
     Ok(Checkpoint(CheckpointWire::from(world)))
-}
-
-/// Capture the explicit first-generation unload schema without widening V1.
-/// # Errors
-/// Rejects unsupported resume/history, invalid capture references or bounds.
-pub fn capture_unload(
-    world: &World,
-    limits: CheckpointLimits,
-) -> Result<Checkpoint, CheckpointReject> {
-    bounds::world(world, limits)?;
-    validate::unload_world(world)?;
-    let mut wire = CheckpointWire::from(world);
-    wire.version = UNLOAD_CHECKPOINT_VERSION;
-    Ok(Checkpoint(wire))
 }
 
 /// Restore only after validating the version, bounds and complete references.
@@ -256,16 +239,11 @@ pub fn restore(
     limits: CheckpointLimits,
 ) -> Result<World, CheckpointReject> {
     let wire = checkpoint.0;
-    if wire.version != CHECKPOINT_VERSION && wire.version != UNLOAD_CHECKPOINT_VERSION {
+    if wire.version != CHECKPOINT_VERSION {
         return Err(CheckpointReject::UnsupportedVersion);
     }
     bounds::wire(&wire, limits)?;
-    let version = wire.version;
     let world = wire.into_world()?;
-    if version == UNLOAD_CHECKPOINT_VERSION {
-        validate::unload_world(&world)?;
-    } else {
-        validate::world(&world)?;
-    }
+    validate::world(&world)?;
     Ok(world)
 }

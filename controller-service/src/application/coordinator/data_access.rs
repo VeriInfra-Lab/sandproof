@@ -6,6 +6,38 @@ use super::{
 };
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Resolve the full current lifecycle identity and bind it to the original
+    /// native credential, permission and lifetime under the same short lock.
+    /// # Errors
+    /// Structurally valid identities still fail on every stale/foreign or
+    /// revoked mapping; the host-only secret is never returned to the center.
+    pub fn lifecycle_data_authorization(
+        &self,
+        identity: &sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+        context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+        kind: DataKind,
+    ) -> Result<(DataPermit, String), ApplicationError> {
+        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let local = inner
+            .journal
+            .lifecycle_access_local(identity, context)
+            .map_err(|error| match error {
+                super::JournalError::Conflict => ApplicationError::NotFound,
+                other => map_journal(other),
+            })?;
+        let world = inner.journal.world().map_err(map_journal)?;
+        let record = world
+            .sandbox_record(local.sandbox)
+            .ok_or(ApplicationError::NotFound)?;
+        let secret = data_credentials::verify_target(&inner, local.sandbox, record.generation)?;
+        let (sandbox, target) = self.data_target(&inner, &secret, kind)?;
+        if sandbox != local.sandbox {
+            return Err(ApplicationError::Busy);
+        }
+        let mut permit = Self::register_data_permit(&mut inner, sandbox, target, kind)?;
+        permit.lifecycle = Some((identity.clone(), context.clone()));
+        Ok((permit, secret))
+    }
     /// # Errors
     /// Rejects expired, revoked, unknown or non-running credentials.
     pub fn authorize_data(
@@ -137,6 +169,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             revocation,
             drain,
             helper_gate,
+            lifecycle: None,
         })
     }
 
@@ -149,9 +182,21 @@ impl<H: ControllerHost> ControllerApplication<H> {
         permit: &DataPermit,
         control: bool,
     ) -> Result<TrackedRelayChild, ApplicationError> {
-        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         if *permit.revocation.borrow() {
             return Err(ApplicationError::NotFound);
+        }
+        if let Some((identity, context)) = &permit.lifecycle {
+            let local = inner
+                .journal
+                .lifecycle_access_local(identity, context)
+                .map_err(|error| match error {
+                    super::JournalError::Conflict => ApplicationError::NotFound,
+                    other => map_journal(other),
+                })?;
+            if local.sandbox != permit.sandbox {
+                return Err(ApplicationError::NotFound);
+            }
         }
         if inner
             .journal

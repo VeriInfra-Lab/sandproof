@@ -29,7 +29,6 @@ pub fn capacity() -> CapacityConfig {
 
 pub fn maintenance() -> MaintenanceConfig {
     MaintenanceConfig {
-        checkpoint_profile: sandproof_controller_service::CheckpointProfile::CreateKill,
         capacity: Some(capacity()),
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,

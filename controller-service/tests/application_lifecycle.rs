@@ -223,11 +223,7 @@ impl HostCapacity for TestHost {
 }
 
 impl LaunchConfiguration for TestHost {
-    fn put_secret(
-        &self,
-        sandbox: core::SandboxId,
-        token: &str,
-    ) -> Result<(), ApplicationError> {
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError> {
         let mut state = self.state.lock().unwrap();
         if state.secrets.contains_key(&sandbox.0) {
             return Err(ApplicationError::Conflict);

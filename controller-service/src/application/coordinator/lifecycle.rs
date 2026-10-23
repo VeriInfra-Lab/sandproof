@@ -3,8 +3,8 @@ use super::{
     AdmissionError, ApplicationError, BTreeSet, ConnectCommand, ControllerApplication,
     ControllerHost, CreateAdmission, CreateCommand, CreateOptions, ExpiryReport, FaultContext,
     FaultRecord, FaultStage, Inner, InstanceDetail, InstanceInfo, InstancePage, JournalError,
-    ListSelection, NeverCrash, Session, core, data_credentials, finish_accepted_kill_v1,
-    finish_admitted_create_v1_timed, map_admission, map_journal, map_unknown_application,
+    ListSelection, NeverCrash, Session, core, data_credentials, finish_accepted_kill,
+    finish_admitted_create_timed, map_admission, map_journal, map_unknown_application,
     map_unknown_journal, next_operation, next_sandbox, recover_locked, release_reclaimed_slots,
     sandbox_id, tenant_id, token,
 };
@@ -60,7 +60,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 Err(error) => return Err(map_admission(error)),
             }
             let Inner { journal, host, .. } = &mut *inner;
-            match finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
+            match finish_accepted_kill(journal, sandbox, operation, &mut |action| {
                 host.execute(action)
             })
             .map(|_| ())
@@ -262,7 +262,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         {
             return Err(ApplicationError::OutcomeUnknown);
         }
-        finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
+        finish_accepted_kill(journal, sandbox, operation, &mut |action| {
             host.execute(action)
         })
         .map_err(|error| map_unknown_journal(error, FaultStage::KillWorkflow, context))?;
@@ -360,7 +360,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .map_err(|error| map_unknown_application(error, FaultStage::PutCredential, context))?;
         data_credentials::register_original(&mut inner.journal, sandbox, &secret)?;
         let Inner { journal, host, .. } = &mut *inner;
-        finish_admitted_create_v1_timed(
+        finish_admitted_create_timed(
             journal,
             sandbox,
             core::OperationId(1),

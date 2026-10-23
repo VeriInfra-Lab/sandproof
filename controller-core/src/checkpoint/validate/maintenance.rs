@@ -1,4 +1,3 @@
-use super::Profile;
 use super::{
     Authority, EffectStatus, HostBinding, HostSlotPhase, OperationInput, OperationStatus, Phase,
     Reject, VmStatus, World, binding_current, ledger_shape, record,
@@ -6,7 +5,7 @@ use super::{
 use crate::maintenance::MaintenanceState;
 use crate::{OperationKind, SandboxId};
 
-pub(super) fn validate(world: &World, profile: Profile) -> Result<(), Reject> {
+pub(super) fn validate(world: &World) -> Result<(), Reject> {
     let Some(state) = &world.maintenance else {
         return Ok(());
     };
@@ -24,8 +23,8 @@ pub(super) fn validate(world: &World, profile: Profile) -> Result<(), Reject> {
         return Err(Reject::InvalidFrontier);
     }
     for (key, retained) in state.retained.entries() {
-        retained_group(state, key.sandbox, profile)?;
-        ledger_shape(*key, &retained.ledger, profile)?;
+        retained_group(state, key.sandbox)?;
+        ledger_shape(*key, &retained.ledger)?;
         if world.sandbox_record(key.sandbox).is_some()
             || !matches!(
                 retained.ledger.operation.status,
@@ -147,11 +146,7 @@ fn released(world: &World, binding: HostBinding) -> Result<(), Reject> {
     Ok(())
 }
 
-fn retained_group(
-    state: &MaintenanceState,
-    sandbox: SandboxId,
-    profile: Profile,
-) -> Result<(), Reject> {
+fn retained_group(state: &MaintenanceState, sandbox: SandboxId) -> Result<(), Reject> {
     let mut creates = 0_u64;
     let mut kills = 0_u64;
     let mut failed_create = false;
@@ -167,8 +162,8 @@ fn retained_group(
                     matches!(retained.ledger.operation.status, OperationStatus::Failed(_));
             }
             OperationKind::Kill => kills += 1,
-            OperationKind::Pause if profile == Profile::FirstUnload => pauses += 1,
-            OperationKind::Pause | OperationKind::Resume => {
+            OperationKind::Pause => pauses += 1,
+            OperationKind::Resume => {
                 return Err(Reject::UnsupportedSnapshotHistory);
             }
         }

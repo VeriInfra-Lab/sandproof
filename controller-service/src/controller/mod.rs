@@ -31,9 +31,9 @@ pub use internal_inbox::{
 };
 pub use lifecycle_inbox::{
     CreateReadiness, CreateReadinessPending, LifecycleAudit, LifecycleAuditOperation,
-    LifecycleCreateObservation, LifecycleInboxConfig,
-    LifecycleReadyBasis, LifecycleReadyObservation, LifecycleWorkState, NativeCreateSnapshot,
-    SourceWork, SourceWorkRecord,
+    LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
+    LifecycleReadyObservation, LifecycleWorkState, NativeCreateSnapshot, SourceWork,
+    SourceWorkRecord,
 };
 mod private_build;
 mod registry;
@@ -44,8 +44,7 @@ pub use private_build::{BuildAnchor, BuildRetryConfig};
 
 pub use bounded::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
 pub use checkpoint::{
-    CheckpointInfo, CheckpointProfile, CheckpointProgress, HostReleaseWitness, MaintenanceConfig,
-    RetirementCandidate,
+    CheckpointInfo, CheckpointProgress, HostReleaseWitness, MaintenanceConfig, RetirementCandidate,
 };
 
 #[cfg(test)]
@@ -789,7 +788,7 @@ impl ControllerJournal {
         }
     }
 
-    fn claim_next(
+    pub(crate) fn claim_next(
         &mut self,
         selected: Option<core::SandboxId>,
         crashes: &mut impl CrashInjector,
@@ -882,20 +881,6 @@ impl ControllerJournal {
         let (id, json, state, previous) = row.ok_or(JournalError::Conflict)?;
         let action: WorkAction<core::EffectId> = serde_json::from_slice(&json)?;
         receipt.validate_for(&action)?;
-        let world = transaction.world();
-        // An initialization result cannot reopen a terminal create, and a
-        // stopped VM must not be misread as proof that initialization worked.
-        if matches!(action.command.command(), core::Command::ActivateVm { .. })
-            && !matches!(
-                world.effect_status(&action.command),
-                Some(core::EffectStatus::Acknowledged(_))
-            )
-            && world
-                .sandbox_record(action.command.command().sandbox())
-                .is_some_and(|record| record.terminal)
-        {
-            return Err(JournalError::ObsoleteReceipt);
-        }
         if state == "ready" {
             return Err(JournalError::ReceiptBeforeDispatch);
         }

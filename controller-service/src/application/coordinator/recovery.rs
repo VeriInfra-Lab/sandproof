@@ -4,8 +4,8 @@ use super::super::{HostSlots, LaunchConfiguration, WorkRecovery};
 use super::{
     ApplicationError, BTreeSet, Clock, ControllerApplication, ControllerHost, ControllerJournal,
     DataLease, Inner, JournalError, NeverCrash, RecoveryReport, WorkAction, WorkReceipt,
-    WorkerTransportError, core, data_credentials, finish_accepted_kill_v1,
-    finish_admitted_create_v1_timed, finish_compensating_create_v1, map_admission, map_journal,
+    WorkerTransportError, core, data_credentials, finish_accepted_kill,
+    finish_admitted_create_timed, finish_compensating_create, map_admission, map_journal,
     map_journal_at, same_secret, token,
 };
 
@@ -292,7 +292,7 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
             continue;
         }
         if !ensure_launch_config(
-            host.as_ref(),
+            host,
             *sandbox,
             &options,
             registered.is_some(),
@@ -398,7 +398,10 @@ fn ensure_launch_config<H: LaunchConfiguration>(
     Ok(false)
 }
 
-fn host_routes_drained<H: ControllerHost>(host: &H, context: &crate::HostSlotContext) -> bool {
+pub(super) fn host_routes_drained<H: ControllerHost>(
+    host: &H,
+    context: &crate::HostSlotContext,
+) -> bool {
     host.data_gate_drained(context).unwrap_or_else(|error| {
         FaultRecord::application(FaultStage::DataGate, &error, FaultContext::slot(context)).emit();
         false
@@ -742,7 +745,7 @@ fn resume_workflow<H: ControllerHost>(
 ) -> Option<Result<(), JournalError>> {
     let operation = record.current_operation?;
     let result = match (record.phase, operation.kind) {
-        (core::Phase::Starting, core::OperationKind::Create) => finish_admitted_create_v1_timed(
+        (core::Phase::Starting, core::OperationKind::Create) => finish_admitted_create_timed(
             journal,
             sandbox,
             operation.id,
@@ -756,13 +759,13 @@ fn resume_workflow<H: ControllerHost>(
                 core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
             ) =>
         {
-            finish_compensating_create_v1(journal, sandbox, operation.id, &mut |action| {
+            finish_compensating_create(journal, sandbox, operation.id, &mut |action| {
                 host.execute(action)
             })
             .map(|_| ())
         }
         (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Kill) => {
-            finish_accepted_kill_v1(journal, sandbox, operation.id, &mut |action| {
+            finish_accepted_kill(journal, sandbox, operation.id, &mut |action| {
                 host.execute(action)
             })
             .map(|_| ())

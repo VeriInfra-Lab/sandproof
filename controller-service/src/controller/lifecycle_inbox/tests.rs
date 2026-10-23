@@ -26,13 +26,79 @@ fn config() -> LifecycleInboxConfig {
             policy: sandproof_protocol::lifecycle::ContentDigest::from_sha256([7; 32]),
         }),
         max_sessions: 2,
+        max_operations_per_session: 8,
         max_options_bytes: 1024,
         max_profile_bytes: 4096,
         max_manifest_bytes: 16384,
     }
 }
+fn source_limits() -> crate::capture::SourceObservationConfig {
+    super::super::tests_support::lifecycle_application::source_limits()
+}
 fn context() -> AuthenticatedCenterContext {
     config().context()
+}
+
+#[test]
+fn unknown_release_confirmation_recovers_without_rebinding_released_position() {
+    use super::super::tests_support::lifecycle_application as app_fixture;
+    use crate::application::HostSlots;
+    use app_fixture::fixture::{State, TestEpoch, TestHost};
+    use std::sync::{Arc, Mutex};
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            ..State::default()
+        }));
+        let app = app_fixture::application(&path, state.clone(), true);
+        let create = app_fixture::request();
+        app.record_lifecycle_intent(&create, &app_fixture::context())
+            .unwrap();
+        app.establish_lifecycle_host_epoch().unwrap();
+        let local = app_fixture::advance(&app).unwrap().local.unwrap();
+        let mut destroy = create;
+        destroy.accepted_version = 2;
+        destroy.request.binding.expected = ExpectedSession::Version(1);
+        destroy.request.binding.key.sequence = 2.try_into().unwrap();
+        destroy.request.operation = LifecycleOperation::Destroy {};
+        app.record_lifecycle_intent(&destroy, &app_fixture::context())
+            .unwrap();
+        state.lock().unwrap().release_unknown = true;
+        assert_eq!(
+            app.advance_current_workflow(local.sandbox),
+            Err(crate::application::ApplicationError::Busy)
+        );
+        drop(app);
+        let mut journal = app_fixture::open(&path);
+        let context = journal.host_slot_context(local.sandbox).unwrap().unwrap();
+        assert_eq!(
+            journal.host_slot_inventory().unwrap()[0].1,
+            core::maintenance::slots::HostSlotPhase::Releasing
+        );
+        state.lock().unwrap().release_unknown = false;
+        TestHost(state.clone()).release_host_slot(&context).unwrap();
+        super::super::transaction::fail_next_commit(durable);
+        assert!(matches!(
+            journal.confirm_host_slot_release(context, &mut NeverCrash),
+            Err(JournalError::CommitUncertain(_))
+        ));
+        drop(journal);
+        let binds = state.lock().unwrap().bound_slots.len();
+        let app = app_fixture::application(&path, state.clone(), false);
+        assert!(app.advance_current_workflow(local.sandbox).unwrap());
+        assert!(
+            app.lifecycle_destroy_cleaned(&destroy, &app_fixture::context())
+                .unwrap()
+        );
+        assert_eq!(
+            state.lock().unwrap().bound_slots.len(),
+            binds,
+            "Releasing and Free must not call Bind after the exact physical release"
+        );
+        assert_eq!(state.lock().unwrap().released_slots, vec![context]);
+    }
 }
 fn admission() -> InternalAdmission {
     let template = TemplateBinding {
@@ -116,8 +182,7 @@ fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
     }
 }
 fn open(path: &std::path::Path) -> ControllerJournal {
-    let mut maintenance = super::super::tests_support::fixture::maintenance();
-    maintenance.checkpoint_profile = CheckpointProfile::FirstUnload;
+    let maintenance = super::super::tests_support::fixture::maintenance();
     ControllerJournal::open_complete(
         path,
         NS,
@@ -129,7 +194,7 @@ fn open(path: &std::path::Path) -> ControllerJournal {
 }
 fn initialize(path: &std::path::Path) -> ControllerJournal {
     let mut j = open(path);
-    j.initialize_lifecycle_inbox(config(), &mut NeverCrash)
+    j.initialize_lifecycle_inbox(config(), source_limits(), &mut NeverCrash)
         .unwrap();
     refresh_epoch(&mut j);
     j
@@ -179,8 +244,7 @@ fn export_closed_fixture(path: &std::path::Path) {
     // Every connection has closed. Never export a live database without WAL.
     assert!(!path.with_file_name("db-wal").exists());
     std::fs::copy(path, output.join("db")).unwrap();
-    let mut maintenance = super::super::tests_support::fixture::maintenance();
-    maintenance.checkpoint_profile = CheckpointProfile::FirstUnload;
+    let maintenance = super::super::tests_support::fixture::maintenance();
     std::fs::write(
         output.join("maintenance.json"),
         serde_json::to_vec(&maintenance).unwrap(),
@@ -386,7 +450,7 @@ fn v3_empty_store_cannot_downgrade_into_the_old_inbox_or_create_without_epoch() 
     let mut j = open(&path);
     let mut no_epoch = config();
     no_epoch.host_epoch = None;
-    j.initialize_lifecycle_inbox(no_epoch, &mut NeverCrash)
+    j.initialize_lifecycle_inbox(no_epoch, source_limits(), &mut NeverCrash)
         .unwrap();
     let legacy = crate::InternalInboxConfig {
         node: config().node,
@@ -405,7 +469,7 @@ fn v3_empty_store_cannot_downgrade_into_the_old_inbox_or_create_without_epoch() 
             r.get(0)
         })
         .unwrap();
-    assert_eq!(version, crate::LIFECYCLE_INBOX_FORMAT_VERSION);
+    assert_eq!(version, crate::LIFECYCLE_STORE_FORMAT_VERSION);
     let request = create("alpha", "session-a");
     j.record_lifecycle_intent(&request, &context(), &mut NeverCrash)
         .unwrap();
@@ -437,8 +501,7 @@ fn v3_missing_required_table_or_relabelled_feature_refuses_reopen() {
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection.execute_batch(corruption).unwrap();
         drop(connection);
-        let mut maintenance = super::super::tests_support::fixture::maintenance();
-        maintenance.checkpoint_profile = CheckpointProfile::FirstUnload;
+        let maintenance = super::super::tests_support::fixture::maintenance();
         assert!(
             ControllerJournal::preflight_complete(
                 &path,
@@ -466,7 +529,7 @@ fn v3_epoch_reference_alone_does_not_admit_and_wrong_observation_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let mut j = open(&path);
-    j.initialize_lifecycle_inbox(config(), &mut NeverCrash)
+    j.initialize_lifecycle_inbox(config(), source_limits(), &mut NeverCrash)
         .unwrap();
     let request = create("alpha", "session-a");
     j.record_lifecycle_intent(&request, &context(), &mut NeverCrash)
@@ -515,7 +578,7 @@ fn v3_epoch_provider_runs_without_an_open_sql_transaction_then_commits_original_
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let mut j = open(&path);
-    j.initialize_lifecycle_inbox(config(), &mut NeverCrash)
+    j.initialize_lifecycle_inbox(config(), source_limits(), &mut NeverCrash)
         .unwrap();
     let mut observer = rusqlite::Connection::open(&path).unwrap();
     observer.busy_timeout(std::time::Duration::ZERO).unwrap();

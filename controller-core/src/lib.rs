@@ -27,6 +27,7 @@ pub mod terminal;
 pub(crate) mod transition;
 pub use transition::DEFAULT_RETRY_LIMIT;
 pub mod worker;
+pub mod workflow;
 
 pub use auxiliary::*;
 pub use controller::*;

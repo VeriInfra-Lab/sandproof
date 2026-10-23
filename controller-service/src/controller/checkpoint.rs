@@ -12,7 +12,7 @@ use super::{
     ControllerJournal, HostSlotContext, allocators, bounded, storage, transaction::WorldTransaction,
 };
 use crate::{CrashInjector, CrashPoint, JournalError};
-pub use config::{CheckpointProfile, MaintenanceConfig};
+pub use config::MaintenanceConfig;
 pub use retirement::RetirementCandidate;
 pub(super) use retirement::original_binding;
 pub(super) use retirement::witnesses as release_witnesses;
@@ -139,25 +139,14 @@ pub(super) fn input_bytes(
 // Refuse unsupported new histories before allocating identity or outbox rows.
 // An exact existing-key replay is still decided by the original reducer.
 pub(super) fn check_input_profile(
-    connection: &Connection,
-    world: &core::World,
+    _connection: &Connection,
+    _world: &core::World,
     input: &core::ControllerInput,
 ) -> Result<(), JournalError> {
     if let core::ControllerInput::Request(core::Request::Resume(_)) = input {
         return Err(JournalError::UnsupportedInput);
     }
-    if let core::ControllerInput::Request(core::Request::Pause(request)) = input {
-        let policy = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
-        if policy.checkpoint_profile != CheckpointProfile::FirstUnload
-            || world.operation_records().iter().any(|(key, row)| {
-                key.sandbox == request.sandbox
-                    && key.operation != request.operation
-                    && row.operation.kind == core::OperationKind::Pause
-            })
-        {
-            return Err(JournalError::UnsupportedInput);
-        }
-    }
+
     Ok(())
 }
 
@@ -201,18 +190,12 @@ fn envelope(
     let contexts = bounded::validate_contexts(connection, world, &host)?;
     let released = retirement::witnesses(connection, world)?;
     let envelope = Envelope {
-        version: config.checkpoint_profile.version(),
+        version: core::checkpoint::CHECKPOINT_VERSION,
         namespace: namespace(connection)?,
         host,
         maintenance: config.clone(),
         input_cut: allocators::input_high_water(connection)?,
-        core: match config.checkpoint_profile {
-            CheckpointProfile::CreateKill => core::checkpoint::capture(world, config.core_limits()),
-            CheckpointProfile::FirstUnload => {
-                core::checkpoint::capture_unload(world, config.core_limits())
-            }
-        }
-        .map_err(map_core)?,
+        core: core::checkpoint::capture(world, config.core_limits()).map_err(map_core)?,
         allocators: allocators::snapshot(connection)?,
         host_contexts: contexts,
         release_witnesses: released,

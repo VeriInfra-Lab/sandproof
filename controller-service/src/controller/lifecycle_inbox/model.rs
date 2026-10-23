@@ -17,6 +17,8 @@ pub struct LifecycleInboxConfig {
     /// None permits recording/fencing but refuses native V3 create admission.
     pub host_epoch: Option<crate::capture::HostEpochRegistration>,
     pub max_sessions: u16,
+    /// Finite retained operations; the last position is reserved for Destroy.
+    pub max_operations_per_session: u16,
     pub max_options_bytes: u32,
     pub max_profile_bytes: u32,
     pub max_manifest_bytes: u32,
@@ -24,12 +26,12 @@ pub struct LifecycleInboxConfig {
 impl LifecycleInboxConfig {
     #[must_use]
     pub fn required_bytes(&self) -> u64 {
-        // Each finite position keeps Create/Unload/Destroy, an explicit native
-        // mapping, one capture work and its complete immutable bundle receipt.
+        // Each finite position keeps its bounded operation history, an explicit
+        // native mapping, one capture work and immutable bundle receipt.
         // The final operation position is reserved for terminal responsibility.
         u64::from(self.max_sessions)
             * (4 * u64::from(self.max_options_bytes)
-                + 3 * 8192
+                + u64::from(self.max_operations_per_session) * 8192
                 + 2 * u64::from(self.max_manifest_bytes)
                 + u64::from(self.max_profile_bytes)
                 + 8192)
@@ -42,6 +44,7 @@ impl LifecycleInboxConfig {
                 .as_ref()
                 .is_none_or(crate::capture::HostEpochRegistration::valid)
             && (1..=4096).contains(&self.max_sessions)
+            && (8..=128).contains(&self.max_operations_per_session)
             && (1..=65_536).contains(&self.max_options_bytes)
             && (1..=65_536).contains(&self.max_profile_bytes)
             && (1..=262_144).contains(&self.max_manifest_bytes)
@@ -71,6 +74,8 @@ pub struct LifecycleWorkState {
 pub(super) struct Entry {
     pub intent: AcceptedLifecycleIntent,
     pub local_operation: Option<sandbox_controller_core::OperationId>,
+    /// Exact effective deadline committed in the same transaction as renewal.
+    pub applied_deadline: Option<i64>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -166,7 +171,7 @@ impl Inbox {
         for (i, session) in self.sessions.iter().enumerate() {
             if session.entries.is_empty()
                 || session.local.is_some() && self.host_epoch_observation.is_none()
-                || session.entries.len() > 3
+                || session.entries.len() > usize::from(self.config.max_operations_per_session)
                 || self.sessions[..i].iter().any(|old| {
                     old.id == session.id
                         || session.local.is_some_and(|local| {
@@ -178,13 +183,24 @@ impl Inbox {
                 return Err(JournalError::CorruptStore);
             }
             let mut maximum = 0;
-            let mut kinds = [0_u8; 3];
+            let mut kinds = [0_u16; 4];
             for entry in &session.entries {
                 let intent = &entry.intent;
+                if intent.accepted_version <= maximum
+                    || !matches!(intent.request.operation, LifecycleOperation::Destroy {})
+                        && intent.request.binding.expected
+                            != if maximum == 0 {
+                                ExpectedSession::Absent
+                            } else {
+                                ExpectedSession::Version(maximum)
+                            }
+                {
+                    return Err(JournalError::CorruptStore);
+                }
                 maximum = maximum.max(intent.accepted_version);
                 let kind = self.entry_kind(session, entry, &context)?;
                 kinds[kind] += 1;
-                if kinds[kind] > 1 {
+                if kind != 3 && kinds[kind] > 1 {
                     return Err(JournalError::CorruptStore);
                 }
             }
@@ -222,6 +238,8 @@ impl Inbox {
             || binding.session != session.id
             || binding.key.owner != session.owner
             || session.local.is_none() && entry.local_operation.is_some()
+            || !matches!(intent.request.operation, LifecycleOperation::Renew { .. })
+                && entry.applied_deadline.is_some()
             || self
                 .sessions
                 .iter()
@@ -247,16 +265,32 @@ impl Inbox {
             LifecycleOperation::Unload {
                 source_incarnation, ..
             } => {
-                if session.incarnation != Some(*source_incarnation)
-                    || session.local.is_none()
-                    || intent.accepted_version != 2
-                    || binding.expected != ExpectedSession::Version(1)
-                {
+                if session.incarnation != Some(*source_incarnation) || session.local.is_none() {
                     return Err(JournalError::CorruptStore);
                 }
                 Ok(1)
             }
             LifecycleOperation::Destroy {} => Ok(2),
+            LifecycleOperation::Renew {
+                incarnation,
+                end_at_ms,
+                extend_only,
+            } => {
+                if session.incarnation != Some(*incarnation)
+                    || session.local.is_none()
+                    || *end_at_ms < 0
+                    || entry.applied_deadline.is_some_and(|end| {
+                        if *extend_only {
+                            end < *end_at_ms
+                        } else {
+                            end != *end_at_ms
+                        }
+                    })
+                {
+                    return Err(JournalError::CorruptStore);
+                }
+                Ok(3)
+            }
             LifecycleOperation::Resume { .. } => Err(JournalError::UnsupportedInput),
         }
     }
@@ -285,7 +319,10 @@ impl Inbox {
             if (!terminal
                 && request.binding.expected != ExpectedSession::Version(session.current_version))
                 || (terminal && intent.accepted_version <= session.current_version)
-                || session.entries.len() >= 3
+                || session.entries.len() >= usize::from(self.config.max_operations_per_session)
+                || !terminal
+                    && session.entries.len() + 1
+                        >= usize::from(self.config.max_operations_per_session)
             {
                 return Err(JournalError::Conflict);
             }
@@ -301,6 +338,19 @@ impl Inbox {
                         )
                     }) => {}
                 LifecycleOperation::Destroy {} => {}
+                LifecycleOperation::Renew {
+                    incarnation,
+                    end_at_ms,
+                    ..
+                } if session.local.is_some()
+                    && session.incarnation == Some(*incarnation)
+                    && *end_at_ms >= 0
+                    && !session.entries.iter().any(|e| {
+                        matches!(
+                            e.intent.request.operation,
+                            LifecycleOperation::Unload { .. }
+                        )
+                    }) => {}
                 _ => return Err(JournalError::UnsupportedInput),
             }
             session.current_version = intent.accepted_version;
@@ -308,6 +358,7 @@ impl Inbox {
             session.entries.push(Entry {
                 intent: intent.clone(),
                 local_operation: None,
+                applied_deadline: None,
             });
             return Ok((s, session.entries.len() - 1));
         }
@@ -334,6 +385,7 @@ impl Inbox {
             entries: vec![Entry {
                 intent: intent.clone(),
                 local_operation: None,
+                applied_deadline: None,
             }],
         });
         Ok((self.sessions.len() - 1, 0))

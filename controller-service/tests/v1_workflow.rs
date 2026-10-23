@@ -4,8 +4,8 @@ use support::*;
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, JournalError, NeverCrash,
-    finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
-    finish_compensating_create_v1, kill_v1,
+    finish_accepted_kill, finish_admitted_create, finish_admitted_create_timed,
+    finish_compensating_create, kill,
 };
 use sandproof_protocol::{FailureCode, UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 use tempfile::TempDir;
@@ -39,7 +39,7 @@ fn create_publishes_after_all_results_and_kill_publishes_after_stop() {
         core::Phase::Running
     );
     assert_eq!(running.resource_index(SANDBOX).vms.len(), 1);
-    let destroyed = kill_v1(&mut journal, kill_request(), &mut worker).unwrap();
+    let destroyed = kill(&mut journal, kill_request(), &mut worker).unwrap();
     assert_eq!(
         destroyed.sandbox_record(SANDBOX).unwrap().phase,
         core::Phase::Destroyed
@@ -67,7 +67,7 @@ fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
     journal
         .admit_create(request.clone(), 1_000, 60, 2_000, limits, &mut NeverCrash)
         .unwrap();
-    let running = finish_admitted_create_v1(
+    let running = finish_admitted_create(
         &mut journal,
         request.sandbox,
         request.operation,
@@ -91,7 +91,7 @@ fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
         .accept_expiry(SANDBOX, expiry_operation, 61_000, &mut NeverCrash)
         .unwrap();
     let destroyed =
-        finish_accepted_kill_v1(&mut journal, SANDBOX, expiry_operation, &mut worker).unwrap();
+        finish_accepted_kill(&mut journal, SANDBOX, expiry_operation, &mut worker).unwrap();
     assert_eq!(
         destroyed.sandbox_record(SANDBOX).unwrap().phase,
         core::Phase::Destroyed
@@ -129,7 +129,7 @@ fn running_publication_resets_usable_lifetime_atomically_across_restart() {
         .admit_create(request.clone(), 1_000, 60, 2_000, limits, &mut NeverCrash)
         .unwrap();
     assert!(matches!(
-        finish_admitted_create_v1_timed(
+        finish_admitted_create_timed(
             &mut journal,
             request.sandbox,
             request.operation,
@@ -162,7 +162,7 @@ fn running_publication_resets_usable_lifetime_atomically_across_restart() {
             .phase,
         core::Phase::Starting
     );
-    let running = finish_admitted_create_v1_timed(
+    let running = finish_admitted_create_timed(
         &mut reopened,
         request.sandbox,
         request.operation,
@@ -222,7 +222,7 @@ fn short_usable_lifetime_does_not_cut_off_a_healthy_startup() {
         journal.abort_due_startups(6_000, &mut NeverCrash).unwrap(),
         0
     );
-    let running = finish_admitted_create_v1_timed(
+    let running = finish_admitted_create_timed(
         &mut journal,
         request.sandbox,
         request.operation,
@@ -277,7 +277,7 @@ fn late_running_publication_cannot_win_before_startup_scanner() {
         .admit_create(request.clone(), 1_000, 5, 2_000, limits, &mut NeverCrash)
         .unwrap();
     assert!(matches!(
-        finish_admitted_create_v1_timed(
+        finish_admitted_create_timed(
             &mut journal,
             SANDBOX,
             request.operation,
@@ -341,7 +341,7 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
     };
     // Physical readiness was acknowledged, but publication did not commit.
     assert!(matches!(
-        finish_admitted_create_v1_timed(
+        finish_admitted_create_timed(
             &mut journal,
             SANDBOX,
             request.operation,
@@ -386,7 +386,7 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
             .is_err()
     );
     assert!(matches!(
-        finish_admitted_create_v1_timed(
+        finish_admitted_create_timed(
             &mut reopened,
             SANDBOX,
             request.operation,
@@ -398,8 +398,7 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
     assert_eq!(reopened.world().unwrap(), revoked);
     assert_eq!(lease(), original_lease);
     let destroyed =
-        finish_compensating_create_v1(&mut reopened, SANDBOX, request.operation, &mut host)
-            .unwrap();
+        finish_compensating_create(&mut reopened, SANDBOX, request.operation, &mut host).unwrap();
     assert_eq!(
         destroyed.sandbox_record(SANDBOX).unwrap().phase,
         core::Phase::Destroyed
@@ -565,7 +564,7 @@ fn compensation_stop_reply_lost_requires_observation_before_failed_publication()
         1
     );
     let completed =
-        finish_compensating_create_v1(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
+        finish_compensating_create(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
     assert_eq!(
         completed.sandbox_record(SANDBOX).unwrap().phase,
         core::Phase::Destroyed
@@ -599,7 +598,7 @@ fn one_sandbox_workflow_does_not_dispatch_another_tenants_actions() {
         core::ControllerInput::Request(core::Request::Create(other)),
     );
     let mut seen = Vec::new();
-    finish_admitted_create_v1(
+    finish_admitted_create(
         &mut journal,
         SANDBOX,
         CREATE_OP,

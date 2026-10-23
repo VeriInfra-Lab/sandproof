@@ -41,7 +41,7 @@ fn validation(
             &mut NeverCrash,
         )
         .unwrap();
-    crate::finish_admitted_create_v1(
+    crate::finish_admitted_create(
         journal,
         core::SandboxId(id),
         core::OperationId(1),
@@ -52,7 +52,7 @@ fn validation(
 }
 
 fn kill(journal: &mut ControllerJournal, id: u64) {
-    crate::kill_v1(
+    crate::kill(
         journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -299,7 +299,7 @@ fn unknown_cleanup_is_never_settled_and_forged_checked_input_is_rejected() {
     journal
         .mark_template_checked(1, &value.candidate_id)
         .unwrap();
-    let _ = crate::kill_v1(
+    let _ = crate::kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),

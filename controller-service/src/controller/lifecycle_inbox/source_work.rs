@@ -68,19 +68,54 @@ fn digest(bytes: &[u8]) -> ContentDigest {
 }
 
 pub(in crate::controller) use codec::{charged_bytes, validate};
+pub(super) fn initialize(
+    connection: &rusqlite::Connection,
+    config: SourceObservationConfig,
+    inbox: &super::LifecycleInboxConfig,
+) -> Result<(), JournalError> {
+    codec::initialize(connection, config, inbox)
+}
+
+pub(in crate::controller) fn configuration_snapshot(
+    connection: &rusqlite::Connection,
+) -> Result<SourceObservationConfig, JournalError> {
+    Ok(codec::load(connection)?
+        .ok_or(JournalError::UnsupportedStore)?
+        .config)
+}
+
+// Until capture/material retirement is connected in the following batches,
+// any original source responsibility prevents claiming complete destruction.
+pub(super) fn retains_session(
+    connection: &rusqlite::Connection,
+    session: &sandproof_protocol::lifecycle::SessionId,
+) -> Result<bool, JournalError> {
+    let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    Ok(sources
+        .records
+        .iter()
+        .any(|record| &record.work.request().request.binding.session == session))
+}
 
 impl ControllerJournal {
-    /// Explicit protected opt-in. Existing 17 bytes are not reinterpreted.
+    /// Compare protected limits with the exact original stored source-work
+    /// configuration. Missing/changed values are never repaired on startup.
     /// # Errors
-    /// Incomplete store, invalid limits, insufficient reserve or unknown commit.
-    pub fn enable_lifecycle_source_observations(
-        &mut self,
-        config: SourceObservationConfig,
-        crashes: &mut impl CrashInjector,
+    /// Corrupt, missing or unequal original configuration refuses activation.
+    pub fn check_lifecycle_source_observations(
+        &self,
+        expected: &SourceObservationConfig,
     ) -> Result<(), JournalError> {
-        codec::enable(self, config, crashes)
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        if configuration_snapshot(&tx)? != *expected {
+            return Err(JournalError::UnsupportedStore);
+        }
+        tx.commit()?;
+        Ok(())
     }
-
     /// Commit the same accepted Unload question before any source I/O. Replay
     /// returns its original responsibility; it never allocates another ID.
     /// # Errors

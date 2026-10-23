@@ -373,19 +373,14 @@ pub(super) fn publication_pins(
     if tables == 0
         && matches!(
             version,
-            11 | crate::INTERNAL_INBOX_FORMAT_VERSION
-                | crate::LIFECYCLE_INBOX_FORMAT_VERSION
-                | crate::SOURCE_WORK_FORMAT_VERSION
+            11 | crate::INTERNAL_INBOX_FORMAT_VERSION | crate::LIFECYCLE_STORE_FORMAT_VERSION
         )
     {
         return Ok(Vec::new());
     }
     if !matches!(
         version,
-        10 | 11
-            | crate::INTERNAL_INBOX_FORMAT_VERSION
-            | crate::LIFECYCLE_INBOX_FORMAT_VERSION
-            | crate::SOURCE_WORK_FORMAT_VERSION
+        10 | 11 | crate::INTERNAL_INBOX_FORMAT_VERSION | crate::LIFECYCLE_STORE_FORMAT_VERSION
     ) {
         if !(1..=9).contains(&version) || tables != 0 {
             return Err(JournalError::CorruptStore);
@@ -442,9 +437,7 @@ fn registry_state(connection: &Connection, world: &core::World) -> Result<(), Jo
         if value.validation_certificate.is_some() {
             if !matches!(
                 version,
-                11 | crate::INTERNAL_INBOX_FORMAT_VERSION
-                    | crate::LIFECYCLE_INBOX_FORMAT_VERSION
-                    | crate::SOURCE_WORK_FORMAT_VERSION
+                11 | crate::INTERNAL_INBOX_FORMAT_VERSION | crate::LIFECYCLE_STORE_FORMAT_VERSION
             ) {
                 return Err(JournalError::CorruptStore);
             }

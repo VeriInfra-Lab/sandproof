@@ -246,8 +246,7 @@ pub trait HostCapacity {
 pub trait LaunchConfiguration {
     /// # Errors
     /// A host credential creation failure leaves the admitted create pending.
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str)
-    -> Result<(), ApplicationError>;
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError>;
 
     /// Return false only when no credential was ever stored. A malformed or
     /// unreadable credential must be an error, not permission to replace it.
@@ -364,7 +363,7 @@ impl<T> ControllerHost for T where
         + TemplateArtifacts
         + Send
         + Sync
-    + Sync
+        + Sync
         + 'static
 {
 }

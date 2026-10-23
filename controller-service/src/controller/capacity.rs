@@ -52,30 +52,29 @@ struct Graph {
     sql_rows: u64,
     operations: u64,
 }
-fn graph(policy: &checkpoint::MaintenanceConfig) -> Graph {
-    let unload = policy.checkpoint_profile == checkpoint::CheckpointProfile::FirstUnload;
+fn graph(_policy: &checkpoint::MaintenanceConfig) -> Graph {
     // The one-pause profile adds fence/freeze/seal/register/stop (the final
     // kill's stop has a different epoch). Reserve all retries before create.
-    let logical = LOGICAL + if unload { 5 } else { 0 };
+    let logical = LOGICAL + 5;
     let attempts = logical * (core::DEFAULT_RETRY_LIMIT + 1);
     let receipts = attempts * 2;
     Graph {
         logical,
         attempts,
         receipts,
-        records: RECORDS + (logical - LOGICAL) + (attempts - ATTEMPTS) + if unload { 3 } else { 0 },
-        references: REFERENCES + 2 * (attempts - ATTEMPTS) + if unload { 8 } else { 0 },
+        records: RECORDS + (logical - LOGICAL) + (attempts - ATTEMPTS) + 3,
+        references: REFERENCES + 2 * (attempts - ATTEMPTS) + 8,
         policy_copies: POLICY_COPIES,
         inputs: INPUTS
             + 4 * (attempts - ATTEMPTS)
             + (logical - LOGICAL) * (core::DEFAULT_RETRY_LIMIT + 1)
-            + if unload { 16 } else { 0 },
+            + 16,
         sql_rows: SQL_ROWS
             + (attempts - ATTEMPTS)
             + (receipts - RECEIPTS)
             + (logical - LOGICAL)
-            + u64::from(unload),
-        operations: if unload { 3 } else { 2 },
+            + 1,
+        operations: 3,
     }
 }
 

@@ -39,8 +39,8 @@ fn root(connection: &Connection, config: &MaintenanceConfig) -> Result<Envelope,
         return Err(JournalError::CorruptStore);
     }
     let root: Envelope = serde_json::from_slice(&bytes).map_err(|_| JournalError::CorruptStore)?;
-    if root.version != config.checkpoint_profile.version()
-        || root.core.version() != config.checkpoint_profile.version()
+    if root.version != core::checkpoint::CHECKPOINT_VERSION
+        || root.core.version() != core::checkpoint::CHECKPOINT_VERSION
         || root.input_cut != u64::try_from(cut).map_err(|_| JournalError::CorruptStore)?
         || &root.maintenance != config
         || root.namespace != namespace(connection)?

@@ -8,6 +8,43 @@ use sandproof_protocol::{
 };
 
 impl ControllerJournal {
+    /// Current, already received renewals without a committed application.
+    /// Listing is not permission; apply rechecks the full original transaction.
+    /// # Errors
+    /// Wrong node and unreadable original authority refuse the scan.
+    pub fn lifecycle_pending_renewals(
+        &self,
+        node: &NodeIdentity,
+    ) -> Result<Vec<AcceptedLifecycleIntent>, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        if &inbox.config.node != node {
+            return Err(JournalError::Conflict);
+        }
+        let pending = inbox
+            .sessions
+            .iter()
+            .filter(|session| !session.terminal)
+            .filter_map(|session| {
+                session.entries.iter().find(|entry| {
+                    entry.intent.accepted_version == session.current_version
+                        && entry.applied_deadline.is_none()
+                        && matches!(
+                            entry.intent.request.operation,
+                            LifecycleOperation::Renew { .. }
+                        )
+                })
+            })
+            .map(|entry| entry.intent.clone())
+            .collect();
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(pending)
+    }
+
     pub(crate) fn recorded_lifecycle_context(
         &self,
         intent: &AcceptedLifecycleIntent,

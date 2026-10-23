@@ -269,7 +269,7 @@ fn apply_revocation_fence(world: &World, sandbox: SandboxId, record: &SandboxRec
     next
 }
 
-fn prepare_resources(
+pub(crate) fn prepare_resources(
     world: &World,
     sandbox: SandboxId,
     record: &SandboxRecord,
@@ -305,6 +305,9 @@ fn prepare_resources(
     updated.current_vm = Some(vm_id);
     updated.net_slot = Some(slot_id);
     next.sandboxes.put(sandbox, updated);
+    if record.terminal {
+        return next;
+    }
     enqueue(
         &mut next,
         Command::ConfigureNetwork {
@@ -372,6 +375,9 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
         return Err(WorkerReject::NotAwaiting);
     }
 
+    if crate::terminal::startup_effect_in_current_abort(world, id) {
+        return crate::terminal::record_late_startup(world, id);
+    }
     match command {
         Command::InstallFence {
             sandbox,

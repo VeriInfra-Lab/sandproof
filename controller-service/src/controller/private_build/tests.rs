@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     AdmissionLimits, BoundedHostConfig, CreateAdmission, MaintenanceConfig, NeverCrash,
-    finish_admitted_create_v1, kill_v1,
+    finish_admitted_create, kill,
 };
 use tempfile::TempDir;
 
@@ -118,14 +118,14 @@ fn success(
     })
 }
 fn destroy(journal: &mut ControllerJournal, id: u64) {
-    finish_admitted_create_v1(
+    finish_admitted_create(
         journal,
         core::SandboxId(id),
         core::OperationId(1),
         &mut success,
     )
     .unwrap();
-    kill_v1(
+    kill(
         journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
