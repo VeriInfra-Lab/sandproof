@@ -97,7 +97,7 @@ pub(super) fn retains_session(
         .any(|record| &record.work.request().request.binding.session == session))
 }
 
-/// Exact inbox rows used by source_work::snapshot::validate_record: the
+/// Exact inbox rows used by `source_work::snapshot::validate_record`: the
 /// original Unload and first Create. The native/action/receipt snapshots are
 /// self-contained; they contain no SDK renewal-row reference. Keep the two
 /// full rows the real subsequent find calls consume, rather than treating a
