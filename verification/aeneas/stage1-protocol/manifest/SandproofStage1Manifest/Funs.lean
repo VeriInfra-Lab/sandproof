@@ -49,7 +49,7 @@ def
   ok (self = other)
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::NodeId, sandproof_protocol::NodeId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -61,7 +61,7 @@ def sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -101,7 +101,7 @@ def
   else ok false
 
 /-- Trait implementation: [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>"]
@@ -114,7 +114,7 @@ impl_def sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId :
 }
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceId, sandproof_protocol::ResourceId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -127,7 +127,7 @@ def sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- Trait implementation: [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [core::cmp::PartialEq<sandproof_protocol::ResourceId, sandproof_protocol::ResourceId>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandproof_protocol::ResourceId, sandproof_protocol::ResourceId>"]
@@ -140,7 +140,7 @@ impl_def sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId :
 }
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::SandboxId, sandproof_protocol::SandboxId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -153,7 +153,7 @@ def sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::TenantId, sandproof_protocol::TenantId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -253,7 +253,7 @@ def
     self other
 
 /-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 72:23-72:32
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 91:23-91:32
     Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey, sandproof_protocol::lifecycle::identity::OperationKey>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -286,7 +286,7 @@ def
   else ok false
 
 /-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 82:29-82:38
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 101:29-101:38
     Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession, sandproof_protocol::lifecycle::identity::ExpectedSession>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -312,7 +312,7 @@ def
   else ok false
 
 /-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 95:23-95:32
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 114:23-114:32
     Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding, sandproof_protocol::lifecycle::identity::OperationBinding>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -918,7 +918,7 @@ def sandproof_protocol.lifecycle.manifest.file_length
             sandproof_protocol.lifecycle.manifest.ManifestError) residual
 
 /-- [sandproof_protocol::lifecycle::PROTOCOL_VERSION]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs', lines 23:0-23:31
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs', lines 45:0-45:31
     Name pattern: [sandproof_protocol::lifecycle::PROTOCOL_VERSION]
     Visibility: public -/
 @[global_simps, irreducible, rust_const
@@ -1100,7 +1100,7 @@ def sandproof_protocol.lifecycle.manifest.SnapshotManifest.validate
               sandproof_protocol.lifecycle.manifest.ManifestError.InvalidBinding)
 
 /-- [sandproof_stage1_protocol_extract::manifest_validate]:
-    Source: 'src/lib.rs', lines 21:0-27:1
+    Source: 'src/lib.rs', lines 36:0-42:1
     Visibility: public -/
 def manifest_validate
   (manifest : sandproof_protocol.lifecycle.manifest.SnapshotManifest)

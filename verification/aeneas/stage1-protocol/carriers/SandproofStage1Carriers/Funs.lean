@@ -139,7 +139,7 @@ def
   | core.result.Result.Err error => ok (core.result.Result.Err error)
 
 /-- [sandproof_stage1_protocol_extract::capture_from_u64]:
-    Source: 'src/lib.rs', lines 29:0-31:1
+    Source: 'src/lib.rs', lines 44:0-46:1
     Visibility: public -/
 def capture_from_u64
   (value : Std.U64) :
@@ -150,7 +150,7 @@ def capture_from_u64
     value
 
 /-- [sandproof_stage1_protocol_extract::capture_value]:
-    Source: 'src/lib.rs', lines 33:0-35:1
+    Source: 'src/lib.rs', lines 48:0-50:1
     Visibility: public -/
 def capture_value
   (value : sandproof_protocol.lifecycle.identity.CaptureId) :
@@ -159,7 +159,7 @@ def capture_value
   sandproof_protocol.lifecycle.identity.CaptureId.get value
 
 /-- [sandproof_stage1_protocol_extract::capture_next]:
-    Source: 'src/lib.rs', lines 37:0-39:1
+    Source: 'src/lib.rs', lines 52:0-54:1
     Visibility: public -/
 def capture_next
   (value : sandproof_protocol.lifecycle.identity.CaptureId) :
@@ -169,7 +169,7 @@ def capture_next
   sandproof_protocol.lifecycle.identity.CaptureId.checked_next value
 
 /-- [sandproof_stage1_protocol_extract::digest_roundtrip]:
-    Source: 'src/lib.rs', lines 41:0-43:1
+    Source: 'src/lib.rs', lines 56:0-58:1
     Visibility: public -/
 def digest_roundtrip
   (value : Array Std.U8 32#usize) : Result (Array Std.U8 32#usize) := do

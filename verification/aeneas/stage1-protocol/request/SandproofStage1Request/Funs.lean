@@ -22,6 +22,19 @@ noncomputable section
 
 namespace SandproofStage1RequestRust
 
+/-- Trait implementation: [core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}]
+    Source: '/rustc/library/core/src/option.rs', lines 2434:0-2434:56
+    Name pattern: [core::cmp::PartialEq<core::option::Option<@T>, core::option::Option<@T>>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<core::option::Option<@T>, core::option::Option<@T>>"]
+impl_def core.option.Option.Insts.CoreCmpPartialEqOption {T : Type}
+  (cmpPartialEqInst : core.cmp.PartialEq T T) : core.cmp.PartialEq (Option T)
+  (Option T) := {
+  eq := core.option.Option.Insts.CoreCmpPartialEqOption.eq cmpPartialEqInst
+  ne := core.cmp.PartialEq.ne.trait_default
+    (core.option.Option.Insts.CoreCmpPartialEqOption cmpPartialEqInst)
+}
+
 /-- [sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES]
     Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal/lifecycle.rs', lines 6:0-6:34
     Name pattern: [sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES]
@@ -72,7 +85,7 @@ def sandproof_protocol.internal.lifecycle.Resources.positive
   else ok false
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceId, sandproof_protocol::ResourceId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -206,7 +219,7 @@ def sandproof_protocol.internal.PositiveCounter.get
   ok self
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::NodeId, sandproof_protocol::NodeId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -218,7 +231,7 @@ def sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -273,7 +286,7 @@ impl_def
 }
 
 /-- Trait implementation: [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandproof_protocol::DeploymentId, sandproof_protocol::DeploymentId>"]
@@ -286,7 +299,7 @@ impl_def sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId :
 }
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::SandboxId, sandproof_protocol::SandboxId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -299,7 +312,7 @@ def sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 68:37-68:46
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs', lines 71:37-71:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::TenantId, sandproof_protocol::TenantId>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -310,78 +323,82 @@ def sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq
   := do
   alloc.string.String.Insts.CoreCmpPartialEqString.eq self other
 
-/-- [sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs', lines 9:29-9:38
-    Name pattern: [sandproof_protocol::lifecycle::digest::{core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>}::eq]
+/-- [sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterId> for sandproof_protocol::lifecycle::authority::CenterId}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 10:23-10:32
+    Name pattern: [sandproof_protocol::lifecycle::authority::{core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterId, sandproof_protocol::lifecycle::authority::CenterId>}::eq]
     Visibility: public -/
 @[rust_fun
-  "sandproof_protocol::lifecycle::digest::{core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>}::eq"]
+  "sandproof_protocol::lifecycle::authority::{core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterId, sandproof_protocol::lifecycle::authority::CenterId>}::eq"]
 def
-  sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
-  (self : sandproof_protocol.lifecycle.digest.ContentDigest)
-  (other : sandproof_protocol.lifecycle.digest.ContentDigest) :
+  sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCmpPartialEqCenterId.eq
+  (self : sandproof_protocol.lifecycle.authority.CenterId)
+  (other : sandproof_protocol.lifecycle.authority.CenterId) :
   Result Bool
   := do
-  core.array.equality.PartialEqArray.eq core.cmp.PartialEqU8 self other
+  sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq self
+    other
 
-/-- Trait implementation: [sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs', lines 9:29-9:38
-    Name pattern: [core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>] -/
+/-- [sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity> for sandproof_protocol::lifecycle::authority::CenterIdentity}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 27:23-27:32
+    Name pattern: [sandproof_protocol::lifecycle::authority::{core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity, sandproof_protocol::lifecycle::authority::CenterIdentity>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::authority::{core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity, sandproof_protocol::lifecycle::authority::CenterIdentity>}::eq"]
+def
+  sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq
+  (self : sandproof_protocol.lifecycle.authority.CenterIdentity)
+  (other : sandproof_protocol.lifecycle.authority.CenterIdentity) :
+  Result Bool
+  := do
+  let b ←
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq
+      self.deployment other.deployment
+  if b
+  then
+    sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCmpPartialEqCenterId.eq
+      self.center other.center
+  else ok false
+
+/-- Trait implementation: [sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity> for sandproof_protocol::lifecycle::authority::CenterIdentity}]
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 27:23-27:32
+    Name pattern: [core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity, sandproof_protocol::lifecycle::authority::CenterIdentity>] -/
 @[reducible, rust_trait_impl
-  "core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>"]
+  "core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity, sandproof_protocol::lifecycle::authority::CenterIdentity>"]
 impl_def
-  sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest
-  : core.cmp.PartialEq sandproof_protocol.lifecycle.digest.ContentDigest
-  sandproof_protocol.lifecycle.digest.ContentDigest := {
+  sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity
+  : core.cmp.PartialEq sandproof_protocol.lifecycle.authority.CenterIdentity
+  sandproof_protocol.lifecycle.authority.CenterIdentity := {
   eq :=
-    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+    sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq
   ne := core.cmp.PartialEq.ne.trait_default
-    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest
+    sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity
 }
 
-/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId> for sandproof_protocol::lifecycle::identity::SessionId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 6:23-6:32
-    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId, sandproof_protocol::lifecycle::identity::SessionId>}::eq]
+/-- [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::center]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 54:4-54:49
+    Name pattern: [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::center]
     Visibility: public -/
 @[rust_fun
-  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId, sandproof_protocol::lifecycle::identity::SessionId>}::eq"]
+  "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::center"]
 def
-  sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq
-  (self : sandproof_protocol.lifecycle.identity.SessionId)
-  (other : sandproof_protocol.lifecycle.identity.SessionId) :
-  Result Bool
+  sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.center
+  (self : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext) :
+  Result sandproof_protocol.lifecycle.authority.CenterIdentity
   := do
-  sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq self other
+  ok self.center
 
-/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
-    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>}::eq]
+/-- [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::expected_node]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 58:4-58:54
+    Name pattern: [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::expected_node]
     Visibility: public -/
 @[rust_fun
-  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>}::eq"]
+  "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::expected_node"]
 def
-  sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq
-  (self : sandproof_protocol.lifecycle.identity.IncarnationId)
-  (other : sandproof_protocol.lifecycle.identity.IncarnationId) :
-  Result Bool
+  sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.expected_node
+  (self : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext) :
+  Result sandproof_protocol.internal.NodeIdentity
   := do
-  sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq
-    self other
-
-/-- Trait implementation: [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
-    Name pattern: [core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>] -/
-@[reducible, rust_trait_impl
-  "core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>"]
-impl_def
-  sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId
-  : core.cmp.PartialEq sandproof_protocol.lifecycle.identity.IncarnationId
-  sandproof_protocol.lifecycle.identity.IncarnationId := {
-  eq :=
-    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId
-}
+  ok self.expected_node
 
 /-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}::eq]:
     Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
@@ -413,142 +430,64 @@ impl_def
     sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId
 }
 
-/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId> for sandproof_protocol::lifecycle::identity::RequestWindowId}::eq]:
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}::eq]:
     Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
-    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId, sandproof_protocol::lifecycle::identity::RequestWindowId>}::eq]
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>}::eq]
     Visibility: public -/
 @[rust_fun
-  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId, sandproof_protocol::lifecycle::identity::RequestWindowId>}::eq"]
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>}::eq"]
 def
-  sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq
-  (self : sandproof_protocol.lifecycle.identity.RequestWindowId)
-  (other : sandproof_protocol.lifecycle.identity.RequestWindowId) :
+  sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq
+  (self : sandproof_protocol.lifecycle.identity.IncarnationId)
+  (other : sandproof_protocol.lifecycle.identity.IncarnationId) :
   Result Bool
   := do
   sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq
     self other
 
-/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence> for sandproof_protocol::lifecycle::identity::RequestSequence}::eq]:
+/-- Trait implementation: [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}]
     Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
-    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence, sandproof_protocol::lifecycle::identity::RequestSequence>}::eq]
+    Name pattern: [core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId, sandproof_protocol::lifecycle::identity::IncarnationId>"]
+impl_def
+  sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId
+  : core.cmp.PartialEq sandproof_protocol.lifecycle.identity.IncarnationId
+  sandproof_protocol.lifecycle.identity.IncarnationId := {
+  eq :=
+    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId
+}
+
+/-- [sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs', lines 9:29-9:38
+    Name pattern: [sandproof_protocol::lifecycle::digest::{core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>}::eq]
     Visibility: public -/
 @[rust_fun
-  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence, sandproof_protocol::lifecycle::identity::RequestSequence>}::eq"]
+  "sandproof_protocol::lifecycle::digest::{core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>}::eq"]
 def
-  sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq
-  (self : sandproof_protocol.lifecycle.identity.RequestSequence)
-  (other : sandproof_protocol.lifecycle.identity.RequestSequence) :
+  sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+  (self : sandproof_protocol.lifecycle.digest.ContentDigest)
+  (other : sandproof_protocol.lifecycle.digest.ContentDigest) :
   Result Bool
   := do
-  sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq
-    self other
+  core.array.equality.PartialEqArray.eq core.cmp.PartialEqU8 self other
 
-/-- [sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 38:12-38:41
-    Name pattern: [sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get]
-    Visibility: public -/
-@[rust_fun
-  "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get"]
-def sandproof_protocol.lifecycle.identity.IncarnationId.get
-  (self : sandproof_protocol.lifecycle.identity.IncarnationId) :
-  Result Std.U64
-  := do
-  sandproof_protocol.internal.PositiveCounter.get self
-
-/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 72:23-72:32
-    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey, sandproof_protocol::lifecycle::identity::OperationKey>}::eq]
-    Visibility: public -/
-@[rust_fun
-  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey, sandproof_protocol::lifecycle::identity::OperationKey>}::eq"]
-def
-  sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
-  (self : sandproof_protocol.lifecycle.identity.OperationKey)
-  (other : sandproof_protocol.lifecycle.identity.OperationKey) :
-  Result Bool
-  := do
-  let b ←
-    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq
-      self.deployment other.deployment
-  if b
-  then
-    let b1 ←
-      sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq self.owner
-        other.owner
-    if b1
-    then
-      let b2 ←
-        sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq
-          self.window other.window
-      if b2
-      then
-        sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq
-          self.sequence other.sequence
-      else ok false
-    else ok false
-  else ok false
-
-/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 82:29-82:38
-    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession, sandproof_protocol::lifecycle::identity::ExpectedSession>}::eq]
-    Visibility: public -/
-@[rust_fun
-  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession, sandproof_protocol::lifecycle::identity::ExpectedSession>}::eq"]
-def
-  sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq
-  (self : sandproof_protocol.lifecycle.identity.ExpectedSession)
-  (other : sandproof_protocol.lifecycle.identity.ExpectedSession) :
-  Result Bool
-  := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  if self1 = other1
-  then
-    match self with
-    | sandproof_protocol.lifecycle.identity.ExpectedSession.Absent => ok true
-    | sandproof_protocol.lifecycle.identity.ExpectedSession.Version __self_0 =>
-      match other with
-      | sandproof_protocol.lifecycle.identity.ExpectedSession.Absent => ok true
-      | sandproof_protocol.lifecycle.identity.ExpectedSession.Version __arg1_0
-        =>
-        lift (core.cmp.impls.PartialEqU64.eq __self_0 __arg1_0)
-  else ok false
-
-/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 95:23-95:32
-    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding, sandproof_protocol::lifecycle::identity::OperationBinding>}::eq]
-    Visibility: public -/
-@[rust_fun
-  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding, sandproof_protocol::lifecycle::identity::OperationBinding>}::eq"]
-def
-  sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq
-  (self : sandproof_protocol.lifecycle.identity.OperationBinding)
-  (other : sandproof_protocol.lifecycle.identity.OperationBinding) :
-  Result Bool
-  := do
-  if self.protocol_version = other.protocol_version
-  then
-    let b ←
-      sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq
-        self.node other.node
-    if b
-    then
-      let b1 ←
-        sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq
-          self.session other.session
-      if b1
-      then
-        let b2 ←
-          sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
-            self.key other.key
-        if b2
-        then
-          sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq
-            self.expected other.expected
-        else ok false
-      else ok false
-    else ok false
-  else ok false
+/-- Trait implementation: [sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}]
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs', lines 9:29-9:38
+    Name pattern: [core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest, sandproof_protocol::lifecycle::digest::ContentDigest>"]
+impl_def
+  sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest
+  : core.cmp.PartialEq sandproof_protocol.lifecycle.digest.ContentDigest
+  sandproof_protocol.lifecycle.digest.ContentDigest := {
+  eq :=
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest
+}
 
 /-- [sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleOperation> for sandproof_protocol::lifecycle::request::LifecycleOperation}::eq]:
     Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 17:23-17:32
@@ -585,6 +524,8 @@ def
       | sandproof_protocol.lifecycle.request.LifecycleOperation.Resume _ _ _ _
         =>
         ok true
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Renew _ _ _ =>
+        ok true
       | sandproof_protocol.lifecycle.request.LifecycleOperation.Destroy =>
         ok true
     | sandproof_protocol.lifecycle.request.LifecycleOperation.Unload __self_0
@@ -604,6 +545,8 @@ def
         else ok false
       | sandproof_protocol.lifecycle.request.LifecycleOperation.Resume _ _ _ _
         =>
+        ok true
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Renew _ _ _ =>
         ok true
       | sandproof_protocol.lifecycle.request.LifecycleOperation.Destroy =>
         ok true
@@ -636,14 +579,179 @@ def
             else ok false
           else ok false
         else ok false
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Renew _ _ _ =>
+        ok true
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Destroy =>
+        ok true
+    | sandproof_protocol.lifecycle.request.LifecycleOperation.Renew __self_0
+      __self_1 __self_2 =>
+      match other with
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Create _ _ =>
+        ok true
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Unload _ _ =>
+        ok true
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Resume _ _ _ _
+        =>
+        ok true
+      | sandproof_protocol.lifecycle.request.LifecycleOperation.Renew __arg1_0
+        __arg1_1 __arg1_2 =>
+        let b ← lift (core.cmp.impls.PartialEqI64.eq __self_1 __arg1_1)
+        if b
+        then
+          let b1 ← core.cmp.impls.PartialEqBool.eq __self_2 __arg1_2
+          if b1
+          then
+            sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq
+              __self_0 __arg1_0
+          else ok false
+        else ok false
       | sandproof_protocol.lifecycle.request.LifecycleOperation.Destroy =>
         ok true
     | sandproof_protocol.lifecycle.request.LifecycleOperation.Destroy =>
       ok true
   else ok false
 
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 101:29-101:38
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession, sandproof_protocol::lifecycle::identity::ExpectedSession>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession, sandproof_protocol::lifecycle::identity::ExpectedSession>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq
+  (self : sandproof_protocol.lifecycle.identity.ExpectedSession)
+  (other : sandproof_protocol.lifecycle.identity.ExpectedSession) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | sandproof_protocol.lifecycle.identity.ExpectedSession.Absent => ok true
+    | sandproof_protocol.lifecycle.identity.ExpectedSession.Version __self_0 =>
+      match other with
+      | sandproof_protocol.lifecycle.identity.ExpectedSession.Absent => ok true
+      | sandproof_protocol.lifecycle.identity.ExpectedSession.Version __arg1_0
+        =>
+        lift (core.cmp.impls.PartialEqU64.eq __self_0 __arg1_0)
+  else ok false
+
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence> for sandproof_protocol::lifecycle::identity::RequestSequence}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence, sandproof_protocol::lifecycle::identity::RequestSequence>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence, sandproof_protocol::lifecycle::identity::RequestSequence>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq
+  (self : sandproof_protocol.lifecycle.identity.RequestSequence)
+  (other : sandproof_protocol.lifecycle.identity.RequestSequence) :
+  Result Bool
+  := do
+  sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq
+    self other
+
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId> for sandproof_protocol::lifecycle::identity::RequestWindowId}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId, sandproof_protocol::lifecycle::identity::RequestWindowId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId, sandproof_protocol::lifecycle::identity::RequestWindowId>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq
+  (self : sandproof_protocol.lifecycle.identity.RequestWindowId)
+  (other : sandproof_protocol.lifecycle.identity.RequestWindowId) :
+  Result Bool
+  := do
+  sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq
+    self other
+
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 91:23-91:32
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey, sandproof_protocol::lifecycle::identity::OperationKey>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey, sandproof_protocol::lifecycle::identity::OperationKey>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
+  (self : sandproof_protocol.lifecycle.identity.OperationKey)
+  (other : sandproof_protocol.lifecycle.identity.OperationKey) :
+  Result Bool
+  := do
+  let b ←
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq
+      self.deployment other.deployment
+  if b
+  then
+    let b1 ←
+      sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq self.owner
+        other.owner
+    if b1
+    then
+      let b2 ←
+        sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq
+          self.window other.window
+      if b2
+      then
+        sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq
+          self.sequence other.sequence
+      else ok false
+    else ok false
+  else ok false
+
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId> for sandproof_protocol::lifecycle::identity::SessionId}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 6:23-6:32
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId, sandproof_protocol::lifecycle::identity::SessionId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId, sandproof_protocol::lifecycle::identity::SessionId>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq
+  (self : sandproof_protocol.lifecycle.identity.SessionId)
+  (other : sandproof_protocol.lifecycle.identity.SessionId) :
+  Result Bool
+  := do
+  sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq self other
+
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 114:23-114:32
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding, sandproof_protocol::lifecycle::identity::OperationBinding>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding, sandproof_protocol::lifecycle::identity::OperationBinding>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq
+  (self : sandproof_protocol.lifecycle.identity.OperationBinding)
+  (other : sandproof_protocol.lifecycle.identity.OperationBinding) :
+  Result Bool
+  := do
+  if self.protocol_version = other.protocol_version
+  then
+    let b ←
+      sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq
+        self.node other.node
+    if b
+    then
+      let b1 ←
+        sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq
+          self.session other.session
+      if b1
+      then
+        let b2 ←
+          sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
+            self.key other.key
+        if b2
+        then
+          sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq
+            self.expected other.expected
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
 /-- [sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest> for sandproof_protocol::lifecycle::request::LifecycleRequest}::eq]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 38:23-38:32
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 47:23-47:32
     Name pattern: [sandproof_protocol::lifecycle::request::{core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest, sandproof_protocol::lifecycle::request::LifecycleRequest>}::eq]
     Visibility: public -/
 @[rust_fun
@@ -663,45 +771,156 @@ def
       self.operation other.operation
   else ok false
 
-/-- Trait implementation: [sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest> for sandproof_protocol::lifecycle::request::LifecycleRequest}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 38:23-38:32
-    Name pattern: [core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest, sandproof_protocol::lifecycle::request::LifecycleRequest>] -/
-@[reducible, rust_trait_impl
-  "core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest, sandproof_protocol::lifecycle::request::LifecycleRequest>"]
-impl_def
-  sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest
-  : core.cmp.PartialEq sandproof_protocol.lifecycle.request.LifecycleRequest
-  sandproof_protocol.lifecycle.request.LifecycleRequest := {
-  eq :=
-    sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest
-}
-
-/-- [sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 49:4-49:57
-    Name pattern: [sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches]
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionWindowId> for sandproof_protocol::lifecycle::identity::RetentionWindowId}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 32:37-32:46
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionWindowId, sandproof_protocol::lifecycle::identity::RetentionWindowId>}::eq]
     Visibility: public -/
 @[rust_fun
-  "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches"]
-def sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches
-  (self : sandproof_protocol.lifecycle.request.LifecycleRequest)
-  (original : sandproof_protocol.lifecycle.request.LifecycleRequest) :
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionWindowId, sandproof_protocol::lifecycle::identity::RetentionWindowId>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq
+  (self : sandproof_protocol.lifecycle.identity.RetentionWindowId)
+  (other : sandproof_protocol.lifecycle.identity.RetentionWindowId) :
   Result Bool
   := do
-  sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq
-    self original
+  sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq
+    self other
+
+/-- [sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionBinding> for sandproof_protocol::lifecycle::identity::RetentionBinding}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 75:29-75:38
+    Name pattern: [sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionBinding, sandproof_protocol::lifecycle::identity::RetentionBinding>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionBinding, sandproof_protocol::lifecycle::identity::RetentionBinding>}::eq"]
+def
+  sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq
+  (self : sandproof_protocol.lifecycle.identity.RetentionBinding)
+  (other : sandproof_protocol.lifecycle.identity.RetentionBinding) :
+  Result Bool
+  := do
+  if self.slot = other.slot
+  then
+    sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq
+      self.window other.window
+  else ok false
+
+/-- [sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent> for sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::eq]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 65:23-65:32
+    Name pattern: [sandproof_protocol::lifecycle::authority::{core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent, sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::authority::{core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent, sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent>}::eq"]
+def
+  sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq
+  (self : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+  (other : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+  Result Bool
+  := do
+  if self.accepted_version = other.accepted_version
+  then
+    let b ←
+      sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq
+        self.request other.request
+    if b
+    then
+      let b1 ←
+        sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq
+          self.center other.center
+      if b1
+      then
+        sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq
+          self.retention other.retention
+      else ok false
+    else ok false
+  else ok false
+
+/-- [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::RecordedLifecycleIntent}::matches]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 86:4-86:69
+    Name pattern: [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::RecordedLifecycleIntent}::matches]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::RecordedLifecycleIntent}::matches"]
+def sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent.matches
+  (self : sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent)
+  (original : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+  Result Bool
+  := do
+  let b ←
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq
+      self.intent original
+  if b
+  then
+    if self.current_session_version >= original.accepted_version
+    then
+      ok (self.current = (self.current_session_version =
+        original.accepted_version))
+    else ok false
+  else ok false
+
+/-- [sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 97:4-97:11
+    Name pattern: [sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request] -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request"]
+def
+  sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request.constructor
+  (ve : sandproof_protocol.lifecycle.request.ValidationError) :
+  Result sandproof_protocol.lifecycle.authority.AcceptedIntentError
+  := do
+  ok (sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request ve)
+
+/-- [sandproof_protocol::lifecycle::authority::AcceptedIntentError::{impl core::ops::function::FnOnce<(sandproof_protocol::lifecycle::request::ValidationError,), sandproof_protocol::lifecycle::authority::AcceptedIntentError> for sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request}::call_once]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 97:4-97:11
+    Name pattern: [sandproof_protocol::lifecycle::authority::AcceptedIntentError::{core::ops::function::FnOnce<@, (sandproof_protocol::lifecycle::request::ValidationError), sandproof_protocol::lifecycle::authority::AcceptedIntentError>}::call_once] -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::authority::AcceptedIntentError::{core::ops::function::FnOnce<@, (sandproof_protocol::lifecycle::request::ValidationError), sandproof_protocol::lifecycle::authority::AcceptedIntentError>}::call_once"]
+def
+  P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError.call_once
+  (state : sandproof_protocol.lifecycle.request.ValidationError → Result
+  sandproof_protocol.lifecycle.authority.AcceptedIntentError)
+  (args : sandproof_protocol.lifecycle.request.ValidationError) :
+  Result sandproof_protocol.lifecycle.authority.AcceptedIntentError
+  := do
+  sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request.constructor
+    args
+
+/-- Trait implementation: [sandproof_protocol::lifecycle::authority::AcceptedIntentError::{impl core::ops::function::FnOnce<(sandproof_protocol::lifecycle::request::ValidationError,), sandproof_protocol::lifecycle::authority::AcceptedIntentError> for sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request}]
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 97:4-97:11
+    Name pattern: [core::ops::function::FnOnce<@, (sandproof_protocol::lifecycle::request::ValidationError), sandproof_protocol::lifecycle::authority::AcceptedIntentError>] -/
+@[reducible, rust_trait_impl
+  "core::ops::function::FnOnce<@, (sandproof_protocol::lifecycle::request::ValidationError), sandproof_protocol::lifecycle::authority::AcceptedIntentError>"]
+def P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError :
+  core.ops.function.FnOnce
+  (sandproof_protocol.lifecycle.request.ValidationError → Result
+  sandproof_protocol.lifecycle.authority.AcceptedIntentError)
+  sandproof_protocol.lifecycle.request.ValidationError
+  sandproof_protocol.lifecycle.authority.AcceptedIntentError := {
+  call_once :=
+    P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError.call_once
+}
 
 /-- [sandproof_protocol::lifecycle::PROTOCOL_VERSION]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs', lines 23:0-23:31
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs', lines 45:0-45:31
     Name pattern: [sandproof_protocol::lifecycle::PROTOCOL_VERSION]
     Visibility: public -/
 @[global_simps, irreducible, rust_const
   "sandproof_protocol::lifecycle::PROTOCOL_VERSION"]
 def sandproof_protocol.lifecycle.PROTOCOL_VERSION : Std.U16 := 3#u16
 
+/-- [sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 38:12-38:41
+    Name pattern: [sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get"]
+def sandproof_protocol.lifecycle.identity.IncarnationId.get
+  (self : sandproof_protocol.lifecycle.identity.IncarnationId) :
+  Result Std.U64
+  := do
+  sandproof_protocol.internal.PositiveCounter.get self
+
 /-- [sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::validate]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 59:4-59:87
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 68:4-68:87
     Name pattern: [sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::validate]
     Visibility: public -/
 @[rust_fun
@@ -777,6 +996,14 @@ def sandproof_protocol.lifecycle.request.LifecycleRequest.validate
               ok (core.result.Result.Err
                 sandproof_protocol.lifecycle.request.ValidationError.InvalidIncarnation)
             else ok (core.result.Result.Ok ())
+        | sandproof_protocol.lifecycle.request.LifecycleOperation.Renew _ _ _
+          =>
+          match self.binding.expected with
+          | sandproof_protocol.lifecycle.identity.ExpectedSession.Absent =>
+            ok (core.result.Result.Err
+              sandproof_protocol.lifecycle.request.ValidationError.InvalidExpectation)
+          | sandproof_protocol.lifecycle.identity.ExpectedSession.Version _ =>
+            ok (core.result.Result.Ok ())
         | sandproof_protocol.lifecycle.request.LifecycleOperation.Destroy =>
           match self.binding.expected with
           | sandproof_protocol.lifecycle.identity.ExpectedSession.Absent =>
@@ -785,8 +1012,142 @@ def sandproof_protocol.lifecycle.request.LifecycleRequest.validate
           | sandproof_protocol.lifecycle.identity.ExpectedSession.Version _ =>
             ok (core.result.Result.Ok ())
 
+/-- [sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::RetentionBinding}::valid_for]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs', lines 85:4-85:56
+    Name pattern: [sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::RetentionBinding}::valid_for]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::RetentionBinding}::valid_for"]
+def sandproof_protocol.lifecycle.identity.RetentionBinding.valid_for
+  (self : sandproof_protocol.lifecycle.identity.RetentionBinding)
+  (max_slots : Std.U16) :
+  Result Bool
+  := do
+  if self.slot > 0#u16
+  then ok (self.slot <= max_slots)
+  else ok false
+
+/-- [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::accepted_version_for_request]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 131:4-131:61
+    Name pattern: [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::accepted_version_for_request]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::accepted_version_for_request"]
+def
+  sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.accepted_version_for_request
+  (self : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+  Result (Option Std.U64)
+  := do
+  match self.request.binding.expected with
+  | sandproof_protocol.lifecycle.identity.ExpectedSession.Absent =>
+    ok (some 1#u64)
+  | sandproof_protocol.lifecycle.identity.ExpectedSession.Version version =>
+    ok (U64.checked_add version 1#u64)
+
+/-- [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::validate]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/authority.rs', lines 108:4-111:40
+    Name pattern: [sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::validate]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::validate"]
+def sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.validate
+  (self : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+  (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+  :
+  Result (core.result.Result Unit
+    sandproof_protocol.lifecycle.authority.AcceptedIntentError)
+  := do
+  let ci ←
+    sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.center
+      context
+  let b ←
+    core.cmp.PartialEq.ne.trait_default
+      sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity
+      self.center ci
+  if b
+  then
+    ok (core.result.Result.Err
+      sandproof_protocol.lifecycle.authority.AcceptedIntentError.ForeignCenter)
+  else
+    let ni ←
+      sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.expected_node
+        context
+    let b1 ←
+      core.cmp.PartialEq.ne.trait_default
+        sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId
+        self.center.deployment ni.deployment_id
+    if b1
+    then
+      ok (core.result.Result.Err
+        sandproof_protocol.lifecycle.authority.AcceptedIntentError.ForeignDeployment)
+    else
+      let r ←
+        sandproof_protocol.lifecycle.request.LifecycleRequest.validate
+          self.request ni
+      let r1 ←
+        core.result.Result.map_err
+          P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError
+          r
+          (sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request.constructor)
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue _ =>
+        let b2 ←
+          sandproof_protocol.lifecycle.identity.RetentionBinding.valid_for
+            self.retention 4096#u16
+        if b2
+        then
+          let o ←
+            sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.accepted_version_for_request
+              self
+          let b3 ←
+            core.cmp.PartialEq.ne.trait_default
+              (core.option.Option.Insts.CoreCmpPartialEqOption
+              core.cmp.PartialEqU64) o (some self.accepted_version)
+          if b3
+          then
+            ok (core.result.Result.Err
+              sandproof_protocol.lifecycle.authority.AcceptedIntentError.InvalidAcceptedVersion)
+          else ok (core.result.Result.Ok ())
+        else
+          ok (core.result.Result.Err
+            sandproof_protocol.lifecycle.authority.AcceptedIntentError.InvalidRetention)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Unit (core.convert.FromSame
+          sandproof_protocol.lifecycle.authority.AcceptedIntentError) residual
+
+/-- Trait implementation: [sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest> for sandproof_protocol::lifecycle::request::LifecycleRequest}]
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 47:23-47:32
+    Name pattern: [core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest, sandproof_protocol::lifecycle::request::LifecycleRequest>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest, sandproof_protocol::lifecycle::request::LifecycleRequest>"]
+impl_def
+  sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest
+  : core.cmp.PartialEq sandproof_protocol.lifecycle.request.LifecycleRequest
+  sandproof_protocol.lifecycle.request.LifecycleRequest := {
+  eq :=
+    sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest
+}
+
+/-- [sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches]:
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/request.rs', lines 58:4-58:57
+    Name pattern: [sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches"]
+def sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches
+  (self : sandproof_protocol.lifecycle.request.LifecycleRequest)
+  (original : sandproof_protocol.lifecycle.request.LifecycleRequest) :
+  Result Bool
+  := do
+  sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq
+    self original
+
 /-- [sandproof_stage1_protocol_extract::request_validate]:
-    Source: 'src/lib.rs', lines 10:0-15:1
+    Source: 'src/lib.rs', lines 11:0-16:1
     Visibility: public -/
 def request_validate
   (request : sandproof_protocol.lifecycle.request.LifecycleRequest)
@@ -798,7 +1159,7 @@ def request_validate
     expected
 
 /-- [sandproof_stage1_protocol_extract::replay_matches]:
-    Source: 'src/lib.rs', lines 17:0-19:1
+    Source: 'src/lib.rs', lines 18:0-20:1
     Visibility: public -/
 def replay_matches
   (request : sandproof_protocol.lifecycle.request.LifecycleRequest)
@@ -807,5 +1168,29 @@ def replay_matches
   := do
   sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches request
     original
+
+/-- [sandproof_stage1_protocol_extract::accepted_validate]:
+    Source: 'src/lib.rs', lines 22:0-27:1
+    Visibility: public -/
+def accepted_validate
+  (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+  (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+  :
+  Result (core.result.Result Unit
+    sandproof_protocol.lifecycle.authority.AcceptedIntentError)
+  := do
+  sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.validate
+    intent context
+
+/-- [sandproof_stage1_protocol_extract::recorded_matches]:
+    Source: 'src/lib.rs', lines 29:0-34:1
+    Visibility: public -/
+def recorded_matches
+  (recorded : sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent)
+  (original : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+  Result Bool
+  := do
+  sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent.matches
+    recorded original
 
 end SandproofStage1RequestRust
