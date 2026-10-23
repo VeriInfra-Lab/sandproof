@@ -4,6 +4,7 @@ mod access;
 pub(in crate::controller) mod audit;
 mod codec;
 mod renewal;
+mod window;
 pub use audit::{LifecycleAudit, LifecycleAuditOperation};
 mod model;
 mod pending;
@@ -19,7 +20,7 @@ use crate::{
 };
 pub(super) use codec::{charged_bytes, validate};
 use model::{Inbox, Owner};
-pub use model::{LifecycleInboxConfig, LifecycleWorkState};
+pub use model::{LifecycleInboxConfig, LifecycleRetentionLane, LifecycleWorkState};
 pub use readiness::{
     CreateReadiness, CreateReadinessPending, LifecycleCreateObservation, LifecycleReadyBasis,
     LifecycleReadyObservation, NativeCreateSnapshot,
@@ -32,10 +33,27 @@ use sandproof_protocol::lifecycle::{
 use sha2::{Digest, Sha256};
 pub use source_work::{SourceWork, SourceWorkRecord};
 
+#[cfg(test)]
+thread_local! {
+    static FAIL_NEXT_WORK_STATE_READ: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 pub(super) struct CreateAttachment {
     pub intent: AcceptedLifecycleIntent,
     pub local: InternalLocalBinding,
     pub registered_template: crate::templates::TemplateBinding,
+}
+
+pub(in crate::controller) fn pinned(
+    connection: &rusqlite::Connection,
+    sandbox: core::SandboxId,
+) -> Result<bool, JournalError> {
+    Ok(codec::load(connection)?.is_some_and(|inbox| {
+        inbox
+            .sessions
+            .iter()
+            .any(|session| session.local.is_some_and(|local| local.sandbox == sandbox))
+    }))
 }
 
 fn authenticated(
@@ -48,6 +66,11 @@ fn authenticated(
 }
 
 impl ControllerJournal {
+    #[cfg(test)]
+    pub(crate) fn fail_next_lifecycle_work_state_read() {
+        FAIL_NEXT_WORK_STATE_READ.set(true);
+    }
+
     pub(crate) fn startup_epoch_ready(&self) -> Result<bool, JournalError> {
         self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
@@ -154,12 +177,16 @@ impl ControllerJournal {
             return Err(JournalError::MaintenanceCapacity);
         }
         let reserve = config.required_bytes();
+        let lanes = (1..=config.max_sessions)
+            .map(model::LifecycleRetentionLane::fresh)
+            .collect();
         let inbox = Inbox {
             config,
             host_epoch_observation: None,
             owner_high_water: 0,
             owners: vec![],
             sessions: vec![],
+            lanes,
         };
         inbox.validate()?;
         let bytes = serde_json::to_vec(&inbox)?;
@@ -229,6 +256,13 @@ impl ControllerJournal {
         intent: &AcceptedLifecycleIntent,
         context: &AuthenticatedCenterContext,
     ) -> Result<LifecycleWorkState, JournalError> {
+        #[cfg(test)]
+        if FAIL_NEXT_WORK_STATE_READ.replace(false) {
+            return Err(JournalError::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                None,
+            )));
+        }
         self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
         self.committed_world.check_identity(&tx)?;

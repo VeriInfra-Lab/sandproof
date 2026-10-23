@@ -10,7 +10,7 @@ mod cache_tests;
 #[cfg(test)]
 mod lease_tests;
 #[cfg(test)]
-mod tests_support;
+pub(crate) mod tests_support;
 
 mod capacity;
 mod data_credentials;
@@ -32,8 +32,8 @@ pub use internal_inbox::{
 pub use lifecycle_inbox::{
     CreateReadiness, CreateReadinessPending, LifecycleAudit, LifecycleAuditOperation,
     LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
-    LifecycleReadyObservation, LifecycleWorkState, NativeCreateSnapshot, SourceWork,
-    SourceWorkRecord,
+    LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState, NativeCreateSnapshot,
+    SourceWork, SourceWorkRecord,
 };
 mod private_build;
 mod registry;

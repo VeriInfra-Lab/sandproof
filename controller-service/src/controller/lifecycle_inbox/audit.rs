@@ -25,6 +25,7 @@ pub struct LifecycleAudit {
     pub operations: Vec<LifecycleAuditOperation>,
     pub native: Vec<InternalNativeAudit>,
     pub host_slots: Vec<(HostSlotContext, core::maintenance::slots::HostSlotPhase)>,
+    pub retention_lanes: Vec<super::LifecycleRetentionLane>,
 }
 
 pub(in crate::controller) fn snapshot(
@@ -84,6 +85,7 @@ pub(in crate::controller) fn snapshot(
         operations,
         native,
         host_slots,
+        retention_lanes: inbox.lanes,
     })
 }
 
@@ -102,9 +104,17 @@ impl ControllerJournal {
         }
         let host = super::super::bounded::config(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         let physical = super::super::bounded::available_positions(&world, &host)?;
-        let unused = usize::from(inbox.config.max_sessions)
-            .checked_sub(inbox.sessions.len())
-            .ok_or(JournalError::CorruptStore)?;
+        let unused = inbox
+            .lanes
+            .iter()
+            .filter(|lane| {
+                lane.current_window.is_some()
+                    && !inbox
+                        .sessions
+                        .iter()
+                        .any(|session| session.retention.slot == lane.slot)
+            })
+            .count();
         tx.commit()?;
         Ok(physical.min(u64::try_from(unused).map_err(|_| JournalError::CorruptStore)?))
     }

@@ -138,7 +138,7 @@ impl<H: ControllerHost> Inner<H> {
 
 /// The mutex serializes current journal decisions and route admission. Each
 /// physical executor retains a separate session occupancy while using the same
-/// shared Host outside this lock. SQLite excludes a second writer process.
+/// shared Host outside this lock. `SQLite` excludes a second writer process.
 pub struct ControllerApplication<H: ControllerHost> {
     inner: Mutex<Inner<H>>,
     config: ApplicationConfig,

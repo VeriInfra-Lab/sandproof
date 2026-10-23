@@ -1,6 +1,6 @@
 use crate::effect::effect_succeeded_check;
 use crate::model::{
-    Command, EffectStatus, Event, OperationKey, OperationKind, OperationStatus, Phase,
+    Command, Event, OperationKey, OperationKind, OperationStatus, Phase,
     RestoreSource, SandboxRecord, SnapshotStage, WorkerFence, World,
 };
 use crate::request::Decision;
@@ -104,10 +104,7 @@ pub fn only_uncertain_prepare_for_abort(world: &World, sandbox: SandboxId) -> bo
     while index < world.effect_ids().len() && valid {
         let id = &world.effect_ids()[index];
         if id.command().sandbox() == sandbox
-            && matches!(
-                world.effect_status(id),
-                Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
-            )
+            && crate::effect::outcome_is_unresolved(world, id)
         {
             seen = true;
             valid = *id.command() == expected;
@@ -117,18 +114,33 @@ pub fn only_uncertain_prepare_for_abort(world: &World, sandbox: SandboxId) -> bo
     seen && valid
 }
 
+fn current_terminal_fence(world: &World, command: &Command) -> bool {
+    let Command::InstallFence {
+        sandbox,
+        epoch,
+        terminal: true,
+    } = command
+    else {
+        return false;
+    };
+    let Some(record) = world.sandboxes.get(sandbox) else {
+        return false;
+    };
+    record.epoch == *epoch
+}
+
 #[must_use]
 pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
     let sandbox = command.sandbox();
     if crate::terminal::only_uncertain_activation_for_abort(world, sandbox) {
+        let terminal_fence = current_terminal_fence(world, command);
         let mut index = 0;
         let mut found = false;
         while index < world.effect_ids().len() && !found {
             let id = &world.effect_ids()[index];
             found = crate::terminal::activation_in_current_abort(world, id)
                 && (crate::terminal::activation_stop_current(world, id).as_ref() == Some(command)
-                    || matches!(command, Command::InstallFence { epoch, terminal: true, .. }
-                        if matches!(world.sandboxes.get(&sandbox), Some(record) if record.epoch == *epoch)));
+                    || terminal_fence);
             index += 1;
         }
         return found;

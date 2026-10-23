@@ -180,7 +180,6 @@ fn sealed_registry_hash_is_reused_but_restart_and_mutation_force_revalidation() 
     directory.close().unwrap();
 }
 
-
 #[test]
 #[ignore = "requires root and SANDPROOF_ARTIFACT_TEST_PARENT; real file I/O, no VM"]
 fn slow_artifact_hash_does_not_hold_shared_cache_or_block_another_artifact() {
@@ -217,14 +216,19 @@ fn slow_artifact_hash_does_not_hold_shared_cache_or_block_another_artifact() {
             })
             .is_ok()
         });
-        waiting.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        waiting
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
         let cache_available = node.validated_artifacts.try_lock().is_ok();
         // A failing cache-lock mutant must not block the second hash. The
         // guard also releases the worker on every panic/timeout return path.
         let other = cache_available.then(|| node.validate_artifact(&binding.kernel).is_ok());
         drop(release);
         let first_succeeded = first.join().unwrap();
-        assert!(cache_available, "slow hash held the shared artifact cache lock");
+        assert!(
+            cache_available,
+            "slow hash held the shared artifact cache lock"
+        );
         assert_eq!(other, Some(true));
         assert!(first_succeeded);
     });

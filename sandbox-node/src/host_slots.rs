@@ -1375,6 +1375,8 @@ fn check_occupied_action(
         | core::Command::AbortPrepare { vm, slot, .. }
         | core::Command::ConfigureNetwork { vm, slot, .. } => (Some(*vm), Some(*slot)),
         core::Command::ActivateVm { vm, .. }
+        | core::Command::FreezeVm { vm, .. }
+        | core::Command::SealSnapshot { vm, .. }
         | core::Command::StopVm { vm, .. }
         | core::Command::CleanupVm { vm, .. } => (Some(*vm), None),
         core::Command::CleanupSlot { slot, .. } => (None, Some(*slot)),
@@ -1609,6 +1611,23 @@ mod tests {
                 epoch: 1,
                 generation: 3,
                 vm: binding.vm,
+            },
+            core::Command::FreezeVm {
+                sandbox: binding.sandbox,
+                epoch: 1,
+                generation: 3,
+                vm: binding.vm,
+            },
+            core::Command::SealSnapshot {
+                sandbox: binding.sandbox,
+                epoch: 1,
+                generation: 3,
+                vm: binding.vm,
+                workspace: core::FsId(5),
+                snapshot: core::SnapshotId(6),
+                manifest: core::SnapshotManifestRef {
+                    digest: core::ManifestDigest(7),
+                },
             },
             core::Command::StopVm {
                 sandbox: binding.sandbox,

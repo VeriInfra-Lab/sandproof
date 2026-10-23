@@ -70,7 +70,9 @@
 
 `Runtime::observe_original_configuration` 在已接受的原只读工作及关闭新准入条件下，沿原 PID/start/boot、claim、jail/cgroup 和保留目录 FD 读取。它只发送 GET，核对固定工具的原 instance、两次配置字节一致，并测量实际执行 inode 与原私有内核副本的字节摘要，观察原可写盘长度；前后仍须是同一来源。进程、文件、回复或上界不能确认时返回未决；错误不会 Pause、Full、Stop、创建或删除材料。返回类型私有构造，但只代表读取时的事实。
 
-该输出不验证完整设备 JSON、不认证 CPU/初始镜像兼容，也不授予捕获或停止许可。节点仍须与第一次 V3 Create 前的受保护 epoch、原 CreateOptions/template 和同一实际 BootPlan 对照；缺少事实不得填默认值。原可写盘仍在变化，当前长度不替代后续连续暂停区间内的完整测量。V5 接受回传后须重核原工作/版本并在原事务保存，同一责任接管成功后才发物理捕获许可；不在 SQL 事务内等待文件或 API I/O。manager 重启不能仅凭历史 epoch 观察继续启动，须重新核对当前受保护部署。当前只读组件不代表这些连接已经实现或证明。
+当前冷启动来源观察先将实际 GET `/vm/config` 按固定 Firecracker 1.16.1 的返回形状解析，再与启动实际使用的同一 `BootPlan` 对照：vCPU/RAM、内核路径和参数、单 rootfs 的可写/缓存/同步 I/O 配置、零或一个原网卡、MMDS 版本/地址/接口，以及不使用 balloon、hotplug、pmem、vsock、entropy。额外或重复字段、额外设备、未知配置、缺失必需字段均拒绝，不把观察值回填成期望值。固定返回投影的依据是 [VmmConfig::from](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/resources.rs)、[machine](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/machine_config.rs)、[drive](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/drive.rs)、[network](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/net.rs) 和 [MMDS](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/mmds.rs)。该检查不是任意 VMM 或恢复来源的通用兼容验证器；恢复批须按原候选来源和固定工具真实返回继续连接，不能用此冷启动检查直接背书多周期。
+
+特别是该固定工具的 GET 投影会将 custom CPU、logger、metrics 返回为 null，并隐藏 custom CPU 的 machine 字段；null 不能证明它们从未配置。原唯一启动路径、受保护工具字节及没有未登记 API 写者的部署条件仍不可省略。这个可见配置判断不认证 CPU/初始镜像兼容、编码堆界、捕获前物理预留，也不授予捕获或停止许可。节点仍须与第一次 Create 前的受保护 epoch、原 CreateOptions/template 和实际原文件测量对照；缺少事实不得填默认值。原可写盘仍在变化，当前长度不替代后续连续暂停区间内的完整测量。V5 接受回传后须重核原工作/版本并在原事务保存，同一责任接管成功后才发物理捕获许可；不在 SQL 事务内等待文件或 API I/O。manager 重启不能仅凭历史 epoch 观察继续启动，须重新核对当前受保护部署。当前只读组件不代表这些连接已经实现或证明。
 
 ### 原来源绑定的停止与退出观察
 
@@ -100,3 +102,12 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 
 
 重启后 `Runtime::observe_original_pause_state` 只观察持久工作指定的原来源：原 claim、PID/启动 ticks/boot、宿主 PID/user namespace、jail/cgroup 与保留目录必须匹配，GET 使用该目录下同一个 Unix 连接并核对实际 peer PID/UID/GID。Paused 只返回此次观察的私有句柄，Running 保留未决责任，Exited 需要原记录一致及内核退出依据；API/格式/权限/连接/超时错误和单纯 proc 路径缺失都不生成 Paused/Exited。观察没有 PATCH、Full、Stop、重新初始化或位置释放。Exited 也不证明旧捕获 worker 已结束，管理重启不能据此无条件重发 Full。该观察与后续分段捕获接线属于本批运行组件，尚待真实固定 VMM endpoint 和完整卸载验收，不声称获得新机器证明。
+
+
+### 原 Pause 的 Node 接线候选
+
+`NodeHost::pause_original(action, pause, original_source)` 只消费已持久领取的原 `FreezeVm`，并要求独立的 `SourceObservationRequirement` 来自同一已存 source-work：完整 work digest、node、resource、PID/start/boot 必须与 Pause 输入相同。服务仍须独立核外部操作到原 native action 的映射、原 plan、当前寿命/资格和领取/回执；Node 不从 DTO 重新生成 bootstrap registration，不把外部 incarnation 当作本地 generation。
+
+Node 沿原 Occupied 位置、owner/VM/generation、原 helper 独占门和未终止当前围栏执行；在 Pause 两侧重新核对原 epoch、实际源配置和文件事实，确认同一私有 paused 句柄后，才构造原 action 的 `Frozen` 回执。任何错误仍可能已经 Pause，原责任不退。`observe_pause_original` 复用相同 guard 和 source 输入，只读重开原 paused 观察，绝不重发 PATCH 或 Full；Running、Exited 或不能确认均不产生 Frozen。通用 execute/observe 在缺少这些原输入时仍拒绝 Freeze，不靠当前 PID/全局 boot 补字段。
+
+此候选尚待统一 ning 编译/针对性回归、真实固定 VMM 端点、对应 Rust 抽取和完整卸载验收。Full 仍是后继独立 `SealSnapshot`，须额外接 protected layout、实际来源匹配的兼容配置和原持久预算；不能从请求里的 profile/尺寸直接制造期望或预留。Linux 文件大小限额与原 cgroup 只提供各自实际约束，不能保证唯一源 VM 在撞限时存活，也不是正常支持条件充分的证明。尚未闭合这些条件之前不启用物理 Full，更不因此赋予 Stop、Unloaded 或释放资格。

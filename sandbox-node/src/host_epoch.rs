@@ -69,16 +69,26 @@ impl ProtectedHostEpochSource {
         node: &NodeIdentity,
         config: &crate::NodeConfig,
     ) -> Result<HostEpochRegistration> {
-        self.provision_inputs(node, Inputs {
-            namespace: &config.namespace,
-            firecracker: &config.firecracker,
-            jailer: &config.jailer,
-        })
+        self.provision_inputs(
+            node,
+            Inputs {
+                namespace: &config.namespace,
+                firecracker: &config.firecracker,
+                jailer: &config.jailer,
+            },
+        )
     }
 
-    fn provision_inputs(&self, node: &NodeIdentity, inputs: Inputs<'_>) -> Result<HostEpochRegistration> {
+    fn provision_inputs(
+        &self,
+        node: &NodeIdentity,
+        inputs: Inputs<'_>,
+    ) -> Result<HostEpochRegistration> {
         if inputs.namespace.len() != 16
-            || !inputs.namespace.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || !inputs
+                .namespace
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
         {
             return Err(error("invalid original bootstrap namespace"));
         }

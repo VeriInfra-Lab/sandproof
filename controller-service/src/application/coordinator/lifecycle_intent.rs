@@ -1,4 +1,4 @@
-//! V3 enters the original application owner, journal and host workflow.
+//! Current intents enter the original application owner, journal and host workflow.
 use super::{
     ApplicationError, ControllerApplication, ControllerHost, Inner, JournalError, NeverCrash,
     map_admission, map_journal,
@@ -12,6 +12,79 @@ use sandproof_protocol::lifecycle::{
 };
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Persist the full authenticated center confirmation, after our original
+    /// journal independently verifies the terminal fact.
+    /// # Errors
+    /// Pending/foreign/unknown resources cannot be confirmed as cleaned.
+    pub fn confirm_lifecycle_terminal(
+        &self,
+        result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?
+            .journal
+            .confirm_lifecycle_terminal(result, context, &mut NeverCrash)
+    }
+
+    /// Close only after original physical cleanup, durable center confirmation
+    /// and absence of in-process workers/routes. No waiting occurs under lock.
+    /// # Errors
+    /// Active work, data pins and unresolved original responsibility refuse.
+    pub fn close_lifecycle_window(
+        &self,
+        request: &sandproof_protocol::lifecycle::LifecycleWindowClose,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, JournalError> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?;
+        if inner.active_sessions.contains(
+            request
+                .terminal
+                .request
+                .request
+                .binding
+                .session
+                .as_protocol_id()
+                .as_str(),
+        ) {
+            return Err(JournalError::UnresolvedAction);
+        }
+        let state = match inner
+            .journal
+            .lifecycle_work_state(&request.terminal.request, context)
+        {
+            Ok(state) => Some(state),
+            Err(JournalError::Conflict) => {
+                if !inner
+                    .journal
+                    .is_recently_retired_terminal(&request.terminal, context)?
+                {
+                    return Err(JournalError::Conflict);
+                }
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        if let Some(state) = state
+            && let Some(local) = state.local
+            && (inner.active_sandboxes.contains(&local.sandbox)
+                || !super::execution::local_routes_dropped(&inner, local.sandbox)
+                || !inner
+                    .data_drains
+                    .get(&local.sandbox.0)
+                    .is_none_or(super::DataLease::drained))
+        {
+            return Err(JournalError::UnresolvedAction);
+        }
+        inner
+            .journal
+            .close_lifecycle_window(request, context, &mut NeverCrash)
+    }
+
     /// Apply or replay the exact recorded lifetime update under original SQL
     /// authority. The saved result is historical, never a current Ready claim.
     /// # Errors
@@ -307,5 +380,125 @@ impl<H: ControllerHost> ControllerApplication<H> {
         }
         admission.now_ms = self.clock.now_ms()?;
         Ok(admission)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controller::tests_support::lifecycle_application as fixture;
+    use fixture::fixture::{State, TestEpoch, TestHost};
+    use sandproof_protocol::lifecycle::{
+        ExpectedSession, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
+    };
+    use std::sync::{Arc, Mutex};
+
+    fn cleaned() -> (
+        tempfile::TempDir,
+        ControllerApplication<TestHost>,
+        LifecycleWindowClose,
+        sandbox_controller_core::SandboxId,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            ..State::default()
+        }));
+        let app = fixture::application(&dir.path().join("db"), host, true);
+        let create = fixture::request();
+        app.record_lifecycle_intent(&create, &fixture::context())
+            .unwrap();
+        app.establish_lifecycle_host_epoch().unwrap();
+        let local = fixture::advance(&app).unwrap().local.unwrap();
+        let mut destroy = create;
+        destroy.accepted_version = 2;
+        destroy.request.binding.expected = ExpectedSession::Version(1);
+        destroy.request.binding.key.sequence = 2.try_into().unwrap();
+        destroy.request.operation = LifecycleOperation::Destroy {};
+        app.record_lifecycle_intent(&destroy, &fixture::context())
+            .unwrap();
+        app.advance_current_workflow(local.sandbox).unwrap();
+        assert!(
+            app.lifecycle_destroy_cleaned(&destroy, &fixture::context())
+                .unwrap()
+        );
+        let terminal = TerminalLifecycleObservation {
+            request: destroy,
+            status: TerminalStatus::Cleaned,
+        };
+        app.confirm_lifecycle_terminal(&terminal, &fixture::context())
+            .unwrap();
+        (dir, app, LifecycleWindowClose { terminal }, local.sandbox)
+    }
+
+    #[test]
+    fn close_refuses_each_in_process_occupancy_before_retiring_the_original_lane() {
+        let (_dir, app, close, sandbox) = cleaned();
+        let session = close
+            .terminal
+            .request
+            .request
+            .binding
+            .session
+            .as_protocol_id()
+            .as_str()
+            .to_owned();
+        app.inner
+            .lock()
+            .unwrap()
+            .active_sessions
+            .insert(session.clone());
+        assert!(matches!(
+            app.close_lifecycle_window(&close, &fixture::context()),
+            Err(JournalError::UnresolvedAction)
+        ));
+        app.inner.lock().unwrap().active_sessions.remove(&session);
+        app.inner.lock().unwrap().active_sandboxes.insert(sandbox);
+        assert!(matches!(
+            app.close_lifecycle_window(&close, &fixture::context()),
+            Err(JournalError::UnresolvedAction)
+        ));
+        app.inner.lock().unwrap().active_sandboxes.remove(&sandbox);
+        assert!(
+            app.lifecycle_work_state(&close.terminal.request, &fixture::context())
+                .is_ok()
+        );
+        assert!(
+            app.close_lifecycle_window(&close, &fixture::context())
+                .unwrap()
+                .matches(&close)
+        );
+        assert!(
+            app.close_lifecycle_window(&close, &fixture::context())
+                .unwrap()
+                .matches(&close)
+        );
+    }
+
+    #[test]
+    fn transient_read_failure_cannot_skip_a_live_worker_even_if_the_next_read_succeeds() {
+        let (_dir, app, close, sandbox) = cleaned();
+        app.inner.lock().unwrap().active_sandboxes.insert(sandbox);
+        crate::ControllerJournal::fail_next_lifecycle_work_state_read();
+        assert!(matches!(
+            app.close_lifecycle_window(&close, &fixture::context()),
+            Err(JournalError::Sqlite(_))
+        ));
+        // The fault is one-shot. A second query genuinely succeeds, but it
+        // cannot retroactively turn the first error into retirement permission.
+        assert!(
+            app.lifecycle_work_state(&close.terminal.request, &fixture::context())
+                .is_ok()
+        );
+        assert!(matches!(
+            app.close_lifecycle_window(&close, &fixture::context()),
+            Err(JournalError::UnresolvedAction)
+        ));
+        app.inner.lock().unwrap().active_sandboxes.remove(&sandbox);
+        assert!(
+            app.close_lifecycle_window(&close, &fixture::context())
+                .unwrap()
+                .matches(&close)
+        );
     }
 }

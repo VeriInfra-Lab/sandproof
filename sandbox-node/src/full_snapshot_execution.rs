@@ -4,7 +4,9 @@ use super::{
     observe_stored_capture, seal_full_capture,
 };
 use sandbox_runtime::snapshot_store::BundleReadLimits;
-use sandbox_runtime::{FullCaptureLimits, PausedOriginalVm, Runtime, RuntimeProcessIdentity, SnapshotLayout};
+use sandbox_runtime::{
+    FullCaptureLimits, PausedOriginalVm, Runtime, RuntimeProcessIdentity, SnapshotLayout,
+};
 
 /// A receipt from actual Full/Seal on the original paused source, still requiring V5 registration.
 /// A recovered file observation deliberately has a different type: its source
@@ -50,7 +52,10 @@ pub fn capture_paused_original(
     if paused.resource_id() != expected.resource_id || paused.source() != expected.source {
         return Err("paused source differs from the original capture work".into());
     }
-    expected.compatibility.validate().map_err(super::CaptureManifestError::Manifest)?;
+    expected
+        .compatibility
+        .validate()
+        .map_err(super::CaptureManifestError::Manifest)?;
     let captured = runtime.capture_full_into(
         paused,
         layout,

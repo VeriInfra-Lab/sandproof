@@ -19,7 +19,7 @@ where
         let world = journal.world()?;
         match core::workflow::next_step(&world, sandbox) {
             core::workflow::WorkflowStep::Apply(input) => {
-                journal.apply(input, &mut NeverCrash)?;
+                journal.apply(*input, &mut NeverCrash)?;
             }
             core::workflow::WorkflowStep::Claim => {
                 let Some(action) = journal.claim_next(Some(sandbox), &mut NeverCrash)? else {

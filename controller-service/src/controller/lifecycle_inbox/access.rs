@@ -20,41 +20,7 @@ impl ControllerJournal {
         self.committed_world.check_identity(&tx)?;
         codec::validate(&tx, &world)?;
         let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
-        super::authenticated(&inbox, intent, context)?;
-        let (s, e) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
-        let state = inbox.state(s, e);
-        if !state.current
-            || !state.terminal
-            || !matches!(intent.request.operation, LifecycleOperation::Destroy {})
-        {
-            return Err(JournalError::Conflict);
-        }
-        // A missing local mapping is valid only before atomic admission, and
-        // the current durable terminal fence prevents any later admission.
-        let cleaned = !super::source_work::retains_session(&tx, &intent.request.binding.session)?
-            && match state.local {
-                Some(local) => {
-                    let no_extended_work = world.resource_index(local.sandbox).snapshots.is_empty()
-                        && world.operation_records().iter().all(|(key, _)| {
-                            key.sandbox != local.sandbox
-                                || world.operation_plan(*key).is_some_and(|plan| {
-                                    plan.capture.is_none() && plan.restore_from.is_none()
-                                })
-                        })
-                        && world.effect_ids().iter().all(|effect| {
-                            effect.command().sandbox() != local.sandbox
-                                || !matches!(
-                                    world.effect_status(effect),
-                                    Some(
-                                        sandbox_controller_core::EffectStatus::Dispatched
-                                            | sandbox_controller_core::EffectStatus::OutcomeUnknown
-                                    )
-                                )
-                        });
-                    no_extended_work && super::internal_inbox::native_cleaned(&tx, &world, local)?
-                }
-                None => true,
-            };
+        let cleaned = destroy_cleaned(&tx, &world, &inbox, intent, context)?;
         self.committed_world.check_identity(&tx)?;
         tx.commit()?;
         Ok(cleaned)
@@ -102,10 +68,10 @@ impl ControllerJournal {
             .ok_or(JournalError::Conflict)?;
         // Resume is enabled only with its explicit incarnation/native mapping
         // in batch C. A valid header cannot enable that unsupported transition.
-        if !matches!(
+        if !(matches!(
             entry.intent.request.operation,
             LifecycleOperation::Create { .. }
-        ) && !(matches!(
+        ) || matches!(
             entry.intent.request.operation,
             LifecycleOperation::Renew { .. }
         ) && entry.applied_deadline.is_some())
@@ -125,4 +91,56 @@ impl ControllerJournal {
         tx.commit()?;
         Ok(local)
     }
+}
+
+// Shared by readonly observation, durable confirmation and retirement. This
+// exact native/provider condition cannot be supplied by a wire success flag.
+pub(super) fn destroy_cleaned(
+    connection: &rusqlite::Connection,
+    world: &sandbox_controller_core::World,
+    inbox: &super::model::Inbox,
+    intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> Result<bool, JournalError> {
+    super::authenticated(inbox, intent, context)?;
+    if !matches!(intent.request.operation, LifecycleOperation::Destroy {}) {
+        return Err(JournalError::Conflict);
+    }
+    if inbox.lanes.iter().any(|lane| {
+        lane.last_retired.as_ref().is_some_and(|last| {
+            last.request == *intent
+                && last.status == sandproof_protocol::lifecycle::TerminalStatus::Cleaned
+        })
+    }) {
+        return Ok(true);
+    }
+    let (s, e) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
+    let state = inbox.state(s, e);
+    if !state.current || !state.terminal {
+        return Err(JournalError::Conflict);
+    }
+    if super::source_work::retains_session(connection, &intent.request.binding.session)? {
+        return Ok(false);
+    }
+    let Some(local) = state.local else {
+        return Ok(true);
+    };
+    let no_extended_work = world.resource_index(local.sandbox).snapshots.is_empty()
+        && world.operation_records().iter().all(|(key, _)| {
+            key.sandbox != local.sandbox
+                || world
+                    .operation_plan(*key)
+                    .is_some_and(|plan| plan.capture.is_none() && plan.restore_from.is_none())
+        })
+        && world.effect_ids().iter().all(|effect| {
+            effect.command().sandbox() != local.sandbox
+                || !matches!(
+                    world.effect_status(effect),
+                    Some(
+                        sandbox_controller_core::EffectStatus::Dispatched
+                            | sandbox_controller_core::EffectStatus::OutcomeUnknown
+                    )
+                )
+        });
+    Ok(no_extended_work && super::internal_inbox::native_cleaned(connection, world, local)?)
 }

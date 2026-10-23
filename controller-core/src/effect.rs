@@ -413,27 +413,34 @@ pub fn finalize_logical_failure(
     next
 }
 
+fn is_startup_command(command: &Command) -> bool {
+    matches!(command,
+        Command::InstallFence { terminal: false, .. }
+            | Command::PrepareVm { .. }
+            | Command::ConfigureNetwork { .. }
+            | Command::ActivateVm { .. }
+            | Command::ApplyFilePolicy { .. }
+    )
+}
+
 /// Startup commands are never newly issued after a terminal intent. A late
 /// receipt is a separate transition and cannot serve as dispatch permission.
 #[must_use]
 pub fn startup_dispatch_revoked(world: &World, command: &Command) -> bool {
-    let startup = matches!(
-        command,
-        Command::InstallFence {
-            terminal: false,
-            ..
-        } | Command::PrepareVm { .. }
-            | Command::ConfigureNetwork { .. }
-            | Command::ActivateVm { .. }
-            | Command::ApplyFilePolicy { .. }
-    );
-    if !startup {
+    if !is_startup_command(command) {
         return false;
     }
     match world.sandbox_record(command.sandbox()) {
         Some(record) => record.terminal,
         None => false,
     }
+}
+
+pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
+    let Some(status) = world.effect_status(effect) else {
+        return false;
+    };
+    status == EffectStatus::Dispatched || status == EffectStatus::OutcomeUnknown
 }
 
 /// Dispatch the current attempt, rejecting new capture work after revocation.

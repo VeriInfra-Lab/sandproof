@@ -4,6 +4,9 @@ use super::{RuntimeConfig, RuntimeError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[path = "boot_configuration.rs"]
+mod configuration;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct BootPlan {

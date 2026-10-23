@@ -55,10 +55,18 @@ impl<H: ControllerHost + Send + 'static> HostFacade<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostFacade<H> {
-    async fn confirm_terminal(&self, result: sandproof_protocol::lifecycle::TerminalLifecycleObservation, context: AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
+    async fn confirm_terminal(
+        &self,
+        result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        context: AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
         self.lifecycle.confirm_terminal(result, context).await
     }
-    async fn close_window(&self, request: sandproof_protocol::lifecycle::LifecycleWindowClose, context: AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError> {
+    async fn close_window(
+        &self,
+        request: sandproof_protocol::lifecycle::LifecycleWindowClose,
+        context: AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError> {
         self.lifecycle.close_window(request, context).await
     }
     async fn observe_terminal(
