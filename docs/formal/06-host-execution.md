@@ -122,3 +122,18 @@ Node 沿原 Occupied 位置、owner/VM/generation、原 helper 独占门和未�
 Node 从同一原 `HostEpochRegistration.policy` 绑定的 protected payload 取 A，沿原 source-work 在实际配置观察前后执行上述检查；原 Pause 两侧 source 检查复用它。A 不是每次 work DTO 的可选声明；原 Bootstrap 仍核当前调用线程及所有 manager 线程的同一已登记范围。Full 后续沿相同原 source/profile 再核，不能凭 Paused/Exited 或目录存在确认旧 Full/复制 worker 已结束。
 
 固定 jailer/Firecracker 启动路径不扩大 affinity、没有未登记外部 affinity/CPU 热插拔/微码写者、真实完整宿主 proc 视图及受保护 CPU 域在原 epoch 内不变仍是必要条件；读回不能证明整个中间区间或未来永远不变。该检查也不读取 guest CPUID/MSR 或实际 VM XSAVE，不自动认证 Xmax、编码上界、预留、捕获资格或停止权。尚待本批定向原生检查、固定依赖亲和行为源码依据、真实启动/Pause/Full 及 Rust 对应证明；旧 boot 或 Metadata 定理不自动背书新增字段/调用。
+
+
+### 私有 Full profile 与实际提供方候选
+
+唯一服务装配可用 `NodeHost::with_capture_settings(settings, journal.host_epoch_requirement()?)` 将一份独立 profile 保存在 NodeHost 私有状态中。公开 settings 只来自受保护的 HostConfig：原 layout_parent、layout_binding、state_copy_bytes、memory_copy_bytes、disk_copy_bytes、api_timeout_ms；装配只重开并核原 layout/runtime 根和原 epoch，不自动初始化。profile 本身不反序列化，没有公开字段，不是 HTTP/work DTO 的一个可替换输入。复制/读取接受界不提供写前上界或物理预留，V5 原持久领取、预算及 V8 关闭/排空仍是实际动作的独立前置，未闭合前正式服务不装配/派发 Full。
+
+`prepare_full_capture(pause, original_source)` 只读生成建议参数，不代表授权。它从原受保护文件取已登记工具字节摘要，从同一 Node 原位置和密封 launch credential 取完整 managed-template 描述，用实际启动共用的 BootPlan 求设备指纹，比较真实 executable、原私有 kernel SHA/长度、盘长度和同一 CPU 范围。原模板、位置在观察两侧还须相同。此 adapter 路径只接原 managed-template 来源，不用当前基盘或工作请求补造旧镜像来源；独立 Full 文件组件/诊断 CLI 的旧精确证据不能背书该生产提供方。
+
+固定 FC 1.16.1 的实际 snapshot version 为 10.0.0，本 profile 的 snapshot_format 取 10；工具字段为原受保护 executable SHA，devices 为同一 BootPlan 的规范编码 SHA，image_configuration 绑定原完整 template canonical_digest 与设备指纹。cpu 绑定原 Bootstrap policy（整份宿主注册内容摘要），只在同一固定宿主/boot/内核/微码/CPU 域及已列依赖条件下使用，不能称为实测 guest CPUID/VM XSAVE 指纹。actual source 检查和固定无模板启动责任不可省略；null/摘要相等或 DTO.validate 不能代替这些条件。
+
+`capture_original(action, full, original_source)` 只消费原 SealSnapshot 动作，重新生成独立期望并比较完整 Full 输入，持原 helper 门、Occupied/owner/generation/VM 及未终止围栏，然后只读重开原 Paused 句柄，不再发送 Pause。实际 Full/Seal/原 key 重开后仍重新核对原来源、模板和围栏，成功返回 `FullCaptureObservation`。任何后置错误可能已有完整材料或原 VMM 仍在写，原 Dispatched/Unknown Full 名额与材料责任不能因为 Rust 回调返回而释放，也不产生 Stop/Resume 许可。
+
+`observe_full_capture` 只为仍持原来源位置的未决 Full 工作核同一原 key、独立 profile/原输入及已有 manifest 摘要（若有），返回 `CheckedStoredCapture` 文件事实；不要求原 VMM 仍运行，不再次 Pause/Full，不从文件存在推出捕获 provenance、原 writer/helper/copy 退出或数据库接管。卸载后释放原位置的恢复 C 路径须按独立持久 bundle/pin 记录继续，不能依赖仍有旧 Occupied 位置，也不能把此未决 Full 观察误作通用恢复资格。
+
+当前冷启动链没有 Node snapshot-source Prepare 成功路径，T=0 仅限这条原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射；C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套 0 或删掉真实恢复状态。本批新增纯参数/配置/实际文件比较回归仍为受控数据，未获真实 VMM、完整 Full 预算或对应 Rust 证明结论。

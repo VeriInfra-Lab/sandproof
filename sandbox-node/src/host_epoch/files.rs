@@ -236,6 +236,9 @@ pub(super) struct ToolIdentity {
     group: u32,
     sha256: [u8; 32],
 }
+impl ToolIdentity {
+    pub(super) fn digest(&self) -> [u8;32] {self.sha256}
+}
 pub(super) fn tool(path: &Path) -> Result<ToolIdentity> {
     sandbox_runtime::check_trusted_path(path)?;
     let file = CheckedFile::read_owned(path, 0, Kind::Executable)?;

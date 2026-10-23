@@ -30,6 +30,10 @@ use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
 mod capture;
+mod capture_profile;
+mod full_capture;
+pub use capture_profile::ProtectedCaptureSettings;
+pub(crate) use capture_profile::ProtectedCaptureProfile;
 mod credentials;
 mod decisions;
 mod execution;

@@ -115,7 +115,7 @@ impl LinuxWorker {
 // not by reconstructing a registration from the incoming Pause DTO. Equality
 // does not attest the external operation -> native action mapping or current
 // lifetime: those checks remain in the original durable claim and completion.
-fn require_source_binding(
+pub(super) fn require_source_binding(
     request: &PauseWorkRequest,
     original: &SourceObservationRequirement,
 ) -> NodeResult<()> {

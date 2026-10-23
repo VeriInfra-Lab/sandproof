@@ -1,0 +1,142 @@
+//! Original Full provider. Durable claim, reservations and completion stay V5.
+use super::{LinuxWorker,NodeResult,Runtime,WorkAction,core};
+use super::capture::require_source_binding;
+use super::capture_profile::ProtectedCaptureProfile;
+use crate::{ProtectedHostEpochSource,full_snapshot::{self,ExpectedFullCapture,FullCaptureObservation,CheckedStoredCapture}};
+use sandbox_runtime::{FullCaptureLimits,OriginalPauseObservation,RuntimeProcessIdentity,snapshot_store::BundleReadLimits};
+use sandproof_controller_service::capture::{FullCaptureWorkRequest,PauseWorkRequest,SourceObservationRequirement,RawSourceObservation};
+use sandproof_controller_service::templates::TemplateBinding;
+use sandproof_protocol::{ResourceId,lifecycle::{ContentDigest,VmCompatibility,WritableDrive}};
+use sha2::{Digest,Sha256};
+
+const SNAPSHOT_FORMAT: u16=10; // Fixed FC 1.16.1 SNAPSHOT_VERSION=10.0.0.
+
+fn hex(bytes:&[u8;32])->String {bytes.iter().map(|byte|format!("{byte:02x}")).collect()}
+fn expected_compatibility(template:&TemplateBinding,device:[u8;32],tool:[u8;32],cpu:ContentDigest)->NodeResult<VmCompatibility> {
+    if !template.is_valid() { return Err("Full requires the original valid sealed template".into()); }
+    let image=Sha256::digest(serde_json::to_vec(&("cold-template-image",template.canonical_digest()?,device))?);
+    Ok(VmCompatibility{snapshot_format:SNAPSHOT_FORMAT,tool:ContentDigest::from_sha256(tool),cpu,
+        devices:ContentDigest::from_sha256(device),image_configuration:ContentDigest::from_sha256(image.into()),
+        writable_drives:vec![WritableDrive{drive_id:ResourceId::try_from("rootfs")?,jail_relative_path:"rootfs.ext4".into()}]})
+}
+fn check_measured_source(template:&TemplateBinding,raw:&RawSourceObservation,expected:&VmCompatibility)->NodeResult<()> {
+    if raw.executable_sha256!=*expected.tool.as_bytes() || hex(&raw.kernel_sha256)!=template.kernel.sha256
+        || raw.kernel_bytes!=template.kernel.size_bytes || raw.disk_bytes!=template.rootfs.size_bytes {
+        return Err("actual Full source does not match protected tool and original template".into());
+    }
+    Ok(())
+}
+
+struct ExpectedColdWork {
+    context: sandproof_controller_service::HostSlotContext,
+    runtime: Runtime,
+    template: TemplateBinding,
+    request: FullCaptureWorkRequest,
+}
+
+fn require_expected_request(request:&FullCaptureWorkRequest,expected:&FullCaptureWorkRequest)->NodeResult<()> {
+    if request!=expected { return Err("Full request differs from independent protected source/profile".into()); }
+    Ok(())
+}
+
+impl LinuxWorker {
+    // Independent local expectation. It does not read a manifest/Full DTO and
+    // does not claim this cold-source rule automatically covers restored MSRs.
+    fn expected_cold_work(&self,provider:&ProtectedHostEpochSource,profile:&ProtectedCaptureProfile,
+        pause:&PauseWorkRequest,original:&SourceObservationRequirement)->NodeResult<ExpectedColdWork> {
+        require_source_binding(pause,original)?;
+        profile.require_original_source(original)?;
+        let context=self.original_source_context(&pause.source_resource)?;
+        let secret=self.secret(context.binding.sandbox)?;
+        let template=secret.template.as_ref().ok_or("Full requires original sealed managed-template provenance")?;
+        let runtime=self.runtime(context.binding.sandbox,context.binding.vm)?;
+        let tool=provider.original_tool_digest(&original.node,&original.host_bootstrap,self.host_bootstrap_inputs())?;
+        let compatibility=expected_compatibility(template,runtime.boot_plan_digest()?,tool,original.host_bootstrap.policy)?;
+        let memory_bytes=u64::from(template.resources.memory_mib)*1_048_576;
+        if memory_bytes==0 || memory_bytes>profile.memory_max || template.rootfs.size_bytes>profile.disk_bytes {
+            return Err("original template exceeds protected Full copy/read caps".into());
+        }
+        let request=FullCaptureWorkRequest{pause:pause.clone(),compatibility,state_bytes:profile.state_bytes,
+            memory_bytes,disk_bytes:profile.disk_bytes,api_timeout_ms:u64::try_from(profile.api_timeout.as_millis())?};
+        if !request.valid() { return Err("independent Full request is invalid".into()); }
+        Ok(ExpectedColdWork{context,runtime,template:template.clone(),request})
+    }
+
+    pub(crate) fn prepare_full_capture(&self,provider:&ProtectedHostEpochSource,profile:&ProtectedCaptureProfile,
+        pause:&PauseWorkRequest,original:&SourceObservationRequirement)->NodeResult<FullCaptureWorkRequest> {
+        let expected=self.expected_cold_work(provider,profile,pause,original)?;
+        let raw=crate::source_observation::observe(self,Some(provider),original)?;
+        check_measured_source(&expected.template,&raw,&expected.request.compatibility)?;
+        let current=self.secret(expected.context.binding.sandbox)?;
+        if self.original_source_context(&pause.source_resource)?!=expected.context
+            || current.template.as_ref()!=Some(&expected.template) {
+            return Err("Full source context or original template changed during preparation".into());
+        }
+        Ok(expected.request)
+    }
+
+    fn require_full_action(&self,action:&WorkAction<core::EffectId>,request:&FullCaptureWorkRequest)->NodeResult<sandproof_controller_service::HostSlotContext> {
+        self.validate_action(action)?;
+        let core::Command::SealSnapshot{sandbox,epoch,generation,vm,..}=action.command.command() else {
+            return Err("Full requires its original SealSnapshot action".into());
+        };
+        let context=self.original_source_context(&request.pause.source_resource)?;
+        if context.binding.sandbox!=*sandbox || context.binding.generation!=*generation || context.binding.vm!=*vm {
+            return Err("Full action differs from original source position".into());
+        }
+        self.require_fence(*sandbox,*epoch,false)?;
+        Ok(context)
+    }
+
+    pub(crate) fn capture_original(&self,provider:&ProtectedHostEpochSource,profile:&ProtectedCaptureProfile,
+        action:&WorkAction<core::EffectId>,request:&FullCaptureWorkRequest,original:&SourceObservationRequirement)->NodeResult<FullCaptureObservation> {
+        let context=self.require_full_action(action,request)?;
+        let slot=self.runtime_host_slot(context.position,context.binding.vm)?;
+        let _gate=slot.helper_gate.try_acquire(Some(&slot))?;
+        let expected=self.prepare_full_capture(provider,profile,&request.pause,original)?;
+        require_expected_request(request,&expected)?;
+        if self.require_full_action(action,request)?!=context { return Err("Full original context changed".into()); }
+        let execution=self.expected_cold_work(provider,profile,&request.pause,original)?;
+        if execution.context!=context || execution.request!=expected {
+            return Err("Full configuration changed before actual execution".into());
+        }
+        let runtime=execution.runtime;
+        let source=crate::source_observation::expected_source(original)?;
+        let paused=match runtime.observe_original_pause_state(request.pause.source_resource.id.as_str(),&source)? {
+            OriginalPauseObservation::Paused(paused)=>paused,
+            OriginalPauseObservation::Running|OriginalPauseObservation::Exited=>return Err("original Full source not observed Paused".into()),
+        };
+        let observed=full_snapshot::capture_paused_original(&runtime,&profile.layout,&paused,
+            &ExpectedFullCapture{resource_id:request.pause.source_resource.id.as_str(),source:&source,
+                binding:&request.pause.binding,compatibility:&expected.compatibility},
+            FullCaptureLimits{state_bytes:profile.state_bytes,disk_bytes:profile.disk_bytes,api_timeout:profile.api_timeout},
+            read_limits(&expected))?;
+        // Any failure here can follow actual Full/publication. Keep the same
+        // durable Dispatched/Unknown work and its concurrency/material charge.
+        let after=self.prepare_full_capture(provider,profile,&request.pause,original)?;
+        if after!=expected || self.require_full_action(action,request)?!=context {
+            return Err("original Full source/profile or current fence changed".into());
+        }
+        Ok(observed)
+    }
+
+    pub(crate) fn observe_full_capture(&self,provider:&ProtectedHostEpochSource,profile:&ProtectedCaptureProfile,
+        request:&FullCaptureWorkRequest,original:&SourceObservationRequirement,manifest:Option<[u8;32]>)->NodeResult<CheckedStoredCapture> {
+        // No live-source assumption for this FILE observation. It cannot prove
+        // a prior Full/helper/copy worker ended, or replace saved provenance.
+        let expected=self.expected_cold_work(provider,profile,&request.pause,original)?.request;
+        require_expected_request(request,&expected)?;
+        provider.observe_original(&original.node,&original.host_bootstrap,self.host_bootstrap_inputs())?;
+        let source=RuntimeProcessIdentity{pid:original.source.pid,start_time_ticks:original.source.start_time_ticks,boot_id:original.source.boot_id.clone()};
+        full_snapshot::observe_stored_capture(&profile.layout,
+            &ExpectedFullCapture{resource_id:request.pause.source_resource.id.as_str(),source:&source,
+                binding:&request.pause.binding,compatibility:&expected.compatibility},manifest,read_limits(&expected))
+    }
+}
+fn read_limits(request:&FullCaptureWorkRequest)->BundleReadLimits {
+    BundleReadLimits{state_bytes:request.state_bytes,memory_bytes:request.memory_bytes,disk_bytes:request.disk_bytes}
+}
+
+#[cfg(test)]
+#[path="full_capture_tests.rs"]
+mod tests;

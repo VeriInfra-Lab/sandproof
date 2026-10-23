@@ -22,6 +22,7 @@ pub struct NodeHost {
     physical_storage: PhysicalProfileLease,
     relay_executable: std::path::PathBuf,
     host_epoch_source: Option<ProtectedHostEpochSource>,
+    capture_profile: Option<crate::linux::ProtectedCaptureProfile>,
 }
 impl NodeHost {
     /// The relay executable is selected only by trusted service assembly.
@@ -36,6 +37,7 @@ impl NodeHost {
             physical_storage,
             relay_executable,
             host_epoch_source: None,
+            capture_profile: None,
         }
     }
     /// Select only the original protected registration path. This does not
@@ -88,6 +90,78 @@ impl NodeHost {
             action,
             request,
             original_source,
+        )
+    }
+}
+
+impl NodeHost {
+    /// Assemble the one adapter-held profile from protected server settings and
+    /// the ORIGINAL journal epoch. This only reopens an existing layout; it
+    /// never creates a new layout or takes settings from an incoming work DTO.
+    /// Copy caps do not grant a durable claim, reservation or permission to run.
+    /// # Errors
+    /// Missing/changed protected source, epoch or layout refuses assembly.
+    pub fn with_capture_settings(
+        mut self,
+        settings: crate::ProtectedCaptureSettings,
+        original: &sandproof_controller_service::capture::HostEpochRequirement,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let provider=self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?;
+        self.capture_profile=Some(crate::linux::ProtectedCaptureProfile::assemble(
+            &self.worker,provider,settings,original,
+        )?);
+        Ok(self)
+    }
+
+    /// Propose parameters from the original sealed source and local profile.
+    /// The service must persist/check its original plan and budgets before
+    /// dispatching any physical Full. This proposal is never a permission.
+    /// # Errors
+    /// Missing profile, incompatible source or unknown facts remain errors.
+    pub fn prepare_full_capture(
+        &self,
+        pause: &sandproof_controller_service::capture::PauseWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::FullCaptureWorkRequest,Box<dyn std::error::Error>> {
+        self.worker.prepare_full_capture(
+            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
+            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,pause,original,
+        )
+    }
+
+    /// Execute only an originally claimed Full with independently checked local
+    /// parameters. The original V5 claim/resource plan and closed/drained V8
+    /// access are required; no untrusted DTO can install the private profile.
+    /// # Errors
+    /// Every error may follow actual Full/Seal or publication. Preserve original
+    /// Dispatched/Unknown Full concurrency and material responsibility: callback
+    /// return, Paused/Exited or a directory does NOT prove the FC writer ended.
+    pub fn capture_original(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<crate::full_snapshot::FullCaptureObservation,Box<dyn std::error::Error>> {
+        self.worker.capture_original(
+            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
+            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,action,request,original,
+        )
+    }
+
+    /// Read only the exact saved key. Returned file facts have no captured-source
+    /// provenance, durable handoff, worker-end, Stop or resource-release claim.
+    /// # Errors
+    /// Missing, foreign or incomplete materials remain unresolved; no retry Full.
+    pub fn observe_full_capture(
+        &self,
+        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+        manifest: Option<sandproof_protocol::lifecycle::ContentDigest>,
+    ) -> Result<crate::full_snapshot::CheckedStoredCapture,Box<dyn std::error::Error>> {
+        self.worker.observe_full_capture(
+            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
+            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,request,original,
+            manifest.map(|digest|*digest.as_bytes()),
         )
     }
 }

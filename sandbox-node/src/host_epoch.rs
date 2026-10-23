@@ -147,6 +147,19 @@ impl ProtectedHostEpochSource {
         Ok(allowed)
     }
 
+    pub(super) fn original_tool_digest(
+        &self,
+        node: &NodeIdentity,
+        registration: &HostEpochRegistration,
+        inputs: Inputs<'_>,
+    ) -> Result<[u8;32]> {
+        let file = CheckedFile::payload(&self.path)?;
+        let payload = Payload::read_bound(&file, node, registration, inputs.namespace)?;
+        let digest = payload.host.firecracker.digest();
+        file.recheck()?;
+        Ok(digest)
+    }
+
     pub(super) fn observe(
         &self,
         requirement: &HostEpochRequirement,
