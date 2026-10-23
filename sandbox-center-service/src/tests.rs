@@ -1,10 +1,10 @@
 //! The storage/host substitutes inject faults around the SAME pure center
 //! transitions. These tests do not claim Redis, TLS or KVM acceptance.
+mod host;
 mod late_observation;
 mod query_snapshot;
 mod retired_destroy;
 mod session_wait;
-mod host;
 use host::Host;
 #[test]
 fn physical_observation_has_bounded_freshness_and_clock_skew() {
@@ -37,8 +37,16 @@ use sandproof_controller_service::{
     application::{Clock, ConnectCommand, CreateCommand},
     templates::ResourceShape,
 };
-use sandproof_protocol::internal::{NodeIdentity, lifecycle::{CreateBinding, Resources}};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, CenterIdentity, ClosedLifecycleWindow, ConfirmedLifecycleResult, ConfirmedRenewal, CreateObservation, CreateRefusalReason, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation, LifecycleWindowClose, RecordedLifecycleIntent, RenewalConfirmation, SessionId, TerminalLifecycleObservation, TerminalStatus};
+use sandproof_protocol::internal::{
+    NodeIdentity,
+    lifecycle::{CreateBinding, Resources},
+};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, CenterIdentity, ClosedLifecycleWindow, ConfirmedLifecycleResult,
+    ConfirmedRenewal, CreateObservation, CreateRefusalReason, CurrentCreateReadiness,
+    CurrentReadyFacts, LifecycleOperation, LifecycleWindowClose, RecordedLifecycleIntent,
+    RenewalConfirmation, SessionId, TerminalLifecycleObservation, TerminalStatus,
+};
 use sandproof_protocol::{SandboxId, TenantId};
 use std::{
     sync::{
@@ -407,17 +415,29 @@ impl AuthorityPort for MemoryAuthority {
         }
         Ok(())
     }
-    fn destroy_bound_create(&mut self, original: &AcceptedLifecycleIntent) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+    fn destroy_bound_create(
+        &mut self,
+        original: &AcceptedLifecycleIntent,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
         let owner = &original.request.binding.key.owner;
         let session = &original.request.binding.session;
-        let record = self.state.lifecycle_session(owner, session).ok_or(sandproof_center_core::DecisionError::NotFound)?;
+        let record = self
+            .state
+            .lifecycle_session(owner, session)
+            .ok_or(sandproof_center_core::DecisionError::NotFound)?;
         if record.operations().first().map(|op| op.intent()) != Some(original) {
             return Err(sandproof_center_core::DecisionError::Stale.into());
         }
         let current = record.operations().last().unwrap().intent();
-        if record.terminating() { return Ok(current.clone()); }
-        let submission = LifecycleSubmission::Destroy { key: self.state.next_sdk_operation_key(owner)?, session: session.clone(), expected_version: current.accepted_version };
+        if record.terminating() {
+            return Ok(current.clone());
+        }
+        let submission = LifecycleSubmission::Destroy {
+            key: self.state.next_sdk_operation_key(owner)?,
+            session: session.clone(),
+            expected_version: current.accepted_version,
+        };
         let (next, intent) = self.state.accept_lifecycle(owner, &submission, 0)?;
         self.state = next;
         Ok(intent)
@@ -473,17 +493,33 @@ struct NetworkGate {
     release: std::sync::mpsc::Receiver<()>,
 }
 fn create_binding(intent: &AcceptedLifecycleIntent) -> &CreateBinding {
-    let LifecycleOperation::Create { create, .. } = &intent.request.operation else { panic!("original Create required") };
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+        panic!("original Create required")
+    };
     create
 }
-fn ready_observation(original: &AcceptedLifecycleIntent, current: &AcceptedLifecycleIntent, now: u64) -> CreateObservation {
+fn ready_observation(
+    original: &AcceptedLifecycleIntent,
+    current: &AcceptedLifecycleIntent,
+    now: u64,
+) -> CreateObservation {
     let create = create_binding(original);
     // Fixture creates sample this exact configured duration at admission.
     let started_at_ms = create.startup_deadline_ms - config().startup_timeout_secs * 1000;
-    CreateObservation { request: original.clone(), current_request: current.clone(), historical_create_succeeded: true,
-        readiness: CurrentCreateReadiness::Observed { facts: CurrentReadyFacts { started_at_ms,
-            end_at_ms: started_at_ms + create.timeout_ms, max_end_at_ms: started_at_ms + create.max_lifetime_ms,
-            startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: now } } }
+    CreateObservation {
+        request: original.clone(),
+        current_request: current.clone(),
+        historical_create_succeeded: true,
+        readiness: CurrentCreateReadiness::Observed {
+            facts: CurrentReadyFacts {
+                started_at_ms,
+                end_at_ms: started_at_ms + create.timeout_ms,
+                max_end_at_ms: started_at_ms + create.max_lifetime_ms,
+                startup_deadline_ms: create.startup_deadline_ms,
+                observed_at_ms: now,
+            },
+        },
+    }
 }
 fn advance_retention(f: &Fixture) {
     f.clock.0.fetch_add(RESULT_RETENTION_MS, Ordering::SeqCst);
@@ -578,19 +614,42 @@ fn durable_confirmation_keeps_repeated_renewals_bounded_and_lost_ack_is_retried(
     let session = f.app.create("1", command()).unwrap();
     for _ in 0..20 {
         f.app.set_timeout("1", &session.sandbox_id, 200).unwrap();
-        assert_eq!(f.app.snapshot().unwrap().sandboxes()[0].operations().len(), 2);
+        assert_eq!(
+            f.app.snapshot().unwrap().sandboxes()[0].operations().len(),
+            2
+        );
     }
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
     f.app.set_timeout("1", &session.sandbox_id, 100).unwrap();
     let retained = f.app.snapshot().unwrap();
     assert_eq!(retained.sandboxes()[0].operations().len(), 3);
-    assert_eq!(retained.sandboxes()[0].current_running().map(|facts| facts.end_at_ms), Some(101_000));
-    assert_eq!(retained.pending_lifecycle(), vec![retained.sandboxes()[0].operations().last().unwrap().intent().clone()]);
+    assert_eq!(
+        retained.sandboxes()[0]
+            .current_running()
+            .map(|facts| facts.end_at_ms),
+        Some(101_000)
+    );
+    assert_eq!(
+        retained.pending_lifecycle(),
+        vec![
+            retained.sandboxes()[0]
+                .operations()
+                .last()
+                .unwrap()
+                .intent()
+                .clone()
+        ]
+    );
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     let compacted = f.app.snapshot().unwrap();
     assert_eq!(compacted.sandboxes()[0].operations().len(), 2);
-    assert_eq!(compacted.sandboxes()[0].current_running().map(|facts| facts.end_at_ms), Some(101_000));
+    assert_eq!(
+        compacted.sandboxes()[0]
+            .current_running()
+            .map(|facts| facts.end_at_ms),
+        Some(101_000)
+    );
     assert!(f.app.resolve_data_route(&session.envd_access_token).is_ok());
     f.app.kill("1", &session.sandbox_id).unwrap();
 }
@@ -606,7 +665,9 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
         .unwrap()
         .as_ref()
         .unwrap()
-        .request.binding.node
+        .request
+        .binding
+        .node
         .clone();
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
     f.app.kill("1", &session.sandbox_id).unwrap();
@@ -615,7 +676,13 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
     assert_eq!(record.operations().len(), 2);
     assert!(record.unconfirmed_sdk_renewal().is_none());
     assert!(record.terminal_confirmation.is_none());
-    let cleaned = record.operations().last().unwrap().terminal().unwrap().clone();
+    let cleaned = record
+        .operations()
+        .last()
+        .unwrap()
+        .terminal()
+        .unwrap()
+        .clone();
     assert_eq!(f.app.begin_close(&cleaned), Err(PortError::Conflict));
     assert!(f.host.close_requests.lock().unwrap().is_empty());
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
@@ -666,19 +733,30 @@ fn refused_create_keeps_original_destroy_until_exact_terminal_confirmation() {
     let snapshot = f.app.snapshot().unwrap();
     let record = &snapshot.sandboxes()[0];
     assert_eq!(record.operations().len(), 2);
-    assert_eq!(record.operations()[0].create_refusal(), Some(CreateRefusalReason::Capacity));
-    let terminal = record.operations().last().unwrap().terminal().unwrap().clone();
+    assert_eq!(
+        record.operations()[0].create_refusal(),
+        Some(CreateRefusalReason::Capacity)
+    );
+    let terminal = record
+        .operations()
+        .last()
+        .unwrap()
+        .terminal()
+        .unwrap()
+        .clone();
     assert!(record.terminal_confirmation.is_none());
     assert_eq!(f.app.begin_close(&terminal), Err(PortError::Conflict));
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     let snapshot = f.app.snapshot().unwrap();
-    assert_eq!(snapshot.sandboxes()[0].terminal_confirmation, Some(terminal.clone()));
+    assert_eq!(
+        snapshot.sandboxes()[0].terminal_confirmation,
+        Some(terminal.clone())
+    );
     assert!(f.app.begin_close(&terminal).is_err());
     advance_retention(&f);
     assert!(f.app.begin_close(&terminal).is_ok());
 }
-
 
 #[test]
 fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successors() {
@@ -698,7 +776,10 @@ fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successor
     f.app.retire_terminal_history_once().unwrap();
     let pending = f.app.snapshot().unwrap().pending_closes();
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].terminal.request.request.binding.node, original.request.binding.node);
+    assert_eq!(
+        pending[0].terminal.request.request.binding.node,
+        original.request.binding.node
+    );
     assert_eq!(
         pending[0].terminal.request.retention.window,
         original.retention.window
@@ -729,7 +810,8 @@ fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successor
             .unwrap()
             .as_ref()
             .unwrap()
-            .retention.window
+            .retention
+            .window
             .get(),
         2
     );
@@ -756,7 +838,14 @@ fn background_retirement_keeps_a_live_sibling_and_its_original_data_token() {
         let pending = f.app.snapshot().unwrap().pending_closes();
         assert_eq!(pending.len(), 1);
         assert_eq!(
-            pending[0].terminal.request.request.binding.session.as_protocol_id().as_str(),
+            pending[0]
+                .terminal
+                .request
+                .request
+                .binding
+                .session
+                .as_protocol_id()
+                .as_str(),
             peer.sandbox_id
         );
         assert!(
@@ -785,7 +874,10 @@ fn durable_capacity_refusal_is_429_after_original_destroy_cleanup() {
     let snapshot = f.app.snapshot().unwrap();
     let record = &snapshot.sandboxes()[0];
     assert_eq!(record.operations().len(), 2);
-    assert_eq!(record.operations()[0].create_refusal(), Some(CreateRefusalReason::Capacity));
+    assert_eq!(
+        record.operations()[0].create_refusal(),
+        Some(CreateRefusalReason::Capacity)
+    );
     let terminal = record.operations()[1].terminal().unwrap();
     assert_eq!(terminal.status, TerminalStatus::Cleaned);
     assert_eq!(record.terminal_confirmation.as_ref(), Some(terminal));
@@ -914,8 +1006,16 @@ fn private_validation_cannot_issue_public_tokens_or_receive_user_management() {
     );
     // Hiding is NOT cleanup. The trusted internal driver still sees the SAME
     // record and can commit its original Destroy; no public bypass is added.
-    let original = f.app.snapshot().unwrap().sandboxes()[0].operations()[0].intent().clone();
-    let destroy = f.app.authority.lock().unwrap().destroy_bound_create(&original).unwrap();
+    let original = f.app.snapshot().unwrap().sandboxes()[0].operations()[0]
+        .intent()
+        .clone();
+    let destroy = f
+        .app
+        .authority
+        .lock()
+        .unwrap()
+        .destroy_bound_create(&original)
+        .unwrap();
     assert!(f.app.wait_current_terminal(&destroy).is_ok());
     assert_eq!(
         f.app.snapshot().unwrap().reserved(None, None),
@@ -1118,7 +1218,10 @@ fn host_transport_failure_after_admission_is_unknown_and_retains_original_identi
     f.host.unknown.store(true, Ordering::SeqCst);
     assert_eq!(f.app.create("1", command()), Err(PortError::OutcomeUnknown));
     let original = f.app.snapshot().unwrap().pending_lifecycle()[0].clone();
-    assert_eq!(original.request.binding.session.as_protocol_id().as_str(), "sandbox-1");
+    assert_eq!(
+        original.request.binding.session.as_protocol_id().as_str(),
+        "sandbox-1"
+    );
     f.host.unknown.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     assert_eq!(f.host.last.lock().unwrap().as_ref().unwrap(), &original);
@@ -1135,7 +1238,10 @@ fn transient_host_budget_refusal_retries_only_the_original_durable_intent() {
     assert_eq!(state.sandboxes().len(), 1);
     assert_eq!(state.sandboxes()[0].operations().len(), 1);
     let request = state.sandboxes()[0].operations()[0].intent();
-    assert_eq!(request.request.binding.session.as_protocol_id().as_str(), session.sandbox_id);
+    assert_eq!(
+        request.request.binding.session.as_protocol_id().as_str(),
+        session.sandbox_id
+    );
     assert_eq!(request.request.binding.key.sequence.get(), 1);
     assert_eq!(f.host.last.lock().unwrap().as_ref(), Some(request));
 }
@@ -1158,7 +1264,10 @@ fn unknown_redis_commit_prevents_dispatch_and_cached_read_authorization() {
             .unwrap()
             .as_ref()
             .unwrap()
-            .request.binding.session.as_protocol_id()
+            .request
+            .binding
+            .session
+            .as_protocol_id()
             .as_str(),
         "sandbox-1"
     );
@@ -1297,17 +1406,24 @@ fn startup_timeout_creates_destroy_intent_without_guessing_absence() {
     f.host.unknown.store(true, Ordering::SeqCst);
     assert_eq!(f.app.create("1", command()), Err(PortError::OutcomeUnknown));
     let original = f.app.snapshot().unwrap().pending_lifecycle()[0].clone();
-    f.clock
-        .0
-        .store(create_binding(&original).startup_deadline_ms, Ordering::SeqCst);
+    f.clock.0.store(
+        create_binding(&original).startup_deadline_ms,
+        Ordering::SeqCst,
+    );
     assert_eq!(f.app.reconcile_once(), Ok(0));
     let terminating = f.app.snapshot().unwrap().pending_lifecycle()[0].clone();
-    assert_eq!(terminating.request.operation, LifecycleOperation::Destroy {});
+    assert_eq!(
+        terminating.request.operation,
+        LifecycleOperation::Destroy {}
+    );
     assert_eq!(
         terminating.request.binding.session.as_protocol_id(),
         original.request.binding.session.as_protocol_id()
     );
-    assert_eq!(f.app.snapshot().unwrap().sandboxes()[0].operations()[0].intent(), &original);
+    assert_eq!(
+        f.app.snapshot().unwrap().sandboxes()[0].operations()[0].intent(),
+        &original
+    );
     assert_eq!(
         f.app.snapshot().unwrap().reserved(None, None),
         Some(resources(1))
