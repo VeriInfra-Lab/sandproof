@@ -1,4 +1,8 @@
-"""Pure test-relay bounds/barrier checks; no TLS, product process or KVM."""
+"""Current fixed paths/framing and historical barrier vectors; no TLS or KVM.
+
+The barrier packet vectors still need migration to current Create observations;
+these pure tests do not certify the current lifecycle fault matrix.
+"""
 import copy
 from http.client import parse_headers
 import io
@@ -28,11 +32,23 @@ class InternalFaultRelayTests(unittest.TestCase):
         return node, request, response
 
     def test_paths_have_only_fixed_original_internal_destinations(self):
-        for path in (relay.LIFECYCLE, '/internal/v2/node-status',
-                     '/internal/v2/data/process.Process/Start', '/internal/v2/data/files?path=%2Ftmp%2Fx'):
+        # Match the current Rust server constants, not whatever the relay lists.
+        expected = (
+            '/internal/lifecycle', '/internal/lifecycle/result-confirmation',
+            '/internal/lifecycle/window-close', '/internal/lifecycle/create-observation',
+            '/internal/lifecycle/terminal-observation', '/internal/lifecycle/renewal-confirmation',
+            '/internal/node-status', '/internal/probe', '/internal/template-cache',
+            '/internal/template-validation-evidence',
+        )
+        self.assertEqual(relay.PATHS, frozenset(expected))
+        for path in (*expected, '/internal/data/process.Process/Start',
+                     '/internal/data/files?path=%2Ftmp%2Fx'):
             self.assertTrue(relay.allowed_path(path), path)
-        for path in ('https://other.test/internal/v2/lifecycle', '//other.test/path',
-                     '/v2/sandboxes', '/internal/v2/lifecycle?target=other', '/internal/v2/shell', '/internal/v1/lifecycle'):
+        for path in ('https://other.test/internal/lifecycle', '//other.test/path',
+                     '/v2/sandboxes', '/internal/lifecycle?target=other', '/internal/shell',
+                     '/internal/v1/lifecycle', '/internal/v2/node-status',
+                     '/internal/v2/lifecycle', '/internal/v2/probe',
+                     '/internal/v2/data/process.Process/Start'):
             self.assertFalse(relay.allowed_path(path), path)
 
     def test_finite_length_and_chunked_bodies_keep_original_bytes(self):
@@ -117,7 +133,7 @@ class InternalFaultRelayTests(unittest.TestCase):
 
     def test_original_host_transport_loss_is_unavailable_not_a_synthetic_fact(self):
         value=relay._Handler.__new__(relay._Handler)
-        value.path='/internal/v2/node-status'
+        value.path=relay.STATUS_PATH
         value.command='POST'
         value.headers=self.headers('Content-Length: 0\r\n')
         value.rfile=io.BytesIO()
@@ -164,7 +180,7 @@ class InternalFaultRelayTests(unittest.TestCase):
 
     def test_bad_authenticated_backend_data_still_fails_instead_of_becoming_unavailable(self):
         value=relay._Handler.__new__(relay._Handler)
-        value.path='/internal/v2/node-status'
+        value.path=relay.STATUS_PATH
         value.command='POST'
         value.headers=self.headers('Content-Length: 0\r\n')
         value.rfile=io.BytesIO()

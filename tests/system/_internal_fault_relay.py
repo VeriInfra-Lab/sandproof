@@ -30,19 +30,24 @@ from tools.system_acceptance import private_path
 
 BODY_BYTES = 2 * 1024**2
 MATERIAL_BYTES = 512 * 1024
-LIFECYCLE = '/internal/v2/lifecycle'
-CONTROL_PATHS = frozenset((LIFECYCLE, '/internal/v2/result-confirmation',
-                          '/internal/v2/window-close'))
-PATHS = CONTROL_PATHS | frozenset(('/internal/v2/node-status', '/internal/v2/probe',
-                                  '/internal/v2/template-cache', '/internal/v2/template-validation-evidence'))
+LIFECYCLE = '/internal/lifecycle'
+CONTROL_PATHS = frozenset((LIFECYCLE, '/internal/lifecycle/result-confirmation',
+                          '/internal/lifecycle/window-close',
+                          '/internal/lifecycle/create-observation',
+                          '/internal/lifecycle/terminal-observation',
+                          '/internal/lifecycle/renewal-confirmation'))
+STATUS_PATH = '/internal/node-status'
+DATA_PREFIX = '/internal/data/'
+PATHS = CONTROL_PATHS | frozenset((STATUS_PATH, '/internal/probe',
+                                  '/internal/template-cache', '/internal/template-validation-evidence'))
 HOP_HEADERS = frozenset(('host', 'connection', 'transfer-encoding', 'content-length',
                          'proxy-connection', 'keep-alive', 'upgrade', 'trailer'))
 
 
 def allowed_path(path):
     return (type(path) is str and path.startswith('/') and not path.startswith('//')
-            and len(path) <= 4096 and ('?' not in path or path.startswith('/internal/v2/data/'))
-            and (path in PATHS or path.startswith('/internal/v2/data/')))
+            and len(path) <= 4096 and ('?' not in path or path.startswith(DATA_PREFIX))
+            and (path in PATHS or path.startswith(DATA_PREFIX)))
 
 
 def read_body(source, headers, *, limit=BODY_BYTES):

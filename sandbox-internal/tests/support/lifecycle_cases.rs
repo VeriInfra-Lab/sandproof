@@ -192,10 +192,7 @@ async fn lifecycle_rejects_untrusted_binding_and_bounded_wire_before_receiver() 
         RegisteredEndpoint::new(address, "host.test".into(), fixture::node("host-a")).unwrap(),
         limits(),
     );
-    assert_eq!(
-        client.record_lifecycle(&good).await.unwrap().intent,
-        good
-    );
+    assert_eq!(client.record_lifecycle(&good).await.unwrap().intent, good);
     assert_eq!(count.load(Ordering::SeqCst), 1);
     assert_eq!(*captured.lock().unwrap(), vec![good.clone()]);
     assert_complete_fields(&client, &good, &count, &captured).await;
@@ -277,9 +274,8 @@ async fn assert_complete_fields(
         assert_eq!(expected.center, good.center);
         expected.request.binding.key.owner = "tenant-fields".try_into().unwrap();
         expected.request.binding.session = "sandbox-fields".try_into().unwrap();
-        expected.request.binding.key.sequence = (17 + u64::try_from(index).unwrap())
-            .try_into()
-            .unwrap();
+        expected.request.binding.key.sequence =
+            (17 + u64::try_from(index).unwrap()).try_into().unwrap();
         expected.retention.slot = 19;
         expected.retention.window = 31.try_into().unwrap();
         expected.request.binding.key.window = 23.try_into().unwrap();
