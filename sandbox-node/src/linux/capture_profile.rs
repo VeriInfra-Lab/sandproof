@@ -44,6 +44,8 @@ impl ProtectedCaptureSettings {
 // manufacture this profile or choose a different path/epoch for one operation.
 pub(crate) struct ProtectedCaptureProfile {
     pub(super) layout: SnapshotLayout,
+    pub(super) layout_parent: PathBuf,
+    pub(super) layout_binding: ContentDigest,
     pub(super) epoch: HostEpochRequirement,
     pub(super) state_bytes: u64,
     pub(super) memory_max: u64,
@@ -67,6 +69,8 @@ impl ProtectedCaptureProfile {
         }
         Ok(Self {
             layout,
+            layout_parent: settings.layout_parent.clone(),
+            layout_binding: settings.layout_binding,
             epoch: epoch.clone(),
             state_bytes: settings.state_copy_bytes,
             memory_max: settings.memory_copy_bytes,

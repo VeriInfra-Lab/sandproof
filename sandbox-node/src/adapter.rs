@@ -144,6 +144,24 @@ impl NodeHost {
         )
     }
 
+    /// Prepare one waiting child for an already claimed original Full.
+    /// Save its exact process/job under the original work before any release.
+    /// No Full socket is opened by preparation or EOF/cancellation.
+    /// # Errors
+    /// Preparation failures retain original work/material/process responsibility.
+    pub fn prepare_capture_worker(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<crate::PreparedCaptureWorker,Box<dyn std::error::Error>> {
+        self.worker.prepare_capture_worker(
+            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
+            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,
+            action,request,original,&self.relay_executable,
+        )
+    }
+
     /// Execute only an originally claimed Full with independently checked local
     /// parameters. The original V5 claim/resource plan and closed/drained V8
     /// access are required; no untrusted DTO can install the private profile.

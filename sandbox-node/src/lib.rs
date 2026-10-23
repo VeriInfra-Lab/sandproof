@@ -37,7 +37,7 @@ mod linux;
 pub use linux::{
     CredentialFault, ExecutionReport, HostInventory, HostMetadataEnvelope, HostObservation,
     LaunchCredentialStatus, LinuxObservation, LinuxWorker, NodeConfig, ObservedSlot,
-    ProtectedCaptureSettings, RouteCapacityExceeded,
+    ProtectedCaptureSettings, PreparedCaptureWorker, run_capture_worker, CAPTURE_WORKER_INPUT_BYTES, CAPTURE_WORKER_OUTPUT_BYTES, RouteCapacityExceeded,
 };
 
 #[cfg(target_os = "linux")]

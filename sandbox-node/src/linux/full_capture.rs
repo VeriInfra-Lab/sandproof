@@ -31,7 +31,7 @@ fn hex(bytes: &[u8; 32]) -> String {
     }
     output
 }
-fn expected_compatibility(
+pub(super) fn expected_compatibility(
     template: &TemplateBinding,
     device: [u8; 32],
     tool: [u8; 32],
@@ -59,7 +59,7 @@ fn expected_compatibility(
         }],
     })
 }
-fn check_measured_source(
+pub(super) fn check_measured_source(
     template: &TemplateBinding,
     raw: &RawSourceObservation,
     expected: &VmCompatibility,
@@ -79,6 +79,7 @@ fn check_measured_source(
 struct ExpectedColdWork {
     context: sandproof_controller_service::HostSlotContext,
     runtime: Runtime,
+    runtime_config: sandbox_runtime::RuntimeConfig,
     template: TemplateBinding,
     request: FullCaptureWorkRequest,
 }
@@ -111,7 +112,8 @@ impl LinuxWorker {
             .template
             .as_ref()
             .ok_or("Full requires original sealed managed-template provenance")?;
-        let runtime = self.runtime(context.binding.sandbox, context.binding.vm)?;
+        let runtime_config = self.runtime_config(context.binding.sandbox, context.binding.vm)?;
+        let runtime = Runtime::for_existing(runtime_config.clone())?;
         let tool = provider.original_tool_digest(
             &original.node,
             &original.host_bootstrap,
@@ -144,6 +146,7 @@ impl LinuxWorker {
         Ok(ExpectedColdWork {
             context,
             runtime,
+            runtime_config,
             template: template.clone(),
             request,
         })
@@ -195,6 +198,35 @@ impl LinuxWorker {
         }
         self.require_fence(*sandbox, *epoch, false)?;
         Ok(context)
+    }
+
+    pub(crate) fn prepare_capture_worker(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        action: &WorkAction<core::EffectId>,
+        request: &FullCaptureWorkRequest,
+        original: &SourceObservationRequirement,
+        executable: &std::path::Path,
+    ) -> NodeResult<super::capture_worker::PreparedCaptureWorker> {
+        let context=self.require_full_action(action,request)?;
+        let slot=self.runtime_host_slot(context.position,context.binding.vm)?;
+        let gate=slot.helper_gate.try_acquire(Some(&slot))?;
+        let actual=self.prepare_full_capture(provider,profile,&request.pause,original)?;
+        require_expected_request(request,&actual)?;
+        let expected=self.expected_cold_work(provider,profile,&request.pause,original)?;
+        if expected.context!=context || expected.request!=actual
+            || self.require_full_action(action,request)?!=context {
+            return Err("capture worker source changed before preparation".into());
+        }
+        super::capture_worker::PreparedCaptureWorker::prepare(gate,&slot,executable,
+            super::capture_worker::CaptureWorkerJob {
+                action:action.clone(),full:actual,source:original.clone(),
+                runtime:expected.runtime_config,template:expected.template,
+                namespace:self.config.namespace.clone(),
+                bootstrap_path:provider.original_path().to_path_buf(),
+                layout_parent:profile.layout_parent.clone(),layout_binding:profile.layout_binding,
+            })
     }
 
     pub(crate) fn capture_original(
