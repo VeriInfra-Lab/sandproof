@@ -2,8 +2,19 @@
 #[path = "../../sandbox-protocol/tests/support/lifecycle.rs"]
 mod fixture;
 use fixture::{binding, node, resources};
-use sandproof_center_core::{AvailableTemplate, Bounds, CenterState, CreateParameters, DecisionError, LifecycleSubmission, LifecycleWindow, NodeMode, NodeRegistration, NodeRole, TenantBudget};
-use sandproof_protocol::{TenantId, internal::lifecycle::CreateBinding, lifecycle::{AcceptedLifecycleIntent, CenterIdentity, CreateObservation, CurrentCreateReadiness, CurrentReadyFacts, LifecycleOperation, OperationKey, TerminalLifecycleObservation, TerminalStatus}};
+use sandproof_center_core::{
+    AvailableTemplate, Bounds, CenterState, CreateParameters, DecisionError, LifecycleSubmission,
+    LifecycleWindow, NodeMode, NodeRegistration, NodeRole, TenantBudget,
+};
+use sandproof_protocol::{
+    TenantId,
+    internal::lifecycle::CreateBinding,
+    lifecycle::{
+        AcceptedLifecycleIntent, CenterIdentity, CreateObservation, CurrentCreateReadiness,
+        CurrentReadyFacts, LifecycleOperation, OperationKey, TerminalLifecycleObservation,
+        TerminalStatus,
+    },
+};
 fn center() -> CenterIdentity {
     CenterIdentity {
         deployment: node("host-a").deployment_id,
@@ -42,7 +53,10 @@ fn state() -> CenterState {
             }],
             protocol_version: sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION,
         }],
-        vec![TenantBudget { tenant: "1".try_into().unwrap(), limit: resources(2) }],
+        vec![TenantBudget {
+            tenant: "1".try_into().unwrap(),
+            limit: resources(2),
+        }],
         center(),
         request_windows(),
     )
@@ -76,7 +90,11 @@ fn admit_create(
     shape: CreateBinding,
     sequence: u64,
 ) -> Result<(CenterState, AcceptedLifecycleIntent), DecisionError> {
-    image.accept_lifecycle(owner, &create_submission(public_key(owner, sequence), shape), 0)
+    image.accept_lifecycle(
+        owner,
+        &create_submission(public_key(owner, sequence), shape),
+        0,
+    )
 }
 fn admit_destroy(
     image: &CenterState,
@@ -98,21 +116,28 @@ fn observed(
     current: &AcceptedLifecycleIntent,
     end_at_ms: u64,
 ) -> CreateObservation {
-    let LifecycleOperation::Create { create, .. } = &original.request.operation else { unreachable!() };
+    let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+        unreachable!()
+    };
     CreateObservation {
         request: original.clone(),
         current_request: current.clone(),
         historical_create_succeeded: true,
         readiness: CurrentCreateReadiness::Observed {
             facts: CurrentReadyFacts {
-                started_at_ms: 100, end_at_ms, max_end_at_ms: 600,
-                startup_deadline_ms: create.startup_deadline_ms, observed_at_ms: 150,
+                started_at_ms: 100,
+                end_at_ms,
+                max_end_at_ms: 600,
+                startup_deadline_ms: create.startup_deadline_ms,
+                observed_at_ms: 150,
             },
         },
     }
 }
 fn save_ready(image: &CenterState, original: &AcceptedLifecycleIntent) -> CenterState {
-    image.accept_lifecycle_create_observation(&observed(original, original, 200)).unwrap()
+    image
+        .accept_lifecycle_create_observation(&observed(original, original, 200))
+        .unwrap()
 }
 
 #[test]
@@ -121,7 +146,10 @@ fn current_observation_checks_full_binding_before_replay() {
     let (accepted, create) = admit_create(&state(), &owner, binding(), 1).unwrap();
     let exact = observed(&create, &create, 200);
     let running = save_ready(&accepted, &create);
-    assert_eq!(running.accept_lifecycle_create_observation(&exact).unwrap(), running);
+    assert_eq!(
+        running.accept_lifecycle_create_observation(&exact).unwrap(),
+        running
+    );
     // Either origin or current-request substitution must fail, even when the
     // readiness facts exactly equal a result already saved in the original row.
     let mut altered = vec![create.clone(); 7];
@@ -131,25 +159,47 @@ fn current_observation_checks_full_binding_before_replay() {
     altered[3].retention.window = 2.try_into().unwrap();
     altered[4].request.binding.node.node_generation = 2.try_into().unwrap();
     altered[5].request.binding.key.sequence = 2.try_into().unwrap();
-    let LifecycleOperation::Create { create: parameters, .. } = &mut altered[6].request.operation else { unreachable!() };
+    let LifecycleOperation::Create {
+        create: parameters, ..
+    } = &mut altered[6].request.operation
+    else {
+        unreachable!()
+    };
     parameters.options.push(b' ');
     for wrong in altered {
         for replace_origin in [true, false] {
             let mut candidate = exact.clone();
-            if replace_origin { candidate.request = wrong.clone(); }
-            else { candidate.current_request = wrong.clone(); }
-            assert_eq!(running.accept_lifecycle_create_observation(&candidate), Err(DecisionError::Stale));
+            if replace_origin {
+                candidate.request = wrong.clone();
+            } else {
+                candidate.current_request = wrong.clone();
+            }
+            assert_eq!(
+                running.accept_lifecycle_create_observation(&candidate),
+                Err(DecisionError::Stale)
+            );
         }
     }
     let mut changed = exact.clone();
-    let CurrentCreateReadiness::Observed { facts } = &mut changed.readiness else { unreachable!() };
+    let CurrentCreateReadiness::Observed { facts } = &mut changed.readiness else {
+        unreachable!()
+    };
     facts.started_at_ms = 101;
     facts.end_at_ms = 201;
     facts.max_end_at_ms = 601;
-    assert_eq!(running.accept_lifecycle_create_observation(&changed), Err(DecisionError::Conflict));
+    assert_eq!(
+        running.accept_lifecycle_create_observation(&changed),
+        Err(DecisionError::Conflict)
+    );
     let (terminating, _) = admit_destroy(&running, &create, public_key(&owner, 2)).unwrap();
-    assert_eq!(terminating.accept_lifecycle_create_observation(&exact), Err(DecisionError::Stale));
-    assert_eq!(terminating.reserved(None, None), running.reserved(None, None));
+    assert_eq!(
+        terminating.accept_lifecycle_create_observation(&exact),
+        Err(DecisionError::Stale)
+    );
+    assert_eq!(
+        terminating.reserved(None, None),
+        running.reserved(None, None)
+    );
 }
 
 #[test]
@@ -157,24 +207,59 @@ fn exact_terminal_replay_cannot_bypass_current_destroy_or_restart_retention() {
     let owner = "1".try_into().unwrap();
     let (accepted, create) = admit_create(&state(), &owner, binding(), 1).unwrap();
     let running = save_ready(&accepted, &create);
-    let fake = TerminalLifecycleObservation { request: create.clone(), status: TerminalStatus::Cleaned };
-    assert_eq!(running.accept_lifecycle_terminal_observation(&fake, 150), Err(DecisionError::Stale));
+    let fake = TerminalLifecycleObservation {
+        request: create.clone(),
+        status: TerminalStatus::Cleaned,
+    };
+    assert_eq!(
+        running.accept_lifecycle_terminal_observation(&fake, 150),
+        Err(DecisionError::Stale)
+    );
     let (terminating, destroy) = admit_destroy(&running, &create, public_key(&owner, 2)).unwrap();
-    let pending = TerminalLifecycleObservation { request: destroy.clone(), status: TerminalStatus::Pending };
-    assert_eq!(terminating.accept_lifecycle_terminal_observation(&pending, 150).unwrap(), terminating);
+    let pending = TerminalLifecycleObservation {
+        request: destroy.clone(),
+        status: TerminalStatus::Pending,
+    };
+    assert_eq!(
+        terminating
+            .accept_lifecycle_terminal_observation(&pending, 150)
+            .unwrap(),
+        terminating
+    );
     assert_eq!(terminating.reserved(None, None), Some(resources(1)));
-    let exact = TerminalLifecycleObservation { request: destroy, status: TerminalStatus::Cleaned };
-    let cleaned = terminating.accept_lifecycle_terminal_observation(&exact, 150).unwrap();
+    let exact = TerminalLifecycleObservation {
+        request: destroy,
+        status: TerminalStatus::Cleaned,
+    };
+    let cleaned = terminating
+        .accept_lifecycle_terminal_observation(&exact, 150)
+        .unwrap();
     assert_eq!(cleaned.reserved(None, None), Some(resources(0)));
     for now in [0, 149, 150, 250, u64::MAX] {
-        assert_eq!(cleaned.accept_lifecycle_terminal_observation(&exact, now).unwrap(), cleaned);
+        assert_eq!(
+            cleaned
+                .accept_lifecycle_terminal_observation(&exact, now)
+                .unwrap(),
+            cleaned
+        );
     }
     let mut wrong = exact.clone();
     wrong.request.accepted_version += 1;
-    assert_eq!(cleaned.accept_lifecycle_terminal_observation(&wrong, 150), Err(DecisionError::Stale));
+    assert_eq!(
+        cleaned.accept_lifecycle_terminal_observation(&wrong, 150),
+        Err(DecisionError::Stale)
+    );
     let mut wrong = exact;
     wrong.request.retention.slot = 2;
-    assert_eq!(cleaned.accept_lifecycle_terminal_observation(&wrong, 150), Err(DecisionError::Stale));
-    assert_eq!(cleaned.accept_lifecycle_terminal_observation(&pending, 150).unwrap(), cleaned);
+    assert_eq!(
+        cleaned.accept_lifecycle_terminal_observation(&wrong, 150),
+        Err(DecisionError::Stale)
+    );
+    assert_eq!(
+        cleaned
+            .accept_lifecycle_terminal_observation(&pending, 150)
+            .unwrap(),
+        cleaned
+    );
     assert!(cleaned.is_valid());
 }
