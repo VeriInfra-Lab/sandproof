@@ -253,7 +253,9 @@ pub(in crate::controller) fn base_snapshot(
         }
         _ => false,
     };
-    let readiness = if current_request == *intent || applied_renewal {
+    let readiness = if let Some(reason) = session.refusal {
+        CreateReadiness::Refused { reason }
+    } else if current_request == *intent || applied_renewal {
         CreateReadiness::Pending(CreateReadinessPending::NoLocalMapping)
     } else {
         CreateReadiness::NotCurrent

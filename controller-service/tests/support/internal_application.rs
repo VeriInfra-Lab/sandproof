@@ -72,6 +72,7 @@ pub struct State {
     pub bound_slots: Vec<HostSlotContext>,
     pub release_unknown: bool,
     pub disk_available: Option<u64>,
+    pub disk_probe: Option<Box<dyn FnOnce() -> Result<u64, ApplicationError> + Send>>,
     pub template_error: Option<ApplicationError>,
     pub template_checks: usize,
     pub cached_verifications: usize,
@@ -236,7 +237,14 @@ impl HostCapacity for TestHost {
     }
 
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
-        Ok(self.0.lock().unwrap().disk_available.unwrap_or(u64::MAX))
+        let (probe, available) = {
+            let mut state = self.0.lock().unwrap();
+            (
+                state.disk_probe.take(),
+                state.disk_available.unwrap_or(u64::MAX),
+            )
+        };
+        probe.map_or(Ok(available), |probe| probe())
     }
     fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
         Ok((2, 512 * 1024 * 1024))

@@ -83,7 +83,7 @@ impl ControllerJournal {
         }
         let mut pending = Vec::new();
         for session in &inbox.sessions {
-            if session.terminal {
+            if session.terminal || session.refusal.is_some() {
                 continue;
             }
             let entry = session

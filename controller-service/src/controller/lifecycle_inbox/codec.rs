@@ -79,6 +79,7 @@ pub(in crate::controller) fn validate(
         return Ok(());
     };
     validate_confirmed(connection, world, &inbox)?;
+    super::refusal::validate(connection, &inbox)?;
     for session in &inbox.sessions {
         let Some(local) = session.local else {
             continue;

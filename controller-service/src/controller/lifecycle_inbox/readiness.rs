@@ -26,6 +26,9 @@ pub enum CreateReadiness {
     NotRunning,
     Expired,
     Pending(CreateReadinessPending),
+    Refused {
+        reason: sandproof_protocol::lifecycle::CreateRefusalReason,
+    },
     Observed(LifecycleReadyObservation),
 }
 
