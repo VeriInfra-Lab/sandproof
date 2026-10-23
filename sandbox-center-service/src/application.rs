@@ -184,28 +184,24 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     pub fn set_timeout(&self, tenant: &str, sandbox: &str, seconds: i64) -> Result<(), PortError> {
         let tenant = tenant_id(tenant)?;
         let sandbox: SandboxId = sandbox.try_into().map_err(|_| PortError::NotFound)?;
+        if seconds <= 0 {
+            self.authority.lock().map_err(|_| PortError::Busy)?
+                .destroy_current(&tenant, &sandbox).map_err(authority_error)?;
+            return Ok(());
+        }
         let now = self.now()?;
         let request = {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
-            if seconds <= 0 {
-                authority
-                    .destroy_current(&tenant, &sandbox)
-                    .map_err(authority_error)?
-            } else {
-                authority
-                    .renew_current(
-                        &tenant,
-                        &sandbox,
-                        u64::try_from(seconds).map_err(|_| PortError::Invalid)?,
-                        false,
-                        now,
-                    )
-                    .map_err(authority_error)?
-            }
+            authority
+                .renew_current(
+                    &tenant,
+                    &sandbox,
+                    u64::try_from(seconds).map_err(|_| PortError::Invalid)?,
+                    false,
+                    now,
+                )
+                .map_err(authority_error)?
         };
-        if seconds <= 0 {
-            return Ok(());
-        }
         self.wait_current_session(&request).map(|_| ())
     }
     /// # Errors
