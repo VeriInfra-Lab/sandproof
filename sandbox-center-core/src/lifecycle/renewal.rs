@@ -170,9 +170,9 @@ impl CenterState {
                 return Err(DecisionError::Stale);
             }
         }
-        let mut next = self.clone();
-        let session = &mut next.sandboxes[index];
-        if let Some(previous) = &original.confirmed_renewal {
+        // Finish the immutable projection before borrowing the destination.
+        // No reference into next crosses the ordered copy loop.
+        let replacement = if let Some(previous) = &original.confirmed_renewal {
             let old = original
                 .find_operation(&previous.request.request.binding.key)
                 .ok_or(DecisionError::Invalid)?;
@@ -194,13 +194,20 @@ impl CenterState {
                 }
                 cursor += 1;
             }
-            session.operations = retained;
-            session.compacted_sdk_through = Some(old.intent.accepted_version);
-            session.compacted_sampled_acceptance_max_ms = Some(
+            let sampled_max =
                 original
                     .compacted_sampled_acceptance_max_ms
-                    .map_or(sampled, |old| old.max(sampled)),
-            );
+                    .map_or(sampled, |old| old.max(sampled));
+            Some((retained, old.intent.accepted_version, sampled_max))
+        } else {
+            None
+        };
+        let mut next = self.clone();
+        let session = &mut next.sandboxes[index];
+        if let Some((retained, through, sampled_max)) = replacement {
+            session.operations = retained;
+            session.compacted_sdk_through = Some(through);
+            session.compacted_sampled_acceptance_max_ms = Some(sampled_max);
         }
         session.confirmed_renewal = Some(result.clone());
         if !next.is_valid() {

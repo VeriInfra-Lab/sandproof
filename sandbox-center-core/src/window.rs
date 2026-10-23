@@ -72,58 +72,58 @@ impl CenterState {
             return false;
         }
         let mut index = 0;
-        let mut valid = true;
-        while valid && index < self.retention_lanes.len() {
+        while index < self.retention_lanes.len() {
             let lane = &self.retention_lanes[index];
-            if let Some(node_index) = self
+            let Some(node_index) = self
                 .nodes
                 .iter()
                 .position(|node| node.identity == lane.node)
+            else {
+                return false;
+            };
+            let node = &self.nodes[node_index];
+            if lane.retention_slot == 0
+                || lane.retention_slot > node.retention_slots
+                || !identities.insert((lane.node.node_id.as_str().to_owned(), lane.retention_slot))
+                || (lane.phase == LanePhase::Exhausted) != lane.current().is_none()
+                || !valid_last_retired(lane, self)
+                || !self.valid_lane_records(lane)
             {
-                let node = &self.nodes[node_index];
-                valid = lane.retention_slot != 0
-                    && lane.retention_slot <= node.retention_slots
-                    && identities.insert((lane.node.node_id.as_str(), lane.retention_slot))
-                    && (lane.phase == LanePhase::Exhausted) == lane.current().is_none()
-                    && valid_last_retired(lane, self);
-                if valid {
-                    valid = self.valid_lane_records(lane);
-                }
-            } else {
-                valid = false;
+                return false;
             }
             // The guard established index < length, so this cannot wrap.
             index += 1;
         }
-        valid
+        true
     }
     /// Separate the inner ordered scan for the fixed Aeneas loop prepass.
     /// Same records, first refusal, count and lane checks; no host effects.
     fn valid_lane_records(&self, lane: &RetentionLane) -> bool {
         let mut count = 0;
         let mut index = 0;
-        let mut valid = true;
-        while valid && index < self.sandboxes.len() {
+        while index < self.sandboxes.len() {
             let record = &self.sandboxes[index];
-            if let Some(first) = record.operations.first() {
-                if first.intent().request.binding.node == lane.node
-                    && first.intent().retention.slot == lane.retention_slot
+            let Some(first) = record.operations.first() else {
+                return false;
+            };
+            if first.intent().request.binding.node == lane.node
+                && first.intent().retention.slot == lane.retention_slot
+            {
+                count += 1;
+                if count > 1
+                    || lane
+                        .current()
+                        .map(sandproof_protocol::internal::PositiveCounter::get)
+                        != Some(first.intent().retention.window.get())
+                    || lane.phase == LanePhase::Exhausted
+                    || (lane.phase == LanePhase::ClosePending && terminal(record).is_none())
                 {
-                    count += 1;
-                    valid = count <= 1
-                        && lane
-                            .current()
-                            .map(sandproof_protocol::internal::PositiveCounter::get)
-                            == Some(first.intent().retention.window.get())
-                        && lane.phase != LanePhase::Exhausted
-                        && (lane.phase != LanePhase::ClosePending || terminal(record).is_some());
+                    return false;
                 }
-            } else {
-                valid = false;
             }
             index += 1;
         }
-        valid && (count != 0 || lane.phase != LanePhase::ClosePending)
+        count != 0 || lane.phase != LanePhase::ClosePending
     }
     /// # Errors
     /// Operational drain never retires history or releases resources.
@@ -299,36 +299,37 @@ impl CenterState {
     }
 }
 fn valid_last_retired(lane: &RetentionLane, state: &CenterState) -> bool {
-    match (&lane.last_retired, lane.retired_through) {
-        (None, 0) => true,
-        (Some(result), floor) if floor > 0 => {
-            let intent = &result.request;
-            let b = &intent.request.binding;
-            let close = LifecycleWindowClose {
-                terminal: result.clone(),
-            };
-            intent.retention.window.get() == floor
-                && intent.retention.slot == lane.retention_slot
-                && b.node == lane.node
-                && intent.center == state.lifecycle.center
-                && b.key.deployment == state.deployment
-                && intent.request.validate(&lane.node).is_ok()
-                && intent.accepted_version_for_request() == Some(intent.accepted_version)
-                && crate::validation::number(
-                    b.session.as_protocol_id().as_str(),
-                    "sandbox-",
-                    state.sandbox_highwater,
-                )
-                .is_some()
-                && state.tenant_is_registered(&b.key.owner)
-                && state
-                    .lifecycle
-                    .windows
-                    .iter()
-                    .any(|window| window.contains_history(&b.key))
-                && (b.key.window.get() != 2 || b.key.sequence.get() <= state.operation_highwater)
-                && close.is_terminal_result()
-        }
-        _ => false,
+    let floor = lane.retired_through;
+    let Some(result) = lane.last_retired.as_ref() else {
+        return floor == 0;
+    };
+    if floor == 0 {
+        return false;
     }
+    let intent = &result.request;
+    let b = &intent.request.binding;
+    let close = LifecycleWindowClose {
+        terminal: result.clone(),
+    };
+    intent.retention.window.get() == floor
+        && intent.retention.slot == lane.retention_slot
+        && b.node == lane.node
+        && intent.center == state.lifecycle.center
+        && b.key.deployment == state.deployment
+        && intent.request.validate(&lane.node).is_ok()
+        && intent.accepted_version_for_request() == Some(intent.accepted_version)
+        && crate::validation::number(
+            b.session.as_protocol_id().as_str(),
+            "sandbox-",
+            state.sandbox_highwater,
+        )
+        .is_some()
+        && state.tenant_is_registered(&b.key.owner)
+        && state
+            .lifecycle
+            .windows
+            .iter()
+            .any(|window| window.contains_history(&b.key))
+        && (b.key.window.get() != 2 || b.key.sequence.get() <= state.operation_highwater)
+        && close.is_terminal_result()
 }

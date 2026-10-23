@@ -49,7 +49,7 @@ impl CenterState {
         while valid && index < self.nodes.len() {
             let node = &self.nodes[index];
             valid = !(node.identity.deployment_id != self.deployment
-                || !nodes.insert(node.identity.node_id.as_str())
+                || !nodes.insert(node.identity.node_id.as_str().to_owned())
                 || !node.limit.positive()
                 || node.retention_slots == 0
                 || node.retention_slots > self.bounds.max_sandboxes
@@ -57,7 +57,7 @@ impl CenterState {
                 || node
                     .templates
                     .iter()
-                    .map(|t| t.revision.as_str())
+                    .map(|t| t.revision.as_str().to_owned())
                     .collect::<BTreeSet<_>>()
                     .len()
                     != node.templates.len()
@@ -77,7 +77,7 @@ impl CenterState {
         while valid && index < self.tenants.len() {
             let budget = &self.tenants[index];
             valid = !(!budget.limit.positive()
-                || !tenants.insert(budget.tenant.as_str())
+                || !tenants.insert(budget.tenant.as_str().to_owned())
                 || self
                     .reserved(Some(&budget.tenant), None)
                     .is_none_or(|r| !r.fits(budget.limit)));

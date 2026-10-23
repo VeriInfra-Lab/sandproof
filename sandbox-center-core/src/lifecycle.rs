@@ -190,15 +190,18 @@ impl LifecycleOperationRecord {
     }
 }
 impl Sandbox {
-    #[expect(
-        clippy::manual_find,
-        reason = "Keep the real short-circuit loop extractable"
-    )]
     fn find_operation(&self, key: &OperationKey) -> Option<&LifecycleOperationRecord> {
-        for operation in &self.operations {
-            if operation.intent.request.binding.key == *key {
-                return Some(operation);
+        let index = self.operation_index(key)?;
+        self.operations.get(index)
+    }
+    /// Resolve the same first match before borrowing its returned row.
+    fn operation_index(&self, key: &OperationKey) -> Option<usize> {
+        let mut index = 0;
+        while index < self.operations.len() {
+            if self.operations[index].intent.request.binding.key == *key {
+                return Some(index);
             }
+            index += 1;
         }
         None
     }

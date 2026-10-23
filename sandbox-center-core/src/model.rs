@@ -150,10 +150,18 @@ impl Sandbox {
     /// Historical lifetime, never sufficient by itself to authorize access.
     #[must_use]
     pub fn last_running(&self) -> Option<&CurrentReadyFacts> {
-        self.operations
-            .iter()
-            .rev()
-            .find_map(|operation| operation.running.as_ref())
+        let index = self.last_running_index()?;
+        self.operations.get(index)?.running.as_ref()
+    }
+    fn last_running_index(&self) -> Option<usize> {
+        let mut index = self.operations.len();
+        while index > 0 {
+            index -= 1;
+            if self.operations[index].running.is_some() {
+                return Some(index);
+            }
+        }
+        None
     }
     /// Only a result committed for the actual current Create/Renew can route.
     #[must_use]
