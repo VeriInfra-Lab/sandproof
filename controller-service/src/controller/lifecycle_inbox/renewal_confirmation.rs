@@ -1,11 +1,15 @@
 //! Exact SDK renewal acknowledgements on the original journal. Confirmation
 //! permits bounded history compaction, never execution, extension or release.
-use super::{authenticated, codec, model::{Entry, Session}, source_work};
-use crate::{ControllerJournal, CrashInjector, CrashPoint, JournalError};
+use super::{
+    authenticated, codec,
+    model::{Entry, Session},
+    source_work,
+};
 use crate::controller::transaction::WorldTransaction;
+use crate::{ControllerJournal, CrashInjector, CrashPoint, JournalError};
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, AuthenticatedCenterContext, ConfirmedRenewal,
-    ExpectedSession, LifecycleOperation, RenewalConfirmation, RENEWAL_CONFIRMATION_BODY_BYTES,
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, ConfirmedRenewal, ExpectedSession,
+    LifecycleOperation, RENEWAL_CONFIRMATION_BODY_BYTES, RenewalConfirmation,
 };
 
 #[cfg(test)]
@@ -60,14 +64,21 @@ pub(super) fn validate_session(session: &Session) -> Result<(), JournalError> {
     if !confirmed.is_sdk_renewal()
         || serde_json::to_vec(confirmed)?.len() > RENEWAL_CONFIRMATION_BODY_BYTES
         || session.local.is_none()
-        || session.entries.iter().find(|entry| entry.intent == confirmed.request)
+        || session
+            .entries
+            .iter()
+            .find(|entry| entry.intent == confirmed.request)
             .is_none_or(|entry| {
                 entry.applied_deadline != Some(confirmed.effective_end_at_ms)
                     || entry.previous_effective_end_at_ms.is_none()
             })
         || session.compacted_sdk_through.is_some_and(|through| {
-            through < 2 || through >= confirmed.request.accepted_version
-                || session.entries.iter().any(|entry| entry.intent.accepted_version == through)
+            through < 2
+                || through >= confirmed.request.accepted_version
+                || session
+                    .entries
+                    .iter()
+                    .any(|entry| entry.intent.accepted_version == through)
         })
         || session.entries.iter().any(|entry| {
             is_sdk_renewal(&entry.intent)
@@ -93,8 +104,11 @@ pub(super) fn follows_retained(
         ExpectedSession::Absent => previous == 0,
         ExpectedSession::Version(expected) if expected == previous => previous > 0,
         ExpectedSession::Version(expected) => {
-            previous > 0 && expected > previous
-                && session.compacted_sdk_through.is_some_and(|through| expected <= through)
+            previous > 0
+                && expected > previous
+                && session
+                    .compacted_sdk_through
+                    .is_some_and(|through| expected <= through)
                 && session.confirmed_renewal.as_ref().is_some_and(|confirmed| {
                     intent.accepted_version <= confirmed.request.accepted_version
                 })
@@ -111,13 +125,19 @@ pub(super) fn validate_lifetimes(
     lifetime: crate::Lifetime,
 ) -> Result<(), JournalError> {
     let start = lifetime.started_at_ms.ok_or(JournalError::CorruptStore)?;
-    let initial = session.entries.first().and_then(|entry| {
-        if let LifecycleOperation::Create { create, .. } = &entry.intent.request.operation {
-            i64::try_from(create.timeout_ms).ok().and_then(|duration| start.checked_add(duration))
-        } else {
-            None
-        }
-    }).ok_or(JournalError::CorruptStore)?;
+    let initial = session
+        .entries
+        .first()
+        .and_then(|entry| {
+            if let LifecycleOperation::Create { create, .. } = &entry.intent.request.operation {
+                i64::try_from(create.timeout_ms)
+                    .ok()
+                    .and_then(|duration| start.checked_add(duration))
+            } else {
+                None
+            }
+        })
+        .ok_or(JournalError::CorruptStore)?;
     if initial > lifetime.max_deadline_ms {
         return Err(JournalError::CorruptStore);
     }
@@ -131,9 +151,13 @@ pub(super) fn validate_lifetimes(
             prior_end = None;
         }
         if let Some(end) = entry.applied_deadline {
-            let before = entry.previous_effective_end_at_ms.ok_or(JournalError::CorruptStore)?;
-            if before < start || before > lifetime.max_deadline_ms
-                || end < start || end > lifetime.max_deadline_ms
+            let before = entry
+                .previous_effective_end_at_ms
+                .ok_or(JournalError::CorruptStore)?;
+            if before < start
+                || before > lifetime.max_deadline_ms
+                || end < start
+                || end > lifetime.max_deadline_ms
                 || prior_end.is_some_and(|prior| prior != before)
             {
                 return Err(JournalError::CorruptStore);
@@ -179,27 +203,33 @@ impl ControllerJournal {
         {
             return Err(JournalError::Conflict);
         }
-        let ack = ConfirmedRenewal { result: result.clone() };
+        let ack = ConfirmedRenewal {
+            result: result.clone(),
+        };
         if session.confirmed_renewal.as_ref() == Some(result) {
             return Ok(ack);
         }
         let previous = session.confirmed_renewal.clone();
-        if previous.as_ref().is_some_and(|old| {
-            old.request.accepted_version >= result.request.accepted_version
-        }) || session.entries.iter().any(|old| {
-            is_sdk_renewal(&old.intent)
-                && old.intent.accepted_version < result.request.accepted_version
-                && previous.as_ref().is_none_or(|confirmed| {
-                    old.intent.accepted_version > confirmed.request.accepted_version
-                })
-        }) {
+        if previous
+            .as_ref()
+            .is_some_and(|old| old.request.accepted_version >= result.request.accepted_version)
+            || session.entries.iter().any(|old| {
+                is_sdk_renewal(&old.intent)
+                    && old.intent.accepted_version < result.request.accepted_version
+                    && previous.as_ref().is_none_or(|confirmed| {
+                        old.intent.accepted_version > confirmed.request.accepted_version
+                    })
+            })
+        {
             return Err(JournalError::Conflict);
         }
         let source_pinned = if let Some(previous) = previous.as_ref() {
             let pinned = source_work::references_intent(&tx, &previous.request)?;
-            if pinned || session.entries.iter().any(|entry| {
-                entry.intent == previous.request && entry.local_operation.is_some()
-            }) {
+            if pinned
+                || session.entries.iter().any(|entry| {
+                    entry.intent == previous.request && entry.local_operation.is_some()
+                })
+            {
                 // Preserve the previous complete checkpoint until its exact
                 // responsibility is settled. Advancing despite this pin would
                 // forget which retained SDK row can later be reclaimed.

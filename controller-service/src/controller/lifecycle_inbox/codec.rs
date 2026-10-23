@@ -131,7 +131,11 @@ pub(in crate::controller) fn validate(
                 return Err(JournalError::CorruptStore);
             }
         }
-        if session.entries.iter().any(|entry| entry.applied_deadline.is_some()) {
+        if session
+            .entries
+            .iter()
+            .any(|entry| entry.applied_deadline.is_some())
+        {
             let lifetime = super::super::admission::read_lifetime(
                 connection,
                 &namespace,

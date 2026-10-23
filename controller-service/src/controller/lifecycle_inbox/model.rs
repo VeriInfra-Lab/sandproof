@@ -439,10 +439,13 @@ impl Inbox {
                     || *end_at_ms < 0
                     || entry.applied_deadline.is_some()
                         != entry.previous_effective_end_at_ms.is_some()
-                    || entry.previous_effective_end_at_ms.is_some_and(|end| end < 0)
+                    || entry
+                        .previous_effective_end_at_ms
+                        .is_some_and(|end| end < 0)
                     || entry.applied_deadline.is_some_and(|end| {
                         if *extend_only {
-                            entry.previous_effective_end_at_ms
+                            entry
+                                .previous_effective_end_at_ms
                                 .is_none_or(|previous| end != previous.max(*end_at_ms))
                         } else {
                             end != *end_at_ms
