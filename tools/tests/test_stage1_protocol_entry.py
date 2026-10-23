@@ -442,7 +442,6 @@ class ExtractionControlFlowTests(unittest.TestCase):
                                 +str(root/'verification/experiments/stage1-protocol')+')\n')
                         kwargs['stdout'].write(text.encode())
                         raw = root/'artifacts/stage1-protocol/raw/request.llbc'
-                        raw.parent.mkdir(parents=True)
                         raw.write_text(json.dumps({'has_errors': False, 'translated': {
                             'options': {'dest_file': '../../../artifacts/stage1-protocol/raw/request.llbc'},
                             'target_information': [{'key': target}]}}))
