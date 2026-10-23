@@ -3,7 +3,7 @@ use super::{
     BodyExt, Bytes, CertificatePin, Full, Incoming, LifecycleReceiver, Limited, Method,
     ReceiveError, Request, Response, StatusCode, ValidationReceiver, json_response, response,
 };
-use crate::lifecycle::{CenterPeerRegistration, REQUEST_BODY_BYTES, CREATE_OBSERVATION_BODY_BYTES};
+use crate::lifecycle::{CREATE_OBSERVATION_BODY_BYTES, CenterPeerRegistration, REQUEST_BODY_BYTES};
 use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
 
 #[derive(Clone, Copy)]
@@ -39,7 +39,9 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
         crate::template::VALIDATION_REQUEST_BODY_BYTES
     } else if matches!(call, Call::Confirm | Call::Close) {
         sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES
-    } else { REQUEST_BODY_BYTES };
+    } else {
+        REQUEST_BODY_BYTES
+    };
     if request
         .headers()
         .get(hyper::header::CONTENT_TYPE)
@@ -60,10 +62,7 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     {
         return response(StatusCode::PAYLOAD_TOO_LARGE, Bytes::new());
     }
-    let Ok(body) = Limited::new(request.into_body(), limit)
-        .collect()
-        .await
-    else {
+    let Ok(body) = Limited::new(request.into_body(), limit).collect().await else {
         return response(StatusCode::BAD_REQUEST, Bytes::new());
     };
     if matches!(call, Call::Validation) {
@@ -80,16 +79,22 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     }
     if matches!(call, Call::CreateObservation) {
         return match handler.observe_create(intent.clone(), context).await {
-            Ok(view) if view.matches_request(&intent) => json_response(&view, CREATE_OBSERVATION_BODY_BYTES),
+            Ok(view) if view.matches_request(&intent) => {
+                json_response(&view, CREATE_OBSERVATION_BODY_BYTES)
+            }
             Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+                response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+            }
         };
     }
     if matches!(call, Call::TerminalObservation) {
         return match handler.observe_terminal(intent.clone(), context).await {
             Ok(view) if view.matches_request(&intent) => json_response(&view, REQUEST_BODY_BYTES),
             Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+                response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+            }
         };
     }
     match handler.record_lifecycle(intent.clone(), context).await {
@@ -107,7 +112,10 @@ async fn terminal_command<H: LifecycleReceiver>(
     handler: &H,
     call: Call,
 ) -> Response<Full<Bytes>> {
-    use sandproof_protocol::lifecycle::{LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus, TERMINAL_RESULT_BODY_BYTES};
+    use sandproof_protocol::lifecycle::{
+        LifecycleWindowClose, TERMINAL_RESULT_BODY_BYTES, TerminalLifecycleObservation,
+        TerminalStatus,
+    };
     if matches!(call, Call::Confirm) {
         let Ok(result) = serde_json::from_slice::<TerminalLifecycleObservation>(bytes) else {
             return response(StatusCode::BAD_REQUEST, Bytes::new());
@@ -121,7 +129,9 @@ async fn terminal_command<H: LifecycleReceiver>(
         return match handler.confirm_terminal(result.clone(), context).await {
             Ok(ack) if ack.matches(&result) => json_response(&ack, TERMINAL_RESULT_BODY_BYTES),
             Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+                response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+            }
         };
     }
     let Ok(request) = serde_json::from_slice::<LifecycleWindowClose>(bytes) else {
@@ -133,6 +143,8 @@ async fn terminal_command<H: LifecycleReceiver>(
     match handler.close_window(request.clone(), context).await {
         Ok(ack) if ack.matches(&request) => json_response(&ack, TERMINAL_RESULT_BODY_BYTES),
         Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
     }
 }

@@ -4,11 +4,7 @@ use sandproof_api::{PortError, PublicationView, TemplatePage, TemplateView};
 use sandproof_center_core::CenterState;
 use sandproof_center_store::authority::AuthorityError;
 use sandproof_controller_service::templates::{ResourceShape, TemplateBinding};
-use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleRequest, LifecycleResponse};
-use sandproof_protocol::internal::{
-    NodeIdentity,
-    window::{WindowCloseAck, WindowCloseRequest},
-};
+use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::numeric::seconds_to_milliseconds;
 use sandproof_protocol::{ResourceId, SandboxId, TenantId};
 use serde::Deserialize;
@@ -223,16 +219,18 @@ pub trait CommittedDriver: Send + Sync {
     /// Only an already committed exact request is driven. Unknown preserves it.
     /// Trusted assembly supplies the exact original request already accepted
     /// by this application's authority, not a caller-constructed lookalike.
-    /// A retired terminal receipt rechecks its complete control identity; it
-    /// does not retain/revalidate the canonical create body or reopen a window.
-    fn drive_committed(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError>;
+    /// This performs one bounded attempt; later reconciliation uses the same
+    /// complete packet rather than creating another operation.
+    fn drive_committed(
+        &self,
+        request: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    ) -> Result<(), PortError>;
     /// # Errors
     /// Commits/reuses the original Destroy through the original authority.
     fn destroy_exact(
         &self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, PortError>;
+        original_create: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError>;
 }
 
 /// One high-level network attempt; no automatic new operation/VM allocation.
@@ -240,12 +238,20 @@ pub trait CommittedDriver: Send + Sync {
 pub trait HostPort: Send + Sync + 'static {
     /// # Errors
     /// The original center must have durably saved the exact result first.
-    fn confirm_lifecycle_terminal(&self, _result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation, _deadline: Duration) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, PortError> {
+    fn confirm_lifecycle_terminal(
+        &self,
+        _result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        _deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, PortError> {
         Err(PortError::OutcomeUnknown)
     }
     /// # Errors
     /// Unsupported/unknown cannot acknowledge a retired retained position.
-    fn close_lifecycle_window(&self, _request: &sandproof_protocol::lifecycle::LifecycleWindowClose, _deadline: Duration) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, PortError> {
+    fn close_lifecycle_window(
+        &self,
+        _request: &sandproof_protocol::lifecycle::LifecycleWindowClose,
+        _deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, PortError> {
         Err(PortError::OutcomeUnknown)
     }
     /// # Errors
@@ -275,40 +281,31 @@ pub trait HostPort: Send + Sync + 'static {
     ) -> Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, PortError> {
         Err(PortError::Busy)
     }
-    /// # Errors
-    /// Every error is an unknown transport outcome, never admission rejection.
-    fn send(
-        &self,
-        request: &LifecycleRequest,
-        deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError>;
-    /// # Errors
-    /// Confirms only the EXACT already committed result; no implicit support.
-    fn confirm(
-        &self,
-        result: &LifecycleResponse,
-        deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError>;
-    /// # Errors
-    /// Only an exact authenticated durable close acknowledgement permits retirement.
-    fn close(
-        &self,
-        request: &WindowCloseRequest,
-        deadline: Duration,
-    ) -> Result<WindowCloseAck, PortError>;
 }
 
 /// The production business authority owns the coupled lifecycle/metadata view.
 /// Tests inject storage faults while using the same pure `CenterState`
 /// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
+    /// Protected workflow termination of its exact original accepted Create.
+    /// Public owner/visibility checks remain at their original public entry.
+    /// # Errors
+    /// Missing, changed or unsupported originals cannot allocate termination.
+    fn destroy_bound_create(
+        &mut self,
+        _original: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
+        Err(sandproof_center_core::DecisionError::Invalid.into())
+    }
     /// # Errors
     /// Expiry sets current termination in the original CAS, including private rows.
     fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError>;
     /// One fresh, finite projection of the same authoritative managed inbox.
     /// # Errors
     /// Unknown storage cannot supply detached work from a cached candidate.
-    fn lifecycle_dispatch_batch(&mut self) -> Result<Vec<sandproof_protocol::lifecycle::AcceptedLifecycleIntent>, AuthorityError> {
+    fn lifecycle_dispatch_batch(
+        &mut self,
+    ) -> Result<Vec<sandproof_protocol::lifecycle::AcceptedLifecycleIntent>, AuthorityError> {
         Ok(self.snapshot()?.pending_lifecycle())
     }
     /// # Errors
@@ -346,47 +343,26 @@ pub trait AuthorityPort: Send + 'static {
     /// # Errors
     /// Original SDK seconds and current version are normalized by the SAME CAS.
     fn renew_current(
-        &mut self, owner: &TenantId, sandbox: &SandboxId,
-        timeout_secs: u64, extend_only: bool, now_ms: u64,
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
+        timeout_secs: u64,
+        extend_only: bool,
+        now_ms: u64,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError>;
     /// # Errors
     /// Timely termination neither waits for host work nor invents cleanup.
     fn destroy_current(
-        &mut self, owner: &TenantId, sandbox: &SandboxId,
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError>;
     /// # Errors
-    /// Acceptance and the original outbox commit together.
-    fn create(
-        &mut self,
-        tenant: &TenantId,
-        binding: CreateBinding,
-        now_ms: u64,
-    ) -> Result<LifecycleRequest, AuthorityError>;
-    /// # Errors
-    /// The original lifetime and a durable intent are required.
-    fn renew(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-        end_at_ms: u64,
-        now_ms: u64,
-    ) -> Result<LifecycleRequest, AuthorityError>;
-    /// # Errors
-    /// Termination is monotone, retains fixed binding and reservation.
-    fn destroy(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, AuthorityError>;
-    /// # Errors
-    /// Wrong/old observations cannot cover newer decisions.
-    fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
-    /// # Errors
-    /// Requires the exact current final result and actual durable host ack.
-    fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
-    /// # Errors
     /// Requires the exact host-confirmed terminal result, not an absent record.
-    fn confirm_terminal(&mut self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), AuthorityError>;
+    fn confirm_terminal(
+        &mut self,
+        response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult,
+    ) -> Result<(), AuthorityError>;
     /// # Errors
     /// Stops new creates only after the original authority commit succeeds.
     fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError>;
@@ -399,10 +375,17 @@ pub trait AuthorityPort: Send + 'static {
     ) -> Result<sandproof_protocol::lifecycle::LifecycleWindowClose, AuthorityError>;
     /// # Errors
     /// Returns only committed close responsibilities from the original authority.
-    fn close_batch(&mut self, now_ms: u64) -> Result<Vec<sandproof_protocol::lifecycle::LifecycleWindowClose>, AuthorityError>;
+    fn close_batch(
+        &mut self,
+        now_ms: u64,
+    ) -> Result<Vec<sandproof_protocol::lifecycle::LifecycleWindowClose>, AuthorityError>;
     /// # Errors
     /// Wrong acknowledgements or unresolved business pins retain responsibility.
-    fn apply_close_ack(&mut self, ack: &sandproof_protocol::lifecycle::ClosedLifecycleWindow, now_ms: u64) -> Result<(), AuthorityError>;
+    fn apply_close_ack(
+        &mut self,
+        ack: &sandproof_protocol::lifecycle::ClosedLifecycleWindow,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError>;
     /// # Errors
     /// Unknown commits require explicit durable reconciliation.
     fn recover(&mut self) -> Result<(), AuthorityError>;

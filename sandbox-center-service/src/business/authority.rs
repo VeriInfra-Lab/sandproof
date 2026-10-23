@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{AuthorityPort, application::authority_error};
 use sandproof_api::{PortError, TemplateView};
-use sandproof_center_core::{CenterState, DecisionError};
+use sandproof_center_core::{CenterState, DecisionError, LifecycleSubmission};
 use sandproof_center_store::{
     authority::{AuthorityError, CenterAuthority},
     business::{BusinessEnvelope, BusinessMetadata},
@@ -14,12 +14,10 @@ use sandproof_controller_service::template_registry::{
     Publication, PublicationFailure, PublicationState, ValidationCertificate, ValidationEvidence,
 };
 use sandproof_internal::template::ValidationRequest;
-use sandproof_protocol::{
-    ResourceId, SandboxId, TenantId,
-    internal::lifecycle::{CreateBinding, LifecycleFact, LifecycleRequest, LifecycleResponse},
-    internal::window::{WindowCloseAck, WindowCloseRequest},
-    internal::{ControlIdentity, NodeIdentity},
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, CreateParameters, TerminalLifecycleObservation,
 };
+use sandproof_protocol::{ResourceId, SandboxId, TenantId, internal::NodeIdentity};
 use std::sync::{Arc, Mutex};
 mod lifecycle;
 
@@ -130,7 +128,10 @@ impl SharedBusinessAuthority {
     /// Preserve an exact acknowledgement obtained from the authenticated host.
     /// # Errors
     /// Nonterminal or changed results cannot authorize window removal.
-    pub fn confirm_terminal(&self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), PortError> {
+    pub fn confirm_terminal(
+        &self,
+        response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult,
+    ) -> Result<(), PortError> {
         self.0
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
@@ -154,7 +155,11 @@ impl SharedBusinessAuthority {
     /// Apply authenticated exact close evidence to the SAME business envelope.
     /// # Errors
     /// Unsettled business references veto deletion; commit faults fence both views.
-    pub fn apply_close_ack(&self, acknowledgement: &sandproof_protocol::lifecycle::ClosedLifecycleWindow, now_ms: u64) -> Result<(), PortError> {
+    pub fn apply_close_ack(
+        &self,
+        acknowledgement: &sandproof_protocol::lifecycle::ClosedLifecycleWindow,
+        now_ms: u64,
+    ) -> Result<(), PortError> {
         self.0
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
@@ -231,9 +236,9 @@ impl SharedBusinessAuthority {
     pub fn create_validation(
         &self,
         candidate: &str,
-        binding: CreateBinding,
+        parameters: CreateParameters,
         now_ms: u64,
-    ) -> Result<LifecycleRequest, PortError> {
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
         authority.snapshot_envelope().map_err(authority_error)?;
         authority
@@ -247,16 +252,26 @@ impl SharedBusinessAuthority {
                 if record.validation.is_some() || record.value.state != PublicationState::Checking {
                     return Err(DecisionError::Conflict.into());
                 }
+                let binding = parameters
+                    .binding_at(now_ms)
+                    .ok_or(DecisionError::Invalid)?;
                 let tenant = current
                     .metadata
                     .validation_tenant(&record, &binding)
                     .map_err(to_authority)?;
-                let (center, request) = current.center.create(&tenant, binding, now_ms)?;
+                let submission = LifecycleSubmission::Create {
+                    key: current.center.next_sdk_operation_key(&tenant)?,
+                    parameters: parameters.clone(),
+                };
+                let (center, request) =
+                    current
+                        .center
+                        .accept_lifecycle(&tenant, &submission, now_ms)?;
                 if !RegistryMetadata::request_fits(&request) {
                     return Err(DecisionError::Invalid.into());
                 }
                 record.validation = Some(ValidationLink {
-                    create: request.identity.clone(),
+                    create: request.clone(),
                     local: None,
                     terminal: None,
                     settlement: None,
@@ -273,7 +288,7 @@ impl SharedBusinessAuthority {
     pub fn bind_local_validation(
         &self,
         candidate: &str,
-        identity: &ControlIdentity,
+        identity: &AcceptedLifecycleIntent,
         local: &LocalValidationBinding,
     ) -> Result<(), PortError> {
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
@@ -312,7 +327,7 @@ impl SharedBusinessAuthority {
     pub fn settle_validation(
         &self,
         candidate: &str,
-        terminal: &ControlIdentity,
+        terminal: &TerminalLifecycleObservation,
         certificate: ValidationCertificate,
     ) -> Result<(), PortError> {
         self.settle(candidate, terminal, Some(certificate), None)
@@ -326,7 +341,7 @@ impl SharedBusinessAuthority {
         evidence: &ValidationEvidence,
     ) -> Result<(), PortError> {
         request
-            .validate(&request.create.node)
+            .validate(&request.create.request.binding.node)
             .map_err(|_| PortError::Conflict)?;
         evidence
             .validate_for(&request.create, &request.terminal, &request.publication)
@@ -343,7 +358,7 @@ impl SharedBusinessAuthority {
     fn settle(
         &self,
         candidate: &str,
-        terminal: &ControlIdentity,
+        terminal: &TerminalLifecycleObservation,
         certificate: Option<ValidationCertificate>,
         evidence: Option<(&ValidationRequest, &ValidationEvidence)>,
     ) -> Result<(), PortError> {
@@ -398,32 +413,29 @@ impl SharedBusinessAuthority {
                         sandbox
                             .operations
                             .first()
-                            .is_some_and(|first| first.request.identity == link.create)
+                            .is_some_and(|first| first.intent() == &link.create)
                     })
                     .ok_or(AuthorityError::Decision(DecisionError::Conflict))?;
-                let original_create = sandbox.operations[0].request.clone();
+                let original_create = sandbox.operations[0].intent();
                 let last = sandbox
                     .operations
                     .last()
                     .ok_or(AuthorityError::Decision(DecisionError::Conflict))?;
                 let cleaned = last
-                    .response
-                    .as_ref()
+                    .terminal()
                     .ok_or(AuthorityError::Decision(DecisionError::Conflict))?;
-                if last.request.identity != *terminal
-                    || super::publication::terminal_request(&original_create, cleaned).as_ref()
-                        != Some(&last.request)
-                    || (cleaned.fact == LifecycleFact::NotAccepted
-                        && (certificate.is_some()
-                            || link.local.is_some()
+                if cleaned != terminal
+                    || super::publication::terminal_request(original_create, cleaned).as_ref()
+                        != Some(last.intent())
+                    || (certificate.is_none()
+                        && (link.local.is_some()
                             || sandbox.terminal_confirmation.as_ref() != Some(cleaned)))
                     || evidence.is_some_and(|(_, observed)| observed.cleaned != *cleaned)
                 {
                     return Err(DecisionError::Conflict.into());
                 }
-                link.terminal = Some(terminal.clone());
+                link.terminal = Some(terminal.request.clone());
                 link.settlement = Some(ValidationSettlement {
-                    original_create,
                     cleaned: cleaned.clone(),
                     admission: if certificate.is_some() {
                         ValidationAdmission::Admitted
@@ -501,23 +513,42 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
     }
 }
 impl AuthorityPort for SharedBusinessAuthority {
+    fn destroy_bound_create(
+        &mut self,
+        original: &AcceptedLifecycleIntent,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        self.accept_bound_destroy(original)
+    }
     fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
-        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?.terminate_expired(now_ms)
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
+            .terminate_expired(now_ms)
     }
     fn accept_lifecycle_terminal_observation(
-        &mut self, result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation, now_ms: u64,
+        &mut self,
+        result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        now_ms: u64,
     ) -> Result<(), AuthorityError> {
-        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
             .accept_lifecycle_terminal_observation(result, now_ms)
     }
     fn renew_current(
-        &mut self, owner: &TenantId, sandbox: &SandboxId,
-        timeout_secs: u64, extend_only: bool, now_ms: u64,
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
+        timeout_secs: u64,
+        extend_only: bool,
+        now_ms: u64,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
         self.accept_sdk_followup(owner, sandbox, Some((timeout_secs, extend_only)), now_ms)
     }
     fn destroy_current(
-        &mut self, owner: &TenantId, sandbox: &SandboxId,
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError> {
         self.accept_sdk_followup(owner, sandbox, None, 0)
     }
@@ -530,14 +561,22 @@ impl AuthorityPort for SharedBusinessAuthority {
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError> {
         self.accept_sdk_create(owner, parameters, policy, || Ok(now_ms))
     }
-    fn lifecycle_dispatch_batch(&mut self) -> Result<Vec<sandproof_protocol::lifecycle::AcceptedLifecycleIntent>, AuthorityError> {
-        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?.lifecycle_dispatch_batch()
+    fn lifecycle_dispatch_batch(
+        &mut self,
+    ) -> Result<Vec<sandproof_protocol::lifecycle::AcceptedLifecycleIntent>, AuthorityError> {
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
+            .lifecycle_dispatch_batch()
     }
     fn accept_lifecycle_create_observation(
         &mut self,
         observation: &sandproof_protocol::lifecycle::CreateObservation,
     ) -> Result<(), AuthorityError> {
-        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?.accept_lifecycle_create_observation(observation)
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
+            .accept_lifecycle_create_observation(observation)
     }
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
         self.0
@@ -562,52 +601,10 @@ impl AuthorityPort for SharedBusinessAuthority {
             templates,
         })
     }
-    fn create(
+    fn confirm_terminal(
         &mut self,
-        tenant: &TenantId,
-        binding: CreateBinding,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .create(tenant, binding, now)
-    }
-    fn renew(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-        end: u64,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .renew(tenant, sandbox, end, now)
-    }
-    fn destroy(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .destroy(tenant, sandbox)
-    }
-    fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .apply_response(response)
-    }
-    fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .compact_confirmed(response)
-    }
-    fn confirm_terminal(&mut self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), AuthorityError> {
+        response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult,
+    ) -> Result<(), AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
@@ -629,13 +626,20 @@ impl AuthorityPort for SharedBusinessAuthority {
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .begin_close(terminal, now_ms)
     }
-    fn close_batch(&mut self, now_ms: u64) -> Result<Vec<sandproof_protocol::lifecycle::LifecycleWindowClose>, AuthorityError> {
+    fn close_batch(
+        &mut self,
+        now_ms: u64,
+    ) -> Result<Vec<sandproof_protocol::lifecycle::LifecycleWindowClose>, AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .close_batch(now_ms)
     }
-    fn apply_close_ack(&mut self, ack: &sandproof_protocol::lifecycle::ClosedLifecycleWindow, now_ms: u64) -> Result<(), AuthorityError> {
+    fn apply_close_ack(
+        &mut self,
+        ack: &sandproof_protocol::lifecycle::ClosedLifecycleWindow,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?

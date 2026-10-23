@@ -29,7 +29,7 @@ pub use manifest::{
     CaptureBinding, MANIFEST_FORMAT_VERSION, MAX_WRITABLE_DRIVES, ManifestError, SnapshotFile,
     SnapshotFileKind, SnapshotManifest, VmCompatibility, WritableDrive, disk_bundle_path,
 };
-pub use observation::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts};
+pub use observation::{CreateObservation, CreateRefusalReason, CurrentCreateReadiness, CurrentReadyFacts};
 pub use public::{
     CreateParameters, PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase,
     PublicSessionView, PublicUnloadRequest, PublicRequestWindow,

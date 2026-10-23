@@ -7,8 +7,8 @@ use crate::status::{
     StatusRequest,
 };
 use crate::template::{
-    VALIDATION_PATH, VALIDATION_RESPONSE_BODY_BYTES,
-    ValidationEvidence, ValidationReceiver, ValidationRequest,
+    VALIDATION_PATH, VALIDATION_RESPONSE_BODY_BYTES, ValidationEvidence, ValidationReceiver,
+    ValidationRequest,
 };
 use crate::{CertificatePin, Limits, ProtectedHttp, ProtectedServer, ServerTls, TransportError};
 use axum::body::Body;
@@ -18,8 +18,8 @@ use hyper::{
     body::{Bytes, Incoming},
 };
 use sandproof_protocol::internal::{
-    DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity,
-    PROBE_BODY_BYTES, PROBE_PATH, ProbeRequest, ProbeResponse,
+    DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity, PROBE_BODY_BYTES,
+    PROBE_PATH, ProbeRequest, ProbeResponse,
 };
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use std::{convert::Infallible, sync::Arc};
@@ -34,14 +34,18 @@ pub trait LifecycleReceiver: Send + Sync + 'static {
         &self,
         _result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,
         _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
-    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError>> + Send {
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError>,
+    > + Send {
         std::future::ready(Err(ReceiveError::Unavailable))
     }
     fn close_window(
         &self,
         _request: sandproof_protocol::lifecycle::LifecycleWindowClose,
         _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
-    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError>> + Send {
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError>,
+    > + Send {
         std::future::ready(Err(ReceiveError::Unavailable))
     }
     /// Read the same current Destroy; unsupported fixtures cannot acknowledge
@@ -50,7 +54,9 @@ pub trait LifecycleReceiver: Send + Sync + 'static {
         &self,
         _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
-    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError>> + Send {
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError>,
+    > + Send {
         std::future::ready(Err(ReceiveError::Unavailable))
     }
     /// One original readonly Create observation; unsupported receivers refuse.
@@ -231,7 +237,9 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
     ) -> Result<Response<Body>, Infallible> {
         if request.uri().path().starts_with(DATA_PATH_PREFIX) {
             let Some(registration) = self.lifecycle.as_ref() else {
-                return Ok(sandproof_data_transport::response(StatusCode::SERVICE_UNAVAILABLE));
+                return Ok(sandproof_data_transport::response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                ));
             };
             let Ok(context) = registration.context_for_verified_peer(peer) else {
                 return Ok(sandproof_data_transport::response(StatusCode::UNAUTHORIZED));
@@ -245,18 +253,26 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             || request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH
             || request.uri().path() == VALIDATION_PATH
         {
-            let call = if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH {
-                lifecycle::Call::CreateObservation
-            } else if request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH {
-                lifecycle::Call::TerminalObservation
-            } else if request.uri().path() == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH {
-                lifecycle::Call::Confirm
-            } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
-                lifecycle::Call::Close
-            } else if request.uri().path() == VALIDATION_PATH {
-                lifecycle::Call::Validation
-            } else { lifecycle::Call::Record };
-            let work = lifecycle::respond(request, peer, self.lifecycle.as_ref(), &*self.handler, call);
+            let call =
+                if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH {
+                    lifecycle::Call::CreateObservation
+                } else if request.uri().path()
+                    == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
+                {
+                    lifecycle::Call::TerminalObservation
+                } else if request.uri().path()
+                    == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
+                {
+                    lifecycle::Call::Confirm
+                } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
+                    lifecycle::Call::Close
+                } else if request.uri().path() == VALIDATION_PATH {
+                    lifecycle::Call::Validation
+                } else {
+                    lifecycle::Call::Record
+                };
+            let work =
+                lifecycle::respond(request, peer, self.lifecycle.as_ref(), &*self.handler, call);
             return Ok(timeout(self.limits.request_timeout, work)
                 .await
                 .unwrap_or_else(|_| response(StatusCode::REQUEST_TIMEOUT, Bytes::new()))
@@ -301,7 +317,8 @@ async fn receive_data<H: DataReceiver>(
         if headers.next().is_some() || header.as_bytes().len() > DATA_IDENTITY_BYTES {
             return sandproof_data_transport::response(StatusCode::BAD_REQUEST);
         }
-        let Ok(identity) = serde_json::from_slice::<LifecycleAccessIdentity>(header.as_bytes()) else {
+        let Ok(identity) = serde_json::from_slice::<LifecycleAccessIdentity>(header.as_bytes())
+        else {
             return sandproof_data_transport::response(StatusCode::BAD_REQUEST);
         };
         identity
@@ -327,7 +344,9 @@ async fn receive_data<H: DataReceiver>(
     request.headers_mut().remove("x-api-key");
     request.headers_mut().remove("x-access-token");
     let _ = streaming.send(true);
-    handler.receive_data(identity, context, request.map(Body::new)).await
+    handler
+        .receive_data(identity, context, request.map(Body::new))
+        .await
 }
 
 async fn management_route<
@@ -346,9 +365,7 @@ async fn management_route<
     } else {
         PROBE_BODY_BYTES
     };
-    let status = if (!cache
-        && !status_request
-        && request.uri().path() != PROBE_PATH)
+    let status = if (!cache && !status_request && request.uri().path() != PROBE_PATH)
         || request.uri().query().is_some()
     {
         Some(StatusCode::NOT_FOUND)

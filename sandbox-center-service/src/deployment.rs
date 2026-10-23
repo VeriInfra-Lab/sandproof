@@ -7,6 +7,7 @@ use sandproof_api::{
     ApiCredential,
     admission::{RequestAdmission, RequestAdmissionLimits},
 };
+use sandproof_center_core::LifecycleWindow;
 use sandproof_center_core::{Bounds, CenterState, NodeRegistration, TenantBudget};
 use sandproof_center_store::{
     ControlState, RedisEndpoint, StoreConfig, authority::AuthorityState, business::BusinessEnvelope,
@@ -21,7 +22,6 @@ use sandproof_internal::{
 };
 use sandproof_protocol::DeploymentId;
 use sandproof_protocol::lifecycle::{CenterId, CenterIdentity, RequestWindowId};
-use sandproof_center_core::LifecycleWindow;
 use serde::Deserialize;
 use std::{
     collections::BTreeSet,
@@ -387,10 +387,16 @@ impl CenterAssemblyInputs {
         if token_key.len() < 32 {
             return Err(invalid());
         }
-        let windows = file.tenants.iter().map(|tenant| Ok(LifecycleWindow {
-            owner: tenant.tenant.clone(),
-            window: RequestWindowId::try_from(1).map_err(|_| invalid())?,
-        })).collect::<Result<Vec<_>, AssemblyError>>()?;
+        let windows = file
+            .tenants
+            .iter()
+            .map(|tenant| {
+                Ok(LifecycleWindow {
+                    owner: tenant.tenant.clone(),
+                    window: RequestWindowId::try_from(1).map_err(|_| invalid())?,
+                })
+            })
+            .collect::<Result<Vec<_>, AssemblyError>>()?;
         let registration = CenterState::new(
             file.deployment_id.clone(),
             file.bounds,

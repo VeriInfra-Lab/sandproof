@@ -104,15 +104,15 @@ Stale 仅说明这次没有新增受理，不证明这个键历史上未执行�
 普通编译、测试及严格静态检查属于工程证据；正式 profile 保持默认关闭，
 真实材料登记、原 VMM 退出、必要 runtime 清理和安全复用事实尚未连接为公开 Unloaded。
 
-### v3 公开接受与受保护 Recorded 收件：尚未驱动执行
+### 公开接受与受保护 Recorded 收件的历史组件证据
 
 本批在 `279002a0c7be5e0ec650a501f653516334eb0fd0` 的依赖组合上增加
 [显式公开入口](../sandbox-api/src/lifecycle.rs)、
 [原业务包络接受](../sandbox-center-service/src/business/authority/lifecycle.rs)和
-[原 TLS 收件](../sandbox-internal/src/server/lifecycle_v3.rs)。
+[原 TLS 收件的当前源码位置](../sandbox-internal/src/server/lifecycle.rs)。
 公开认证给出 owner，原中心状态给出 deployment/node/session；客户不能在正文选择它们。
 相对参数按全文重放，首次接受才读取当前受保护模板、政策和时钟，并沿原 Redis CAS 保存。
-旧 v2 可见性排除这些 managed 会话；202 仅表示持久接受。
+该历史候选使用单独的可见性投影；当前开发已改为唯一生命周期行，不保留该旧运行分支。202 仅表示持久接受。历史组件结果不自动适用于当前重构。
 
 受保护路由显式配置原 peer 注册后，将真实 TLS 提供的 pin 转成 context，
 校验完整 accepted intent，再经原 HostFacade/HostLifecycle 工作许可交给
@@ -130,12 +130,12 @@ Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、V
 当前 Ready、新 Unload 和完整 Unloaded 均尚未接通；正式 profile 不默认启用。
 内部到期仅有设计，未实施前不能启用该 profile；Resume/GC 和真实部署输入仍开放。
 
-### 新 v3 同步协议：真实生成体的局部性质与边界
+### 同步协议的历史局部证明与适用边界
 
 [草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的生产 Rust 适用
 `584e155163f641582e93f5d94538329e257c74f8`。相对首个字段提交，循环/借用写法作保持首错和短路的小拆分，
-新增未启用的 [v3 codec](../sandbox-internal/src/lifecycle_v3.rs)；仍没有新 HTTP 路由、持久收件或驱动。
-旧 v2 保留。源码审查和对照测试不是旧新实现的一般等价证明。
+当时新增未启用的 codec；其[当前源码位置](../sandbox-internal/src/lifecycle.rs)已随唯一实现重构调整。
+当时尚无新 HTTP 路由、持久收件或驱动。该历史提交保留旧路径，不表示当前运行实现仍支持两套合同；以下局部结论只认领列明版本，源码审查和对照测试不是一般性行为对应证明。
 
 [独立 Model](../SandboxModel/Lifecycle/Protocol/Model.lean) 不导入被检查的生成 Funs。
 三个真实生成视图、原完整 LLBC、准确输入/导入闭包和检查器由

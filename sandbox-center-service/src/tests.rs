@@ -230,11 +230,19 @@ impl AuthorityPort for MemoryAuthority {
         _: crate::LifecyclePolicy,
         now_ms: u64,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError> {
-        self.snapshot().map_err(crate::application::authority_error)?;
-        let key = self.state.next_sdk_operation_key(owner)
+        self.snapshot()
+            .map_err(crate::application::authority_error)?;
+        let key = self
+            .state
+            .next_sdk_operation_key(owner)
             .map_err(|error| crate::application::authority_error(error.into()))?;
-        let submission = sandproof_center_core::LifecycleSubmission::Create { key, parameters: parameters.clone() };
-        let (state, intent) = self.state.accept_lifecycle(owner, &submission, now_ms)
+        let submission = sandproof_center_core::LifecycleSubmission::Create {
+            key,
+            parameters: parameters.clone(),
+        };
+        let (state, intent) = self
+            .state
+            .accept_lifecycle(owner, &submission, now_ms)
             .map_err(|error| crate::application::authority_error(error.into()))?;
         self.state = state;
         if self.unknown_create.load(Ordering::SeqCst) {
@@ -1203,7 +1211,8 @@ fn public_tokens_are_instance_bound_and_do_not_route_after_kill_or_expiry() {
             .resolve_data_route(&first.envd_access_token)
             .unwrap()
             .identity
-            .operation.owner
+            .operation
+            .owner
             .as_str(),
         "1"
     );

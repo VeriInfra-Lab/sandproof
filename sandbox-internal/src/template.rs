@@ -7,24 +7,26 @@ use sandproof_controller_service::{
     JournalError,
     template_registry::{Publication, evidence, state},
 };
-use sandproof_protocol::{
-    ResourceId,
-    internal::{
-        NodeIdentity,
-        lifecycle::{LIFECYCLE_BODY_BYTES, RESULT_CONFIRMATION_BODY_BYTES},
-    },
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, ExpectedSession, LifecycleOperation,
+    TerminalLifecycleObservation, TerminalStatus,
 };
+use sandproof_protocol::{ResourceId, internal::NodeIdentity};
 use serde::{Deserialize, Serialize};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, AuthenticatedCenterContext,
-    ExpectedSession, LifecycleOperation, TerminalLifecycleObservation, TerminalStatus};
 
 pub const VALIDATION_PATH: &str = "/internal/template-validation-evidence";
-pub const VALIDATION_REQUEST_BODY_BYTES: usize = LIFECYCLE_BODY_BYTES;
-/// The same cap bounds host encoding and client collection, not just chunks.
-pub const VALIDATION_RESPONSE_BODY_BYTES: usize = MAX_VALIDATION_CERTIFICATE_BYTES
+/// Both messages retain a full accepted Create, including its byte-array
+/// options, and the separate Destroy result. The descriptor's canonical JSON
+/// is independently capped by the original template validator. The remaining
+/// allowance covers publication/local scalars, the revision and JSON framing.
+const VALIDATION_BINDING_BODY_BYTES: usize = crate::lifecycle::REQUEST_BODY_BYTES
+    + sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES
     + sandproof_controller_service::CreateOptions::MAX_ENCODED_BYTES
-    + RESULT_CONFIRMATION_BODY_BYTES
-    + 8192;
+    + 4096;
+pub const VALIDATION_REQUEST_BODY_BYTES: usize = VALIDATION_BINDING_BODY_BYTES;
+/// The same cap bounds host encoding and client collection, not just chunks.
+pub const VALIDATION_RESPONSE_BODY_BYTES: usize =
+    MAX_VALIDATION_CERTIFICATE_BYTES + VALIDATION_BINDING_BODY_BYTES;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,16 +50,27 @@ impl ValidationRequest {
             || self.create.center != self.terminal.request.center
             || !self.create.retention.valid_for(4096)
             || self.create.retention != self.terminal.request.retention
-            || create.node != terminal.node || create.key.owner != terminal.key.owner
-            || create.session != terminal.session || create.key.deployment != terminal.key.deployment
-            || create.key == terminal.key || create.expected != ExpectedSession::Absent
+            || create.node != terminal.node
+            || create.key.owner != terminal.key.owner
+            || create.session != terminal.session
+            || create.key.deployment != terminal.key.deployment
+            || create.key == terminal.key
+            || create.expected != ExpectedSession::Absent
             || self.create.accepted_version != 1
             || self.create.accepted_version_for_request() != Some(1)
-            || !matches!(self.create.request.operation, LifecycleOperation::Create { .. })
+            || !matches!(
+                self.create.request.operation,
+                LifecycleOperation::Create { .. }
+            )
             || self.terminal.request.accepted_version <= self.create.accepted_version
             || self.terminal.status != TerminalStatus::Cleaned
             || !self.terminal.matches_request(&self.terminal.request)
-            || self.publication.binding.owner.map(|owner| owner.to_string()).as_deref()
+            || self
+                .publication
+                .binding
+                .owner
+                .map(|owner| owner.to_string())
+                .as_deref()
                 != Some(create.key.owner.as_str())
         {
             return Err(JournalError::Conflict);
@@ -72,9 +85,17 @@ impl ValidationRequest {
     /// Full sender/context binding, separate from shape validation used by the client.
     /// # Errors
     /// The original verified TLS peer and protected registration must agree.
-    pub fn validate_context(&self, context: &AuthenticatedCenterContext) -> Result<(), JournalError> {
-        self.create.validate(context).map_err(|_| JournalError::Conflict)?;
-        self.terminal.request.validate(context).map_err(|_| JournalError::Conflict)?;
+    pub fn validate_context(
+        &self,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<(), JournalError> {
+        self.create
+            .validate(context)
+            .map_err(|_| JournalError::Conflict)?;
+        self.terminal
+            .request
+            .validate(context)
+            .map_err(|_| JournalError::Conflict)?;
         self.validate(context.expected_node())
     }
     /// # Errors
@@ -94,3 +115,6 @@ pub trait ValidationReceiver: Send + Sync + 'static {
         context: AuthenticatedCenterContext,
     ) -> impl std::future::Future<Output = Result<ValidationEvidence, ReceiveError>> + Send;
 }
+
+#[cfg(test)]
+mod tests;

@@ -148,7 +148,10 @@ fn native_guest_credential_replaces_all_public_bearers_without_fallback() {
 #[tokio::test]
 async fn native_identity_binds_original_guest_secret_through_body_preparation() {
     let directory = tempfile::tempdir().unwrap();
-    let state = Arc::new(std::sync::Mutex::new(local::State::default()));
+    let state = Arc::new(std::sync::Mutex::new(local::State {
+        epoch: local::TestEpoch::Matching,
+        ..local::State::default()
+    }));
     let application = Arc::new(lifecycle::application(
         &directory.path().join("db"),
         Arc::clone(&state),
@@ -156,21 +159,35 @@ async fn native_identity_binds_original_guest_secret_through_body_preparation() 
     ));
     let create = lifecycle::request();
     let context = lifecycle::context();
-    application.record_lifecycle_intent(&create, &context).unwrap();
+    application
+        .record_lifecycle_intent(&create, &context)
+        .unwrap();
+    application.establish_lifecycle_host_epoch().unwrap();
     application
         .advance_recorded_lifecycle_create_with_verification(
-            &create, context.expected_node(), Some(local::template()), local::compute(), None,
+            &create,
+            context.expected_node(),
+            Some(local::template()),
+            local::compute(),
+            None,
         )
         .unwrap();
-    let sandproof_protocol::lifecycle::LifecycleOperation::Create { target_incarnation, .. } =
-        &create.request.operation else { unreachable!() };
+    let sandproof_protocol::lifecycle::LifecycleOperation::Create {
+        target_incarnation, ..
+    } = &create.request.operation
+    else {
+        unreachable!()
+    };
     let native = NativeDataPort {
         application,
         identity: LifecycleAccessIdentity {
             protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
-            center: create.center.clone(), node: create.request.binding.node.clone(),
-            session: create.request.binding.session.clone(), operation: create.request.binding.key.clone(),
-            accepted_version: create.accepted_version, incarnation: *target_incarnation,
+            center: create.center.clone(),
+            node: create.request.binding.node.clone(),
+            session: create.request.binding.session.clone(),
+            operation: create.request.binding.key.clone(),
+            accepted_version: create.accepted_version,
+            incarnation: *target_incarnation,
         },
         context,
     };

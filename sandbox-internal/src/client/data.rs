@@ -6,9 +6,7 @@ use super::{
 };
 use axum::body::Body;
 use sandproof_data_transport::WriteIdle;
-use sandproof_protocol::internal::{
-    DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX,
-};
+use sandproof_protocol::internal::{DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX};
 use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
 use std::{
     future::Future,

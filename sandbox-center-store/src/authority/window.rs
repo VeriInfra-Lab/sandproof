@@ -3,7 +3,8 @@
 use super::{AuthorityError, AuthorityState, CenterAuthority};
 use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::lifecycle::{
-    ClosedLifecycleWindow, ConfirmedLifecycleResult, LifecycleWindowClose, TerminalLifecycleObservation,
+    ClosedLifecycleWindow, ConfirmedLifecycleResult, LifecycleWindowClose,
+    TerminalLifecycleObservation,
 };
 
 impl<S: AuthorityState> CenterAuthority<S> {
@@ -20,7 +21,10 @@ impl<S: AuthorityState> CenterAuthority<S> {
     /// result. The caller must obtain this through the authenticated host port.
     /// # Errors
     /// Altered, superseded, nonterminal or uncertain results cannot enable close.
-    pub fn confirm_terminal(&mut self, response: &ConfirmedLifecycleResult) -> Result<(), AuthorityError> {
+    pub fn confirm_terminal(
+        &mut self,
+        response: &ConfirmedLifecycleResult,
+    ) -> Result<(), AuthorityError> {
         self.snapshot()?;
         let next = self.state()?.confirm_terminal(response)?;
         self.commit_center(next)
@@ -65,13 +69,21 @@ impl<S: AuthorityState> CenterAuthority<S> {
     /// Retry only close intents confirmed against authority within this call.
     /// # Errors
     /// Storage failures fence this projection along with lifecycle dispatch.
-    pub fn close_batch(&mut self, now_ms: u64) -> Result<Vec<LifecycleWindowClose>, AuthorityError> {
+    pub fn close_batch(
+        &mut self,
+        now_ms: u64,
+    ) -> Result<Vec<LifecycleWindowClose>, AuthorityError> {
         let state = self.snapshot()?;
-        Ok(state.pending_closes().into_iter().filter(|close| {
-            let binding = &close.terminal.request.request.binding;
-            state.lifecycle_session(&binding.key.owner, &binding.session)
-                .is_some_and(|record| record.result_retention_elapsed(now_ms))
-        }).collect())
+        Ok(state
+            .pending_closes()
+            .into_iter()
+            .filter(|close| {
+                let binding = &close.terminal.request.request.binding;
+                state
+                    .lifecycle_session(&binding.key.owner, &binding.session)
+                    .is_some_and(|record| record.result_retention_elapsed(now_ms))
+            })
+            .collect())
     }
 
     /// Apply an exact durable host-close acknowledgement. The whole envelope

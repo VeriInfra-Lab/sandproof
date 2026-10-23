@@ -2,7 +2,7 @@
 use crate::{CenterConfig, PublicTemplate};
 use sandproof_api::PortError;
 use sandproof_controller_service::CreateOptions;
-use sandproof_protocol::internal::lifecycle::{CreateBinding, Resources};
+use sandproof_protocol::internal::lifecycle::Resources;
 use sandproof_protocol::numeric::seconds_to_milliseconds;
 use serde::{Deserialize, Serialize};
 
@@ -36,25 +36,6 @@ impl From<&CenterConfig> for LifecyclePolicy {
     }
 }
 
-pub(crate) fn create_binding(
-    template: &PublicTemplate,
-    options: &CreateOptions,
-    timeout_secs: u64,
-    now_ms: u64,
-    policy: LifecyclePolicy,
-) -> Result<CreateBinding, PortError> {
-    let parameters = create_parameters(template, options, timeout_secs, policy)?;
-    Ok(CreateBinding {
-        template_revision: parameters.template_revision,
-        template_digest: parameters.template_digest,
-        resources: parameters.resources,
-        options: parameters.options,
-        startup_deadline_ms: now_ms.checked_add(parameters.startup_timeout_ms).ok_or(PortError::Invalid)?,
-        timeout_ms: parameters.timeout_ms,
-        max_lifetime_ms: parameters.max_lifetime_ms,
-    })
-}
-
 pub(crate) fn create_parameters(
     template: &PublicTemplate,
     options: &CreateOptions,
@@ -82,7 +63,8 @@ pub(crate) fn create_parameters(
             disk_bytes: shape.disk_bytes,
         },
         options: serde_json::to_vec(options).map_err(|_| PortError::Invalid)?,
-        startup_timeout_ms: seconds_to_milliseconds(policy.startup_timeout_secs).ok_or(PortError::Invalid)?,
+        startup_timeout_ms: seconds_to_milliseconds(policy.startup_timeout_secs)
+            .ok_or(PortError::Invalid)?,
         timeout_ms: seconds_to_milliseconds(timeout_secs).ok_or(PortError::Invalid)?,
         max_lifetime_ms: seconds_to_milliseconds(policy.max_lifetime_secs)
             .ok_or(PortError::Invalid)?,

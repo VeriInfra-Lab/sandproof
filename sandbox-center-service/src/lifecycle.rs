@@ -5,28 +5,41 @@ use crate::{
     CenterApplication, CenterPort, HostPort, TemplateProvider, business::SharedBusinessAuthority,
 };
 use sandproof_api::{PortError, lifecycle::LifecyclePort};
+use sandproof_center_core::SessionPhase;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentCreateReadiness, LifecycleOperation, PublicAcceptance,
-    PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase, PublicSessionView, PublicUnloadRequest, SessionId,
+    PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase, PublicSessionView,
+    PublicUnloadRequest, SessionId,
 };
-use sandproof_center_core::SessionPhase;
 
 impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority, H, T> {
     /// # Errors
     /// No caller chooses another owner or resets the persisted window frontier.
-    pub fn lifecycle_request_window(&self, owner: &str) -> Result<sandproof_protocol::lifecycle::PublicRequestWindow, PortError> {
+    pub fn lifecycle_request_window(
+        &self,
+        owner: &str,
+    ) -> Result<sandproof_protocol::lifecycle::PublicRequestWindow, PortError> {
         let owner = tenant_id(owner)?;
         let current = self.snapshot()?;
         Ok(sandproof_protocol::lifecycle::PublicRequestWindow {
-            window: current.public_request_window(&owner).map_err(|error|
-                crate::application::authority_error(error.into()))?,
+            window: current
+                .public_request_window(&owner)
+                .map_err(|error| crate::application::authority_error(error.into()))?,
         })
     }
     /// # Errors
     /// Acceptance only; cleanup still requires original physical receipts.
-    pub fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: &PublicDestroyRequest) -> Result<PublicAcceptance, PortError> {
+    pub fn destroy_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: &PublicDestroyRequest,
+    ) -> Result<PublicAcceptance, PortError> {
         let owner = tenant_id(owner)?;
-        let intent = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
+        let intent = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
             .accept_public_destroy(&owner, session, request)?;
         Ok(acceptance(intent))
     }
@@ -55,7 +68,10 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         request: &PublicUnloadRequest,
     ) -> Result<PublicAcceptance, PortError> {
         let owner = tenant_id(owner)?;
-        if let Some(intent) = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
+        if let Some(intent) = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
             .replay_public_unload(&owner, &session, request)?
         {
             return Ok(acceptance(intent));
@@ -82,37 +98,51 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         session: &SessionId,
     ) -> Result<PublicSessionView, PortError> {
         let owner = tenant_id(owner)?;
-        let (intent, phase) = self.current_lifecycle_intent(&owner, session)?;
-        if matches!(phase, SessionPhase::Creating | SessionPhase::Running | SessionPhase::Renewing)
-            && matches!(intent.request.operation, LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. })
-        {
+        let (intent, phase) = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .public_lifecycle_intent(&owner, session)?;
+        if matches!(
+            phase,
+            SessionPhase::Creating | SessionPhase::Running | SessionPhase::Renewing
+        ) && matches!(
+            intent.request.operation,
+            LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. }
+        ) {
             // A local Running can already be committed while the center still
             // retains pending Create. Observe that same operation; never issue
             // another create or infer current readiness from saved history.
             let observation = match self.current_create_observation_attempt(&intent) {
                 Ok(observation) => Some(observation),
-                Err(crate::lifecycle_dispatch::CurrentObservationError::Shared(error)) => return Err(error),
-                Err(crate::lifecycle_dispatch::CurrentObservationError::Host(_)
+                Err(crate::lifecycle_dispatch::CurrentObservationError::Shared(error)) => {
+                    return Err(error);
+                }
+                Err(
+                    crate::lifecycle_dispatch::CurrentObservationError::Host(_)
                     | crate::lifecycle_dispatch::CurrentObservationError::Superseded
-                    | crate::lifecycle_dispatch::CurrentObservationError::Deadline) => None,
+                    | crate::lifecycle_dispatch::CurrentObservationError::Deadline,
+                ) => None,
             };
             if let Some(observation) = observation {
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(PortError::Busy);
                 };
-                let mut authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+                let mut authority = self
+                    .authority
+                    .lock()
+                    .map_err(|_| PortError::OutcomeUnknown)?;
                 crate::AuthorityPort::accept_lifecycle_create_observation(
                     &mut *authority,
                     &observation,
-                ).map_err(crate::application::authority_error)?;
+                )
+                .map_err(crate::application::authority_error)?;
                 // Commit/reaffirm first, then inspect a fresh authority under
                 // the same short lock. A newer unload/termination cannot be
                 // overwritten by the result of the detached observation.
-                let state = crate::AuthorityPort::snapshot(&mut *authority)
-                    .map_err(crate::application::authority_error)?;
-                let record = state.lifecycle_session(&owner, session).ok_or(PortError::NotFound)?;
-                let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent();
-                if current != &intent || record.phase() != SessionPhase::Running
+                let (current, phase) = authority.public_lifecycle_intent(&owner, session)?;
+                if current != intent
+                    || phase != SessionPhase::Running
                     || self.now()? >= facts.end_at_ms
                 {
                     return Err(PortError::Busy);
@@ -135,11 +165,20 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
 }
 
 impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusinessAuthority, H, T> {
-    fn request_window(&self, owner: &str) -> Result<sandproof_protocol::lifecycle::PublicRequestWindow, PortError> {
+    fn request_window(
+        &self,
+        owner: &str,
+    ) -> Result<sandproof_protocol::lifecycle::PublicRequestWindow, PortError> {
         self.application().lifecycle_request_window(owner)
     }
-    fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: PublicDestroyRequest) -> Result<PublicAcceptance, PortError> {
-        self.application().destroy_lifecycle(owner, session, &request)
+    fn destroy_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicDestroyRequest,
+    ) -> Result<PublicAcceptance, PortError> {
+        self.application()
+            .destroy_lifecycle(owner, session, &request)
     }
     fn create_lifecycle(
         &self,

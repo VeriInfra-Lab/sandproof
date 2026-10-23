@@ -1,8 +1,10 @@
 use sandproof_protocol::internal::lifecycle::{RESULT_CONFIRMATION_BODY_BYTES, Resources};
-use sandproof_protocol::lifecycle::{CenterIdentity, CurrentReadyFacts, LifecycleOperation,
-    TerminalLifecycleObservation, TerminalStatus};
 use sandproof_protocol::internal::window::RETENTION_LANE_BYTES;
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
+use sandproof_protocol::lifecycle::{
+    CenterIdentity, CurrentReadyFacts, LifecycleOperation, TerminalLifecycleObservation,
+    TerminalStatus,
+};
 use sandproof_protocol::{DeploymentId, TenantId};
 use serde::{Deserialize, Serialize};
 
@@ -115,18 +117,27 @@ pub struct Sandbox {
 impl Sandbox {
     #[must_use]
     pub fn terminating(&self) -> bool {
-        self.operations.last().is_some_and(|operation|
-            matches!(operation.intent().request.operation, LifecycleOperation::Destroy {}))
+        self.operations.last().is_some_and(|operation| {
+            matches!(
+                operation.intent().request.operation,
+                LifecycleOperation::Destroy {}
+            )
+        })
     }
     #[must_use]
     pub fn released(&self) -> bool {
-        self.operations.last().and_then(|operation| operation.terminal())
+        self.operations
+            .last()
+            .and_then(|operation| operation.terminal())
             .is_some_and(|result| result.status == TerminalStatus::Cleaned)
     }
     /// Historical lifetime, never sufficient by itself to authorize access.
     #[must_use]
     pub fn last_running(&self) -> Option<&CurrentReadyFacts> {
-        self.operations.iter().rev().find_map(|operation| operation.running.as_ref())
+        self.operations
+            .iter()
+            .rev()
+            .find_map(|operation| operation.running.as_ref())
     }
     /// Only a result committed for the actual current Create/Renew can route.
     #[must_use]
@@ -135,7 +146,9 @@ impl Sandbox {
     }
     #[must_use]
     pub fn created_at_ms(&self) -> Option<u64> {
-        self.operations.first().map(|operation| operation.accepted_at_ms)
+        self.operations
+            .first()
+            .map(|operation| operation.accepted_at_ms)
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -273,24 +286,25 @@ impl CenterState {
         tenant: Option<&TenantId>,
         node: Option<&NodeIdentity>,
     ) -> Option<Resources> {
-        let mut sum = Resources::ZERO;
-        for sandbox in &self.sandboxes {
-            if sandbox.released() {
-                continue;
-            }
-            let Some(op) = sandbox.operations.first() else {
-                continue;
-            };
-            if tenant.is_none_or(|t| &op.intent().request.binding.key.owner == t)
+        let mut sum = Some(Resources::ZERO);
+        let mut index = 0;
+        while sum.is_some() && index < self.sandboxes.len() {
+            let sandbox = &self.sandboxes[index];
+            if !sandbox.released()
+                && let Some(op) = sandbox.operations.first()
+                && tenant.is_none_or(|t| &op.intent().request.binding.key.owner == t)
                 && node.is_none_or(|n| &op.intent().request.binding.node == n)
             {
-                let LifecycleOperation::Create { create, .. } = &op.intent().request.operation else {
-                    return None;
+                sum = match (&op.intent().request.operation, sum) {
+                    (LifecycleOperation::Create { create, .. }, Some(total)) => {
+                        total.checked_add(create.resources)
+                    }
+                    _ => None,
                 };
-                sum = sum.checked_add(create.resources)?;
             }
+            index += 1;
         }
-        Some(sum)
+        sum
     }
     /// Explicit physical/time/config input; no heartbeat-based release or rebind.
     /// # Errors

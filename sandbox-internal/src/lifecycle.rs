@@ -256,7 +256,7 @@ mod tests {
         use sandproof_protocol::lifecycle::{
             AcceptedLifecycleIntent, CenterIdentity, ClosedLifecycleWindow,
             ConfirmedLifecycleResult, LifecycleWindowClose, RetentionBinding,
-            TerminalLifecycleObservation, TerminalStatus, TERMINAL_RESULT_BODY_BYTES,
+            TERMINAL_RESULT_BODY_BYTES, TerminalLifecycleObservation, TerminalStatus,
         };
         let longest = "x".repeat(128);
         let mut request = request();
@@ -278,12 +278,20 @@ mod tests {
                 },
                 request,
                 accepted_version: u64::MAX,
-                retention: RetentionBinding { slot: 4096, window: 7.try_into().unwrap() },
+                retention: RetentionBinding {
+                    slot: 4096,
+                    window: 7.try_into().unwrap(),
+                },
             },
             status: TerminalStatus::Cleaned,
         };
-        let close = LifecycleWindowClose { terminal: result.clone() };
-        let ack = ClosedLifecycleWindow { terminal: result.clone(), retired_through: 7.try_into().unwrap() };
+        let close = LifecycleWindowClose {
+            terminal: result.clone(),
+        };
+        let ack = ClosedLifecycleWindow {
+            terminal: result.clone(),
+            retired_through: 7.try_into().unwrap(),
+        };
         for bytes in [
             encode_bounded(&result, TERMINAL_RESULT_BODY_BYTES).unwrap(),
             encode_bounded(&close, TERMINAL_RESULT_BODY_BYTES).unwrap(),
@@ -297,10 +305,18 @@ mod tests {
         assert!(decoded.matches(&close));
         let mut newer = decoded;
         newer.retired_through = 8.try_into().unwrap();
-        assert!(!newer.matches(&close), "a newer frontier cannot acknowledge this close");
+        assert!(
+            !newer.matches(&close),
+            "a newer frontier cannot acknowledge this close"
+        );
         let mut pending = result.clone();
         pending.status = TerminalStatus::Pending;
-        assert!(!ConfirmedLifecycleResult { result: pending.clone() }.matches(&pending));
+        assert!(
+            !ConfirmedLifecycleResult {
+                result: pending.clone()
+            }
+            .matches(&pending)
+        );
         assert!(!LifecycleWindowClose { terminal: pending }.is_terminal_result());
         let mut old = serde_json::to_value(result).unwrap();
         old["request"].as_object_mut().unwrap().remove("retention");
