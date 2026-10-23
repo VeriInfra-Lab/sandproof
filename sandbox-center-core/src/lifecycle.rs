@@ -146,7 +146,8 @@ impl LifecycleOperationRecord {
                 AcceptanceTime::Sampled { at_ms: now_ms }
             },
             running: None,
-            previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. }) {
+            previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. })
+            {
                 previous.running.as_ref().map(|facts| facts.end_at_ms)
             } else {
                 None
@@ -763,7 +764,11 @@ impl CenterState {
         next.sandboxes[index]
             .operations
             .push(LifecycleOperationRecord::followup(
-                submission, prior, intent.clone(), number, now_ms,
+                submission,
+                prior,
+                intent.clone(),
+                number,
+                now_ms,
             ));
         if !next.is_valid() {
             return Err(DecisionError::Invalid);
