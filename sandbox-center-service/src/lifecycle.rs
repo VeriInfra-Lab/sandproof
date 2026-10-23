@@ -125,6 +125,12 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 ) => None,
             };
             if let Some(observation) = observation {
+                if matches!(observation.readiness, CurrentCreateReadiness::Refused { .. }) {
+                    let mut authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+                    crate::AuthorityPort::accept_lifecycle_create_refusal(&mut *authority, &observation, self.now()?)
+                        .map_err(crate::application::authority_error)?;
+                    return authority.query_public_lifecycle(&owner, session);
+                }
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(PortError::Busy);
                 };
@@ -152,6 +158,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     operation: current.request.binding.key.clone(),
                     current_version: current.accepted_version,
                     phase: PublicSessionPhase::Running,
+                    create_refusal: None,
                 });
             }
         }

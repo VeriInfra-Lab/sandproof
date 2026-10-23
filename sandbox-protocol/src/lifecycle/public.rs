@@ -94,4 +94,6 @@ pub struct PublicSessionView {
     pub operation: OperationKey,
     pub current_version: u64,
     pub phase: PublicSessionPhase,
+    /// Original Create outcome, retained independently of the current Destroy.
+    pub create_refusal: Option<super::CreateRefusalReason>,
 }

@@ -39,6 +39,8 @@ pub trait ControlState: Serialize + DeserializeOwned {
     const FORMAT_VERSION: u32;
     /// Supported nested profile domains, checked before general validation.
     /// Types without such profiles keep their existing validation contract.
+    /// # Errors
+    /// An unsupported nested profile must reject before general state use.
     fn check_supported_profiles(&self) -> Result<(), StoreError> {
         Ok(())
     }

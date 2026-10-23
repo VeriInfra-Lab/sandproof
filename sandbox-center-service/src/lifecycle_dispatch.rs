@@ -6,7 +6,7 @@ use crate::application::diagnostics::{
 };
 use crate::{AuthorityPort, CenterApplication, HostPort, NodeObservationPolicy, TemplateProvider};
 use sandproof_api::PortError;
-use sandproof_center_core::{DecisionError, SessionPhase};
+use sandproof_center_core::{DecisionError, Sandbox, SessionPhase};
 use sandproof_center_store::authority::AuthorityError;
 use sandproof_protocol::{
     TenantId,
@@ -115,6 +115,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         if !view.matches_request(original) || view.current_request != *intent {
             return Err(CurrentObservationError::Superseded);
         }
+        if matches!(view.readiness, CurrentCreateReadiness::Refused { .. }) {
+            return Ok(view);
+        }
         let CurrentCreateReadiness::Observed { facts } = &view.readiness else {
             return Err(CurrentObservationError::Host(PortError::Busy));
         };
@@ -139,14 +142,18 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         loop {
             time_left(deadline)?;
             self.reconcile_lifecycle_intent(intent, deadline)?;
-            let (current, phase) = self.current_lifecycle_intent(
-                &intent.request.binding.key.owner,
-                &intent.request.binding.session,
-            )?;
-            if current != *intent || phase == SessionPhase::Terminating {
+            let state = self.snapshot()?;
+            let record = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
+                .ok_or(PortError::OutcomeUnknown)?;
+            if let Some(destroy) = refused_create_destroy(record, intent)? {
+                self.wait_current_terminal_before(&destroy, deadline)?;
+                return Err(PortError::QuotaExceeded);
+            }
+            let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent();
+            if current != intent || record.phase() == SessionPhase::Terminating {
                 return Err(PortError::OutcomeUnknown);
             }
-            if phase == SessionPhase::Running {
+            if record.phase() == SessionPhase::Running {
                 if let Some(session) = self
                     .session_attempt(
                         intent.request.binding.key.owner.as_str(),
@@ -189,6 +196,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     &intent.request.binding.session,
                 )
                 .ok_or(PortError::OutcomeUnknown)?;
+            if let Some(destroy) = refused_create_destroy(record, intent)? {
+                self.wait_current_terminal_before(&destroy, deadline)?;
+                return Err(PortError::QuotaExceeded);
+            }
             let current = record
                 .operations()
                 .last()
@@ -212,6 +223,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         intent: &AcceptedLifecycleIntent,
     ) -> Result<(), PortError> {
         let deadline = self.reply_deadline()?;
+        self.wait_current_terminal_before(intent, deadline)
+    }
+
+    fn wait_current_terminal_before(&self, intent: &AcceptedLifecycleIntent, deadline: Instant) -> Result<(), PortError> {
         loop {
             time_left(deadline)?;
             self.reconcile_lifecycle_intent(intent, deadline)?;
@@ -432,6 +447,14 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 | CurrentObservationError::Deadline,
             ) => return Ok(false),
         };
+        if matches!(observation.readiness, CurrentCreateReadiness::Refused { .. }) {
+            return match self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
+                .accept_lifecycle_create_refusal(&observation, self.now()?) {
+                Ok(_) => Ok(true),
+                Err(AuthorityError::Decision(DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound)) => Ok(false),
+                Err(error) => Err(authority_error(error)),
+            };
+        }
         match self
             .authority
             .lock()
@@ -454,6 +477,24 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             }
         }
     }
+}
+
+/// Read the cause only from its same immutable original operation. A later
+/// Destroy is cleanup responsibility, never a replacement creation or refund.
+fn refused_create_destroy(record: &Sandbox, original: &AcceptedLifecycleIntent)
+    -> Result<Option<AcceptedLifecycleIntent>, PortError>
+{
+    let first = record.operations().first().ok_or(PortError::OutcomeUnknown)?;
+    if first.intent() != original { return Ok(None); }
+    match first.create_refusal() {
+        Some(sandproof_protocol::lifecycle::CreateRefusalReason::Capacity) => {}
+        None => return Ok(None),
+    }
+    let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent();
+    if !matches!(current.request.operation, LifecycleOperation::Destroy {}) {
+        return Err(PortError::OutcomeUnknown);
+    }
+    Ok(Some(current.clone()))
 }
 
 fn time_left(deadline: Instant) -> Result<std::time::Duration, PortError> {
