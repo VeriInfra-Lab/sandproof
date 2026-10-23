@@ -33,7 +33,7 @@ fn record(source: &RuntimeProcessIdentity) -> ProcessRecord {
         resource_id: ID.into(),
         pid: source.pid,
         start_time_ticks: source.start_time_ticks,
-        boot_id: Some(source.boot_id.clone()),
+        boot_id: source.boot_id.clone(),
     }
 }
 
@@ -48,6 +48,14 @@ fn save(runtime: &Runtime, record: &ProcessRecord) {
         serde_json::to_vec(record).unwrap(),
     )
     .unwrap();
+}
+
+fn save_without_boot(runtime: &Runtime, record: &ProcessRecord) -> Vec<u8> {
+    let mut value = serde_json::to_value(record).unwrap();
+    value.as_object_mut().unwrap().remove("boot_id");
+    let bytes = serde_json::to_vec(&value).unwrap();
+    fs::write(runtime.config.chroot_base.join(".claims").join(ID).join("record.json"), &bytes).unwrap();
+    bytes
 }
 
 fn fixture(source: &RuntimeProcessIdentity) -> (tempfile::TempDir, Runtime) {
@@ -141,9 +149,7 @@ fn mismatched_original_source_is_refused_before_signalling() {
         assert!(runtime.observe_original_stopped(ID, &wrong).is_err());
         assert!(child.0.try_wait().unwrap().is_none());
     }
-    let mut legacy = record(&source);
-    legacy.boot_id = None;
-    save(&runtime, &legacy);
+    save_without_boot(&runtime, &record(&source));
     assert!(runtime.stop_original_vm(ID, &source).is_err());
     assert!(runtime.observe_original_stopped(ID, &source).is_err());
     assert!(child.0.try_wait().unwrap().is_none());
@@ -189,7 +195,7 @@ fn a_foreign_boot_is_unresolved_and_does_not_signal_the_current_pid_occupant() {
 }
 
 #[test]
-fn readonly_configuration_refuses_wrong_or_legacy_source_without_effects() {
+fn readonly_configuration_refuses_wrong_or_missing_source_without_effects() {
     let _serial = PROCESS_TEST_LOCK.lock().unwrap();
     let (mut child, source) = process();
     let (temp, runtime) = fixture(&source);
@@ -213,9 +219,7 @@ fn readonly_configuration_refuses_wrong_or_legacy_source_without_effects() {
             .is_err()
     );
     assert_eq!(fs::read(&claim).unwrap(), saved);
-    let mut legacy = record(&source);
-    legacy.boot_id = None;
-    save(&runtime, &legacy);
+    let missing_boot = save_without_boot(&runtime, &record(&source));
     assert!(
         runtime
             .observe_original_configuration(ID, &source, limits)
@@ -223,7 +227,7 @@ fn readonly_configuration_refuses_wrong_or_legacy_source_without_effects() {
     );
     assert_eq!(
         fs::read(&claim).unwrap(),
-        serde_json::to_vec(&legacy).unwrap()
+        missing_boot
     );
     assert_eq!(fs::read(&canary).unwrap(), b"unchanged");
     assert!(!runtime.root_path(ID).exists());

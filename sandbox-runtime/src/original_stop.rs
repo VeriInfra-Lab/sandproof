@@ -10,7 +10,7 @@ fn require_source(
     expected: &RuntimeProcessIdentity,
 ) -> Result<(), RuntimeError> {
     expected.validate_fields()?;
-    if record.source_identity()?.as_ref() != Some(expected) {
+    if record.source_identity()? != *expected {
         return Err(RuntimeError::IdentityMismatch(
             "stop original process binding",
         ));
@@ -52,7 +52,7 @@ impl Runtime {
     /// and exclude late capture/other workers under the original admission gate.
     /// No bundle, jail, claim, network or capacity is deleted/released here.
     /// # Errors
-    /// Missing/legacy/conflicting claims, changed host boot and timeouts remain
+    /// Missing/invalid/conflicting claims, changed host boot and timeouts remain
     /// unresolved. An error may follow a signal; observe only this same source.
     pub fn stop_original_vm(
         &self,

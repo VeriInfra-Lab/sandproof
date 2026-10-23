@@ -64,9 +64,7 @@
 
 新的 VM claim 在原 launch gate 开放前持久保存 `ProcessRecord.boot_id`，它来自同一被记录 PID/启动 ticks 的宿主 kernel boot identity。新 Prepared/Activated 回执经原 claim、PID/ticks、jail/cgroup 检查后保留该字段；不是从 manifest、guest 或恢复时的全局 boot 值补造旧身份。`HostEvidence::source_process_identity(command, expected_resource)` 同时核原 command 和调用者从原 action 独立取得的完整 resource，再原样投影来源，不能传自己的 resource 自比。owner/operation/原工作与多份回执来源一致仍由 V5 的原持久事务建立；动作前仍须重核原进程，getter 不保证未来存活。
 
-原 claim 与 Prepared/Activated 的 boot 字段采用 default/skip-none。新读取器可读旧缺字段记录，并保持 None 的原序列化形状；这些记录没有可认证捕获来源，不从缺字段推断进程退出。此往返不保证旧代码保留或校验新的 Some 字段：原缺少相应字段的解码路径可能忽略该字段。本批不提供滚动混合版本或旧库自动升级保证；不能因为旧解码器能读就声明其认证了来源。提供者/解码版本和实际适用范围由类型登记与 V5 接线维护。新字段计入退休清单的最大序列化预算；缺失/格式损坏/冲突不得变成释放或 Stop 许可。
-
-本批普通回归覆盖真实字段保留、旧字节往返、错误 command/独立 resource、非法 boot 和原 claim 的 boot 不同不得选中当前同 PID 的进程；整个进程记录/系统调用/回执/SQLite 的机器对应仍是后续义务，不把字段测试记成整个来源链证明。
+当前唯一 claim 与 Prepared/Activated 回执格式必须保存原 boot 字符串。缺失或 null 的旧开发字节直接拒绝，不保留旧形状往返、不补当前 boot、不收养或迁移旧库。字段齐全仍须核对完整 command、独立 resource、PID/start/boot 和当前原进程；解析成功不表示来源或执行资格已成立。新部署使用隔离数据，历史实现和证据只从 Git 查阅。整个进程记录/系统调用/回执/SQLite 的机器对应仍是后续义务，不把字段回归记成完整来源链证明。
 
 ### 捕获前原配置的只读事实
 

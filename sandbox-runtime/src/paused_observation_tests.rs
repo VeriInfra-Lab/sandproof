@@ -65,7 +65,7 @@ fn malformed_error_unknown_or_missing_replies_never_report_paused_or_exited() {
 fn late_record_replacement_corruption_or_loss_refuses_an_otherwise_paused_reply() {
     for change in 0..3 {
         let root=tempfile::tempdir().unwrap();let source=identity();let path=root.path().join("record.json");
-        let record=ProcessRecord{resource_id:ID.into(),pid:source.pid,start_time_ticks:source.start_time_ticks,boot_id:Some(source.boot_id.clone())};
+        let record=ProcessRecord{resource_id:ID.into(),pid:source.pid,start_time_ticks:source.start_time_ticks,boot_id:source.boot_id.clone()};
         fs::write(&path,serde_json::to_vec(&record).unwrap()).unwrap();let after=path.clone();
         let listener=UnixListener::bind(root.path().join("api.socket")).unwrap();
         let server=serve(listener,http(&reply("Paused")),move||match change {

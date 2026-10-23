@@ -73,7 +73,7 @@ fn mismatch(message: &'static str)->RuntimeError { RuntimeError::IdentityMismatc
 
 fn require_record(record:&ProcessRecord,id:&str,expected:&RuntimeProcessIdentity)->Result<(),RuntimeError> {
     expected.validate_fields()?;
-    if record.resource_id!=id || record.source_identity()?.as_ref()!=Some(expected) {
+    if record.resource_id!=id || record.source_identity()?!=*expected {
         return Err(mismatch("pause observation original record differs"));
     }
     if helper_gate::boot_id()?!=expected.boot_id {

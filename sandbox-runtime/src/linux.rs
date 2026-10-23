@@ -221,22 +221,18 @@ struct ProcessRecord {
     resource_id: String,
     pid: u32,
     start_time_ticks: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    boot_id: Option<String>,
+    boot_id: String,
 }
 
 impl ProcessRecord {
-    fn source_identity(&self) -> Result<Option<RuntimeProcessIdentity>, RuntimeError> {
-        let Some(boot_id) = &self.boot_id else {
-            return Ok(None);
-        };
+    fn source_identity(&self) -> Result<RuntimeProcessIdentity, RuntimeError> {
         let identity = RuntimeProcessIdentity {
             pid: self.pid,
             start_time_ticks: self.start_time_ticks,
-            boot_id: boot_id.clone(),
+            boot_id: self.boot_id.clone(),
         };
         identity.validate_fields()?;
-        Ok(Some(identity))
+        Ok(identity)
     }
 }
 
@@ -497,7 +493,7 @@ impl Runtime {
                 resource_id: id.to_owned(),
                 pid,
                 start_time_ticks,
-                boot_id: Some(identity.boot_id),
+                boot_id: identity.boot_id,
             };
             self.write_new_record(&claim.join("record.json"), &record)?;
             // Directory authority must already be durable and still match
@@ -567,18 +563,17 @@ impl Runtime {
     }
 
     /// Read the boot identity already persisted before this original launch.
-    /// Old claims without it remain unavailable, never upgraded from /proc.
+    /// The current format requires it; absent/invalid fields are rejected,
+    /// never filled from a current observation.
     /// # Errors
     /// Missing/changed original process, jail or cgroup remains unknown.
     pub fn source_process_identity(
         &self,
         id: &str,
-    ) -> Result<Option<RuntimeProcessIdentity>, RuntimeError> {
+    ) -> Result<RuntimeProcessIdentity, RuntimeError> {
         validate_id(id)?;
         let record = self.read_record(id)?;
-        let Some(identity) = record.source_identity()? else {
-            return Ok(None);
-        };
+        let identity = record.source_identity()?;
         if !identity.is_alive()? || verified_process(&record)?.is_none() {
             return Err(RuntimeError::IdentityMismatch(
                 "original source process unavailable",
@@ -586,7 +581,7 @@ impl Runtime {
         }
         self.require_launch_jail(id, 0)?;
         self.verify_cgroup(id, Some(record.pid))?;
-        Ok(Some(identity))
+        Ok(identity)
     }
 
     /// Observe only the process bound to this resource claim.
@@ -1624,9 +1619,7 @@ fn parse_proc_stat(stat: &str) -> Result<ProcStatus, RuntimeError> {
 }
 
 fn verified_process(record: &ProcessRecord) -> Result<Option<std::os::fd::OwnedFd>, RuntimeError> {
-    if let Some(identity) = record.source_identity()?
-        && !identity.is_alive()?
-    {
+    if !record.source_identity()?.is_alive()? {
         return Ok(None);
     }
     let pid = Pid::from_raw(
@@ -1839,7 +1832,7 @@ mod tests {
                 resource_id: id.clone(),
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
-                boot_id: None,
+                boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
             },
         )
         .unwrap();

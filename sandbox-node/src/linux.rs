@@ -163,8 +163,7 @@ enum ObservedResult {
     Prepared {
         pid: u32,
         start_ticks: u64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        boot_id: Option<String>,
+        boot_id: String,
     },
     Network {
         namespace_inode: u64,
@@ -172,8 +171,7 @@ enum ObservedResult {
     Activated {
         pid: u32,
         start_ticks: u64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        boot_id: Option<String>,
+        boot_id: String,
     },
     FilePolicy {
         disk_inode: u64,
