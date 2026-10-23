@@ -5,6 +5,19 @@ use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
 impl<S: AuthorityState> CenterAuthority<S> {
+    /// Persist the original refusal and allocated Destroy in the same CAS.
+    /// # Errors
+    /// Unknown commit fences all reads; no quota or cleanup fact is fabricated.
+    pub fn accept_lifecycle_create_refusal(
+        &mut self, observation: &sandproof_protocol::lifecycle::CreateObservation,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        self.snapshot()?;
+        let (next, destroy) = self.state()?.accept_lifecycle_create_refusal(observation)?;
+        if &next == self.state()? { self.snapshot()?; }
+        else { self.commit_center(next)?; }
+        Ok(destroy)
+    }
+
     /// # Errors
     /// Same original authority and business pins; no host I/O or public owner bypass.
     pub fn terminate_expired(&mut self, now_ms: u64) -> Result<(), AuthorityError> {

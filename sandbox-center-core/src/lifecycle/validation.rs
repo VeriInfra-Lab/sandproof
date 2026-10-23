@@ -133,6 +133,10 @@ impl CenterState {
             || lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(origin.retention.window.get())
             || !self.tenant_is_registered(&b.key.owner)
             || !self.nodes.iter().any(|node| node.identity == b.node)
+            || (first.create_refusal.is_some()
+                && (session.operations.len() != 2
+                    || !matches!(last.intent.request.operation, LifecycleOperation::Destroy {})
+                    || session.operations.iter().any(|operation| operation.running.is_some())))
             || session
                 .terminal_confirmation
                 .as_ref()
@@ -206,6 +210,9 @@ impl CenterState {
     ) -> bool {
         let intent = &op.intent;
         let request = &intent.request;
+        if position != 0 && op.create_refusal.is_some() {
+            return false;
+        }
         let Some(origin) = session.operations.first() else {
             return false;
         };
