@@ -189,3 +189,7 @@ impl ControllerJournal {
         Ok(inbox.lanes)
     }
 }
+
+#[cfg(test)]
+#[path = "window_tests.rs"]
+mod tests;

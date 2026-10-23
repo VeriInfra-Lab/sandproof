@@ -78,6 +78,7 @@ pub(in crate::controller) fn validate(
     let Some(inbox) = load(connection)? else {
         return Ok(());
     };
+    validate_confirmed(connection, world, &inbox)?;
     for session in &inbox.sessions {
         let Some(local) = session.local else {
             continue;
@@ -160,6 +161,24 @@ pub(in crate::controller) fn validate(
             if lifetime.deadline_ms != end {
                 return Err(JournalError::CorruptStore);
             }
+        }
+    }
+    Ok(())
+}
+
+fn validate_confirmed(
+    connection: &Connection,
+    world: &sandbox_controller_core::World,
+    inbox: &Inbox,
+) -> Result<(), JournalError> {
+    // A saved confirmation must still refer to original durable cleanup facts.
+    // This context checks the stored relation, not a network peer identity.
+    let context = inbox.config.context();
+    for session in &inbox.sessions {
+        if let Some(result) = &session.confirmed_terminal
+            && !super::access::destroy_cleaned(connection, world, inbox, &result.request, &context)?
+        {
+            return Err(JournalError::CorruptStore);
         }
     }
     Ok(())
