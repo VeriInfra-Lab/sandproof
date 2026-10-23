@@ -114,7 +114,8 @@ pub struct ApplicationConfig {
 
 struct Inner<H: ControllerHost> {
     journal: ControllerJournal,
-    host: H,
+    host: Arc<H>,
+    active_sandboxes: BTreeSet<core::SandboxId>,
     data_revocations: BTreeMap<u64, Vec<watch::Sender<bool>>>,
     data_drains: BTreeMap<u64, DataLease>,
 }
@@ -286,7 +287,8 @@ impl<H: ControllerHost> ControllerApplication<H> {
         Self {
             inner: Mutex::new(Inner {
                 journal,
-                host,
+                host: Arc::new(host),
+                active_sandboxes: BTreeSet::new(),
                 data_revocations: BTreeMap::new(),
                 data_drains: BTreeMap::new(),
             }),

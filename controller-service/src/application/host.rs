@@ -19,7 +19,7 @@ pub trait WorkExecution: WorkEvidence {
     /// # Errors
     /// Transport loss must remain unknown, never an implicit retry.
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError>;
 }
@@ -37,7 +37,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// Ambiguous or foreign resources remain unresolved; no retry follows.
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError>;
 
@@ -46,7 +46,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// Ambiguous or foreign network resources remain unresolved.
     fn reclaim_incomplete_network(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
@@ -59,7 +59,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// An unreadable guest, changed VM or conflicting configuration stays unknown.
     fn reclaim_incomplete_activation(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
@@ -70,7 +70,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// Ambiguous or stale fence state remains unresolved.
     fn reclaim_incomplete_terminal_fence(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
@@ -82,7 +82,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// A stale or unobservable fence remains unresolved.
     fn reclaim_incomplete_open_fence(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
@@ -94,7 +94,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// An unverified process or incomplete stop remains unresolved.
     fn reclaim_incomplete_stop(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
@@ -105,7 +105,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// An ambiguous or live resource remains unresolved.
     fn reclaim_incomplete_abort_prepare(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
@@ -116,7 +116,7 @@ pub trait WorkRecovery: WorkEvidence {
     /// # Errors
     /// Ambiguous or live resources remain unresolved.
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError>;
 }
@@ -130,7 +130,7 @@ pub trait HostSlots {
     /// # Errors
     /// Unsupported bounded mode or ambiguous identity must fail closed.
     fn bind_host_slot(
-        &mut self,
+        &self,
         _context: &HostSlotContext,
         _allow_install: bool,
     ) -> Result<(), ApplicationError> {
@@ -141,7 +141,7 @@ pub trait HostSlots {
     /// only after the controller committed Releasing and local routes drained.
     /// # Errors
     /// Unknown cleanup or stale identity keeps the physical position unavailable.
-    fn release_host_slot(&mut self, _context: &HostSlotContext) -> Result<(), ApplicationError> {
+    fn release_host_slot(&self, _context: &HostSlotContext) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
     }
 }
@@ -168,7 +168,7 @@ pub trait DataRelay {
     /// # Errors
     /// Capacity or uncertain child identity refuses the new relay.
     fn spawn_data_relay(
-        &mut self,
+        &self,
         _sandbox: core::SandboxId,
         _vm: core::VmId,
         _generation: core::Generation,
@@ -246,7 +246,7 @@ pub trait HostCapacity {
 pub trait LaunchConfiguration {
     /// # Errors
     /// A host credential creation failure leaves the admitted create pending.
-    fn put_secret(&mut self, sandbox: core::SandboxId, token: &str)
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str)
     -> Result<(), ApplicationError>;
 
     /// Return false only when no credential was ever stored. A malformed or
@@ -265,7 +265,7 @@ pub trait LaunchConfiguration {
     /// # Errors
     /// Any uncertain credential write blocks launch until observation.
     fn put_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         env_vars: &BTreeMap<String, String>,
@@ -295,7 +295,7 @@ pub trait LaunchConfiguration {
     /// # Errors
     /// Unknown writes stay pending; no replacement template is permitted.
     fn put_bound_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         options: &CreateOptions,
@@ -339,7 +339,7 @@ pub trait TemplateArtifacts {
     }
 }
 
-/// Assembly constraint only: the application retains one host and one lock.
+/// Assembly constraint: one shared host, with short internal metadata locks.
 /// Individual helpers depend on their actual capability, not this aggregate.
 pub trait ControllerHost:
     WorkExecution
@@ -350,6 +350,7 @@ pub trait ControllerHost:
     + LaunchConfiguration
     + TemplateArtifacts
     + Send
+    + Sync
     + 'static
 {
 }
@@ -362,6 +363,8 @@ impl<T> ControllerHost for T where
         + LaunchConfiguration
         + TemplateArtifacts
         + Send
+        + Sync
+    + Sync
         + 'static
 {
 }
