@@ -169,3 +169,11 @@ Notify 条件接口执行 `bash scripts/verify-notify.sh`，完整形式入口�
 JoinSet 的条件模型执行 `bash scripts/verify-joinset.sh`，全批入口包含本模块和实际 Audit 文件诊断。先在 ning 完整原生批次运行 `check_joinset_components.py`；单独复现用 `bash scripts/python-entry.sh tools/check_joinset_components.py --output artifacts/joinset-check`，目录须不存在。组件只给原模块追加显式测试，中心/Guest 错误版只删除原收齐循环；正确与错误版必须新编译，错误版由同一即时断言拒绝，不用超时或编译失败充当反例。共享注册 Cargo target，原二进制、源码、变更及日志另存。
 
 向 a6000 只交接完整成功记录。模块入口还对真实 `Listener::serve` 执行固定原 Charon 预检：不支持 Coroutine 的失败原文和部分 LLBC 保留，不能据此运行 Aeneas 或称异步抽取成功。接口与条件见[依赖登记](../docs/formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[逐点登记](joinset-environment.json)。两个模型分别描述组历史与任意原任务，使用者提供同一真实执行的相容投影；它们不是完整 async Rust 语义。收齐保留正常值和原 JoinError 的所有权；panic 载荷也可以持有许可，需等这份错误值实际丢弃后才能观察其归还。模型保留 α/ρ 两类原值表示，不据此承诺独立阻塞工作或业务外部资源已经退出。实际完成状态仍由覆盖记录和 #333 精确回执说明。
+
+标准 Mutex 的条件守卫、真实 get_mut 与错误版复现见 [专用说明](experiments/std-mutex/README.md)，实际支持域和业务责任以[依赖合同](../docs/formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)为准；完整验收仍按原证明工作流执行。
+
+Condvar 的单次原等待、原守卫/中毒/超时协议和真实 Reaper 接线见[专用说明](experiments/condvar/README.md)及[接口登记](condvar-environment.json)。执行 `bash scripts/verify-condvar.sh`，普通组件由 ning 的完整原生入口提供；原 `run` 的后端限制、模型反例和原生夹具错误版分别报告，不称整个 Reaper Rust 已机器精化。
+
+### Tokio RwLock 原读守卫
+
+[使用范围和复现](experiments/tokio-rwlock/README.md)覆盖原读/写取得、映射及正常释放的条件模型。普通正反例在原生入口执行；证明入口为 `bash scripts/verify-tokio-rwlock.sh`，要求同提交的完整原生证据。实际 async 接线仍依登记 A6/B2，不据此认领 Guest 业务证明。

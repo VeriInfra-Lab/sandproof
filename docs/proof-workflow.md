@@ -122,11 +122,11 @@
 默认构建成功不代表所有探索中的模块已通过，也不代表所有控制器输入已覆盖。
 不修改检查脚本来排除失败模块，不以占位证明、自定义假设或调试开关绕过检查。
 
-### 两台机器的分工与证据交接
+### 普通测试机与证明机的分工及证据交接
 
 普通 CI 继续使用现有 ning 上的隔离 runner。普通 Rust/Python 测试、格式、
 Clippy、SDK、组件回归和错误实现的原生断言也都在 ning 执行。
-a6000 仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、Lean 构建、
+证明机（如 msra）仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、Lean 构建、
 形式反例、真实文件诊断和依赖审计；不在证明机安装或复制另一套 CI 环境。
 
 一次完整证明批次先在 ning 的确定提交上运行：
@@ -135,14 +135,22 @@ a6000 仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、
 # 使用现有的固定 Rust、Python、离线 Cargo 和真实 Redis 环境。
 export CARGO_NET_OFFLINE=true
 export SANDPROOF_REDIS_SERVER=/path/to/fixed/redis-server
+export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
+export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
+export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
+export SANDPROOF_LIBRARY_SOURCE_ARCHIVE=/private/acceptance/library-original.tar
 bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --output /private/acceptance/native-evidence
 ```
 
 这个入口包含完整 Linux `check-function.sh`，并运行原证明入口中的独立抽取
-crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、JSON、TLS、relay、SQLite 和 Redis 候选回归。
+crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、标准 Mutex、Condvar、Tokio RwLock、原 Child 观察、有状态回调、JSON、TLS、relay、SQLite、Redis、BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 候选回归。
 保留原测试数量、拒绝断言、正确/错误版和新编译二进制检查。它不运行 Lean
 或翻译器。原生错误版仍须确实编译并触发原断言；构建失败不能写入成功记录。
+变体使用同一 Cargo target 时，还须检查实际业务库与测试二进制都绑定当前源副本；
+新测试二进制不能证明其链接库已更新。Tokio RwLock 入口逐变体重建本自有包，并在结束时
+移除错误版包缓存，保留其它依赖。原 Child 入口同样绑定实际同 crate 的业务测试程序，
+检查 package/manifest/src/fresh，并只清理 sandbox-runtime 自有包的变体缓存。源码时间较旧不能作为复用前一变体库的依据。
 SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这份证明批次记录替代。
 入口为测试夹具建立 0700 的私有临时目录；不放宽真实文件的属主、符号链接或
 祖先写权限检查。普通功能验收绑定全部跟踪输入，文档变化也必须重新检查，
@@ -151,20 +159,28 @@ SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这�
 工作区或共享父目录。权限不符合原用例要求时，在昂贵测试前失败。
 
 原始工作目录、二进制摘要和日志留在 ning。将完整的 `commands/`、`runtime.json`
-和 `complete.json` 交给 a6000；不传 Cargo target。只有全部子检查成功后才写
-`complete.json`。a6000 必须检查完整记录及其所有日志摘要，缺一个、被修改或
+和 `complete.json` 交给证明机；不传 Cargo target。只有全部子检查成功后才写
+`complete.json`。证明机必须检查完整记录及其所有日志摘要，缺一个、被修改或
 未完成都拒绝入场，不能只信文件名或一个 `success` 字段。
 
-然后在 a6000 的同一源码上运行：
+然后在证明机的同一源码上运行：
 
 ```sh
 export SANDPROOF_NATIVE_EVIDENCE=/private/acceptance/native-evidence
+# 指向证明机上同内容的四份原源码归档；不复制 Rust target。
+export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
+export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
+export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
+export SANDPROOF_LIBRARY_SOURCE_ARCHIVE=/private/acceptance/library-original.tar
+export SANDPROOF_PROTECTED_DIRECTORY_STD_EVIDENCE=/private/acceptance/reviewed-directory-stdlib
 export SANDPROOF_USE_CAPTURE=/private/acceptance/validated-mir-capture
 export SANDPROOF_FORMAL_CACHE=/private/acceptance/formal-cache
 bash scripts/verify-controller.sh
 # 有疑问或需要重新执行时：同批仍对相同公共步骤去重。
 bash scripts/verify-controller.sh --recompute
 ```
+
+有限 TLS 来源与共享字段目录由 `verify-use-inventory.sh` 强制核对各自源码、完整树或原捕获引用及独立冻结清单。两份清单引用已有父清单，因此作为必经准入叶子登记，不把它们或含父摘要的目录 JSON 反写入祖先，避免摘要循环。它们没有新增 Lean 定理，也不把有限目录当成全部生产调用覆盖。
 
 MIR 捕获须通过 `v0_use_inventory.py check-published`；已有捕获仍适用于当前输入时
 不重做十组编译。清单是防漏证据，不能解释成全部调用或异步行为已经证明。
@@ -187,10 +203,18 @@ foundations 检查只执行一次。原脚本的生成物比较、错误版、�
 不能漏掉 `include_str!` 等输入。当前项目没有自有 `build.rs`；以后新增时，须先
 登记其生成输入，入口会拒绝未登记的自有构建脚本，不猜测其外部读取。
 
+原生组件还逐字节收录 `verification/` 根级 JSON 合同/环境配置：检查工具所在源码和候选源码分别登记，新增、删除、改动或非普通文件均不能沿用旧输入。四份 SQLite/Child/Writer/目录判断原源码归档按实际内容摘要收录；两机绝对路径可以不同，内容须相同，缺失、修改或改成符号链接即拒绝。归档内容每次读取，不使用固定工具的元数据摘要捷径。原生整批结束及证明机准入再次核对这些输入，形式模块键同时绑定其封口记录；旧版缺少这些字段的封口不能升级标签后沿用。未来检查器读取新的外部文件或不同配置格式时，先登记它的内容输入，不把本条理解成自动追踪任意文件读取。纯证明文件/根级冻结清单仍由形式闭包检查；未进入该组件规则或合同闭包的 docs/ 覆盖报告变化，不单独使原生组件失效。experiments/ 内的说明和检查规则仍在原生规则闭包中；完整功能入口始终按全部跟踪文件重新准入。
+
 仅复用先前完整成功、输入仍一致、日志和原始抽取/反例证据仍存在且摘要相符的
 模块记录。失败、中断、缺失、损坏和任何输入不符都不能命中；受影响模块重新
 执行。模块列表和本批源代码入场始终检查，新版本不能直接沿用 GitHub 的绿色
 状态。`latest-batch.json` 分别记录本批 `RUN` 和历史 `REUSE`；后者不称“本轮重证”。
+Status schema、原 Store 共享查询和 SQLite 条件 UPDATE 各有独立封口原生 case 与正式模块；新增 case 缺少、未封口或与当前输入不符时，正式入口必须拒绝。Status 与 TLS 的同名生成辅助声明以及 SQLite 的完整生成根保留独立审计环境；Status 值合同可共同导入。有界 Writer 的完整生成根也具有同名 ContractError 辅助声明，公共总根仅导入其纯 Model；实际对应和36项审计仍由全文件构建、独立模块及实际文件服务完整检查，不与 Foundations 生成命名空间合并导入。正例与错误版实际内核审计均进入总清单，不以公共根未导入实现对应为由省略。
+
+有界 Writer 的私有工作目录与源码/target 分离，正式模块仍固定重抽取两版、检查同性质反例和全部实际文件。批次对只读目录凭据先准入，再收录其新增目录的原始 Rust/LLBC/Lean、服务日志与归档摘要；原始证据缺失或变化会使复用失效。
+
+BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 各有独立原生 case、形式模块及冻结清单；完整入口保留全部正确与错误版审计。目录判断的两份生成环境分开，公共根仅导入 Model，实际对应及全部16份物理文件由组件检查；Tokio Mutex 沿用条件模型与原生错误版，不称 async Rust 抽取。三模块转发经真实服务记录核对的原始审计消息，不自行生成成功消息。目录判断还逐字节核对原归档与八份已审查 Std 原文，并在任务结束时再次核对；新增必需原始输入而旧收据没有收录时必须重跑，不能只检查旧收据已经列出的文件。
+
 原生记录只收录本次真正使用且全部外层断言成功的步骤。未封口批次的裸进程
 退出记录不跨批复用；独立组件完成记录可以复用。原生 `uses` 同样区分执行和复用，
 重跑前保留旧裸记录。模块耗时包含复用准入的成本，不把缓存核对写成零耗时。
@@ -199,6 +223,13 @@ foundations 检查只执行一次。原脚本的生成物比较、错误版、�
 它检查文件身份、大小、mtime 和 ctime；刚写入、时间可能落在同一文件系统
 时钟刻度内、时钟倒退或摘要损坏时重新读取内容。该优化限于本轮固定 Linux
 本地文件系统，依赖其正常修改记录；源码、生成物和证明证据不使用这个捷径。
+有界 Writer 的受限嵌套运行还绑定原 bwrap 二进制、外层 wrapper 和宿主目录凭据的实际内容摘要；
+缺少配置不能复用旧成功。凭据由宿主固定三个独立数据盘目录身份，在原命名空间中只读挂载并逐次核对；
+它是操作者执行记录，不是不可信上传方的证明。配置/凭据始终读取内容，不使用工具元数据捷径。
+迁移机器只改变明确登记的私有物理根及执行环境，不改固定工具版本、虚拟抽取路径或生成物。
+新机可用有界 Writer v2 目录凭据登记当前操作者拥有的私有工作根；保留设备/inode、
+目录互不嵌套、固定 bwrap 和只读挂载检查，不用符号链接伪装旧机路径。每次迁移重新
+生成凭据、记录工具/库和 wrapper 的实际摘要；旧机器失败或未完成的验收不能沿用。
 `--recompute` 同时重新读取固定工具内容。不能把未知文件系统上的相同时间戳
 解释成内容相同，也不能将操作者不可信的摘要记录作为证明依据。
 

@@ -1,0 +1,11 @@
+[package]
+name = "sandproof-loop-callbacks-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Validation delegates only; production algorithms remain in controller-core.
+[workspace]
+
+[dependencies]
+sandbox-controller-core = { path = "../../controller-core" }

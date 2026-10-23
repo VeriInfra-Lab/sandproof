@@ -11,6 +11,17 @@ import SandboxModel.Boundaries.Revocation.Audit
 import SandboxModel.Boundaries.OwnedMessage.Audit
 import SandboxModel.Boundaries.Notify.Audit
 import SandboxModel.Boundaries.JoinSet.Audit
+import SandboxModel.Boundaries.StdMutex.Audit
+import SandboxModel.Boundaries.Condvar.Audit
+import SandboxModel.Boundaries.TokioRwLock.Audit
+import SandboxModel.Foundations.LoopCallbacks.Audit
+
+import SandboxModel.Boundaries.ChildObservation.Audit
+import SandboxModel.Foundations.CallbackState.Audit
+
+
+import SandboxModel.Foundations.BtreeSetBinding.Audit
+import SandboxModel.Boundaries.TokioMutex.Audit
 
 /-! Audit actual theorem dependencies, including imported libraries.  Source
 text scanning alone cannot detect an unproved assumption hidden in an import.

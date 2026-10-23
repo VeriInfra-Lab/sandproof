@@ -26,12 +26,106 @@ namespace SandproofStorageRust
 structure core.borrow.Borrow (Self : Type) (Borrowed : Type) where
   borrow : Self → Result Borrowed
 
+/-- [core::io::error::ErrorKind]
+    Source: '/rustc/library/core/src/io/error.rs', lines 770:0-770:18
+    Name pattern: [core::io::error::ErrorKind]
+    Visibility: public -/
+@[discriminant isize, rust_type "core::io::error::ErrorKind"]
+inductive core.io.error.ErrorKind where
+| NotFound : core.io.error.ErrorKind
+| PermissionDenied : core.io.error.ErrorKind
+| ConnectionRefused : core.io.error.ErrorKind
+| ConnectionReset : core.io.error.ErrorKind
+| HostUnreachable : core.io.error.ErrorKind
+| NetworkUnreachable : core.io.error.ErrorKind
+| ConnectionAborted : core.io.error.ErrorKind
+| NotConnected : core.io.error.ErrorKind
+| AddrInUse : core.io.error.ErrorKind
+| AddrNotAvailable : core.io.error.ErrorKind
+| NetworkDown : core.io.error.ErrorKind
+| BrokenPipe : core.io.error.ErrorKind
+| AlreadyExists : core.io.error.ErrorKind
+| WouldBlock : core.io.error.ErrorKind
+| NotADirectory : core.io.error.ErrorKind
+| IsADirectory : core.io.error.ErrorKind
+| DirectoryNotEmpty : core.io.error.ErrorKind
+| ReadOnlyFilesystem : core.io.error.ErrorKind
+| FilesystemLoop : core.io.error.ErrorKind
+| StaleNetworkFileHandle : core.io.error.ErrorKind
+| InvalidInput : core.io.error.ErrorKind
+| InvalidData : core.io.error.ErrorKind
+| TimedOut : core.io.error.ErrorKind
+| WriteZero : core.io.error.ErrorKind
+| StorageFull : core.io.error.ErrorKind
+| NotSeekable : core.io.error.ErrorKind
+| QuotaExceeded : core.io.error.ErrorKind
+| FileTooLarge : core.io.error.ErrorKind
+| ResourceBusy : core.io.error.ErrorKind
+| ExecutableFileBusy : core.io.error.ErrorKind
+| Deadlock : core.io.error.ErrorKind
+| CrossesDevices : core.io.error.ErrorKind
+| TooManyLinks : core.io.error.ErrorKind
+| InvalidFilename : core.io.error.ErrorKind
+| ArgumentListTooLong : core.io.error.ErrorKind
+| Interrupted : core.io.error.ErrorKind
+| Unsupported : core.io.error.ErrorKind
+| UnexpectedEof : core.io.error.ErrorKind
+| OutOfMemory : core.io.error.ErrorKind
+| InProgress : core.io.error.ErrorKind
+| TooManyOpenFiles : core.io.error.ErrorKind
+| InputOutputError : core.io.error.ErrorKind
+| Other : core.io.error.ErrorKind
+| Uncategorized : core.io.error.ErrorKind
+
 /-- [core::marker::PhantomData]
     Source: '/rustc/library/core/src/marker.rs', lines 811:0-811:39
     Name pattern: [core::marker::PhantomData]
     Visibility: public -/
 @[reducible, rust_type "core::marker::PhantomData"]
 def core.marker.PhantomData (T : Type) := Unit
+
+/-- [redis::errors::server_error::ServerErrorKind]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redis-1.7.1/src/errors/server_error.rs', lines 9:0-9:24
+    Name pattern: [redis::errors::server_error::ServerErrorKind]
+    Visibility: public -/
+@[discriminant isize, rust_type "redis::errors::server_error::ServerErrorKind"]
+inductive redis.errors.server_error.ServerErrorKind where
+| ResponseError : redis.errors.server_error.ServerErrorKind
+| ExecAbort : redis.errors.server_error.ServerErrorKind
+| BusyLoading : redis.errors.server_error.ServerErrorKind
+| NoScript : redis.errors.server_error.ServerErrorKind
+| Moved : redis.errors.server_error.ServerErrorKind
+| Ask : redis.errors.server_error.ServerErrorKind
+| TryAgain : redis.errors.server_error.ServerErrorKind
+| ClusterDown : redis.errors.server_error.ServerErrorKind
+| CrossSlot : redis.errors.server_error.ServerErrorKind
+| MasterDown : redis.errors.server_error.ServerErrorKind
+| ReadOnly : redis.errors.server_error.ServerErrorKind
+| NotBusy : redis.errors.server_error.ServerErrorKind
+| NoSub : redis.errors.server_error.ServerErrorKind
+| NoPerm : redis.errors.server_error.ServerErrorKind
+
+/-- [redis::errors::redis_error::ErrorKind]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redis-1.7.1/src/errors/redis_error.rs', lines 13:0-13:18
+    Name pattern: [redis::errors::redis_error::ErrorKind]
+    Visibility: public -/
+@[discriminant isize, rust_type "redis::errors::redis_error::ErrorKind"]
+inductive redis.errors.redis_error.ErrorKind where
+| Parse : redis.errors.redis_error.ErrorKind
+| AuthenticationFailed : redis.errors.redis_error.ErrorKind
+| UnexpectedReturnType : redis.errors.redis_error.ErrorKind
+| InvalidClientConfig : redis.errors.redis_error.ErrorKind
+| Io : redis.errors.redis_error.ErrorKind
+| Client : redis.errors.redis_error.ErrorKind
+| Extension : redis.errors.redis_error.ErrorKind
+| MasterNameNotFoundBySentinel : redis.errors.redis_error.ErrorKind
+| NoValidReplicasFoundBySentinel : redis.errors.redis_error.ErrorKind
+| EmptySentinelList : redis.errors.redis_error.ErrorKind
+| ClusterConnectionNotFound : redis.errors.redis_error.ErrorKind
+| Server :
+  redis.errors.server_error.ServerErrorKind →
+  redis.errors.redis_error.ErrorKind
+| RESP3NotSupported : redis.errors.redis_error.ErrorKind
 
 /-- [sandproof_center_store::StoreError]
     Source: './sandbox-center-store/src/lib.rs', lines 46:0-46:19
@@ -76,8 +170,35 @@ inductive sandproof_protocol.internal.InternalError where
 @[reducible, rust_type "sandproof_protocol::DeploymentId"]
 def sandproof_protocol.DeploymentId := String
 
+/-- [sandproof_storage_extract::store::diagnostics::Phase]
+    Source: 'src/../../../sandbox-center-store/src/store/diagnostics.rs', lines 12:0-18:1 -/
+@[discriminant isize]
+inductive store.diagnostics.Phase where
+| ServerHealth : store.diagnostics.Phase
+| SettingsHealth : store.diagnostics.Phase
+| PersistenceHealth : store.diagnostics.Phase
+| Read : store.diagnostics.Phase
+| Cas : store.diagnostics.Phase
+
+/-- [sandproof_storage_extract::store::diagnostics::Failure]
+    Source: 'src/../../../sandbox-center-store/src/store/diagnostics.rs', lines 20:0-33:1 -/
+@[discriminant isize]
+inductive store.diagnostics.Failure where
+| BudgetExpired : store.diagnostics.Failure
+| MissingConnection : store.diagnostics.Failure
+| ReadTimeoutSetup : store.diagnostics.Failure
+| WriteTimeoutSetup : store.diagnostics.Failure
+| TransportTimeout : store.diagnostics.Failure
+| Transport :
+  core.io.error.ErrorKind →
+  Option Std.I32 →
+  store.diagnostics.Failure
+| Protocol : redis.errors.redis_error.ErrorKind → store.diagnostics.Failure
+| ConfigurationMismatch : store.diagnostics.Failure
+| UnhealthyPersistence : store.diagnostics.Failure
+
 /-- [sandproof_storage_extract::store::storage_io::Cas]
-    Source: 'src/../../../sandbox-center-store/src/store/storage_io.rs', lines 6:0-16:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store/storage_io.rs', lines 24:0-34:1 -/
 structure store.storage_io.Cas where
   script : Str
   key : String
@@ -90,7 +211,7 @@ structure store.storage_io.Cas where
   expected : Slice Std.U8
 
 /-- [sandproof_storage_extract::store::RedisEndpoint]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 18:0-22:1
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 22:0-26:1
     Visibility: public -/
 structure store.RedisEndpoint where
   address : core.net.socket_addr.SocketAddrV4
@@ -98,7 +219,7 @@ structure store.RedisEndpoint where
   password : String
 
 /-- [sandproof_storage_extract::store::StoreConfig]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 50:0-55:1
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 54:0-59:1
     Visibility: public -/
 structure store.StoreConfig where
   deployment : sandproof_protocol.DeploymentId
@@ -107,7 +228,7 @@ structure store.StoreConfig where
   operation_timeout : core.time.Duration
 
 /-- [sandproof_storage_extract::store::Observed]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 92:0-97:1
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 96:0-101:1
     Visibility: public -/
 structure store.Observed (T : Type) where
   deployment : sandproof_protocol.DeploymentId
@@ -116,7 +237,7 @@ structure store.Observed (T : Type) where
   encoded : alloc.vec.Vec Std.U8
 
 /-- [sandproof_storage_extract::store::Committed]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 112:0-112:37
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 116:0-116:37
     Visibility: public -/
 @[reducible]
 def store.Committed (T : Type) := store.Observed T
@@ -129,7 +250,7 @@ structure writer.WriterLease where
   file : std.fs.File
 
 /-- [sandproof_storage_extract::store::RedisLedger]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 132:0-139:1
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 136:0-144:1
     Visibility: public -/
 structure store.RedisLedger (T : Type) where
   endpoint : store.RedisEndpoint
@@ -137,10 +258,11 @@ structure store.RedisLedger (T : Type) where
   _lease : writer.WriterLease
   connection : Option redis.connection.Connection
   write_fenced : Bool
+  diagnostics : store.storage_io.Diagnostics
   _state : core.marker.PhantomData T
 
 /-- [sandproof_storage_extract::store::DecodedWrite]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 382:0-388:1
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 414:0-420:1
     Visibility: public -/
 structure store.DecodedWrite (T : Type) where
   encoded : alloc.vec.Vec Std.U8
@@ -150,7 +272,7 @@ structure store.DecodedWrite (T : Type) where
   state : T
 
 /-- Trait declaration: [sandproof_storage_extract::store::ValueCodec]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 517:0-520:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 581:0-584:1 -/
 structure store.ValueCodec (Self : Type) (T : Type) where
   encode : Self → T → Std.Usize → Result ((core.result.Result
     (alloc.vec.Vec Std.U8) sandproof_center_store.StoreError) × Self)
@@ -158,12 +280,12 @@ structure store.ValueCodec (Self : Type) (T : Type) where
     T sandproof_center_store.StoreError) × Self)
 
 /-- Trait declaration: [sandproof_storage_extract::store::OperationClock]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 532:0-534:1 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 596:0-598:1 -/
 structure store.OperationClock (Self : Type) where
   deadline : Self → core.time.Duration → Result (std.time.Instant × Self)
 
 /-- [sandproof_storage_extract::store::{sandproof_storage_extract::store::RedisLedger<T>}::replace_using::{closure}]
-    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 586:21-586:54 -/
+    Source: 'src/../../../sandbox-center-store/src/store.rs', lines 650:21-650:54 -/
 @[reducible]
 def store.RedisLedger.replace_using.closure (T : Type) (C : Type) := Unit
 

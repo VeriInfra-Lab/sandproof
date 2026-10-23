@@ -1,72 +1,69 @@
 # Sandproof
 
-E2B 核心兼容的沙箱控制系统，采用轻中心、重宿主的目标架构，对声明边界内的安全关键 Rust 实现进行形式化验证。
+**简体中文** · [English](README.en.md)
 
-先完成中心/宿主合同与功能拆分、故障及实机验收，再冻结真实组合提交推进证明。**中心、Redis 协调与宿主组件已有实现和分批实测；公开入口、模板及 CI 正在按 #292 统一迁移，整套候选验收和新增证明不能由这些局部结果代替。** 当前范围以[项目蓝图](docs/project-blueprint.md)为准，任务进度见[总计划 #1](https://github.com/ningZhang-cs/sandproof/issues/1)。
+Sandproof 是一个以 Rust 实现、以 Lean 验证关键控制逻辑的有状态沙箱系统。当前目标是：在管理服务崩溃、请求重试和并发操作下，实现可靠的暂停卸载、同宿主恢复及资源回收。
 
-## 我们要做什么
+## 当前目标
 
-用户经统一中心访问沙箱，中心使用权威 Redis 完成全局鉴权、准入、固定宿主选择和路由；各 Linux/KVM 宿主保留自己的 Rust 控制器、SQLite、Firecracker/jailer 执行和恢复能力，支持多用户、多沙箱。在固定版本、明确功能子集内兼容 E2B 客户端：
+第一阶段聚焦三个相互关联的问题：
 
-- 创建、连接运行中沙箱、查询、寿命续期、到期销毁和主动销毁。
-- 重复命令执行、后台任务、输出，以及运行期间的文件读写与传输。
-- 私有可写系统盘、通用 Dockerfile/OCI 模板、鉴权、资源限额和受控网络。
-- 持久记录、提交后派发、未知结果处理、精确资源身份和重启恢复。
+- **保住最新状态**：暂停时保存同一次冻结期间的全量内存、VM/设备状态和匹配的私有磁盘，再卸载旧 VM；恢复延续原会话状态。
+- **保证唯一执行资格**：恢复为新的运行代，旧执行者、重复请求和迟到回执不能造成重复执行；客户端通过操作键查询原请求结果。
+- **安全回收材料**：卸载后释放运行位置，保留会话及恢复材料的记账；仍被恢复过程或运行 VM 使用的材料不能提前删除。
 
-首次工程交付在一台物理 KVM 主机上运行中心、Redis 和一个真实宿主，经双向认证 HTTPS 通信；多台真机验收另行推进。暂停/恢复、快照、共享卷、自动迁移、中心多活、Redis 自动切换、完整云平台复制和自动部署不在当前交付。当前使用冻结的 Terminal-Bench 2.0 兼容回归；两题预装晋升回归与 2.1 原题 89 题全量待办分别见[验收清单](docs/testing-plan.md#4-通用模板与-terminal-bench)，版本锁与工具入口见[评测说明](benchmarks/README.md)。兼容性与评测不能替代安全证明。
+保留真实中心→宿主网络链路：一个有效中心写者及权威 Redis，一个固定 Linux/KVM 宿主及其 SQLite，支持多用户、多会话。中心负责全局授权、绑定、预留和意图；宿主负责本地控制、持久化、实际执行与精确清理。Redis、SQLite、文件和 VMM 之间没有跨层原子事务。
 
-通用模板链已接通显式部署的自助 Dockerfile/公开 OCI 构建、转换、发布和原 SDK 创建；实际功能与资源验收按对应 issue/PR 的精确提交和配置判断，不把历史成绩当新候选通过。回归与发布前全题集待办见 [#13](https://github.com/ningZhang-cs/sandproof/issues/13)、[#14](https://github.com/ningZhang-cs/sandproof/issues/14) 及[验收清单](docs/testing-plan.md)。模板构建/转换及其自有编排、登记/发布整体以测试验收，不做形式化证明；核心控制流程的外部前提和准确证明范围见[覆盖记录](docs/proof-coverage.md)。
+当前范围以[总计划 #1](https://github.com/VeriInfra-Lab/sandproof/issues/1)和 [stage1 项目蓝图](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md)为准；新的 V0–V9 任务见总计划中的 #632–#641。交付要求包括真实系统、指定 Rust 实现的条件证明，以及可复现的状态连续性、故障和资源实验。
 
-## 现在有什么
+## 目标与现状
 
-| 部分 | 当前状态 |
-|---|---|
-| Rust 控制核心 | 已有纯状态处理实现与单元测试，不包含真实存储、HTTP 服务或 VM 操作 |
-| Lean 规范与对应证明 | 保留公共基础、共享状态与首链的局部对应及数学模型；旧整控制器生成物和专属对应证明已退役，当前实现剩余义务及历史恢复入口见[覆盖记录](docs/proof-coverage.md) |
-| 最终完成性与长期容量 | 仍有未闭合义务，见[证明覆盖记录](docs/proof-coverage.md) |
-| E2B 兼容服务与运行层 | 本地 SDK 管理/数据、网络、恢复、多模板隔离、自助构建及通用题目链已有分批实机证据；支持范围按候选验收，不自动覆盖新增中心/双服务 |
-| 中心/宿主拆分 | 纯中心决策、Redis 权威块、内部协议、两端网关已有组件；交付唯一中心/宿主入口及完整模板、故障、晋升验收由 [#292](https://github.com/ningZhang-cs/sandproof/issues/292) 跟踪 |
-| CI | 普通检查及原两题晋升机制保持；中心/宿主候选必须使用迁移后的双产物、故障组及同一 App 检查，不沿用旧入口成绩；规则见开发指南 |
+既有中心/宿主、冷启动与清理、E2B 核心兼容、模板链、网关和公共证明是后续工作的基础。**新的有状态生命周期正在分批实现与验证，完整 create → unload → 管理进程重启 → resume → destroy 闭环尚不能声明已验收或已证明。** 纯核心中的 Pause/Resume 类型、局部组件测试和历史证明都不能代替真实产品链路的验收。
+
+当前阶段设计维护在 `stage1`，尚未整体进入本分支的文档树。阅读最新范围、合同与验收要求请使用下方 stage1 链接；本分支的代码和[覆盖记录](docs/proof-coverage.md)仅说明各自已集成的基线，后续候选的实际结果见对应 issue/PR。
+
+第一阶段要求同宿主全量快照及先加载为暂停状态，暂停/恢复不重置会话总寿命；新生命周期操作需要客户端首次发送前已知的操作键。旧无键 SDK create 不自动获得安全重试语义，也不承诺旧 TCP/vsock 连接在恢复后连续。
+
+多宿主迁移、fork、增量快照、对象存储、中心高可用、完整来宾协议证明，以及任意 VMM 死亡后的 RAM 恢复均不在本阶段范围。模板构建与镜像转换继续通过工程测试验收；**运行态快照管理、恢复资格和清理决策属于本阶段必须验证的自有业务**。
 
 ## 开发入口
 
-- [总计划与任务](https://github.com/ningZhang-cs/sandproof/issues/1)、[阶段里程碑](https://github.com/ningZhang-cs/sandproof/milestones)
-- [开发指南](CONTRIBUTING.md)：分支、提交、issue、PR、测试和文档维护规则的统一入口
-- [文档目录](docs/README.md)：蓝图、合同、验收清单与模型／证明说明的总分索引
-- [系统架构](docs/ARCHITECTURE.md)：统一入口、组件责任、运行路径、存储与 E2B 对照
-- [形式化验证设计](docs/formal-verification-design.md)：目标性质、状态与故障模型、精化和系统组合
-- [CI 运行记录](https://github.com/ningZhang-cs/sandproof/actions)
+详细文档目前主要为中文；本页提供英文入口，未表示全部文档已有译本。
 
-分工以蓝图为准，开发流程以开发指南为准；不在本页复制规则和实时测试数量。
+- [总计划与任务](https://github.com/VeriInfra-Lab/sandproof/issues/1)、[里程碑](https://github.com/VeriInfra-Lab/sandproof/milestones)
+- [开发指南](CONTRIBUTING.md)：分支、提交、PR、测试和文档维护规则；任务 → integration → test → main
+- [本分支文档目录](docs/README.md)：已集成基线的文档与工具说明
+- [当前阶段蓝图](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md)、[架构](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/ARCHITECTURE.md)、[模块合同](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/module-contracts.md)：最新目标、责任及失败语义
+- [当前验证设计](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/formal-verification-design.md)、[证明覆盖](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/proof-coverage.md)、[验收清单](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/testing-plan.md)：目标性质、适用范围及实机判据
+- [CI 运行记录](https://github.com/VeriInfra-Lab/sandproof/actions)
 
 ## 代码和证明
 
 | 目录 | 用途 |
 |---|---|
-| `controller-core/` | 已有 Rust 纯控制核心 |
-| `SandboxModel/` | Lean 状态机、安全性质、处理函数及 Rust 对应证明 |
-| `verification/` | 固定版本 Charon/Aeneas 抽取结果、工具链说明和定理依赖审计 |
-| `scripts/` | 功能检查、抽取与完整证明验收入口 |
-| `tools/` | 模板构建服务/客户端、共享配置、CI/验收工具与 Lean/研究辅助；产品入口见[架构](docs/ARCHITECTURE.md)，评测入口见[评测说明](benchmarks/README.md) |
-| `docs/` | 蓝图、架构、合同、验收、验证设计与证明覆盖 |
-
-服务、接口和宿主运行模块的职责与目录见[系统架构](docs/ARCHITECTURE.md)。crate 已存在不等于对应工作包已完整验收，不以目录数量计算完成度。
+| `sandbox-center-core/`、`sandbox-center-store/` | 中心纯决策与 Redis 持久协调 |
+| `controller-core/`、`controller-service/` | 宿主本地控制、SQLite 和恢复编排 |
+| `sandbox-node/`、`sandbox-runtime/` | 节点协议接入、真实资源执行与精确清理 |
+| `sandbox-center/`、`sandbox-server/` | 中心与受保护宿主服务的装配入口 |
+| `SandboxModel/` | Lean 模型、性质及指定 Rust 的对应证明 |
+| `verification/` | 固定版本 Charon/Aeneas 抽取、工具链说明和证明依赖审计 |
+| `scripts/`、`tools/` | 功能检查、证明验收、部署与开发辅助工具 |
+| `docs/`、`benchmarks/` | 已集成设计与覆盖记录，以及固定兼容/评测入口 |
 
 ## 本地检查
 
-使用仓库固定的 Rust 工具链执行功能检查：
+先按[开发指南](CONTRIBUTING.md)及 [CI 环境说明](docs/ci.md)准备固定工具链、Python 和校验后的 Redis，并显式设置 `SANDPROOF_REDIS_SERVER`。
 
 ```sh
-bash scripts/check-function.sh
+bash scripts/check-function.sh             # Linux 完整基础检查
+bash scripts/check-function.sh --portable  # macOS 开发检查，不代替 Linux 验收
 ```
 
-证明开发遵循[证明工作流](docs/proof-workflow.md)；完整验收执行：
+证明开发先完整阅读[证明工作流](docs/proof-workflow.md)，使用其指定服务与固定工具链；完整证明验收入口为：
 
 ```sh
 scripts/bootstrap-aeneas.sh  # 首次准备固定版本工具链
 scripts/verify-controller.sh
 ```
 
-Lean 是唯一协议规范来源。Charon/Aeneas 将实际 Rust 转为 Lean 函数，再与规范证明对应，而不是另写一份看起来相似的实现。抽取受固定工具链支持子集及外部模型限制，不能视为任意 Rust 的无条件无损翻译。详见[验证设计](docs/formal-verification-design.md)、[验证工具链](verification/README.zh-CN.md)和[本地状态机说明](docs/state-machine.md)。
-
-验证结论只覆盖声明的代码、输入、故障模型与前提，不自动覆盖新增运行服务。Linux/KVM、Firecracker/jailer、存储引擎及底层文件/网络原语必须列明合同；不声称证明虚拟化逃逸不存在、完整 POSIX/ACL 或恶意宿主安全。
+Lean 是协议规范来源；Charon/Aeneas 将指定真实 Rust 抽取为 Lean 函数，再证明其与规范的对应关系。抽取受固定工具链支持子集和外部合同限制。模型定理、实现对应、原生测试及 Linux/KVM 实测分别报告；已有结论只适用于记录的代码、输入、故障模型和前提，不代表整个系统、虚拟化隔离或底层 OS 已被完整验证。

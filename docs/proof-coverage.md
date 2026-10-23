@@ -2,6 +2,129 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+
+## 三项公共组件的组合范围：#626、#628、#630
+
+本组合只接入已封存的三个组件，不增加新接口、不修改生产 Rust 或固定 Charon/Aeneas。来源分别为 #626 `8fa328e6`、#628 `00c0fb83`、#630 `93c12f51`；各组件已有证据，组合后的完整验收及合入适用性在 [#631](https://github.com/VeriInfra-Lab/sandproof/pull/631) 记录并另行核对。不能以来源 PR 的 CI 或独立组件通过代替组合结果。
+
+| 组件 | 已有证明及实际连接 | 仍依赖或不覆盖 |
+|---|---|---|
+| [BTreeSet 插入](../SandboxModel/Foundations/BtreeSetBinding/Refinement.lean) | 五个真实 Rust 透明委托的原生成体；22项正确/辅助及2项返回值取反错误版目标；新键/重复键、原集合连续回写，原生同性质断言 | 固定普通键/Global/正常分配及实际比较的 A6 条件；不含任意 Ord/allocator/资源键、contains/collect/迭代或完整 validator |
+| [Metadata 目录判断](../SandboxModel/Boundaries/ProtectedDirectory/Refinement.lean) | 原 directory 函数的完整比较/掩码/返回，14项正确/辅助及2项真实错误版目标，原生产/抽取工具与16份实际Lean文件 | A3/B4仅同一已有Metadata的3个getter；路径/FD取得、owner选择、替换竞态和完整受保护读取尚未证明 |
+| [Tokio Mutex](../SandboxModel/Boundaries/TokioMutex.lean) | 21项条件模型目标，七组原操作绑定，真实Session提前释放副本的原生断言 | A6/B2机械异步接线仍可信；非async Rust机器证明。业务写入/授权/取消清理/IO及退出仍归调用者 |
+
+本批全局入口只共同导入可兼容模块；目录判断错误版和正确版保持独立生成环境，全部实际对应和反例进入原形式任务。保留集合登记新增61个唯一审计目标；最终数量及实际执行/复用以同一候选的完整结果核对，登记数量不表示验收通过。G1/G2 尚未发布的新证明、BTreeSet contains 预检和 open_checked 失败试点均未纳入本组合。
+
+## V0 剩余义务的有限范围
+
+当前收敛决定：先完整验收并集成 #626/#628/#630，暂不启动新接口。后续进度与逐项验收只在 [#333](https://github.com/VeriInfra-Lab/sandproof/issues/333) 维护；本节固定剩余义务的证据类别与边界，不以百分比或新增定理数量关单。来源是当前生产编译目录、D1–D11/52个共享字段位置、schema目录及25类/71个OS存储代表位置；这些有限目录仍不是已完成的语义调用图。新增用法须说明原条目为何不足，经单独认领才扩展，不能自动把未来所有Rust用法加入本轮。
+
+| 编号/类别 | 当前尚缺的内容及已有证据 | 完成时必须能说明什么 |
+|---|---|---|
+| P1 公共能力核对：字节到文本 | `file_query::Query::into_text` 的三个可选字节字段和有符号expiration；现有String域不能直接描述非法UTF-8前态 | 先查原工具现有from_utf8接法；若已有则转入连接项。保留合法原字节、非法拒绝、None/空值、原首错和有符号值，不预造新字符串库 |
+| P2 公共能力：剩余容器/借用形状 | 集合contains/collect/迭代、BTreeMap的Entry/get_mut/insert/remove、可变元素定位/反向查找、短路Result遍历；#626仅插入，不等于这些已证 | 以#333列出的实际函数和最小签名为限，给可复用合同或保持顺序/首错/回写的小重构接法；不预建所有标准容器或证明全部业务循环 |
+| P3 公共能力：可观察资源移动 | 订阅列表retain_mut/drain、reaper的swap_remove及队列/字段载荷；已有纯值筛选、持额消息和Child观察不足以覆盖所有删除时机 | 表达原资源所有者、转交/替换/移出和实际Drop效果；不把普通值析构或引用计数观察当成资源已归还 |
+| P4 公共能力：路径到原句柄 | `protected_files::open_checked` 试点Charon已通过，Aeneas仍在循环/借用状态合并失败，无可用Lean输出；#628只证Metadata快照判断 | 给出具体可抽取接法并保留原flags/身份/首错/部分效果，或单独审查准确新增条件；不把路径安全整体改可信，不扩成通用文件系统证明 |
+| C1 已有能力的来源连接 | T0目录尚未把全部保留范围内的实际根/类型/外部API/析构关联到具体接口和业务提供方 | 每个已登记点都有已证公共接口、明确未完成公共项或实际业务任务；来源登记不能写成行为证明，不能删掉未知点造覆盖 |
+| C2 类型连接与组件交付 | 已有身份/算术/完整守卫；G1/G2仅两个本地编号和准确版本记录的独立组件通过，未PR/未共享验收 | 52位置按实际域/单位/原参数/定理与条件对账；其它本地编号不得由两个样例自动覆盖，Lean的u64别名不自动隔离身份角色 |
+| C3 普通JSON形状与输出连接 | LifecycleRequest/Status代表及有界Writer已交付；Probe、身份头、LifecycleResponse/结果确认、WindowClose请求/ack仍需实例连接 | 原字段/derive属性/叶子/切片/限额/错误顺序与值保持；原json_response实际Writer轨迹及200/500选择；不重证serde引擎或信任整段自有decoder |
+| C4 实际回调连接 | 后台分支、Redis codec/clock、SQLite FnOnce及回调状态已有接法 | 原实例、完整参数、次数/顺序、捕获/结果/错误与实际自有函数对应；仅机械调用可信，完整授权/提交/恢复/释放业务留给所属模块 |
+| C5 任务与资源接口实例连接 | 已有任务池、撤销、消息、Notify、JoinSet、标准锁/Condvar/RwLock；Mutex公共模型与七组有限接线已接入本页组合入口 | 原锁/池/信号/守卫/载荷和取消清理逐点对应；正常Drop、panic、abort、崩溃分开；发现确实缺规则时定位P3或明确新增最小项 |
+| C6 存储公共使用条件 | Redis CAS/未知围栏、SQLite提交/缓存与条件UPDATE代表已交付 | 现有有限目录的版本/配置/原连接/参数/结果及部分效果对账；保留可能已提交与原身份恢复条件，不要求V0先证明全部SQL/Lua |
+| C7 TLS/OS/流接口连接 | TLS/relay候选及Child观察已交付，原TLS来源已登记；原生产借用入口和外层复制/转交未获一般对应证明 | 绑定原连接/字节/完整证书快照/pins/摘要/预算及已有A/B条件；普通源码审查与机器对应分开，开始/就绪/停止/清理/排空/释放分别有提供方 |
+
+P项表示公共能力尚未交付或需最小预检确认，C项可能仍需真实实例的小证明，不是只填文档。P2各具体操作及T3/T4余项以#333列明的有限函数族为准，不能用一个普通键接口承诺任意比较器/资源键/迭代形状。上述未完成项不能仅改名“下游”就消除；反过来，下列业务证明也不能全部加入V0前置：
+
+- V1/V2/V4/V5：身份选择/分配、高水位/退休/恢复、全局容量、全部实际SQL/Lua、codec/validator、outbox、耐久确认、派发与生命周期（#334–#338）。
+- V3/V7：认证端点/证书角色、实际请求与回执全文绑定、版本/身份/结果资格、窗口关闭/确认、公开输入授权（#336/#340）。公共JSON表示不授予执行权限。
+- V6：真实路径/进程/VM/网络对象选择、Firecracker/jailer调用政策、围栏/停止/精确清理、整个reaper与释放资格（#339）。P4的共用打开接法仍属V0，完整宿主算法不属V0。
+- V8：自有Guest协议解析与授权、命令Data-before-End、消费者落后/掉线政策、输入/字节传输、撤销和真实排空（#341）；Go/Connect/protobuf兼容解析不能一揽子当Serde可信，也不因此提前证明整个Guest。
+- V9：具体初态、邻接业务不变量、容量、双执行保密及条件最终完成性（#342–#346）。业务启用/出队/预算/无环等待不能写成调度假设。
+
+模板子系统和T9继续按既有范围排除；模板相关目录保留来源及核心侧输入责任，不把模板端点全部变成V0新增前置。#337历史生成物迁移不恢复。V0完成要求公共项有交付、连接项有实际证据或明确的业务实例义务；不要求下游整体完成，也不保证以后的新用法永远无需扩展。
+
+## T2/T3/T4/T8 接口组合已集成：原 Child、回调状态与有界 Writer
+
+来源 PR 为 [#617](https://github.com/VeriInfra-Lab/sandproof/pull/617)（封口 `e50f6b5b`）、[#619](https://github.com/VeriInfra-Lab/sandproof/pull/619)（`28facbba`）和 [#620](https://github.com/VeriInfra-Lab/sandproof/pull/620)（`74e9f53d`）。四个来源已由 [#622](https://github.com/VeriInfra-Lab/sandproof/pull/622) 正常 squash 合入 integration `139f4db6990f67c1ed9cd28c4ce28af707d469f9`，与完整验收候选 `22383847` 同树。ning 原入口 1914.273 秒、52份实际成功记录（58次使用含6次同批去重），a6000 原入口 2339.072 秒、27项全部 RUN；1506个唯一命名审计（含辅助/见证/错误版）与预期一致、27份全局实际文件服务诊断完整非陈旧，当前四项 CI 首次通过。实际合入后完整2138个跟踪文件、配置/工具及原始证据核对一致，ning2.631秒、a6000 29.885秒采用证据复用，没有重新测试、抽取或证明；详细摘要及失败见[最终验收](https://github.com/VeriInfra-Lab/sandproof/pull/622#issuecomment-6304788365)。生产 Rust、Charon/Aeneas 和固定工具版本均未改。
+
+- [ChildObservation](../SandboxModel/Boundaries/ChildObservation.lean)：正常返回下，真实隔离同步核心与具体调用方已由原生成函数证明；成功有原 Child 的完整同一退出观察，未知返回前交出原 Child/Slot。15 项核心、3 项具体调用方和4项同性质错误版审计共22个不同目标；重复视图不重复计数。九个机械 API 仍依 [A2/A3/A6/A8/B4](formal/dependencies.md#a2a3a6a8b4-原-child-的退出观察与未知交接)。生产未采用候选，一般新旧等价、异常后态、整个 reaper 和 V6 生命周期未完成。
+- [CallbackState](../SandboxModel/Foundations/CallbackState.lean)：真实 helper 生成体及有条件的状态/访问/幸存行组合，24 项正例与2/3项实际错误版审计共29个不同目标。原外部状态/参数接线依 A6/B4；toggle 是隔离代表，trace/calls 有原测试来源。不能据此声称所有生产闭包、panic 堆语义或完整 FnMut 机器精化。
+- [OS/存储目录](../verification/experiments/os-boundary-catalogue/README.md)：25类/71位置有限源码与合同审查，沿用原818项/60变体来源记录；未重新捕获 MIR，没有新增程序定理或信任。目录状态是审查基线快照，不能据其 pending_617 历史文字重新打开已交付接口，也不能把 business_obligation 读为已证。
+
+子进程原生驱动在共享接线中加强了同 crate 业务测试程序的 package/manifest/src/fresh 检查，逐变体只重建 sandbox-runtime 包，并在结束时收掉其错误版构建缓存；依赖、原二进制证据和 Lean 缓存保留。加强后的驱动已包含在上述候选的本次完整实际验收中，没有沿用旧驱动结果背书新准入。
+
+[#621 有界 Writer](https://github.com/VeriInfra-Lab/sandproof/pull/621)的来源提交为 `1655c14e`，36 个正确声明和3个同性质实际错误版目标。真实隔离生成体覆盖写入、结束及响应选择；原生产连接仍依 A6/B4 的逐动作原语和精确来源/原生证据。两版已在上述完整入口中通过原抽取、36/3审计和17份专属实际文件检查；namespace适配、完整验收及CI已按同一候选核对，不由宿主或环境探针成功推定。 公共总根复用纯 Model；生成 ContractError 同名声明与 Foundations 分开导入，实际对应及正反例审计未删除，仍进入独立模块、全部文件构建和实际文件诊断。普通值/初始界/正常分配、任意 Serialize 的错误传播以及逻辑字节界与 RAM 的区别见[依赖合同](formal/dependencies.md#a6b4-有界-writer真实写入结束和响应选择)。
+
+本组合已通过完整验收，但不等于 V0 全部完成。T0原生缓存曾遗漏根级合同/配置JSON；该缺口后来由 #629 修复并完整验收。#622 当时52项均实际执行，其历史证据不依赖该缺陷命中。T0 全量连接、其余 JSON/schema、Tokio Mutex、TLS 原借用来源及剩余公共义务继续开放；V1–V9 的真实对象/授权/提交/生命周期/系统组合责任保留，T9 与 #337 历史迁移不作前置。
+
+## T0/T1/T8 来源准入与缓存输入修复：#629 已集成
+
+[#629](https://github.com/VeriInfra-Lab/sandproof/pull/629) 已正常 squash 合入 integration `38dde5c9f00fcbc55b3d516c462a93adfdc8028a`，与验收代码 `6a9f1cba` 的完整文件树一致。ning 完整入口2115.227秒通过，52份记录实际执行、58次使用含6次同批复用；a6000 完整入口2392.938秒通过，27项形式任务全部执行、1506项唯一审计与27份全局实际文件检查通过。最新四项CI及实际合入的2159项源码和原始证据适用性核对通过；后者为只读复用，不称重证。[最终证据](https://github.com/VeriInfra-Lab/sandproof/pull/629#issuecomment-6307535361)保留探索失败和范围。原生记录改为逐字节绑定根级 JSON 合同/环境及候选对应配置，并绑定实际 SQLite/Child/Writer 原源码归档；旧版封口不沿用。根级配置失效缺口的原失败保留；ning 在首个修复提交 `225861bc` 上通过230项定向回归及文档/来源检查（13.613秒），不是整套验收。
+
+来源 [#623](https://github.com/VeriInfra-Lab/sandproof/pull/623) `d4caa358` 的14个原TLS本地体及四入口，以及 [#624](https://github.com/VeriInfra-Lab/sandproof/pull/624) `50690eb4` 的D1–D11/52个共享字段审查位置已纳入候选的必经来源准入和独立冻结叶子。两单原组件/原捕获引用及失败保留；本批只重新连接实际父元数据，不改原15份Rust、39条既有定理引用、TLS原IR或既有模型。#624的375个词法候选不是调用数；其27个已有实现连接、2个条件叶子、23个未预检位置均为原审查快照，后续G1/G2预检不在此冒充已证明。TLS原借用入口仍未机器精化，一般旧新等价未交付；窄A6/A9/A12/B4、原对象/原字节及业务授权/撤销条件保留。本批新增Lean定理为0，不关闭全部T0/T1/T8或V0。
+
+## T5/T6 Tokio RwLock：原读守卫与映射观察
+
+生产 Rust 来源为 integration `e576a8475043c2d21b68231b7f6b1ead09be1952`，两份原源码和固定 Tokio 1.49.0 摘要见[来源登记](../verification/tokio-rwlock-environment.json)。模型首次组件提交为 `924e06a9d2b63d1395cd1edd4189e2d496537d56`；[公共入口](../SandboxModel/Boundaries/TokioRwLock.lean)、[接口条件](formal/dependencies.md#a6b2-tokio-rwlock保留原读守卫的共享观察)和[复现说明](../verification/experiments/tokio-rwlock/README.md)分别提供复用入口、保证与检查方式。生产 Rust、Charon/Aeneas、依赖与固定工具均未改。
+
+42 条条件模型声明已通过 a6000 原服务的组合检查，以及五个实际文件的构建、内核依赖审计和完整非陈旧诊断。Core 提供读写排斥、领取/释放/遗忘及调用者写关系下的不变量保持；Mapping 保留同一个原读持有，失败 Err 仍拥有原守卫；Examples 给出非空多读者历史及同一 `ProtectedRead` 对提前解锁的拒绝。实际 A6/B2 事件、独立 Rust 所有权与整个守卫寿命仍是显式连接条件，不是完整 async Rust 实现证明。
+
+原型的 ning 回归包括原会话与六项 API 夹具共 17 项、严格 Clippy 和实际 `Session::authorize` 的提前释放错误副本。错误版先成功编译业务库及测试二进制，再由正确版原轮换等待断言拒绝，不能称 Rust 形式反例。一次补测检出试验脚本复用上一错误版 rlib 的缓存问题，原失败和库/二进制保留；可复现入口逐变体重建本自有包，同时检查业务库、测试二进制与源副本绑定，并在结束时移除错误版包缓存。其它依赖与 Lean 缓存保留。后续正式入口另运行原文件授权的两个确定性回归；本段不以尚未运行的检查充当通过。
+
+载荷保持只用于原锁继续存活的范围：最后一个 owned Arc 析构可能接着销毁锁与载荷。取消只投影对这次读写权的影响，不把 semaphore 内部预留视为已返回守卫，也不假定整个运行时不变。没有 FIFO、最大读者数、最终调度或硬返回时限定理。
+
+固定 Charon 的原 `Session::authorize` 预检在 coroutine 和 `MetadataSource` GAT 处失败，带错误 LLBC 和原诊断保留。七组有限机械绑定不把三项令牌/签名、默认值/替换业务决定列可信；V8/V9 继续提供业务校验、旧快照使用、守卫寿命、内部进展和最终析构条件。T0 全量连接、其它锁和 T1–T8 剩余公共义务保持开放，T9 排除，#337 不作为前置。
+
+本节记录上述已完成组件的精确范围；本批最终候选、完整双机验收、当前 CI、正式 PR/合入及实际合入适用性由 [#333](https://github.com/VeriInfra-Lab/sandproof/issues/333) 对应回执绑定。局部构建/审计不代替整套验收，不据此认领 V0 或部署系统完成。
+
+
+## T5/T6 Condvar：原守卫等待与重新持锁
+
+本批在 integration `646fc2c8569083cf4f03554f9acb2ca67bf22e6e`（#615）上开发，代码与正式接线冻结于 `75044cd8b68edbd5ef267364e25d598aadb31cfb`。生产 Rust、Charon/Aeneas、Cargo 依赖和固定工具配置未改。[公共入口](../SandboxModel/Boundaries/Condvar.lean)导出原守卫核心和有限等待协议；[实验说明](../verification/experiments/condvar/README.md)、[依赖合同](formal/dependencies.md#a6b2-condvar等待时释放返回前重新持有原锁)与[七组实际来源](../verification/condvar-environment.json)分别给出复现、适用条件和业务提供方。
+
+46 项条件审计目标由 Core 20 项、Protocol 22 项及 Examples 4 项组成：等待暂停旧逻辑持锁权限而非执行守卫 Drop；正常返回或中毒错误均重新持有原 Mutex，保留被传入的守卫值及最初的 panic 标记；超时错误保留完整元组。协议要求匹配的活跃等待已可返回且原锁空闲，裸 `resume` 只是值构造器。其它线程的写入必须由调用者证明保持业务不变量。合法有限历史同时表明虚假唤醒不建立队列谓词、通知不缓存许可、超时观察不保证已重新取得锁或在硬时限内返回。范围限一次活跃等待，不包含多等待者、notify_all、公平性或一般异常清理。
+
+ning 的原完整原生入口退出 0（1361.049 秒），129 项前置回归通过；48 份完整成功记录、54 次使用中 6 次同批复用。13 阶段 Linux 功能检查实际执行 574.367 秒；新增 Condvar case 包含四项原锁/守卫/中毒/展开用例、原 Reaper 回归、fmt、严格 Clippy 和新编译的错误锁夹具。原生封口 SHA256 为 `afb3317921d88949d11132236f2d179b4ac0b026ab6be3315ef7fd919102fdb0`；完整证据包 SHA256 为 `70181777e43c9e0fb78717eddbadb2e2b9f60f8f1f029934d0a5699196014e07`，a6000 用原校验器核对了全部回执和日志。
+
+a6000 的原完整 `verify-controller.sh` 退出 0（入口 1480.961 秒，批次 1479.124 秒），23 项任务全部实际执行；内部同批公共生成去重不冒充模块跨批复用。1374 项预期唯一命名声明与实际审计完全一致，无缺项或额外项；该数字包含辅助、见证及错误版声明，不是业务定理数量。最终保留集合入口完成全局登记的 19 份实际物理文件诊断，全部完整、非陈旧；既有独立模块的实际诊断及正负检查同样保留。原始完整结果 SHA256 为 `8d9f98ccff20fbfd4072b184d670b013e06403ea497fddafb42c7302831af2cd`，批次回执 SHA256 为 `e1ca5d3859c816af278a615c9ecdbf71a8694c020369fd10add930308d28fdab`。全部新增证明临时和证据实际位于 `/data1/zn`，普通测试与 CI 没有搬到证明机。
+
+固定原 Charon 对未修改的 `Reaper::run/reap_ready` 得到透明体；固定 Aeneas 在原 run 循环借用合并处报告 `InterpReduceCollapse.ml:1137`，预检原文与 LLBC 保留。整个回收循环、实际队列/退出/Slot 释放没有机器精化，也没有被整体列为可信。条件模型中“不重新持锁就返回”被正确版同一 Safe 性质反驳；原生错误锁只修改 API 夹具，两者均不称真实 Rust 的形式反例。七组源码绑定和原生对照支持 A6/B2 符合性的采用，不构成标准库或适配的一般精化证明。
+
+旧 ca804a1c 轮次的权限拒绝、功能子任务完成后受控取消及 CLI 漏登记均保留，不算完整原生通过；75044cd8 同时修正 require-condvar 接线并检查所有正式入口的字面 case。一次性形式调度脚本的语法错误在启动前修正，原文件保留；正式入口、断言、审计和固定工具未放宽。四个 Condvar 实际文件进入全局诊断，24 份冻结清单保留全部原成员。
+
+本批交付单消费者代表的公共条件接口及有限实际接线。V6 仍须证明原 Child/Slot、单一等待消费者、容量、全部业务写入、队列判断、中毒策略、真实退出和释放依据；通知或等待结束不替代这些证据。T0 全量连接、其它锁/消息接口及 T1–T8 剩余公共义务继续开放，T9 排除，#337 历史迁移不作为前置。最终报告提交、当前 CI、正式合入及实际合入适用性以本批 PR 和 #333 精确回执为准。
+
+
+## 三窗口公共接线：Status、共享查询与 SQLite UPDATE
+
+本批在 integration `2165f57f` 上保留 #609（`5b176a31`）、#611（`fb13711e`）、#613（`8320e736`）原封口提交的来源；共享接线与验收代码冻结于 `4302cc59ed70e2d664bf1359dd71ccc43a271a82`，统一交付见 [PR #615](https://github.com/VeriInfra-Lab/sandproof/pull/615)。生产 Rust、Charon/Aeneas 和工具版本未改。下面记录该精确候选已完成的验收；最终报告提交、当前 CI、正式合入及实际合入适用性由该 PR 和 #333 绑定，不能沿用上一批 1216 项审计背书新增模块。
+
+- [Status 模块](../SandboxModel/Boundaries/SchemaDomains.lean)：22 项真实同步守卫对应和 24 项条件字节声明；两个实际错误版先编译抽取，再由同合同反驳。标准引擎/派生/原对象接线仍依 A6/B4；服务器有界 Writer 另见本页独立接口候选与验收范围，普通 Vec 响应编码只为参考。
+- [共享查询模块](../SandboxModel/Foundations/LoopCallbacks.lean)：21 项原 Store::get/contains_key 及四个真实委托的对应；两种实际错误版分别由同一 QueryContract/MembershipContract 反驳。普通值共享借用、lawful 比较和单射投影条件保留；有状态回调和全部调用者业务不由本模块证明，源码邻域不等于完整调用图。
+- [SQLite 模块](../SandboxModel/Boundaries/SqliteStatements/Model.lean)：隔离候选条件 UPDATE/修订计算的 38 项正例与 7 项错误版审计；固定五参数执行联合合同包含 raw_bind 失败和 step/reset 原次序，不把编码成功当绑定成功。保持独立完整生成视图，公共根只导入纯行模型；一般候选等价、完整事务/恢复和生产部署未闭合。
+
+[依赖保证](formal/dependencies.md)列明具体 A4/A6/B4、普通值/Drop、失败与下游提供方；[真实使用登记](../verification/use-inventory/responsibilities.json)将本批来源/模块/条件挂到原编译器清单，仍不是完整语义调用图。原生产 Rust/Cargo 来源未变，原准入实际核对 818 项来源、60 个编译变体和 27 项已观察自定义 Drop 责任后采用原始 MIR 捕获，没有重复采集；新增验证根均经原工具实际重建与生成物核对，不能用清单代替证明。
+
+ning 的完整原生入口在 `4302cc59` 退出 0（763.863 秒）：47 份完整成功记录、53 次使用中 52 次复用；包含原 13 阶段 Linux 基础检查，其当前全部跟踪输入对应的功能门槛本轮实际执行。118 项定向准入回归通过（7.131 秒）。未变化的 Rust/组件/原生错误版记录按原完整输入和原始日志摘要复用，不称本轮重新测试；三项新增 case 均已进入正式入口。原生封口摘要为 `dbc528bbe6a2d61cd17123768f77430e9e754a523e310e9e87370228d92e4532`。
+
+a6000 的原完整 `verify-controller.sh` 退出 0（入口 924.178 秒，批次 922.204 秒）：22 项任务中 19 项本轮执行，3 个新增模块复用同一候选刚完成且输入一致的独立组件记录；其独立原入口先分别执行 234.282、182.854 和 157.890 秒。全部保留 Lean 文件、实际重抽取/比较、原正负例、占位检查和依赖审计保留；1328 项预期唯一命名声明与实际审计完全一致，无缺项或额外项，其中包括 SQLite 的 7 项错误版声明，不是 1328 条业务定理。15 份实际物理文件的原服务诊断完整、非陈旧、无错误/警告；三个新增 Audit 分别实际返回 46、21、38 项。原始完整机器回执摘要为 `4fdb2dcfd54b167754dcfdc4f3514ff9007d7701a46bdecc2f34d68705f914cc`。所有新增证明临时/构建/证据实际位于 `/data1/zn`，普通测试与 CI 没有移到证明机。
+
+Status/TLS 的生成辅助声明同名，Status 公共根采用纯值词汇，原 Rust 对应和全部审计在独立环境保留；SQLite 完整生成根也保持独立。这不是删去目标或宣称所有生成根可共同导入。原服务仅在完整准入后转交实际审计消息，总清单不依赖 Lake 是否重建导入文件；缺项及额外项均拒绝。23 份冻结清单保留全部原成员并纳入新的实际输入，不以删清单解决失配。
+
+`4302cc59` 的[当前四项 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/39447973596)首次执行全部通过，未重试；#611 旧 SDK CI 失败 39404264085 仍未解释，新候选成功不等于旧故障根因修复。早期接线失败（独立 Lake 视图未继承完整父配置、回归漏导入、根导入位于模块文档后、生成声明冲突）及一次操作取消分别保留；只修正实际接线，不降低准入/错误断言、删去旧目标、手改生成 Lean 或清理 `.lake`。最终报告只补本节及其原冻结摘要，受影响门槛仍须在最终提交复核。
+
+本批完成的是三个代表接口和当前保留证明集合的组合验收，不是整个生产外壳、任意 async Rust 或部署系统的证明。原 opt-in/特权忽略项不计为已执行。T0 全量连接、有界 Writer、其它锁/通知/OS 接口及 T1–T8 剩余公共义务继续开放，T9 排除，#337 历史迁移不作为前置。
+
+## T5/T6 标准 Mutex：原守卫与真实唯一借用
+
+本批从 integration `489f1ed5` 开始，集成来源更新到 `b973b40b`（含 #604 诊断、#610 Redis 重确认与 #612 测试失败诊断）；三份代表生产源码未改变，生产 Rust 和 Charon/Aeneas 均未修改。正式范围见[依赖合同](formal/dependencies.md#a6b2-标准-mutex原守卫中毒与唯一借用)和[十三组来源/责任登记](../verification/std-mutex-environment.json)。[公共模块](../SandboxModel/Boundaries/StdMutex.lean)包含 35 条条件守卫声明、7 条真实 get_mut/借用声明及 4 条连接声明，共 46 个正式审计目标。
+
+原守卫模型区分忙碌与持有原守卫的中毒错误、恢复不回滚/清除、正常 Drop 不析构原 payload、取得时已 unwind 的建议性中毒、遗忘守卫仍锁住及独立的唯一借用条件。原 SerialMutex::get_mut 保留透明 Rust 函数体，由固定原工具生成 Types/Funs 并证明原调用、正常/中毒分支和回写保持；库模型仍依 A6。实际吞错版先编译抽取，再由同一 GetMutContract 的否定定理反驳；专用 into_inner 绑定只准入实际 PoisonError<&mut T> 调用。
+
+ning 隔离试验已通过十一项原源码正确用例、严格 Clippy 和两份新编译的同断言错误版：延后 SerialGuard 解锁、吞掉 get_mut 中毒错误。a6000 已通过独立模块构建和原服务实际 Audit 文件的完整、非陈旧 46 项审计；早期启动命名错误及结果解包错误的原始记录保留，后者经严格核对原服务的嵌套成功结果，不称重新执行。正式可复现入口、最新候选的完整双机验收/CI 与最终合入适用性，以 #333 本批 PR 的精确回执为准；这些局部结果不能替代完整验收。
+
+共享锁实际接线仍依 A6/B2。原 Meter::lock 和 PTY descriptor 的预检分别受非可结束共享借用、动态 I/O 错误类型限制；其测试不是机器证明。业务中毒策略、Snapshot/FD/许可真实所有者、授权、资源归还和无死锁/进展仍由所属业务提供。Condvar 的窄接口见本页独立记录；Tokio Mutex/RwLock、其他通道及 T0 全量使用点仍归 V0；T0/T5/T6/V0 保持开放，T9 排除。
+
 ## T5/T6 JoinSet：原任务组收齐
 
 来源为 integration `886f2dd6`，生产 Rust 与固定 Charon/Aeneas 未改。[两个条件模型](../SandboxModel/Boundaries/JoinSet.lean)以 36 条声明为审计目标，覆盖组历史守恒、已完成未取出仍计数、原任务/正常值/完整原错误表示与至多一次交付、取消等待和 abort/Drop 的区别、逐 spawn 检查的容量与正常收齐。合法非空执行、提前 Drop 和只 abort 的同性质反例一并保留；[依赖合同](formal/dependencies.md#a6b2b3-joinset收齐原任务与返回值)和[十五组操作/责任登记](../verification/joinset-environment.json)限定范围。
@@ -16,7 +139,7 @@
 
 隔离 Lean 候选已在 a6000 原服务检查通过；ning 的 9 个确定性原生用例及严格 Clippy 已通过，其中原 `PtyMaster::close/read/write_all` 的广播错误版新编译后，被正确版同一即时 poll 断言拒绝。原 Record 类型/原 reserve 许可的测试只核对通知不直接归还原许可，不执行或证明 `publish/run` 的业务决定。原 Charon 预检在实际 `PtyMaster::read` 报告 coroutine 不支持；失败原文及部分 LLBC 保留，不作为语义反例，也不交给 Aeneas 当成功产物。
 
-正式组合提交、模块构建、实际文件诊断、完整双机验收与 CI 的完成结果，以 #333 对应 PR 的精确回执为准，未完成阶段不由隔离成功代替。当前结论是条件模型及原源码工程证据，未形成 async Rust 机器精化；T0/T5/T6/V0 仍开放。关闭/退休资格、真实终态、字节/部分 I/O、保留期限、旧记录删除与原资源归还归 V8/V6。标准库 Condvar 的公共合同仍是 V0 缺口，JoinSet 和其他锁/任务接口未随本批完成。
+正式组合提交、模块构建、实际文件诊断、完整双机验收与 CI 的完成结果，以 #333 对应 PR 的精确回执为准，未完成阶段不由隔离成功代替。当前结论是条件模型及原源码工程证据，未形成 async Rust 机器精化；T0/T5/T6/V0 仍开放。关闭/退休资格、真实终态、字节/部分 I/O、保留期限、旧记录删除与原资源归还归 V8/V6。标准库 Condvar 另见本页独立记录；JoinSet 和其他锁/任务接口不由本 Notify 批次完成。
 
 ## T5/T6 Guest 持额消息
 
@@ -42,7 +165,11 @@ Data-before-End、授权、消费者掉线策略、全部字节副本/引用的�
 
 ## Redis 提交结果：隔离候选与完整验收（#564）
 
-[冻结候选](../verification/experiments/redis-result/candidate.json)以生产基线 `824abe2b6285774ef8983fbe02db3a6509c9b5fb` 加固定补丁构建，生产文件未改。[生成核心](../verification/aeneas/storage/SandproofStorage/Funs.lean)来自固定原 Charon/Aeneas。公开 commit/reaffirm 的四个薄转调另经完整 Charon AST 核对参数、结果、关联常量、codec/clock 字典和 unwind 路径；该机械准入不等于具体 Serde 回调图已由 Lean 闭合。[依赖明细](formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)区分外部 A6/A8/A11、获批 B4 与仍由调用者提供的自有条件。
+[冻结候选](../verification/experiments/redis-result/candidate.json)更新到生产基线 `f60e81f81629b23a512da52e6511b5f46699535f`，保留 #604 新增诊断；生产 Rust 和原 Charon/Aeneas 未改。隔离候选中的日志仅经已获批的窄输出接口调用，健康判断、返回码、配置与围栏仍由原工具抽取。接口模型保留写失败、抑制、panic 和不返回；不能据正常后态保证异常后围栏、物理日志写入或进展。精确合同见[依赖明细](formal/dependencies.md#a11b4-redis-提交结果接口的具体范围)。
+
+审计入口保留原 131 项，另登记日志效果 13 项、错误助手 2 项和原业务字段保持 1 项，共 147 项；正常健康回写仅额外允许零资源日志端点的逻辑历史变化，原五项非连接字段仍不变。新生成物、完整 AST/Drop、来源回归、实际错误版及两个完整入口的最终适用提交与回执以 #333 和本次 PR 验收记录为准；这里不将局部抽取或旧组合结果当成当前完整通过。具体 codec/schema、Lua、一般旧新等价和部署闭合仍未因此完成。
+
+以下保留旧 `824abe2b` 候选在 `dfaf79a7` 上的历史结论与原始证据；它们不背书 #604 后的新组合。
 
 正式库包含[结果与写围栏](../verification/aeneas/storage/SandproofStorage/Results.lean)、[健康检查回写范围](../verification/aeneas/storage/SandproofStorage/Health.lean)、[泛型调用链的未知围栏](../verification/aeneas/storage/SandproofStorage/Caller.lean)及[原完整载荷和新修订来源](../verification/aeneas/storage/SandproofStorage/Success.lean)，共 40 项核心与辅助声明；[具体见证](../verification/aeneas/storage/SandproofStorage/Examples.lean)另有 91 项见证及辅助声明。中央 Audit 逐项审计全部 131 项，只依赖标准逻辑。成功性质显式要求同一 codec 状态链的往返，正常错误范围由自有 codec 提供，未把这些业务义务移入外部边界。示例 codec 会拒绝超容量和非法字节，并证明自己的条件；完整成功见证经过实际生成的写前健康、修订推进、CAS、写后健康和 Committed 构造，不实例化生产 JsonCodec/schema、物理租约或部署条件。
 

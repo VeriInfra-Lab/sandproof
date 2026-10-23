@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "base_commit": "139f4db6990f67c1ed9cd28c4ce28af707d469f9",
+  "previous_preflight_report": "799d49e51dee9b2fdd9cd2434366ae6ba0788dfc",
+  "source_archive_sha256": "4ef9f178a2039ad8effd3fc97414d5b464d940fce7e6514a0d8f8e39ef14d687",
+  "source_root": "sandbox-internal/src/protected_files.rs::directory",
+  "target": "x86_64-unknown-linux-gnu",
+  "features": [],
+  "compile_mode": [
+    "lib",
+    "not(test)"
+  ],
+  "variants": [
+    "correct",
+    "bypass-writes"
+  ],
+  "A3_getters": [
+    "MetadataExt for Metadata::uid",
+    "MetadataExt for Metadata::mode",
+    "Metadata::is_dir"
+  ],
+  "new_trusted_conditions": false,
+  "base_inputs": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "sandbox-internal/Cargo.toml": "c82e0cceeaa52433d4cf20947f2f5cd4fa1bcf169e9df90a5a683a005c927e1b",
+    "sandbox-internal/src/lib.rs": "d681f6005233368b5f306dc6eed4a75686f992ce6e4ff658cca465349b8b5e28",
+    "sandbox-internal/src/protected_files.rs": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
+    "verification/first-chain-linux-environment.json": "f0e7463b5c953afa3064cf14d6515026e2e90657f29a68433889e15cbd961496",
+    "tools/check_first_chain_extraction.py": "e9b8d4798c8eafb1e5bb43b51e5f26517c61d975fef04401ab5abe487d026252",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+    "tools/check_foundations_extraction.py": "30e4591ee7d227b0204f37df13e570602b594fa589a578abefab5943c7ab9e1f",
+    "verification/experiments/schema-domains/replay.py": "fd95a78d7f5aee89b0b03e9e5052c1e177ee49941896a1e5d00ccfba0f1b5160",
+    "verification/experiments/bounded-writer/audit_messages.py": "b976dc0a5632bbf67000786ff61facc6a40c91e805c3a35382300099909a35fa"
+  },
+  "scope_excludes": [
+    "other three protected-file roots",
+    "full filesystem/path/FD safety",
+    "panic/unwind cleanup",
+    "async/cancellation",
+    "whole T8/V0"
+  ],
+  "audits": {
+    "correct": 14,
+    "bypass-writes": 2,
+    "total": 16
+  },
+  "formal_files": 16,
+  "generated_files_unmodified": true,
+  "elaboration": "two named namespace-scoped priority-1 Classical.propDecidable instances; no global instance; original source_exact and the same-property counterexample audited with existing standard logical dependencies"
+}
