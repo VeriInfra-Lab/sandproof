@@ -146,6 +146,10 @@ fn admission() -> InternalAdmission {
 fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
     let a = admission();
     AcceptedLifecycleIntent {
+        retention: sandproof_protocol::lifecycle::RetentionBinding {
+            slot: if session == "session-b" { 2 } else { 1 },
+            window: 1.try_into().unwrap(),
+        },
         center: config().center,
         accepted_version: 1,
         request: LifecycleRequest {
@@ -182,7 +186,7 @@ fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
     }
 }
 fn open(path: &std::path::Path) -> ControllerJournal {
-    let maintenance = super::super::tests_support::fixture::maintenance();
+    let maintenance = super::super::tests_support::lifecycle_application::maintenance();
     ControllerJournal::open_complete(
         path,
         NS,
@@ -244,7 +248,7 @@ fn export_closed_fixture(path: &std::path::Path) {
     // Every connection has closed. Never export a live database without WAL.
     assert!(!path.with_file_name("db-wal").exists());
     std::fs::copy(path, output.join("db")).unwrap();
-    let maintenance = super::super::tests_support::fixture::maintenance();
+    let maintenance = super::super::tests_support::lifecycle_application::maintenance();
     std::fs::write(
         output.join("maintenance.json"),
         serde_json::to_vec(&maintenance).unwrap(),
@@ -501,7 +505,7 @@ fn v3_missing_required_table_or_relabelled_feature_refuses_reopen() {
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection.execute_batch(corruption).unwrap();
         drop(connection);
-        let maintenance = super::super::tests_support::fixture::maintenance();
+        let maintenance = super::super::tests_support::lifecycle_application::maintenance();
         assert!(
             ControllerJournal::preflight_complete(
                 &path,

@@ -49,8 +49,8 @@ pub use controller::{
     InternalCreateResult, InternalInboxConfig, InternalLocalBinding, InternalNativeAudit,
     InternalRetentionLane, InternalTemplate, InternalWorkState, LifecycleAudit,
     LifecycleAuditOperation, LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
-    LifecycleReadyObservation, LifecycleWorkState, Lifetime, MaintenanceConfig,
-    NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
+    LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState, Lifetime,
+    MaintenanceConfig, NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
 };
 
 #[cfg(feature = "durable")]

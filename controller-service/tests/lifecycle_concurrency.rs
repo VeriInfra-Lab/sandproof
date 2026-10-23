@@ -43,6 +43,7 @@ fn physical_release_does_not_hold_management_lock_or_publish_cleaned_early() {
     let first = lifecycle::request();
     let mut second = first.clone();
     second.request.binding.session = "session-b".try_into().unwrap();
+    second.retention.slot = 2;
     second.request.binding.key.owner = "account-beta".try_into().unwrap();
     for request in [&first, &second] {
         app.record_lifecycle_intent(request, &lifecycle::context())
@@ -159,6 +160,7 @@ fn blocked_original_prepare_does_not_block_second_session_ready_or_destroy_accep
     let first = lifecycle::request();
     let mut second = first.clone();
     second.request.binding.session = "session-b".try_into().unwrap();
+    second.retention.slot = 2;
     second.request.binding.key.owner = "account-beta".try_into().unwrap();
     for request in [&first, &second] {
         app.record_lifecycle_intent(request, &lifecycle::context())

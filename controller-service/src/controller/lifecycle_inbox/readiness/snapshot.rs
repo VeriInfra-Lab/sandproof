@@ -162,6 +162,41 @@ pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>
     Ok(found.into_iter().unzip())
 }
 
+fn native_snapshot(
+    tx: &Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    local: InternalLocalBinding,
+    record: &core::SandboxRecord,
+) -> Result<NativeCreateSnapshot, JournalError> {
+    if record.owner != local.owner {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(NativeCreateSnapshot {
+        owner: record.owner,
+        phase: record.phase,
+        terminal: record.terminal,
+        epoch: record.epoch,
+        generation: record.generation,
+        current_vm: record.current_vm,
+        current_operation: record.current_operation,
+        lifetime: admission::read_lifetime(tx, namespace, local.sandbox, local.owner)
+            .map_err(|_| JournalError::CorruptStore)?,
+        uncertain_actions: world
+            .effect_ids()
+            .iter()
+            .filter(|effect| {
+                effect.command().sandbox() == local.sandbox
+                    && matches!(
+                        world.effect_status(effect),
+                        Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
+                    )
+            })
+            .cloned()
+            .collect(),
+    })
+}
+
 pub(in crate::controller) fn base_snapshot(
     tx: &Transaction<'_>,
     namespace: &str,
@@ -189,37 +224,7 @@ pub(in crate::controller) fn base_snapshot(
                 .sandbox_record(local.sandbox)
                 .map(|record| (local, record))
         })
-        .map(|(local, record)| {
-            if record.owner != local.owner {
-                return Err(JournalError::CorruptStore);
-            }
-            Ok(NativeCreateSnapshot {
-                owner: record.owner,
-                phase: record.phase,
-                terminal: record.terminal,
-                epoch: record.epoch,
-                generation: record.generation,
-                current_vm: record.current_vm,
-                current_operation: record.current_operation,
-                lifetime: admission::read_lifetime(tx, namespace, local.sandbox, local.owner)
-                    .map_err(|_| JournalError::CorruptStore)?,
-                uncertain_actions: world
-                    .effect_ids()
-                    .iter()
-                    .filter(|effect| {
-                        effect.command().sandbox() == local.sandbox
-                            && matches!(
-                                world.effect_status(effect),
-                                Some(
-                                    core::EffectStatus::Dispatched
-                                        | core::EffectStatus::OutcomeUnknown
-                                )
-                            )
-                    })
-                    .cloned()
-                    .collect(),
-            })
-        })
+        .map(|(local, record)| native_snapshot(tx, namespace, world, local, record))
         .transpose()?;
     let historical_result = local
         .and_then(|local| {
