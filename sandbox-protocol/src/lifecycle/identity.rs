@@ -70,7 +70,7 @@ counter_role!(RequestSequence);
 counter_role!(RetentionWindowId);
 
 /// Center-selected finite history position and its non-reused use generation.
-/// This is neither a client's request window nor a native execution HostSlot.
+/// This is neither a client's request window nor a native execution `HostSlot`.
 /// It is fixed for every intent/result of one session by the original allocator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
