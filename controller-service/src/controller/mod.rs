@@ -30,7 +30,8 @@ pub use internal_inbox::{
     InternalTemplate, InternalWorkState,
 };
 pub use lifecycle_inbox::{
-    CreateReadiness, CreateReadinessPending, LifecycleCreateObservation, LifecycleInboxConfig,
+    CreateReadiness, CreateReadinessPending, LifecycleAudit, LifecycleAuditOperation,
+    LifecycleCreateObservation, LifecycleInboxConfig,
     LifecycleReadyBasis, LifecycleReadyObservation, LifecycleWorkState, NativeCreateSnapshot,
     SourceWork, SourceWorkRecord,
 };

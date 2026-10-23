@@ -50,9 +50,9 @@ pub use controller::{
     CreateReadinessPending, HostReleaseWitness, InternalAdmission, InternalAudit,
     InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
     InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState,
-    LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
-    LifecycleReadyObservation, LifecycleWorkState, Lifetime, MaintenanceConfig,
-    NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
+    LifecycleAudit, LifecycleAuditOperation, LifecycleCreateObservation, LifecycleInboxConfig,
+    LifecycleReadyBasis, LifecycleReadyObservation, LifecycleWorkState, Lifetime,
+    MaintenanceConfig, NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
 };
 
 #[cfg(feature = "durable")]

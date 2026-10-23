@@ -18,7 +18,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
         cache: &PhysicalTemplateCache,
     ) -> Result<(), ApplicationError> {
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        inner.journal.internal_pending(node).map_err(map_journal)?;
+        inner
+            .journal
+            .lifecycle_pending_creates(node)
+            .map_err(map_journal)?;
         let bounded = inner
             .journal
             .bounded_host_config()
@@ -55,7 +58,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let slots =
             inner
                 .journal
-                .internal_available_instances(node)
+                .lifecycle_available_instances(node)
                 .map_err(|error| match error {
                     JournalError::Conflict => ApplicationError::Invalid,
                     other => map_journal(other),
@@ -108,7 +111,26 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .lock()
             .map_err(|_| JournalError::ControllerBusy)?
             .journal
-            .internal_pending(node)
+            .lifecycle_pending_creates(node)
             .map(|_| ())
+    }
+
+    /// Check the complete protected current configuration without initializing
+    /// or repairing the journal, observing hardware or granting execution.
+    /// # Errors
+    /// Missing, mismatched, fenced or corrupt authority refuses.
+    pub fn check_lifecycle_authority(
+        &self,
+        expected: &crate::LifecycleInboxConfig,
+    ) -> Result<(), JournalError> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?;
+        inner.journal.world()?;
+        if inner.journal.lifecycle_inbox_configuration()?.as_ref() != Some(expected) {
+            return Err(JournalError::UnsupportedStore);
+        }
+        Ok(())
     }
 }

@@ -35,7 +35,7 @@ impl LifecycleInboxConfig {
                 + 8192)
             + 8192
     }
-    pub(super) fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         self.center.deployment == self.node.deployment_id
             && self
                 .host_epoch
