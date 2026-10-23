@@ -25,10 +25,29 @@ impl CurrentReadyFacts {
     /// update. Actual application of the current Renew is a separate journal
     /// provider obligation; merely satisfying these values cannot prove it.
     #[must_use]
-    pub fn matches_renewed(&self, original: &AcceptedLifecycleIntent, current: &AcceptedLifecycleIntent) -> bool {
-        let LifecycleOperation::Create { create, target_incarnation } = &original.request.operation else { return false; };
-        let LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } = &current.request.operation else { return false; };
-        let Ok(end) = u64::try_from(*end_at_ms) else { return false; };
+    pub fn matches_renewed(
+        &self,
+        original: &AcceptedLifecycleIntent,
+        current: &AcceptedLifecycleIntent,
+    ) -> bool {
+        let LifecycleOperation::Create {
+            create,
+            target_incarnation,
+        } = &original.request.operation
+        else {
+            return false;
+        };
+        let LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms,
+            extend_only,
+        } = &current.request.operation
+        else {
+            return false;
+        };
+        let Ok(end) = u64::try_from(*end_at_ms) else {
+            return false;
+        };
         *incarnation == *target_incarnation
             && self.startup_deadline_ms == create.startup_deadline_ms
             && self.started_at_ms <= self.startup_deadline_ms
@@ -36,7 +55,11 @@ impl CurrentReadyFacts {
             && self.started_at_ms <= self.observed_at_ms
             && self.observed_at_ms < self.end_at_ms
             && self.end_at_ms <= self.max_end_at_ms
-            && if *extend_only { self.end_at_ms >= end } else { self.end_at_ms == end }
+            && if *extend_only {
+                self.end_at_ms >= end
+            } else {
+                self.end_at_ms == end
+            }
     }
     /// Shape and original-lifetime checks, not proof of physical observation.
     #[must_use]
@@ -63,8 +86,12 @@ pub enum CurrentCreateReadiness {
     Pending,
     /// Bound to this observation's full original request. The same durable
     /// refusal remains queryable while its current Destroy is being settled.
-    Refused { reason: CreateRefusalReason },
-    Observed { facts: CurrentReadyFacts },
+    Refused {
+        reason: CreateRefusalReason,
+    },
+    Observed {
+        facts: CurrentReadyFacts,
+    },
 }
 
 /// Historical success and current readiness are independent. False historical
@@ -86,14 +113,21 @@ impl CreateObservation {
         let current = &self.current_request.request.binding;
         if self.request != *original
             || original.center.deployment != requested.node.deployment_id
-            || !matches!(original.request.operation, LifecycleOperation::Create { .. })
+            || !matches!(
+                original.request.operation,
+                LifecycleOperation::Create { .. }
+            )
             || self.current_request.center != original.center
             || self.current_request.retention != original.retention
             || current.node != requested.node
             || current.session != requested.session
             || current.key.owner != requested.key.owner
             || current.key.deployment != requested.key.deployment
-            || self.current_request.request.validate(&requested.node).is_err()
+            || self
+                .current_request
+                .request
+                .validate(&requested.node)
+                .is_err()
             || self.current_request.accepted_version < original.accepted_version
             || original.accepted_version == 0
         {
@@ -109,23 +143,36 @@ impl CreateObservation {
                 return false;
             }
             return self.current_request == *original
-                || (matches!(self.current_request.request.operation, LifecycleOperation::Destroy {})
-                    && self.current_request.accepted_version > original.accepted_version
+                || (matches!(
+                    self.current_request.request.operation,
+                    LifecycleOperation::Destroy {}
+                ) && self.current_request.accepted_version > original.accepted_version
                     && self.current_request.accepted_version_for_request()
                         == Some(self.current_request.accepted_version)
                     && current.key != requested.key);
         }
         if self.current_request != *original {
-            if matches!(self.current_request.request.operation, LifecycleOperation::Renew { .. }) {
+            if matches!(
+                self.current_request.request.operation,
+                LifecycleOperation::Renew { .. }
+            ) {
                 if self.current_request.accepted_version <= original.accepted_version
-                    || self.current_request.accepted_version_for_request() != Some(self.current_request.accepted_version)
-                { return false; }
+                    || self.current_request.accepted_version_for_request()
+                        != Some(self.current_request.accepted_version)
+                {
+                    return false;
+                }
                 return match &self.readiness {
-                    CurrentCreateReadiness::Observed { facts } => self.historical_create_succeeded
-                        && facts.matches_renewed(original, &self.current_request),
-                    CurrentCreateReadiness::NotRunning | CurrentCreateReadiness::Expired
+                    CurrentCreateReadiness::Observed { facts } => {
+                        self.historical_create_succeeded
+                            && facts.matches_renewed(original, &self.current_request)
+                    }
+                    CurrentCreateReadiness::NotRunning
+                    | CurrentCreateReadiness::Expired
                     | CurrentCreateReadiness::Pending => true,
-                    CurrentCreateReadiness::NotCurrent | CurrentCreateReadiness::Refused { .. } => false,
+                    CurrentCreateReadiness::NotCurrent | CurrentCreateReadiness::Refused { .. } => {
+                        false
+                    }
                 };
             }
             return self.current_request.accepted_version > original.accepted_version

@@ -85,6 +85,11 @@ impl BootPlan {
         }
     }
 
+    pub(super) fn digest(&self) -> Result<[u8; 32], RuntimeError> {
+        use sha2::{Digest, Sha256};
+        Ok(Sha256::digest(serde_json::to_vec(self)?).into())
+    }
+
     /// Sends the same ordered requests the original launch used. A failed PUT
     /// never advances to later configuration, credentials or `InstanceStart`.
     pub(super) fn configure(

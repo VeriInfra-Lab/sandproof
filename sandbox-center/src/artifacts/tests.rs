@@ -12,7 +12,7 @@ mod engine;
 #[path = "../../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 use sandproof_center_core::{
-    Bounds, CenterState, NodeMode, NodeRegistration, NodeRole, TenantBudget,
+    Bounds, CenterState, LifecycleWindow, NodeMode, NodeRegistration, NodeRole, TenantBudget,
 };
 use sandproof_center_service::RegisteredHost;
 use sandproof_center_service::business::{MetadataBudget, RegistryMetadata, TemplateRegistration};
@@ -175,6 +175,7 @@ fn authority_with_nodes(
             max_sandboxes: 2,
             operations_per_sandbox: 4,
             max_options_bytes: 4096,
+            result_retention_ms: 100,
             platform: resources(),
         },
         nodes
@@ -195,6 +196,10 @@ fn authority_with_nodes(
             tenant: "1".try_into().unwrap(),
             limit: resources(),
         }],
+        sandproof_protocol::lifecycle::CenterIdentity {
+            deployment: engine::deployment(), center: "center".try_into().unwrap(),
+        },
+        vec![LifecycleWindow { owner: "1".try_into().unwrap(), window: 9.try_into().unwrap() }],
     )
     .unwrap();
     let envelope = BusinessEnvelope { center, metadata };
@@ -466,8 +471,9 @@ impl ValidationReceiver for VerifiedCache {
     async fn validation_evidence(
         &self,
         request: ValidationRequest,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<ValidationEvidence, ReceiveError> {
-        RejectLifecycle.validation_evidence(request).await
+        RejectLifecycle.validation_evidence(request, context).await
     }
 }
 impl StatusReceiver for VerifiedCache {

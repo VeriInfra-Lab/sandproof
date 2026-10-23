@@ -146,9 +146,10 @@ impl Sandbox {
     }
     #[must_use]
     pub fn created_at_ms(&self) -> Option<u64> {
-        self.operations
-            .first()
-            .map(|operation| operation.accepted_at_ms)
+        match self.operations.first() {
+            Some(operation) => operation.acceptance_time.sampled_at_ms(),
+            None => None,
+        }
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

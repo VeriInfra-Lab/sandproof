@@ -180,6 +180,13 @@ fn sealed_registry_hash_is_reused_but_restart_and_mutation_force_revalidation() 
     directory.close().unwrap();
 }
 
+struct ResumeOnDrop(std::sync::mpsc::Sender<()>);
+impl Drop for ResumeOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
+
 #[test]
 #[ignore = "requires root and SANDPROOF_ARTIFACT_TEST_PARENT; real file I/O, no VM"]
 fn slow_artifact_hash_does_not_hold_shared_cache_or_block_another_artifact() {
@@ -199,12 +206,6 @@ fn slow_artifact_hash_does_not_hold_shared_cache_or_block_another_artifact() {
     let node = worker(directory.path());
     let (entered, waiting) = mpsc::channel();
     let (release, resume) = mpsc::channel();
-    struct ResumeOnDrop(mpsc::Sender<()>);
-    impl Drop for ResumeOnDrop {
-        fn drop(&mut self) {
-            let _ = self.0.send(());
-        }
-    }
     std::thread::scope(|scope| {
         let release = ResumeOnDrop(release);
         let node = &node;

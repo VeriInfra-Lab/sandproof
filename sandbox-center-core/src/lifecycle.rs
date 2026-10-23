@@ -2,9 +2,9 @@
 //! One Sandbox row owns one bounded operation history; no shadow lifecycle table.
 use crate::{CenterState, DecisionError, NodeRole, Sandbox, TenantBudget};
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CreateRefusalReason, CurrentReadyFacts, ExpectedSession,
-    IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
-    RequestWindowId, SessionId, TerminalLifecycleObservation,
+    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CreateRefusalReason, CurrentReadyFacts,
+    ExpectedSession, IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding,
+    OperationKey, RequestWindowId, SessionId, TerminalLifecycleObservation,
 };
 use sandproof_protocol::{SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
@@ -79,12 +79,30 @@ pub struct LifecycleOperationRecord {
     pub(crate) intent: AcceptedLifecycleIntent,
     /// Original global allocation frontier, independent of a caller's key sequence.
     pub(crate) allocation_number: u64,
-    pub(crate) accepted_at_ms: u64,
+    pub(crate) acceptance_time: AcceptanceTime,
     pub(crate) running: Option<CurrentReadyFacts>,
     /// Exact original Create refusal; later Destroy never erases its cause.
     pub(crate) create_refusal: Option<CreateRefusalReason>,
     pub(crate) terminal: Option<RetainedTerminalResult>,
 }
+/// Timed requests preserve their actual sample for deadline reconstruction.
+/// Termination is clock-independent and explicitly makes no new time claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AcceptanceTime {
+    Sampled { at_ms: u64 },
+    Unsampled,
+}
+impl AcceptanceTime {
+    #[must_use]
+    pub const fn sampled_at_ms(self) -> Option<u64> {
+        match self {
+            Self::Sampled { at_ms } => Some(at_ms),
+            Self::Unsampled => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RetainedTerminalResult {
@@ -109,6 +127,10 @@ impl LifecycleOperationRecord {
     #[must_use]
     pub const fn create_refusal(&self) -> Option<CreateRefusalReason> {
         self.create_refusal
+    }
+    #[must_use]
+    pub const fn acceptance_time(&self) -> AcceptanceTime {
+        self.acceptance_time
     }
     #[must_use]
     pub fn terminal(&self) -> Option<&TerminalLifecycleObservation> {
@@ -161,7 +183,9 @@ impl Sandbox {
             return SessionPhase::Creating;
         };
         match &operation.intent.request.operation {
-            LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. } if operation.running.is_some() => {
+            LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. }
+                if operation.running.is_some() =>
+            {
                 SessionPhase::Running
             }
             LifecycleOperation::Create { .. } => SessionPhase::Creating,
@@ -191,14 +215,22 @@ impl Sandbox {
             })
     }
     pub(crate) fn retention_deadline(&self, now_ms: u64, retention_ms: u64) -> Option<u64> {
-        if self
-            .operations
-            .iter()
-            .any(|operation| operation.accepted_at_ms > now_ms)
-        {
+        if !self.acceptance_times_not_after(now_ms) {
             return None;
         }
         now_ms.checked_add(retention_ms)
+    }
+    pub(crate) fn acceptance_times_not_after(&self, now_ms: u64) -> bool {
+        let mut valid = true;
+        let mut index = 0;
+        while valid && index < self.operations.len() {
+            valid = match self.operations[index].acceptance_time {
+                AcceptanceTime::Sampled { at_ms } => at_ms <= now_ms,
+                AcceptanceTime::Unsampled => true,
+            };
+            index += 1;
+        }
+        valid
     }
     #[must_use]
     pub fn termination_due(&self, now_ms: u64) -> bool {
@@ -459,6 +491,8 @@ impl CenterState {
     }
     /// # Errors
     /// All refusals are pure. Allocation and intent are saved in the SAME authority CAS.
+    /// `now_ms` supplies Create/Unload/Renew samples. Destroy deliberately
+    /// ignores it and records Unsampled, so termination needs no working clock.
     pub fn accept_lifecycle(
         &self,
         owner: &TenantId,
@@ -579,7 +613,7 @@ impl CenterState {
                 submission: submission.clone(),
                 intent: intent.clone(),
                 allocation_number: allocation.operation_number,
-                accepted_at_ms: now_ms,
+                acceptance_time: AcceptanceTime::Sampled { at_ms: now_ms },
                 running: None,
                 create_refusal: None,
                 terminal: None,
@@ -677,7 +711,7 @@ impl CenterState {
                 submission: submission.clone(),
                 intent: intent.clone(),
                 allocation_number: number,
-                accepted_at_ms: now_ms,
+                acceptance_time: if destroy { AcceptanceTime::Unsampled } else { AcceptanceTime::Sampled { at_ms: now_ms } },
                 running: None,
                 create_refusal: None,
                 terminal: None,

@@ -52,7 +52,7 @@ impl PausedOriginalVm {
 }
 
 // A live original identity without implying that it is paused.
-struct OriginalVmSource {
+pub(super) struct OriginalVmSource {
     resource_id: String,
     identity: RuntimeProcessIdentity,
     root: File,
@@ -180,7 +180,7 @@ impl Runtime {
         Ok(PausedOriginalVm { original })
     }
 
-    fn open_original_source(
+    pub(super) fn open_original_source(
         &self,
         id: &str,
         expected: &RuntimeProcessIdentity,
@@ -237,7 +237,7 @@ impl Runtime {
         self.verify_original_source(&paused.original, require_paused)
     }
 
-    fn verify_original_source(
+    pub(super) fn verify_original_source(
         &self,
         source: &OriginalVmSource,
         require_paused: bool,

@@ -191,7 +191,8 @@ fn write_owned_payload(
     let metadata = parent.metadata()?;
     let mut components = Path::new(leaf).components();
     if bytes.is_empty()
-        || bytes.len() > Kind::Payload.maximum() as usize
+        || u64::try_from(bytes.len()).map_err(|_| error("bootstrap payload length"))?
+            > Kind::Payload.maximum()
         || !metadata.is_dir()
         || metadata.uid() != owner
         || metadata.mode() & 0o022 != 0
@@ -235,6 +236,11 @@ pub(super) struct ToolIdentity {
     mode: u32,
     group: u32,
     sha256: [u8; 32],
+}
+impl ToolIdentity {
+    pub(super) fn digest(&self) -> [u8; 32] {
+        self.sha256
+    }
 }
 pub(super) fn tool(path: &Path) -> Result<ToolIdentity> {
     sandbox_runtime::check_trusted_path(path)?;

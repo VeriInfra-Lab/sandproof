@@ -10,6 +10,7 @@ pub(crate) enum Command {
     ObserveCenter(PathBuf),
     Relay,
     ContractVersions,
+    CaptureWorker(String),
 }
 
 pub(crate) fn parse(
@@ -20,6 +21,14 @@ pub(crate) fn parse(
     let result = match command.to_str() {
         Some("relay") => Command::Relay,
         Some("contract-versions") => Command::ContractVersions,
+        Some("capture-worker") => {
+            let digest = arguments.next().ok_or("capture job digest missing")?;
+            let digest = digest.into_string().map_err(|_| "capture job digest is not ASCII")?;
+            if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+                return Err("capture job digest must contain 64 lowercase hex digits");
+            }
+            Command::CaptureWorker(digest)
+        }
         Some("initialize" | "provision-bootstrap" | "serve" | "audit" | "observe-center") => {
             if arguments.next().as_deref() != Some(std::ffi::OsStr::new("--config")) {
                 return Err("host command requires --config /absolute/protected/config.json");
@@ -71,6 +80,21 @@ mod tests {
             &["serve", "--config", "/private/config", "extra"][..],
         ] {
             assert!(parse(arguments(values)).is_err());
+        }
+    }
+
+    #[test]
+    fn capture_worker_accepts_one_exact_digest_and_no_product_configuration() {
+        let digest = "a1".repeat(32);
+        assert_eq!(parse(arguments(&["capture-worker", &digest])), Ok(Command::CaptureWorker(digest)));
+        for values in [
+            vec!["capture-worker"], vec!["capture-worker", "1234"],
+            vec!["capture-worker", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"],
+            vec!["capture-worker", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaag"],
+            vec!["capture-worker", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "extra"],
+            vec!["capture-worker", "--config", "/private/config"],
+        ] {
+            assert!(parse(arguments(&values)).is_err());
         }
     }
 }

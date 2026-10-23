@@ -143,13 +143,21 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             time_left(deadline)?;
             self.reconcile_lifecycle_intent(intent, deadline)?;
             let state = self.snapshot()?;
-            let record = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
+            let record = state
+                .lifecycle_session(
+                    &intent.request.binding.key.owner,
+                    &intent.request.binding.session,
+                )
                 .ok_or(PortError::OutcomeUnknown)?;
             if let Some(destroy) = refused_create_destroy(record, intent)? {
                 self.wait_current_terminal_before(&destroy, deadline)?;
                 return Err(PortError::QuotaExceeded);
             }
-            let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent();
+            let current = record
+                .operations()
+                .last()
+                .ok_or(PortError::OutcomeUnknown)?
+                .intent();
             if current != intent || record.phase() == SessionPhase::Terminating {
                 return Err(PortError::OutcomeUnknown);
             }
@@ -226,7 +234,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         self.wait_current_terminal_before(intent, deadline)
     }
 
-    fn wait_current_terminal_before(&self, intent: &AcceptedLifecycleIntent, deadline: Instant) -> Result<(), PortError> {
+    fn wait_current_terminal_before(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        deadline: Instant,
+    ) -> Result<(), PortError> {
         loop {
             time_left(deadline)?;
             self.reconcile_lifecycle_intent(intent, deadline)?;
@@ -447,11 +459,20 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 | CurrentObservationError::Deadline,
             ) => return Ok(false),
         };
-        if matches!(observation.readiness, CurrentCreateReadiness::Refused { .. }) {
-            return match self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
-                .accept_lifecycle_create_refusal(&observation, self.now()?) {
+        if matches!(
+            observation.readiness,
+            CurrentCreateReadiness::Refused { .. }
+        ) {
+            return match self
+                .authority
+                .lock()
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .accept_lifecycle_create_refusal(&observation)
+            {
                 Ok(_) => Ok(true),
-                Err(AuthorityError::Decision(DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound)) => Ok(false),
+                Err(AuthorityError::Decision(
+                    DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
+                )) => Ok(false),
                 Err(error) => Err(authority_error(error)),
             };
         }
@@ -481,16 +502,26 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
 
 /// Read the cause only from its same immutable original operation. A later
 /// Destroy is cleanup responsibility, never a replacement creation or refund.
-fn refused_create_destroy(record: &Sandbox, original: &AcceptedLifecycleIntent)
-    -> Result<Option<AcceptedLifecycleIntent>, PortError>
-{
-    let first = record.operations().first().ok_or(PortError::OutcomeUnknown)?;
-    if first.intent() != original { return Ok(None); }
+fn refused_create_destroy(
+    record: &Sandbox,
+    original: &AcceptedLifecycleIntent,
+) -> Result<Option<AcceptedLifecycleIntent>, PortError> {
+    let first = record
+        .operations()
+        .first()
+        .ok_or(PortError::OutcomeUnknown)?;
+    if first.intent() != original {
+        return Ok(None);
+    }
     match first.create_refusal() {
         Some(sandproof_protocol::lifecycle::CreateRefusalReason::Capacity) => {}
         None => return Ok(None),
     }
-    let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent();
+    let current = record
+        .operations()
+        .last()
+        .ok_or(PortError::OutcomeUnknown)?
+        .intent();
     if !matches!(current.request.operation, LifecycleOperation::Destroy {}) {
         return Err(PortError::OutcomeUnknown);
     }

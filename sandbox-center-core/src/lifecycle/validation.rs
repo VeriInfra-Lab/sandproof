@@ -130,13 +130,22 @@ impl CenterState {
             || session.operations.len() > usize::from(self.bounds.operations_per_sandbox)
             || (!session.terminating()
                 && session.operations.len() >= usize::from(self.bounds.operations_per_sandbox))
-            || lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(origin.retention.window.get())
+            || lane
+                .current()
+                .map(sandproof_protocol::internal::PositiveCounter::get)
+                != Some(origin.retention.window.get())
             || !self.tenant_is_registered(&b.key.owner)
             || !self.nodes.iter().any(|node| node.identity == b.node)
             || (first.create_refusal.is_some()
                 && (session.operations.len() != 2
-                    || !matches!(last.intent.request.operation, LifecycleOperation::Destroy {})
-                    || session.operations.iter().any(|operation| operation.running.is_some())))
+                    || !matches!(
+                        last.intent.request.operation,
+                        LifecycleOperation::Destroy {}
+                    )
+                    || session
+                        .operations
+                        .iter()
+                        .any(|operation| operation.running.is_some())))
             || session
                 .terminal_confirmation
                 .as_ref()
@@ -178,18 +187,13 @@ impl CenterState {
                         || match retained.retention_started_at_ms {
                             Some(started) => {
                                 started < retained.recorded_at_ms
-                                    || session
-                                        .operations
-                                        .iter()
-                                        .any(|operation| operation.accepted_at_ms > started)
+                                    || !session.acceptance_times_not_after(started)
                                     || started.checked_add(self.bounds.result_retention_ms)
                                         != retained.retain_until_ms
                             }
                             None => {
                                 retained.retain_until_ms.is_some()
-                                    || !session.operations.iter().any(|operation| {
-                                        operation.accepted_at_ms > retained.recorded_at_ms
-                                    })
+                                    || session.acceptance_times_not_after(retained.recorded_at_ms)
                             }
                         }
                 })
@@ -226,6 +230,17 @@ impl CenterState {
         if request.binding.expected != ExpectedSession::Version(previous.intent.accepted_version) {
             return false;
         }
+        Self::valid_lifecycle_followup(op, origin, previous, position + 1 == session.operations.len())
+    }
+
+    fn valid_lifecycle_followup(
+        op: &LifecycleOperationRecord,
+        origin: &LifecycleOperationRecord,
+        previous: &LifecycleOperationRecord,
+        is_last: bool,
+    ) -> bool {
+        let intent = &op.intent;
+        let request = &intent.request;
         match (&op.submission, &request.operation) {
             (
                 LifecycleSubmission::Renew {
@@ -244,6 +259,7 @@ impl CenterState {
                 let Some(prior) = previous.running.as_ref() else {
                     return false;
                 };
+                let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else { return false; };
                 let Ok(end) = u64::try_from(*end_at_ms) else {
                     return false;
                 };
@@ -258,12 +274,12 @@ impl CenterState {
                     && incarnation.get() == 1
                     && *timeout_secs > 0
                     && super::normalized_renewal_end(
-                        op.accepted_at_ms,
+                        accepted_at_ms,
                         *timeout_secs,
                         prior.max_end_at_ms,
                     ) == end
-                    && prior.end_at_ms > op.accepted_at_ms
-                    && prior.max_end_at_ms > op.accepted_at_ms
+                    && prior.end_at_ms > accepted_at_ms
+                    && prior.max_end_at_ms > accepted_at_ms
                     && op.terminal.is_none()
                     && op.running.as_ref().is_none_or(|facts| {
                         facts.matches_renewed(&origin.intent, intent)
@@ -289,6 +305,7 @@ impl CenterState {
                     && previous.running.is_some()
                     && source_incarnation.get() == 1
                     && capture.get() == 1
+                    && op.acceptance_time.sampled_at_ms().is_some()
                     && op.running.is_none()
                     && op.terminal.is_none()
             }
@@ -300,7 +317,8 @@ impl CenterState {
                 },
                 LifecycleOperation::Destroy {},
             ) => {
-                position + 1 == session.operations.len()
+                let super::AcceptanceTime::Unsampled = op.acceptance_time else { return false; };
+                is_last
                     && *expected_version == previous.intent.accepted_version
                     && named == &request.binding.session
                     && !matches!(
@@ -314,13 +332,21 @@ impl CenterState {
     }
 
     /// The same initial-record branch, kept separate from follow-up checks.
-    fn valid_lifecycle_create_record(&self, op: &LifecycleOperationRecord, position: usize) -> bool {
+    fn valid_lifecycle_create_record(
+        &self,
+        op: &LifecycleOperationRecord,
+        position: usize,
+    ) -> bool {
         let intent = &op.intent;
         let request = &intent.request;
+        let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else { return false; };
         match (&op.submission, &request.operation) {
             (
                 LifecycleSubmission::Create { parameters, .. },
-                LifecycleOperation::Create { create, target_incarnation },
+                LifecycleOperation::Create {
+                    create,
+                    target_incarnation,
+                },
             ) => {
                 position == 0
                     && request.binding.expected == ExpectedSession::Absent
@@ -332,12 +358,15 @@ impl CenterState {
                     && parameters.resources == create.resources
                     && parameters.options == create.options
                     && parameters.startup_timeout_ms > 0
-                    && op.accepted_at_ms.checked_add(parameters.startup_timeout_ms)
+                    && accepted_at_ms.checked_add(parameters.startup_timeout_ms)
                         == Some(create.startup_deadline_ms)
                     && parameters.timeout_ms == create.timeout_ms
                     && parameters.max_lifetime_ms == create.max_lifetime_ms
                     && op.terminal.is_none()
-                    && op.running.as_ref().is_none_or(|facts| facts.matches_create(intent))
+                    && op
+                        .running
+                        .as_ref()
+                        .is_none_or(|facts| facts.matches_create(intent))
             }
             _ => false,
         }

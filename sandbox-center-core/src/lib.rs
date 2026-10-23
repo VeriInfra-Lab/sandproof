@@ -9,7 +9,7 @@ mod model;
 mod validation;
 mod window;
 pub use lifecycle::{
-    CreateParameters, LIFECYCLE_PROFILE_VERSION, LifecycleOperationRecord, LifecycleProfile,
+    AcceptanceTime, CreateParameters, LIFECYCLE_PROFILE_VERSION, LifecycleOperationRecord, LifecycleProfile,
     LifecycleSubmission, LifecycleWindow, SessionPhase, next_lifecycle_version,
 };
 pub use model::*;

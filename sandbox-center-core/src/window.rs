@@ -75,7 +75,11 @@ impl CenterState {
         let mut valid = true;
         while valid && index < self.retention_lanes.len() {
             let lane = &self.retention_lanes[index];
-            if let Some(node_index) = self.nodes.iter().position(|node| node.identity == lane.node) {
+            if let Some(node_index) = self
+                .nodes
+                .iter()
+                .position(|node| node.identity == lane.node)
+            {
                 let node = &self.nodes[node_index];
                 valid = lane.retention_slot != 0
                     && lane.retention_slot <= node.retention_slots
@@ -107,7 +111,9 @@ impl CenterState {
                 {
                     count += 1;
                     valid = count <= 1
-                        && lane.current().map(sandproof_protocol::internal::PositiveCounter::get)
+                        && lane
+                            .current()
+                            .map(sandproof_protocol::internal::PositiveCounter::get)
                             == Some(first.intent().retention.window.get())
                         && lane.phase != LanePhase::Exhausted
                         && (lane.phase != LanePhase::ClosePending || terminal(record).is_some());
@@ -183,7 +189,10 @@ impl CenterState {
         }
         let lane_index = self.lane_index(&b.node, result.request.retention.slot)?;
         let lane = &self.retention_lanes[lane_index];
-        if lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(result.request.retention.window.get())
+        if lane
+            .current()
+            .map(sandproof_protocol::internal::PositiveCounter::get)
+            != Some(result.request.retention.window.get())
             || lane.phase == LanePhase::Exhausted
         {
             return Err(DecisionError::Stale);
@@ -242,7 +251,10 @@ impl CenterState {
                 Err(DecisionError::Stale)
             };
         }
-        if lane.current().map(sandproof_protocol::internal::PositiveCounter::get) != Some(retention.window.get())
+        if lane
+            .current()
+            .map(sandproof_protocol::internal::PositiveCounter::get)
+            != Some(retention.window.get())
             || lane.phase != LanePhase::ClosePending
         {
             return Err(DecisionError::Conflict);

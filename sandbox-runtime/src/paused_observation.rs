@@ -119,7 +119,7 @@ fn source_exited(
         Err(error) if error == rustix::io::Errno::SRCH => return Ok(true),
         Err(error) => return Err(errno_to_io(error).into()),
     };
-    if known_exit(&pidfd, read_proc(expected.pid)?, expected)? {
+    if known_exit(&pidfd, read_proc(expected.pid)?.as_ref(), expected)? {
         return Ok(true);
     }
     if verified_process(&record)?.is_none() {
@@ -135,10 +135,10 @@ fn source_exited(
 
 fn known_exit(
     pidfd: &std::os::fd::OwnedFd,
-    status: Option<super::super::ProcStatus>,
+    status: Option<&super::super::ProcStatus>,
     expected: &RuntimeProcessIdentity,
 ) -> Result<bool, RuntimeError> {
-    if let Some(ref status) = status
+    if let Some(status) = status
         && status.start_time_ticks != expected.start_time_ticks
     {
         return Err(mismatch("pause observation PID was reused"));

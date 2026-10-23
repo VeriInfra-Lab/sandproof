@@ -1,6 +1,6 @@
-//! Fixed Firecracker 1.16.1 GET projection, checked against the actual BootPlan.
+//! Fixed Firecracker 1.16.1 GET projection, checked against the actual `BootPlan`.
 //! This is a visible configuration check, not a CPU or resource certificate.
-//! VmmConfig::from omits custom CPU/logger/metrics state even when configured;
+//! `VmmConfig::from` omits custom CPU/logger/metrics state even when configured;
 //! their null fields cannot prove absence. The original protected launch path
 //! and exclusive API writer condition remain necessary.
 use super::BootPlan;
@@ -11,8 +11,8 @@ use serde::Deserialize;
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct FullConfiguration {
     balloon: (),
-    drives: Vec<Drive>,
-    boot_source: Boot,
+    drives: Vec<BlockDevice>,
+    boot_source: BootSource,
     cpu_config: (),
     logger: (),
     machine_config: Machine,
@@ -38,7 +38,7 @@ struct Machine {
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Boot {
+struct BootSource {
     kernel_image_path: String,
     initrd_path: (),
     boot_args: String,
@@ -46,7 +46,7 @@ struct Boot {
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Drive {
+struct BlockDevice {
     drive_id: String,
     partuuid: (),
     is_root_device: bool,
@@ -92,7 +92,7 @@ impl BootPlan {
         let actual: FullConfiguration = serde_json::from_slice(bytes)?;
         let expected = FullConfiguration {
             balloon: (),
-            drives: vec![Drive {
+            drives: vec![BlockDevice {
                 drive_id: self.root_drive.drive_id.clone(),
                 partuuid: (),
                 is_root_device: self.root_drive.is_root_device,
@@ -103,7 +103,7 @@ impl BootPlan {
                 io_engine: "Sync".into(),
                 socket: (),
             }],
-            boot_source: Boot {
+            boot_source: BootSource {
                 kernel_image_path: self.boot.kernel_image_path.clone(),
                 initrd_path: (),
                 boot_args: self.boot.boot_args.clone(),

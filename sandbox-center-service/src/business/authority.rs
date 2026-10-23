@@ -514,10 +514,13 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
 }
 impl AuthorityPort for SharedBusinessAuthority {
     fn accept_lifecycle_create_refusal(
-        &mut self, observation: &sandproof_protocol::lifecycle::CreateObservation, now_ms: u64,
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::CreateObservation,
     ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
-        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?
-            .accept_lifecycle_create_refusal(observation, now_ms)
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
+            .accept_lifecycle_create_refusal(observation)
     }
     fn destroy_bound_create(
         &mut self,

@@ -34,6 +34,7 @@ fn record(source: &RuntimeProcessIdentity) -> ProcessRecord {
         pid: source.pid,
         start_time_ticks: source.start_time_ticks,
         boot_id: source.boot_id.clone(),
+        launch_cpu_domain: vec![0],
     }
 }
 
