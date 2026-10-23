@@ -89,3 +89,10 @@
 UID 扫描限于必需身份元数据，不读取 cmdline/environ；每次最多 262,144 个目录项、单 status 128 KiB、挂载信息 1 MiB，并检查同一 2 秒观察期限，超额/超时均保持未决。系统调用仍依赖固定 Linux/procfs 的完成语义，不是任意文件系统的硬实时保证。只允许真实 procfs 挂载，拒绝可检测的 hidepid/subset、多层 NSpid 与 PID namespace 不一致；这些检查不能从进程内部独立证明所在 namespace 就是整台宿主。受保护部署必须将服务放在原宿主 PID namespace，挂载完整宿主 proc 视图，并由本轮准入核对；不能在私有 PID namespace 内重新挂 proc 后宣称看到了所有宿主任务。该前提与独占 UID/已登记 spawn 一起维护。
 
 UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`、`/proc/self/ns/user` 与原宿主 PID 1 的对应 namespace 身份（设备号/inode）核对，不匹配或任何读取失败保持未决。配置 `vm_uid`、原 claim 的文件属主、jailer 使用的 UID 和 `/proc` 显示的四 UID 必须来自同一个受保护的宿主 user namespace，部署与整个原扫描/释放 worker 期间都不得切换 namespace。仅 PID 视图相同不足以保证 UID 数字相同；未映射编号可能在读取者域显示为 overflow UID，依据 [Linux user_namespaces(7)](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) 的 Unmapped user and group IDs。此路径不支持任意 UID 映射或私有 user namespace，不新增编号翻译器；PID namespace 内重新挂 proc 不能自证外层宿主的限制仍保留。取消或超时也必须保留实际仍运行 worker 的许可与责任，不能因调用方不再等待就 Free。
+
+
+### 共享宿主执行与并发读取
+
+当前候选将同一个 `NodeHost` / `LinuxWorker` 通过共享引用执行，不复制宿主或物理 profile 的租约。每次执行返回原动作身份的回执；诊断由该次调用单独返回，不通过全局“最近一次错误”字段传递。执行错误仍保持 Unknown，不视为没有发生效果。可共享引用本身不提供同会话协调，V5 的持久领取、进程内活动工作和原助手门仍须共同保证同一会话不会出现两个物理执行者；取消等待不释放仍在执行的工作责任。
+
+不可变模板缓存只在查询、插入时持有短锁，完整摘要读取及前后文件身份检查在锁外进行。并发首次校验可能重复读取同一文件，必须由实际执行名额限制；缓存不保证文件不可变，固定部署仍须禁止未登记写者。物理 profile 使用原租约 FD 的有界偏移读取，不通过共享游标上的 seek/read 校验配置；共享对象最后一个所有者退出前不得释放租约。上述候选改动尚待本批普通回归、系统组合与真实 Rust 对应验收，不是新增已证结论。

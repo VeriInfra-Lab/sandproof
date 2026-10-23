@@ -52,7 +52,7 @@ impl WorkEvidence for NodeHost {
 }
 impl WorkExecution for NodeHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
         #[cfg(debug_assertions)]
@@ -81,7 +81,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         #[cfg(debug_assertions)]
@@ -102,7 +102,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_network(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -117,7 +117,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_activation(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -132,7 +132,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_terminal_fence(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -147,7 +147,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_open_fence(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -162,7 +162,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_stop(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         #[cfg(debug_assertions)]
@@ -183,7 +183,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_abort_prepare(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -198,7 +198,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -215,7 +215,7 @@ impl WorkRecovery for NodeHost {
 
 impl HostSlots for NodeHost {
     fn bind_host_slot(
-        &mut self,
+        &self,
         context: &HostSlotContext,
         allow_install: bool,
     ) -> Result<(), ApplicationError> {
@@ -230,7 +230,7 @@ impl HostSlots for NodeHost {
             })
     }
 
-    fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), ApplicationError> {
+    fn release_host_slot(&self, context: &HostSlotContext) -> Result<(), ApplicationError> {
         self.worker.release_host_slot(context).map_err(|error| {
             busy(
                 error.as_ref(),
@@ -265,7 +265,7 @@ impl DataRelay for NodeHost {
     }
 
     fn spawn_data_relay(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         vm: core::VmId,
         generation: core::Generation,
@@ -383,7 +383,7 @@ impl HostCapacity for NodeHost {
 
 impl LaunchConfiguration for NodeHost {
     fn put_secret(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
     ) -> Result<(), ApplicationError> {
@@ -417,7 +417,7 @@ impl LaunchConfiguration for NodeHost {
     }
 
     fn put_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         env_vars: &std::collections::BTreeMap<String, String>,
@@ -450,7 +450,7 @@ impl LaunchConfiguration for NodeHost {
     }
 
     fn put_bound_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         options: &CreateOptions,

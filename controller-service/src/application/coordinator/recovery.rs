@@ -61,7 +61,7 @@ fn matches_current_reclaim(
 
 fn reclaim_uncertain_actions<H: WorkRecovery>(
     journal: &ControllerJournal,
-    host: &mut H,
+    host: &H,
     world: &core::World,
     blocked: &mut BTreeSet<core::SandboxId>,
     selected: Option<core::SandboxId>,
@@ -236,7 +236,7 @@ fn observe_recovery_action<H: WorkRecovery>(
 
 fn blocked_launch_configs<H: LaunchConfiguration>(
     journal: &mut ControllerJournal,
-    host: &mut H,
+    host: &H,
     initial: &core::World,
     selected: Option<core::SandboxId>,
     prior_blocked: &BTreeSet<core::SandboxId>,
@@ -292,7 +292,7 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
             continue;
         }
         if !ensure_launch_config(
-            host,
+            host.as_ref(),
             *sandbox,
             &options,
             registered.is_some(),
@@ -371,7 +371,7 @@ fn register_recovered_credential(
 }
 
 fn ensure_launch_config<H: LaunchConfiguration>(
-    host: &mut H,
+    host: &H,
     sandbox: core::SandboxId,
     options: &crate::CreateOptions,
     registered: bool,
@@ -430,7 +430,7 @@ pub fn can_install_host_slot_binding(world: &core::World, sandbox: core::Sandbox
 
 pub(super) fn bind_recovery_slots<H: HostSlots>(
     journal: &ControllerJournal,
-    host: &mut H,
+    host: &H,
     world: &core::World,
     selected: Option<core::SandboxId>,
     prior_blocked: &BTreeSet<core::SandboxId>,
@@ -493,7 +493,7 @@ pub(super) fn release_reclaimed_slots<H: ControllerHost>(
             .data_drains
             .get(&sandbox.0)
             .is_none_or(DataLease::drained)
-            || (drained && host_routes_drained(&inner.host, &context));
+            || (drained && host_routes_drained(inner.host.as_ref(), &context));
         if !drained
             || !known_exit
             || inner
@@ -603,7 +603,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
     let epoch_blocked = epoch_blocked_startups(journal, &initial, selected)?;
     let mut blocked = bind_recovery_slots(
         journal,
-        host,
+        host.as_ref(),
         &initial,
         selected,
         &epoch_blocked,
@@ -612,7 +612,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
     blocked.extend(epoch_blocked.iter().copied());
     let launch_blocked = blocked_launch_configs(
         journal,
-        host,
+        host.as_ref(),
         &initial,
         selected,
         &blocked,
@@ -621,7 +621,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
     blocked.extend(launch_blocked);
     reclaim_uncertain_actions(
         journal,
-        host,
+        host.as_ref(),
         &initial,
         &mut blocked,
         selected,
@@ -630,7 +630,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
     let recovery_world = journal.world().map_err(map_journal)?;
     let receipts_recovered = recover_receipts(
         journal,
-        host,
+        host.as_ref(),
         &recovery_world,
         &mut blocked,
         selected,
@@ -659,7 +659,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
         let Some(operation) = record.current_operation else {
             continue;
         };
-        let Some(resume) = resume_workflow(journal, host, clock, *sandbox, record) else {
+        let Some(resume) = resume_workflow(journal, host.as_ref(), clock, *sandbox, record) else {
             continue;
         };
         match resume {
@@ -735,7 +735,7 @@ fn recover_receipts<H: WorkRecovery>(
 
 fn resume_workflow<H: ControllerHost>(
     journal: &mut ControllerJournal,
-    host: &mut H,
+    host: &H,
     clock: &dyn Clock,
     sandbox: core::SandboxId,
     record: &core::SandboxRecord,
