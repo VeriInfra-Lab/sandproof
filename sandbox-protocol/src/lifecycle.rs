@@ -1,8 +1,9 @@
-//! Versioned stateful lifecycle contracts.
+//! Current stateful lifecycle contracts.
 //!
 //! These values do not enable a route or certify a snapshot. In particular,
 //! carrying a digest is distinct from hashing and checking the original files.
 
+mod access;
 mod authority;
 mod digest;
 mod identity;
@@ -11,6 +12,7 @@ mod observation;
 mod public;
 mod request;
 
+pub use access::{AccessIdentityError, LifecycleAccessIdentity};
 pub use authority::{
     AcceptedIntentError, AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterId,
     CenterIdentity, RecordedLifecycleIntent,
@@ -26,12 +28,12 @@ pub use manifest::{
 };
 pub use observation::{CreateObservation, CurrentCreateReadiness, CurrentReadyFacts};
 pub use public::{
-    CreateParameters, PublicAcceptance, PublicCreateRequest, PublicSessionPhase, PublicSessionView,
-    PublicUnloadRequest,
+    CreateParameters, PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase,
+    PublicSessionView, PublicUnloadRequest,
 };
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 
-/// A distinct profile: existing v2 endpoints retain their original semantics.
+/// The only supported lifecycle wire format. Mismatches are refused.
 pub const PROTOCOL_VERSION: u16 = 3;
-pub const LIFECYCLE_PATH: &str = "/internal/v3/lifecycle";
-pub const CREATE_OBSERVATION_PATH: &str = "/internal/v3/lifecycle/create-observation";
+pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
+pub const CREATE_OBSERVATION_PATH: &str = "/internal/lifecycle/create-observation";

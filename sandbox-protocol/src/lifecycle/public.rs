@@ -33,6 +33,14 @@ pub struct PublicUnloadRequest {
     pub expected_version: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicDestroyRequest {
+    pub window: RequestWindowId,
+    pub sequence: RequestSequence,
+    pub expected_version: u64,
+}
+
 /// Durable acceptance, not evidence of a completed physical operation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

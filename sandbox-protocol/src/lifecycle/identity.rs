@@ -62,7 +62,7 @@ macro_rules! counter_role {
     };
 }
 
-// New v3 roles only. These domains do not change any existing local core ID.
+// Logical roles are distinct from the original local core IDs.
 counter_role!(IncarnationId);
 counter_role!(CaptureId);
 counter_role!(RequestWindowId);
