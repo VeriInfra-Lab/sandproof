@@ -67,7 +67,7 @@ fn request() -> FullCaptureWorkRequest {
             "node":{"deployment_id":"deployment","node_id":"node","node_generation":1},
             "session":"session","key":{"deployment":"deployment","owner":"owner","window":1,"sequence":1},
             "expected":{"state":"version","version":3}},"source_incarnation":2,"capture":4},
-            "source_work_binding":"07".repeat(32),
+            "source_work_binding":ContentDigest::from_sha256([7;32]),
             "node":{"deployment_id":"deployment","node_id":"node","node_generation":1},
             "source_resource":raw().resource,"source":raw().source},
         "compatibility":profile(),"state_bytes":1_000_000,"memory_bytes":128*1_048_576,
