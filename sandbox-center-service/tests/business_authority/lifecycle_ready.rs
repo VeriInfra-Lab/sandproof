@@ -43,6 +43,7 @@ impl Drop for Release {
         }
     }
 }
+type RecordedSignal = Arc<Mutex<Option<(SessionId, mpsc::Sender<()>)>>>;
 #[derive(Clone)]
 struct Host {
     clock: Arc<Time>,
@@ -50,7 +51,7 @@ struct Host {
     observations: Arc<AtomicUsize>,
     recordings: Arc<AtomicUsize>,
     blocked: Arc<Mutex<Option<Block>>>,
-    notify_recorded: Arc<Mutex<Option<(SessionId, mpsc::Sender<()>)>>>,
+    notify_recorded: RecordedSignal,
 }
 impl Host {
     fn new(clock: Arc<Time>) -> Self {

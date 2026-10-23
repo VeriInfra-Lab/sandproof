@@ -846,7 +846,7 @@ fn assert_settlement_tampering_refused(state: &BusinessEnvelope<RegistryMetadata
             6 => link["local"]["create_operation"] = serde_json::json!(999),
             7 => {
                 link["settlement"]["cleaned"]["request"]["retention"]["window"] =
-                    serde_json::json!(2)
+                    serde_json::json!(2);
             }
             8 => link["settlement"] = serde_json::Value::Null,
             9 => {

@@ -39,7 +39,15 @@ pub(super) fn request() -> PublicCreateRequest {
     }
 }
 pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
-    let state = envelope();
+    let mut state = envelope();
+    // A registered second owner exercises cross-tenant refusal, independently
+    // of the earlier rejection of an unregistered request-window domain.
+    state.center = CenterState::new(
+        state.center.deployment().clone(), state.center.bounds().clone(), state.center.nodes().to_vec(),
+        ["8", "9"].into_iter().map(|id| TenantBudget { tenant: id.try_into().unwrap(), limit: resources(2) }).collect(),
+        state.center.center_identity().clone(),
+        ["8", "9"].into_iter().map(|id| sandproof_center_core::LifecycleWindow { owner: id.try_into().unwrap(), window: 1.try_into().unwrap() }).collect(),
+    ).unwrap();
     let (ledger, _) = RedisLedger::initialize(
         engine::endpoint(proxy.address),
         Engine::config(state.required_block_bytes()),

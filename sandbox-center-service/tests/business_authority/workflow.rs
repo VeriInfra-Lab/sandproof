@@ -496,6 +496,13 @@ fn actual_capacity_refusal_keeps_original_destroy_and_waits_for_exact_confirmati
             .state,
         PublicationState::Checking
     );
+    let pending = authority.snapshot().unwrap();
+    assert_eq!(pending.center.reserved(None, None), Some(super::resources(1)));
+    assert!(pending.center.sandboxes()[0].operations().last().unwrap().terminal().is_none());
+    assert_eq!(pending.center.identity_frontiers(), (1, 2));
+    // First progress saved the original Destroy; this background pass drives
+    // that same intent. Its lost confirmation must still prevent settlement.
+    assert_eq!(templates.reconcile_once(&app), Ok(0));
     let settled = authority.snapshot().unwrap();
     let sandbox = &settled.center.sandboxes()[0];
     assert_eq!(sandbox.operations().len(), 2);

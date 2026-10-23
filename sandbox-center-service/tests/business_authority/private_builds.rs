@@ -294,9 +294,9 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
         retired_through: close.terminal.request.retention.window,
         terminal: close.terminal.clone(),
     };
-    // Original apply_close_ack consumes its already confirmed view; unlike
-    // settlement it commits directly, without a preceding fresh-view write.
-    proxy.lose_after(0);
+    // Current apply_close_ack first reaffirms the original envelope; lose
+    // the subsequent close CAS reply, not that preceding fresh-view reply.
+    proxy.lose_after(1);
     assert_eq!(
         business.apply_close_ack(&acknowledgement, 200),
         Err(PortError::OutcomeUnknown)
@@ -507,10 +507,19 @@ fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority()
             .unwrap()
             .is_none()
     );
-    let next_window = business.issue_build_window(&tenant, 2).unwrap();
+    assert_next_builder_uses_retired_lane(&business, &tenant, &peer);
+
+}
+
+fn assert_next_builder_uses_retired_lane(
+    business: &SharedBusinessAuthority,
+    tenant: &sandproof_protocol::TenantId,
+    peer: &AcceptedLifecycleIntent,
+) {
+    let next_window = business.issue_build_window(tenant, 2).unwrap();
     let next = business
         .accept_build(
-            &tenant,
+            tenant,
             &next_window.request_window,
             &format!("{:032x}", 3),
             &parameters(),
@@ -665,7 +674,9 @@ fn actual_builder_policy_does_not_widen_runtime_network_or_lifetime_limits() {
     let snapshot = business.snapshot().unwrap();
     let original = &snapshot.metadata.private_build_anchors()[0].original_create;
     assert_eq!(original.request.binding.node, wire::node("builder-a"));
-    let LifecycleOperation::Create { create, .. } = &original.request.operation else { unreachable!() };
+    let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+        unreachable!()
+    };
     assert_eq!(create.timeout_ms, 600_000);
     assert_eq!(create.max_lifetime_ms, 900_000);
     // The controlled application clock is 1ms at admission.
