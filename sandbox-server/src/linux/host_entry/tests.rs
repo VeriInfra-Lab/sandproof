@@ -112,10 +112,7 @@ fn host_budget_retains_management_and_destroy_capacity() {
 fn current_bootstrap_settings_reject_foreign_missing_and_old_shapes() {
     for (pointer, replacement) in [
         ("/inbox/center/deployment", json!("another-deployment")),
-        (
-            "/protected_bootstrap_path",
-            json!("relative/bootstrap.json"),
-        ),
+        ("/protected_bootstrap_path", json!("relative/bootstrap.json")),
         ("/source_observation/max_work_bytes", json!(1023)),
         ("/source_observation/max_configuration_bytes", json!(0)),
     ] {
@@ -134,11 +131,14 @@ fn current_bootstrap_settings_reject_foreign_missing_and_old_shapes() {
 fn cache_is_one_reserved_source_not_a_static_availability_fallback() {
     let mut value = host_settings();
     value["native"]["templates"]["aliases"] = json!({"base":"base"});
-    assert!(
-        !check(value),
-        "an alias cannot shadow the canonical template ID"
+    let config: HostConfig = serde_json::from_value(value).unwrap();
+    // The original activation preflight validates the catalog before touching
+    // files. Static host checks cover budgets and protocol settings instead.
+    assert_eq!(
+        validate_config(&config.native).unwrap_err().to_string(),
+        "invalid prebuilt template catalog"
     );
-    value = host_settings();
+    let mut value = host_settings();
     value["template_registrations"] = json!([{ "revision":"base-r1","template_id":"base" }]);
     assert!(!check(value));
     value = host_settings();
