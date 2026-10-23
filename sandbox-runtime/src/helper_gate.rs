@@ -11,13 +11,21 @@ use std::{
     cell::RefCell,
     fs::{self, File},
     io::{self, Read, Write},
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    os::{
+        fd::AsRawFd,
+        unix::fs::{MetadataExt, OpenOptionsExt},
+    },
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
 };
 
 const EXEC_GATE: &str =
     "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec \"$@\"";
+// In the Full preparation role, fd2 retains this slot's lock across the
+// initial shell exec. Only a durable caller-authorized release replaces it.
+// Diagnostics after release join the bounded result pipe; parsers must reject
+// anything other than their exact single reply frame.
+const CAPTURE_EXEC_GATE: &str = "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
 pub const MAX_HELPER_MARKER_BYTES: u64 = 16_384;
 
 /// Fixed gate inode created by the trusted node's mapping initialization.
@@ -136,6 +144,25 @@ struct OwnedMarker {
     record: InflightRecord,
     device: u64,
     inode: u64,
+}
+
+/// A spawned child whose execution gate has not been released.
+/// The private child cannot be accessed to write permission or bypass release.
+/// Dropping this value stops/reaps only that owned child; it never stops a VM
+/// or clears its persistent process witness.
+pub struct PreparedTrackedChild {
+    child: OwnedChild,
+    witness: OwnedMarker,
+}
+impl PreparedTrackedChild {
+    #[must_use]
+    pub fn process(&self) -> &RuntimeProcessIdentity {
+        &self.witness.record.process
+    }
+    #[must_use]
+    pub const fn command_digest(&self) -> &[u8; 32] {
+        &self.witness.record.command_digest
+    }
 }
 
 /// A held admission lock. Its drop only closes this descriptor, never calls
@@ -415,11 +442,29 @@ impl RuntimeHelperGuard {
         Ok(record)
     }
 
+    fn gated_capture_command(&self, program: &str, args: &[&str]) -> Result<Command, RuntimeError> {
+        // Full's fixed service assembly keeps stdio open. Reject a configuration
+        // that could alias the deliberately retained lock with stdio setup.
+        rustix::io::fcntl_getfd(std::io::stdin()).map_err(io::Error::from)?;
+        rustix::io::fcntl_getfd(std::io::stdout()).map_err(io::Error::from)?;
+        rustix::io::fcntl_getfd(std::io::stderr()).map_err(io::Error::from)?;
+        if self.file.as_raw_fd() < 3 {
+            return Err(RuntimeError::IdentityMismatch("capture gate aliases stdio"));
+        }
+        let mut command = self.command_waiting(program, args, CAPTURE_EXEC_GATE);
+        command.stderr(Stdio::from(self.file.try_clone()?));
+        Ok(command)
+    }
+
     fn gated_command(&self, program: &str, args: &[&str]) -> Command {
+        self.command_waiting(program, args, EXEC_GATE)
+    }
+
+    fn command_waiting(&self, program: &str, args: &[&str], script: &str) -> Command {
         let mut command = Command::new(&self.shell);
         command
             .arg("-c")
-            .arg(EXEC_GATE)
+            .arg(script)
             .arg("sandproof-tracked-helper")
             .arg(program)
             .args(args)
@@ -443,6 +488,33 @@ impl RuntimeHelperGuard {
         program: &str,
         args: &[&str],
     ) -> Result<OwnedChild, RuntimeError> {
+        let prepared = self.prepare_singleton(context, program, args, false)?;
+        self.release_tracked(prepared)
+    }
+
+    /// Prepare Full's child with its slot lock held on fd2 until permission.
+    /// After release, stderr joins stdout; a Full consumer must require exactly
+    /// one bounded reply frame and reject diagnostics mixed with that frame.
+    /// A caller using this for Full must save the same process/job under its
+    /// original durable work before invoking `release_tracked`.
+    /// # Errors
+    /// Any launch/publication error retains uncertain process evidence.
+    pub fn prepare_tracked(
+        &self,
+        context: &RuntimeHostSlot,
+        program: &str,
+        args: &[&str],
+    ) -> Result<PreparedTrackedChild, RuntimeError> {
+        self.prepare_singleton(context, program, args, true)
+    }
+
+    fn prepare_singleton(
+        &self,
+        context: &RuntimeHostSlot,
+        program: &str,
+        args: &[&str],
+        retain_waiting_gate: bool,
+    ) -> Result<PreparedTrackedChild, RuntimeError> {
         self.validate_context(context)?;
         let (path, stage) = self.gate.inflight_paths()?;
         if super::path_present(&path)? {
@@ -455,7 +527,66 @@ impl RuntimeHelperGuard {
             .write(true)
             .mode(0o600)
             .open(&stage)?;
-        self.spawn_reserved(context, None, None, &path, &stage, staged, program, args)
+        self.prepare_reserved(
+            context,
+            None,
+            None,
+            &path,
+            &stage,
+            staged,
+            program,
+            args,
+            retain_waiting_gate,
+        )
+    }
+
+    /// Release only the exact originally prepared child under the same guard.
+    /// This is a physical primitive, not a database commit or Full permission.
+    /// # Errors
+    /// Wrong/replaced markers, identities or broken permission pipes refuse.
+    /// A write error may be partial; keep the original work and its witness.
+    pub fn release_tracked(
+        &self,
+        mut prepared: PreparedTrackedChild,
+    ) -> Result<OwnedChild, RuntimeError> {
+        let witness = &prepared.witness;
+        if self.expected.as_ref() != Some(&witness.record.context)
+            || witness.record.context.helper_gate != self.gate
+            || prepared.child.id() != witness.record.process.pid
+            || !witness.record.process.is_alive()?
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "prepared helper release binding",
+            ));
+        }
+        let (path, _) = match witness.record.route_index {
+            Some(index) => self.gate.route_paths(index)?,
+            None => self.gate.inflight_paths()?,
+        };
+        let current = self.read_cell(&path, witness.record.route_index)?.ok_or(
+            RuntimeError::IdentityMismatch("prepared helper witness missing"),
+        )?;
+        if current.record != witness.record
+            || current.device != witness.device
+            || current.inode != witness.inode
+            || (witness.record.route_index.is_none()
+                && self.active.borrow().as_ref().is_none_or(|active| {
+                    active.record != witness.record
+                        || active.device != witness.device
+                        || active.inode != witness.inode
+                }))
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "prepared helper witness replaced",
+            ));
+        }
+        prepared
+            .child
+            .stdin
+            .as_mut()
+            .ok_or(RuntimeError::Protocol("tracked helper gate pipe"))?
+            .write_all(b"release\n")?;
+        Ok(prepared.child)
     }
 
     /// Whether a configured route cell is absent or its exact process exited.
@@ -562,12 +693,47 @@ impl RuntimeHelperGuard {
         control: Option<bool>,
         path: &Path,
         stage: &Path,
-        mut staged: File,
+        staged: File,
         program: &str,
         args: &[&str],
     ) -> Result<OwnedChild, RuntimeError> {
+        let prepared = self.prepare_reserved(
+            context,
+            route_index,
+            control,
+            path,
+            stage,
+            staged,
+            program,
+            args,
+            false,
+        )?;
+        self.release_tracked(prepared)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one gated publication covers both fixed singleton and fixed route cells"
+    )]
+    fn prepare_reserved(
+        &self,
+        context: &RuntimeHostSlot,
+        route_index: Option<u64>,
+        control: Option<bool>,
+        path: &Path,
+        stage: &Path,
+        mut staged: File,
+        program: &str,
+        args: &[&str],
+        retain_waiting_gate: bool,
+    ) -> Result<PreparedTrackedChild, RuntimeError> {
         sync_parent(stage)?;
-        let mut child = match OwnedChild::spawn(&mut self.gated_command(program, args)) {
+        let mut command = if retain_waiting_gate {
+            self.gated_capture_command(program, args)?
+        } else {
+            self.gated_command(program, args)
+        };
+        let child = match OwnedChild::spawn(&mut command) {
             Ok(child) => child,
             Err(error) => {
                 // No child obtained permission or published a process witness.
@@ -577,7 +743,7 @@ impl RuntimeHelperGuard {
                 return Err(error.into());
             }
         };
-        self.publish_and_release(
+        let witness = self.publish_prepared(
             context,
             route_index,
             control,
@@ -586,9 +752,9 @@ impl RuntimeHelperGuard {
             &mut staged,
             program,
             args,
-            &mut child,
+            &child,
         )?;
-        Ok(child)
+        Ok(PreparedTrackedChild { child, witness })
     }
 
     fn abandon_unspawned_stage(&self, stage: &Path, staged: &File) -> Result<(), RuntimeError> {
@@ -613,7 +779,7 @@ impl RuntimeHelperGuard {
         clippy::too_many_arguments,
         reason = "publication binds one pre-spawn reservation and its exact owned process"
     )]
-    fn publish_and_release(
+    fn publish_prepared(
         &self,
         context: &RuntimeHostSlot,
         route_index: Option<u64>,
@@ -623,8 +789,8 @@ impl RuntimeHelperGuard {
         staged: &mut File,
         program: &str,
         args: &[&str],
-        child: &mut Child,
-    ) -> Result<(), RuntimeError> {
+        child: &Child,
+    ) -> Result<OwnedMarker, RuntimeError> {
         let record = InflightRecord {
             version: 1,
             context: context.clone(),
@@ -651,19 +817,15 @@ impl RuntimeHelperGuard {
         )
         .map_err(io::Error::from)?;
         sync_parent(path)?;
+        let witness = OwnedMarker {
+            record,
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        };
         if route_index.is_none() {
-            *self.active.borrow_mut() = Some(OwnedMarker {
-                record,
-                device: metadata.dev(),
-                inode: metadata.ino(),
-            });
+            *self.active.borrow_mut() = Some(witness.clone());
         }
-        child
-            .stdin
-            .as_mut()
-            .ok_or(RuntimeError::Protocol("tracked helper gate pipe"))?
-            .write_all(b"release\n")?;
-        Ok(())
+        Ok(witness)
     }
 
     /// Discharge only this guard's exact completed helper, never a successor.
@@ -1447,11 +1609,11 @@ mod tests {
             .write_all(b"{\"partial\"")
             .unwrap();
         let mut staged = File::open(&stage).unwrap(); // deterministic write failure
-        let mut child = OwnedChild::new(guard.gated_command("/bin/true", &[]).spawn().unwrap());
+        let child = OwnedChild::new(guard.gated_command("/bin/true", &[]).spawn().unwrap());
         let id = child.id();
         assert!(
             guard
-                .publish_and_release(
+                .publish_prepared(
                     &context,
                     None,
                     None,
@@ -1460,7 +1622,7 @@ mod tests {
                     &mut staged,
                     "/bin/true",
                     &[],
-                    &mut child
+                    &child
                 )
                 .is_err()
         );
@@ -1696,5 +1858,170 @@ mod tests {
             acquire(&context, false),
             Err(RuntimeError::IdentityMismatch(_))
         ));
+    }
+
+    #[test]
+    fn prepared_child_eof_never_executes_and_keeps_the_original_witness() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (temp, context) = fixture(1);
+        let guard = acquire(&context, false).unwrap();
+        let effect = temp.path().join("must-not-run");
+        let mut prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "prepared-eof",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        let marker = context.helper_gate.inflight_paths().unwrap().0;
+        let original = fs::read(&marker).unwrap();
+        let stored: InflightRecord = serde_json::from_slice(&original).unwrap();
+        assert_eq!(stored.process, process);
+        assert_eq!(&stored.command_digest, prepared.command_digest());
+        drop(prepared.child.stdin.take());
+        let output = prepared.child.wait_output().unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!effect.exists());
+        assert_reaped(process.pid);
+        assert_eq!(fs::read(&marker).unwrap(), original);
+        guard.finish_tracked().unwrap();
+    }
+
+    #[test]
+    fn prepared_release_preserves_same_identity_and_separates_permission_from_body() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_temp, context) = fixture(1);
+        let guard = acquire(&context, false).unwrap();
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "IFS= read -r body; [ \"$body\" = payload ] || exit 2; printf consumed",
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        assert!(process.is_alive().unwrap());
+        let mut child = guard.release_tracked(prepared).unwrap();
+        assert_eq!(child.id(), process.pid);
+        let output = child.exchange(b"payload\n", HelperLimits::CONTROL).unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"consumed");
+        assert_reaped(process.pid);
+        assert!(context.helper_gate.inflight_paths().unwrap().0.exists());
+        guard.finish_tracked().unwrap();
+    }
+
+    #[test]
+    fn another_guard_cannot_release_a_prepared_child() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (temp, context) = fixture(1);
+        let (_other_temp, other_context) = fixture(1);
+        let guard = acquire(&context, false).unwrap();
+        let other = acquire(&other_context, false).unwrap();
+        let effect = temp.path().join("must-not-run");
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "foreign-release",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        assert!(other.release_tracked(prepared).is_err());
+        assert_reaped(process.pid);
+        assert!(!effect.exists());
+        assert!(context.helper_gate.inflight_paths().unwrap().0.exists());
+        guard.finish_tracked().unwrap();
+    }
+
+    #[test]
+    fn replacing_prepared_witness_refuses_release_without_erasing_either_record() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (temp, context) = fixture(1);
+        let guard = acquire(&context, false).unwrap();
+        let effect = temp.path().join("must-not-run");
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "replaced-release",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        let marker = context.helper_gate.inflight_paths().unwrap().0;
+        let original = fs::read(&marker).unwrap();
+        let moved = marker.with_extension("original");
+        fs::rename(&marker, &moved).unwrap();
+        File::options()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&marker)
+            .unwrap()
+            .write_all(b"{}")
+            .unwrap();
+        assert!(guard.release_tracked(prepared).is_err());
+        assert_reaped(process.pid);
+        assert!(!effect.exists());
+        assert_eq!(fs::read(&marker).unwrap(), b"{}");
+        assert_eq!(fs::read(&moved).unwrap(), original);
+        assert!(guard.finish_tracked().is_err());
+    }
+
+    #[test]
+    fn prepared_child_retains_the_slot_lock_across_exec_until_eof_and_exact_exit() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (temp, context) = fixture(1);
+        let guard = acquire(&context, false).unwrap();
+        let effect = temp.path().join("must-not-run");
+        let mut prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf effect > \"$1\"",
+                    "held-slot",
+                    effect.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let process = prepared.process().clone();
+        let fd2 = fs::metadata(format!("/proc/{}/fd/2", process.pid)).unwrap();
+        assert_eq!(fd2.dev(), context.helper_gate.device);
+        assert_eq!(fd2.ino(), context.helper_gate.inode);
+        let marker = context.helper_gate.inflight_paths().unwrap().0;
+        fs::rename(&marker, marker.with_extension("saved")).unwrap();
+        drop(guard);
+        let contender = File::open(&context.helper_gate.path).unwrap();
+        assert_eq!(
+            flock(&contender, FlockOperation::NonBlockingLockExclusive).unwrap_err(),
+            rustix::io::Errno::WOULDBLOCK
+        );
+        drop(prepared.child.stdin.take());
+        assert!(!prepared.child.wait_output().unwrap().status.success());
+        assert_reaped(process.pid);
+        flock(&contender, FlockOperation::NonBlockingLockExclusive).unwrap();
+        assert!(!effect.exists());
     }
 }

@@ -8,6 +8,7 @@ impl LinuxWorker {
     pub(crate) fn collect_original_source(
         &self,
         requirement: &SourceObservationRequirement,
+        allowed_cpus: &[u32],
     ) -> NodeResult<RawSourceObservation> {
         let context = self.original_source_context(&requirement.resource)?;
         let expected = crate::source_observation::expected_source(requirement)?;
@@ -17,6 +18,11 @@ impl LinuxWorker {
             || self.original_source_context(&requirement.resource),
             || {
                 let runtime = self.runtime(context.binding.sandbox, context.binding.vm)?;
+                runtime.verify_original_cpu_domain(
+                    requirement.resource.id.as_str(),
+                    &expected,
+                    allowed_cpus,
+                )?;
                 let measured = runtime.observe_original_configuration(
                     requirement.resource.id.as_str(),
                     &expected,
@@ -29,6 +35,11 @@ impl LinuxWorker {
                         "original source or occupied position changed during observation".into(),
                     );
                 }
+                runtime.verify_original_cpu_domain(
+                    requirement.resource.id.as_str(),
+                    &expected,
+                    allowed_cpus,
+                )?;
                 let source = measured.source();
                 Ok(RawSourceObservation {
                     work_binding: requirement.work_binding,

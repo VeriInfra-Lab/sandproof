@@ -40,6 +40,10 @@ pub struct ProtectedHostEpochSource {
     path: PathBuf,
 }
 impl ProtectedHostEpochSource {
+    pub(crate) fn original_path(&self) -> &Path {
+        &self.path
+    }
+
     /// Configure a pathname only. Actual ownership, bytes, identity and host
     /// facts are checked each time the original bootstrap requirement is used.
     /// # Errors
@@ -128,6 +132,36 @@ impl ProtectedHostEpochSource {
         self.observe_original(node, &registration, inputs)?;
         file.recheck()?;
         Ok(registration)
+    }
+
+    // This returns the CPU values bound by the SAME original registration,
+    // not a new declaration taken from a work DTO or a later SSH process.
+    // The enclosing source collection still observes current host facts on
+    // both sides; reading these fields alone is not a VM/XSAVE certificate.
+    pub(super) fn original_cpu_domain(
+        &self,
+        node: &NodeIdentity,
+        registration: &HostEpochRegistration,
+        inputs: Inputs<'_>,
+    ) -> Result<Vec<u32>> {
+        let file = CheckedFile::payload(&self.path)?;
+        let payload = Payload::read_bound(&file, node, registration, inputs.namespace)?;
+        let allowed = payload.host.cpus.allowed_cpus().to_vec();
+        file.recheck()?;
+        Ok(allowed)
+    }
+
+    pub(super) fn original_tool_digest(
+        &self,
+        node: &NodeIdentity,
+        registration: &HostEpochRegistration,
+        inputs: Inputs<'_>,
+    ) -> Result<[u8; 32]> {
+        let file = CheckedFile::payload(&self.path)?;
+        let payload = Payload::read_bound(&file, node, registration, inputs.namespace)?;
+        let digest = payload.host.firecracker.digest();
+        file.recheck()?;
+        Ok(digest)
     }
 
     pub(super) fn observe(

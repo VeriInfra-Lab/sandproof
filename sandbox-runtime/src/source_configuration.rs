@@ -181,12 +181,20 @@ fn private_metadata(
 }
 
 impl Runtime {
+    /// Fingerprint the same local plan used by actual cold startup and visible
+    /// configuration checks. This does not observe or certify a live VM.
+    /// # Errors
+    /// An encoding failure cannot invent a device/profile identity.
+    pub fn boot_plan_digest(&self) -> Result<[u8; 32], RuntimeError> {
+        super::super::boot_plan::BootPlan::for_runtime(&self.config).digest()
+    }
+
     /// Inspect the same original source under its already accepted read work.
     /// Uses only GET and readonly file descriptors, without `Pause`/`Full`/`Stop`,
     /// chmod, new files or replacement-source adoption. The caller holds its
     /// original work/gate, then rechecks its version and commits these facts
     /// against the protected epoch/template before any capture effect. Visible
-    /// device JSON must match the same BootPlan used at launch. Hidden custom
+    /// device JSON must match the same `BootPlan` used at launch. Hidden custom
     /// CPU/logger/metrics state, actual image provenance and CPU compatibility
     /// still need the original protected deployment and writer checks.
     /// # Errors

@@ -111,3 +111,32 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 Node 沿原 Occupied 位置、owner/VM/generation、原 helper 独占门和未终止当前围栏执行；在 Pause 两侧重新核对原 epoch、实际源配置和文件事实，确认同一私有 paused 句柄后，才构造原 action 的 `Frozen` 回执。任何错误仍可能已经 Pause，原责任不退。`observe_pause_original` 复用相同 guard 和 source 输入，只读重开原 paused 观察，绝不重发 PATCH 或 Full；Running、Exited 或不能确认均不产生 Frozen。通用 execute/observe 在缺少这些原输入时仍拒绝 Freeze，不靠当前 PID/全局 boot 补字段。
 
 此候选尚待统一 ning 编译/针对性回归、真实固定 VMM 端点、对应 Rust 抽取和完整卸载验收。Full 仍是后继独立 `SealSnapshot`，须额外接 protected layout、实际来源匹配的兼容配置和原持久预算；不能从请求里的 profile/尺寸直接制造期望或预留。Linux 文件大小限额与原 cgroup 只提供各自实际约束，不能保证唯一源 VM 在撞限时存活，也不是正常支持条件充分的证明。尚未闭合这些条件之前不启用物理 Full，更不因此赋予 Stop、Unloaded 或释放资格。
+
+
+### 原启动 CPU 范围与实际 VMM 线程
+
+当前唯一 `ProcessRecord` 增加必填 `launch_cpu_domain`。它在原 shell 启动门仍阻塞时，按刚捕获的同一 PID/start/boot 读取该子进程实际继承的 CPU mask；两次原线程快照一致且只有一个原启动线程后，才与原身份一起持久保存，再开放原 gate。它不复制受保护配置 A 或当前 manager/SSH 的 mask 充当旧 VM 事实；采集、身份或持久写入错误沿原失败路径关闭 gate 并等待该自有子进程。缺字段、空/重复/无序/超界 CPU 的旧开发 claim 拒绝，正式验收采用新的隔离部署，不迁移或收养旧记录。RetirementManifest 的原存储上界同时计入最多 256 项原 CPU 字段。
+
+`Runtime::verify_original_cpu_domain` 沿原 claim、PID/start/boot、jail/cgroup 和 pidfd 对象读取原 VMM 的全部线程，要求原记录的启动集合与每个当前线程集合都包含于原受保护 A。线程还须匹配原 Tgid、TID 和启动 ticks；原线程集/身份/范围变化、缺失/损坏/无法读取、最多 1024 线程或 2 秒观察界失败都保持未知。每份 status 最多 128KiB，stat 最多 16KiB；任务名称可以是非 UTF-8，不因名称跳过身份。该接口只读，不调用 sched_setaffinity、不取得 VM FD、不修改共享 CPU/cgroup 策略。
+
+Node 从同一原 `HostEpochRegistration.policy` 绑定的 protected payload 取 A，沿原 source-work 在实际配置观察前后执行上述检查；原 Pause 两侧 source 检查复用它。A 不是每次 work DTO 的可选声明；原 Bootstrap 仍核当前调用线程及所有 manager 线程的同一已登记范围。Full 后续沿相同原 source/profile 再核，不能凭 Paused/Exited 或目录存在确认旧 Full/复制 worker 已结束。
+
+固定 jailer/Firecracker 启动路径不扩大 affinity、没有未登记外部 affinity/CPU 热插拔/微码写者、真实完整宿主 proc 视图及受保护 CPU 域在原 epoch 内不变仍是必要条件；读回不能证明整个中间区间或未来永远不变。该检查也不读取 guest CPUID/MSR 或实际 VM XSAVE，不自动认证 Xmax、编码上界、预留、捕获资格或停止权。尚待本批定向原生检查、固定依赖亲和行为源码依据、真实启动/Pause/Full 及 Rust 对应证明；旧 boot 或 Metadata 定理不自动背书新增字段/调用。
+
+
+### 私有 Full profile 与实际提供方候选
+
+唯一服务装配可用 `NodeHost::with_capture_settings(settings, journal.host_epoch_requirement()?)` 将一份独立 profile 保存在 NodeHost 私有状态中。公开 settings 只来自受保护的 HostConfig：原 layout_parent、layout_binding、state_copy_bytes、memory_copy_bytes、disk_copy_bytes、api_timeout_ms；装配只重开并核原 layout/runtime 根和原 epoch，不自动初始化。profile 本身不反序列化，没有公开字段，不是 HTTP/work DTO 的一个可替换输入。复制/读取接受界不提供写前上界或物理预留，V5 原持久领取、预算及 V8 关闭/排空仍是实际动作的独立前置，未闭合前正式服务不装配/派发 Full。
+
+`prepare_full_capture(pause, original_source)` 只读生成建议参数，不代表授权。它从原受保护文件取已登记工具字节摘要，从同一 Node 原位置和密封 launch credential 取完整 managed-template 描述，用实际启动共用的 BootPlan 求设备指纹，比较真实 executable、原私有 kernel SHA/长度、盘长度和同一 CPU 范围。原模板、位置在观察两侧还须相同。此 adapter 路径只接原 managed-template 来源，不用当前基盘或工作请求补造旧镜像来源；独立 Full 文件组件/诊断 CLI 的旧精确证据不能背书该生产提供方。
+
+固定 FC 1.16.1 的实际 snapshot version 为 10.0.0，本 profile 的 snapshot_format 取 10；工具字段为原受保护 executable SHA，devices 为同一 BootPlan 的规范编码 SHA，image_configuration 绑定原完整 template canonical_digest 与设备指纹。cpu 绑定原 Bootstrap policy（整份宿主注册内容摘要），只在同一固定宿主/boot/内核/微码/CPU 域及已列依赖条件下使用，不能称为实测 guest CPUID/VM XSAVE 指纹。actual source 检查和固定无模板启动责任不可省略；null/摘要相等或 DTO.validate 不能代替这些条件。
+
+`capture_original(action, full, original_source)` 只消费原 SealSnapshot 动作，重新生成独立期望并比较完整 Full 输入，持原 helper 门、Occupied/owner/generation/VM 及未终止围栏，然后只读重开原 Paused 句柄，不再发送 Pause。实际 Full/Seal/原 key 重开后仍重新核对原来源、模板和围栏，成功返回 `FullCaptureObservation`。任何后置错误可能已有完整材料或原 VMM 仍在写，原 Dispatched/Unknown Full 名额与材料责任不能因为 Rust 回调返回而释放，也不产生 Stop/Resume 许可。
+
+`observe_full_capture` 只为仍持原来源位置的未决 Full 工作核同一原 key、独立 profile/原输入及已有 manifest 摘要（若有），返回 `CheckedStoredCapture` 文件事实；不要求原 VMM 仍运行，不再次 Pause/Full，不从文件存在推出捕获 provenance、原 writer/helper/copy 退出或数据库接管。卸载后释放原位置的恢复 C 路径须按独立持久 bundle/pin 记录继续，不能依赖仍有旧 Occupied 位置，也不能把此未决 Full 观察误作通用恢复资格。
+
+当前冷启动链没有 Node snapshot-source Prepare 成功路径，T=0 仅限这条原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射；C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套 0 或删掉真实恢复状态。本批新增纯参数/配置/实际文件比较回归仍为受控数据，未获真实 VMM、完整 Full 预算或对应 Rust 证明结论。
+
+
+`NodeHost::observe_committed_capture(&CommittedCaptureExpectation)` 是材料已由原数据库登记后的只读入口。该 service 类型字段私有、没有 Deserialize 或公开构造，只保存原完整 Full 工作和已登记 manifest 摘要；Node 使用这两项独立期望与同一受保护 store/epoch、读取界检查原 key 和全部字节，不访问旧 Occupied 位置、launch secret 或活 VMM。未决工作仍使用前述 `observe_full_capture`。材料观察不提供恢复、pin、删除、访问、停止或退额许可，完整材料不自行产生来源或提交证明。当前原 journal 的持久接管及该类型提供方尚未实现，不能从 DTO、文件存在或测试替身构造成功凭证；消费接口可编译不表示卸载后重开已端到端接通。

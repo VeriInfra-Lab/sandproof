@@ -688,6 +688,7 @@ mod tests {
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
                 boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
+                launch_cpu_domain: vec![0],
             },
         )
         .unwrap();
@@ -716,6 +717,7 @@ mod tests {
                 pid: i32::MAX as u32,
                 start_time_ticks: 1,
                 boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
+                launch_cpu_domain: vec![0],
             },
         )
         .unwrap();
@@ -812,6 +814,7 @@ mod tests {
                     pid: i32::MAX as u32,
                     start_time_ticks: 1,
                     boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
+                    launch_cpu_domain: vec![0],
                 },
             )
             .unwrap();
