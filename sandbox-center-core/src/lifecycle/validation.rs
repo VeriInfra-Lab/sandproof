@@ -317,7 +317,8 @@ impl CenterState {
                 },
                 LifecycleOperation::Destroy {},
             ) => {
-                is_last && op.acceptance_time == super::AcceptanceTime::Unsampled
+                let super::AcceptanceTime::Unsampled = op.acceptance_time else { return false; };
+                is_last
                     && *expected_version == previous.intent.accepted_version
                     && named == &request.binding.session
                     && !matches!(
