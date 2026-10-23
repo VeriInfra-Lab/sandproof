@@ -99,3 +99,6 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 
 
 正式初始化从 `LinuxWorker::host_epoch_registration` 取得既有受保护文件的完整 SHA-256、boot 和原节点/namespace 绑定，并重新核对同一 provider 的真实宿主信息。`ProtectedHostEpochSource::provision` 仅供显式操作者命令生成全新当前格式文件：原父目录 FD 下 create-new、root/0400、全字节写入及文件/目录同步；不覆盖、修复或自动升级。错误可留下未登记文件，不能把错误当“没有写入”。服务重启必须核对已存原 registration，不能用这次观察自动改写旧值。实际工具字节与固定 Firecracker/jailer 语义的对应、完整宿主 proc/sys 视图及 epoch 内配置不变仍是部署条件；该接口不产生快照兼容、捕获预算或停止许可。正式 CLI/初始化/重启连接和本批验收由唯一服务装配完成，单个生成函数不代表这些连接已经通过。
+
+
+重启后 `Runtime::observe_original_pause_state` 只观察持久工作指定的原来源：原 claim、PID/启动 ticks/boot、宿主 PID/user namespace、jail/cgroup 与保留目录必须匹配，GET 使用该目录下同一个 Unix 连接并核对实际 peer PID/UID/GID。Paused 只返回此次观察的私有句柄，Running 保留未决责任，Exited 需要原记录一致及内核退出依据；API/格式/权限/连接/超时错误和单纯 proc 路径缺失都不生成 Paused/Exited。观察没有 PATCH、Full、Stop、重新初始化或位置释放。Exited 也不证明旧捕获 worker 已结束，管理重启不能据此无条件重发 Full。该观察与后续分段捕获接线属于本批运行组件，尚待真实固定 VMM endpoint 和完整卸载验收，不声称获得新机器证明。

@@ -354,3 +354,8 @@ impl Runtime {
 #[path = "source_configuration.rs"]
 mod source_configuration;
 pub use source_configuration::{OriginalConfigurationObservation, SourceConfigurationLimits};
+
+
+#[path = "paused_observation.rs"]
+mod paused_observation;
+pub use paused_observation::OriginalPauseObservation;

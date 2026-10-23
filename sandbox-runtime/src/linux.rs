@@ -50,7 +50,7 @@ pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
 pub use snapshot::{
-    CapturedFullSnapshot, FullCaptureLimits, OriginalConfigurationObservation, PausedOriginalVm,
+    CapturedFullSnapshot, FullCaptureLimits, OriginalConfigurationObservation, OriginalPauseObservation, PausedOriginalVm,
     PublishedFullCapture, SourceConfigurationLimits,
 };
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
