@@ -2,7 +2,7 @@
 use crate::{CenterConfig, PublicTemplate};
 use sandproof_api::PortError;
 use sandproof_controller_service::CreateOptions;
-use sandproof_protocol::internal::lifecycle::{CreateBinding, Resources};
+use sandproof_protocol::internal::lifecycle::Resources;
 use sandproof_protocol::numeric::seconds_to_milliseconds;
 use serde::{Deserialize, Serialize};
 
@@ -34,17 +34,6 @@ impl From<&CenterConfig> for LifecyclePolicy {
             public_ipv4_enabled: config.public_ipv4_enabled,
         }
     }
-}
-
-pub(crate) fn create_binding(
-    template: &PublicTemplate,
-    options: &CreateOptions,
-    timeout_secs: u64,
-    now_ms: u64,
-    policy: LifecyclePolicy,
-) -> Result<CreateBinding, PortError> {
-    let parameters = create_parameters(template, options, timeout_secs, policy)?;
-    parameters.binding_at(now_ms).ok_or(PortError::Invalid)
 }
 
 pub(crate) fn create_parameters(

@@ -2,6 +2,7 @@
 //! Recorded never removes work or stands in for a current physical observation.
 use crate::{AuthorityPort, CenterApplication, HostPort, NodeObservationPolicy, TemplateProvider};
 use crate::application::authority_error;
+use crate::application::diagnostics::{self, Failure as DiagnosticFailure, Stage as DiagnosticStage};
 use sandproof_api::PortError;
 use sandproof_center_core::{DecisionError, SessionPhase};
 use sandproof_center_store::authority::AuthorityError;
@@ -87,7 +88,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 if let Some(session) = self.session_attempt(
                     intent.request.binding.key.owner.as_str(),
                     intent.request.binding.session.as_protocol_id().as_str(),
-                )? {
+                ).inspect_err(|error| diagnostics::emit(DiagnosticStage::SessionProjection, DiagnosticFailure::Port(*error)))? {
                     time_left(deadline)?;
                     return Ok(session);
                 }
@@ -103,7 +104,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         loop {
             time_left(deadline)?;
             let observed = self.reconcile_lifecycle_intent(intent, deadline)?;
-            let state = self.snapshot()?;
+            let state = self.snapshot().inspect_err(|error|
+                diagnostics::emit(DiagnosticStage::SendSnapshot, DiagnosticFailure::Port(*error)))?;
             let record = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session)
                 .ok_or(PortError::OutcomeUnknown)?;
             let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?;
@@ -121,7 +123,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         loop {
             time_left(deadline)?;
             self.reconcile_lifecycle_intent(intent, deadline)?;
-            let state = self.snapshot()?;
+            let state = self.snapshot().inspect_err(|error|
+                diagnostics::emit(DiagnosticStage::RetiredSnapshot, DiagnosticFailure::Port(*error)))?;
             let Some(record) = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session) else {
                 // Only THIS already-accepted in-flight call may use the exact
                 // recent retirement stamp. Generic queries do not use this as
@@ -143,7 +146,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     }
 
     pub(crate) fn current_lifecycle_intent(&self, owner: &TenantId, session: &SessionId) -> Result<(AcceptedLifecycleIntent, SessionPhase), PortError> {
-        let state = self.snapshot()?;
+        let state = self.snapshot().inspect_err(|error|
+            diagnostics::emit(DiagnosticStage::SendSnapshot, DiagnosticFailure::Port(*error)))?;
         let record = state.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
         let current = record.operations().last().ok_or(PortError::OutcomeUnknown)?.intent().clone();
         Ok((current, record.phase()))
@@ -243,12 +247,18 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .accept_lifecycle_create_observation(&observation) {
             Ok(()) => Ok(true),
             Err(AuthorityError::Decision(DecisionError::Stale | DecisionError::Conflict | DecisionError::Unavailable | DecisionError::NotFound)) => Ok(false),
-            Err(error) => Err(authority_error(error)),
+            Err(error) => {
+                diagnostics::emit(DiagnosticStage::ApplyResponse, DiagnosticFailure::Authority(error));
+                Err(authority_error(error))
+            },
         }
     }
 }
 
 fn time_left(deadline: Instant) -> Result<std::time::Duration, PortError> {
     deadline.checked_duration_since(Instant::now()).filter(|left| !left.is_zero())
-        .ok_or(PortError::OutcomeUnknown)
+        .ok_or_else(|| {
+            diagnostics::emit(DiagnosticStage::ReplyDeadline, DiagnosticFailure::Port(PortError::OutcomeUnknown));
+            PortError::OutcomeUnknown
+        })
 }

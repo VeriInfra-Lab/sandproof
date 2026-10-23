@@ -4,11 +4,7 @@ use sandproof_api::{PortError, PublicationView, TemplatePage, TemplateView};
 use sandproof_center_core::CenterState;
 use sandproof_center_store::authority::AuthorityError;
 use sandproof_controller_service::templates::{ResourceShape, TemplateBinding};
-use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleRequest, LifecycleResponse};
-use sandproof_protocol::internal::{
-    NodeIdentity,
-    window::{WindowCloseAck, WindowCloseRequest},
-};
+use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::numeric::seconds_to_milliseconds;
 use sandproof_protocol::{ResourceId, SandboxId, TenantId};
 use serde::Deserialize;
@@ -274,27 +270,7 @@ pub trait HostPort: Send + Sync + 'static {
     ) -> Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, PortError> {
         Err(PortError::Busy)
     }
-    /// # Errors
-    /// Every error is an unknown transport outcome, never admission rejection.
-    fn send(
-        &self,
-        request: &LifecycleRequest,
-        deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError>;
-    /// # Errors
-    /// Confirms only the EXACT already committed result; no implicit support.
-    fn confirm(
-        &self,
-        result: &LifecycleResponse,
-        deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError>;
-    /// # Errors
-    /// Only an exact authenticated durable close acknowledgement permits retirement.
-    fn close(
-        &self,
-        request: &WindowCloseRequest,
-        deadline: Duration,
-    ) -> Result<WindowCloseAck, PortError>;
+
 }
 
 /// The production business authority owns the coupled lifecycle/metadata view.
@@ -362,36 +338,6 @@ pub trait AuthorityPort: Send + 'static {
     fn destroy_current(
         &mut self, owner: &TenantId, sandbox: &SandboxId,
     ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AuthorityError>;
-    /// # Errors
-    /// Acceptance and the original outbox commit together.
-    fn create(
-        &mut self,
-        tenant: &TenantId,
-        binding: CreateBinding,
-        now_ms: u64,
-    ) -> Result<LifecycleRequest, AuthorityError>;
-    /// # Errors
-    /// The original lifetime and a durable intent are required.
-    fn renew(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-        end_at_ms: u64,
-        now_ms: u64,
-    ) -> Result<LifecycleRequest, AuthorityError>;
-    /// # Errors
-    /// Termination is monotone, retains fixed binding and reservation.
-    fn destroy(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, AuthorityError>;
-    /// # Errors
-    /// Wrong/old observations cannot cover newer decisions.
-    fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
-    /// # Errors
-    /// Requires the exact current final result and actual durable host ack.
-    fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
     /// # Errors
     /// Requires the exact host-confirmed terminal result, not an absent record.
     fn confirm_terminal(&mut self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), AuthorityError>;

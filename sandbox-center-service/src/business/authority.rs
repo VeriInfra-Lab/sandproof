@@ -16,7 +16,6 @@ use sandproof_controller_service::template_registry::{
 use sandproof_internal::template::ValidationRequest;
 use sandproof_protocol::{
     ResourceId, SandboxId, TenantId,
-    internal::lifecycle::{CreateBinding, LifecycleRequest, LifecycleResponse},
     internal::NodeIdentity,
 };
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, CreateParameters, TerminalLifecycleObservation};
@@ -568,51 +567,6 @@ impl AuthorityPort for SharedBusinessAuthority {
             hidden_sandboxes,
             templates,
         })
-    }
-    fn create(
-        &mut self,
-        tenant: &TenantId,
-        binding: CreateBinding,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .create(tenant, binding, now)
-    }
-    fn renew(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-        end: u64,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .renew(tenant, sandbox, end, now)
-    }
-    fn destroy(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .destroy(tenant, sandbox)
-    }
-    fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .apply_response(response)
-    }
-    fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        self.0
-            .lock()
-            .map_err(|_| AuthorityError::RecoveryRequired)?
-            .compact_confirmed(response)
     }
     fn confirm_terminal(&mut self, response: &sandproof_protocol::lifecycle::ConfirmedLifecycleResult) -> Result<(), AuthorityError> {
         self.0

@@ -2,11 +2,7 @@
 use crate::HostPort;
 use sandproof_api::PortError;
 use sandproof_internal::InternalClient;
-use sandproof_protocol::internal::{
-    NodeIdentity,
-    lifecycle::{LifecycleRequest, LifecycleResponse},
-    window::{WindowCloseAck, WindowCloseRequest},
-};
+use sandproof_protocol::internal::NodeIdentity;
 use std::{collections::BTreeSet, time::Duration};
 use tokio::runtime::Handle;
 
@@ -126,59 +122,6 @@ impl HostPort for RegisteredHosts {
         let client = self.client(&intent.request.binding.node)?;
         self.runtime.block_on(async {
             tokio::time::timeout(deadline, client.record_lifecycle(intent))
-                .await
-                .map_err(|_| PortError::OutcomeUnknown)?
-                .map_err(|_| PortError::OutcomeUnknown)
-        })
-    }
-    fn send(
-        &self,
-        request: &LifecycleRequest,
-        deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError> {
-        let host = self
-            .hosts
-            .iter()
-            .find(|host| host.identity == request.identity.node)
-            .ok_or(PortError::OutcomeUnknown)?;
-        // ControllerPort calls run inside the API's bounded spawn_blocking.
-        // Never invoke this sync adapter on a Tokio runtime worker thread.
-        self.runtime.block_on(async {
-            tokio::time::timeout(deadline, host.client.lifecycle(request))
-                .await
-                .map_err(|_| PortError::OutcomeUnknown)?
-                .map_err(|_| PortError::OutcomeUnknown)
-        })
-    }
-    fn confirm(
-        &self,
-        result: &LifecycleResponse,
-        deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError> {
-        let host = self
-            .hosts
-            .iter()
-            .find(|host| host.identity == result.identity.node)
-            .ok_or(PortError::OutcomeUnknown)?;
-        self.runtime.block_on(async {
-            tokio::time::timeout(deadline, host.client.confirm_result(result))
-                .await
-                .map_err(|_| PortError::OutcomeUnknown)?
-                .map_err(|_| PortError::OutcomeUnknown)
-        })
-    }
-    fn close(
-        &self,
-        request: &WindowCloseRequest,
-        deadline: Duration,
-    ) -> Result<WindowCloseAck, PortError> {
-        let host = self
-            .hosts
-            .iter()
-            .find(|host| host.identity == request.terminal.identity.node)
-            .ok_or(PortError::OutcomeUnknown)?;
-        self.runtime.block_on(async {
-            tokio::time::timeout(deadline, host.client.close_window(request))
                 .await
                 .map_err(|_| PortError::OutcomeUnknown)?
                 .map_err(|_| PortError::OutcomeUnknown)
