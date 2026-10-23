@@ -362,6 +362,14 @@ fn lifecycle_registration(
     .map_err(|_| AssemblyError::InvalidConfiguration)
 }
 
+fn data_token_key(path: &Path, owner: u32) -> Result<Vec<u8>, AssemblyError> {
+    let key = read_protected(path, owner, 4096).map_err(|_| AssemblyError::ProtectedInput)?;
+    if key.len() < 32 {
+        return Err(AssemblyError::InvalidConfiguration);
+    }
+    Ok(key)
+}
+
 impl CenterAssemblyInputs {
     /// Load root/service-account-protected configuration and DER TLS material.
     /// The center cannot accept host `database`, jailer, UID or VM configuration;
@@ -409,11 +417,7 @@ impl CenterAssemblyInputs {
         file.data_transfer.validate().map_err(|_| invalid())?;
         let admission = RequestAdmission::new(file.request_admission).map_err(|_| invalid())?;
         let credentials = credentials(file.credentials, &file.tenants)?;
-        let token_key = read_protected(&file.data_token_key, owner, 4096)
-            .map_err(|_| AssemblyError::ProtectedInput)?;
-        if token_key.len() < 32 {
-            return Err(invalid());
-        }
+        let token_key = data_token_key(&file.data_token_key, owner)?;
         let registration = lifecycle_registration(
             CenterIdentity {
                 deployment: file.deployment_id.clone(),
