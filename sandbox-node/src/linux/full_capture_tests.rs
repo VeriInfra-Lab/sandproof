@@ -51,6 +51,8 @@ fn independent_profile_binds_exact_template_device_tool_cpu_and_fixed_format() {
         ([4;32],[1;32],ContentDigest::from_sha256([8;32]))] {
         assert_ne!(expected_compatibility(&template,device,tool,cpu).unwrap(),expected);
     }
+    changed=template.clone();changed.resources.cpu_count=33;
+    assert!(expected_compatibility(&changed,[4;32],[1;32],expected.cpu).is_err());
     changed.kernel.sha256="bad".into();
     assert!(expected_compatibility(&changed,[4;32],[1;32],expected.cpu).is_err());
 }

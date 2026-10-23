@@ -13,7 +13,9 @@ const SNAPSHOT_FORMAT: u16=10; // Fixed FC 1.16.1 SNAPSHOT_VERSION=10.0.0.
 
 fn hex(bytes:&[u8;32])->String {bytes.iter().map(|byte|format!("{byte:02x}")).collect()}
 fn expected_compatibility(template:&TemplateBinding,device:[u8;32],tool:[u8;32],cpu:ContentDigest)->NodeResult<VmCompatibility> {
-    if !template.is_valid() { return Err("Full requires the original valid sealed template".into()); }
+    if !template.is_valid() || template.resources.cpu_count>32 {
+        return Err("Full requires the original supported sealed template".into());
+    }
     let image=Sha256::digest(serde_json::to_vec(&("cold-template-image",template.canonical_digest()?,device))?);
     Ok(VmCompatibility{snapshot_format:SNAPSHOT_FORMAT,tool:ContentDigest::from_sha256(tool),cpu,
         devices:ContentDigest::from_sha256(device),image_configuration:ContentDigest::from_sha256(image.into()),
