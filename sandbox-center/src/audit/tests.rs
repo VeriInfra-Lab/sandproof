@@ -5,26 +5,42 @@ mod wire;
 fn request() -> AcceptedLifecycleIntent {
     let node = wire::node("host-a");
     AcceptedLifecycleIntent {
-        center: CenterIdentity { deployment: node.deployment_id.clone(), center: "center".try_into().unwrap() },
-        retention: RetentionBinding { slot: 1, window: 1.try_into().unwrap() },
+        center: CenterIdentity {
+            deployment: node.deployment_id.clone(),
+            center: "center".try_into().unwrap(),
+        },
+        retention: RetentionBinding {
+            slot: 1,
+            window: 1.try_into().unwrap(),
+        },
         accepted_version: 1,
         request: sandproof_protocol::lifecycle::LifecycleRequest {
             binding: OperationBinding {
                 protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
-                node: node.clone(), session: "sandbox-1".try_into().unwrap(),
+                node: node.clone(),
+                session: "sandbox-1".try_into().unwrap(),
                 key: sandproof_protocol::lifecycle::OperationKey {
-                    deployment: node.deployment_id, owner: "1".try_into().unwrap(),
-                    window: 9.try_into().unwrap(), sequence: 17.try_into().unwrap(),
+                    deployment: node.deployment_id,
+                    owner: "1".try_into().unwrap(),
+                    window: 9.try_into().unwrap(),
+                    sequence: 17.try_into().unwrap(),
                 },
                 expected: sandproof_protocol::lifecycle::ExpectedSession::Absent,
             },
-            operation: LifecycleOperation::Create { create: wire::binding(), target_incarnation: 1.try_into().unwrap() },
+            operation: LifecycleOperation::Create {
+                create: wire::binding(),
+                target_incarnation: 1.try_into().unwrap(),
+            },
         },
     }
 }
 
-fn create_binding(request: &mut AcceptedLifecycleIntent) -> &mut sandproof_protocol::internal::lifecycle::CreateBinding {
-    let LifecycleOperation::Create { create, .. } = &mut request.request.operation else { unreachable!() };
+fn create_binding(
+    request: &mut AcceptedLifecycleIntent,
+) -> &mut sandproof_protocol::internal::lifecycle::CreateBinding {
+    let LifecycleOperation::Create { create, .. } = &mut request.request.operation else {
+        unreachable!()
+    };
     create
 }
 
@@ -59,10 +75,7 @@ fn creation_audit_exports_exact_binding_and_hashes_without_user_contents() {
         value["resources"],
         serde_json::to_value(create.resources).unwrap()
     );
-    assert_eq!(
-        value["startup_deadline_ms"],
-        create.startup_deadline_ms
-    );
+    assert_eq!(value["startup_deadline_ms"], create.startup_deadline_ms);
     assert_eq!(value["timeout_ms"], create.timeout_ms);
     assert_eq!(value["max_lifetime_ms"], create.max_lifetime_ms);
     assert_eq!(
@@ -116,18 +129,32 @@ fn operation_projection_keeps_binding_and_version_without_create_payload() {
     let mut intent = request();
     create_binding(&mut intent).options = br#"{"env_vars":{"SECRET":"private-env-content"},"metadata":{"task":"private-task-content"}}"#.to_vec();
     let audit = OperationAudit {
-        center: &intent.center, binding: &intent.request.binding, retention: intent.retention,
-        accepted_version: intent.accepted_version, operation: OperationKind::from(&intent.request.operation),
+        center: &intent.center,
+        binding: &intent.request.binding,
+        retention: intent.retention,
+        accepted_version: intent.accepted_version,
+        operation: OperationKind::from(&intent.request.operation),
         acceptance_time: AcceptanceTime::Sampled { at_ms: 10 },
-        running: None, create_refusal: None, terminal: None,
+        running: None,
+        create_refusal: None,
+        terminal: None,
     };
     let bytes = serde_json::to_string(&audit).unwrap();
     assert!(!bytes.contains("private-env-content"));
     assert!(!bytes.contains("private-task-content"));
     let value: serde_json::Value = serde_json::from_str(&bytes).unwrap();
-    assert_eq!(value["binding"], serde_json::to_value(&intent.request.binding).unwrap());
-    assert_eq!(value["center"], serde_json::to_value(&intent.center).unwrap());
-    assert_eq!(value["retention"], serde_json::to_value(intent.retention).unwrap());
+    assert_eq!(
+        value["binding"],
+        serde_json::to_value(&intent.request.binding).unwrap()
+    );
+    assert_eq!(
+        value["center"],
+        serde_json::to_value(&intent.center).unwrap()
+    );
+    assert_eq!(
+        value["retention"],
+        serde_json::to_value(intent.retention).unwrap()
+    );
     assert_eq!(value["accepted_version"], 1);
     assert_eq!(value["operation"]["kind"], "create");
     assert_eq!(value["operation"]["target_incarnation"], 1);

@@ -48,6 +48,8 @@ async fn run(command: cli::Command) -> Result<(), Box<dyn std::error::Error>> {
             writeln!(output)?;
             Ok(())
         }
-        Command::CaptureWorker(_) => Err("capture worker must execute before the async runtime".into()),
+        Command::CaptureWorker(_) => {
+            Err("capture worker must execute before the async runtime".into())
+        }
     }
 }

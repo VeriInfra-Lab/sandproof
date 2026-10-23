@@ -11,8 +11,8 @@ mod identity;
 mod manifest;
 mod observation;
 mod public;
-mod request;
 mod renewal;
+mod request;
 mod terminal;
 
 pub use access::{AccessIdentityError, LifecycleAccessIdentity};
@@ -37,8 +37,8 @@ pub use public::{
     CreateParameters, PublicAcceptance, PublicCreateRequest, PublicDestroyRequest,
     PublicRequestWindow, PublicSessionPhase, PublicSessionView, PublicUnloadRequest,
 };
-pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 pub use renewal::{ConfirmedRenewal, RenewalConfirmation};
+pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
 
 /// The only supported lifecycle wire format. Mismatches are refused.

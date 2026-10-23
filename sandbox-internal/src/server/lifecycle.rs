@@ -117,7 +117,7 @@ async fn renewal_command<H: LifecycleReceiver>(
     context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     handler: &H,
 ) -> Response<Full<Bytes>> {
-    use sandproof_protocol::lifecycle::{RenewalConfirmation, RENEWAL_CONFIRMATION_BODY_BYTES};
+    use sandproof_protocol::lifecycle::{RENEWAL_CONFIRMATION_BODY_BYTES, RenewalConfirmation};
     let Ok(result) = serde_json::from_slice::<RenewalConfirmation>(bytes) else {
         return response(StatusCode::BAD_REQUEST, Bytes::new());
     };
@@ -127,7 +127,9 @@ async fn renewal_command<H: LifecycleReceiver>(
     match handler.confirm_renewal(result.clone(), context).await {
         Ok(ack) if ack.matches(&result) => json_response(&ack, RENEWAL_CONFIRMATION_BODY_BYTES),
         Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
     }
 }
 

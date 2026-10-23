@@ -37,16 +37,14 @@ use sandproof_controller_service::{
 };
 use sandproof_protocol::internal::{
     NodeIdentity,
-    lifecycle::{
-        Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
-    },
+    lifecycle::{Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources},
     window::{WindowCloseAck, WindowCloseRequest},
 };
-use sandproof_protocol::{SandboxId, TenantId};
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CenterIdentity, ClosedLifecycleWindow, ConfirmedLifecycleResult,
     CreateObservation, LifecycleWindowClose, SessionId, TerminalLifecycleObservation,
 };
+use sandproof_protocol::{SandboxId, TenantId};
 use std::{
     sync::{
         Arc, Mutex,
@@ -207,9 +205,13 @@ fn state() -> CenterState {
             },
         ],
         center,
-        ["1", "2"].into_iter().map(|owner| LifecycleWindow {
-            owner: owner.try_into().unwrap(), window: 9.try_into().unwrap(),
-        }).collect(),
+        ["1", "2"]
+            .into_iter()
+            .map(|owner| LifecycleWindow {
+                owner: owner.try_into().unwrap(),
+                window: 9.try_into().unwrap(),
+            })
+            .collect(),
     )
     .unwrap()
 }
@@ -239,16 +241,32 @@ impl MemoryAuthority {
             return Err(sandproof_center_core::DecisionError::NotFound.into());
         }
         let session = SessionId::from_protocol_id(sandbox.clone());
-        let record = self.state.lifecycle_session(owner, &session)
+        let record = self
+            .state
+            .lifecycle_session(owner, &session)
             .ok_or(sandproof_center_core::DecisionError::NotFound)?;
-        let prior = record.operations().last().ok_or(sandproof_center_core::DecisionError::Invalid)?.intent();
-        if renewal.is_none() && record.terminating() { return Ok(prior.clone()); }
+        let prior = record
+            .operations()
+            .last()
+            .ok_or(sandproof_center_core::DecisionError::Invalid)?
+            .intent();
+        if renewal.is_none() && record.terminating() {
+            return Ok(prior.clone());
+        }
         let key = self.state.next_sdk_operation_key(owner)?;
         let submission = match renewal {
             Some((timeout_secs, extend_only)) => LifecycleSubmission::Renew {
-                key, session, expected_version: prior.accepted_version, timeout_secs, extend_only,
+                key,
+                session,
+                expected_version: prior.accepted_version,
+                timeout_secs,
+                extend_only,
             },
-            None => LifecycleSubmission::Destroy { key, session, expected_version: prior.accepted_version },
+            None => LifecycleSubmission::Destroy {
+                key,
+                session,
+                expected_version: prior.accepted_version,
+            },
         };
         let (next, intent) = self.state.accept_lifecycle(owner, &submission, now_ms)?;
         self.state = next;
@@ -348,19 +366,24 @@ impl AuthorityPort for MemoryAuthority {
         Ok(request)
     }
     fn accept_lifecycle_create_refusal(
-        &mut self, observation: &CreateObservation,
+        &mut self,
+        observation: &CreateObservation,
     ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
         let (next, destroy) = self.state.accept_lifecycle_create_refusal(observation)?;
         self.state = next;
         Ok(destroy)
     }
-    fn accept_lifecycle_create_observation(&mut self, observation: &CreateObservation)
-        -> Result<(), AuthorityError>
-    {
+    fn accept_lifecycle_create_observation(
+        &mut self,
+        observation: &CreateObservation,
+    ) -> Result<(), AuthorityError> {
         self.snapshot()?;
         match self.state.accept_lifecycle_create_observation(observation) {
-            Ok(next) => { self.state = next; Ok(()) }
+            Ok(next) => {
+                self.state = next;
+                Ok(())
+            }
             Err(error) => {
                 if error == sandproof_center_core::DecisionError::Stale {
                     self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterStaleApply)?;
@@ -372,23 +395,33 @@ impl AuthorityPort for MemoryAuthority {
             }
         }
     }
-    fn accept_lifecycle_terminal_observation(&mut self, response: &TerminalLifecycleObservation, now_ms: u64)
-        -> Result<(), AuthorityError>
-    {
+    fn accept_lifecycle_terminal_observation(
+        &mut self,
+        response: &TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        match self.state.accept_lifecycle_terminal_observation(response, now_ms) {
+        match self
+            .state
+            .accept_lifecycle_terminal_observation(response, now_ms)
+        {
             Ok(next) => self.state = next,
             Err(error) => {
                 if error == sandproof_center_core::DecisionError::Stale {
                     self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterStaleApply)?;
-                    if self.fence_after_stale { self.unreadable.store(true, Ordering::SeqCst); }
+                    if self.fence_after_stale {
+                        self.unreadable.store(true, Ordering::SeqCst);
+                    }
                 }
                 return Err(error.into());
             }
         }
         Ok(())
     }
-    fn confirm_terminal(&mut self, response: &ConfirmedLifecycleResult) -> Result<(), AuthorityError> {
+    fn confirm_terminal(
+        &mut self,
+        response: &ConfirmedLifecycleResult,
+    ) -> Result<(), AuthorityError> {
         self.snapshot()?;
         self.state = self.state.confirm_terminal(response)?;
         Ok(())
@@ -411,7 +444,11 @@ impl AuthorityPort for MemoryAuthority {
     fn close_batch(&mut self, _now_ms: u64) -> Result<Vec<LifecycleWindowClose>, AuthorityError> {
         Ok(self.snapshot()?.pending_closes())
     }
-    fn apply_close_ack(&mut self, ack: &ClosedLifecycleWindow, now_ms: u64) -> Result<(), AuthorityError> {
+    fn apply_close_ack(
+        &mut self,
+        ack: &ClosedLifecycleWindow,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
         self.snapshot()?;
         self.state = self.state.apply_close_ack(ack, now_ms)?;
         Ok(())
@@ -612,7 +649,9 @@ fn confirmation_uses_remaining_attempt_budget_without_resetting_original_wait() 
 }
 struct UnavailableClock;
 impl Clock for UnavailableClock {
-    fn now_ms(&self) -> Result<i64, PortError> { Err(PortError::OutcomeUnknown) }
+    fn now_ms(&self) -> Result<i64, PortError> {
+        Err(PortError::OutcomeUnknown)
+    }
 }
 
 #[test]
@@ -623,7 +662,10 @@ fn nonpositive_timeout_persists_original_destroy_when_clock_is_unavailable() {
         let calls = f.host.calls.load(Ordering::SeqCst);
         let app = Arc::try_unwrap(f.app).ok().expect("one application owner");
         f.app = Arc::new(app.with_clock(Arc::new(UnavailableClock)));
-        assert_eq!(f.app.set_timeout("1", &session.sandbox_id, 1), Err(PortError::OutcomeUnknown));
+        assert_eq!(
+            f.app.set_timeout("1", &session.sandbox_id, 1),
+            Err(PortError::OutcomeUnknown)
+        );
         assert_eq!(f.app.snapshot().unwrap().identity_frontiers(), (1, 1));
         assert_eq!(f.app.set_timeout("1", &session.sandbox_id, seconds), Ok(()));
         let state = f.app.snapshot().unwrap();
@@ -632,7 +674,10 @@ fn nonpositive_timeout_persists_original_destroy_when_clock_is_unavailable() {
         let record = &state.sandboxes()[0];
         assert!(record.terminating());
         assert!(!record.released());
-        assert_eq!(record.operations().last().unwrap().acceptance_time(), sandproof_center_core::AcceptanceTime::Unsampled);
+        assert_eq!(
+            record.operations().last().unwrap().acceptance_time(),
+            sandproof_center_core::AcceptanceTime::Unsampled
+        );
         assert_eq!(f.host.calls.load(Ordering::SeqCst), calls);
         assert_eq!(f.app.set_timeout("1", &session.sandbox_id, seconds), Ok(()));
         assert_eq!(f.app.snapshot().unwrap(), state);
@@ -925,7 +970,10 @@ fn fixture() -> Fixture {
         )
         .unwrap()
         .with_clock(Arc::new(clock.clone()))
-        .with_lifecycle_observation_policy(NodeObservationPolicy { health_window_ms: 1000, max_clock_skew_ms: 10 })
+        .with_lifecycle_observation_policy(NodeObservationPolicy {
+            health_window_ms: 1000,
+            max_clock_skew_ms: 10,
+        })
         .unwrap(),
     );
     Fixture {

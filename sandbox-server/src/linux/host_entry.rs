@@ -99,7 +99,9 @@ pub(crate) fn initialize(path: &Path) -> Result<(), Box<dyn Error>> {
     let source = ProtectedHostEpochSource::at(config.protected_bootstrap_path.clone())?;
     let registration = node.host_epoch_registration(&source, &config.inbox.node)?;
     if config.inbox.host_epoch.as_ref() != Some(&registration) {
-        return Err("explicit host bootstrap registration does not match protected material".into());
+        return Err(
+            "explicit host bootstrap registration does not match protected material".into(),
+        );
     }
     let mut journal = open_journal(
         config.native.database.clone(),
@@ -131,7 +133,9 @@ pub(crate) fn audit(path: &Path) -> Result<(), Box<dyn Error>> {
     let observation =
         LinuxWorker::inspect_existing(node_configuration(&config.native, contract.bounded))?;
     let source = ProtectedHostEpochSource::at(config.protected_bootstrap_path)?;
-    if config.inbox.host_epoch.as_ref() != Some(&observation.host_epoch_registration(&source, &config.inbox.node)?) {
+    if config.inbox.host_epoch.as_ref()
+        != Some(&observation.host_epoch_registration(&source, &config.inbox.node)?)
+    {
         return Err("stored host bootstrap registration does not match protected material".into());
     }
     observation.host_slot_inventory()?;
@@ -169,8 +173,9 @@ fn application(
     let managed = application_config(&config.native, disk_bytes)?;
     let application = ControllerApplication::with_templates(
         journal,
-        NodeHost::new(node, physical, std::env::current_exe()?)
-            .with_host_epoch_source(ProtectedHostEpochSource::at(config.protected_bootstrap_path.clone())?),
+        NodeHost::new(node, physical, std::env::current_exe()?).with_host_epoch_source(
+            ProtectedHostEpochSource::at(config.protected_bootstrap_path.clone())?,
+        ),
         managed,
         config
             .native
@@ -200,7 +205,10 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
         return Err("stored source observation limits do not match protected configuration".into());
     }
     let tls = config.internal.tls.load()?;
-    let center_peer = config.internal.tls.center_registration(config.inbox.center.clone(), config.inbox.node.clone())?;
+    let center_peer = config
+        .internal
+        .tls
+        .center_registration(config.inbox.center.clone(), config.inbox.node.clone())?;
     let limits = config.internal.limits()?;
     let node_config = node_configuration(&config.native, contract.bounded.clone());
     let physical = validate_physical_storage(&config.native, &node_config)?;

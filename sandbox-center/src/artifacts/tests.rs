@@ -32,10 +32,7 @@ use sandproof_internal::{
     status::{HostStatus, StatusReceiver, StatusRequest},
     template::{ValidationEvidence, ValidationRequest},
 };
-use sandproof_protocol::internal::{
-    NodeIdentity,
-    lifecycle::Resources,
-};
+use sandproof_protocol::internal::{NodeIdentity, lifecycle::Resources};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -197,9 +194,13 @@ fn authority_with_nodes(
             limit: resources(),
         }],
         sandproof_protocol::lifecycle::CenterIdentity {
-            deployment: engine::deployment(), center: "center".try_into().unwrap(),
+            deployment: engine::deployment(),
+            center: "center".try_into().unwrap(),
         },
-        vec![LifecycleWindow { owner: "1".try_into().unwrap(), window: 9.try_into().unwrap() }],
+        vec![LifecycleWindow {
+            owner: "1".try_into().unwrap(),
+            window: 9.try_into().unwrap(),
+        }],
     )
     .unwrap();
     let envelope = BusinessEnvelope { center, metadata };
@@ -464,7 +465,9 @@ impl DataReceiver for VerifiedCache {
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
         request: axum::http::Request<axum::body::Body>,
     ) -> axum::http::Response<axum::body::Body> {
-        RejectLifecycle.receive_data(identity, context, request).await
+        RejectLifecycle
+            .receive_data(identity, context, request)
+            .await
     }
 }
 impl ValidationReceiver for VerifiedCache {

@@ -184,8 +184,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let tenant = tenant_id(tenant)?;
         let sandbox: SandboxId = sandbox.try_into().map_err(|_| PortError::NotFound)?;
         if seconds <= 0 {
-            self.authority.lock().map_err(|_| PortError::Busy)?
-                .destroy_current(&tenant, &sandbox).map_err(authority_error)?;
+            self.authority
+                .lock()
+                .map_err(|_| PortError::Busy)?
+                .destroy_current(&tenant, &sandbox)
+                .map_err(authority_error)?;
             return Ok(());
         }
         let now = self.now()?;

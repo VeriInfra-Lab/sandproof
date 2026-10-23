@@ -6,10 +6,10 @@ use sandproof_protocol::lifecycle::{CenterIdentity, LifecycleOperation, Operatio
 #[path = "../../sandbox-protocol/tests/support/lifecycle.rs"]
 mod fixture;
 use fixture::*;
-#[path = "lifecycle/refusal.rs"]
-mod refusal;
 #[path = "lifecycle/acceptance_time.rs"]
 mod acceptance_time;
+#[path = "lifecycle/refusal.rs"]
+mod refusal;
 
 fn state() -> CenterState {
     CenterState::new(

@@ -63,21 +63,61 @@ struct OperationAudit<'a> {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum OperationKind {
-    Create { target_incarnation: IncarnationId },
-    Unload { source_incarnation: IncarnationId, capture: CaptureId },
-    Resume { source_incarnation: IncarnationId, capture: CaptureId, target_incarnation: IncarnationId, manifest_digest: ContentDigest },
-    Renew { incarnation: IncarnationId, end_at_ms: i64, extend_only: bool },
+    Create {
+        target_incarnation: IncarnationId,
+    },
+    Unload {
+        source_incarnation: IncarnationId,
+        capture: CaptureId,
+    },
+    Resume {
+        source_incarnation: IncarnationId,
+        capture: CaptureId,
+        target_incarnation: IncarnationId,
+        manifest_digest: ContentDigest,
+    },
+    Renew {
+        incarnation: IncarnationId,
+        end_at_ms: i64,
+        extend_only: bool,
+    },
     Destroy,
 }
 impl From<&LifecycleOperation> for OperationKind {
     fn from(operation: &LifecycleOperation) -> Self {
         match operation {
-            LifecycleOperation::Create { target_incarnation, .. } => Self::Create { target_incarnation: *target_incarnation },
-            LifecycleOperation::Unload { source_incarnation, capture } => Self::Unload { source_incarnation: *source_incarnation, capture: *capture },
-            LifecycleOperation::Resume { source_incarnation, capture, target_incarnation, manifest_digest } => Self::Resume {
-                source_incarnation: *source_incarnation, capture: *capture, target_incarnation: *target_incarnation, manifest_digest: *manifest_digest,
+            LifecycleOperation::Create {
+                target_incarnation, ..
+            } => Self::Create {
+                target_incarnation: *target_incarnation,
             },
-            LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } => Self::Renew { incarnation: *incarnation, end_at_ms: *end_at_ms, extend_only: *extend_only },
+            LifecycleOperation::Unload {
+                source_incarnation,
+                capture,
+            } => Self::Unload {
+                source_incarnation: *source_incarnation,
+                capture: *capture,
+            },
+            LifecycleOperation::Resume {
+                source_incarnation,
+                capture,
+                target_incarnation,
+                manifest_digest,
+            } => Self::Resume {
+                source_incarnation: *source_incarnation,
+                capture: *capture,
+                target_incarnation: *target_incarnation,
+                manifest_digest: *manifest_digest,
+            },
+            LifecycleOperation::Renew {
+                incarnation,
+                end_at_ms,
+                extend_only,
+            } => Self::Renew {
+                incarnation: *incarnation,
+                end_at_ms: *end_at_ms,
+                extend_only: *extend_only,
+            },
             LifecycleOperation::Destroy {} => Self::Destroy,
         }
     }
@@ -147,14 +187,12 @@ pub fn view(envelope: &Envelope, revision: Revision) -> Result<AuditView<'_>, &'
     })
 }
 
-fn create_view(
-    intent: &AcceptedLifecycleIntent,
-) -> Result<CreateAudit<'_>, &'static str> {
+fn create_view(intent: &AcceptedLifecycleIntent) -> Result<CreateAudit<'_>, &'static str> {
     let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
         return Err("invalid original center create operation");
     };
-    let options: CreateOptions = serde_json::from_slice(&create.options)
-        .map_err(|_| "invalid original center options")?;
+    let options: CreateOptions =
+        serde_json::from_slice(&create.options).map_err(|_| "invalid original center options")?;
     options
         .validate()
         .map_err(|_| "invalid original center options")?;

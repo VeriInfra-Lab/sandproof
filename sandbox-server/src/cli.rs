@@ -23,8 +23,14 @@ pub(crate) fn parse(
         Some("contract-versions") => Command::ContractVersions,
         Some("capture-worker") => {
             let digest = arguments.next().ok_or("capture job digest missing")?;
-            let digest = digest.into_string().map_err(|_| "capture job digest is not ASCII")?;
-            if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+            let digest = digest
+                .into_string()
+                .map_err(|_| "capture job digest is not ASCII")?;
+            if digest.len() != 64
+                || !digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
                 return Err("capture job digest must contain 64 lowercase hex digits");
             }
             Command::CaptureWorker(digest)
@@ -62,7 +68,13 @@ mod tests {
     }
     #[test]
     fn only_explicit_protected_host_commands_are_accepted() {
-        for command in ["initialize", "provision-bootstrap", "serve", "audit", "observe-center"] {
+        for command in [
+            "initialize",
+            "provision-bootstrap",
+            "serve",
+            "audit",
+            "observe-center",
+        ] {
             assert!(parse(arguments(&[command, "--config", "/private/config"])).is_ok());
         }
         assert_eq!(parse(arguments(&["relay"])).unwrap(), Command::Relay);
@@ -86,12 +98,26 @@ mod tests {
     #[test]
     fn capture_worker_accepts_one_exact_digest_and_no_product_configuration() {
         let digest = "a1".repeat(32);
-        assert_eq!(parse(arguments(&["capture-worker", &digest])), Ok(Command::CaptureWorker(digest)));
+        assert_eq!(
+            parse(arguments(&["capture-worker", &digest])),
+            Ok(Command::CaptureWorker(digest))
+        );
         for values in [
-            vec!["capture-worker"], vec!["capture-worker", "1234"],
-            vec!["capture-worker", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"],
-            vec!["capture-worker", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaag"],
-            vec!["capture-worker", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "extra"],
+            vec!["capture-worker"],
+            vec!["capture-worker", "1234"],
+            vec![
+                "capture-worker",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            ],
+            vec![
+                "capture-worker",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaag",
+            ],
+            vec![
+                "capture-worker",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "extra",
+            ],
             vec!["capture-worker", "--config", "/private/config"],
         ] {
             assert!(parse(arguments(&values)).is_err());

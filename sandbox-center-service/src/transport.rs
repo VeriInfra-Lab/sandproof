@@ -86,7 +86,8 @@ impl HostPort for RegisteredHosts {
         let client = self.client(&result.request.request.binding.node)?;
         self.runtime.block_on(async {
             tokio::time::timeout(deadline, client.confirm_lifecycle_renewal(result))
-                .await.map_err(|_| PortError::OutcomeUnknown)?
+                .await
+                .map_err(|_| PortError::OutcomeUnknown)?
                 .map_err(|_| PortError::OutcomeUnknown)
         })
     }

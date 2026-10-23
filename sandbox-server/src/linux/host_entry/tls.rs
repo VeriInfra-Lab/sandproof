@@ -66,10 +66,20 @@ pub(super) struct TlsFiles {
     center_leaves: Vec<PathBuf>,
 }
 impl TlsFiles {
-    pub(super) fn center_registration(&self, center: sandproof_protocol::lifecycle::CenterIdentity, node: sandproof_protocol::internal::NodeIdentity) -> Result<sandproof_internal::lifecycle::CenterPeerRegistration, Box<dyn Error>> {
+    pub(super) fn center_registration(
+        &self,
+        center: sandproof_protocol::lifecycle::CenterIdentity,
+        node: sandproof_protocol::internal::NodeIdentity,
+    ) -> Result<sandproof_internal::lifecycle::CenterPeerRegistration, Box<dyn Error>> {
         self.validate()?;
-        Ok(sandproof_internal::lifecycle::CenterPeerRegistration::new(center, node,
-            certificates(&self.center_leaves)?.iter().map(CertificatePin::from_certificate).collect())?)
+        Ok(sandproof_internal::lifecycle::CenterPeerRegistration::new(
+            center,
+            node,
+            certificates(&self.center_leaves)?
+                .iter()
+                .map(CertificatePin::from_certificate)
+                .collect(),
+        )?)
     }
     pub(super) fn validate(&self) -> Result<(), Box<dyn Error>> {
         if !(1..=8).contains(&self.identity_chain.len())

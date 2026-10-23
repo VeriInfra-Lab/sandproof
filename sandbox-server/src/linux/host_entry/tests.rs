@@ -102,7 +102,10 @@ fn host_budget_retains_management_and_destroy_capacity() {
 fn current_bootstrap_settings_reject_foreign_missing_and_old_shapes() {
     for (pointer, replacement) in [
         ("/inbox/center/deployment", json!("another-deployment")),
-        ("/protected_bootstrap_path", json!("relative/bootstrap.json")),
+        (
+            "/protected_bootstrap_path",
+            json!("relative/bootstrap.json"),
+        ),
         ("/source_observation/max_work_bytes", json!(1023)),
         ("/source_observation/max_configuration_bytes", json!(0)),
     ] {

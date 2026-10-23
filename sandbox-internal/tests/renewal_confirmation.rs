@@ -4,7 +4,8 @@ use hyper::{Request, Response};
 use sandproof_internal::{
     ClientTls, DataReceiver, InternalClient, InternalServer, LifecycleReceiver, Limits,
     ReceiveError, RegisteredEndpoint, RejectLifecycle, ServerTls, TransportError,
-    diagnostic::RejectTemplateCache, lifecycle::CenterPeerRegistration,
+    diagnostic::RejectTemplateCache,
+    lifecycle::CenterPeerRegistration,
     template::{ValidationEvidence, ValidationReceiver, ValidationRequest},
 };
 use sandproof_protocol::{
@@ -16,7 +17,10 @@ use sandproof_protocol::{
     },
 };
 use std::{
-    sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::{net::TcpListener, sync::oneshot};
@@ -41,7 +45,10 @@ fn result() -> RenewalConfirmation {
     RenewalConfirmation {
         request: AcceptedLifecycleIntent {
             center: center(),
-            retention: RetentionBinding { slot: 1, window: 7.try_into().unwrap() },
+            retention: RetentionBinding {
+                slot: 1,
+                window: 7.try_into().unwrap(),
+            },
             accepted_version: 2,
             request: LifecycleRequest {
                 binding: OperationBinding {
@@ -78,7 +85,10 @@ impl LifecycleReceiver for Receiver {
         result: RenewalConfirmation,
         context: AuthenticatedCenterContext,
     ) -> Result<ConfirmedRenewal, ReceiveError> {
-        self.received.lock().unwrap().push((result.clone(), context));
+        self.received
+            .lock()
+            .unwrap()
+            .push((result.clone(), context));
         let mut ack = ConfirmedRenewal { result };
         if self.change_ack.load(Ordering::SeqCst) {
             ack.result.request.request.binding.key.owner = "other-owner".try_into().unwrap();
@@ -93,7 +103,9 @@ impl DataReceiver for Receiver {
         context: AuthenticatedCenterContext,
         request: Request<Body>,
     ) -> Response<Body> {
-        RejectLifecycle.receive_data(identity, context, request).await
+        RejectLifecycle
+            .receive_data(identity, context, request)
+            .await
     }
 }
 impl ValidationReceiver for Receiver {
@@ -113,24 +125,52 @@ async fn renewal_confirmation_preserves_exact_result_and_independent_peer_contex
     let change_ack = Arc::new(AtomicBool::new(false));
     let limits = Limits::new(2, Duration::from_secs(5), Duration::from_secs(10)).unwrap();
     let server = InternalServer::new(
-        ServerTls::new(certificates.host.material(), vec![certificates.ca.der().clone()], vec![certificates.center.pin()]).unwrap(),
+        ServerTls::new(
+            certificates.host.material(),
+            vec![certificates.ca.der().clone()],
+            vec![certificates.center.pin()],
+        )
+        .unwrap(),
         node(),
         limits,
-        RejectTemplateCache::new(Receiver { received: Arc::clone(&received), change_ack: Arc::clone(&change_ack) }),
-    ).with_center_peer(CenterPeerRegistration::new(center(), node(), vec![certificates.center.pin()]).unwrap()).unwrap();
+        RejectTemplateCache::new(Receiver {
+            received: Arc::clone(&received),
+            change_ack: Arc::clone(&change_ack),
+        }),
+    )
+    .with_center_peer(
+        CenterPeerRegistration::new(center(), node(), vec![certificates.center.pin()]).unwrap(),
+    )
+    .unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (stop, shutdown) = oneshot::channel();
     let run = server.clone();
     let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
     let client = InternalClient::new(
-        ClientTls::new(certificates.center.material(), vec![certificates.ca.der().clone()], vec![certificates.host.pin()]).unwrap(),
+        ClientTls::new(
+            certificates.center.material(),
+            vec![certificates.ca.der().clone()],
+            vec![certificates.host.pin()],
+        )
+        .unwrap(),
         RegisteredEndpoint::new(address, "host.test".into(), node()).unwrap(),
         limits,
     );
     let original = result();
-    assert_eq!(client.confirm_lifecycle_renewal(&original).await.unwrap(), ConfirmedRenewal { result: original.clone() });
-    assert_eq!(*received.lock().unwrap(), vec![(original.clone(), AuthenticatedCenterContext::from_verified_peer_registration(center(), node()))]);
+    assert_eq!(
+        client.confirm_lifecycle_renewal(&original).await.unwrap(),
+        ConfirmedRenewal {
+            result: original.clone()
+        }
+    );
+    assert_eq!(
+        *received.lock().unwrap(),
+        vec![(
+            original.clone(),
+            AuthenticatedCenterContext::from_verified_peer_registration(center(), node())
+        )]
+    );
     assert_rejections(&client, &original, &received, &change_ack).await;
     stop.send(()).unwrap();
     task.await.unwrap().unwrap();
@@ -146,15 +186,35 @@ async fn assert_rejections(
 ) {
     let mut foreign = original.clone();
     foreign.request.center.center = "unregistered-center".try_into().unwrap();
-    assert_eq!(client.confirm_lifecycle_renewal(&foreign).await, Err(TransportError::Rejected));
+    assert_eq!(
+        client.confirm_lifecycle_renewal(&foreign).await,
+        Err(TransportError::Rejected)
+    );
     let mut public = original.clone();
     public.request.request.binding.key.window = 3.try_into().unwrap();
-    assert_eq!(client.confirm_lifecycle_renewal(&public).await, Err(TransportError::Rejected));
+    assert_eq!(
+        client.confirm_lifecycle_renewal(&public).await,
+        Err(TransportError::Rejected)
+    );
     let mut changed_end = original.clone();
     changed_end.effective_end_at_ms += 1;
-    assert_eq!(client.confirm_lifecycle_renewal(&changed_end).await, Err(TransportError::Rejected));
-    assert_eq!(received.lock().unwrap().len(), 1, "rejected input must not reach the provider");
+    assert_eq!(
+        client.confirm_lifecycle_renewal(&changed_end).await,
+        Err(TransportError::Rejected)
+    );
+    assert_eq!(
+        received.lock().unwrap().len(),
+        1,
+        "rejected input must not reach the provider"
+    );
     change_ack.store(true, Ordering::SeqCst);
-    assert_eq!(client.confirm_lifecycle_renewal(original).await, Err(TransportError::Rejected));
-    assert_eq!(received.lock().unwrap().len(), 2, "a changed reply is not an absent call");
+    assert_eq!(
+        client.confirm_lifecycle_renewal(original).await,
+        Err(TransportError::Rejected)
+    );
+    assert_eq!(
+        received.lock().unwrap().len(),
+        2,
+        "a changed reply is not an absent call"
+    );
 }

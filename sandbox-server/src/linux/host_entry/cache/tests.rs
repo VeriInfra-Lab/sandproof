@@ -727,14 +727,12 @@ fn cache_application(
     };
     let namespace = "0123456789abcdef";
     let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
-    let mut host =
-        local::complete_fixture::host(path, namespace, 64, 2 * 1024 * 1024, reserve);
+    let mut host = local::complete_fixture::host(path, namespace, 64, 2 * 1024 * 1024, reserve);
     let physical = host.physical_storage.as_mut().unwrap();
     physical.filesystem_overhead_inodes += cache.inode_budget;
     physical.host_template_caches = vec![cache];
     let mut journal =
-        ControllerJournal::open_complete(path, namespace, host, current::maintenance(), 0)
-            .unwrap();
+        ControllerJournal::open_complete(path, namespace, host, current::maintenance(), 0).unwrap();
     journal
         .initialize_lifecycle_inbox(current::config(), current::source_limits(), &mut NeverCrash)
         .unwrap();
@@ -793,7 +791,10 @@ async fn assert_current_ready(
         .await
         .unwrap();
     assert!(observed.matches_request(create));
-    assert!(matches!(observed.readiness, CurrentCreateReadiness::Observed { .. }));
+    assert!(matches!(
+        observed.readiness,
+        CurrentCreateReadiness::Observed { .. }
+    ));
 }
 
 #[tokio::test]

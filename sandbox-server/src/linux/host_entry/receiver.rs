@@ -15,7 +15,10 @@ use sandproof_internal::{
 use sandproof_node::NodeHost;
 use sandproof_protocol::{
     internal::NodeIdentity,
-    lifecycle::{AcceptedLifecycleIntent, AuthenticatedCenterContext, CreateObservation, LifecycleAccessIdentity, RecordedLifecycleIntent},
+    lifecycle::{
+        AcceptedLifecycleIntent, AuthenticatedCenterContext, CreateObservation,
+        LifecycleAccessIdentity, RecordedLifecycleIntent,
+    },
 };
 use std::sync::Arc;
 
@@ -34,19 +37,39 @@ impl LifecycleReceiver for RegisteredHost {
     ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, ReceiveError> {
         self.facade.confirm_renewal(result, context).await
     }
-    async fn confirm_terminal(&self, result: sandproof_protocol::lifecycle::TerminalLifecycleObservation, context: AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
+    async fn confirm_terminal(
+        &self,
+        result: sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+        context: AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, ReceiveError> {
         self.facade.confirm_terminal(result, context).await
     }
-    async fn close_window(&self, request: sandproof_protocol::lifecycle::LifecycleWindowClose, context: AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError> {
+    async fn close_window(
+        &self,
+        request: sandproof_protocol::lifecycle::LifecycleWindowClose,
+        context: AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, ReceiveError> {
         self.facade.close_window(request, context).await
     }
-    async fn observe_terminal(&self, intent: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError> {
+    async fn observe_terminal(
+        &self,
+        intent: AcceptedLifecycleIntent,
+        context: AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError> {
         self.facade.observe_terminal(intent, context).await
     }
-    async fn record_lifecycle(&self, intent: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<RecordedLifecycleIntent, ReceiveError> {
+    async fn record_lifecycle(
+        &self,
+        intent: AcceptedLifecycleIntent,
+        context: AuthenticatedCenterContext,
+    ) -> Result<RecordedLifecycleIntent, ReceiveError> {
         self.facade.record_lifecycle(intent, context).await
     }
-    async fn observe_create(&self, intent: AcceptedLifecycleIntent, context: AuthenticatedCenterContext) -> Result<CreateObservation, ReceiveError> {
+    async fn observe_create(
+        &self,
+        intent: AcceptedLifecycleIntent,
+        context: AuthenticatedCenterContext,
+    ) -> Result<CreateObservation, ReceiveError> {
         self.facade.observe_create(intent, context).await
     }
 }

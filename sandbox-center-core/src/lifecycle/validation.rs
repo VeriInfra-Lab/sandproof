@@ -230,7 +230,12 @@ impl CenterState {
         if request.binding.expected != ExpectedSession::Version(previous.intent.accepted_version) {
             return false;
         }
-        Self::valid_lifecycle_followup(op, origin, previous, position + 1 == session.operations.len())
+        Self::valid_lifecycle_followup(
+            op,
+            origin,
+            previous,
+            position + 1 == session.operations.len(),
+        )
     }
 
     fn valid_lifecycle_followup(
@@ -259,7 +264,9 @@ impl CenterState {
                 let Some(prior) = previous.running.as_ref() else {
                     return false;
                 };
-                let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else { return false; };
+                let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else {
+                    return false;
+                };
                 let Ok(end) = u64::try_from(*end_at_ms) else {
                     return false;
                 };
@@ -317,7 +324,9 @@ impl CenterState {
                 },
                 LifecycleOperation::Destroy {},
             ) => {
-                let super::AcceptanceTime::Unsampled = op.acceptance_time else { return false; };
+                let super::AcceptanceTime::Unsampled = op.acceptance_time else {
+                    return false;
+                };
                 is_last
                     && *expected_version == previous.intent.accepted_version
                     && named == &request.binding.session
@@ -339,7 +348,9 @@ impl CenterState {
     ) -> bool {
         let intent = &op.intent;
         let request = &intent.request;
-        let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else { return false; };
+        let Some(accepted_at_ms) = op.acceptance_time.sampled_at_ms() else {
+            return false;
+        };
         match (&op.submission, &request.operation) {
             (
                 LifecycleSubmission::Create { parameters, .. },

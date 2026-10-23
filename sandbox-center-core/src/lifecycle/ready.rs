@@ -203,8 +203,7 @@ impl CenterState {
             result: result.clone(),
             recorded_at_ms: now_ms,
             retain_until_ms,
-            retention_started_at_ms: record.acceptance_times_not_after(now_ms)
-            .then_some(now_ms),
+            retention_started_at_ms: record.acceptance_times_not_after(now_ms).then_some(now_ms),
         });
         if !next.is_valid() {
             return Err(DecisionError::Invalid);

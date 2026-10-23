@@ -13,9 +13,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
         observation: &sandproof_protocol::lifecycle::CreateObservation,
     ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
-        let (next, destroy) = self
-            .state()?
-            .accept_lifecycle_create_refusal(observation)?;
+        let (next, destroy) = self.state()?.accept_lifecycle_create_refusal(observation)?;
         if &next == self.state()? {
             self.snapshot()?;
         } else {

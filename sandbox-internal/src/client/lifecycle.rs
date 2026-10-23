@@ -11,19 +11,46 @@ impl InternalClient {
         &self,
         result: &sandproof_protocol::lifecycle::RenewalConfirmation,
     ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, TransportError> {
-        use sandproof_protocol::lifecycle::{ConfirmedRenewal, RENEWAL_CONFIRMATION_BODY_BYTES, RENEWAL_CONFIRMATION_PATH};
-        result.request.request.validate(&self.endpoint.node).map_err(|_| TransportError::Rejected)?;
-        if !result.is_sdk_renewal() { return Err(TransportError::Rejected); }
-        let _permit = self.calls.try_acquire().map_err(|_| TransportError::Overloaded)?;
+        use sandproof_protocol::lifecycle::{
+            ConfirmedRenewal, RENEWAL_CONFIRMATION_BODY_BYTES, RENEWAL_CONFIRMATION_PATH,
+        };
+        result
+            .request
+            .request
+            .validate(&self.endpoint.node)
+            .map_err(|_| TransportError::Rejected)?;
+        if !result.is_sdk_renewal() {
+            return Err(TransportError::Rejected);
+        }
+        let _permit = self
+            .calls
+            .try_acquire()
+            .map_err(|_| TransportError::Overloaded)?;
         let work = async {
-            let encoded = sandproof_controller_service::template_registry::evidence::encode_bounded(result, RENEWAL_CONFIRMATION_BODY_BYTES)
+            let encoded =
+                sandproof_controller_service::template_registry::evidence::encode_bounded(
+                    result,
+                    RENEWAL_CONFIRMATION_BODY_BYTES,
+                )
                 .map_err(|_| TransportError::Rejected)?;
-            let bytes = self.exchange_bytes(RENEWAL_CONFIRMATION_PATH, encoded, RENEWAL_CONFIRMATION_BODY_BYTES, RENEWAL_CONFIRMATION_BODY_BYTES).await?;
-            let ack: ConfirmedRenewal = serde_json::from_slice(&bytes).map_err(|_| TransportError::InvalidResponse)?;
-            if !ack.matches(result) { return Err(TransportError::InvalidResponse); }
+            let bytes = self
+                .exchange_bytes(
+                    RENEWAL_CONFIRMATION_PATH,
+                    encoded,
+                    RENEWAL_CONFIRMATION_BODY_BYTES,
+                    RENEWAL_CONFIRMATION_BODY_BYTES,
+                )
+                .await?;
+            let ack: ConfirmedRenewal =
+                serde_json::from_slice(&bytes).map_err(|_| TransportError::InvalidResponse)?;
+            if !ack.matches(result) {
+                return Err(TransportError::InvalidResponse);
+            }
             Ok(ack)
         };
-        timeout(self.limits.request_timeout, work).await.map_err(|_| TransportError::Deadline)?
+        timeout(self.limits.request_timeout, work)
+            .await
+            .map_err(|_| TransportError::Deadline)?
     }
     /// Only the original center's DURABLY SAVED complete terminal result may
     /// enter this call. A network echo is not a substitute for that provider.
