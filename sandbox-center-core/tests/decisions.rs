@@ -190,7 +190,10 @@ fn deterministic_balanced_fixed_binding_and_capacity() {
     assert_eq!(second.request.binding.node, node("host-b"));
     let (s, _) = create(&s, &tenant, binding(), 3).unwrap();
     let (s, _) = create(&s, &tenant, binding(), 4).unwrap();
-    assert_eq!(create(&s, &tenant, binding(), 5), Err(DecisionError::Capacity));
+    assert_eq!(
+        create(&s, &tenant, binding(), 5),
+        Err(DecisionError::Capacity)
+    );
     assert_eq!(s.pending_lifecycle()[0], first);
     assert_eq!(s.reserved(None, None), Some(resources(4)));
     assert!(s.is_valid());
@@ -205,15 +208,24 @@ fn stale_health_physical_free_templates_and_draining_are_vetoes() {
     let mut b = registration("host-b");
     b.free.disk_bytes = 0;
     let s = s.observe_node(b.clone()).unwrap();
-    assert_eq!(create(&s, &tenant, binding(), 1), Err(DecisionError::Capacity));
+    assert_eq!(
+        create(&s, &tenant, binding(), 1),
+        Err(DecisionError::Capacity)
+    );
     b.free = resources(2);
     b.healthy_until_ms = 0;
     let s = s.observe_node(b.clone()).unwrap();
-    assert_eq!(create(&s, &tenant, binding(), 1), Err(DecisionError::Unavailable));
+    assert_eq!(
+        create(&s, &tenant, binding(), 1),
+        Err(DecisionError::Unavailable)
+    );
     b.healthy_until_ms = 2000;
     b.templates.clear();
     let s = s.observe_node(b).unwrap();
-    assert_eq!(create(&s, &tenant, binding(), 1), Err(DecisionError::Unavailable));
+    assert_eq!(
+        create(&s, &tenant, binding(), 1),
+        Err(DecisionError::Unavailable)
+    );
 }
 
 #[test]
@@ -230,17 +242,23 @@ fn unknown_holds_quota_destroy_supersedes_late_ready_and_pending_is_not_cleaned(
         request: destroy_request.clone(),
         status: TerminalStatus::Pending,
     };
-    let s = s.accept_lifecycle_terminal_observation(&pending, 150).unwrap();
+    let s = s
+        .accept_lifecycle_terminal_observation(&pending, 150)
+        .unwrap();
     assert_eq!(s.reserved(None, None), Some(resources(1)));
     let cleaned = TerminalLifecycleObservation {
         request: destroy_request.clone(),
         status: TerminalStatus::Cleaned,
     };
-    let s = s.accept_lifecycle_terminal_observation(&cleaned, 150).unwrap();
+    let s = s
+        .accept_lifecycle_terminal_observation(&cleaned, 150)
+        .unwrap();
     assert_eq!(s.reserved(None, None), Some(resources(0)));
     // Saving Cleaned does not discharge the pending confirmation responsibility.
     assert_eq!(s.pending_lifecycle(), vec![destroy_request.clone()]);
-    let s = s.confirm_terminal(&ConfirmedLifecycleResult { result: cleaned }).unwrap();
+    let s = s
+        .confirm_terminal(&ConfirmedLifecycleResult { result: cleaned })
+        .unwrap();
     assert!(s.pending_lifecycle().is_empty());
     assert_eq!(destroy(&s, &create, 2).unwrap().1, destroy_request);
 }
@@ -253,7 +271,10 @@ fn lifetime_is_original_normalization_is_bounded_and_destroy_keeps_its_reserve()
     // The current public input is relative seconds. Even an enormous duration
     // is normalized to the original total limit, not a renewed execution.
     let (_, clamped) = renew(&s, &create, 2, u64::MAX, 150).unwrap();
-    assert!(matches!(clamped.request.operation, LifecycleOperation::Renew { end_at_ms: 600, .. }));
+    assert!(matches!(
+        clamped.request.operation,
+        LifecycleOperation::Renew { end_at_ms: 600, .. }
+    ));
     let (s, renewal) = renew(&s, &create, 2, 1, 150).unwrap();
     assert_eq!(s.sandboxes()[0].last_running().unwrap().end_at_ms, 200);
     assert_eq!(
@@ -273,36 +294,64 @@ fn wrong_owner_or_full_binding_and_a_refusal_cannot_release_before_cleaned() {
     let tenant = "1".try_into().unwrap();
     let other: TenantId = "2".try_into().unwrap();
     let mut registered = tenants();
-    registered.push(TenantBudget { tenant: other.clone(), limit: resources(4) });
-    let initial = configured(vec![registration("host-a"), registration("host-b")], registered);
+    registered.push(TenantBudget {
+        tenant: other.clone(),
+        limit: resources(4),
+    });
+    let initial = configured(
+        vec![registration("host-a"), registration("host-b")],
+        registered,
+    );
     let (s, create) = create(&initial, &tenant, binding(), 1).unwrap();
     let foreign = LifecycleSubmission::Destroy {
         key: key(&other, 2),
         session: create.request.binding.session.clone(),
         expected_version: 1,
     };
-    assert_eq!(s.accept_lifecycle(&other, &foreign, 0), Err(DecisionError::NotFound));
+    assert_eq!(
+        s.accept_lifecycle(&other, &foreign, 0),
+        Err(DecisionError::NotFound)
+    );
     let mut bad = observed(&create, &create, 200, 100);
     bad.request.request.binding.node.node_generation = 2.try_into().unwrap();
-    assert_eq!(s.accept_lifecycle_create_observation(&bad), Err(DecisionError::Stale));
+    assert_eq!(
+        s.accept_lifecycle_create_observation(&bad),
+        Err(DecisionError::Stale)
+    );
     assert_eq!(s.pending_lifecycle(), vec![create.clone()]);
     let refused = CreateObservation {
         request: create.clone(),
         current_request: create.clone(),
         historical_create_succeeded: false,
-        readiness: CurrentCreateReadiness::Refused { reason: CreateRefusalReason::Capacity },
+        readiness: CurrentCreateReadiness::Refused {
+            reason: CreateRefusalReason::Capacity,
+        },
     };
     let running = ready(&s, &create);
-    assert_eq!(running.accept_lifecycle_create_refusal(&refused), Err(DecisionError::Conflict));
+    assert_eq!(
+        running.accept_lifecycle_create_refusal(&refused),
+        Err(DecisionError::Conflict)
+    );
     assert_eq!(running.reserved(None, None), Some(resources(1)));
     let (s, destroy) = s.accept_lifecycle_create_refusal(&refused).unwrap();
     assert_eq!(s.reserved(None, None), Some(resources(1)));
-    assert_eq!(s.accept_lifecycle_create_refusal(&refused), Err(DecisionError::Stale));
+    assert_eq!(
+        s.accept_lifecycle_create_refusal(&refused),
+        Err(DecisionError::Stale)
+    );
     let mut exact = refused;
     exact.current_request = destroy.clone();
-    assert_eq!(s.accept_lifecycle_create_refusal(&exact).unwrap(), (s.clone(), destroy.clone()));
-    let cleaned = TerminalLifecycleObservation { request: destroy, status: TerminalStatus::Cleaned };
-    let s = s.accept_lifecycle_terminal_observation(&cleaned, 150).unwrap();
+    assert_eq!(
+        s.accept_lifecycle_create_refusal(&exact).unwrap(),
+        (s.clone(), destroy.clone())
+    );
+    let cleaned = TerminalLifecycleObservation {
+        request: destroy,
+        status: TerminalStatus::Cleaned,
+    };
+    let s = s
+        .accept_lifecycle_terminal_observation(&cleaned, 150)
+        .unwrap();
     assert_eq!(s.reserved(None, None), Some(resources(0)));
     assert!(s.is_valid());
 }
@@ -327,9 +376,13 @@ fn u64_max_ratios_are_exact_without_overflow() {
 fn tenant_quota_does_not_block_another_tenant_and_template_digest_must_match() {
     let s = configured(
         vec![registration("host-a"), registration("host-b")],
-        ["1", "2"].into_iter().map(|id| TenantBudget {
-            tenant: id.try_into().unwrap(), limit: resources(2),
-        }).collect(),
+        ["1", "2"]
+            .into_iter()
+            .map(|id| TenantBudget {
+                tenant: id.try_into().unwrap(),
+                limit: resources(2),
+            })
+            .collect(),
     );
     let one = "1".try_into().unwrap();
     let two = "2".try_into().unwrap();
@@ -346,7 +399,10 @@ fn tenant_quota_does_not_block_another_tenant_and_template_digest_must_match() {
 fn private_build_role_reuses_admission_without_consuming_runtime_pool() {
     let mut builder = registration("host-a");
     builder.role = NodeRole::Builder;
-    assert_eq!(state().observe_node(builder.clone()), Err(DecisionError::Conflict));
+    assert_eq!(
+        state().observe_node(builder.clone()),
+        Err(DecisionError::Conflict)
+    );
     let initial = configured(vec![builder, registration("host-b")], tenants());
     let tenant = "1".try_into().unwrap();
     let (normal, public) = create(&initial, &tenant, binding(), 1).unwrap();
@@ -354,10 +410,19 @@ fn private_build_role_reuses_admission_without_consuming_runtime_pool() {
     let input = create_input(&tenant, binding(), 2);
     let (both, private) = normal.accept_builder_lifecycle(&tenant, &input, 0).unwrap();
     assert_eq!(private.request.binding.node, node("host-a"));
-    assert_ne!(public.request.binding.session, private.request.binding.session);
+    assert_ne!(
+        public.request.binding.session,
+        private.request.binding.session
+    );
     assert_ne!(public.request.binding.key, private.request.binding.key);
-    assert_eq!(both.reserved(None, Some(&node("host-b"))), Some(resources(1)));
-    assert_eq!(both.reserved(None, Some(&node("host-a"))), Some(resources(1)));
+    assert_eq!(
+        both.reserved(None, Some(&node("host-b"))),
+        Some(resources(1))
+    );
+    assert_eq!(
+        both.reserved(None, Some(&node("host-a"))),
+        Some(resources(1))
+    );
     assert_eq!(both.pending_lifecycle(), vec![public, private]);
     assert!(both.is_valid());
 }
