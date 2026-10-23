@@ -96,7 +96,10 @@ fn mutable_credential_rotation_does_not_change_the_device_boot_plan() {
     assert_eq!(before, after);
     assert_eq!(before.digest().unwrap(), after.digest().unwrap());
     rotated.memory_mib += 1;
-    assert_ne!(before.digest().unwrap(), BootPlan::for_runtime(&rotated).digest().unwrap());
+    assert_ne!(
+        before.digest().unwrap(),
+        BootPlan::for_runtime(&rotated).digest().unwrap()
+    );
     let bytes = serde_json::to_string(&before).unwrap();
     assert!(!bytes.contains(&"a".repeat(128)) && !bytes.contains(&"b".repeat(128)));
     assert!(!bytes.contains("InstanceStart"));

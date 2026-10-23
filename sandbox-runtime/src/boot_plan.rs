@@ -85,8 +85,8 @@ impl BootPlan {
         }
     }
 
-    pub(super) fn digest(&self) -> Result<[u8;32], RuntimeError> {
-        use sha2::{Digest,Sha256};
+    pub(super) fn digest(&self) -> Result<[u8; 32], RuntimeError> {
+        use sha2::{Digest, Sha256};
         Ok(Sha256::digest(serde_json::to_vec(self)?).into())
     }
 

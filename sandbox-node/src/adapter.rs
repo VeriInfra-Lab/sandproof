@@ -106,9 +106,15 @@ impl NodeHost {
         settings: crate::ProtectedCaptureSettings,
         original: &sandproof_controller_service::capture::HostEpochRequirement,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let provider=self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?;
-        self.capture_profile=Some(crate::linux::ProtectedCaptureProfile::assemble(
-            &self.worker,provider,settings,original,
+        let provider = self
+            .host_epoch_source
+            .as_ref()
+            .ok_or("missing original protected bootstrap source")?;
+        self.capture_profile = Some(crate::linux::ProtectedCaptureProfile::assemble(
+            &self.worker,
+            provider,
+            settings,
+            original,
         )?);
         Ok(self)
     }
@@ -122,10 +128,19 @@ impl NodeHost {
         &self,
         pause: &sandproof_controller_service::capture::PauseWorkRequest,
         original: &sandproof_controller_service::capture::SourceObservationRequirement,
-    ) -> Result<sandproof_controller_service::capture::FullCaptureWorkRequest,Box<dyn std::error::Error>> {
+    ) -> Result<
+        sandproof_controller_service::capture::FullCaptureWorkRequest,
+        Box<dyn std::error::Error>,
+    > {
         self.worker.prepare_full_capture(
-            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
-            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,pause,original,
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            pause,
+            original,
         )
     }
 
@@ -141,10 +156,17 @@ impl NodeHost {
         action: &WorkAction<core::EffectId>,
         request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
         original: &sandproof_controller_service::capture::SourceObservationRequirement,
-    ) -> Result<crate::full_snapshot::FullCaptureObservation,Box<dyn std::error::Error>> {
+    ) -> Result<crate::full_snapshot::FullCaptureObservation, Box<dyn std::error::Error>> {
         self.worker.capture_original(
-            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
-            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,action,request,original,
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            action,
+            request,
+            original,
         )
     }
 
@@ -157,11 +179,17 @@ impl NodeHost {
         request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
         original: &sandproof_controller_service::capture::SourceObservationRequirement,
         manifest: Option<sandproof_protocol::lifecycle::ContentDigest>,
-    ) -> Result<crate::full_snapshot::CheckedStoredCapture,Box<dyn std::error::Error>> {
+    ) -> Result<crate::full_snapshot::CheckedStoredCapture, Box<dyn std::error::Error>> {
         self.worker.observe_full_capture(
-            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
-            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,request,original,
-            manifest.map(|digest|*digest.as_bytes()),
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            request,
+            original,
+            manifest.map(|digest| *digest.as_bytes()),
         )
     }
 }
@@ -179,7 +207,9 @@ impl NodeHost {
         expected: &sandproof_controller_service::capture::CommittedCaptureExpectation,
     ) -> Result<crate::full_snapshot::CheckedStoredCapture, Box<dyn std::error::Error>> {
         crate::linux::observe_committed_capture(
-            self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
             expected,
         )
     }

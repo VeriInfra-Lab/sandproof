@@ -185,7 +185,7 @@ impl Runtime {
     /// configuration checks. This does not observe or certify a live VM.
     /// # Errors
     /// An encoding failure cannot invent a device/profile identity.
-    pub fn boot_plan_digest(&self) -> Result<[u8;32],RuntimeError> {
+    pub fn boot_plan_digest(&self) -> Result<[u8; 32], RuntimeError> {
         super::super::boot_plan::BootPlan::for_runtime(&self.config).digest()
     }
 

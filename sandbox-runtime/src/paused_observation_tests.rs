@@ -10,7 +10,9 @@ use std::{
 
 struct FinishOnDrop(std::sync::mpsc::Sender<()>);
 impl Drop for FinishOnDrop {
-    fn drop(&mut self) { let _ = self.0.send(()); }
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
 }
 
 const ID: &str = "paused-read-test";
