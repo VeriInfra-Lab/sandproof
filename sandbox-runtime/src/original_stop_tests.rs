@@ -54,7 +54,16 @@ fn save_without_boot(runtime: &Runtime, record: &ProcessRecord) -> Vec<u8> {
     let mut value = serde_json::to_value(record).unwrap();
     value.as_object_mut().unwrap().remove("boot_id");
     let bytes = serde_json::to_vec(&value).unwrap();
-    fs::write(runtime.config.chroot_base.join(".claims").join(ID).join("record.json"), &bytes).unwrap();
+    fs::write(
+        runtime
+            .config
+            .chroot_base
+            .join(".claims")
+            .join(ID)
+            .join("record.json"),
+        &bytes,
+    )
+    .unwrap();
     bytes
 }
 
@@ -225,10 +234,7 @@ fn readonly_configuration_refuses_wrong_or_missing_source_without_effects() {
             .observe_original_configuration(ID, &source, limits)
             .is_err()
     );
-    assert_eq!(
-        fs::read(&claim).unwrap(),
-        missing_boot
-    );
+    assert_eq!(fs::read(&claim).unwrap(), missing_boot);
     assert_eq!(fs::read(&canary).unwrap(), b"unchanged");
     assert!(!runtime.root_path(ID).exists());
     assert!(child.0.try_wait().unwrap().is_none());

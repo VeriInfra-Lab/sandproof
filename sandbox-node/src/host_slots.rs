@@ -1625,7 +1625,9 @@ mod tests {
                 vm: binding.vm,
                 workspace: core::FsId(5),
                 snapshot: core::SnapshotId(6),
-                manifest: core::SnapshotManifestRef { digest: core::ManifestDigest(7) },
+                manifest: core::SnapshotManifestRef {
+                    digest: core::ManifestDigest(7),
+                },
             },
             core::Command::StopVm {
                 sandbox: binding.sandbox,

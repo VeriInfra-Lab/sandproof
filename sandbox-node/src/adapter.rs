@@ -61,8 +61,12 @@ impl NodeHost {
         original_source: &sandproof_controller_service::capture::SourceObservationRequirement,
     ) -> Result<HostObservation, Box<dyn std::error::Error>> {
         self.worker.pause_original(
-            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
-            action, request, original_source,
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            action,
+            request,
+            original_source,
         )
     }
 
@@ -78,8 +82,12 @@ impl NodeHost {
         original_source: &sandproof_controller_service::capture::SourceObservationRequirement,
     ) -> Result<HostObservation, Box<dyn std::error::Error>> {
         self.worker.observe_pause_original(
-            self.host_epoch_source.as_ref().ok_or("missing original protected bootstrap source")?,
-            action, request, original_source,
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            action,
+            request,
+            original_source,
         )
     }
 }
@@ -419,11 +427,7 @@ impl HostCapacity for NodeHost {
 }
 
 impl LaunchConfiguration for NodeHost {
-    fn put_secret(
-        &self,
-        sandbox: core::SandboxId,
-        token: &str,
-    ) -> Result<(), ApplicationError> {
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError> {
         self.worker.put_secret(sandbox, token).map_err(|error| {
             busy(
                 error.as_ref(),

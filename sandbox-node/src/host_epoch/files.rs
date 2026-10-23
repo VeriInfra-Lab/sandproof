@@ -133,10 +133,16 @@ impl CheckedFile {
 /// this function, and uncertain failures never remove or replace the new file.
 pub(super) fn write_new_payload(path: &Path, bytes: &[u8]) -> Result<()> {
     if rustix::process::geteuid().as_raw() != 0 {
-        return Err(error("bootstrap provisioning requires original root identity"));
+        return Err(error(
+            "bootstrap provisioning requires original root identity",
+        ));
     }
-    let parent_path = path.parent().ok_or_else(|| error("bootstrap parent missing"))?;
-    let leaf = path.file_name().ok_or_else(|| error("bootstrap filename missing"))?;
+    let parent_path = path
+        .parent()
+        .ok_or_else(|| error("bootstrap parent missing"))?;
+    let leaf = path
+        .file_name()
+        .ok_or_else(|| error("bootstrap filename missing"))?;
     sandbox_runtime::check_trusted_path(parent_path)?;
     let parent = File::from(
         rfs::open(
@@ -151,7 +157,9 @@ pub(super) fn write_new_payload(path: &Path, bytes: &[u8]) -> Result<()> {
     recheck_parent(parent_path, &parent)?;
     let checked = CheckedFile::payload(path)?;
     if Stamp::read(&file.metadata()?) != checked.stamp || checked.bytes != bytes {
-        return Err(error("published bootstrap file differs from original descriptor"));
+        return Err(error(
+            "published bootstrap file differs from original descriptor",
+        ));
     }
     checked.recheck()?;
     Ok(())
@@ -161,36 +169,56 @@ fn recheck_parent(path: &Path, parent: &File) -> Result<()> {
     sandbox_runtime::check_trusted_path(path)?;
     let held = parent.metadata()?;
     let named = fs::symlink_metadata(path)?;
-    if !held.is_dir() || held.uid() != 0 || held.mode() & 0o022 != 0
-        || held.dev() != named.dev() || held.ino() != named.ino()
-        || !named.is_dir() || named.file_type().is_symlink()
+    if !held.is_dir()
+        || held.uid() != 0
+        || held.mode() & 0o022 != 0
+        || held.dev() != named.dev()
+        || held.ino() != named.ino()
+        || !named.is_dir()
+        || named.file_type().is_symlink()
     {
         return Err(error("bootstrap parent changed"));
     }
     Ok(())
 }
 
-fn write_owned_payload(parent: &File, leaf: &std::ffi::OsStr, bytes: &[u8], owner: u32) -> Result<File> {
+fn write_owned_payload(
+    parent: &File,
+    leaf: &std::ffi::OsStr,
+    bytes: &[u8],
+    owner: u32,
+) -> Result<File> {
     let metadata = parent.metadata()?;
     let mut components = Path::new(leaf).components();
-    if bytes.is_empty() || bytes.len() > Kind::Payload.maximum() as usize
-        || !metadata.is_dir() || metadata.uid() != owner || metadata.mode() & 0o022 != 0
+    if bytes.is_empty()
+        || bytes.len() > Kind::Payload.maximum() as usize
+        || !metadata.is_dir()
+        || metadata.uid() != owner
+        || metadata.mode() & 0o022 != 0
         || !matches!(components.next(), Some(std::path::Component::Normal(_)))
         || components.next().is_some()
     {
-        return Err(error("invalid bootstrap publication parent, name or length"));
+        return Err(error(
+            "invalid bootstrap publication parent, name or length",
+        ));
     }
     let mut file = File::from(
-        rfs::openat(parent, leaf,
+        rfs::openat(
+            parent,
+            leaf,
             OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
             Mode::RUSR,
-        ).map_err(io::Error::from)?,
+        )
+        .map_err(io::Error::from)?,
     );
     file.write_all(bytes)?;
     file.sync_all()?;
     let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.uid() != owner || metadata.nlink() != 1
-        || metadata.mode() & 0o7777 != 0o400 || metadata.len() != bytes.len() as u64
+    if !metadata.is_file()
+        || metadata.uid() != owner
+        || metadata.nlink() != 1
+        || metadata.mode() & 0o7777 != 0o400
+        || metadata.len() != bytes.len() as u64
     {
         return Err(error("new bootstrap file metadata differs"));
     }
@@ -331,7 +359,9 @@ mod tests {
         let parent = File::open(directory.path()).unwrap();
         let owner = parent.metadata().unwrap().uid();
         for leaf in ["", "..", "../escape", "/absolute", "sub/leaf"] {
-            assert!(write_owned_payload(&parent, std::ffi::OsStr::new(leaf), b"bytes", owner).is_err());
+            assert!(
+                write_owned_payload(&parent, std::ffi::OsStr::new(leaf), b"bytes", owner).is_err()
+            );
         }
         let leaf = std::ffi::OsStr::new("bootstrap");
         assert!(write_owned_payload(&parent, leaf, b"", owner).is_err());
@@ -344,7 +374,10 @@ mod tests {
         fs::write(directory.path().join("original"), b"retained").unwrap();
         symlink("original", directory.path().join(leaf)).unwrap();
         assert!(write_owned_payload(&parent, leaf, b"replacement", owner).is_err());
-        assert_eq!(fs::read(directory.path().join("original")).unwrap(), b"retained");
+        assert_eq!(
+            fs::read(directory.path().join("original")).unwrap(),
+            b"retained"
+        );
     }
 
     #[test]

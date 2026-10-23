@@ -42,8 +42,8 @@ mod recovery;
 mod source_observation;
 mod source_process;
 use decisions::fence_can_advance;
-pub use readonly::LinuxObservation;
 pub use execution::ExecutionReport;
+pub use readonly::LinuxObservation;
 #[path = "host_lease.rs"]
 mod host_lease;
 #[path = "host_slots.rs"]

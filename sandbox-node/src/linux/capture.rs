@@ -1,5 +1,8 @@
 //! Original claimed Pause and its readonly recovery. No capture/stop authority.
-use super::{HostObservation, LinuxWorker, NodeResult, ObservedResult, Runtime, RuntimeError, WorkAction, core};
+use super::{
+    HostObservation, LinuxWorker, NodeResult, ObservedResult, Runtime, RuntimeError, WorkAction,
+    core,
+};
 use crate::ProtectedHostEpochSource;
 use sandbox_runtime::{OriginalPauseObservation, PausedOriginalVm, RuntimeProcessIdentity};
 use sandproof_controller_service::capture::{PauseWorkRequest, SourceObservationRequirement};
@@ -12,8 +15,13 @@ impl LinuxWorker {
         request: &PauseWorkRequest,
         original_source: &SourceObservationRequirement,
     ) -> NodeResult<HostObservation> {
-        self.with_original_pause(protected, action, request, original_source,
-            |runtime, id, source| runtime.pause_original_vm(id, source))
+        self.with_original_pause(
+            protected,
+            action,
+            request,
+            original_source,
+            |runtime, id, source| runtime.pause_original_vm(id, source),
+        )
     }
 
     pub(crate) fn observe_pause_original(
@@ -23,12 +31,18 @@ impl LinuxWorker {
         request: &PauseWorkRequest,
         original_source: &SourceObservationRequirement,
     ) -> NodeResult<HostObservation> {
-        self.with_original_pause(protected, action, request, original_source,
+        self.with_original_pause(
+            protected,
+            action,
+            request,
+            original_source,
             |runtime, id, source| match runtime.observe_original_pause_state(id, source)? {
                 OriginalPauseObservation::Paused(paused) => Ok(paused),
-                OriginalPauseObservation::Running | OriginalPauseObservation::Exited =>
-                    Err(RuntimeError::IdentityMismatch("original Pause outcome not confirmed")),
-            })
+                OriginalPauseObservation::Running | OriginalPauseObservation::Exited => Err(
+                    RuntimeError::IdentityMismatch("original Pause outcome not confirmed"),
+                ),
+            },
+        )
     }
 
     fn with_original_pause(
@@ -37,19 +51,31 @@ impl LinuxWorker {
         action: &WorkAction<core::EffectId>,
         request: &PauseWorkRequest,
         original_source: &SourceObservationRequirement,
-        operation: impl FnOnce(&Runtime, &str, &RuntimeProcessIdentity) -> Result<PausedOriginalVm, RuntimeError>,
+        operation: impl FnOnce(
+            &Runtime,
+            &str,
+            &RuntimeProcessIdentity,
+        ) -> Result<PausedOriginalVm, RuntimeError>,
     ) -> NodeResult<HostObservation> {
         self.validate_action(action)?;
         require_source_binding(request, original_source)?;
-        let core::Command::FreezeVm { sandbox, epoch, generation, vm } = action.command.command() else {
+        let core::Command::FreezeVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
             return Err("original Pause requires its FreezeVm action".into());
         };
         if action.identity.resource != request.source_resource {
             return Err("Pause action resource differs from original source work".into());
         }
         let context = self.original_source_context(&request.source_resource)?;
-        if context.binding.sandbox != *sandbox || context.binding.generation != *generation
-            || context.binding.vm != *vm {
+        if context.binding.sandbox != *sandbox
+            || context.binding.generation != *generation
+            || context.binding.vm != *vm
+        {
             return Err("Pause action differs from original occupied source".into());
         }
         let slot = self.runtime_host_slot(context.position, *vm)?;
@@ -62,7 +88,9 @@ impl LinuxWorker {
         let runtime = self.runtime(*sandbox, *vm)?;
         let expected = crate::source_observation::expected_source(original_source)?;
         let paused = operation(&runtime, request.source_resource.id.as_str(), &expected)?;
-        if paused.resource_id() != request.source_resource.id.as_str() || paused.source() != &expected {
+        if paused.resource_id() != request.source_resource.id.as_str()
+            || paused.source() != &expected
+        {
             return Err("Pause observation differs from original source".into());
         }
         let after = crate::source_observation::observe(self, Some(protected), original_source)?;
@@ -91,10 +119,13 @@ fn require_source_binding(
     request: &PauseWorkRequest,
     original: &SourceObservationRequirement,
 ) -> NodeResult<()> {
-    if !request.valid() || !original.limits.valid()
+    if !request.valid()
+        || !original.limits.valid()
         || request.source_work_binding != original.work_binding
-        || request.node != original.node || request.source_resource != original.resource
-        || request.source != original.source {
+        || request.node != original.node
+        || request.source_resource != original.resource
+        || request.source != original.source
+    {
         return Err("Pause differs from the independent original source work".into());
     }
     crate::source_observation::expected_source(original)?;

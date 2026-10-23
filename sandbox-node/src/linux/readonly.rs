@@ -212,8 +212,8 @@ mod tests {
         let before = files(dir.path());
         let observation = LinuxWorker::inspect_existing(config).unwrap();
         assert!(observation.host_slot_inventory().unwrap().is_empty());
-        let source = crate::ProtectedHostEpochSource::at(dir.path().join("not-provisioned"))
-            .unwrap();
+        let source =
+            crate::ProtectedHostEpochSource::at(dir.path().join("not-provisioned")).unwrap();
         let node = sandproof_protocol::internal::NodeIdentity {
             deployment_id: sandproof_protocol::DeploymentId::try_from("readonly-test").unwrap(),
             node_id: sandproof_protocol::NodeId::try_from("node-test").unwrap(),

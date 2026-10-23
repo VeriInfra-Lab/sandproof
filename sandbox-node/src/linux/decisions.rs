@@ -86,12 +86,18 @@ pub(super) fn evidence_matches(observation: &HostObservation, command: &core::Co
         }
         (
             core::Command::FreezeVm { .. },
-            ObservedResult::Frozen { pid, start_ticks, boot_id },
+            ObservedResult::Frozen {
+                pid,
+                start_ticks,
+                boot_id,
+            },
         ) => sandbox_runtime::RuntimeProcessIdentity {
             pid: *pid,
             start_time_ticks: *start_ticks,
             boot_id: boot_id.clone(),
-        }.validate_fields().is_ok(),
+        }
+        .validate_fields()
+        .is_ok(),
         (core::Command::ConfigureNetwork { .. }, ObservedResult::Network { namespace_inode })
         | (
             core::Command::ApplyFilePolicy { .. },
@@ -121,7 +127,9 @@ pub(super) fn command_resource(
         core::Command::ConfigureNetwork { slot, .. } | core::Command::CleanupSlot { slot, .. } => {
             (ResourceKind::NetworkSlot, "slot", slot.0)
         }
-        core::Command::SealSnapshot { snapshot, .. } => (ResourceKind::Snapshot, "snapshot", snapshot.0),
+        core::Command::SealSnapshot { snapshot, .. } => {
+            (ResourceKind::Snapshot, "snapshot", snapshot.0)
+        }
         core::Command::ApplyFilePolicy { workspace, .. } => {
             (ResourceKind::Workspace, "fs", workspace.0)
         }
@@ -185,20 +193,35 @@ mod tests {
 
     #[test]
     fn freeze_and_full_retain_original_generation_and_distinct_resource_roles() {
-        let freeze = core::Command::FreezeVm {sandbox:core::SandboxId(1),epoch:2,generation:3,vm:core::VmId(4)};
-        let seal = core::Command::SealSnapshot {sandbox:core::SandboxId(1),epoch:2,generation:3,vm:core::VmId(4),workspace:core::FsId(5),snapshot:core::SnapshotId(6),manifest:core::SnapshotManifestRef{digest:core::ManifestDigest(7)}};
+        let freeze = core::Command::FreezeVm {
+            sandbox: core::SandboxId(1),
+            epoch: 2,
+            generation: 3,
+            vm: core::VmId(4),
+        };
+        let seal = core::Command::SealSnapshot {
+            sandbox: core::SandboxId(1),
+            epoch: 2,
+            generation: 3,
+            vm: core::VmId(4),
+            workspace: core::FsId(5),
+            snapshot: core::SnapshotId(6),
+            manifest: core::SnapshotManifestRef {
+                digest: core::ManifestDigest(7),
+            },
+        };
         for command in [&freeze, &seal] {
             let mut work = action(command.clone());
-            assert!(action_fields_match(&work,"test"));
-            work.identity.generation+=1;
-            assert!(!action_fields_match(&work,"test"));
+            assert!(action_fields_match(&work, "test"));
+            work.identity.generation += 1;
+            assert!(!action_fields_match(&work, "test"));
         }
-        let resource=command_resource(&freeze,"test").unwrap();
-        assert_eq!(resource.kind,ResourceKind::Vm);
-        assert_eq!(resource.id.as_str(),"vm-test-4");
-        let resource=command_resource(&seal,"test").unwrap();
-        assert_eq!(resource.kind,ResourceKind::Snapshot);
-        assert_eq!(resource.id.as_str(),"snapshot-test-6");
+        let resource = command_resource(&freeze, "test").unwrap();
+        assert_eq!(resource.kind, ResourceKind::Vm);
+        assert_eq!(resource.id.as_str(), "vm-test-4");
+        let resource = command_resource(&seal, "test").unwrap();
+        assert_eq!(resource.kind, ResourceKind::Snapshot);
+        assert_eq!(resource.id.as_str(), "snapshot-test-6");
     }
 
     #[test]
