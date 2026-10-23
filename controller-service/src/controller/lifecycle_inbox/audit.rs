@@ -5,8 +5,12 @@ use crate::{
     LifecycleInboxConfig,
 };
 use sandbox_controller_core as core;
-use sandproof_protocol::{internal::NodeIdentity, lifecycle::OperationBinding};
+use sandproof_protocol::{internal::NodeIdentity, lifecycle::{OperationBinding, TerminalLifecycleObservation}};
 use serde::Serialize;
+
+#[cfg(test)]
+#[path = "audit_tests.rs"]
+mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LifecycleAuditOperation {
@@ -14,6 +18,9 @@ pub struct LifecycleAuditOperation {
     pub accepted_version: u64,
     pub current: bool,
     pub terminal: bool,
+    /// Exact original saved confirmation on the current operation only.
+    /// The terminal intent flag alone is never a completed-cleanup result.
+    pub confirmed_terminal: Option<TerminalLifecycleObservation>,
     pub local: Option<InternalLocalBinding>,
     pub local_operation: Option<core::OperationId>,
 }
@@ -59,6 +66,9 @@ pub(in crate::controller) fn snapshot(
                 accepted_version: entry.intent.accepted_version,
                 current: entry.intent.accepted_version == session.current_version,
                 terminal: session.terminal,
+                confirmed_terminal: if entry.intent.accepted_version == session.current_version {
+                    session.confirmed_terminal.clone()
+                } else { None },
                 local: session.local,
                 local_operation: entry.local_operation,
             })

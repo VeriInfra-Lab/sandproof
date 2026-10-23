@@ -549,7 +549,7 @@ mod tests {
             renew.request.operation = LifecycleOperation::Renew { incarnation, end_at_ms: 50, extend_only: false };
             app.record_lifecycle_intent(&renew, &context).unwrap();
             clock.0.store(100, Ordering::SeqCst);
-            if let Some(durable) = unknown { crate::controller::transaction::fail_next_commit(durable); }
+            if let Some(durable) = unknown { crate::ControllerJournal::fail_next_lifecycle_commit(durable); }
             let result = app.apply_lifecycle_renew(&renew, &context);
             if unknown.is_some() { assert_eq!(result, Err(ApplicationError::OutcomeUnknown)); }
             else { assert_eq!(result.unwrap().1, 50); }
