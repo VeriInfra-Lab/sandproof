@@ -58,15 +58,19 @@ impl Sandbox {
                 through >= 2
                     && through < checkpoint.request.accepted_version
                     && self.compacted_sampled_acceptance_max_ms.is_some()
-                    && !self.operations.iter().any(|record| {
-                        record.intent.accepted_version == through
-                    })
+                    && !self
+                        .operations
+                        .iter()
+                        .any(|record| record.intent.accepted_version == through)
             }
         }
     }
 
     fn valid_sdk_confirmation_order(&self) -> bool {
-        let confirmed = self.confirmed_renewal.as_ref().map(|result| result.request.accepted_version);
+        let confirmed = self
+            .confirmed_renewal
+            .as_ref()
+            .map(|result| result.request.accepted_version);
         let mut unconfirmed = false;
         let mut index = 0;
         while index < self.operations.len() {
@@ -177,7 +181,10 @@ impl CenterState {
             {
                 return Err(DecisionError::Conflict);
             }
-            let sampled = old.acceptance_time.sampled_at_ms().ok_or(DecisionError::Invalid)?;
+            let sampled = old
+                .acceptance_time
+                .sampled_at_ms()
+                .ok_or(DecisionError::Invalid)?;
             let mut retained = Vec::new();
             let mut cursor = 0;
             while cursor < original.operations.len() {
@@ -190,7 +197,9 @@ impl CenterState {
             session.operations = retained;
             session.compacted_sdk_through = Some(old.intent.accepted_version);
             session.compacted_sampled_acceptance_max_ms = Some(
-                original.compacted_sampled_acceptance_max_ms.map_or(sampled, |old| old.max(sampled)),
+                original
+                    .compacted_sampled_acceptance_max_ms
+                    .map_or(sampled, |old| old.max(sampled)),
             );
         }
         session.confirmed_renewal = Some(result.clone());

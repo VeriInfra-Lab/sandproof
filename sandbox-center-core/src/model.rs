@@ -2,8 +2,8 @@ use sandproof_protocol::internal::lifecycle::{RESULT_CONFIRMATION_BODY_BYTES, Re
 use sandproof_protocol::internal::window::RETENTION_LANE_BYTES;
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use sandproof_protocol::lifecycle::{
-    CenterIdentity, CurrentReadyFacts, LifecycleOperation, RenewalConfirmation,
-    RENEWAL_CONFIRMATION_BODY_BYTES, TerminalLifecycleObservation, TerminalStatus,
+    CenterIdentity, CurrentReadyFacts, LifecycleOperation, RENEWAL_CONFIRMATION_BODY_BYTES,
+    RenewalConfirmation, TerminalLifecycleObservation, TerminalStatus,
 };
 use sandproof_protocol::{DeploymentId, TenantId};
 use serde::{Deserialize, Serialize};

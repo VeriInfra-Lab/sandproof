@@ -452,9 +452,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             ) {
                 Ok(_) => Ok(true),
                 Err(CurrentObservationError::Shared(error)) => Err(error),
-                Err(CurrentObservationError::Host(_)
+                Err(
+                    CurrentObservationError::Host(_)
                     | CurrentObservationError::Superseded
-                    | CurrentObservationError::Deadline) => Ok(true),
+                    | CurrentObservationError::Deadline,
+                ) => Ok(true),
             },
             Err(AuthorityError::Decision(
                 DecisionError::Stale
@@ -480,9 +482,12 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     ) -> Result<(), PortError> {
         // Public SDK calls must not confirm hidden builder/validation work
         // before their original owner and visibility admission checks.
-        let public = self.authority.lock()
+        let public = self
+            .authority
+            .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .public_snapshot().map_err(authority_error)?;
+            .public_snapshot()
+            .map_err(authority_error)?;
         if public.hidden_sandboxes.contains(session.as_protocol_id())
             || public.state.lifecycle_session(owner, session).is_none()
         {
@@ -501,27 +506,34 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     ) -> Result<bool, CurrentObservationError> {
         time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
         let state = self.snapshot().map_err(CurrentObservationError::Shared)?;
-        let record = state.lifecycle_session(owner, session)
+        let record = state
+            .lifecycle_session(owner, session)
             .ok_or(CurrentObservationError::Host(PortError::NotFound))?;
         let Some(intent) = record.unconfirmed_sdk_renewal() else {
             return Ok(false);
         };
         // This exact result was committed by the original observation CAS.
         // The independent Host port must check its own full applied SQL row.
-        let result = state.lifecycle_renewal_confirmation(intent).map_err(|error| {
-            if error == DecisionError::Unavailable {
-                CurrentObservationError::Host(PortError::Busy)
-            } else {
-                CurrentObservationError::Shared(authority_error(error.into()))
-            }
-        })?;
+        let result = state
+            .lifecycle_renewal_confirmation(intent)
+            .map_err(|error| {
+                if error == DecisionError::Unavailable {
+                    CurrentObservationError::Host(PortError::Busy)
+                } else {
+                    CurrentObservationError::Shared(authority_error(error.into()))
+                }
+            })?;
         let budget = time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
-        let ack = self.hosts.confirm_lifecycle_renewal(&result, budget)
+        let ack = self
+            .hosts
+            .confirm_lifecycle_renewal(&result, budget)
             .map_err(CurrentObservationError::Host)?;
         if !ack.matches(&result) {
             return Err(CurrentObservationError::Host(PortError::OutcomeUnknown));
         }
-        let saved = self.authority.lock()
+        let saved = self
+            .authority
+            .lock()
             .map_err(|_| CurrentObservationError::Shared(PortError::OutcomeUnknown))?
             .confirm_lifecycle_renewal(&ack);
         match saved {

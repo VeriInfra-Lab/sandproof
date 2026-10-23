@@ -124,7 +124,10 @@ fn current_bootstrap_settings_reject_foreign_missing_and_old_shapes() {
 fn cache_is_one_reserved_source_not_a_static_availability_fallback() {
     let mut value = host_settings();
     value["native"]["templates"]["aliases"] = json!({"base":"base"});
-    assert!(!check(value), "an alias cannot shadow the canonical template ID");
+    assert!(
+        !check(value),
+        "an alias cannot shadow the canonical template ID"
+    );
     value = host_settings();
     value["template_registrations"] = json!([{ "revision":"base-r1","template_id":"base" }]);
     assert!(!check(value));

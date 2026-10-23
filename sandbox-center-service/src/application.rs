@@ -216,7 +216,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 )
                 .map_err(authority_error)?
         };
-        self.wait_current_session_before(&request, deadline).map(|_| ())
+        self.wait_current_session_before(&request, deadline)
+            .map(|_| ())
     }
     /// # Errors
     /// Success requires exact Cleaned evidence, not an absent heartbeat.
