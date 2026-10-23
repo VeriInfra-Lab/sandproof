@@ -9,22 +9,25 @@ use sandproof_controller_service::{
 };
 use sandproof_protocol::{
     ResourceId,
-    internal::{
-        NodeIdentity,
-        lifecycle::{LIFECYCLE_BODY_BYTES, RESULT_CONFIRMATION_BODY_BYTES},
-    },
+    internal::NodeIdentity,
 };
 use serde::{Deserialize, Serialize};
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, AuthenticatedCenterContext,
     ExpectedSession, LifecycleOperation, TerminalLifecycleObservation, TerminalStatus};
 
 pub const VALIDATION_PATH: &str = "/internal/template-validation-evidence";
-pub const VALIDATION_REQUEST_BODY_BYTES: usize = LIFECYCLE_BODY_BYTES;
+/// Both messages retain a full accepted Create, including its byte-array
+/// options, and the separate Destroy result. The descriptor's canonical JSON
+/// is independently capped by the original template validator. The remaining
+/// allowance covers publication/local scalars, the revision and JSON framing.
+const VALIDATION_BINDING_BODY_BYTES: usize = crate::lifecycle::REQUEST_BODY_BYTES
+    + sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES
+    + sandproof_controller_service::CreateOptions::MAX_ENCODED_BYTES
+    + 4096;
+pub const VALIDATION_REQUEST_BODY_BYTES: usize = VALIDATION_BINDING_BODY_BYTES;
 /// The same cap bounds host encoding and client collection, not just chunks.
 pub const VALIDATION_RESPONSE_BODY_BYTES: usize = MAX_VALIDATION_CERTIFICATE_BYTES
-    + sandproof_controller_service::CreateOptions::MAX_ENCODED_BYTES
-    + RESULT_CONFIRMATION_BODY_BYTES
-    + 8192;
+    + VALIDATION_BINDING_BODY_BYTES;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,3 +97,6 @@ pub trait ValidationReceiver: Send + Sync + 'static {
         context: AuthenticatedCenterContext,
     ) -> impl std::future::Future<Output = Result<ValidationEvidence, ReceiveError>> + Send;
 }
+
+#[cfg(test)]
+mod tests;

@@ -15,12 +15,12 @@ use sandproof_controller_service::{
 use sandproof_protocol::{
     ResourceId, TenantId,
     internal::lifecycle::{
-        CreateBinding, LIFECYCLE_BODY_BYTES,
-        RESULT_CONFIRMATION_BODY_BYTES, Resources,
+        CreateBinding, Resources,
     },
 };
+use sandproof_internal::lifecycle::REQUEST_BODY_BYTES;
 use serde::{Deserialize, Serialize};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation};
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation, TERMINAL_RESULT_BODY_BYTES};
 
 /// Explicit engineering certificate limit, not a public request parameter.
 /// The final record separately reserves the protocol's entire create-request
@@ -40,8 +40,8 @@ impl MetadataBudget {
         CreateOptions::MAX_ENCODED_BYTES
             .saturating_mul(3)
             .saturating_add(self.max_certificate_bytes)
-            .saturating_add(LIFECYCLE_BODY_BYTES)
-            .saturating_add(RESULT_CONFIRMATION_BODY_BYTES)
+            .saturating_add(REQUEST_BODY_BYTES)
+            .saturating_add(TERMINAL_RESULT_BODY_BYTES)
             .saturating_add(16 * 1024)
     }
 }
@@ -174,7 +174,7 @@ impl RegistryMetadata {
             .map_err(|_| PortError::Invalid)
     }
     pub(super) fn request_fits(request: &AcceptedLifecycleIntent) -> bool {
-        serde_json::to_vec(request).is_ok_and(|bytes| bytes.len() <= LIFECYCLE_BODY_BYTES)
+        serde_json::to_vec(request).is_ok_and(|bytes| bytes.len() <= REQUEST_BODY_BYTES)
     }
     fn validation_valid(&self, entry: &GlobalPublication, center: &CenterState) -> bool {
         let Some(link) = &entry.validation else { return true; };
@@ -259,7 +259,7 @@ impl RegistryMetadata {
                         !Self::request_fits(&link.create)
                             || link.settlement.as_ref().is_some_and(|saved|
                                 !serde_json::to_vec(&saved.cleaned)
-                                    .is_ok_and(|bytes| bytes.len() <= RESULT_CONFIRMATION_BODY_BYTES))
+                                    .is_ok_and(|bytes| bytes.len() <= TERMINAL_RESULT_BODY_BYTES))
                     })
             {
                 return false;
@@ -408,8 +408,8 @@ mod tests {
             budget.record_bytes(),
             3 * CreateOptions::MAX_ENCODED_BYTES
                 + budget.max_certificate_bytes
-                + LIFECYCLE_BODY_BYTES
-                + RESULT_CONFIRMATION_BODY_BYTES
+                + REQUEST_BODY_BYTES
+                + TERMINAL_RESULT_BODY_BYTES
                 + 16 * 1024
         );
         for max_certificate_bytes in [

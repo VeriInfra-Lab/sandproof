@@ -6,13 +6,13 @@
 
 本页是外部依赖 A1–A12 和获批可信薄适配 B1–B4 的唯一明细；模块计划引用合同编号，不再各自列一套“依赖不会出错”。当前采用原 Charon/Aeneas 抽取真实同步业务核心、窄接口模型和显式可信适配的路线，不以开发通用 async/Pin/Drop 翻译器为前置。可信范围来自项目 owner 的明确选择；其余自有业务继续由对应模块证明。
 
-### v3 中心身份的薄连接
+### 当前中心身份的薄连接
 
-[`CenterPeerRegistration::context_for_verified_peer`](../../sandbox-internal/src/lifecycle_v3/peer.rs)只实例化既有 A9/B4：输入必须是原 `ProtectedServer` 在链、用途、时间、角色 pin 和 ALPN 检查后交给 `ProtectedHttp::respond` 的那个 `CertificatePin`。受保护配置将最多两个轮换 pin 绑定到同一 `CenterIdentity` 和完整本地 `NodeIdentity`；未登记 pin 拒绝，不能从 HTTP 头、正文或任意证书字节创建这个认证事实。
+[`CenterPeerRegistration::context_for_verified_peer`](../../sandbox-internal/src/lifecycle/peer.rs)只实例化既有 A9/B4：输入必须是原 `ProtectedServer` 在链、用途、时间、角色 pin 和 ALPN 检查后交给 `ProtectedHttp::respond` 的那个 `CertificatePin`。受保护配置将最多两个轮换 pin 绑定到同一 `CenterIdentity` 和完整本地 `NodeIdentity`；未登记 pin 拒绝，不能从 HTTP 头、正文或任意证书字节创建这个认证事实。
 
 输出 `AuthenticatedCenterContext` 不可反序列化，但公开工厂是明确的可信装配接缝，Rust 类型本身不证明调用者无法伪造。配置/pin 来源与调用绑定仍须在正式服务接线时核对；已有摘要值测试只检查映射，不证明 TLS 握手。`AcceptedLifecycleIntent::validate` 的中心全文、部署、原请求节点和接受版本检查属于自有同步判断，不将其整体列为 B4。持久接受、授权、原对象选择、材料完整、退出、清理和发布仍由各业务模块证明。
 
-显式 `InternalServer::with_lifecycle_v3` 路由沿原 `ProtectedHttp::respond` 的实际 peer
+显式 `InternalServer::with_center_peer` 路由沿原 `ProtectedHttp::respond` 的实际 peer
 调用该映射；原 TLS/连接预算和有限请求期限保留。原 HostFacade 只转交给同一
 HostLifecycle；许可进入实际 blocking worker 后才调用原应用收件，不因 HTTP 取消提前归还。
 可依赖的机械保证限于原对象、完整参数、结果和许可寿命；接受资格、全文重放、
