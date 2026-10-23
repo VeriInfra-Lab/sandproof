@@ -7,6 +7,17 @@ These do not establish standard-library correctness or business authorization. -
 open Aeneas Aeneas.Std
 namespace SandproofStage1RequestRust
 
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (eq : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  SandproofNetworkRust.core.option.Option.Insts.CoreCmpPartialEqOption.eq eq left right
+
+def core.result.Result.is_err {T E : Type} (value : core.result.Result T E) : Result Bool :=
+  -- The same two-constructor model registered for SQLite; importing its generated
+  -- types would collide with Network's generated auxiliary declarations.
+  match value with
+  | .Ok _ => .ok false
+  | .Err _ => .ok true
+
 def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
   SandproofNetworkRust.Bool.Insts.CoreCmpPartialEqBool.ne left right
 

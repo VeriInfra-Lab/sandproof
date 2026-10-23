@@ -13,7 +13,7 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILES = {
-    'request': ['request_validate', 'replay_matches'],
+    'request': ['request_validate', 'replay_matches', 'renewal_rule'],
     'manifest': ['manifest_validate'],
     'carriers': ['capture_from_u64', 'capture_value', 'capture_next', 'digest_roundtrip'],
 }
@@ -24,10 +24,12 @@ def sha(path):
 
 
 def inputs():
-    paths = list((ROOT / 'sandbox-protocol').rglob('*.rs'))
+    paths = [p for crate in ['sandbox-protocol', 'controller-core', 'controller-service']
+             for p in (ROOT / crate).rglob('*.rs')]
     paths += [ROOT / n for n in [
         'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
         'sandbox-protocol/Cargo.toml', 'verification/foundations-environment.json',
+        'controller-core/Cargo.toml', 'controller-service/Cargo.toml',
         'verification/experiments/stage1-protocol/Cargo.toml',
         'verification/experiments/stage1-protocol/Cargo.lock',
         'verification/experiments/stage1-protocol/src/lib.rs',
@@ -79,6 +81,9 @@ def extract(output, profiles, tool_root):
             argv = [str(tool_root / 'aeneas/charon/bin/charon'), 'cargo',
                     '--preset=aeneas', '--error-on-warnings', '--sysroot', 'default',
                     '--include', 'sandproof_protocol']
+            if name == 'request':
+                argv += ['--include', 'sandbox_controller_core',
+                         '--include', 'sandproof_controller_service']
             for root in PROFILES[name]:
                 argv += ['--start-from', 'crate::' + root]
             argv += ['--dest-file', destination, '--', '--manifest-path',
@@ -118,7 +123,8 @@ def extract(output, profiles, tool_root):
             for template in generated.rglob('*External_Template.lean'):
                 external += re.findall(r'^axiom\s+([A-Za-z0-9_.]+)', template.read_text(), re.M)
             allowed = {
-                'request': {'alloc.string.String.Insts.CoreCmpPartialEqString.eq', 'alloc.vec.Vec.is_empty'},
+                'request': {'alloc.string.String.Insts.CoreCmpPartialEqString.eq', 'alloc.vec.Vec.is_empty',
+                            'core.option.Option.Insts.CoreCmpPartialEqOption.eq', 'core.result.Result.is_err'},
                 'manifest': {'core.str.Str.len', 'core.str.Str.is_empty', 'core.str.Str.as_bytes',
                              'Str.Insts.AllocBorrowToOwnedString.to_owned',
                              'alloc.string.String.Insts.CoreCmpPartialEqString.eq',

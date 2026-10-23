@@ -1,0 +1,35 @@
+import SandboxModel.Lifecycle.Protocol.Confirmation
+import SandboxModel.Lifecycle.Protocol.RetentionValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request sandproof_protocol.lifecycle.authority
+open sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.Retention
+
+theorem mutant_discards_foreign_center :
+    renewal_rule otherCenter (some 200#i64) (some 100#i64) none checkpoint 3#u64 false = .ok true := by
+  have hv : ValidConfirmation checkpoint := by
+    simp [ValidConfirmation, checkpoint, Request.renew, Request.binding, Request.node,
+      Successor, DeadlineOK, Validation.ValidRequest, Validation.headersOK,
+      Validation.expectationOK, Validation.operationOK]
+  simp [renewal_rule, sandproof_controller_service.lifecycle_renewal.can_discard_confirmed_sdk,
+    RenewalConfirmation.matches_request, Replay.key_eq, confirmation_refines,
+    otherCenter, checkpoint, Request.renew, Request.binding, Request.node,
+    RequestWindowId.get, PositiveCounter.get,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    SandproofNetworkRust.core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    core.option.Option.is_some, core.option.Option.is_none]
+  simp only [checkpoint, Request.renew, Request.binding, Request.node] at hv
+  simp [hv, bne, BEq.beq]
+
+theorem key_only_not_retention : ¬ FullRetentionContract renewal_rule := by
+  intro contract
+  have h := contract otherCenter (some 200#i64) (some 100#i64) none checkpoint 3#u64 false
+  rw [mutant_discards_foreign_center] at h
+  simp [MayDiscard, otherCenter, checkpoint, AcceptedLifecycleIntent.mk.injEq,
+    CenterIdentity.mk.injEq] at h
+end SandboxModel.Stage1Protocol.Retention
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Retention.mutant_discards_foreign_center
+#audit_controller_proof SandboxModel.Stage1Protocol.Retention.key_only_not_retention

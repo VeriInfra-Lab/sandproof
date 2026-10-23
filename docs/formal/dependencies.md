@@ -389,6 +389,15 @@ str::to_owned。自有请求、路径/profile、文件名/数量/总长和 captu
 
 ## 精确条款
 
+第一阶段续期确认/回收根复用已登记的 Option 相等和 Result 判别：
+[请求命名空间适配](../../verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean)
+的 `core.option.Option.Insts.CoreCmpPartialEqOption.eq` 直接委托网络库模型，
+先比较 None/Some，仅 Some/Some 调用给定的完整元素相等；本调用的 U64/I64 字典由具体引理连接。
+`core.result.Result.is_err` 使用原 [SQLite 模型](../../verification/aeneas/sqlite/SandproofSqlite/FunsExternal.lean)
+相同的两构造分支（Ok 为 false、Err 为 true）；因两个生成类型环境的辅助声明重名，未共同导入。
+它仅判别纯请求校验的 Rust Result，不把 Err 解释为事务未执行，也不提供提交或物理效果证据。
+这些适配不新增业务假设；库符合性、固定工具责任和有限正常值范围仍沿用原 A6 条件。
+
 ### 网络授权所用的克隆与析构边界
 
 同一 `A6-network-stdlib` 登记增加 `String::clone` 与 `Option<T>::clone` 两个接口：在有效 Rust 值的正常返回中，字符串保持完整内容；None 不调用字典，Some 恰调用给定元素克隆并传播其结果。两版 `option.rs`、`clone.rs`、`tuple.rs`、`alloc/vec/mod.rs` 和 `alloc/slice.rs` 源码一并冻结。自有记录、策略、命令、维护状态和完整 World 的克隆均保留真实生成函数体，由 [Cloning](../../SandboxModel/Access/Cloning.lean) 提供逐类型的值保持证明，不把自有克隆算法归为外部函数。

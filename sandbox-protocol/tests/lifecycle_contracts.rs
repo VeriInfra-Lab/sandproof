@@ -31,6 +31,47 @@ fn binding() -> OperationBinding {
     }
 }
 
+#[test]
+fn renewal_confirmation_compares_complete_accepted_intent() {
+    use sandproof_protocol::lifecycle::{
+        AcceptedLifecycleIntent, CenterIdentity, RenewalConfirmation, RetentionBinding,
+    };
+    let mut sdk = binding();
+    sdk.key.window = RequestWindowId::try_from(2).unwrap();
+    sdk.expected = ExpectedSession::Version(1);
+    let intent = AcceptedLifecycleIntent {
+        request: LifecycleRequest {
+            binding: sdk,
+            operation: LifecycleOperation::Renew {
+                incarnation: IncarnationId::try_from(1).unwrap(),
+                end_at_ms: 200,
+                extend_only: false,
+            },
+        },
+        accepted_version: 2,
+        center: CenterIdentity {
+            deployment: node().deployment_id,
+            center: "center".try_into().unwrap(),
+        },
+        retention: RetentionBinding {
+            slot: 1,
+            window: 1.try_into().unwrap(),
+        },
+    };
+    let confirmed = RenewalConfirmation {
+        request: intent.clone(),
+        effective_end_at_ms: 200,
+    };
+    assert!(confirmed.matches_request(&intent));
+    let mut changed = intent;
+    changed.center.center = "another-center".try_into().unwrap();
+    assert_eq!(
+        changed.request.binding.key,
+        confirmed.request.request.binding.key
+    );
+    assert!(!confirmed.matches_request(&changed));
+}
+
 fn unload() -> LifecycleRequest {
     LifecycleRequest {
         binding: binding(),

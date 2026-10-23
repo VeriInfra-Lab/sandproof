@@ -58,6 +58,29 @@ PROPERTIES = {
         negative_audits=['mutant_accepts_same_incarnation', 'mutant_not_full_validation']),
 }
 
+CONFIRMATION_AUDITS = ['SandboxModel.Stage1Protocol.Retention.' + n for n in
+    ['option_eq', 'checked_successor', 'validate_is_err',
+     'version_matches', 'expected_is_err', 'confirmation_refines']]
+RETENTION_AUDITS = CONFIRMATION_AUDITS + ['SandboxModel.Stage1Protocol.Retention.' + n for n in
+    [
+     'intent_eq', 'matches_refines', 'discard_refines',
+     'discard_iff', 'preserve_current', 'preserve_pinned',
+     'preserve_unapplied', 'preserve_pending', 'preserve_other_intent',
+     'deleted_is_older', 'preserve_public', 'preserve_nonrenew',
+     'preserve_missing_previous', 'preserve_changed_end', 'eligible_checkpoint_discarded',
+     'different_center_preserved',
+    ]]
+PROPERTIES['retention'] = dict(kind='stage1-renewal-retention-local-formal',
+    mutation='key-only-confirmation',
+    positive=PROPERTIES['validation']['positive'] + ['RetentionModel', 'RetentionValues', 'Confirmation', 'Retention'],
+    negative=['ReplayContract', 'ReplayEquality', 'ValidationModel', 'Validation',
+              'Model', 'RequestValues', 'RetentionModel', 'RetentionValues', 'Confirmation'],
+    common_files=['SandboxModel/Foundations/Model.lean'], contract='RetentionModel',
+    template='NegativeRetention', audits=PROPERTIES['validation']['audits'] + RETENTION_AUDITS,
+    negative_namespace='SandboxModel.Stage1Protocol.Retention.',
+    negative_import_audits=REPLAY_AUDITS + VALIDATION_AUDITS + CONFIRMATION_AUDITS,
+    negative_audits=['mutant_discards_foreign_center', 'key_only_not_retention'])
+
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -182,7 +205,7 @@ def run(output, property_name='replay'):
                 shutil.copy2(template, project / relative)
                 files.append(relative)
                 expected_inputs[relative] = sha(template)
-                expected_audits = ['SandboxModel.Stage1Protocol.Request.' + n for n in
+                expected_audits = config.get('negative_import_audits', []) + [config.get('negative_namespace', 'SandboxModel.Stage1Protocol.Request.') + n for n in
                                    config['negative_audits']]
             actual = formal.actual_files(project, files, folder, env, command)
             if sorted(actual['audits']) != sorted(expected_audits):

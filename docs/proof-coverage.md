@@ -26,8 +26,9 @@ Stale 仅说明这次没有新增受理，不证明这个键历史上未执行�
 每次只删原上一个完整且已应用的 SDK Renew，保留 Create、公开输入、当前行、未知结果和终止责任。
 恢复保留相邻版本检查，间隙只能落在实际删除前沿及完整确认之前；该结构检查不单独证明被删历史。
 Renew 保存原前驱有效期限，不能用 Create 的期限替代；下一 SDK 检查全部保留历史中的未确认 SDK，
-不能靠插入公开操作绕过确认，Destroy 不受此门控。新字段、纯回收函数和相应回归仍为未验收候选，
-不是已完成的服务/数据库接线或真实 Rust 证明，旧恢复和终态抽取结论不自动适用。
+不能靠插入公开操作绕过确认，Destroy 不受此门控。新字段及事务整体仍为未验收候选；
+下文“续期确认与本地回收守卫”单独限定纯函数的对应证明，不表示数据库接线或恢复已证明。
+旧恢复和终态抽取结论不自动适用。
 
 当前中心的引用来自 `ValidationLink` 的原 Create/Destroy、`GlobalBuildAnchor` 的原 Create/Cleaned，
 由 `RegistryMetadata::validation_valid`、`PrivateBuilds::valid_for` 与 `publication::terminal_request`
@@ -259,6 +260,37 @@ key-only 实际 Rust 错误版另有改变 Renew 模式仍被接受的见证，�
 正确与错误版均由局部入口重新抽取，精确输入、实际文件诊断和审计以本迁移回执为准。
 这不刷新历史 `frozen.json` 或共享输入摘要，不迁记上游其它提交的普通/原生检查结果；
 完整普通检查、原生错误版回执、共享冻结/登记和全套证明验收仍需在统一候选闭合。
+
+#### 续期确认与本地回收守卫
+
+本切片仍绑定 `a0ae6288a6ad90aae5a8fc4956d9d3506ae9d119` 的实际
+[确认方法](../sandbox-protocol/src/lifecycle/renewal.rs)和
+[本地回收规则](../controller-service/src/lifecycle_renewal.rs)，不改生产行为。
+原 `stage1-center` 的 `renewal-rule` 预检已用固定工具成功抽取；其独立锁文件补齐已声明依赖。
+正式局部根加入原请求抽取工程，复用同一请求类型、全文相等和有序校验定理；
+所有生成文件均来自固定原 Charon/Aeneas，新增外部符号仅接入已登记的 Option 相等与 Result 判别模型。
+
+[独立规范](../SandboxModel/Lifecycle/Protocol/RetentionModel.lean)只导入类型与原校验规范。
+[确认对应](../SandboxModel/Lifecycle/Protocol/Confirmation.lean)覆盖无溢出后继版本、SDK 窗口、槽位范围、中心部署、请求校验和非负有效期限；
+extend-only 要求有效期限不小于所请求期限，替换模式要求两者相等。
+[回收对应](../SandboxModel/Lifecycle/Protocol/Retention.lean)先连接整个接受记录的精确相等，
+再给出实际纯规则的完整返回值，
+精确确认、已应用期限、显式前驱期限、没有本地操作责任、没有来源 pin、不是当前版本缺一不可。
+公开窗口、非 Renew、当前、未应用、缺前驱、未结算操作、来源 pin、不同完整记录及不同有效期限
+均有保留定理；合法可删除记录另有见证。“被删版本严格更旧”显式要求账本版本顺序前提，
+不能仅从实际代码的 `!= current_version` 推出。
+
+局部入口 `replay_formal.py --property retention` 重新抽取正确版及真实 Rust key-only-confirmation
+错误版；后者保持请求键，却能删除另一中心的接受记录，形式反例否定同一个 `FullRetentionContract`。
+对应原生断言已进入协议合同测试和原错误版入口；本切片在证明机不运行普通或原生测试。
+局部检查包含此前五操作校验/重放消费者、全部新增实际文件及依赖审计，精确输入和结果绑定本切片回执。
+
+原 [SQLite 调用者](../controller-service/src/controller/lifecycle_inbox/renewal_confirmation.rs)
+逐字段传入实际 Entry 和旧完整确认，查询来源引用后才执行 retain，随后保存前沿与新确认再提交。
+这份源码核对不代替事务证明：同一事务内输入真实性、`references_intent` 的完整引用覆盖、
+实际 retain/前沿更新、版本排序与恢复不变量保持、编解码、提交未知及崩溃/重启可达性仍未闭合。
+纯守卫返回真不授予新执行、延长实际寿命、释放资源或新的 Ready。
+共享冻结迁移、宁侧同输入普通/原生回执和整套证明验收仍缺，不刷新旧摘要以代替验收。
 
 历史 Request 的两个、Manifest 的七个外部函数按[逐符号 A6 登记](formal/dependencies.md)使用；
 当前五操作请求另复用上述已登记的布尔比较模型。

@@ -18,6 +18,21 @@ pub fn replay_matches(request: &LifecycleRequest, original: &LifecycleRequest) -
     request.replay_matches(original)
 }
 
+/// The production deletion rule used by the original SQLite transaction.
+pub fn renewal_rule(
+    request: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    applied_end: Option<i64>,
+    previous_end: Option<i64>,
+    local_operation: Option<sandbox_controller_core::OperationId>,
+    checkpoint: &sandproof_protocol::lifecycle::RenewalConfirmation,
+    current_version: u64,
+    source_pinned: bool,
+) -> bool {
+    sandproof_controller_service::lifecycle_renewal::can_discard_confirmed_sdk(
+        request, applied_end, previous_end, local_operation, checkpoint, current_version, source_pinned,
+    )
+}
+
 pub fn manifest_validate(
     manifest: &SnapshotManifest,
     expected: &CaptureBinding,
