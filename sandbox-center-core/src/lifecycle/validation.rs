@@ -302,6 +302,17 @@ impl CenterState {
                             && facts.end_at_ms == target
                     })
             }
+            _ => Self::valid_lifecycle_nonrenewal(op, previous, is_last),
+        }
+    }
+
+    fn valid_lifecycle_nonrenewal(
+        op: &LifecycleOperationRecord,
+        previous: &LifecycleOperationRecord,
+        is_last: bool,
+    ) -> bool {
+        let request = &op.intent.request;
+        match (&op.submission, &request.operation) {
             (
                 LifecycleSubmission::Unload {
                     session: named,
