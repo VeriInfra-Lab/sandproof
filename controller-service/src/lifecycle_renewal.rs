@@ -1,7 +1,9 @@
 //! Pure deletion rule used by the original durable renewal transaction.
 //! The caller supplies actual fields read under the same authority; returning
 //! true grants no native work, time extension, resource release or fresh Ready.
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation, RenewalConfirmation};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, LifecycleOperation, RenewalConfirmation,
+};
 
 /// Only the previous exact, applied SDK checkpoint can be discarded. Public,
 /// current, unapplied and native/source-pinned records remain intact.
