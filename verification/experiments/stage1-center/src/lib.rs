@@ -53,6 +53,12 @@ pub fn renewal_rule(
     source_pinned: bool,
 ) -> bool {
     sandproof_controller_service::lifecycle_renewal::can_discard_confirmed_sdk(
-        request, applied_end, previous_end, local_operation, checkpoint, current_version, source_pinned,
+        request,
+        applied_end,
+        previous_end,
+        local_operation,
+        checkpoint,
+        current_version,
+        source_pinned,
     )
 }
