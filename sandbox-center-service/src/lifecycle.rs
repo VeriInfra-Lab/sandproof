@@ -89,7 +89,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             // A local Running can already be committed while the center still
             // retains pending Create. Observe that same operation; never issue
             // another create or infer current readiness from saved history.
-            if let Ok(observation) = self.current_create_observation(&intent) {
+            let observation = match self.current_create_observation_attempt(&intent) {
+                Ok(observation) => Some(observation),
+                Err(crate::lifecycle_dispatch::CurrentObservationError::Shared(error)) => return Err(error),
+                Err(crate::lifecycle_dispatch::CurrentObservationError::Host(_)
+                    | crate::lifecycle_dispatch::CurrentObservationError::Superseded
+                    | crate::lifecycle_dispatch::CurrentObservationError::Deadline) => None,
+            };
+            if let Some(observation) = observation {
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(PortError::Busy);
                 };
