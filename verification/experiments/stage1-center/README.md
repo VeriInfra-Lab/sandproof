@@ -61,6 +61,13 @@ python3 verification/experiments/stage1-center/extract.py \
 没有当前结果前不能沿用历史失败或成功。若前端失败但留下 IR，原脚本另保留 `partial.llbc`，
 它不作为完整生成物交给后端。
 
+续期小批使用 `--profile renewal` 和 `--profile renewal-rule`，分别直调中心的完整
+`confirm_lifecycle_renewal`（包含实际恢复校验）和原 SQL 适配实际调用的
+`can_discard_confirmed_sdk`。后一根只引用原 service 的无 durable 特性纯模块，
+不复制删除算法、不将恢复校验设为不透明。Cargo 锁由测试机以固定离线依赖生成，
+随后在同一保存源上由证明机运行原工具；新字段/格式改变后的旧生成物不能沿用。
+预检源码存在不表示编译、抽取或证明成功；业务引用和回收保持性仍按覆盖记录认领。
+
 首轮 version/replay 均完成原工具生成，但尚未运行 Lean 内核/实际文件服务或证明审计，
 不能称已证明。完整 accept 首轮在 Aeneas 循环预处理拒绝两层首匹配循环；拆为原序短路
 Session/Profile 查询并分离顺序校验循环后，仍在 `valid_lifecycle_session` 报
