@@ -115,7 +115,7 @@ impl LinuxWorker {
                     return Err("activation VM binding mismatch".into());
                 }
                 let observed = self.running(*sandbox, *vm)?;
-                let token = self.secret(*sandbox)?.token;
+                let token = self.secret(*sandbox, *generation)?.token;
                 if self.guest_file_status(&self.vm_name(*vm), &token)? != "200" {
                     return Err("guest authentication not observed".into());
                 }

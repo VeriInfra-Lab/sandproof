@@ -240,6 +240,7 @@ fn admitted_options_bound_secret_startup_and_request_payloads() {
         CreateOptions::MAX_ENCODED_BYTES
     );
     let secret = super::super::GuestSecret {
+        generation: u64::MAX,
         token: "x".repeat(128),
         sha512: "f".repeat(128),
         env_vars: options.env_vars.clone(),

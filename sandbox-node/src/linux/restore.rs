@@ -213,7 +213,7 @@ impl LinuxWorker {
             context.paused()?
         } else {
             let template = self
-                .secret(context.sandbox)?
+                .secret(context.sandbox, context.generation)?
                 .template
                 .ok_or("restore lacks original sealed template")?;
             self.validate_template(&template)?;
@@ -318,8 +318,10 @@ impl LinuxWorker {
             let after = context.observe()?;
             if after.process != before.process
                 || after.state != LoadedSnapshotState::Running
-                || self.guest_file_status(&context.name, &self.secret(context.sandbox)?.token)?
-                    != "200"
+                || self.guest_file_status(
+                    &context.name,
+                    &self.secret(context.sandbox, context.generation)?.token,
+                )? != "200"
             {
                 return Err("restore activation/current guest credential not observed".into());
             }

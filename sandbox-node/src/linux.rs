@@ -146,6 +146,7 @@ pub struct ObservedSlot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GuestSecret {
+    generation: core::Generation,
     token: String,
     sha512: String,
     #[serde(default)]

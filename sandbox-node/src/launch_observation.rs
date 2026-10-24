@@ -1,7 +1,7 @@
 //! Credential failures are separate from protected physical-resource authority.
 use super::{
     CreateOptions, File, GuestSecret, MetadataExt, NodeResult, Path, RuntimeObservationConfig,
-    Sha256, TemplateBinding, check_trusted_path, fs, hash_token, node_staging,
+    Sha256, TemplateBinding, check_trusted_path, core, fs, hash_token, node_staging,
 };
 use sha2::Digest;
 use std::io::Read;
@@ -45,6 +45,7 @@ pub(super) fn bind_template(
 
 pub(super) fn credential_status(
     path: &Path,
+    generation: core::Generation,
     options: &CreateOptions,
     original_digest: &[u8; 32],
 ) -> NodeResult<LaunchCredentialStatus> {
@@ -123,14 +124,20 @@ pub(super) fn credential_status(
         }
     };
     File::open(parent)?.sync_all()?;
-    classify(&stored, options, original_digest)
+    classify(&stored, generation, options, original_digest)
 }
 
 fn classify(
     stored: &GuestSecret,
+    generation: core::Generation,
     options: &CreateOptions,
     original_digest: &[u8; 32],
 ) -> NodeResult<LaunchCredentialStatus> {
+    if generation == 0 || stored.generation != generation {
+        return Ok(LaunchCredentialStatus::Unavailable(
+            CredentialFault::Malformed,
+        ));
+    }
     // A readable, changed launch descriptor is not merely a token fault.
     if stored.env_vars != options.env_vars || stored.template != options.template {
         return Err("stored template or initialization differs from admitted create".into());
@@ -165,6 +172,7 @@ mod tests {
 
     fn secret(token: &str) -> GuestSecret {
         GuestSecret {
+            generation: 1,
             token: token.into(),
             sha512: hash_token(token),
             env_vars: std::collections::BTreeMap::default(),
@@ -173,27 +181,42 @@ mod tests {
     }
 
     #[test]
+    fn original_token_and_template_cannot_attest_a_different_native_generation() {
+        let value = secret(&"a".repeat(64));
+        let digest = Sha256::digest(value.token.as_bytes()).into();
+        for generation in [0, 2] {
+            assert_eq!(
+                classify(&value, generation, &CreateOptions::default(), &digest).unwrap(),
+                LaunchCredentialStatus::Unavailable(CredentialFault::Malformed)
+            );
+        }
+        let mut missing = serde_json::to_value(value).unwrap();
+        missing.as_object_mut().unwrap().remove("generation");
+        assert!(serde_json::from_value::<GuestSecret>(missing).is_err());
+    }
+
+    #[test]
     fn only_credential_content_faults_can_be_local() {
         let token = "a".repeat(64);
         let digest = Sha256::digest(token.as_bytes()).into();
         let options = CreateOptions::default();
         assert_eq!(
-            classify(&secret(&token), &options, &digest).unwrap(),
+            classify(&secret(&token), 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Intact
         );
         let mut bad = secret(&token);
         bad.sha512 = "0".repeat(128);
         assert_eq!(
-            classify(&bad, &options, &digest).unwrap(),
+            classify(&bad, 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Unavailable(CredentialFault::TokenHashMismatch)
         );
         assert_eq!(
-            classify(&secret(&"b".repeat(64)), &options, &digest).unwrap(),
+            classify(&secret(&"b".repeat(64)), 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Unavailable(CredentialFault::OriginalDigestMismatch)
         );
         let mut changed = secret(&token);
         changed.env_vars.insert("CHANGED".into(), "1".into());
-        assert!(classify(&changed, &options, &digest).is_err());
+        assert!(classify(&changed, 1, &options, &digest).is_err());
     }
 
     #[test]
@@ -291,13 +314,13 @@ mod tests {
         let original = secret(&"a".repeat(64));
         let digest = Sha256::digest(original.token.as_bytes()).into();
         assert_eq!(
-            credential_status(&path, &options, &digest).unwrap(),
+            credential_status(&path, 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Unavailable(CredentialFault::Missing)
         );
         fs::write(&path, b"{").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         assert_eq!(
-            credential_status(&path, &options, &digest).unwrap(),
+            credential_status(&path, 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Unavailable(CredentialFault::Malformed)
         );
         File::options()
@@ -307,28 +330,30 @@ mod tests {
             .set_len(node_staging::MAX_PAYLOAD as u64 + 1)
             .unwrap();
         assert_eq!(
-            credential_status(&path, &options, &digest).unwrap(),
+            credential_status(&path, 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Unavailable(CredentialFault::Malformed)
         );
         fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
         assert_eq!(
-            credential_status(&path, &options, &digest).unwrap(),
+            credential_status(&path, 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Intact
         );
         let mut changed = original;
         changed.sha512 = "0".repeat(128);
         fs::write(&path, serde_json::to_vec(&changed).unwrap()).unwrap();
         assert_eq!(
-            credential_status(&path, &options, &digest).unwrap(),
+            credential_status(&path, 1, &options, &digest).unwrap(),
             LaunchCredentialStatus::Unavailable(CredentialFault::TokenHashMismatch)
         );
         changed.env_vars.insert("CHANGED".into(), "1".into());
         fs::write(&path, serde_json::to_vec(&changed).unwrap()).unwrap();
-        assert!(credential_status(&path, &options, &digest).is_err());
+        assert!(credential_status(&path, 1, &options, &digest).is_err());
         let link = directory.path().join("link");
         std::os::unix::fs::symlink(&path, &link).unwrap();
-        assert!(credential_status(&link, &options, &digest).is_err());
+        assert!(credential_status(&link, 1, &options, &digest).is_err());
         fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o770)).unwrap();
-        assert!(credential_status(&directory.path().join("missing"), &options, &digest).is_err());
+        assert!(
+            credential_status(&directory.path().join("missing"), 1, &options, &digest).is_err()
+        );
     }
 }

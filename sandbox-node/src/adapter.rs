@@ -832,28 +832,45 @@ impl HostCapacity for NodeHost {
 }
 
 impl LaunchConfiguration for NodeHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError> {
-        self.worker.put_secret(sandbox, token).map_err(|error| {
-            busy(
-                error.as_ref(),
-                FaultStage::PutCredential,
-                FaultContext::instance(sandbox, None),
-            )
-        })
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), ApplicationError> {
+        self.worker
+            .put_secret(sandbox, generation, token)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::PutCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
-        self.worker.has_secret(sandbox).map_err(|error| {
-            busy(
-                error.as_ref(),
-                FaultStage::CheckCredential,
-                FaultContext::instance(sandbox, None),
-            )
-        })
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, ApplicationError> {
+        self.worker
+            .has_secret(sandbox, generation)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::CheckCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
-        self.worker.token_for(sandbox).map_err(|error| {
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, ApplicationError> {
+        self.worker.token_for(sandbox, generation).map_err(|error| {
             busy(
                 error.as_ref(),
                 FaultStage::ReadCredential,
@@ -865,11 +882,12 @@ impl LaunchConfiguration for NodeHost {
     fn put_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         env_vars: &std::collections::BTreeMap<String, String>,
     ) -> Result<(), ApplicationError> {
         self.worker
-            .put_launch_secret(sandbox, token, env_vars)
+            .put_launch_secret(sandbox, generation, token, env_vars)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
@@ -882,10 +900,11 @@ impl LaunchConfiguration for NodeHost {
     fn has_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         env_vars: &std::collections::BTreeMap<String, String>,
     ) -> Result<bool, ApplicationError> {
         self.worker
-            .has_launch_secret(sandbox, env_vars)
+            .has_launch_secret(sandbox, generation, env_vars)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
@@ -898,11 +917,12 @@ impl LaunchConfiguration for NodeHost {
     fn put_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &CreateOptions,
     ) -> Result<(), ApplicationError> {
         self.worker
-            .put_bound_launch_secret(sandbox, token, options)
+            .put_bound_launch_secret(sandbox, generation, token, options)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
@@ -915,10 +935,11 @@ impl LaunchConfiguration for NodeHost {
     fn has_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
     ) -> Result<bool, ApplicationError> {
         self.worker
-            .has_bound_launch_secret(sandbox, options)
+            .has_bound_launch_secret(sandbox, generation, options)
             .map_err(|error| {
                 busy(
                     error.as_ref(),

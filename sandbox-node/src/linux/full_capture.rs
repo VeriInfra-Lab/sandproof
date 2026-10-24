@@ -169,7 +169,7 @@ impl LinuxWorker {
         require_source_binding(pause, original)?;
         profile.require_original_source(original)?;
         let context = self.original_source_context(&pause.source_resource)?;
-        let secret = self.secret(context.binding.sandbox)?;
+        let secret = self.secret(context.binding.sandbox, context.binding.generation)?;
         let template = secret
             .template
             .as_ref()
@@ -225,7 +225,10 @@ impl LinuxWorker {
         let expected = self.expected_cold_work(provider, profile, pause, original)?;
         let raw = crate::source_observation::observe(self, Some(provider), original)?;
         check_measured_source(&expected.template, &raw, &expected.request.compatibility)?;
-        let current = self.secret(expected.context.binding.sandbox)?;
+        let current = self.secret(
+            expected.context.binding.sandbox,
+            expected.context.binding.generation,
+        )?;
         if self.original_source_context(&pause.source_resource)? != expected.context
             || current.template.as_ref() != Some(&expected.template)
         {

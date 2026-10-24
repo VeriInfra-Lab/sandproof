@@ -289,13 +289,38 @@ fn gate_bytes(config: &NodeConfig, position: HostSlotId) -> NodeResult<Vec<u8>> 
     Ok(serde_json::to_vec(&(1_u32, config, position))?)
 }
 
+fn select_credential_context(
+    rows: &[HostPosition],
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+) -> NodeResult<HostSlotContext> {
+    if generation == 0 {
+        return Err("credential generation must be positive".into());
+    }
+    let mut matching = rows.iter().filter(|row| {
+        row.context.binding.sandbox == sandbox && row.context.binding.generation == generation
+    });
+    let row = matching
+        .next()
+        .ok_or("credential generation has no original host position")?;
+    if matching.next().is_some() {
+        return Err("ambiguous credential generation binding".into());
+    }
+    row.require_occupied(row.context.binding)?;
+    Ok(row.context)
+}
+
 pub(super) fn retirement_paths(config: &NodeConfig, binding: HostBinding) -> Vec<PathBuf> {
     let name = format!("vm-{}-{}", config.namespace, binding.vm.0);
     vec![
         config
             .state_dir
             .join("secrets")
-            .join(format!("sb-{}-{}", config.namespace, binding.sandbox.0)),
+            .join(super::credentials::secret_file_name(
+                &config.namespace,
+                binding.sandbox,
+                binding.generation,
+            )),
         config.state_dir.join("fences").join(format!(
             "sb-{}-{}.json",
             config.namespace, binding.sandbox.0
@@ -1156,7 +1181,7 @@ impl LinuxWorker {
         } else {
             require_absent(&request_path)?;
         }
-        let runtime = if self.has_secret(binding.sandbox)? {
+        let runtime = if self.has_secret_record(binding.sandbox, binding.generation)? {
             self.runtime_config(binding.sandbox, binding.vm)?
         } else {
             require_absent(
@@ -1210,13 +1235,12 @@ impl LinuxWorker {
         })
     }
 
-    pub(super) fn require_occupied_sandbox(&self, sandbox: core::SandboxId) -> NodeResult<()> {
-        let rows = self.read_host_positions()?;
-        let row = rows
-            .iter()
-            .find(|row| row.context.binding.sandbox == sandbox)
-            .ok_or("sandbox has no occupied host position")?;
-        row.require_occupied(row.context.binding)
+    pub(super) fn credential_context(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<HostSlotContext> {
+        select_credential_context(&self.read_host_positions()?, sandbox, generation)
     }
 
     /// Pin the exact occupied incarnation while a data request is prepared.
@@ -1567,6 +1591,38 @@ mod tests {
                 network: core::NetSlotId(vm),
             },
         }
+    }
+
+    #[test]
+    fn credential_selection_ignores_old_free_generation_and_rejects_foreign_or_ambiguous_binding() {
+        let mut old = HostPosition {
+            context: context(1, None),
+            phase: HostSlotPhase::Free,
+            retirement: None,
+        };
+        old.context.binding.generation = 1;
+        let mut current = HostPosition {
+            context: context(2, None),
+            phase: HostSlotPhase::Occupied,
+            retirement: None,
+        };
+        current.context.position = HostSlotId(1);
+        current.context.binding.sandbox = old.context.binding.sandbox;
+        current.context.binding.generation = 2;
+        let rows = vec![old, current.clone()];
+        assert_eq!(
+            select_credential_context(&rows, core::SandboxId(1), 2).unwrap(),
+            current.context
+        );
+        assert!(select_credential_context(&rows, core::SandboxId(1), 1).is_err());
+        assert!(select_credential_context(&rows, core::SandboxId(2), 2).is_err());
+        assert!(select_credential_context(&rows, core::SandboxId(1), 0).is_err());
+        let mut duplicate = current;
+        duplicate.context.position = HostSlotId(2);
+        duplicate.context.binding.vm = core::VmId(3);
+        let mut ambiguous = rows;
+        ambiguous.push(duplicate);
+        assert!(select_credential_context(&ambiguous, core::SandboxId(1), 2).is_err());
     }
 
     fn action(command: core::Command) -> WorkAction<core::EffectId> {
@@ -1990,7 +2046,7 @@ mod tests {
         for path in [
             "/node/startup/.tmp-random",
             "/node/startup/vm-ns-0.request",
-            "/node/secrets/sb-ns-1",
+            "/node/secrets/sb-ns-1-1",
         ] {
             assert!(require_known_node_entry(&expected, Path::new(path)).is_err());
         }

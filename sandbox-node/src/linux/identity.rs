@@ -33,7 +33,7 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         vm: core::VmId,
     ) -> NodeResult<RuntimeConfig> {
-        let secret = self.secret(sandbox)?;
+        let secret = self.secret_for_vm(sandbox, vm)?;
         let observed = self.observation_config(sandbox, vm, secret.template.as_ref())?;
         Ok(RuntimeConfig {
             guest_instance_id: observed.guest_instance_id,

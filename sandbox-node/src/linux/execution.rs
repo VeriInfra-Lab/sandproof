@@ -107,7 +107,7 @@ impl LinuxWorker {
                 if source.is_some() {
                     return Err("snapshot restore is outside V1".into());
                 }
-                if let Some(template) = &self.secret(*sandbox)?.template {
+                if let Some(template) = &self.secret(*sandbox, *generation)?.template {
                     self.validate_template(template)?;
                 }
                 self.vm_uid(*vm)?;
@@ -283,7 +283,7 @@ impl LinuxWorker {
             }
             thread::sleep(Duration::from_millis(100));
         }
-        let secret = self.secret(sandbox)?;
+        let secret = self.secret_for_vm(sandbox, vm)?;
         let startup = secret
             .template
             .as_ref()
@@ -317,7 +317,7 @@ impl LinuxWorker {
         vm: core::VmId,
         observation: &Observation,
     ) -> NodeResult<()> {
-        let secret = self.secret(sandbox)?;
+        let secret = self.secret_for_vm(sandbox, vm)?;
         let Some(template) = secret.template else {
             return Ok(());
         };
