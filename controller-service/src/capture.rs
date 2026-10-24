@@ -29,7 +29,8 @@ pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 /// original worker is confirmed exited. This is neither a successful bundle
 /// nor permission to continue the VM; the journal separately resolves commit
 /// uncertainty, revokes restore eligibility and records the continuation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CaptureApiEndObservation {
     pub action: sandproof_protocol::WorkAction<sandbox_controller_core::EffectId>,
     pub full_work_binding: sandproof_protocol::lifecycle::ContentDigest,

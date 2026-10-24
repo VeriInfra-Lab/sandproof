@@ -15,8 +15,28 @@ pub struct OriginalContinueWorkRequest {
     full: FullCaptureWorkRequest,
     source: SourceObservationRequirement,
     end_receipt: CaptureWorkEndReceipt,
+    network_policy: sandbox_controller_core::NetworkPolicy,
+    file_policy: sandbox_controller_core::FilePolicyRef,
 }
 impl OriginalContinueWorkRequest {
+    #[cfg(feature = "durable")]
+    pub(crate) const fn from_ended_source(
+        identity: OriginalContinueIdentity,
+        full: FullCaptureWorkRequest,
+        source: SourceObservationRequirement,
+        end_receipt: CaptureWorkEndReceipt,
+        network_policy: sandbox_controller_core::NetworkPolicy,
+        file_policy: sandbox_controller_core::FilePolicyRef,
+    ) -> Self {
+        Self {
+            identity,
+            full,
+            source,
+            end_receipt,
+            network_policy,
+            file_policy,
+        }
+    }
     #[must_use]
     pub const fn identity(&self) -> OriginalContinueIdentity {
         self.identity
@@ -33,6 +53,14 @@ impl OriginalContinueWorkRequest {
     pub const fn end_receipt(&self) -> CaptureWorkEndReceipt {
         self.end_receipt
     }
+    #[must_use]
+    pub const fn network_policy(&self) -> &sandbox_controller_core::NetworkPolicy {
+        &self.network_policy
+    }
+    #[must_use]
+    pub const fn file_policy(&self) -> sandbox_controller_core::FilePolicyRef {
+        self.file_policy
+    }
     /// Bind the complete saved question. Equality supplies no physical fact
     /// and cannot turn an observation into permission to PATCH the original VM.
     /// # Errors
@@ -44,6 +72,8 @@ impl OriginalContinueWorkRequest {
                 &self.full,
                 &self.source,
                 self.end_receipt,
+                &self.network_policy,
+                self.file_policy,
             ))?)
             .into(),
         ))

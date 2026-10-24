@@ -17,10 +17,9 @@ pub(in crate::controller) fn claim(
             | core::Command::CleanupSlot { .. }
     ) && sources.records.iter().any(|record| {
         record.work.anchor.local.sandbox == sandbox
-            && record
-                .capture
-                .as_ref()
-                .is_some_and(|capture| capture.action.is_some() && capture.completed.is_none())
+            && record.capture.as_ref().is_some_and(|capture| {
+                capture.action.is_some() && capture.completed.is_none() && capture.end.is_none()
+            })
     }) {
         // No unfinished writer is forgotten when a newer source is admitted.
         return Ok(false);
@@ -43,6 +42,9 @@ pub(in crate::controller) fn claim(
     };
     let record = &sources.records[index];
     let capture = record.capture.as_ref().ok_or(JournalError::Conflict)?;
+    if capture.end.is_some() {
+        return Ok(false);
+    }
     if matches!(action.command.command(), core::Command::SealSnapshot { .. }) {
         let active = sources
             .records
@@ -50,7 +52,7 @@ pub(in crate::controller) fn claim(
             .filter(|r| {
                 r.capture
                     .as_ref()
-                    .is_some_and(|c| c.action.is_some() && c.completed.is_none())
+                    .is_some_and(|c| c.action.is_some() && c.completed.is_none() && c.end.is_none())
             })
             .count();
         if capture.action.is_some() || active >= MAX_FULL {
