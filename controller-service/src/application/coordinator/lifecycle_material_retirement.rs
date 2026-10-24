@@ -73,12 +73,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
             (questions, Arc::clone(&inner.host), session)
         };
         let _active = MaterialRetirementGuard { application: self, sandbox, session };
-        let mut settled = 0;
+        let count = questions.len();
         for question in questions {
             self.retire_one_material(&question, &host)?;
-            settled += 1;
         }
-        Ok(settled)
+        Ok(count)
     }
 
     fn retire_one_material(

@@ -5,6 +5,7 @@ use super::*;
 use super::super::tests as fixture;
 use crate::controller::tests_support::lifecycle_application as v3;
 use crate::NeverCrash;
+use sandbox_controller_core as core;
 use core::workflow::{self, WorkflowStep};
 use sandproof_protocol::{WorkOutcome, WorkReceipt, lifecycle::{ExpectedSession, LifecycleOperation}};
 use std::path::Path;
