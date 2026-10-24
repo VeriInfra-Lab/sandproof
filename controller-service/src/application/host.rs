@@ -134,15 +134,16 @@ pub trait WorkRecovery: WorkEvidence {
         Err(ApplicationError::Invalid)
     }
 
-    /// Observe an exact persisted API-end record and the actual original
-    /// worker's exit. A helper exit or a timeout alone must return None.
-    fn observe_lifecycle_capture_api_end(
+    /// Observe the exact durable worker result and actual original worker exit.
+    /// Only an explicit tagged record proves no request; death, EOF, missing
+    /// records, disconnection and timeout alone must return None.
+    fn observe_lifecycle_capture_request_end(
         &self,
         _action: &WorkAction<core::EffectId>,
         _full: &crate::capture::FullCaptureWorkRequest,
         _source: &crate::capture::SourceObservationRequirement,
         _worker: &crate::capture::CaptureWorkerBinding,
-    ) -> Option<crate::capture::CaptureApiEndObservation> {
+    ) -> Option<crate::capture::CaptureRequestEndObservation> {
         None
     }
 
