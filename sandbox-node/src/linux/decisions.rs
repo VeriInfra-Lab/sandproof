@@ -22,6 +22,7 @@ pub(super) fn command_generation(command: &core::Command) -> Option<core::Genera
         | core::Command::ActivateVm { generation, .. }
         | core::Command::FreezeVm { generation, .. }
         | core::Command::SealSnapshot { generation, .. }
+        | core::Command::CommitSnapshot { generation, .. }
         | core::Command::ApplyFilePolicy { generation, .. }
         | core::Command::StopVm { generation, .. }
         | core::Command::CleanupVm { generation, .. }
@@ -36,6 +37,21 @@ pub(super) fn action_fields_match(action: &WorkAction<core::EffectId>, namespace
         && action.identity.epoch == command.epoch().unwrap_or(action.identity.epoch)
         && command_generation(command).is_none_or(|value| value == action.identity.generation)
         && action.identity.sandbox.as_str() == format!("sb-{namespace}-{}", command.sandbox().0)
+}
+
+// Identity only: occupied position, original source and material remain
+// separate mandatory checks at the actual execution/observation entry.
+pub(super) fn validate_action_identity(
+    action: &WorkAction<core::EffectId>,
+    namespace: &str,
+) -> NodeResult<()> {
+    action.identity.validate_version()?;
+    if !action_fields_match(action, namespace)
+        || action.identity.resource != command_resource(action.command.command(), namespace)?
+    {
+        return Err("host action identity mismatch".into());
+    }
+    Ok(())
 }
 
 pub(super) fn slot_coordinates_match(
@@ -218,7 +234,16 @@ mod tests {
                 digest: core::ManifestDigest(7),
             },
         };
-        for command in [&freeze, &seal] {
+        let commit = core::Command::CommitSnapshot {
+            sandbox: core::SandboxId(1),
+            epoch: 2,
+            generation: 3,
+            snapshot: core::SnapshotId(6),
+            manifest: core::SnapshotManifestRef {
+                digest: core::ManifestDigest(7),
+            },
+        };
+        for command in [&freeze, &seal, &commit] {
             let mut work = action(command.clone());
             assert!(action_fields_match(&work, "test"));
             work.identity.generation += 1;

@@ -154,12 +154,7 @@ impl LinuxWorker {
         self.require_occupied_action(action)?;
         let command = action.command.command();
         let generation = decisions::command_generation(command);
-        if !decisions::action_fields_match(action, &self.config.namespace)
-            || action.identity.resource
-                != decisions::command_resource(command, &self.config.namespace)?
-        {
-            return Err("host action identity mismatch".into());
-        }
+        decisions::validate_action_identity(action, &self.config.namespace)?;
         if let Some(generation) = generation {
             // PrepareVm creates the first slot binding. All later actions,
             // including old cleanup and read-only observations, must carry

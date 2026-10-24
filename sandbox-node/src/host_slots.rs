@@ -1385,6 +1385,21 @@ impl LinuxWorker {
         row.require_occupied(expected)
     }
 
+    // Only the dedicated Full observer calls this. A bare CommitSnapshot
+    // remains unsupported by the generic occupied-action/worker dispatcher.
+    pub(super) fn require_capture_commit_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        seal: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        check_capture_commit_action(
+            &self.read_host_positions()?,
+            &self.config.namespace,
+            action,
+            seal,
+        )
+    }
+
     pub(super) fn require_occupied_action(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -1419,6 +1434,52 @@ fn select_original_source_context(
 #[cfg(test)]
 #[path = "source_context_tests.rs"]
 mod source_context_tests;
+
+// Validate the dedicated Commit against the original SQL-saved Seal. This
+// gate alone grants no commit: the caller must still check Full/source/fence,
+// protected bootstrap, helper ownership and the actual complete stored bundle.
+fn check_capture_commit_action(
+    rows: &[HostPosition],
+    namespace: &str,
+    action: &WorkAction<core::EffectId>,
+    seal: &WorkAction<core::EffectId>,
+) -> NodeResult<()> {
+    super::decisions::validate_action_identity(action, namespace)?;
+    super::decisions::validate_action_identity(seal, namespace)?;
+    if action.identity.owner != seal.identity.owner
+        || action.identity.sandbox != seal.identity.sandbox
+        || action.identity.operation != seal.identity.operation
+        || action.identity.epoch != seal.identity.epoch
+        || action.identity.generation != seal.identity.generation
+    {
+        return Err("Commit differs from original durably completed Full".into());
+    }
+    let core::Command::SealSnapshot {
+        sandbox,
+        epoch,
+        generation,
+        snapshot,
+        manifest,
+        ..
+    } = seal.command.command()
+    else {
+        return Err("original saved material action is not SealSnapshot".into());
+    };
+    if action.command.command()
+        != &(core::Command::CommitSnapshot {
+            sandbox: *sandbox,
+            epoch: *epoch,
+            generation: *generation,
+            snapshot: *snapshot,
+            manifest: *manifest,
+        })
+    {
+        return Err("Commit does not name the complete original Seal command".into());
+    }
+    // Commit has no VM field: use the original Seal's VM and occupied binding,
+    // never infer a fresh VM from the snapshot number or bypass the shared gate.
+    check_occupied_action(rows, seal)
+}
 
 fn check_occupied_action(
     rows: &[HostPosition],
@@ -1525,6 +1586,154 @@ mod tests {
             },
             command,
         }
+    }
+
+    fn capture_commit_actions() -> (
+        HostPosition,
+        WorkAction<core::EffectId>,
+        WorkAction<core::EffectId>,
+    ) {
+        let ctx = context(10, None);
+        let row = HostPosition::bind(None, &ctx, true).unwrap();
+        let mut seal = action(core::Command::SealSnapshot {
+            sandbox: ctx.binding.sandbox,
+            epoch: 1,
+            generation: ctx.binding.generation,
+            vm: ctx.binding.vm,
+            workspace: core::FsId(5),
+            snapshot: core::SnapshotId(6),
+            manifest: core::SnapshotManifestRef {
+                digest: core::ManifestDigest(7),
+            },
+        });
+        seal.identity.sandbox =
+            sandproof_protocol::SandboxId::try_from(format!("sb-test-{}", ctx.binding.sandbox.0))
+                .unwrap();
+        seal.identity.resource =
+            super::super::decisions::command_resource(seal.command.command(), "test").unwrap();
+        let mut commit = seal.clone();
+        commit.command = core::EffectId::initial(core::Command::CommitSnapshot {
+            sandbox: ctx.binding.sandbox,
+            epoch: 1,
+            generation: ctx.binding.generation,
+            snapshot: core::SnapshotId(6),
+            manifest: core::SnapshotManifestRef {
+                digest: core::ManifestDigest(7),
+            },
+        });
+        commit.identity.logical_action = LogicalActionId::try_from("effect-commit").unwrap();
+        (row, commit, seal)
+    }
+
+    #[test]
+    fn full_commit_entry_checks_original_seal_while_generic_commit_remains_rejected() {
+        let (row, commit, seal) = capture_commit_actions();
+        let rows = std::slice::from_ref(&row);
+        // This is the production dedicated entry's gate, not a replacement
+        // material observer. The old generic gate rejects this exact valid pair.
+        check_capture_commit_action(rows, "test", &commit, &seal).unwrap();
+        assert_eq!(
+            check_occupied_action(rows, &commit)
+                .unwrap_err()
+                .to_string(),
+            "unsupported bounded host command"
+        );
+        assert!(check_capture_commit_action(&[], "test", &commit, &seal).is_err());
+        for phase in [HostSlotPhase::Releasing, HostSlotPhase::Free] {
+            let mut changed = row.clone();
+            changed.phase = phase;
+            assert!(check_capture_commit_action(&[changed], "test", &commit, &seal).is_err());
+        }
+        let mut successor = row;
+        successor.context.binding.vm = core::VmId(11);
+        assert!(check_capture_commit_action(&[successor], "test", &commit, &seal).is_err());
+    }
+
+    #[test]
+    fn full_commit_entry_rejects_changed_identity_even_with_the_original_seal() {
+        let (row, original, seal) = capture_commit_actions();
+        for field in [
+            "owner",
+            "sandbox",
+            "operation",
+            "epoch",
+            "generation",
+            "attempt",
+            "protocol",
+            "resource",
+        ] {
+            let mut changed = original.clone();
+            match field {
+                "owner" => changed.identity.owner = TenantId::try_from("tenant-8").unwrap(),
+                "sandbox" => {
+                    changed.identity.sandbox =
+                        sandproof_protocol::SandboxId::try_from("sb-test-2").unwrap()
+                }
+                "operation" => {
+                    changed.identity.operation = OperationId::try_from("op-test-other").unwrap()
+                }
+                "epoch" => changed.identity.epoch += 1,
+                "generation" => changed.identity.generation += 1,
+                "attempt" => changed.identity.attempt += 1,
+                "protocol" => changed.identity.protocol_version += 1,
+                "resource" => {
+                    changed.identity.resource.id = ResourceId::try_from("snapshot-test-99").unwrap()
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                check_capture_commit_action(std::slice::from_ref(&row), "test", &changed, &seal)
+                    .is_err(),
+                "accepted {field}"
+            );
+        }
+        let mut changed_seal = seal;
+        let mut changed_commit = original;
+        changed_seal.identity.owner = TenantId::try_from("tenant-8").unwrap();
+        changed_commit.identity.owner = changed_seal.identity.owner.clone();
+        assert!(
+            check_capture_commit_action(&[row], "test", &changed_commit, &changed_seal).is_err()
+        );
+    }
+
+    #[test]
+    fn full_commit_entry_requires_exact_saved_seal_command_and_source_vm() {
+        let (row, original, seal) = capture_commit_actions();
+        for field in ["snapshot", "manifest"] {
+            let mut changed = original.clone();
+            let mut command = changed.command.command().clone();
+            if let core::Command::CommitSnapshot {
+                snapshot, manifest, ..
+            } = &mut command
+            {
+                if field == "snapshot" {
+                    *snapshot = core::SnapshotId(99);
+                } else {
+                    manifest.digest = core::ManifestDigest(99);
+                }
+            }
+            changed.command = core::EffectId::initial(command);
+            changed.identity.resource =
+                super::super::decisions::command_resource(changed.command.command(), "test")
+                    .unwrap();
+            assert!(
+                check_capture_commit_action(std::slice::from_ref(&row), "test", &changed, &seal)
+                    .is_err(),
+                "accepted {field}"
+            );
+        }
+        let mut changed = seal.clone();
+        let mut command = changed.command.command().clone();
+        if let core::Command::SealSnapshot { vm, .. } = &mut command {
+            *vm = core::VmId(99);
+        }
+        changed.command = core::EffectId::initial(command);
+        assert!(
+            check_capture_commit_action(std::slice::from_ref(&row), "test", &original, &changed)
+                .is_err()
+        );
+        // A Commit or another action cannot stand in for the persisted Seal.
+        assert!(check_capture_commit_action(&[row], "test", &original, &original).is_err());
     }
 
     #[test]

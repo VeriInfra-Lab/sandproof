@@ -250,40 +250,12 @@ impl LinuxWorker {
         source: &SourceObservationRequirement,
         expected: &CommittedCaptureExpectation,
     ) -> NodeResult<super::HostObservation> {
-        self.validate_action(action)?;
         let seal = expected.seal_action();
+        self.require_capture_commit_action(action, seal)?;
         self.require_full_action(seal, full)?;
         require_source_binding(&full.pause, source)?;
-        if expected.work() != full
-            || action.identity.owner != seal.identity.owner
-            || action.identity.sandbox != seal.identity.sandbox
-            || action.identity.operation != seal.identity.operation
-            || action.identity.epoch != seal.identity.epoch
-            || action.identity.generation != seal.identity.generation
-        {
+        if expected.work() != full {
             return Err("Commit differs from original durably completed Full".into());
-        }
-        let core::Command::SealSnapshot {
-            sandbox,
-            epoch,
-            generation,
-            snapshot,
-            manifest,
-            ..
-        } = seal.command.command()
-        else {
-            return Err("original saved material action is not SealSnapshot".into());
-        };
-        if action.command.command()
-            != &(core::Command::CommitSnapshot {
-                sandbox: *sandbox,
-                epoch: *epoch,
-                generation: *generation,
-                snapshot: *snapshot,
-                manifest: *manifest,
-            })
-        {
-            return Err("Commit does not name the complete original Seal command".into());
         }
         let context = self.original_source_context(&source.resource)?;
         let slot = self.runtime_host_slot(context.position, context.binding.vm)?;
