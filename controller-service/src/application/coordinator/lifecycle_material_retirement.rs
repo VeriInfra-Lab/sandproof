@@ -148,7 +148,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         };
         // Outside SQL and Inner: errors return without changing Retiring or its
         // reservation. In particular, do not replace a partly deleted plan.
-        let observation = host.retire_lifecycle_material(&question.request, &bytes, &permit)?;
+        let observation = host
+            .retire_lifecycle_material(&question.request, &bytes, &permit)
+            .map_err(|_| ApplicationError::OutcomeUnknown)?;
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let closure = certificate(&inner, question)?;
         inner
