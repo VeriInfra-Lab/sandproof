@@ -27,6 +27,8 @@ use std::{
 
 #[path = "snapshot_bundle.rs"]
 mod bundle;
+#[path = "snapshot_completion.rs"]
+mod completion;
 pub use bundle::{BundleReadLimits, SnapshotBundle};
 
 const MAX_MANIFEST_BYTES: usize = 1_048_576;

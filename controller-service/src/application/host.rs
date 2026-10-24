@@ -16,6 +16,44 @@ pub trait WorkEvidence {
 
 /// Execute only controller-claimed work; transport loss remains unknown.
 pub trait WorkExecution: WorkEvidence {
+    /// Propose protected local capture parameters; this performs no Pause/Full.
+    /// # Errors
+    /// Missing configuration or physical envelope refuses capture admission.
+    fn propose_lifecycle_full(
+        &self,
+        _pause: &crate::capture::PauseWorkRequest,
+        _source: &crate::capture::SourceObservationRequirement,
+    ) -> Result<crate::capture::FullCaptureWorkRequest, ApplicationError> {
+        Err(ApplicationError::Busy)
+    }
+
+    /// Prepare an owned helper, retaining its closed start gate.
+    /// # Errors
+    /// No permit or implicit retry is produced on preparation failure.
+    fn prepare_lifecycle_capture_worker(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _full: &crate::capture::FullCaptureWorkRequest,
+        _source: &crate::capture::SourceObservationRequirement,
+    ) -> Result<Box<dyn crate::capture::PreparedFullCapture<Self::Evidence>>, ApplicationError>
+    {
+        Err(ApplicationError::Busy)
+    }
+
+    /// Execute the original claimed Pause/Commit/Stop against its saved source.
+    /// # Errors
+    /// Unknown work remains durable; this method must never reissue Full.
+    fn execute_lifecycle_capture_action(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _full: &crate::capture::FullCaptureWorkRequest,
+        _source: &crate::capture::SourceObservationRequirement,
+        _worker: Option<&crate::capture::CaptureWorkerBinding>,
+        _committed: Option<&crate::capture::CommittedCaptureExpectation>,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        Err(WorkerTransportError::ConnectionLost)
+    }
+
     /// # Errors
     /// Transport loss must remain unknown, never an implicit retry.
     fn execute(
@@ -26,6 +64,18 @@ pub trait WorkExecution: WorkEvidence {
 
 /// Observe or reconcile exact previously dispatched work, never arbitrary replay.
 pub trait WorkRecovery: WorkEvidence {
+    /// Observe the same persisted capture attempt without starting another Full.
+    fn observe_lifecycle_capture_action(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _full: &crate::capture::FullCaptureWorkRequest,
+        _source: &crate::capture::SourceObservationRequirement,
+        _worker: Option<&crate::capture::CaptureWorkerBinding>,
+        _committed: Option<&crate::capture::CommittedCaptureExpectation>,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        None
+    }
+
     /// Observe an already dispatched action without performing it again.
     /// `None` means the physical outcome is still unknown and must stay so.
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>>;
@@ -123,6 +173,19 @@ pub trait WorkRecovery: WorkEvidence {
 
 /// Bind and release exact durable physical positions.
 pub trait HostSlots {
+    /// Retire the original unloaded running position after SQL material custody.
+    /// # Errors
+    /// Missing exact source exit, worker drain or protected material refuses.
+    fn release_lifecycle_host_slot(
+        &self,
+        _context: &HostSlotContext,
+        _full: &crate::capture::FullCaptureWorkRequest,
+        _source: &crate::capture::SourceObservationRequirement,
+        _committed: &crate::capture::CommittedCaptureExpectation,
+    ) -> Result<(), ApplicationError> {
+        Err(ApplicationError::Busy)
+    }
+
     /// Persist or validate the exact controller-committed physical position.
     /// A missing/prior binding may be installed only before any host dispatch,
     /// or for terminal pre-launch cleanup whose only dispatched action was a

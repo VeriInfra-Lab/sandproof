@@ -417,6 +417,7 @@ impl SharedBusinessAuthority {
             SessionPhase::Running => return Err(PortError::Busy),
             SessionPhase::Renewing => PublicSessionPhase::Renewing,
             SessionPhase::Unloading => PublicSessionPhase::Unloading,
+            SessionPhase::Unloaded => PublicSessionPhase::Unloaded,
             SessionPhase::Terminating => PublicSessionPhase::Terminating,
             SessionPhase::Cleaned => PublicSessionPhase::Cleaned,
         };
@@ -425,6 +426,11 @@ impl SharedBusinessAuthority {
             operation: current.request.binding.key.clone(),
             current_version: current.accepted_version,
             phase,
+            unloaded: record
+                .operations()
+                .last()
+                .and_then(|operation| operation.unloaded())
+                .and_then(|observation| observation.unloaded.clone()),
             create_refusal: record
                 .operations()
                 .first()

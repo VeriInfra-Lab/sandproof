@@ -1,5 +1,8 @@
 //! Current lifecycle admission and authorized observations use one authority.
 //! Host I/O never holds the center's shared decision lock.
+use crate::application::diagnostics::{
+    self, Failure as DiagnosticFailure, Stage as DiagnosticStage,
+};
 use crate::application::tenant_id;
 use crate::{
     CenterApplication, CenterPort, HostPort, TemplateProvider, business::SharedBusinessAuthority,
@@ -11,6 +14,11 @@ use sandproof_protocol::lifecycle::{
     PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase, PublicSessionView,
     PublicUnloadRequest, SessionId,
 };
+
+fn query_lock_error(stage: DiagnosticStage) -> PortError {
+    diagnostics::emit(stage, DiagnosticFailure::Port(PortError::OutcomeUnknown));
+    PortError::OutcomeUnknown
+}
 
 impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority, H, T> {
     /// # Errors
@@ -101,8 +109,17 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         let (intent, phase) = self
             .authority
             .lock()
-            .map_err(|_| PortError::OutcomeUnknown)?
-            .public_lifecycle_intent(&owner, session)?;
+            .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryLookup))?
+            .public_lifecycle_intent(&owner, session)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryLookup,
+                    DiagnosticFailure::Port(*error),
+                );
+            })?;
+        if phase == SessionPhase::Unloaded {
+            return self.query_unloaded(&owner, session);
+        }
         if matches!(
             phase,
             SessionPhase::Creating | SessionPhase::Running | SessionPhase::Renewing
@@ -132,13 +149,20 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     let mut authority = self
                         .authority
                         .lock()
-                        .map_err(|_| PortError::OutcomeUnknown)?;
+                        .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?;
                     crate::AuthorityPort::accept_lifecycle_create_refusal(
                         &mut *authority,
                         &observation,
                     )
                     .map_err(crate::application::authority_error)?;
-                    return authority.query_public_lifecycle(&owner, session);
+                    return authority
+                        .query_public_lifecycle(&owner, session)
+                        .inspect_err(|error| {
+                            diagnostics::emit(
+                                DiagnosticStage::LifecycleQueryResult,
+                                DiagnosticFailure::Port(*error),
+                            );
+                        });
                 }
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(PortError::Busy);
@@ -146,7 +170,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 let mut authority = self
                     .authority
                     .lock()
-                    .map_err(|_| PortError::OutcomeUnknown)?;
+                    .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?;
                 crate::AuthorityPort::accept_lifecycle_create_observation(
                     &mut *authority,
                     &observation,
@@ -167,6 +191,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     operation: current.request.binding.key.clone(),
                     current_version: current.accepted_version,
                     phase: PublicSessionPhase::Running,
+                    unloaded: None,
                     create_refusal: None,
                 });
             }
@@ -175,8 +200,41 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         // the current intent. The authority refuses historical-only Running.
         self.authority
             .lock()
-            .map_err(|_| PortError::OutcomeUnknown)?
+            .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?
             .query_public_lifecycle(&owner, session)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryResult,
+                    DiagnosticFailure::Port(*error),
+                );
+            })
+    }
+
+    fn query_unloaded(
+        &self,
+        owner: &sandproof_protocol::TenantId,
+        session: &SessionId,
+    ) -> Result<PublicSessionView, PortError> {
+        let mut authority = self
+            .authority
+            .lock()
+            .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryExpiry))?;
+        crate::AuthorityPort::expire_current(&mut *authority, self.now()?)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryExpiry,
+                    DiagnosticFailure::Authority(*error),
+                );
+            })
+            .map_err(crate::application::authority_error)?;
+        authority
+            .query_public_lifecycle(owner, session)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryResult,
+                    DiagnosticFailure::Port(*error),
+                );
+            })
     }
 }
 

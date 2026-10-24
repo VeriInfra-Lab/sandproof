@@ -95,7 +95,8 @@ impl Calls {
                         .unwrap();
                     (id, (session.envd_access_token.clone(), BTreeMap::new()))
                 })
-                .collect::<BTreeMap<_, _>>().into(),
+                .collect::<BTreeMap<_, _>>()
+                .into(),
             ..FakeHost::default()
         }
     }

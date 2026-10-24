@@ -810,6 +810,14 @@ impl Runtime {
     /// A persisted intent binds deterministic host names even if installation
     /// failed between effects; absence checks keep repeated cleanup idempotent.
     pub(crate) fn cleanup_uplink_after_namespace(&self, id: &str) -> Result<(), RuntimeError> {
+        self.cleanup_uplink_after_namespace_with_gate(id, None)
+    }
+
+    pub(crate) fn cleanup_uplink_after_namespace_with_gate(
+        &self,
+        id: &str,
+        gate: Option<&crate::RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
         if !self.uplink_intent_exists(id)? {
             return if self.uplink_resources_absent(id)? {
                 Ok(())
@@ -835,20 +843,33 @@ impl Runtime {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        self.delete_root_uplink_tables(&plan)?;
+        self.delete_root_uplink_tables(&plan, gate)?;
         if !self.uplink_resources_absent(id)? {
             return Err(RuntimeError::IdentityMismatch("uplink cleanup incomplete"));
         }
         Ok(())
     }
 
-    fn delete_root_uplink_tables(&self, plan: &UplinkPlan) -> Result<(), RuntimeError> {
+    fn delete_root_uplink_tables(
+        &self,
+        plan: &UplinkPlan,
+        gate: Option<&crate::RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
         for (family, table) in [("inet", &plan.filter_table), ("ip", &plan.nat_table)] {
             if root_table_exists(family, table)? {
-                self.root_nft_script(
-                    "delete stopped uplink table",
-                    &format!("delete table {family} {table}\n"),
-                )?;
+                let script = format!("delete table {family} {table}\n");
+                if let Some(held) = gate {
+                    crate::linux::helper_gate::helper_output(
+                        Some(held),
+                        self.config.host_slot.as_ref(),
+                        "delete stopped uplink table",
+                        "/usr/sbin/nft",
+                        &["-f", "-"],
+                        Some(&script),
+                    )?;
+                } else {
+                    self.root_nft_script("delete stopped uplink table", &script)?;
+                }
             }
         }
         Ok(())
@@ -949,7 +970,7 @@ impl Runtime {
                 ),
             )?;
         }
-        self.delete_root_uplink_tables(&plan)?;
+        self.delete_root_uplink_tables(&plan, None)?;
         if !self.uplink_resources_absent(id)?
             || namespace_link_exists(self, id, "uplink0")?
             || namespace_nft_object_exists(self, id, "tables", "ip", "sandproof_uplink", None)?

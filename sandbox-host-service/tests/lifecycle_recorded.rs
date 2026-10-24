@@ -90,7 +90,26 @@ fn application(
     provision: bool,
 ) -> Arc<Application> {
     let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
-    let maintenance = local::complete_fixture::maintenance();
+    let inbox = configuration();
+    let source = sandproof_controller_service::capture::SourceObservationConfig {
+        max_work_bytes: 4096,
+        max_configuration_bytes: 1024,
+        max_executable_bytes: 67_108_864,
+        max_kernel_bytes: 268_435_456,
+        max_material_bytes: 64 * 1024 * 1024 * 1024,
+        max_disk_bytes: 2 * 1024 * 1024,
+    };
+    // The inbox reserves 286,720 bytes and source work reserves 303,104.
+    // They are separate rows; the per-value cap must fit either complete row.
+    let source_reserve = u64::from(inbox.max_sessions)
+        * (u64::from(source.max_work_bytes)
+            + 4 * u64::from(source.max_configuration_bytes)
+            + 8192
+            + 131_072)
+        + 8192;
+    let mut maintenance = local::complete_fixture::maintenance();
+    maintenance.capacity.as_mut().unwrap().max_sql_value_bytes =
+        inbox.required_bytes().max(source_reserve);
     let mut journal = ControllerJournal::open_complete(
         path,
         NAMESPACE,
@@ -101,17 +120,7 @@ fn application(
     .unwrap();
     if provision {
         journal
-            .initialize_lifecycle_inbox(
-                configuration(),
-                sandproof_controller_service::capture::SourceObservationConfig {
-                    max_work_bytes: 4096,
-                    max_configuration_bytes: 1024,
-                    max_executable_bytes: 67_108_864,
-                    max_kernel_bytes: 268_435_456,
-                    max_disk_bytes: 2 * 1024 * 1024,
-                },
-                &mut NeverCrash,
-            )
+            .initialize_lifecycle_inbox(inbox, source, &mut NeverCrash)
             .unwrap();
     }
     Arc::new(

@@ -55,6 +55,14 @@ impl<H: ControllerHost + Send + 'static> HostFacade<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostFacade<H> {
+    async fn observe_unload(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, ReceiveError> {
+        self.lifecycle.observe_unload(intent, context).await
+    }
+
     async fn confirm_renewal(
         &self,
         result: sandproof_protocol::lifecycle::RenewalConfirmation,

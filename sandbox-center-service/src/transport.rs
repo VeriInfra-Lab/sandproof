@@ -117,6 +117,19 @@ impl HostPort for RegisteredHosts {
                 .map_err(|_| PortError::OutcomeUnknown)
         })
     }
+    fn observe_lifecycle_unload(
+        &self,
+        intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, PortError> {
+        let client = self.client(&intent.request.binding.node)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, client.observe_lifecycle_unload(intent))
+                .await
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .map_err(|_| PortError::OutcomeUnknown)
+        })
+    }
     fn observe_lifecycle_terminal(
         &self,
         intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,

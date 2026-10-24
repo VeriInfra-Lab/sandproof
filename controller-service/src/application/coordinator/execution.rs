@@ -6,7 +6,7 @@ use super::{
 };
 use std::sync::Arc;
 
-struct ActiveSandbox<'a, H: ControllerHost> {
+pub(super) struct ActiveSandbox<'a, H: ControllerHost> {
     application: &'a ControllerApplication<H>,
     sandbox: core::SandboxId,
 }
@@ -98,7 +98,13 @@ impl<H: ControllerHost> ControllerApplication<H> {
     pub fn pending_workflows(&self) -> Result<Vec<(core::SandboxId, bool)>, ApplicationError> {
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let world = inner.journal.world().map_err(map_journal)?;
-        let reclaimed = super::recovery::reclaimed_sandboxes(&world);
+        let reclaimed = world
+            .sandbox_records()
+            .iter()
+            .filter_map(|(sandbox, _)| {
+                runtime_resources_reclaimed(&world, *sandbox).then_some(*sandbox)
+            })
+            .collect::<std::collections::BTreeSet<_>>();
         let pending_release = inner
             .journal
             .host_slot_inventory()
@@ -121,7 +127,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .collect())
     }
 
-    fn acquire_sandbox(
+    pub(super) fn acquire_sandbox(
         &self,
         sandbox: core::SandboxId,
     ) -> Result<ActiveSandbox<'_, H>, ApplicationError> {
@@ -246,6 +252,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             Arc::clone(&inner.host)
         };
+        self.prepare_unload_drain(sandbox, host.as_ref())?;
         self.prepare_execution(sandbox, host.as_ref())?;
         // Reconciliation observes only original Dispatched/Unknown identities.
         // It cannot race an in-process worker: this turn owns the session gate.
@@ -260,7 +267,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .collect::<Vec<_>>()
         };
         for action in uncertain {
-            if let Some(receipt) = host.observe(&action) {
+            if let Some(receipt) = self.observe_capture_action(host.as_ref(), &action)? {
                 let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
                 // complete loads the latest World and validates the full action.
                 // A terminal result can add physical facts, never grant access.
@@ -316,7 +323,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                     core::workflow::WorkflowStep::Blocked => return Ok(false),
                 }
             };
-            let result = host.execute(&action);
+            let result = self.execute_capture_action(host.as_ref(), &action)?;
             let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             match result {
                 Ok(receipt) => {
@@ -342,7 +349,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let candidate = {
             let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             let world = inner.journal.world().map_err(map_journal)?;
-            if !super::recovery::reclaimed_sandboxes(&world).contains(&sandbox) {
+            if !runtime_resources_reclaimed(&world, sandbox) {
                 return Ok(world
                     .sandbox_record(sandbox)
                     .is_some_and(|r| r.phase == core::Phase::Running));
@@ -381,7 +388,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         {
             let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             let world = inner.journal.world().map_err(map_journal)?;
-            if !super::recovery::reclaimed_sandboxes(&world).contains(&sandbox)
+            if !runtime_resources_reclaimed(&world, sandbox)
                 || !local_routes_dropped(&inner, sandbox)
             {
                 return Ok(false);
@@ -393,7 +400,40 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .begin_host_slot_release(context, &mut NeverCrash)
                 .map_err(map_journal)?;
         }
-        host.release_host_slot(&context)?;
+        let unloaded = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            let world = inner.journal.world().map_err(map_journal)?;
+            if world
+                .sandbox_record(sandbox)
+                .is_some_and(|r| r.phase == core::Phase::Paused && !r.terminal)
+            {
+                let record = inner
+                    .journal
+                    .lifecycle_capture_record(sandbox)
+                    .map_err(map_journal)?
+                    .ok_or(ApplicationError::OutcomeUnknown)?;
+                let expected = inner
+                    .journal
+                    .committed_capture_expectation(sandbox)
+                    .map_err(map_journal)?
+                    .ok_or(ApplicationError::OutcomeUnknown)?;
+                Some((record, expected))
+            } else {
+                None
+            }
+        };
+        if let Some((record, expected)) = &unloaded {
+            host.release_lifecycle_host_slot(
+                &context,
+                record
+                    .full_capture()
+                    .ok_or(ApplicationError::OutcomeUnknown)?,
+                record.work.requirement(),
+                expected,
+            )?;
+        } else {
+            host.release_host_slot(&context)?;
+        }
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         if !local_routes_dropped(&inner, sandbox) {
             return Err(ApplicationError::OutcomeUnknown);
@@ -424,4 +464,26 @@ pub(super) fn local_routes_dropped<H: ControllerHost>(
             .data_drains
             .get(&sandbox.0)
             .is_none_or(DataLease::routes_dropped)
+}
+
+fn runtime_resources_reclaimed(world: &core::World, sandbox: core::SandboxId) -> bool {
+    if super::recovery::reclaimed_sandboxes(world).contains(&sandbox) {
+        return true;
+    }
+    let Some(row) = world.sandbox_record(sandbox) else {
+        return false;
+    };
+    if row.phase != core::Phase::Paused || row.terminal || row.durable_snapshot.is_none() {
+        return false;
+    }
+    let resources = world.resource_index(sandbox);
+    resources.vms.iter().all(|vm| {
+        world
+            .vm_record(*vm)
+            .is_some_and(|v| v.status == core::VmStatus::Reclaimed)
+    }) && resources.slots.iter().all(|slot| {
+        world
+            .slot_record(*slot)
+            .is_some_and(|s| s.reclaimed && !s.active)
+    })
 }

@@ -55,17 +55,11 @@ impl WorkRecovery for FleetHost {
         None
     }
 
-    fn reclaim_incomplete_prepare(
-        &self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
+    fn reclaim_incomplete_prepare(&self, _: &WorkAction<core::EffectId>) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 
-    fn reclaim_incomplete_cleanup(
-        &self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
+    fn reclaim_incomplete_cleanup(&self, _: &WorkAction<core::EffectId>) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 }
@@ -447,13 +441,29 @@ async fn ordinary_sdk_create_stays_unchanged_and_http_cannot_supply_retirement_a
     assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
 }
 
+fn assert_other_quotas_fit_a_second_create(bounded: &BoundedHostConfig, settings: &ManagedConfig) {
+    assert!(settings.limits.max_active_global >= 2);
+    assert!(settings.limits.max_active_per_tenant >= 1);
+    assert!(bounded.maintenance.max_host_slots >= 2);
+    assert!(settings.limits.max_disk_bytes_per_tenant >= settings.disk_bytes);
+    assert!(
+        settings.limits.max_disk_bytes_global - settings.limits.cleanup_reserve_bytes
+            >= 2 * settings.disk_bytes
+    );
+    assert!(maintenance_config().capacity.unwrap().max_sql_bytes >= 2 * 4_943_872);
+}
+
 #[test]
-fn full_result_retention_refuses_new_admission_without_evicting_promised_results() {
+fn retained_results_leave_insufficient_capacity_for_the_next_create_promise() {
+    // The production capacity graph reserves Create, one Pause and Kill.
+    const REQUIRED_RESULTS_PER_CREATE: u64 = 3;
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("controller.db");
     let host = FleetHost::new(dir.path());
     let mut bounded = host_config(&path);
-    bounded.maintenance.max_retained_results = 2;
+    bounded.maintenance.max_retained_results = REQUIRED_RESULTS_PER_CREATE;
+    let settings = config();
+    assert_other_quotas_fit_a_second_create(&bounded, &settings);
     let port = new_port(
         ControllerJournal::open_complete(
             &path,
@@ -464,15 +474,21 @@ fn full_result_retention_refuses_new_admission_without_evicting_promised_results
         )
         .unwrap(),
         host.clone(),
-        config(),
+        settings,
     );
     let first = port.create("1", request()).unwrap();
-    port.kill("1", &first.sandbox_id).unwrap();
-    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
     let physical = host.sandbox(core::SandboxId(1)).unwrap();
     let actions_before = physical.0.lock().unwrap().actions.len();
-    // Full mode reserves eventual create/kill outcomes before admitting work,
-    // so this request is refused before another identity or command exists.
+    // The Running object already owns all three promised result slots. Owner
+    // two has no instance yet, and the other quotas permit another Create.
+    assert!(matches!(port.create("2", request()), Err(PortError::Busy)));
+    assert_eq!(physical.0.lock().unwrap().actions.len(), actions_before);
+    assert_eq!(host.hosts.lock().unwrap().len(), 1);
+    port.kill("1", &first.sandbox_id).unwrap();
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
+    let actions_before = physical.0.lock().unwrap().actions.len();
+    // Two real retained results leave one slot out of three. The next Create
+    // cannot reserve its three-result promise; no result may be evicted early.
     assert!(matches!(port.create("1", request()), Err(PortError::Busy)));
     assert_eq!(physical.0.lock().unwrap().actions.len(), actions_before);
     let report = port.application().maintain().unwrap();
@@ -480,11 +496,25 @@ fn full_result_retention_refuses_new_admission_without_evicting_promised_results
     assert_eq!(report.pending_sandboxes, 0);
     assert_eq!(report.expired_results, 0);
     drop(port);
+    let retention_limit = bounded.maintenance.max_retained_results;
     let journal =
         ControllerJournal::open_complete(&path, NAMESPACE, bounded, maintenance_config(), 0)
             .unwrap();
     let world = journal.world().unwrap();
-    assert_eq!(world.maintenance_state().unwrap().retained_count(), 2);
+    let retained = world.maintenance_state().unwrap();
+    let retained_count = u64::try_from(retained.retained_count()).unwrap();
+    assert_eq!(retained_count, 2);
+    let remaining_results = retention_limit.checked_sub(retained_count).unwrap();
+    assert_eq!(remaining_results, 1);
+    assert!(remaining_results < REQUIRED_RESULTS_PER_CREATE);
+    let kill = retained
+        .retained_result(core::OperationKey {
+            sandbox: core::SandboxId(1),
+            operation: core::OperationId(2),
+        })
+        .unwrap();
+    assert_eq!(kill.ledger.operation.kind, core::OperationKind::Kill);
+    assert_eq!(kill.ledger.result, Some(core::OperationResult::Destroyed));
     assert!(world.sandbox_record(core::SandboxId(1)).is_none());
     assert!(world.sandbox_record(core::SandboxId(2)).is_none());
     assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(2));

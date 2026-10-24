@@ -9,6 +9,8 @@ mod cache_fairness;
 )]
 #[path = "../../../sandbox-center-store/tests/support/engine.rs"]
 mod engine;
+#[path = "tests/lifecycle_listener.rs"]
+mod lifecycle_listener;
 #[path = "../../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 use sandproof_center_core::{

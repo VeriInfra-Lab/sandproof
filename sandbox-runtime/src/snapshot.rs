@@ -305,6 +305,10 @@ impl Runtime {
         }
         fs::mkdirat(&paused.original.root, capture_name.as_str(), Mode::RWXU).map_err(errno)?;
         let directory = open_directory_at(&paused.original.root, &capture_name)?;
+        // The newly created, still root-owned EMPTY directory receives the
+        // fixed material project before ownership transfer or first VMM write.
+        // Failure leaves the original paused VM and charged partial directory.
+        layout.assign_new_capture_project(&directory)?;
         fs::fchown(
             &directory,
             Some(Uid::from_raw(self.config.vm_uid)),

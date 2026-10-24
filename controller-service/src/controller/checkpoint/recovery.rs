@@ -278,7 +278,8 @@ pub(super) fn validate_bindings(
         if witness.input_sequence == 0
             || witness.input_sequence > high
             || witness.context.binding != original
-            || row.phase != core::Phase::Destroyed
+            || !(row.phase == core::Phase::Destroyed
+                || paused_release(world, core::SandboxId(*sandbox)))
             || current.binding.vm < original.vm
             || (current.binding.vm == original.vm
                 && (current != &witness.context
@@ -383,4 +384,33 @@ fn validate_current_cursors(
         }
     }
     Ok(())
+}
+
+fn paused_release(world: &core::World, sandbox: core::SandboxId) -> bool {
+    let Some(row) = world.sandbox_record(sandbox) else {
+        return false;
+    };
+    if row.phase != core::Phase::Paused
+        || row.terminal
+        || row.current_vm.is_some()
+        || row.net_slot.is_some()
+    {
+        return false;
+    }
+    let (Some(source), Some(operation)) = (row.durable_snapshot, row.current_operation) else {
+        return false;
+    };
+    let authority = core::Authority::Paused { sandbox, source };
+    row.desired == authority
+        && row.effective == row.desired
+        && world
+            .operation_plan(core::OperationKey {
+                sandbox,
+                operation: operation.id,
+            })
+            .is_some_and(|p| {
+                p.target_snapshot == Some(source)
+                    && p.capture
+                        .is_some_and(core::capture::CaptureHandoff::may_stop_original)
+            })
 }

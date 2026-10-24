@@ -55,28 +55,13 @@ struct HeldMissing {
     arrivals: std::sync::atomic::AtomicUsize,
 }
 
-#[tokio::test]
-async fn exact_durable_confirmation_precedes_reuse_and_old_messages_cannot_touch_successor() {
+async fn confirm_original_termination(
+    host: &HostLifecycle<local::fixture::TestHost>,
+    create: &AcceptedLifecycleIntent,
+) -> sandproof_protocol::lifecycle::LifecycleWindowClose {
     use sandproof_protocol::lifecycle::{
         ExpectedSession, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
     };
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("db");
-    let physical = matching_host();
-    let app = Arc::new(local::application(&path, physical.clone(), true));
-    app.establish_lifecycle_host_epoch().unwrap();
-    let host = HostLifecycle::new(app.clone());
-    let create = local::request();
-    host.record_lifecycle(create.clone(), local::context())
-        .await
-        .unwrap();
-    host.advance(
-        create.clone(),
-        Some(local::fixture::template()),
-        local::fixture::compute(),
-    )
-    .await
-    .unwrap();
     let mut destroy = create.clone();
     destroy.accepted_version = 2;
     destroy.request.binding.expected = ExpectedSession::Version(1);
@@ -138,6 +123,29 @@ async fn exact_durable_confirmation_precedes_reuse_and_old_messages_cannot_touch
             .unwrap()
             .matches(&forged)
     );
+    close
+}
+
+#[tokio::test]
+async fn exact_durable_confirmation_precedes_reuse_and_old_messages_cannot_touch_successor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let physical = matching_host();
+    let app = Arc::new(local::application(&path, physical.clone(), true));
+    app.establish_lifecycle_host_epoch().unwrap();
+    let host = HostLifecycle::new(app.clone());
+    let create = local::request();
+    host.record_lifecycle(create.clone(), local::context())
+        .await
+        .unwrap();
+    host.advance(
+        create.clone(),
+        Some(local::fixture::template()),
+        local::fixture::compute(),
+    )
+    .await
+    .unwrap();
+    let close = confirm_original_termination(&host, &create).await;
     drop((host, app));
     let app = Arc::new(local::application(&path, physical, false));
     let host = HostLifecycle::new(app.clone());

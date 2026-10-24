@@ -120,3 +120,40 @@ impl ControllerJournal {
         Ok(pending)
     }
 }
+
+impl ControllerJournal {
+    /// Bounded current Unload intents from the original durable inbox.
+    /// # Errors
+    /// Missing/foreign protected registration or corrupted state refuses.
+    pub fn lifecycle_pending_unloads(
+        &self,
+        node: &NodeIdentity,
+    ) -> Result<Vec<AcceptedLifecycleIntent>, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        if &inbox.config.node != node {
+            return Err(JournalError::Conflict);
+        }
+        let pending = inbox
+            .sessions
+            .iter()
+            .filter(|s| !s.terminal)
+            .filter_map(|s| {
+                s.entries.iter().find(|e| {
+                    e.intent.accepted_version == s.current_version
+                        && matches!(
+                            e.intent.request.operation,
+                            LifecycleOperation::Unload { .. }
+                        )
+                })
+            })
+            .map(|e| e.intent.clone())
+            .collect();
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(pending)
+    }
+}

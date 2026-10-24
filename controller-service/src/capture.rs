@@ -5,8 +5,12 @@
 //! before a host effect; deserializing these values grants no authority.
 
 use serde::{Deserialize, Serialize};
+mod launch;
 mod source;
 mod work;
+pub use launch::{
+    CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureResult, PreparedFullCapture,
+};
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
 pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 
@@ -19,8 +23,27 @@ pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 pub struct CommittedCaptureExpectation {
     work: FullCaptureWorkRequest,
     manifest_digest: sandproof_protocol::lifecycle::ContentDigest,
+    seal_action: sandproof_protocol::WorkAction<sandbox_controller_core::EffectId>,
 }
 impl CommittedCaptureExpectation {
+    #[cfg(feature = "durable")]
+    pub(crate) fn after_commit(
+        work: FullCaptureWorkRequest,
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest,
+        seal_action: sandproof_protocol::WorkAction<sandbox_controller_core::EffectId>,
+    ) -> Self {
+        Self {
+            work,
+            manifest_digest,
+            seal_action,
+        }
+    }
+    #[must_use]
+    pub const fn seal_action(
+        &self,
+    ) -> &sandproof_protocol::WorkAction<sandbox_controller_core::EffectId> {
+        &self.seal_action
+    }
     #[must_use]
     pub const fn work(&self) -> &FullCaptureWorkRequest {
         &self.work

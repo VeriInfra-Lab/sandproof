@@ -55,6 +55,8 @@ impl Bounds {
                     .saturating_add(RESULT_CONFIRMATION_BODY_BYTES)
                     // Full latest SDK checkpoint coexists with terminal ACK.
                     .saturating_add(RENEWAL_CONFIRMATION_BODY_BYTES)
+                    // Exact completed Unload plus fixed material/lifetime facts.
+                    .saturating_add(sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES)
                     // Actual deleted-version frontier and sampled-time maximum.
                     .saturating_add(256),
             )
@@ -326,7 +328,17 @@ impl CenterState {
             {
                 sum = match (&op.intent().request.operation, sum) {
                     (LifecycleOperation::Create { create, .. }, Some(total)) => {
-                        total.checked_add(create.resources)
+                        let mut held = create.resources;
+                        if sandbox
+                            .operations()
+                            .iter()
+                            .any(|operation| operation.unloaded().is_some())
+                        {
+                            held.instances = 0;
+                            held.cpu = 0;
+                            held.memory_bytes = 0;
+                        }
+                        total.checked_add(held)
                     }
                     _ => None,
                 };

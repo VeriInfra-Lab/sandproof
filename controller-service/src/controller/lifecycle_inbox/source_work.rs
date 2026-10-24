@@ -1,5 +1,6 @@
 //! Readonly source responsibility in the original journal. Never a VM phase.
 mod codec;
+pub(in crate::controller) mod full;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -61,6 +62,16 @@ impl SourceWork {
 pub struct SourceWorkRecord {
     pub work: SourceWork,
     pub observation: Option<RawSourceObservation>,
+    #[serde(deserialize_with = "required_option")]
+    capture: Option<full::CaptureWork>,
+}
+
+fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
 }
 
 fn digest(bytes: &[u8]) -> ContentDigest {
@@ -172,6 +183,7 @@ impl ControllerJournal {
         let record = SourceWorkRecord {
             work,
             observation: None,
+            capture: None,
         };
         sources.records.push(record.clone());
         codec::save(&tx, &sources, inbox.config.max_sessions)?;

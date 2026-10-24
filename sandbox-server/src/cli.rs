@@ -5,6 +5,7 @@ use std::{ffi::OsString, path::PathBuf};
 pub(crate) enum Command {
     Initialize(PathBuf),
     ProvisionBootstrap(PathBuf),
+    ProvisionCaptureLayout(PathBuf),
     Serve(PathBuf),
     Audit(PathBuf),
     ObserveCenter(PathBuf),
@@ -35,7 +36,14 @@ pub(crate) fn parse(
             }
             Command::CaptureWorker(digest)
         }
-        Some("initialize" | "provision-bootstrap" | "serve" | "audit" | "observe-center") => {
+        Some(
+            "initialize"
+            | "provision-bootstrap"
+            | "provision-capture-layout"
+            | "serve"
+            | "audit"
+            | "observe-center",
+        ) => {
             if arguments.next().as_deref() != Some(std::ffi::OsStr::new("--config")) {
                 return Err("host command requires --config /absolute/protected/config.json");
             }
@@ -46,6 +54,7 @@ pub(crate) fn parse(
             match command.to_str() {
                 Some("initialize") => Command::Initialize(path),
                 Some("provision-bootstrap") => Command::ProvisionBootstrap(path),
+                Some("provision-capture-layout") => Command::ProvisionCaptureLayout(path),
                 Some("serve") => Command::Serve(path),
                 Some("observe-center") => Command::ObserveCenter(path),
                 _ => Command::Audit(path),
@@ -71,6 +80,7 @@ mod tests {
         for command in [
             "initialize",
             "provision-bootstrap",
+            "provision-capture-layout",
             "serve",
             "audit",
             "observe-center",

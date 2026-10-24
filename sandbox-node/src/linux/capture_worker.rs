@@ -7,11 +7,12 @@ use crate::{
     full_snapshot::{self, ExpectedFullCapture},
 };
 use sandbox_runtime::{
-    FullCaptureLimits, OriginalPauseObservation, PreparedTrackedChild, RuntimeConfig,
+    FullCaptureLimits, HelperLimits, OriginalPauseObservation, PreparedTrackedChild, RuntimeConfig,
     RuntimeHelperGuard, RuntimeProcessIdentity, SnapshotLayout, snapshot_store::BundleReadLimits,
 };
 use sandproof_controller_service::capture::{
-    FullCaptureWorkRequest, RawSourceObservation, SourceObservationRequirement,
+    CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureWorkRequest, RawSourceObservation,
+    SourceObservationRequirement, SourceProcessIdentity,
 };
 use sandproof_controller_service::templates::TemplateBinding;
 use sandproof_protocol::lifecycle::ContentDigest;
@@ -22,6 +23,10 @@ use std::{
     path::PathBuf,
     time::Duration,
 };
+
+#[path = "capture_worker_completion.rs"]
+mod completion;
+pub(super) use completion::read_completion;
 
 pub const CAPTURE_WORKER_INPUT_BYTES: usize = 1_048_576;
 pub const CAPTURE_WORKER_OUTPUT_BYTES: usize = 4096;
@@ -48,6 +53,59 @@ impl PreparedCaptureWorker {
     pub const fn full_work_binding(&self) -> &ContentDigest {
         &self.full_work_binding
     }
+    /// Actual prepared process/job data for the original authorization callback.
+    /// This value has no release or completion authority.
+    /// # Errors
+    /// Refuses a process representation that cannot enter the original record.
+    pub fn worker_binding(&self) -> NodeResult<CaptureWorkerBinding> {
+        let process = self.process();
+        Ok(CaptureWorkerBinding::new(
+            SourceProcessIdentity {
+                pid: process.pid,
+                start_time_ticks: process.start_time_ticks,
+                boot_id: process.boot_id.clone(),
+            },
+            self.job_digest,
+        )?)
+    }
+
+    fn require_launch_permit(&self, permit: &FullCaptureLaunchPermit) -> NodeResult<()> {
+        if permit.action() != &self.job.action
+            || permit.full_work_binding() != &self.full_work_binding
+            || self.job.full.binding_digest()? != self.full_work_binding
+            || permit.worker() != &self.worker_binding()?
+            || self.body.len() > CAPTURE_WORKER_INPUT_BYTES
+            || serde_json::to_vec(&self.job)? != self.body
+            || digest(&self.body) != self.job_digest
+            || !self.job.full.valid()
+        {
+            return Err("original committed Full/action/process/job permission differs".into());
+        }
+        Ok(())
+    }
+
+    // Keep the same gate alive through exchange AND the original material readback.
+    // Every error is unknown to the durable capture owner, never NoEffect/refund.
+    pub(super) fn release_and_read<T>(
+        self,
+        permit: FullCaptureLaunchPermit,
+        read: impl FnOnce(&CaptureWorkerJob, ContentDigest) -> NodeResult<T>,
+    ) -> NodeResult<T> {
+        self.require_launch_permit(&permit)?;
+        // Consume this unique post-commit permission before opening the child gate.
+        drop(permit);
+        let limits = HelperLimits {
+            timeout: Duration::from_millis(self.job.full.worker_timeout_ms),
+            input_bytes: CAPTURE_WORKER_INPUT_BYTES,
+            stdout_bytes: CAPTURE_WORKER_OUTPUT_BYTES,
+            stderr_bytes: 0,
+        };
+        let mut child = self.gate.release_tracked(self.child)?;
+        let output = child.exchange(&self.body, limits)?;
+        let manifest = decode_reply(self.job_digest, &output)?;
+        read(&self.job, manifest)
+    }
+
     /// Stop only this still-prepared child before dropping its slot lock.
     /// This is not an exit/Full-end or budget-release receipt; uncertain child
     /// exits remain in the original witness/reaper for separate observation.
@@ -103,6 +161,7 @@ pub(super) struct CaptureWorkerJob {
     pub(super) bootstrap_path: PathBuf,
     pub(super) layout_parent: PathBuf,
     pub(super) layout_binding: ContentDigest,
+    pub(super) material_project: sandbox_runtime::MaterialProjectSettings,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -119,6 +178,29 @@ pub(super) enum CaptureWorkerOutcome {
 }
 fn digest(body: &[u8]) -> ContentDigest {
     ContentDigest::from_sha256(Sha256::digest(body).into())
+}
+
+fn decode_reply(
+    expected: ContentDigest,
+    output: &std::process::Output,
+) -> NodeResult<ContentDigest> {
+    if !output.status.success()
+        || !output.stderr.is_empty()
+        || output.stdout.is_empty()
+        || output.stdout.len() > CAPTURE_WORKER_OUTPUT_BYTES
+    {
+        return Err("capture worker exit/output is not a complete bounded reply".into());
+    }
+    let reply: CaptureWorkerReply = serde_json::from_slice(&output.stdout)?;
+    if reply.job_digest != expected {
+        return Err("capture worker reply names another original job".into());
+    }
+    match reply.outcome {
+        CaptureWorkerOutcome::Captured { manifest_digest } => Ok(manifest_digest),
+        CaptureWorkerOutcome::Failed => {
+            Err("capture worker reported an unknown Full outcome".into())
+        }
+    }
 }
 
 fn decode_digest(text: &str) -> NodeResult<ContentDigest> {
@@ -150,7 +232,7 @@ fn decode_job(expected: ContentDigest, body: &[u8]) -> NodeResult<CaptureWorkerJ
 }
 
 impl CaptureWorkerJob {
-    fn execute(&self) -> NodeResult<ContentDigest> {
+    fn execute(&self, job_digest: ContentDigest) -> NodeResult<ContentDigest> {
         require_source_binding(&self.full.pause, &self.source)?;
         self.action.identity.validate_version()?;
         let core::Command::SealSnapshot { vm, .. } = self.action.command.command() else {
@@ -193,7 +275,8 @@ impl CaptureWorkerJob {
         if expected != self.full.compatibility {
             return Err("capture worker independent compatibility differs".into());
         }
-        let layout = SnapshotLayout::reopen(&self.layout_parent, *self.layout_binding.as_bytes())?;
+        let layout = SnapshotLayout::reopen(&self.layout_parent, *self.layout_binding.as_bytes())?
+            .with_material_project(self.material_project.clone())?;
         if layout.runtime_root() != self.runtime.chroot_base {
             return Err("capture worker layout differs".into());
         }
@@ -230,9 +313,16 @@ impl CaptureWorkerJob {
         )?;
         self.check_source(&runtime, &original, &allowed)?;
         provider.observe_original(&self.source.node, &self.source.host_bootstrap, inputs)?;
-        Ok(ContentDigest::from_sha256(
-            captured.stored().manifest_sha256(),
-        ))
+        let manifest = ContentDigest::from_sha256(captured.stored().manifest_sha256());
+        let material_bytes = captured
+            .stored()
+            .manifest()
+            .files
+            .iter()
+            .try_fold(0_u64, |n, f| n.checked_add(f.length))
+            .ok_or("completed Full material length overflow")?;
+        self.persist_completion(&layout, job_digest, manifest, material_bytes)?;
+        Ok(manifest)
     }
     fn check_source(
         &self,
@@ -282,7 +372,7 @@ pub fn run_capture_worker(expected_job_digest: &str) -> NodeResult<()> {
         .take(u64::try_from(CAPTURE_WORKER_INPUT_BYTES)? + 1)
         .read_to_end(&mut body)
     {
-        Ok(_) => match decode_job(expected, &body).and_then(|job| job.execute()) {
+        Ok(_) => match decode_job(expected, &body).and_then(|job| job.execute(expected)) {
             Ok(manifest_digest) => CaptureWorkerOutcome::Captured { manifest_digest },
             Err(_) => CaptureWorkerOutcome::Failed,
         },
@@ -319,6 +409,44 @@ mod tests {
         let oversized = vec![b' '; CAPTURE_WORKER_INPUT_BYTES + 1];
         assert!(decode_job(digest(&oversized), &oversized).is_err());
     }
+    #[test]
+    fn parent_requires_exact_successful_job_and_bounded_complete_frame() {
+        use std::os::unix::process::ExitStatusExt;
+        let expected = ContentDigest::from_sha256([1; 32]);
+        let manifest = ContentDigest::from_sha256([2; 32]);
+        let reply = CaptureWorkerReply {
+            job_digest: expected,
+            outcome: CaptureWorkerOutcome::Captured {
+                manifest_digest: manifest,
+            },
+        };
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: serde_json::to_vec(&reply).unwrap(),
+            stderr: vec![],
+        };
+        assert_eq!(decode_reply(expected, &output).unwrap(), manifest);
+        assert!(decode_reply(ContentDigest::from_sha256([3; 32]), &output).is_err());
+        for variant in 0..6 {
+            let mut bad = output.clone();
+            match variant {
+                0 => bad.status = std::process::ExitStatus::from_raw(1 << 8),
+                1 => bad.stderr.push(b'x'),
+                2 => bad.stdout.clear(),
+                3 => bad.stdout = vec![b' '; CAPTURE_WORKER_OUTPUT_BYTES + 1],
+                4 => bad.stdout.extend_from_slice(b"warning"),
+                _ => {
+                    bad.stdout = serde_json::to_vec(&CaptureWorkerReply {
+                        job_digest: expected,
+                        outcome: CaptureWorkerOutcome::Failed,
+                    })
+                    .unwrap();
+                }
+            }
+            assert!(decode_reply(expected, &bad).is_err(), "variant {variant}");
+        }
+    }
+
     #[test]
     fn diagnostic_noise_cannot_be_accepted_as_a_success_frame() {
         let reply = CaptureWorkerReply {

@@ -58,6 +58,36 @@ fn operation(
     Ok(())
 }
 
+// Starting work and a completed Running replay belong to this entry point.
+// Compensation has its own caller; a startup retry must not drive termination.
+fn startup_operation(
+    journal: &ControllerJournal,
+    sandbox: core::SandboxId,
+    id: core::OperationId,
+) -> Result<(), JournalError> {
+    operation(journal, sandbox, id, core::OperationKind::Create)?;
+    let world = journal.world()?;
+    let record = world
+        .sandbox_record(sandbox)
+        .ok_or(JournalError::UnsupportedInput)?;
+    let status = record
+        .current_operation
+        .ok_or(JournalError::UnsupportedInput)?
+        .status;
+    if record.terminal
+        || !matches!(
+            (record.phase, status),
+            (
+                core::Phase::Starting,
+                core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown
+            ) | (core::Phase::Running, core::OperationStatus::Succeeded)
+        )
+    {
+        return Err(JournalError::UnsupportedInput);
+    }
+    Ok(())
+}
+
 /// Drive an already admitted create through the same finite decisions.
 /// # Errors
 /// Leaves missing, conflicting and uncertain work unresolved.
@@ -71,7 +101,7 @@ where
     E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
     W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
 {
-    operation(journal, sandbox, id, core::OperationKind::Create)?;
+    startup_operation(journal, sandbox, id)?;
     let next = run(journal, sandbox, worker, |journal, sandbox| {
         Ok(journal
             .apply(
@@ -104,7 +134,7 @@ where
     W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
     C: FnMut() -> Result<i64, JournalError>,
 {
-    operation(journal, sandbox, id, core::OperationKind::Create)?;
+    startup_operation(journal, sandbox, id)?;
     let next = run(journal, sandbox, worker, |journal, sandbox| {
         journal.publish_running_at(sandbox, clock()?, &mut NeverCrash)
     })?;

@@ -1,5 +1,6 @@
 //! Serialized durable decisions and revocations; slow physical work runs outside the lock.
 mod lifecycle_source;
+mod lifecycle_unload;
 
 use std::{
     collections::{BTreeMap, BTreeSet},

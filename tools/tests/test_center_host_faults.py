@@ -35,7 +35,7 @@ def current_create_fixture():
     create.update(binding=copy.deepcopy(binding), options_sha256=hashlib.sha256(bytes(options)).hexdigest(),
         metadata_sha256=hashlib.sha256(b'{}').hexdigest())
     operation = copy.deepcopy(identity) | dict(operation=dict(kind='create',target_incarnation=1),
-        acceptance_time=dict(kind='sampled',at_ms=800),running=None,create_refusal=None,terminal=None)
+        acceptance_time=dict(kind='sampled',at_ms=800),running=None,create_refusal=None,terminal=None,unloaded=None)
     record = dict(create=create,private=False,operations=[operation],terminating=False,
         released=False,phase='creating',last_running=None,terminal_confirmation=None)
     return node, identity, record, observation
