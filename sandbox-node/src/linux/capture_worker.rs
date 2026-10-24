@@ -92,6 +92,8 @@ impl PreparedCaptureWorker {
         read: impl FnOnce(&CaptureWorkerJob, ContentDigest) -> NodeResult<T>,
     ) -> NodeResult<T> {
         self.require_launch_permit(&permit)?;
+        // Consume this unique post-commit permission before opening the child gate.
+        drop(permit);
         let limits = HelperLimits {
             timeout: Duration::from_millis(self.job.full.worker_timeout_ms),
             input_bytes: CAPTURE_WORKER_INPUT_BYTES,
@@ -438,7 +440,7 @@ mod tests {
                         job_digest: expected,
                         outcome: CaptureWorkerOutcome::Failed,
                     })
-                    .unwrap()
+                    .unwrap();
                 }
             }
             assert!(decode_reply(expected, &bad).is_err(), "variant {variant}");

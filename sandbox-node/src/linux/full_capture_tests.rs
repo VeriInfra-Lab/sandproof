@@ -71,7 +71,7 @@ fn request() -> FullCaptureWorkRequest {
             "node":{"deployment_id":"deployment","node_id":"node","node_generation":1},
             "source_resource":raw().resource,"source":raw().source},
         "compatibility":profile(),"state_bytes":1_000_000,"memory_bytes":128*1_048_576,
-        "disk_bytes":8192,"api_timeout_ms":1000,"worker_timeout_ms":300000
+        "disk_bytes":8192,"api_timeout_ms":1000,"worker_timeout_ms":300_000
     })).unwrap()
 }
 #[test]

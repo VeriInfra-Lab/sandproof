@@ -216,7 +216,7 @@ impl NodeHost {
     }
 
     /// Consume the original SQL-issued permission and the same waiting child.
-    /// All errors (including pre-release refusal) remain UnknownCapture; caller
+    /// All errors (including pre-release refusal) remain `UnknownCapture`; caller
     /// must retain the original action/Full reservation and reconcile it.
     pub fn release_prepared_full_capture(
         &self,
