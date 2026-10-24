@@ -143,8 +143,13 @@ pub(in crate::controller) fn material_charge(record: &SourceWorkRecord) -> Resul
     if let Some(state) = &record.retirement {
         bounded(state)?;
         let saved = plan(state);
-        if saved.work_binding != request(record)?.binding_digest()?
+        if saved.bytes.is_empty() || saved.bytes.len() > MATERIAL_RETIREMENT_PLAN_MAX_BYTES
+            || saved.work_binding != request(record)?.binding_digest()?
             || saved.plan_binding != super::digest(&saved.bytes)
+            || !complete_certificate(&saved.quiescence)
+            || saved.quiescence.sandbox != record.work.anchor.local.sandbox
+            || saved.quiescence.owner != record.work.anchor.local.owner
+            || record.restore.as_ref().is_some_and(|claim| claim.material_use)
         {
             return Err(JournalError::CorruptStore);
         }
