@@ -988,7 +988,11 @@ impl LinuxWorker {
         seal: &sandproof_protocol::WorkAction<core::EffectId>,
     ) -> NodeResult<()> {
         super::capture::require_source_binding(&full.pause, source)?;
-        self.validate_action(seal)?;
+        seal.identity.validate_version()?;
+        if !super::decisions::action_fields_match(seal, &self.config.namespace)
+            || seal.identity.resource != super::decisions::command_resource(seal.command.command(), &self.config.namespace)? {
+            return Err("Unload release original Seal identity differs".into());
+        }
         let core::Command::SealSnapshot {
             sandbox,
             epoch,
@@ -1014,6 +1018,7 @@ impl LinuxWorker {
             return Err("original Unload position changed".into());
         }
         if row.phase == HostSlotPhase::Occupied {
+            self.validate_action(seal)?;
             self.require_fence(*sandbox, *epoch, false)?;
             let runtime = self.runtime(*sandbox, *vm)?;
             let original = crate::source_observation::expected_source(source)?;

@@ -313,11 +313,11 @@ impl WorkExecution for NodeHost {
         action: &WorkAction<core::EffectId>,
         full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
         source: &sandproof_controller_service::capture::SourceObservationRequirement,
-        _worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
+        worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
         committed: Option<&sandproof_controller_service::capture::CommittedCaptureExpectation>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
         let observed =
-            self.capture_action_observation(action, full, source, _worker, committed, false);
+            self.capture_action_observation(action, full, source, worker, committed, false);
         let outcome = match observed {
             Ok(value) => sandproof_protocol::WorkOutcome::ObservedSuccess(value),
             Err(error) => {
@@ -411,10 +411,10 @@ impl WorkRecovery for NodeHost {
         action: &WorkAction<core::EffectId>,
         full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
         source: &sandproof_controller_service::capture::SourceObservationRequirement,
-        _worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
+        worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
         committed: Option<&sandproof_controller_service::capture::CommittedCaptureExpectation>,
     ) -> Option<WorkReceipt<Self::Evidence>> {
-        self.capture_action_observation(action, full, source, _worker, committed, true)
+        self.capture_action_observation(action, full, source, worker, committed, true)
             .ok()
             .map(|value| WorkReceipt {
                 identity: action.identity.clone(),
