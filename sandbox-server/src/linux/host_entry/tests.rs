@@ -111,6 +111,10 @@ fn host_budget_retains_management_and_destroy_capacity() {
         ("/inbox/max_sessions", json!(0)),
         ("/inbox/max_operations_per_session", json!(7)),
         ("/inbox/max_operations_per_session", json!(129)),
+        ("/inbox/max_operations_per_session", json!(9)),
+        ("/native/maintenance/max_operations_per_sandbox", json!(0)),
+        ("/native/maintenance/max_operations_per_sandbox", json!(7)),
+        ("/native/maintenance/max_operations_per_sandbox", json!(u64::MAX)),
         ("/inbox/max_profile_bytes", json!(0)),
         ("/inbox/max_manifest_bytes", json!(262_145)),
         ("/internal/request_timeout_ms", json!(0)),
@@ -119,6 +123,16 @@ fn host_budget_retains_management_and_destroy_capacity() {
         *settings.pointer_mut(path).unwrap() = value;
         assert!(!check(settings));
     }
+}
+
+#[test]
+fn original_host_requires_explicit_native_operation_bound() {
+    let mut value = host_settings();
+    value["native"]["maintenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("max_operations_per_sandbox");
+    assert!(!check(value));
 }
 
 #[test]

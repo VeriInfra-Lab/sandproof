@@ -151,7 +151,7 @@ class FixtureTests(unittest.TestCase):
                 fixture.terminal_result(changed_center, changed_host, identity)
 
     def native(self):
-        return dict(namespace='a'*16,
+        return dict(namespace='a'*16, maintenance=dict(max_operations_per_sandbox=8),
             max_active_global=2, max_active_per_tenant=2, max_disk_bytes_global=12000,
             max_disk_bytes_per_tenant=8000, cleanup_reserve_bytes=4000,
             max_timeout_secs=86400, max_lifetime_secs=86400, startup_timeout_secs=300,
@@ -236,6 +236,23 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(source,self.native())
         source['max_active_global']=2**16-2
         with self.assertRaisesRegex(ValueError,'retention slot count'):
+            self.render([source])
+
+    def test_missing_or_insufficient_native_operation_bound_is_not_upgraded(self):
+        for bound in (None,0,True,7,2**64):
+            source=self.native()
+            if bound is None:
+                del source['maintenance']['max_operations_per_sandbox']
+            else:
+                source['maintenance']['max_operations_per_sandbox']=bound
+            with self.subTest(bound=bound),self.assertRaisesRegex(ValueError,'operation bound'):
+                self.render([source])
+        for policy in (None,{}):
+            source=self.native();source['maintenance']=policy
+            with self.subTest(policy=policy),self.assertRaisesRegex(ValueError,'operation bound'):
+                self.render([source])
+        source=self.native();del source['maintenance']
+        with self.assertRaisesRegex(ValueError,'operation bound'):
             self.render([source])
 
     def test_no_free_health_cache_or_canonical_digest_is_manufactured(self):

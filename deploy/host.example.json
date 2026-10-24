@@ -101,6 +101,7 @@
         "max_online_storage_bytes": 1092616192
       },
       "retention_ms": 60000,
+      "max_operations_per_sandbox": 8,
       "max_checkpoint_bytes": 4194304,
       "max_records": 10000,
       "max_references": 1000000,

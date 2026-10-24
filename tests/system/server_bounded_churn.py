@@ -89,6 +89,9 @@ def validate_runtime_configuration(settings, rounds, wait_seconds):
     bounded = settings.get('bounded_host', {})
     maintenance = settings.get('maintenance', {})
     capacity = maintenance.get('capacity')
+    operations=maintenance.get('max_operations_per_sandbox')
+    if type(operations) is not int or not 0 < operations < 2**64:
+        raise ValueError('explicit finite maintenance operation bound required')
     if (not capacity or bounded.get('console_policy') != 'discard'
             or bounded.get('maintenance', {}).get('max_host_slots') != 2
             or settings.get('max_active_global') != 2

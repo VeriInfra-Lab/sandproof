@@ -541,6 +541,7 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
     // recommending deployment values.
     let policy = MaintenanceConfig {
         retention_ms: 100,
+        max_operations_per_sandbox: 8,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10_000,
         max_references: 1_000_000,

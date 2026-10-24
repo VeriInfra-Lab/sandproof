@@ -9,6 +9,7 @@ use sandproof_controller_service::{CapacityConfig, ConsolePolicy, MaintenanceCon
 fn capacity() -> MaintenanceConfig {
     MaintenanceConfig {
         retention_ms: 100,
+        max_operations_per_sandbox: 8,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10_000,
         max_references: 1_000_000,

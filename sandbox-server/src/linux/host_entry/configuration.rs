@@ -139,6 +139,8 @@ impl HostConfig {
         self.artifact_source.validate(&self.template_cache)?;
         self.validate_capture(&contract)?;
         if !self.inbox.valid()
+            || u64::from(self.inbox.max_operations_per_session)
+                > contract.maintenance.max_operations_per_sandbox
             || !self.protected_bootstrap_path.is_absolute()
             || !self.source_observation.valid()
             || self.inbox.required_bytes()

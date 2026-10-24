@@ -38,6 +38,9 @@ class CompleteFixtureTests(unittest.TestCase):
     def complete(self):
         return fixture.complete_runtime(self.settings, slots=2)
 
+    def test_stage1_operation_bound_is_an_explicit_profile_choice(self):
+        self.assertEqual(self.complete()['maintenance']['max_operations_per_sandbox'],8)
+
     def test_explicit_single_runtime_policy_is_pure_and_has_complete_cleanup_budget(self):
         original = copy.deepcopy(self.settings)
         files = sorted(self.root.rglob("*"))

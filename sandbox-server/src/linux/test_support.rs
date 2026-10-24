@@ -49,7 +49,8 @@ pub(super) fn resolve(value: Value) -> BoundedHostConfig {
 pub(super) fn maintained_settings() -> Value {
     let mut value = partial_settings();
     value["maintenance"] = json!({
-        "retention_ms": 60_000, "max_checkpoint_bytes": 8_000_000,
+        "retention_ms": 60_000, "max_operations_per_sandbox": 8,
+        "max_checkpoint_bytes": 8_000_000,
         "max_records": 10_000, "max_references": 100_000,
         "max_tail_inputs": 10_000, "max_tail_bytes": 8_000_000,
         "max_input_bytes": 128_000, "prune_batch_rows": 3
@@ -61,7 +62,8 @@ pub(super) fn full_capacity_settings() -> Value {
     // Deliberately small fixture workload; these are not deployment defaults.
     let mut value = maintained_settings();
     value["maintenance"] = json!({
-        "retention_ms": 100, "max_checkpoint_bytes": 4 * 1024 * 1024,
+        "retention_ms": 100, "max_operations_per_sandbox": 8,
+        "max_checkpoint_bytes": 4 * 1024 * 1024,
         "max_records": 10_000, "max_references": 1_000_000,
         "max_tail_inputs": 8, "max_tail_bytes": 64 * 1024,
         "max_input_bytes": 8192, "prune_batch_rows": 3,

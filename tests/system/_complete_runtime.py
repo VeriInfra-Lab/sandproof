@@ -101,7 +101,7 @@ def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=
             "max_shm_bytes": 2 * MIB, "checkpoint_scratch_bytes": 8 * MIB,
             "max_online_storage_bytes": ONLINE_BYTES,
         },
-        "retention_ms": 60_000, "max_checkpoint_bytes": 4 * MIB,
+        "retention_ms": 60_000, "max_operations_per_sandbox": 8, "max_checkpoint_bytes": 4 * MIB,
         "max_records": 10_000, "max_references": 1_000_000,
         "max_tail_inputs": checkpoint_tail_inputs, "max_tail_bytes": 4 * MIB,
         "max_input_bytes": 8192, "prune_batch_rows": 7,

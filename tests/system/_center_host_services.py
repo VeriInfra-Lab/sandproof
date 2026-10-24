@@ -120,6 +120,10 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
                 'template_registry','internal_build_vms','build_retry_windows')):
             raise ValueError('new native inputs required; retired public host configuration is not upgraded')
         native = copy.deepcopy(source)
+        policy=native.get('maintenance')
+        operations=policy.get('max_operations_per_sandbox') if type(policy) is dict else None
+        if type(operations) is not int or not 8 <= operations < 2**64:
+            raise ValueError('explicit maintenance operation bound must cover the original eight-entry inbox')
         native_catalog = native['templates']
         pools = [pool for pool in native['bounded_host']['physical_storage']['pools']
                  if pool['namespace'] == native['namespace']]
