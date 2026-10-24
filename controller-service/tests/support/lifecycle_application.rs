@@ -139,13 +139,17 @@ pub fn application_with_host_configuration(
     inbox: LifecycleInboxConfig,
     host: sandproof_controller_service::BoundedHostConfig,
 ) -> ControllerApplication<TestHost> {
-    application_with_active_limit(path,state,provision,inbox,host,64)
+    application_with_active_limit(path, state, provision, inbox, host, 64)
 }
 
 pub fn application_with_active_limit(
-    path:&Path,state:Arc<Mutex<State>>,provision:bool,inbox:LifecycleInboxConfig,
-    host:sandproof_controller_service::BoundedHostConfig,active_limit:u64,
-)->ControllerApplication<TestHost> {
+    path: &Path,
+    state: Arc<Mutex<State>>,
+    provision: bool,
+    inbox: LifecycleInboxConfig,
+    host: sandproof_controller_service::BoundedHostConfig,
+    active_limit: u64,
+) -> ControllerApplication<TestHost> {
     let mut journal = ControllerJournal::open_complete(path, NS, host, maintenance(), 0).unwrap();
     if provision {
         journal

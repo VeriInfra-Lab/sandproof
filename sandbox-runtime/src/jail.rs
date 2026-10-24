@@ -259,7 +259,11 @@ impl Runtime {
     // root-owned bounded staging is independently exercised by the existing
     // privileged registration test, never disabled in production.
     #[cfg(test)]
-    pub(super) fn reserve_jail_for_fixture(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
+    pub(super) fn reserve_jail_for_fixture(
+        &self,
+        id: &str,
+        owner: u32,
+    ) -> Result<(), RuntimeError> {
         self.reserve_jail_with_writer(id, owner, super::write_new_record)
     }
 

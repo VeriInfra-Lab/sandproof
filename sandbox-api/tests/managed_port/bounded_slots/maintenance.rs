@@ -55,17 +55,11 @@ impl WorkRecovery for FleetHost {
         None
     }
 
-    fn reclaim_incomplete_prepare(
-        &self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
+    fn reclaim_incomplete_prepare(&self, _: &WorkAction<core::EffectId>) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 
-    fn reclaim_incomplete_cleanup(
-        &self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
+    fn reclaim_incomplete_cleanup(&self, _: &WorkAction<core::EffectId>) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 }

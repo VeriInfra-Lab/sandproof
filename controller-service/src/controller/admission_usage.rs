@@ -15,7 +15,7 @@ pub(super) fn usage(
     owner: core::TenantId,
     compute: bool,
 ) -> Result<(Resources, Resources), AdmissionError> {
-    let releases=super::checkpoint::release_witnesses(tx,world)?;
+    let releases = super::checkpoint::release_witnesses(tx, world)?;
     let mut global = Resources::ZERO;
     let mut tenant = Resources::ZERO;
     for (id, record) in world.sandbox_records() {
@@ -24,11 +24,24 @@ pub(super) fn usage(
         }
         let lifetime = read_lifetime(tx, namespace, *id, record.owner)?
             .ok_or(AdmissionError::UnmanagedActive)?;
-        let resources=world.resource_index(*id);
-        let runtime_released=record.current_vm.is_none() && record.net_slot.is_none()
-            && releases.iter().any(|w|w.context.binding.sandbox==*id && w.context.binding.owner==record.owner && w.context.binding.generation==record.generation)
-            && resources.vms.iter().all(|vm|world.vm_record(*vm).is_some_and(|v|v.status==core::VmStatus::Reclaimed))
-            && resources.slots.iter().all(|slot|world.slot_record(*slot).is_some_and(|s|s.reclaimed && !s.active));
+        let resources = world.resource_index(*id);
+        let runtime_released = record.current_vm.is_none()
+            && record.net_slot.is_none()
+            && releases.iter().any(|w| {
+                w.context.binding.sandbox == *id
+                    && w.context.binding.owner == record.owner
+                    && w.context.binding.generation == record.generation
+            })
+            && resources.vms.iter().all(|vm| {
+                world
+                    .vm_record(*vm)
+                    .is_some_and(|v| v.status == core::VmStatus::Reclaimed)
+            })
+            && resources.slots.iter().all(|slot| {
+                world
+                    .slot_record(*slot)
+                    .is_some_and(|s| s.reclaimed && !s.active)
+            });
         let mut instance = Resources {
             instances: u64::from(!runtime_released),
             cpu: 0,

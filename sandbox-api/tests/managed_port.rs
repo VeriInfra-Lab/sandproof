@@ -217,9 +217,15 @@ impl Default for FakeHost {
 impl FakeHost {
     // Only short fixture state updates are locked. The explicit slow gates in
     // execute remain outside these locks, matching the shared Host interface.
-    fn prepare(&self) -> PrepareObservation { *self.prepare.lock().unwrap() }
-    fn activation(&self) -> ActivationObservation { *self.activation.lock().unwrap() }
-    fn stop(&self) -> StopObservation { *self.stop.lock().unwrap() }
+    fn prepare(&self) -> PrepareObservation {
+        *self.prepare.lock().unwrap()
+    }
+    fn activation(&self) -> ActivationObservation {
+        *self.activation.lock().unwrap()
+    }
+    fn stop(&self) -> StopObservation {
+        *self.stop.lock().unwrap()
+    }
     fn recovered(&self, action: RecoveredAction) -> bool {
         self.recovered_actions.lock().unwrap().contains(&action)
     }
@@ -314,8 +320,10 @@ impl WorkExecution for FakeHost {
                 PrepareObservation::LiveUnready | PrepareObservation::Reclaimed
             ));
             *self.prepare.lock().unwrap() = PrepareObservation::Reclaimed;
-            if std::mem::replace(&mut *self.abort_receipt.lock().unwrap(), AbortReceipt::Normal)
-                == AbortReceipt::LostOnce
+            if std::mem::replace(
+                &mut *self.abort_receipt.lock().unwrap(),
+                AbortReceipt::Normal,
+            ) == AbortReceipt::LostOnce
             {
                 return Ok(unknown_receipt(action));
             }
@@ -451,7 +459,10 @@ impl WorkRecovery for FakeHost {
             action.command.command(),
             core::Command::ConfigureNetwork { .. }
         ));
-        self.recovered_actions.lock().unwrap().insert(RecoveredAction::Network);
+        self.recovered_actions
+            .lock()
+            .unwrap()
+            .insert(RecoveredAction::Network);
         Ok(())
     }
 
@@ -482,7 +493,9 @@ impl WorkRecovery for FakeHost {
             action.command.command(),
             core::Command::InstallFence { terminal: true, .. }
         ));
-        self.recovered_actions.lock().unwrap()
+        self.recovered_actions
+            .lock()
+            .unwrap()
             .insert(RecoveredAction::TerminalFence);
         Ok(())
     }
@@ -498,7 +511,10 @@ impl WorkRecovery for FakeHost {
                 ..
             }
         ));
-        self.recovered_actions.lock().unwrap().insert(RecoveredAction::OpenFence);
+        self.recovered_actions
+            .lock()
+            .unwrap()
+            .insert(RecoveredAction::OpenFence);
         Ok(())
     }
 
@@ -637,7 +653,9 @@ impl LaunchConfiguration for FakeHost {
         {
             return Err(PortError::Busy);
         }
-        self.secrets.lock().unwrap()
+        self.secrets
+            .lock()
+            .unwrap()
             .get(&sandbox.0)
             .map(|(token, _)| token.clone())
             .ok_or(PortError::Busy)
@@ -653,7 +671,9 @@ impl LaunchConfiguration for FakeHost {
             return Err(error);
         }
         if self
-            .secrets.lock().unwrap()
+            .secrets
+            .lock()
+            .unwrap()
             .insert(sandbox.0, (token.to_owned(), env_vars.clone()))
             .is_some()
         {
@@ -682,7 +702,10 @@ impl LaunchConfiguration for FakeHost {
     ) -> Result<(), PortError> {
         self.put_launch_config(sandbox, token, &options.env_vars)?;
         if let Some(template) = &options.template {
-            self.templates.lock().unwrap().insert(sandbox.0, template.clone());
+            self.templates
+                .lock()
+                .unwrap()
+                .insert(sandbox.0, template.clone());
         }
         Ok(())
     }
@@ -2742,7 +2765,8 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
         assert_eq!(before.domain, configured.domain);
         drop(port);
         let host = FakeHost {
-            secrets: BTreeMap::from([(1, (created.envd_access_token.clone(), BTreeMap::new()))]).into(),
+            secrets: BTreeMap::from([(1, (created.envd_access_token.clone(), BTreeMap::new()))])
+                .into(),
             ..FakeHost::default()
         };
         let port = new_port(
@@ -3379,7 +3403,8 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
-            secrets: BTreeMap::from([(2, (survivor.envd_access_token.clone(), BTreeMap::new()))]).into(),
+            secrets: BTreeMap::from([(2, (survivor.envd_access_token.clone(), BTreeMap::new()))])
+                .into(),
             ..FakeHost::default()
         },
         policy,

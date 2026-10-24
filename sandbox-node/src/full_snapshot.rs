@@ -152,4 +152,3 @@ fn require_reserved_manifest_bytes(bytes: &[u8]) -> SealResult<()> {
 #[cfg(test)]
 #[path = "full_snapshot_tests.rs"]
 mod tests;
-

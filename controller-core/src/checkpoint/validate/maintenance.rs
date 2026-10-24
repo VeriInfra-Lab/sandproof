@@ -125,9 +125,11 @@ fn released(world: &World, binding: HostBinding) -> Result<(), Reject> {
     // Reuse the same exact released-runtime state accepted by the reducer.
     // Paused alone is insufficient: material custody and absence of current
     // runtime bindings must also hold, with every physical/unknown check below.
-    let terminal = row.terminal && row.phase == Phase::Destroyed
-        && row.desired == Authority::Closed && row.effective == Authority::Closed;
-    if !(terminal || crate::maintenance::paused_release_state(world,binding.sandbox,row))
+    let terminal = row.terminal
+        && row.phase == Phase::Destroyed
+        && row.desired == Authority::Closed
+        && row.effective == Authority::Closed;
+    if !(terminal || crate::maintenance::paused_release_state(world, binding.sandbox, row))
         || world
             .vm_record(binding.vm)
             .is_some_and(|vm| vm.status != VmStatus::Reclaimed)

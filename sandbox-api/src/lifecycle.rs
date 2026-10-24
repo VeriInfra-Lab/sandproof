@@ -11,7 +11,8 @@ use axum::{
     routing::{get, post},
 };
 use sandproof_protocol::lifecycle::{
-    PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicRequestWindow, PublicSessionView, PublicUnloadRequest, SessionId,
+    PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicRequestWindow,
+    PublicSessionView, PublicUnloadRequest, SessionId,
 };
 use std::sync::Arc;
 #[cfg(test)]
@@ -23,7 +24,12 @@ pub trait LifecyclePort: Send + Sync + 'static {
     fn request_window(&self, owner: &str) -> Result<PublicRequestWindow, PortError>;
     /// # Errors
     /// Records termination without waiting for slow physical cleanup.
-    fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: PublicDestroyRequest) -> Result<PublicAcceptance, PortError>;
+    fn destroy_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicDestroyRequest,
+    ) -> Result<PublicAcceptance, PortError>;
     /// # Errors
     /// Only durable acceptance returns; this is not a completed VM result.
     fn create_lifecycle(
@@ -63,11 +69,20 @@ pub fn router_with_admission<P: LifecyclePort>(
         admission,
     };
     Ok(Router::new()
-        .route("/sandproof/lifecycle/request-window", get(request_window::<P>))
+        .route(
+            "/sandproof/lifecycle/request-window",
+            get(request_window::<P>),
+        )
         .route("/sandproof/lifecycle/create", post(create::<P>))
         .route("/sandproof/lifecycle/sessions/{session}", get(query::<P>))
-        .route("/sandproof/lifecycle/sessions/{session}/unload", post(unload::<P>))
-        .route("/sandproof/lifecycle/sessions/{session}/destroy", post(destroy::<P>))
+        .route(
+            "/sandproof/lifecycle/sessions/{session}/unload",
+            post(unload::<P>),
+        )
+        .route(
+            "/sandproof/lifecycle/sessions/{session}/destroy",
+            post(destroy::<P>),
+        )
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
         .with_state(state))
 }
@@ -77,8 +92,11 @@ async fn request_window<P: LifecyclePort>(
     headers: HeaderMap,
 ) -> Result<Json<PublicRequestWindow>, ApiFailure> {
     let owner = authenticate(&state, &headers)?;
-    blocking(state.admission, RequestClass::Ordinary, move || state.port.request_window(&owner))
-        .await.map(Json)
+    blocking(state.admission, RequestClass::Ordinary, move || {
+        state.port.request_window(&owner)
+    })
+    .await
+    .map(Json)
 }
 
 async fn create<P: LifecyclePort>(
@@ -136,6 +154,7 @@ async fn destroy<P: LifecyclePort>(
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
     let result = blocking(state.admission, RequestClass::Control, move || {
         state.port.destroy_lifecycle(&owner, session, request)
-    }).await?;
+    })
+    .await?;
     Ok((StatusCode::ACCEPTED, Json(result)))
 }

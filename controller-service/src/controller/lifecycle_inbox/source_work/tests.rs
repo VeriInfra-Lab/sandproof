@@ -977,16 +977,22 @@ fn full_unloaded_survives_slot_reuse_before_first_center_result_and_manager_rest
     journal
         .release_host_slot(released, |_| Ok(()), &mut NeverCrash)
         .unwrap();
-    let usage=journal.retained_resource_usage().unwrap();
-    assert_eq!((usage.instances,usage.cpu,usage.memory_bytes),(0,0,0));
-    assert_eq!(usage.disk_bytes,4096);
+    let usage = journal.retained_resource_usage().unwrap();
+    assert_eq!((usage.instances, usage.cpu, usage.memory_bytes), (0, 0, 0));
+    assert_eq!(usage.disk_bytes, 4096);
     let original = journal
         .lifecycle_unloaded(&unload(), &v3::context(), 10)
         .unwrap()
         .unwrap();
     drop(journal);
-    let host=v3::fixture::complete_fixture::host(&path,"0123456789abcdef",64,2*1024*1024,v3::fixture::complete_fixture::CLEANUP_BYTES+1000);
-    let app = v3::application_with_active_limit(&path,state,false,v3::config(),host,1);
+    let host = v3::fixture::complete_fixture::host(
+        &path,
+        "0123456789abcdef",
+        64,
+        2 * 1024 * 1024,
+        v3::fixture::complete_fixture::CLEANUP_BYTES + 1000,
+    );
+    let app = v3::application_with_active_limit(&path, state, false, v3::config(), host, 1);
     app.establish_lifecycle_host_epoch().unwrap();
     let mut b = v3::request();
     b.request.binding.session = "session-b".try_into().unwrap();
@@ -998,8 +1004,10 @@ fn full_unloaded_survives_slot_reuse_before_first_center_result_and_manager_rest
         &v3::context(),
         Some(v3::fixture::template()),
         crate::templates::ComputeLimits {
-            max_vcpus_global:1,max_vcpus_per_tenant:1,
-            max_memory_bytes_global:129*1024*1024,max_memory_bytes_per_tenant:129*1024*1024,
+            max_vcpus_global: 1,
+            max_vcpus_per_tenant: 1,
+            max_memory_bytes_global: 129 * 1024 * 1024,
+            max_memory_bytes_per_tenant: 129 * 1024 * 1024,
         },
         None,
     )
@@ -1031,25 +1039,46 @@ fn full_unloaded_survives_slot_reuse_before_first_center_result_and_manager_rest
     );
 }
 
-
 fn claim_capture_before_receipt(
     journal: &mut ControllerJournal,
     record: &SourceWorkRecord,
     stage: usize,
 ) -> sandproof_protocol::WorkAction<sandbox_controller_core::EffectId> {
-    use sandbox_controller_core::{Command, workflow::{self, WorkflowStep}};
+    use sandbox_controller_core::{
+        Command,
+        workflow::{self, WorkflowStep},
+    };
     let sandbox = record.work.anchor.local.sandbox;
     for _ in 0..32 {
         match workflow::next_step(&journal.world().unwrap(), sandbox) {
-            WorkflowStep::Apply(input) => { journal.apply(*input, &mut NeverCrash).unwrap(); }
+            WorkflowStep::Apply(input) => {
+                journal.apply(*input, &mut NeverCrash).unwrap();
+            }
             WorkflowStep::Claim => {
-                let action = journal.claim_next(Some(sandbox), &mut NeverCrash).unwrap().unwrap();
+                let action = journal
+                    .claim_next(Some(sandbox), &mut NeverCrash)
+                    .unwrap()
+                    .unwrap();
                 if matches!(action.command.command(), Command::SealSnapshot { .. }) {
                     let worker = crate::capture::CaptureWorkerBinding::new(
-                        SourceProcessIdentity { pid: 2345, start_time_ticks: 9876, boot_id: "fixture-boot".into() },
+                        SourceProcessIdentity {
+                            pid: 2345,
+                            start_time_ticks: 9876,
+                            boot_id: "fixture-boot".into(),
+                        },
                         ContentDigest::from_sha256([9; 32]),
-                    ).unwrap();
-                    journal.authorize_lifecycle_full_capture(&record.work, &v3::context(), &action, worker, 10, &mut NeverCrash).unwrap();
+                    )
+                    .unwrap();
+                    journal
+                        .authorize_lifecycle_full_capture(
+                            &record.work,
+                            &v3::context(),
+                            &action,
+                            worker,
+                            10,
+                            &mut NeverCrash,
+                        )
+                        .unwrap();
                 }
                 let wanted = match stage {
                     0 => matches!(action.command.command(), Command::FreezeVm { .. }),
@@ -1057,13 +1086,23 @@ fn claim_capture_before_receipt(
                     2 => matches!(action.command.command(), Command::CommitSnapshot { .. }),
                     _ => panic!("unknown finite capture stage"),
                 };
-                if wanted { return action; }
-                journal.complete(&sandproof_protocol::WorkReceipt {
-                    identity: action.identity.clone(),
-                    outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence {
-                        resource: action.identity.resource.clone(), command: action.command.command().clone(),
-                    }),
-                }, &mut NeverCrash).unwrap();
+                if wanted {
+                    return action;
+                }
+                journal
+                    .complete(
+                        &sandproof_protocol::WorkReceipt {
+                            identity: action.identity.clone(),
+                            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
+                                FullEvidence {
+                                    resource: action.identity.resource.clone(),
+                                    command: action.command.command().clone(),
+                                },
+                            ),
+                        },
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
             }
             other => panic!("original workflow blocked before selected late receipt: {other:?}"),
         }
@@ -1079,62 +1118,118 @@ fn assert_late_capture_retained(
     budget: u64,
     stage: usize,
 ) {
-    use sandbox_controller_core::{Command, OperationKey, capture::{CaptureCommit, RestoreEligibility}};
+    use sandbox_controller_core::{
+        Command, OperationKey,
+        capture::{CaptureCommit, RestoreEligibility},
+    };
     let sandbox = accepted.work.anchor.local.sandbox;
     let world = journal.world().unwrap();
     let row = world.sandbox_record(sandbox).unwrap();
-    assert_eq!(row, terminal_row, "late receipt must not change current terminal authority");
+    assert_eq!(
+        row, terminal_row,
+        "late receipt must not change current terminal authority"
+    );
     assert!(row.terminal);
     assert_eq!(row.phase, sandbox_controller_core::Phase::Revoking);
-    let key=OperationKey {sandbox, operation:accepted.capture_operation().unwrap()};
-    let plan=world.operation_plan(key).unwrap();
-    let capture=plan.capture.unwrap();
+    let key = OperationKey {
+        sandbox,
+        operation: accepted.capture_operation().unwrap(),
+    };
+    let plan = world.operation_plan(key).unwrap();
+    let capture = plan.capture.unwrap();
     assert_eq!(capture.eligibility(), RestoreEligibility::Revoked);
     assert!(!capture.may_stop_original());
     assert!(!capture.may_reactivate_original());
-    assert!(capture.has_capture_work(), "material responsibility pin remains held");
-    assert_eq!(capture.has_unload_source(), stage==2);
-    if stage==2 { assert_eq!(capture.commit(), CaptureCommit::Registered); }
-    assert!(world.effect_ids().iter().all(|effect| !matches!(effect.command(), Command::StopVm {epoch,..} if *epoch==plan.epoch)));
-    let saved=journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+    assert!(
+        capture.has_capture_work(),
+        "material responsibility pin remains held"
+    );
+    assert_eq!(capture.has_unload_source(), stage == 2);
+    if stage == 2 {
+        assert_eq!(capture.commit(), CaptureCommit::Registered);
+    }
+    assert!(world.effect_ids().iter().all(
+        |effect| !matches!(effect.command(), Command::StopVm {epoch,..} if *epoch==plan.epoch)
+    ));
+    let saved = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
     assert_eq!(saved.work, accepted.work);
     assert_eq!(saved.full_capture(), accepted.full_capture());
-    assert_eq!(saved.capture.as_ref().unwrap().reserved_material_bytes, budget);
-    assert_eq!(saved.captured_material_bytes(), (stage>0).then_some(12288));
-    assert!(super::retains_session(&journal.journal.connection, &destroy.request.binding.session).unwrap());
-    assert!(journal.lifecycle_unloaded(&unload(), &v3::context(), 10).unwrap().is_none());
-    assert!(!journal.lifecycle_destroy_cleaned(destroy, &v3::context()).unwrap());
+    assert_eq!(
+        saved.capture.as_ref().unwrap().reserved_material_bytes,
+        budget
+    );
+    assert_eq!(
+        saved.captured_material_bytes(),
+        (stage > 0).then_some(12288)
+    );
+    assert!(
+        super::retains_session(
+            &journal.journal.connection,
+            &destroy.request.binding.session
+        )
+        .unwrap()
+    );
+    assert!(
+        journal
+            .lifecycle_unloaded(&unload(), &v3::context(), 10)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(destroy, &v3::context())
+            .unwrap()
+    );
     assert_eq!(journal.retained_resource_usage().unwrap().instances, 1);
 }
 
 #[test]
 fn full_late_capture_after_destroy_keeps_material_and_never_publishes_unloaded() {
     for stage in 0..3 {
-        let dir=tempfile::tempdir().unwrap();
-        let path=dir.path().join("db");
-        let (mut journal, _)=ready(&path);
-        let record=observed_for_full(&mut journal);
-        let accepted=journal.admit_lifecycle_full_capture::<Evidence>(
-            &record.work, &v3::context(), &full_request(&record), 10, &mut NeverCrash,
-        ).unwrap();
-        let action=claim_capture_before_receipt(&mut journal, &accepted, stage);
-        let mut destroy=unload();
-        destroy.accepted_version=3;
-        destroy.request.binding.expected=ExpectedSession::Version(2);
-        destroy.request.binding.key.sequence=3.try_into().unwrap();
-        destroy.request.operation=LifecycleOperation::Destroy {};
-        journal.record_lifecycle_intent(&destroy, &v3::context(), &mut NeverCrash).unwrap();
-        let terminal_row=journal.world().unwrap().sandbox_record(record.work.anchor.local.sandbox).unwrap().clone();
-        let budget=accepted.capture.as_ref().unwrap().reserved_material_bytes;
-        journal.complete(&sandproof_protocol::WorkReceipt {
-            identity: action.identity.clone(),
-            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence {
-                resource: action.identity.resource.clone(), command: action.command.command().clone(),
-            }),
-        }, &mut NeverCrash).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, _) = ready(&path);
+        let record = observed_for_full(&mut journal);
+        let accepted = journal
+            .admit_lifecycle_full_capture::<Evidence>(
+                &record.work,
+                &v3::context(),
+                &full_request(&record),
+                10,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        let action = claim_capture_before_receipt(&mut journal, &accepted, stage);
+        let mut destroy = unload();
+        destroy.accepted_version = 3;
+        destroy.request.binding.expected = ExpectedSession::Version(2);
+        destroy.request.binding.key.sequence = 3.try_into().unwrap();
+        destroy.request.operation = LifecycleOperation::Destroy {};
+        journal
+            .record_lifecycle_intent(&destroy, &v3::context(), &mut NeverCrash)
+            .unwrap();
+        let terminal_row = journal
+            .world()
+            .unwrap()
+            .sandbox_record(record.work.anchor.local.sandbox)
+            .unwrap()
+            .clone();
+        let budget = accepted.capture.as_ref().unwrap().reserved_material_bytes;
+        journal
+            .complete(
+                &sandproof_protocol::WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence {
+                        resource: action.identity.resource.clone(),
+                        command: action.command.command().clone(),
+                    }),
+                },
+                &mut NeverCrash,
+            )
+            .unwrap();
         assert_late_capture_retained(&journal, &accepted, &destroy, &terminal_row, budget, stage);
         drop(journal);
-        let journal=v3::open(&path);
+        let journal = v3::open(&path);
         assert_late_capture_retained(&journal, &accepted, &destroy, &terminal_row, budget, stage);
     }
 }

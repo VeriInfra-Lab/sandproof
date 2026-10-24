@@ -499,30 +499,31 @@ mod tests {
 #[path = "maintenance/slot_integration_tests.rs"]
 mod slot_integration_tests;
 
-pub(crate) fn paused_release_state(world: &World, sandbox: SandboxId, record: &crate::SandboxRecord) -> bool {
-!record.terminal
-                && record.current_vm.is_none()
-                && record.net_slot.is_none()
-                && record.phase == Phase::Paused
-                && record.durable_snapshot.is_some_and(|source| {
-                    let authority = Authority::Paused {
-                        sandbox,
-                        source,
-                    };
-                    record.desired == authority
-                        && record.effective == authority
-                        && record.current_operation.is_some_and(|operation| {
-                            world
-                                .operation_plan(crate::OperationKey {
-                                    sandbox,
-                                    operation: operation.id,
-                                })
-                                .is_some_and(|plan| {
-                                    plan.target_snapshot == Some(source)
-                                        && plan.capture.is_some_and(
-                                            crate::capture::CaptureHandoff::may_stop_original,
-                                        )
-                                })
+pub(crate) fn paused_release_state(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+) -> bool {
+    !record.terminal
+        && record.current_vm.is_none()
+        && record.net_slot.is_none()
+        && record.phase == Phase::Paused
+        && record.durable_snapshot.is_some_and(|source| {
+            let authority = Authority::Paused { sandbox, source };
+            record.desired == authority
+                && record.effective == authority
+                && record.current_operation.is_some_and(|operation| {
+                    world
+                        .operation_plan(crate::OperationKey {
+                            sandbox,
+                            operation: operation.id,
+                        })
+                        .is_some_and(|plan| {
+                            plan.target_snapshot == Some(source)
+                                && plan
+                                    .capture
+                                    .is_some_and(crate::capture::CaptureHandoff::may_stop_original)
                         })
                 })
+        })
 }

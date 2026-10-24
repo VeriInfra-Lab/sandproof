@@ -990,7 +990,12 @@ impl LinuxWorker {
         super::capture::require_source_binding(&full.pause, source)?;
         seal.identity.validate_version()?;
         if !super::decisions::action_fields_match(seal, &self.config.namespace)
-            || seal.identity.resource != super::decisions::command_resource(seal.command.command(), &self.config.namespace)? {
+            || seal.identity.resource
+                != super::decisions::command_resource(
+                    seal.command.command(),
+                    &self.config.namespace,
+                )?
+        {
             return Err("Unload release original Seal identity differs".into());
         }
         let core::Command::SealSnapshot {
