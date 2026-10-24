@@ -359,7 +359,7 @@ impl WorkExecution for NodeHost {
         ApplicationError,
     > {
         let prepared = self
-            .prepare_capture_worker(action, full, source, &self.relay_executable)
+            .prepare_capture_worker(action, full, source)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
