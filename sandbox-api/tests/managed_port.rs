@@ -916,6 +916,53 @@ fn due_unknown_prepare_fixture(
     (directory, journal, host, prepare_calls, abort_calls)
 }
 
+fn assert_first_expiry_keeps_original_sql_responsibility(directory: &TempDir) {
+    // This reader is dropped before the next recovery writes or checkpoints.
+    let connection = rusqlite::Connection::open_with_flags(
+        directory.path().join("controller.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ).unwrap();
+    connection.execute_batch("BEGIN").unwrap();
+    let sandbox = format!("sb-{NAMESPACE}-1");
+    let reservations: i64 = connection.query_row(
+        "SELECT count(*) FROM controller_capacity_reservations WHERE sandbox_id=?1",
+        [&sandbox], |row| row.get(0),
+    ).unwrap();
+    assert_eq!(reservations, 1);
+    let releases: i64 = connection.query_row(
+        "SELECT count(*) FROM controller_release_witnesses WHERE sandbox_id=?1",
+        [&sandbox], |row| row.get(0),
+    ).unwrap();
+    assert_eq!(releases, 0);
+    let binding: Vec<u8> = connection.query_row(
+        "SELECT context_json FROM controller_host_slots WHERE position=0",
+        [], |row| row.get(0),
+    ).unwrap();
+    let context: sandproof_controller_service::HostSlotContext = serde_json::from_slice(&binding).unwrap();
+    assert_eq!(context.binding.sandbox, core::SandboxId(1));
+    assert_eq!(context.binding.vm, core::VmId(0));
+    assert_eq!(context.binding.generation, 1);
+    let mut query = connection.prepare(
+        "SELECT action_json,receipt_json FROM outbox WHERE sandbox_id=?1 ORDER BY id",
+    ).unwrap();
+    let rows = query.query_map([&sandbox], |row| {
+        Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<Vec<u8>>>(1)?))
+    }).unwrap();
+    let mut prepares = 0;
+    for row in rows {
+        let (action, receipt) = row.unwrap();
+        let action: WorkAction<core::EffectId> = serde_json::from_slice(&action).unwrap();
+        if !matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+            continue;
+        }
+        prepares += 1;
+        let receipt: WorkReceipt<Evidence> = serde_json::from_slice(&receipt.unwrap()).unwrap();
+        assert_eq!(receipt.identity, action.identity);
+        assert!(matches!(receipt.outcome, WorkOutcome::Unknown { .. }));
+    }
+    assert_eq!(prepares, 1);
+}
+
 #[test]
 fn expired_unready_prepare_is_fenced_exactly_aborted_and_never_relaunched() {
     let (directory, journal, host, prepare_calls, abort_calls) = due_unknown_prepare_fixture(false);
@@ -928,6 +975,7 @@ fn expired_unready_prepare_is_fenced_exactly_aborted_and_never_relaunched() {
     let first = port.application().recover_on_startup().unwrap();
     assert_eq!(first.workflows_completed, 1);
     assert_eq!(first.unresolved_sandboxes, 1);
+    assert_first_expiry_keeps_original_sql_responsibility(&directory);
     assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
     assert_eq!(
