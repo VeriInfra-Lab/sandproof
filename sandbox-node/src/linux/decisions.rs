@@ -27,7 +27,7 @@ pub(super) fn command_generation(command: &core::Command) -> Option<core::Genera
         | core::Command::StopVm { generation, .. }
         | core::Command::CleanupVm { generation, .. }
         | core::Command::CleanupSlot { generation, .. } => Some(*generation),
-        _ => None,
+        core::Command::InstallFence { .. } => None,
     }
 }
 

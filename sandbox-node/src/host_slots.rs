@@ -1667,17 +1667,17 @@ mod tests {
                 "owner" => changed.identity.owner = TenantId::try_from("tenant-8").unwrap(),
                 "sandbox" => {
                     changed.identity.sandbox =
-                        sandproof_protocol::SandboxId::try_from("sb-test-2").unwrap()
+                        sandproof_protocol::SandboxId::try_from("sb-test-2").unwrap();
                 }
                 "operation" => {
-                    changed.identity.operation = OperationId::try_from("op-test-other").unwrap()
+                    changed.identity.operation = OperationId::try_from("op-test-other").unwrap();
                 }
                 "epoch" => changed.identity.epoch += 1,
                 "generation" => changed.identity.generation += 1,
                 "attempt" => changed.identity.attempt += 1,
                 "protocol" => changed.identity.protocol_version += 1,
                 "resource" => {
-                    changed.identity.resource.id = ResourceId::try_from("snapshot-test-99").unwrap()
+                    changed.identity.resource.id = ResourceId::try_from("snapshot-test-99").unwrap();
                 }
                 _ => unreachable!(),
             }
