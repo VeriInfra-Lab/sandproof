@@ -2,11 +2,11 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#636](https://github.com/VeriInfra-Lab/sandproof/issues/636)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#636](https://github.com/VeriInfra-Lab/sandproof/issues/636)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 从旧核心到新合同
 
-对应 [controller-core](../../controller-core/src/lib.rs)。旧核心存在 Pause/Resume、快照状态和定理，但当前真实执行未启用恢复；`handle_compensation` 对 Pause/Resume 可走终止收尾，`reserve_pause_snapshot` 使用逻辑 manifest 计数。必须重审这些分支，不能靠放开旧产品子集就宣称满足状态连续性。
+对应 [controller-core](../../controller-core/src/lib.rs)。旧核心存在 Pause/Resume、快照状态和定理，但当前真实执行未启用恢复；普通 Pause 的补偿已特判保留原 Pausing、VM 和责任，Resume 仍未启用。旧逻辑 manifest 计数不能代替真实材料摘要，保持状态也不等于失败后已经自动恢复服务。
 
 本模块拥有逻辑 `Session`、`Operation`、`Capture`、运行资格、预留和逻辑工作；V5 提供持久性，V6 提供物理效果。不把持久记录和真实 VMM 状态定义为同一对象。
 
@@ -46,8 +46,8 @@
 
 普通 Pause 失败保留原 `Pausing`、运行代、VM 和资源索引，仅保持期望访问关闭，不虚构实际权限已经撤销，也不进入通用终止补偿。原 InstallFence 仍能完成实际权限和网络槽撤销。未登记时撤销新 capture 的恢复资格；提交未知时仍保留未知和原工作，不把它降成未提交；已确认登记时保留来源，允许继续原卸载。原派发入口拒绝已撤销的新 Freeze/Seal/Commit，Stop 与发布也沿同一个原计划检查。已经派发的物理工作仍可迟到：真实成功回执按原 worker 观察、Receipt 顺序登记材料责任，但不能把已撤销资格恢复为可恢复、排入 Stop 或发布成功。显式 Kill 独立设置终止并撤销未来资格，仍保留材料责任。
 
-该值方法切片不启用产品暂停/恢复，不把旧 `ManifestDigest(u64)` 当作内容校验证据，也不声称永久停留在 Pausing 满足进展。旧 checkpoint schema 1 继续拒绝快照历史；后续显式 schema 2 的范围与原 SQLite 接线见 [V5 检查点接口](05-local-service.md#5-显式卸载检查点)。真实 bundle 校验、同一 SQLite 提交、原工作失效/结束、撤销回执及重启枚举由 V5/V6 连接；主入口的同一性质及允许的真实效果不得换成外部假设。
+该值方法证明不覆盖已接通的完整产品卸载调用链，不把旧 `ManifestDigest(u64)` 当作内容校验证据，也不声称永久停留在 Pausing 满足进展。当前检查点及原 SQLite 接线见 [V5 检查点接口](05-local-service.md#5-显式卸载检查点)。真实 bundle 校验、同一 SQLite 提交、原工作失效/结束、撤销回执及重启枚举由 V5/V6 连接；主入口的同一性质及允许的真实效果不得换成外部假设。
 
 该切片把值方法与原调用方分开验收：[组件入口和接口责任](../../verification/experiments/capture-handoff/README.md)。公共 `CaptureHandoff/Conditions` 只定义参数化的材料责任保持与撤销后迟到成功安全性质，不依赖具体生成类型；正确 `Values` 与两个真实错误版各在独立导入闭包检查同一性质，正常可接受性另外给出见证。公共根只导入纯条件，组件仍必须检查正确生成体、错误证书、全部实际文件与审计，不能漏验。原 `handle_compensation` 抽取成功只说明工具能生成，不等于其 World/计划身份/持久化对应已经证明；普通 Pause 错走终止补偿的原入口反例也仍需与两个值方法的形式反例区分。
 
-下一批增加独立内部动作 `ContinueOriginalVm`，绑定原 owner/session/incarnation/VM、失败的 capture/operation 与当前撤销/访问 epoch。它继续原运行代，区别于 Unloaded 的新运行代恢复。允许条件为：本次 capture 的资格已持久撤销、提交未知已对账、原捕获工作不能迟到发布、当前未终止，且原 VM 的 c0 backing 使用责任仍在。回执只分原 VM 已观察运行，或失败/未知且保留责任；运行观察本身不开放网关、不发布 Pause 成功。后续唯一 claim、激活前 `MayHaveExecuted`、材料退休与取用的同事务互斥另行接入原账。
+尚需实现独立内部动作 `ContinueOriginalVm`，绑定原 owner/session/incarnation/VM、失败的 capture/operation 与当前撤销/访问 epoch。它继续原运行代，区别于 Unloaded 的新运行代恢复。允许条件为：本次 capture 的资格已持久撤销、提交未知已对账、原捕获工作不能迟到发布、当前未终止，且原 VM 的 c0 backing 使用责任仍在。回执只分原 VM 已观察运行，或失败/未知且保留责任；运行观察本身不开放网关、不发布 Pause 成功。后续唯一 claim、激活前 `MayHaveExecuted`、材料退休与取用的同事务互斥另行接入原账。

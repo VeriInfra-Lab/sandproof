@@ -2,7 +2,7 @@
 
 [文档目录](README.md) · [项目蓝图](project-blueprint.md) · [模块合同](module-contracts.md) · [证明覆盖](proof-coverage.md) · [证明工作流](proof-workflow.md)
 
-当前目标是第一阶段有状态沙箱生命周期。代码定位基线为 integration `56b14d642c392316043dfbdbe4d26bacc663fb30`；设计分支 `stage1`。本页描述待实现和待证明的目标，不能把文档调整记为定理完成。已交付组件仅按覆盖记录复用。
+当前目标是第一阶段有状态沙箱生命周期。本页定义最终性质，不是完成声明。实际 Rust、生成体、定理及外部条件的适用版本只在[覆盖记录](proof-coverage.md)登记；认领任务从 integration 的精确提交建立短期分支，不再使用旧 stage1 分支或初始设计提交。LC-G1–6 是待满足的系统性质 ID，不是已经完成的 Lean 定理名。
 
 ## 1. 目标与故障范围
 

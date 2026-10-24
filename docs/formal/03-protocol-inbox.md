@@ -2,11 +2,11 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 实际差距与所有权
 
-[sandbox-protocol 内部生命周期](../../sandbox-protocol/src/internal/lifecycle.rs) 当前只有 Create/Renew/Destroy。本阶段必须版本化加入 unload/resume/查询所需绑定，沿 [sandbox-host-service](../../sandbox-host-service/src/lib.rs) 的原收件/映射连接 V4/V5；协议接受不等于 VM 动作成功。
+[当前生命周期协议](../../sandbox-protocol/src/lifecycle.rs)已表达 Create/Renew/Unload/Resume/Destroy。正式收件、查询与原 SQLite 映射已连接；Resume 仅有协议形状，业务收件仍拒绝。沿 [sandbox-host-service](../../sandbox-host-service/src/lib.rs) 连接 V4/V5；协议接受不等于 VM 动作成功。
 
 规范化消息至少绑定 deployment、认证中心/固定节点、owner、session、operation key、全文输入、期望版本、源/目标运行代及 capture。外部用户不指定宿主路径/PID、manifest 成功标志或任意命令；当前模板/配置来源仍受原合同约束。
 
@@ -29,9 +29,9 @@ V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久�
 
 验收：全部新消息合法往返，字段变异/非法输入/冲突拒绝，重复和乱序回执，收件提交未知，两管理进程独立重启，destroy 与旧 resume 同时到达。保留真实 mTLS/限额检查；模板分发、跨节点发现不扩入本任务。负责 LC-I3/4 的邻接和 LC-P2/3/8/9，不能单独声称系统唯一运行。
 
-## 4. 首批 v3 字段合同与未启用范围
+## 4. 当前字段合同与证明边界
 
-[真实字段和同步校验](../../sandbox-protocol/src/lifecycle.rs)采用独立版本 3，预留路径为 `/internal/v3/lifecycle`。原 v2 类型、路径和版本报告保持原语义。当前只提供库接口，尚未安装 v3 HTTP 路由或接通持久收件、驱动；字段校验成功不能作为已接受、已捕获或已恢复的回复。
+[真实字段和同步校验](../../sandbox-protocol/src/lifecycle.rs)的协议常量为 3，正式生命周期路由、持久收件及后台已经接线；不维护另一旧协议产品路径。数字格式标记不代表证明模块 V3 已完成。字段校验成功不能作为已接受、已捕获或已恢复的回复。请求、manifest、carrier 已有真实生成体及局部定理；当前源码重新绑定与事务/网络调用对应仍须验收。
 
 | 字段/接口 | 准确表示与检查 | 不能从中推出 |
 |---|---|---|

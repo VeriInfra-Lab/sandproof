@@ -2,7 +2,7 @@
 
 [文档目录](README.md) · [项目蓝图](project-blueprint.md) · [模块合同](module-contracts.md) · [验收清单](testing-plan.md)
 
-当前设计面向单固定宿主上的有状态卸载与恢复。integration `56b14d64` 已有中心/宿主、Redis/SQLite、执行/清理和网关代码；真实 snapshot 协议及下述新增状态仍待实现。结构不是已部署或已证明声明，准确证据见[覆盖记录](proof-coverage.md)。
+当前设计面向单固定宿主上的有状态卸载与恢复。正式创建、首次 Full 卸载、原资源释放和重启查询已经接线；恢复执行和卸载材料最终回收尚未闭合。下图同时展示已有组件和目标职责，不能据图推导所有功能已完成；精确实现及验收范围见[覆盖记录](proof-coverage.md)。
 
 ## 1. 保留唯一产品链路
 
@@ -17,7 +17,7 @@ sandproof-host ↔ 原 SQLite（本地状态、原操作、执行尝试、引用
                     │
           sandbox-node / sandbox-runtime
              │                  │
-      jailer / Firecracker    受保护本地 snapshot store〔待实现〕
+      jailer / Firecracker    受保护本地 snapshot store〔已有捕获/发布〕
       当前运行位置/私有盘     全量 RAM、设备状态、匹配磁盘、manifest
              │                  │
        固定来宾 / envd      独立于可复用运行位置，跨管理服务重启
@@ -32,7 +32,7 @@ sandproof-host ↔ 原 SQLite（本地状态、原操作、执行尝试、引用
 | sandbox-api / sandbox-center-service | 解析、鉴权；新增带操作键的生命周期及授权结果查询 | V7；网关 V8 |
 | sandbox-center-core | 意图、身份、准入、终止；新增 unload/resume 的全局预留转换 | V1 |
 | sandbox-center-store | 原字节/CAS、耐久确认、outbox、恢复和有限历史 | V2 |
-| sandbox-protocol / sandbox-host-service | 高级操作及原持久收件；新增协议版本和完整绑定 | V3 |
+| sandbox-protocol / sandbox-host-service | 高级操作、完整绑定及原 SQLite 持久收件 | V3 |
 | controller-core | 本地阶段与纯决定；重审旧 pause/resume 和通用补偿 | V4 |
 | controller-service | 原 SQLite、工作/回执、重启；新增 capture/claim/pin/retire 登记 | V5 |
 | sandbox-node / sandbox-runtime | 原身份、围栏、启动停止；新增全量捕获、先暂停加载、激活、文件持有与精确删除 | V6 |
@@ -71,11 +71,11 @@ Redis、SQLite、文件提交和 VMM 动作不是一个事务。先登记计划/
 
 ## 6. 扩展与实现差距
 
-当前内部 `Intent` 仅 Create/Renew/Destroy；真实 `PrepareVm` 对 `source.is_some()` 明确拒绝；纯核心虽然有 Pause/Resume，但补偿和 manifest 计数器不满足本阶段完整快照合同。V3/V4/V5/V6 需要工程实现与新的表示关系，不能只接通枚举或迁移旧定理。
+当前业务提交支持 Create/Renew/Unload/Destroy。协议的 Resume 形状和旧纯核心 Resume 不是生产恢复能力：收件与检查点仍拒绝 Resume，真实 `PrepareVm` 对 `source.is_some()` 明确拒绝。还需原库唯一 claim、装载与激活、激活前不可逆标记、运行期间材料引用和最终 GC。普通 Pause 失败已保留原状态；继续原 VM 的安全解冻仍待接通。
 
 会话身份、运行代、capture、operation、物理位置分别编码；manifest 的内容摘要独立于旧逻辑计数器。协议版本和完整源/目标绑定为将来多宿主、增量链或 fork 留接口，但这些扩展不进入本次实现和证明。
 
-以下保留既有部署办法，描述当前实现基线；新增 snapshot 目录、预算、schema 和 profile 尚未实现，不能照现有样例就声称已部署本阶段功能。阶段启用前由 V9 核对固定 CPU/内核/设备/文件系统与新协议。
+snapshot 布局、捕获预算与当前存储格式已有实现；部署者仍须用原 provision 入口提供受保护布局、项目配额和实测预算。旧 E2E 配置不能自动满足这些条件。由 V9 核对固定 CPU/内核/设备/文件系统及整套验收，不能仅补一个配置文件就视为部署成功。
 
 ## 7. 部署、CI 和验证
 
