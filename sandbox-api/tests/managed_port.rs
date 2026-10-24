@@ -142,10 +142,12 @@ impl ActionGate {
     }
 }
 
+type StoredLaunchSecret = (String, BTreeMap<String, String>);
+
 struct FakeHost {
     candidate_checks: Option<Arc<AtomicUsize>>,
     template_validation_error: Option<PortError>,
-    secrets: Mutex<BTreeMap<u64, (String, BTreeMap<String, String>)>>,
+    secrets: Mutex<BTreeMap<u64, StoredLaunchSecret>>,
     templates: Mutex<BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>>,
     launch_error_once: Mutex<Option<PortError>>,
     token_error_once: AtomicBool,
@@ -890,7 +892,7 @@ fn due_unknown_prepare_fixture(
         .unwrap();
     let prepare_calls = Arc::new(AtomicUsize::new(0));
     let abort_calls = Arc::new(AtomicUsize::new(0));
-    let mut host = FakeHost {
+    let host = FakeHost {
         prepare: PrepareObservation::LiveUnready.into(),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         abort_calls: Some(Arc::clone(&abort_calls)),
@@ -1042,7 +1044,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
     drop(journal);
     // A new controller process observes physical reclamation, records both
     // missing receipts, and publishes failure without repeating either action.
-    let mut restarted_host = FakeHost {
+    let restarted_host = FakeHost {
         prepare: PrepareObservation::Reclaimed.into(),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         abort_calls: Some(Arc::clone(&abort_calls)),
@@ -1120,7 +1122,7 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
     );
     drop(journal);
 
-    let mut host = FakeHost {
+    let host = FakeHost {
         public_ipv4_ready: true,
         ..FakeHost::default()
     };
@@ -1210,7 +1212,7 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
     );
     drop(journal);
 
-    let mut host = FakeHost {
+    let host = FakeHost {
         public_ipv4_ready: true,
         ..FakeHost::default()
     };
@@ -1271,7 +1273,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let calls = Arc::new(AtomicUsize::new(0));
-    let mut host = FakeHost {
+    let host = FakeHost {
         activation: ActivationObservation::Incomplete.into(),
         activation_calls: Some(Arc::clone(&calls)),
         public_ipv4_ready: true,
@@ -1299,7 +1301,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     let original_vm = world.sandbox_record(sandbox).unwrap().current_vm;
     drop(journal);
 
-    let mut wrong_host = FakeHost {
+    let wrong_host = FakeHost {
         activation: ActivationObservation::Incomplete.into(),
         activation_calls: Some(Arc::clone(&calls)),
         ..FakeHost::default()
@@ -1393,7 +1395,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
         )
         .unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
-    let mut host = FakeHost {
+    let host = FakeHost {
         activation: ActivationObservation::Incomplete.into(),
         activation_calls: Some(Arc::clone(&calls)),
         ..FakeHost::default()
@@ -1461,7 +1463,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
             &mut NeverCrash,
         )
         .unwrap();
-    let mut host = FakeHost {
+    let host = FakeHost {
         activation: ActivationObservation::Unavailable.into(),
         ..FakeHost::default()
     };
@@ -1567,7 +1569,7 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
     );
     drop(journal);
 
-    let mut host = FakeHost::default();
+    let host = FakeHost::default();
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
@@ -1755,7 +1757,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
         });
     assert!(attempted.is_err());
     drop(journal);
-    let mut host = FakeHost {
+    let host = FakeHost {
         prepare: PrepareObservation::Successful.into(),
         ..FakeHost::default()
     };
@@ -1842,7 +1844,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
     let path = directory.path().join("controller.db");
     drop(journal);
     let prepare_calls = Arc::new(AtomicUsize::new(0));
-    let mut host = FakeHost {
+    let host = FakeHost {
         prepare: PrepareObservation::Successful.into(),
         reclaim_prepare_error_for: Some(core::SandboxId(1)),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
@@ -1884,7 +1886,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
     drop(port);
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
-    let mut host = FakeHost {
+    let host = FakeHost {
         prepare: PrepareObservation::Successful.into(),
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
@@ -1958,7 +1960,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
         Err(sandproof_controller_service::JournalError::UnresolvedAction)
     ));
     drop(journal);
-    let mut host = FakeHost {
+    let host = FakeHost {
         prepare: PrepareObservation::Incomplete.into(),
         ..FakeHost::default()
     };
@@ -2307,7 +2309,7 @@ fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
             .unwrap()
     );
     drop(journal);
-    let mut host = FakeHost::default();
+    let host = FakeHost::default();
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
@@ -2490,7 +2492,7 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
     let path = directory.path().join("controller.db");
     let old = template_catalog();
     let token = "a".repeat(64);
-    let mut host = FakeHost::default();
+    let host = FakeHost::default();
     host.put_bound_launch_config(
         core::SandboxId(1),
         &token,
@@ -2848,7 +2850,7 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
         .unwrap();
     drop(journal);
 
-    let mut wrong_host = FakeHost::default();
+    let wrong_host = FakeHost::default();
     wrong_host
         .put_secret(core::SandboxId(1), &"a".repeat(64))
         .unwrap();

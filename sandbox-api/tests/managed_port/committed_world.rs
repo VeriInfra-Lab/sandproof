@@ -37,7 +37,7 @@ fn deadline(connection: &rusqlite::Connection, sandbox: &str) -> i64 {
 }
 
 fn restore_host(sessions: &[SandboxSession], stops: Arc<AtomicUsize>) -> FakeHost {
-    let mut host = FakeHost {
+    let host = FakeHost {
         stop_calls: Some(stops),
         ..FakeHost::default()
     };
