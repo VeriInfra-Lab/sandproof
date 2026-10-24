@@ -136,6 +136,23 @@ impl SnapshotStore {
     }
 }
 
+/// One failed syscall per scheduling interval. The caller retains the exact
+/// stage/bytes and never repeats a Full request. Exact VMM exit drains ownership.
+fn retry_publication<T>(
+    mut step: impl FnMut() -> Result<T, RuntimeError>,
+    mut source_alive: impl FnMut() -> Result<bool, RuntimeError>,
+) -> Result<T, RuntimeError> {
+    loop {
+        match step() {
+            Err(RuntimeError::Io(error)) if matches!(error.raw_os_error(), Some(4 | 28 | 122)) => {
+                if !source_alive()? { return Err(RuntimeError::Io(error)); }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            result => return result,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,22 +234,6 @@ mod tests {
     }
 }
 
-/// One failed syscall per scheduling interval. The caller retains the exact
-/// stage/bytes and never repeats a Full request. Exact VMM exit drains ownership.
-fn retry_publication<T>(
-    mut step: impl FnMut() -> Result<T, RuntimeError>,
-    mut source_alive: impl FnMut() -> Result<bool, RuntimeError>,
-) -> Result<T, RuntimeError> {
-    loop {
-        match step() {
-            Err(RuntimeError::Io(error)) if matches!(error.raw_os_error(), Some(4 | 28 | 122)) => {
-                if !source_alive()? { return Err(RuntimeError::Io(error)); }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            result => return result,
-        }
-    }
-}
 
 #[cfg(test)]
 mod retained_tests {
