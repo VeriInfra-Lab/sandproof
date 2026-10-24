@@ -92,7 +92,7 @@ mod tests {
     use std::process::{Command, Stdio};
     #[test]
     fn unknown_child_retains_capacity_until_exact_exit_is_reaped() {
-        let _serial = crate::linux::PROCESS_TEST_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _serial = crate::linux::PROCESS_TEST_LOCK.lock().unwrap();
         let reaper = Arc::new(Reaper {
             active: AtomicUsize::new(0),
             pending: Mutex::new(Vec::with_capacity(MAX_HELPERS)),
@@ -108,7 +108,7 @@ mod tests {
             .spawn()
             .unwrap();
         slots.pop().unwrap().retain(child);
-        let mut pending = reaper.pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut pending = reaper.pending.lock().unwrap();
         Reaper::reap_ready(&mut pending);
         assert_eq!(pending.len(), 1);
         assert!(Slot::reserve(&reaper).is_err());

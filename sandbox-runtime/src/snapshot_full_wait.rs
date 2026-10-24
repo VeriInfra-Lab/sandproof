@@ -1,5 +1,5 @@
 //! The original Full owner waits on one connection; no request redispatch.
-use super::{RuntimeError, RuntimeProcessIdentity};
+use super::RuntimeProcessIdentity;
 use std::{io::{self, Read, Write}, os::unix::net::UnixStream};
 
 pub(super) struct OriginalFullStream<'a> {

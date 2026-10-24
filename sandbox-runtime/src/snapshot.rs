@@ -39,6 +39,7 @@ pub struct FullCaptureLimits {
     pub api_context: FullCaptureApiContext,
     pub state_bytes: u64,
     pub disk_bytes: u64,
+    /// Poll interval on the original Full connection, not permission to stop it.
     pub api_timeout: Duration,
 }
 
