@@ -136,7 +136,8 @@ fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
         Some(
             core::EffectStatus::Acknowledged(_)
             | core::EffectStatus::RetiredByStop(_)
-            | core::EffectStatus::RetiredByCaptureEnd(_),
+            | core::EffectStatus::RetiredByCaptureEnd(_)
+            | core::EffectStatus::RetiredByCaptureDrain(_),
         ) => false,
         Some(core::EffectStatus::Committed) => {
             // A terminal intent forbids the original startup dispatch. This
