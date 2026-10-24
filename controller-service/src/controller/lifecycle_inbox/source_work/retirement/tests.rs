@@ -44,10 +44,10 @@ fn finish_destroy(journal: &mut ControllerJournal, sandbox: core::SandboxId) {
     panic!("original bounded Destroy did not complete");
 }
 
-fn terminal(path: &Path, with_end: bool) -> (ControllerJournal, super::super::SourceWork) {
+fn terminal(path: &Path) -> (ControllerJournal, super::super::SourceWork) {
     let (mut journal, source) = fixture::unloaded_resume_source(path);
     let sandbox = source.work.anchor.local.sandbox;
-    if with_end {
+    {
         let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
         journal
             .record_lifecycle_capture_request_end(
@@ -110,7 +110,7 @@ impl CrashInjector for StopAt {
 fn terminal_plan_is_committed_before_permission_and_unknown_stays_fully_charged() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (mut journal, source) = terminal(&path, true);
+    let (mut journal, source) = terminal(&path);
     let sandbox = source.anchor.local.sandbox;
     let question = journal
         .lifecycle_material_retirement_questions(sandbox)
@@ -202,22 +202,26 @@ fn terminal_plan_is_committed_before_permission_and_unknown_stays_fully_charged(
 }
 
 #[test]
-fn terminal_native_cleanup_without_actual_writer_end_grants_no_material_permission() {
+fn saved_plan_never_substitutes_for_the_original_writer_end() {
     let dir = tempfile::tempdir().unwrap();
-    let (journal, source) = terminal(&dir.path().join("db"), false);
-    assert!(
-        journal
-            .lifecycle_material_retirement_questions(source.anchor.local.sandbox)
-            .is_err()
-    );
-    assert!(saved(&journal).retirement.is_none());
+    let (mut journal, source) = terminal(&dir.path().join("db"));
+    let sandbox = source.anchor.local.sandbox;
+    let question = journal.lifecycle_material_retirement_questions(sandbox).unwrap().remove(0);
+    let certificate = closure(&journal, sandbox);
+    journal.prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash).unwrap();
+    let original = saved(&journal);
+    let mut encoded = serde_json::to_value(&original).unwrap();
+    encoded["capture"]["end"] = serde_json::Value::Null;
+    let changed: SourceWorkRecord = serde_json::from_value(encoded).unwrap();
+    assert!(validate_record(&changed, &journal.world().unwrap()).is_err());
+    assert_eq!(saved(&journal), original, "no negative test mutation is written to SQL");
     assert!(material_charge(&saved(&journal)).unwrap() > 0);
 }
 
 #[test]
 fn wrong_or_unconfirmed_closure_and_foreign_receipt_preserve_original_charge() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut journal, source) = terminal(&dir.path().join("db"), true);
+    let (mut journal, source) = terminal(&dir.path().join("db"));
     let sandbox = source.anchor.local.sandbox;
     let question = journal
         .lifecycle_material_retirement_questions(sandbox)
@@ -272,7 +276,7 @@ fn wrong_or_unconfirmed_closure_and_foreign_receipt_preserve_original_charge() {
 #[test]
 fn bounded_original_plan_rejects_empty_and_oversize_without_permission() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut journal, source) = terminal(&dir.path().join("db"), true);
+    let (mut journal, source) = terminal(&dir.path().join("db"));
     let sandbox = source.anchor.local.sandbox;
     let question = journal
         .lifecycle_material_retirement_questions(sandbox)
@@ -316,7 +320,7 @@ fn both_commit_boundaries_keep_original_plan_and_settlement_recoverable() {
     for point in [CrashPoint::BeforeCommit, CrashPoint::AfterCommit] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
-        let (mut journal, source) = terminal(&path, true);
+        let (mut journal, source) = terminal(&path);
         let sandbox = source.anchor.local.sandbox;
         let question = journal
             .lifecycle_material_retirement_questions(sandbox)
@@ -384,7 +388,7 @@ fn historical_unloaded_bundle_is_not_a_terminal_material_gc_permit() {
 #[test]
 fn persisted_settlement_checks_reject_changed_plan_receipt_reserve_or_unconfirmed_end() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut journal, source) = terminal(&dir.path().join("db"), true);
+    let (mut journal, source) = terminal(&dir.path().join("db"));
     let sandbox = source.anchor.local.sandbox;
     let question = journal
         .lifecycle_material_retirement_questions(sandbox)

@@ -134,6 +134,9 @@ pub(in crate::controller) fn validate_record(
     }
     validate_terminal_cleanup(world, saved.quiescence.sandbox)
         .map_err(|_| JournalError::UnresolvedAction)?;
+    if !full::material_writer_closed(record, world)? {
+        return Err(JournalError::UnresolvedAction);
+    }
     if let MaterialRetirementState::Settled { settlement, .. } = state
         && (settlement.work_binding != saved.work_binding
             || settlement.plan_binding != saved.plan_binding
