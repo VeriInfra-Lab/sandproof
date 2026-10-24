@@ -6,7 +6,7 @@ use rustix::fs::{Mode, OFlags, RenameFlags, openat, renameat_with};
 use std::{
     ffi::OsStr,
     fs::{File, Permissions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
 };
 pub(super) const MAX_COMPLETION_BYTES: u64 = 16_384;
@@ -20,8 +20,18 @@ impl SnapshotStore {
         self.publish_record("completed-", "completion-stage-", key, bytes)
     }
 
+    #[cfg(test)]
     pub(crate) fn publish_api_end(&self, key: [u8; 32], bytes: &[u8]) -> Result<(), RuntimeError> {
         self.publish_record("api-returned-", "api-return-stage-", key, bytes)
+    }
+
+    pub(crate) fn publish_retained_api_end(
+        &self,
+        key: [u8; 32],
+        bytes: &[u8],
+        source_alive: impl FnMut() -> Result<bool, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
+        self.publish_record_retained("api-returned-", "api-return-stage-", key, bytes, source_alive)
     }
 
     fn publish_record(
@@ -31,12 +41,23 @@ impl SnapshotStore {
         key: [u8; 32],
         bytes: &[u8],
     ) -> Result<(), RuntimeError> {
+        self.publish_record_retained(prefix, stage_prefix, key, bytes, || Ok(false))
+    }
+
+    fn publish_record_retained(
+        &self,
+        prefix: &str,
+        stage_prefix: &str,
+        key: [u8; 32],
+        bytes: &[u8],
+        mut source_alive: impl FnMut() -> Result<bool, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         if bytes.is_empty() || bytes.len() as u64 > MAX_COMPLETION_BYTES {
             return Err(invalid("capture completion byte bound"));
         }
         let name = key_name(prefix, &key);
         let stage = key_name(stage_prefix, &key);
-        let mut file = File::from(
+        let mut file = retry_publication(|| Ok(File::from(
             openat(
                 &self.directory,
                 stage.as_str(),
@@ -44,25 +65,30 @@ impl SnapshotStore {
                 Mode::RUSR | Mode::WUSR,
             )
             .map_err(os_error)?,
-        );
+        )), &mut source_alive)?;
         let meta = file.metadata()?;
         if !meta.is_file() || meta.uid() != self.owner || meta.nlink() != 1 {
             return Err(invalid("capture completion owner/type/link"));
         }
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        file.set_permissions(Permissions::from_mode(0o400))?;
-        file.sync_all()?;
+        retry_publication(|| {
+            matches_entry(&self.directory, OsStr::new(&stage), &file)?;
+            file.seek(SeekFrom::Start(0))?;
+            file.write_all(bytes)?;
+            Ok(())
+        }, &mut source_alive)?;
+        retry_publication(|| Ok(file.sync_all()?), &mut source_alive)?;
+        retry_publication(|| Ok(file.set_permissions(Permissions::from_mode(0o400))?), &mut source_alive)?;
+        retry_publication(|| Ok(file.sync_all()?), &mut source_alive)?;
         matches_entry(&self.directory, OsStr::new(&stage), &file)?;
-        renameat_with(
+        retry_publication(|| Ok(renameat_with(
             &self.directory,
             stage.as_str(),
             &self.directory,
             name.as_str(),
             RenameFlags::NOREPLACE,
         )
-        .map_err(os_error)?;
-        self.directory.sync_all()?;
+        .map_err(os_error)?), &mut source_alive)?;
+        retry_publication(|| Ok(self.directory.sync_all()?), &mut source_alive)?;
         matches_entry(&self.directory, OsStr::new(&name), &file)?;
         Ok(())
     }
@@ -188,5 +214,54 @@ mod tests {
         )
         .unwrap();
         assert!(store.read_completion(other).is_err());
+    }
+}
+
+/// One failed syscall per scheduling interval. The caller retains the exact
+/// stage/bytes and never repeats a Full request. Exact VMM exit drains ownership.
+fn retry_publication<T>(
+    mut step: impl FnMut() -> Result<T, RuntimeError>,
+    mut source_alive: impl FnMut() -> Result<bool, RuntimeError>,
+) -> Result<T, RuntimeError> {
+    loop {
+        match step() {
+            Err(RuntimeError::Io(error)) if matches!(error.raw_os_error(), Some(4 | 28 | 122)) => {
+                if !source_alive()? { return Err(RuntimeError::Io(error)); }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            result => return result,
+        }
+    }
+}
+
+#[cfg(test)]
+mod retained_tests {
+    use super::*;
+    #[test]
+    fn temporary_space_failure_keeps_known_result_until_same_step_succeeds() {
+        let mut attempts = 0;
+        let original = b"original returned response";
+        let result = retry_publication(|| {
+            attempts += 1;
+            if attempts == 1 { return Err(RuntimeError::Io(std::io::Error::from_raw_os_error(28))); }
+            Ok(original.as_slice())
+        }, || Ok(true)).unwrap();
+        assert_eq!(result, original);
+        assert_eq!(attempts, 2);
+    }
+    #[test]
+    fn exact_source_exit_ends_space_wait_without_fabricating_publication() {
+        let mut attempts = 0;
+        let result: Result<(), _> = retry_publication(|| {
+            attempts += 1;
+            Err(RuntimeError::Io(std::io::Error::from_raw_os_error(28)))
+        }, || Ok(false));
+        assert!(result.is_err());
+        assert_eq!(attempts, 1);
+    }
+    #[test]
+    fn foreign_identity_errors_are_not_retried() {
+        let result: Result<(), _> = retry_publication(|| Err(invalid("foreign stage")), || panic!("not transient"));
+        assert!(result.is_err());
     }
 }

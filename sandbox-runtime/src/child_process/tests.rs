@@ -203,3 +203,18 @@ fn another_known_writer_cannot_keep_the_exchange_waiting_after_helper_exit() {
     holder.stdin.take().unwrap().write_all(b"finish\n").unwrap();
     assert!(holder.wait().unwrap().success());
 }
+
+#[test]
+fn durable_full_drop_keeps_original_child_and_slot_until_exit() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
+    let mut child = launch("IFS= read -r input; IFS= read -r release < \"$input\"");
+    let temp = tempfile::tempdir().unwrap();
+    let fifo = temp.path().join("release");
+    rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR, 0).unwrap();
+    let identity = crate::RuntimeProcessIdentity::capture(child.id()).unwrap();
+    child.stdin.as_mut().unwrap().write_all(format!("{}\n", fifo.display()).as_bytes()).unwrap();
+    child.retain_until_exit();
+    drop(child);
+    assert!(identity.is_alive().unwrap());
+    std::fs::OpenOptions::new().write(true).open(&fifo).unwrap().write_all(b"done\n").unwrap();
+}
