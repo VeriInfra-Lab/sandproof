@@ -235,8 +235,9 @@ pub(super) fn save(
 
 // Only final native Retire may consume the exact rows validated against its
 // OLD World in the same transaction. General save still cannot drop a row.
-pub(super) fn remove_retired(connection:&Connection,expected:&[SourceWorkRecord])->Result<(),JournalError>{
+pub(in crate::controller) fn remove_retired(connection:&Connection,expected:&[SourceWorkRecord])->Result<(),JournalError>{
     if connection.is_autocommit(){return Err(JournalError::UnsupportedInput)}
+    if expected.is_empty(){return Ok(())}
     let current=load(connection)?.ok_or(JournalError::UnsupportedStore)?;
     let mut keys=BTreeSet::new();
     for record in expected {
