@@ -2231,3 +2231,36 @@ fn original_work_key_and_payload_are_already_charged_before_source_admission() {
         .unwrap();
     assert_eq!(key, record.work.requirement.work_binding.as_bytes());
 }
+
+#[test]
+fn public_unload_observation_keeps_pending_and_persisted_unloaded_mutually_exclusive() {
+    use sandproof_protocol::lifecycle::UnloadOutcome;
+    for complete in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let journal = if complete {
+            unloaded_resume_source(&path).0
+        } else {
+            ready(&path).0
+        };
+        drop(journal);
+        let state = Arc::new(Mutex::new(State::default()));
+        let app = v3::application(&path, state, false);
+        let observed = app
+            .observe_lifecycle_unloaded(&unload(), &v3::context())
+            .unwrap();
+        assert!(observed.matches_request(&unload()));
+        if complete {
+            let UnloadOutcome::Unloaded { facts } = observed.outcome else {
+                panic!("persisted release and material must yield Unloaded");
+            };
+            assert_eq!(
+                facts.source_incarnation,
+                IncarnationId::try_from(101).unwrap()
+            );
+            assert_eq!(facts.capture, CaptureId::try_from(1).unwrap());
+        } else {
+            assert_eq!(observed.outcome, UnloadOutcome::Pending);
+        }
+    }
+}

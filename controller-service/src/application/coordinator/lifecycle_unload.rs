@@ -219,9 +219,16 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .clock
             .now_ms()
             .map_err(|_| JournalError::UnresolvedAction)?;
+        let outcome = inner
+            .journal
+            .lifecycle_unloaded(intent, context, now)?
+            .map_or(
+                sandproof_protocol::lifecycle::UnloadOutcome::Pending,
+                |facts| sandproof_protocol::lifecycle::UnloadOutcome::Unloaded { facts },
+            );
         Ok(sandproof_protocol::lifecycle::UnloadObservation {
             request: intent.clone(),
-            unloaded: inner.journal.lifecycle_unloaded(intent, context, now)?,
+            outcome,
         })
     }
 }

@@ -154,7 +154,7 @@ pub(super) fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
         accepted_version: 1,
         request: LifecycleRequest {
             binding: OperationBinding {
-                protocol_version: 3,
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 node: config().node,
                 session: SessionId::try_from(session).unwrap(),
                 key: OperationKey {
