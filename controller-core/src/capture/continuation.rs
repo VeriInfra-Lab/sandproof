@@ -745,10 +745,10 @@ pub fn publish_original_continued(
         .sandbox_record(id.key.sandbox)
         .ok_or(CaptureReject::SandboxNotFound)?;
     if row.phase == Phase::Running
-        && matches!(
-            row.current_operation.map(|operation| operation.status),
-            Some(OperationStatus::Failed(_))
-        )
+        && match row.current_operation {
+            Some(operation) => matches!(operation.status, OperationStatus::Failed(_)),
+            None => false,
+        }
     {
         return Ok(CaptureDecision {
             event: CaptureEvent::PublishOriginalContinued(id),
@@ -757,10 +757,11 @@ pub fn publish_original_continued(
     }
     let failure = compensating(world, id)?;
     source_resources(world, id)?;
-    let saved = plan
-        .capture
-        .and_then(CaptureHandoff::original_continuation)
-        .ok_or(CaptureReject::ContinuationNotPrepared)?;
+    let saved = match plan.capture {
+        Some(capture) => capture.original_continuation(),
+        None => None,
+    }
+    .ok_or(CaptureReject::ContinuationNotPrepared)?;
     ended_attempts(world, id, saved.end_receipt)?;
     if row.desired != Authority::Closed
         || row.effective != Authority::Closed

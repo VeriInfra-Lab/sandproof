@@ -2,16 +2,31 @@
 //! An interrupted write remains charged; no record grants SQL or Stop rights.
 use super::{FileStamp, SnapshotStore, invalid, key_name, matches_entry, os_error};
 use crate::RuntimeError;
-use rustix::fs::{Mode, OFlags, RenameFlags, openat, renameat_with};
+use rustix::fs::{AtFlags, Mode, OFlags, RenameFlags, openat, renameat_with, statat};
 use std::{
     ffi::OsStr,
     fs::{File, Permissions},
     io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
 };
-pub(super) const MAX_COMPLETION_BYTES: u64 = 16_384;
+pub(crate) const MAX_COMPLETION_BYTES: u64 = 16_384;
 
 impl SnapshotStore {
+    pub(crate) fn require_request_end_absent(&self, key: [u8; 32]) -> Result<(), RuntimeError> {
+        for prefix in ["api-returned-", "api-return-stage-"] {
+            match statat(
+                &self.directory,
+                key_name(prefix, &key).as_str(),
+                AtFlags::SYMLINK_NOFOLLOW,
+            ) {
+                Err(rustix::io::Errno::NOENT) => {}
+                Err(error) => return Err(os_error(error)),
+                Ok(_) => return Err(invalid("original request end slot already used")),
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn publish_completion(
         &self,
         key: [u8; 32],
@@ -21,11 +36,15 @@ impl SnapshotStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn publish_api_end(&self, key: [u8; 32], bytes: &[u8]) -> Result<(), RuntimeError> {
+    pub(crate) fn publish_request_end(
+        &self,
+        key: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<(), RuntimeError> {
         self.publish_record("api-returned-", "api-return-stage-", key, bytes)
     }
 
-    pub(crate) fn publish_retained_api_end(
+    pub(crate) fn publish_retained_request_end(
         &self,
         key: [u8; 32],
         bytes: &[u8],
@@ -147,7 +166,7 @@ impl SnapshotStore {
     pub(crate) fn read_completion(&self, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
         self.read_record("completed-", key)
     }
-    pub(crate) fn read_api_end(&self, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
+    pub(crate) fn read_request_end(&self, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
         self.read_record("api-returned-", key)
     }
     fn read_record(&self, prefix: &str, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
@@ -243,6 +262,31 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     #[test]
+    fn used_or_partial_request_end_slot_cannot_admit_another_ready() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(root.path(), Permissions::from_mode(0o700)).unwrap();
+        let owner = rustix::process::geteuid().as_raw();
+        let store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        let key = [27; 32];
+        store.require_request_end_absent(key).unwrap();
+        store
+            .publish_retained_request_end(key, b"original tagged record", || Ok(true))
+            .unwrap();
+        assert!(store.require_request_end_absent(key).is_err());
+        let partial = [28; 32];
+        std::fs::write(
+            root.path().join(key_name("api-return-stage-", &partial)),
+            b"partial",
+        )
+        .unwrap();
+        assert!(store.require_request_end_absent(partial).is_err());
+        assert_eq!(
+            store.read_request_end(key).unwrap(),
+            b"original tagged record"
+        );
+    }
+
+    #[test]
     fn retained_api_end_retries_same_protected_inode_and_reopens_complete_bytes() {
         let root = tempfile::tempdir().unwrap();
         std::fs::set_permissions(root.path(), Permissions::from_mode(0o700)).unwrap();
@@ -257,7 +301,7 @@ mod tests {
             };
         });
         store
-            .publish_retained_api_end(key, original, || Ok(true))
+            .publish_retained_request_end(key, original, || Ok(true))
             .unwrap();
         let inode = faults::STATE.with_borrow(|state| {
             assert!(state.remaining.is_empty());
@@ -265,7 +309,7 @@ mod tests {
         });
         drop(store);
         let reopened = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
-        assert_eq!(reopened.read_api_end(key).unwrap(), original);
+        assert_eq!(reopened.read_request_end(key).unwrap(), original);
         let canonical = root.path().join(key_name("api-returned-", &key));
         let meta = canonical.metadata().unwrap();
         assert_eq!((meta.dev(), meta.ino()), inode);
@@ -285,11 +329,11 @@ mod tests {
         let owner = rustix::process::geteuid().as_raw();
         let store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
         let key = [13; 32];
-        store.publish_api_end(key, b"original API-end").unwrap();
-        assert_eq!(store.read_api_end(key).unwrap(), b"original API-end");
+        store.publish_request_end(key, b"original API-end").unwrap();
+        assert_eq!(store.read_request_end(key).unwrap(), b"original API-end");
         assert!(store.read_completion(key).is_err());
-        assert!(store.publish_api_end(key, b"replacement").is_err());
-        assert_eq!(store.read_api_end(key).unwrap(), b"original API-end");
+        assert!(store.publish_request_end(key, b"replacement").is_err());
+        assert_eq!(store.read_request_end(key).unwrap(), b"original API-end");
         let interrupted = [14; 32];
         std::fs::write(
             root.path()
@@ -297,8 +341,8 @@ mod tests {
             b"partial",
         )
         .unwrap();
-        assert!(store.read_api_end(interrupted).is_err());
-        assert!(store.publish_api_end(interrupted, b"new").is_err());
+        assert!(store.read_request_end(interrupted).is_err());
+        assert!(store.publish_request_end(interrupted, b"new").is_err());
     }
 
     #[test]
