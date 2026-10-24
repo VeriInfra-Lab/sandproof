@@ -50,9 +50,9 @@ pin 是具名持久集合，可重建 original loader、candidate、running back
 当前卸载链已接入 `application/coordinator/lifecycle_unload.rs`：
 
 1. 原已接受 Unload 与 Create 来源、寿命、版本及 SourceWork 对应；撤销数据访问并取得所需排空事实。
-2. `capture/admit.rs` 在原 SQL 接受 Pause、材料预算与工作；准备物理 worker 后，`capture/authorize.rs` 保存原 worker/outbox 与当前条件，确认提交才给 `FullCaptureLaunchPermit`。
-3. V6 放行真实 Full 子进程，`capture/full/complete.rs` 在原事务采纳完整材料；Stop、运行清理与位置归还沿各自实际回执推进。
-4. `capture/full/unloaded.rs` 只在原材料、无 current_vm、VM/slot 收尾、寿命及持久释放确认齐全时提供 Unloaded。核心 Paused、文件发布或 VMM 退出单项均不充分。
+2. `lifecycle_inbox/source_work/full/admit.rs` 在原 SQL 接受 Pause、材料预算与工作；准备物理 worker 后，`lifecycle_inbox/source_work/full/authorize.rs` 保存原 worker/outbox 与当前条件，确认提交才给 `FullCaptureLaunchPermit`。
+3. V6 放行真实 Full 子进程，`lifecycle_inbox/source_work/full/complete.rs` 在原事务采纳完整材料；Stop、运行清理与位置归还沿各自实际回执推进。
+4. `lifecycle_inbox/source_work/full/unloaded.rs` 只在原材料、无 current_vm、VM/slot 收尾、寿命及持久释放确认齐全时提供 Unloaded。核心 Paused、文件发布或 VMM 退出单项均不充分。
 
 这些是当前源码接线事实，完整 SQL、外部效果与调用顺序的 Lean 对应尚未闭合。有限成功实机和故障缺口见覆盖记录；不能把引擎事务保证扩为整个自有回调正确。
 
