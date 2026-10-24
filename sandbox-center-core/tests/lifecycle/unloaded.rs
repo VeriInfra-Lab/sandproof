@@ -390,7 +390,7 @@ fn checkpoint_rejects_duplicate_running_pending_and_mutated_continuation() {
         match field {
             "duplicate" => {
                 operation["running"] =
-                    serde_json::to_value(observation.outcome.continued().unwrap()).unwrap()
+                    serde_json::to_value(observation.outcome.continued().unwrap()).unwrap();
             }
             "pending" => operation["unloaded"]["outcome"] = serde_json::json!({"state":"pending"}),
             "lifetime" => operation["unloaded"]["outcome"]["facts"]["end_at_ms"] = 201.into(),
