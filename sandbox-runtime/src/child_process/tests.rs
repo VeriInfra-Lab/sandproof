@@ -210,14 +210,30 @@ fn durable_full_drop_keeps_original_child_and_slot_until_exit() {
     let mut child = launch("IFS= read -r input; IFS= read -r release < \"$input\"");
     let temp = tempfile::tempdir().unwrap();
     let fifo = temp.path().join("release");
-    rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR, 0).unwrap();
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        &fifo,
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        0,
+    )
+    .unwrap();
     let identity = crate::RuntimeProcessIdentity::capture(child.id()).unwrap();
     child.retain_until_exit();
     let mut policy = limits();
     policy.timeout = Duration::from_millis(10);
-    assert!(child.exchange(format!("{}\n", fifo.display()).as_bytes(), policy).is_err());
+    assert!(
+        child
+            .exchange(format!("{}\n", fifo.display()).as_bytes(), policy)
+            .is_err()
+    );
     assert!(identity.is_alive().unwrap());
     drop(child);
     assert!(identity.is_alive().unwrap());
-    std::fs::OpenOptions::new().write(true).open(&fifo).unwrap().write_all(b"done\n").unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&fifo)
+        .unwrap()
+        .write_all(b"done\n")
+        .unwrap();
 }

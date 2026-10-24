@@ -50,7 +50,11 @@ impl Slot {
     pub fn retain(self, child: Child) {
         let reaper = Arc::clone(&self.0);
         // Every entry owns a pre-spawn slot, so length is at most MAX_HELPERS.
-        reaper.pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((child, self));
+        reaper
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((child, self));
         reaper.wake.notify_one();
     }
 }
@@ -71,11 +75,17 @@ impl Reaper {
         }
     }
     fn run(&self) {
-        let mut pending = self.pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         loop {
             Self::reap_ready(&mut pending);
             if pending.is_empty() {
-                pending = self.wake.wait(pending).unwrap_or_else(std::sync::PoisonError::into_inner);
+                pending = self
+                    .wake
+                    .wait(pending)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
             } else {
                 pending = self
                     .wake

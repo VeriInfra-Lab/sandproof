@@ -774,7 +774,11 @@ impl RuntimeHelperGuard {
             args,
             &child,
         )?;
-        Ok(PreparedTrackedChild { child, witness, retain_after_release: retain_waiting_gate })
+        Ok(PreparedTrackedChild {
+            child,
+            witness,
+            retain_after_release: retain_waiting_gate,
+        })
     }
 
     fn abandon_unspawned_stage(&self, stage: &Path, staged: &File) -> Result<(), RuntimeError> {
@@ -2062,20 +2066,45 @@ mod tests {
         let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (temp, context) = fixture(1);
         let fifo = temp.path().join("release-full");
-        rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo,
-            Mode::RUSR | Mode::WUSR, 0).unwrap();
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            &fifo,
+            rustix::fs::FileType::Fifo,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+            0,
+        )
+        .unwrap();
         let guard = acquire(&context, false).unwrap();
-        let prepared = guard.prepare_tracked(&context, "/bin/sh", &[
-            "-c", "printf ready; IFS= read -r release < \"$1\"", "full-worker", fifo.to_str().unwrap()
-        ]).unwrap();
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf ready; IFS= read -r release < \"$1\"",
+                    "full-worker",
+                    fifo.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
         let mut child = guard.release_tracked(prepared).unwrap();
         let mut ready = [0; 5];
-        child.stdout.as_mut().unwrap().read_exact(&mut ready).unwrap();
+        child
+            .stdout
+            .as_mut()
+            .unwrap()
+            .read_exact(&mut ready)
+            .unwrap();
         assert_eq!(&ready, b"ready");
         drop(child);
         drop(guard);
         assert!(acquire(&context, false).is_err());
-        File::options().write(true).open(&fifo).unwrap().write_all(b"done\n").unwrap();
+        File::options()
+            .write(true)
+            .open(&fifo)
+            .unwrap()
+            .write_all(b"done\n")
+            .unwrap();
     }
 
     #[test]

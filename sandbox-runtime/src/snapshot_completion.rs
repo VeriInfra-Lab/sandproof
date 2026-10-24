@@ -31,7 +31,13 @@ impl SnapshotStore {
         bytes: &[u8],
         source_alive: impl FnMut() -> Result<bool, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        self.publish_record_retained("api-returned-", "api-return-stage-", key, bytes, source_alive)
+        self.publish_record_retained(
+            "api-returned-",
+            "api-return-stage-",
+            key,
+            bytes,
+            source_alive,
+        )
     }
 
     fn publish_record(
@@ -57,38 +63,74 @@ impl SnapshotStore {
         }
         let name = key_name(prefix, &key);
         let stage = key_name(stage_prefix, &key);
-        let mut file = retry_publication(|| Ok(File::from(
-            openat(
-                &self.directory,
-                stage.as_str(),
-                OFlags::CREATE | OFlags::EXCL | OFlags::WRONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                Mode::RUSR | Mode::WUSR,
-            )
-            .map_err(os_error)?,
-        )), &mut source_alive)?;
+        let mut file = retry_publication(
+            || {
+                Ok(File::from(
+                    openat(
+                        &self.directory,
+                        stage.as_str(),
+                        OFlags::CREATE
+                            | OFlags::EXCL
+                            | OFlags::WRONLY
+                            | OFlags::NOFOLLOW
+                            | OFlags::CLOEXEC,
+                        Mode::RUSR | Mode::WUSR,
+                    )
+                    .map_err(os_error)?,
+                ))
+            },
+            &mut source_alive,
+        )?;
         let meta = file.metadata()?;
         if !meta.is_file() || meta.uid() != self.owner || meta.nlink() != 1 {
             return Err(invalid("capture completion owner/type/link"));
         }
+        retry_publication(
+            || {
+                matches_entry(&self.directory, OsStr::new(&stage), &file)?;
+                file.seek(SeekFrom::Start(0))?;
+                #[cfg(test)]
+                faults::hit(1, &file, bytes)?;
+                file.write_all(bytes)?;
+                Ok(())
+            },
+            &mut source_alive,
+        )?;
         retry_publication(|| {
-            matches_entry(&self.directory, OsStr::new(&stage), &file)?;
-            file.seek(SeekFrom::Start(0))?;
-            file.write_all(bytes)?;
-            Ok(())
+            #[cfg(test)]
+            faults::hit(2, &file, &[])?;
+            Ok(file.sync_all()?)
         }, &mut source_alive)?;
-        retry_publication(|| Ok(file.sync_all()?), &mut source_alive)?;
-        retry_publication(|| Ok(file.set_permissions(Permissions::from_mode(0o400))?), &mut source_alive)?;
-        retry_publication(|| Ok(file.sync_all()?), &mut source_alive)?;
+        retry_publication(
+            || Ok(file.set_permissions(Permissions::from_mode(0o400))?),
+            &mut source_alive,
+        )?;
+        retry_publication(|| {
+            #[cfg(test)]
+            faults::hit(2, &file, &[])?;
+            Ok(file.sync_all()?)
+        }, &mut source_alive)?;
         matches_entry(&self.directory, OsStr::new(&stage), &file)?;
-        retry_publication(|| Ok(renameat_with(
-            &self.directory,
-            stage.as_str(),
-            &self.directory,
-            name.as_str(),
-            RenameFlags::NOREPLACE,
-        )
-        .map_err(os_error)?), &mut source_alive)?;
-        retry_publication(|| Ok(self.directory.sync_all()?), &mut source_alive)?;
+        retry_publication(
+            || {
+                #[cfg(test)]
+                faults::hit(3, &file, &[])?;
+                renameat_with(
+                    &self.directory,
+                    stage.as_str(),
+                    &self.directory,
+                    name.as_str(),
+                    RenameFlags::NOREPLACE,
+                )
+                .map_err(os_error)
+            },
+            &mut source_alive,
+        )?;
+        retry_publication(|| {
+            #[cfg(test)]
+            faults::hit(4, &self.directory, &[])?;
+            Ok(self.directory.sync_all()?)
+        }, &mut source_alive)?;
         matches_entry(&self.directory, OsStr::new(&name), &file)?;
         Ok(())
     }
@@ -144,8 +186,10 @@ fn retry_publication<T>(
 ) -> Result<T, RuntimeError> {
     loop {
         match step() {
-            Err(RuntimeError::Io(error)) if matches!(error.raw_os_error(), Some(4 | 28 | 122)) => {
-                if !source_alive()? { return Err(RuntimeError::Io(error)); }
+            Err(RuntimeError::Io(error)) if matches!(error.raw_os_error(), Some(4 | 5 | 28 | 122)) => {
+                if !source_alive()? {
+                    return Err(RuntimeError::Io(error));
+                }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
             result => return result,
@@ -154,9 +198,60 @@ fn retry_publication<T>(
 }
 
 #[cfg(test)]
+mod faults {
+    use super::*;
+    use std::{cell::RefCell, collections::VecDeque};
+    #[derive(Default)]
+    pub(super) struct State {
+        pub remaining: VecDeque<(u8, i32)>,
+        pub inode: Option<(u64, u64)>,
+    }
+    thread_local! { pub(super) static STATE: RefCell<State> = RefCell::default(); }
+    pub(super) fn hit(phase: u8, mut file: &File, bytes: &[u8]) -> Result<(), RuntimeError> {
+        STATE.with_borrow_mut(|state| {
+            if state.remaining.front().is_none_or(|fault| fault.0 != phase) { return Ok(()); }
+            if phase != 4 {
+                let meta = file.metadata()?;
+                let identity = (meta.dev(), meta.ino());
+                assert_eq!(*state.inode.get_or_insert(identity), identity);
+            }
+            let (_, code) = state.remaining.pop_front().unwrap();
+            if phase == 1 { file.write_all(&bytes[..bytes.len().min(5)])?; }
+            Err(RuntimeError::Io(std::io::Error::from_raw_os_error(code)))
+        })
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+
+    #[test]
+    fn retained_api_end_retries_same_protected_inode_and_reopens_complete_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(root.path(), Permissions::from_mode(0o700)).unwrap();
+        let owner = rustix::process::geteuid().as_raw();
+        let store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        let key = [21; 32];
+        let original = b"complete original Full API response";
+        faults::STATE.with_borrow_mut(|state| {
+            *state = faults::State { remaining: [(1, 28), (2, 5), (3, 28), (4, 5)].into(), inode: None };
+        });
+        store.publish_retained_api_end(key, original, || Ok(true)).unwrap();
+        let inode = faults::STATE.with_borrow(|state| {
+            assert!(state.remaining.is_empty());
+            state.inode.unwrap()
+        });
+        drop(store);
+        let reopened = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        assert_eq!(reopened.read_api_end(key).unwrap(), original);
+        let canonical = root.path().join(key_name("api-returned-", &key));
+        let meta = canonical.metadata().unwrap();
+        assert_eq!((meta.dev(), meta.ino()), inode);
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+        assert!(!root.path().join(key_name("api-return-stage-", &key)).exists());
+    }
 
     #[test]
     fn api_end_is_separate_from_material_completion_and_partial_stage() {
@@ -234,7 +329,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod retained_tests {
     use super::*;
@@ -242,27 +336,37 @@ mod retained_tests {
     fn temporary_space_failure_keeps_known_result_until_same_step_succeeds() {
         let mut attempts = 0;
         let original = b"original returned response";
-        let result = retry_publication(|| {
-            attempts += 1;
-            if attempts == 1 { return Err(RuntimeError::Io(std::io::Error::from_raw_os_error(28))); }
-            Ok(original.as_slice())
-        }, || Ok(true)).unwrap();
+        let result = retry_publication(
+            || {
+                attempts += 1;
+                if attempts == 1 {
+                    return Err(RuntimeError::Io(std::io::Error::from_raw_os_error(28)));
+                }
+                Ok(original.as_slice())
+            },
+            || Ok(true),
+        )
+        .unwrap();
         assert_eq!(result, original);
         assert_eq!(attempts, 2);
     }
     #[test]
     fn exact_source_exit_ends_space_wait_without_fabricating_publication() {
         let mut attempts = 0;
-        let result: Result<(), _> = retry_publication(|| {
-            attempts += 1;
-            Err(RuntimeError::Io(std::io::Error::from_raw_os_error(28)))
-        }, || Ok(false));
+        let result: Result<(), _> = retry_publication(
+            || {
+                attempts += 1;
+                Err(RuntimeError::Io(std::io::Error::from_raw_os_error(28)))
+            },
+            || Ok(false),
+        );
         assert!(result.is_err());
         assert_eq!(attempts, 1);
     }
     #[test]
     fn foreign_identity_errors_are_not_retried() {
-        let result: Result<(), _> = retry_publication(|| Err(invalid("foreign stage")), || panic!("not transient"));
+        let result: Result<(), _> =
+            retry_publication(|| Err(invalid("foreign stage")), || panic!("not transient"));
         assert!(result.is_err());
     }
 }
