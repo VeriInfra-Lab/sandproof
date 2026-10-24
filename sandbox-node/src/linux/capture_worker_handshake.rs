@@ -1,5 +1,10 @@
 //! One job/Ready/Release exchange with the same original worker and pipes.
-use super::{Serialize, Deserialize, ContentDigest, RuntimeProcessIdentity, NodeResult, CAPTURE_WORKER_INPUT_BYTES, CaptureWorkerJob, decode_job, Instant, Duration, SnapshotLayout, full_snapshot, api_context, decode_digest, CaptureWorkerOutcome, CaptureWorkerReply, CAPTURE_WORKER_OUTPUT_BYTES};
+use super::{
+    CAPTURE_WORKER_INPUT_BYTES, CAPTURE_WORKER_OUTPUT_BYTES, CaptureWorkerJob,
+    CaptureWorkerOutcome, CaptureWorkerReply, ContentDigest, Deserialize, Duration, Instant,
+    NodeResult, RuntimeProcessIdentity, Serialize, SnapshotLayout, api_context, decode_digest,
+    decode_job, full_snapshot,
+};
 use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
 
@@ -79,7 +84,7 @@ fn await_release(
     source: &RuntimeProcessIdentity,
     deadline: Instant,
 ) -> NodeResult<bool> {
-    let mut release = [0; 8];
+    let mut release = [0; RELEASE.len() + 1];
     let mut received = 0;
     loop {
         if Instant::now() >= deadline {
@@ -192,8 +197,8 @@ pub(super) fn run(expected_job_digest: &str) -> NodeResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::digest;
+    use super::*;
     fn process() -> RuntimeProcessIdentity {
         RuntimeProcessIdentity::capture(std::process::id()).unwrap()
     }
