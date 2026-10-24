@@ -256,11 +256,8 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         }
         return WorkflowStep::PublishRunning;
     }
-    if record.phase == Phase::Pausing && operation.kind == OperationKind::Pause {
-        return pause_step(world, sandbox, record, plan);
-    }
-    if record.phase == Phase::Paused {
-        return cleanup(world, sandbox, record.generation);
+    if let Some(step) = paused_workflow_step(world, sandbox, record, plan) {
+        return step;
     }
     if record.phase == Phase::Running {
         return WorkflowStep::Complete;
@@ -448,4 +445,14 @@ fn pause_step(
     apply(ControllerInput::Publication(PublicationInput::Paused(
         sandbox, source,
     )))
+}
+
+fn paused_workflow_step(world: &World, sandbox: SandboxId, record: &crate::SandboxRecord, plan: &crate::OperationPlan) -> Option<WorkflowStep> {
+    if record.phase == Phase::Pausing && record.current_operation.is_some_and(|operation| operation.kind == OperationKind::Pause) {
+        return Some(pause_step(world, sandbox, record, plan));
+    }
+    if record.phase == Phase::Paused {
+        return Some(cleanup(world, sandbox, record.generation));
+    }
+    None
 }
