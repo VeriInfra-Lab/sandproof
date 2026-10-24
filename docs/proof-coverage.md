@@ -213,6 +213,27 @@ Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、V
 该批局部检查通过状态以 `replay_formal.py --property manifest-length` 的同源回执和 PR 为准；
 ning 普通/原生错误版检查、共享批次及整套验收未完成时，不认领整套证明通过。
 
+清单文件集合增量基于长度批次 `05be57d81b3ac405ffdd276850de71fe5b0945af`，生产 Rust
+行为不变。[独立合同](../SandboxModel/Lifecycle/Protocol/ManifestFilesModel.lean)只导入类型，
+用列表位置、完整 drive ID 和十进制 `disk-N.img` 定义文件集合；
+[入口证明](../SandboxModel/Lifecycle/Protocol/ManifestFiles.lean)连接真实 `SnapshotManifest::validate`。
+任意可表示输入一旦成功，profile 声明 1–16 块磁盘，文件恰有“盘数 + 2”项；state/memory
+各一次且分别在位置 0/1，路径精确为 `state.bin`/`memory.bin`，每个 profile drive 按序对应
+一个 ID 相同、路径为 `disk-N.img` 的文件。因此数量或任一位置不合合同的清单不能成功，
+并与前批精确总长、逐文件非零结论组合。这里证明成功结果的必要条件，没有证明完整接受域、
+任意 profile 的 ID 唯一性或 jail 路径合法域；也不背书 profile 来源可信、文件存在、摘要、
+持久发布和恢复资格。
+
+[具体见证](../SandboxModel/Lifecycle/Protocol/ManifestFilesExamples.lean)包含正常接受后的合同，
+以及少磁盘、多磁盘、错误 ID 的 `FileSetMismatch` 和错误路径的 `InvalidPath`。
+私有真实 Rust 错误版仅跳过 drive ID 拒绝条件，重新抽取后实际接受 `foreign` 磁盘、返回总长 3，
+[两个反例](../verification/experiments/stage1-protocol/NegativeManifestFiles.lean.in)否定与正确版逐字节
+相同的独立合同。新增正确侧 24 项声明含辅助和见证，错误侧 2 项，不据此计算业务覆盖率。
+`replay_formal.py --property manifest-files` 保留长度批次和原 manifest 的正确侧检查，
+核验重新抽取输出、完整 IR、实际文件内核/非陈旧服务诊断及准确审计清单；精确源码摘要与结果
+以该入口回执和 PR 为准。原生入口新增跳过 ID 错误版及 16 盘回归输入，未取得 ning 普通/原生
+回执前不计为实测；历史冻结、共享批次和整套验收要求继续保留。
+
 三个真实 Rust 错误版分别允许同代 Resume、只比较操作 key、跳过原 capture 绑定。
 正确版与错误版使用同一个独立 Model 合同，分别给出错误接受见证和合同否定；
 编译/导入失败不能作为反例。第三种修改使原工具生成 loop0/loop1：

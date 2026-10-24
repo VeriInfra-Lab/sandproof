@@ -358,6 +358,49 @@ fn profile_can_declare_more_than_one_disk_without_weakening_full_capture() {
 }
 
 #[test]
+fn all_sixteen_disks_match_profile_ids_and_bundle_names() {
+    let mut value = manifest();
+    for index in 1..16 {
+        let name = format!("drive-{index}");
+        let drive_id = ResourceId::try_from(name.as_str()).unwrap();
+        value.compatibility.writable_drives.push(WritableDrive {
+            drive_id: drive_id.clone(),
+            jail_relative_path: format!("data-{index}.img"),
+        });
+        value.files.push(SnapshotFile {
+            kind: SnapshotFileKind::Disk { drive_id },
+            relative_path: sandproof_protocol::lifecycle::disk_bundle_path(index).unwrap(),
+            length: 1,
+            digest: ContentDigest::from_sha256([0; 32]),
+        });
+    }
+    let profile = value.compatibility.clone();
+    let expected = value.binding.clone();
+    assert_eq!(value.validate(&expected, &profile), Ok(21));
+    for index in 0..16 {
+        let mut wrong = value.clone();
+        wrong.files[index + 2].kind = SnapshotFileKind::Disk {
+            drive_id: ResourceId::try_from("foreign").unwrap(),
+        };
+        assert_eq!(
+            wrong.validate(&expected, &profile),
+            Err(ManifestError::FileSetMismatch)
+        );
+        let mut wrong = value.clone();
+        wrong.files[index + 2].relative_path = "disk-16.img".into();
+        assert_eq!(
+            wrong.validate(&expected, &profile),
+            Err(ManifestError::InvalidPath)
+        );
+    }
+    value.files.push(value.files[2].clone());
+    assert_eq!(
+        value.validate(&expected, &profile),
+        Err(ManifestError::FileSetMismatch)
+    );
+}
+
+#[test]
 fn profile_path_aliases_and_duplicate_drives_are_not_normalized() {
     for path in [
         "/rootfs.ext4",

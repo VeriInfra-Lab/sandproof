@@ -164,6 +164,29 @@ PROPERTIES['manifest-length'] = dict(kind='stage1-manifest-length-local-formal',
     negative_import_audits=MANIFEST_NEGATIVE_IMPORT_AUDITS,
     negative_audits=['mutant_wraps_total', 'wrapping_not_length_contract'])
 
+FILES_AUDITS = ['SandboxModel.Stage1Protocol.ManifestFiles.' + n for n in
+    ['disk_path_exact', 'vector_index_success', 'path_gate_success', 'file_shape_success',
+     'scan_checks_file', 'scan_file_shapes', 'profile_count_bounds', 'validate_shape_preconditions',
+     'validate_files', 'wrong_count_rejected', 'wrong_file_rejected', 'validate_layout_and_lengths',
+     'file_roles_unique', 'state_memory_unique', 'every_drive_present']]
+FILES_VALUE_AUDITS = ['SandboxModel.Stage1Protocol.ManifestFiles.Values.' + n for n in
+    ['validate_fixed_profile', 'state_step', 'memory_step', 'finish_after_headers']]
+FILES_EXAMPLE_AUDITS = ['SandboxModel.Stage1Protocol.ManifestFiles.Examples.' + n for n in
+    ['normal_manifest_complete', 'missing_disk_refused', 'extra_disk_refused',
+     'wrong_disk_id_refused', 'wrong_disk_path_refused']]
+PROPERTIES['manifest-files'] = dict(kind='stage1-manifest-files-local-formal',
+    profile='manifest', mutation='skip-disk-id',
+    positive=PROPERTIES['manifest-length']['positive'] +
+             ['ManifestFilesModel', 'ManifestFiles', 'ManifestFilesValues', 'ManifestFilesExamples'],
+    negative=['Model', 'LoopWitness', 'ManifestValues', 'ManifestLengthModel',
+              'ManifestFilesModel', 'ManifestFilesValues'],
+    common_files=PROPERTIES['manifest-length']['common_files'],
+    contract='ManifestFilesModel', template='NegativeManifestFiles',
+    audits=PROPERTIES['manifest-length']['audits'] + FILES_AUDITS + FILES_VALUE_AUDITS + FILES_EXAMPLE_AUDITS,
+    negative_namespace='SandboxModel.Stage1Protocol.ManifestFiles.Negative.',
+    negative_import_audits=MANIFEST_LOOP_AUDITS + MANIFEST_VALUE_AUDITS + FILES_VALUE_AUDITS,
+    negative_audits=['mutant_accepts_foreign_disk', 'skipped_disk_id_not_files_contract'])
+
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()

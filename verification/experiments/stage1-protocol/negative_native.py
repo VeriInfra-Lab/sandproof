@@ -12,6 +12,10 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[3]
 MUTATIONS = [
+    dict(name='skip-disk-id', source='sandbox-protocol/src/lifecycle/manifest.rs',
+         old='if *drive_id != drive.drive_id {',
+         new='if *drive_id != drive.drive_id && false {', profile='manifest',
+         test='file_names_kinds_and_all_profile_drives_are_checked'),
     dict(name='wrapping-manifest-length', source='sandbox-protocol/src/lifecycle/manifest.rs',
          old='current\n                    .checked_add(length)\n                    .ok_or(ManifestError::LengthOverflow)',
          new='Ok(current.wrapping_add(length))', profile='manifest',

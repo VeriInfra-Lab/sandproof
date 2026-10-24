@@ -170,3 +170,25 @@ python3 verification/experiments/stage1-protocol/replay_formal.py \
 实际导入的 Foundations 值/字符串证明闭包。原生入口登记原 `lengths_are_positive_and_sum_never_wraps`
 断言及新增边界/首错回归；是否实跑以原生回执为准。局部结果继续明确
 `native_checks=not-run`、`full_acceptance=false`，历史冻结和完整验收门槛不变。
+
+## 清单文件集合的局部证明
+
+`ManifestFilesModel` 仅导入类型，独立定义文件数量、state/memory 的唯一位置，以及每个
+profile drive 对应的完整 ID 和十进制 `disk-N.img` 路径。`ManifestFiles` 证明真实入口成功
+必满足该合同和 1–16 盘边界，并组合前批长度结论；不要求输入预先合法。它没有证明完整
+接受域、任意 profile 的 ID 唯一性或 jail 路径合法域，物理文件和 profile 来源也不在本片内。
+
+```sh
+python3 verification/experiments/stage1-protocol/replay_formal.py \
+  --property manifest-files --output artifacts/manifest-files-formal
+```
+
+正确视图保留长度模式的全部声明，并增加文件集合合同、正常/少文件/多文件/错误 ID/错误
+路径见证。`ManifestFilesValues` 给两版共用真实有效绑定和 profile 的执行前缀。
+`skip-disk-id` 在私有 Rust 中只将磁盘 ID 不等的拒绝条件变为 `条件 && false`；从错误版
+重新抽取后，证明实际接受 `foreign` 磁盘且总长为 3，由此否定同一独立合同。
+两版都检查完整实际文件、内核、非陈旧服务诊断和准确审计清单，正确生成物/完整 IR 的比较
+及输入摘要检查沿用同一入口。原生错误版使用原 `file_names_kinds_and_all_profile_drives_are_checked`
+断言，另有 16 盘全部位置及多文件回归；是否实跑以原生回执为准。
+局部入口仍输出 `native_checks=not-run`、`full_acceptance=false`，实际状态只在
+[覆盖记录](../../../docs/proof-coverage.md)及精确候选 PR 维护。
