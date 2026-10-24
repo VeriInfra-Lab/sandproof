@@ -115,29 +115,10 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 diagnostics::emit(
                     DiagnosticStage::LifecycleQueryLookup,
                     DiagnosticFailure::Port(*error),
-                )
+                );
             })?;
         if phase == SessionPhase::Unloaded {
-            let mut authority = self
-                .authority
-                .lock()
-                .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryExpiry))?;
-            crate::AuthorityPort::expire_current(&mut *authority, self.now()?)
-                .inspect_err(|error| {
-                    diagnostics::emit(
-                        DiagnosticStage::LifecycleQueryExpiry,
-                        DiagnosticFailure::Authority(*error),
-                    )
-                })
-                .map_err(crate::application::authority_error)?;
-            return authority
-                .query_public_lifecycle(&owner, session)
-                .inspect_err(|error| {
-                    diagnostics::emit(
-                        DiagnosticStage::LifecycleQueryResult,
-                        DiagnosticFailure::Port(*error),
-                    )
-                });
+            return self.query_unloaded(&owner, session);
         }
         if matches!(
             phase,
@@ -180,7 +161,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                             diagnostics::emit(
                                 DiagnosticStage::LifecycleQueryResult,
                                 DiagnosticFailure::Port(*error),
-                            )
+                            );
                         });
                 }
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
@@ -225,7 +206,34 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 diagnostics::emit(
                     DiagnosticStage::LifecycleQueryResult,
                     DiagnosticFailure::Port(*error),
-                )
+                );
+            })
+    }
+
+    fn query_unloaded(
+        &self,
+        owner: &sandproof_protocol::TenantId,
+        session: &SessionId,
+    ) -> Result<PublicSessionView, PortError> {
+        let mut authority = self
+            .authority
+            .lock()
+            .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryExpiry))?;
+        crate::AuthorityPort::expire_current(&mut *authority, self.now()?)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryExpiry,
+                    DiagnosticFailure::Authority(*error),
+                );
+            })
+            .map_err(crate::application::authority_error)?;
+        authority
+            .query_public_lifecycle(owner, session)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryResult,
+                    DiagnosticFailure::Port(*error),
+                );
             })
     }
 }

@@ -126,7 +126,7 @@ impl SharedBusinessAuthority {
                 diagnostics::emit(
                     DiagnosticStage::AuthoritySnapshot,
                     DiagnosticFailure::Authority(*error),
-                )
+                );
             })
             .map_err(authority_error)
     }
