@@ -214,18 +214,20 @@ async fn one_broken_credential_or_launch_config_cannot_block_another_internal_bi
         .unwrap()
         .sandbox
         .0;
+    // Both requests above are original Create operations; no Resume occurs.
+    let first_key = (first_local, 1);
     let original = state
         .lock()
         .unwrap()
         .configurations
-        .get(&first_local)
+        .get(&first_key)
         .unwrap()
         .clone();
     state
         .lock()
         .unwrap()
         .configurations
-        .get_mut(&first_local)
+        .get_mut(&first_key)
         .unwrap()
         .0 = "0".repeat(64);
     assert!(matches!(
@@ -240,12 +242,12 @@ async fn one_broken_credential_or_launch_config_cannot_block_another_internal_bi
         .lock()
         .unwrap()
         .configurations
-        .insert(first_local, original);
+        .insert(first_key, original);
     state
         .lock()
         .unwrap()
         .configurations
-        .get_mut(&first_local)
+        .get_mut(&first_key)
         .unwrap()
         .1
         .metadata
@@ -258,7 +260,7 @@ async fn one_broken_credential_or_launch_config_cannot_block_another_internal_bi
         app.lifecycle_data_authorization(&local::access(&other), &local::context(), DataKind::Exec)
             .is_ok()
     );
-    state.lock().unwrap().configurations.remove(&first_local);
+    state.lock().unwrap().configurations.remove(&first_key);
     assert!(matches!(
         app.lifecycle_data_authorization(&local::access(&first), &local::context(), DataKind::Exec),
         Err(ApplicationError::Busy)
