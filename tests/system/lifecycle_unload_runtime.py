@@ -95,14 +95,86 @@ def checked_source_records(conn,host_config,deadline):
             if encoded!=b'null' or key is not None:
                 raise ValueError('vacant original source row is not empty')
             continue
-        if set(record)!={'work','observation','capture','restore'} or not isinstance(key,bytes) or len(key)!=32:
+        if set(record)!={'work','observation','capture','restore','retirement'} or not isinstance(key,bytes) or len(key)!=32:
             raise ValueError('complete original source work row required')
         binding=record['work']['requirement']['work_binding']
         anchor=json.dumps(record['work']['anchor'],ensure_ascii=False,separators=(',',':')).encode()
         if list(key)!=binding or hashlib.sha256(anchor).digest()!=key or key in seen:
             raise ValueError('original immutable work key differs or repeats')
+        material_source_charge(record)
         seen.add(key);records.append(record)
     return records
+
+
+def material_source_charge(record):
+    """Audit saved settlement bindings; this does not attest physical closure."""
+    try:
+        return _material_source_charge(record)
+    except (KeyError,TypeError,OverflowError) as exc:
+        raise ValueError('complete original material retirement fields required') from exc
+
+
+def _material_digest_matches(value,expected):
+    return (type(value) is list and len(value)==32
+        and all(type(n) is int and 0<=n<=255 for n in value) and value==expected)
+
+
+def _material_source_charge(record):
+    capture=record['capture'];retirement=record['retirement'];restore=record['restore']
+    if capture is None:
+        if retirement is not None or restore is not None:
+            raise ValueError('material retirement or restore has no original Full')
+        return 0
+    full=capture['full']
+    sizes=[full[name] for name in ('state_bytes','memory_bytes','disk_bytes')]
+    reserved=capture['reserved_material_bytes']
+    if (any(type(n) is not int or not 0<n<2**64 for n in sizes)
+            or type(reserved) is not int or not 0<reserved<2**64
+            or reserved!=2*sum(sizes)+2*262144+65536):
+        raise ValueError('original Full material reservation differs')
+    if restore is not None and type(restore['material_use']) is not bool:
+        raise ValueError('original restore material-use flag required')
+    if retirement is None:
+        if restore is not None and restore['material_use'] is not True:
+            raise ValueError('closed material use has no original retirement record')
+        return reserved
+    if type(retirement) is not dict or retirement['state'] not in ('retiring','settled'):
+        raise ValueError('unknown material retirement state')
+    fields={'state','plan'} if retirement['state']=='retiring' else {'state','plan','settlement'}
+    if set(retirement)!=fields or len(json.dumps(retirement,separators=(',',':')).encode())>69632:
+        raise ValueError('bounded complete material retirement record required')
+    plan=retirement['plan']
+    if type(plan) is not dict or set(plan)!={'bytes','work_binding','plan_binding','quiescence'}:
+        raise ValueError('complete original material plan required')
+    raw=plan['bytes']
+    if type(raw) is not list or not 0<len(raw)<=16384 or any(type(n) is not int or not 0<=n<=255 for n in raw):
+        raise ValueError('bounded original raw Node plan required')
+    anchor=record['work']['anchor']
+    original=[anchor['local']['sandbox'],anchor['native']['generation'],full,
+        record['work']['requirement'],capture['action'],capture['worker'],capture['completed']]
+    work=list(hashlib.sha256(json.dumps(original,ensure_ascii=False,separators=(',',':')).encode()).digest())
+    digest=list(hashlib.sha256(bytes(raw)).digest())
+    if not _material_digest_matches(plan['work_binding'],work) or not _material_digest_matches(plan['plan_binding'],digest):
+        raise ValueError('original material plan or Full work binding differs')
+    closure=plan['quiescence']
+    identity={'sandbox','owner','epoch','operation','workspace'}
+    statuses={'worker_drained','data_connections_drained','host_resources_reclaimed','external_pins_released'}
+    if (type(closure) is not dict or set(closure)!=identity|statuses
+            or any(type(closure[name]) is not int or not 0<=closure[name]<2**64 for name in identity)
+            or closure['sandbox']!=anchor['local']['sandbox'] or closure['owner']!=anchor['local']['owner']
+            or any(closure[name]!='Confirmed' for name in statuses)
+            or (restore is not None and restore['material_use'] is not False)):
+        raise ValueError('original closed material uses and exact certificate required')
+    if retirement['state']=='retiring':
+        return reserved
+    settlement=retirement['settlement']
+    if (type(settlement) is not dict or set(settlement)!={'work_binding','plan_binding','released_material_bytes'}
+            or not _material_digest_matches(settlement['work_binding'],work)
+            or not _material_digest_matches(settlement['plan_binding'],digest)
+            or type(settlement['released_material_bytes']) is not int
+            or settlement['released_material_bytes']!=reserved):
+        raise ValueError('actual original deletion receipt and reservation settlement differ')
+    return 0
 
 
 def original_process(source):
@@ -920,8 +992,7 @@ class UnloadRuntime:
                 sources={'records':checked_source_records(conn,self.services.host_configs[0],deadline)}
             if (database.stat().st_dev,database.stat().st_ino)!=identity:
                 raise ValueError('original SQLite replaced during settlement audit')
-            charges=[0 if record['capture'] is None else record['capture']['reserved_material_bytes']
-                for record in sources['records']]
+            charges=[material_source_charge(record) for record in sources['records']]
             pins=[False if record['restore'] is None else record['restore']['material_use']
                 for record in sources['records']]
             if (any(type(value) is not int or value<0 for value in charges)
