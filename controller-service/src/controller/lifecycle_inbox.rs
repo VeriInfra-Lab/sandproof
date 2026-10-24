@@ -258,7 +258,8 @@ impl ControllerJournal {
             internal_inbox::terminate_local(&tx, &self.namespace, local)?;
             let operation = tx.world()
                     .sandbox_record(local.sandbox)
-                    .and_then(|row| row.current_operation)
+                    .ok_or(JournalError::CorruptStore)?
+                    .current_operation
                     .ok_or(JournalError::CorruptStore)?
             .id;
             inbox.sessions[s].entries[e].local_operation = Some(operation);
