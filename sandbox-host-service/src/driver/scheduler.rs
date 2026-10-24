@@ -13,6 +13,7 @@ enum Candidate {
     Create(AcceptedLifecycleIntent),
     Renew(AcceptedLifecycleIntent),
     Unload(AcceptedLifecycleIntent),
+    Resume(AcceptedLifecycleIntent),
     Native(sandbox_controller_core::SandboxId, bool),
 }
 
@@ -51,6 +52,16 @@ fn recorded_candidates<H: ControllerHost>(
             covered.insert(local.sandbox);
         }
         result.push(Candidate::Unload(intent));
+    }
+    for intent in app
+        .lifecycle_pending_resumes(node)
+        .map_err(|_| ApplicationError::OutcomeUnknown)?
+    {
+        let state = app.lifecycle_work_state_for_recorded(&intent, node)?;
+        if let Some(local) = state.local {
+            covered.insert(local.sandbox);
+        }
+        result.push(Candidate::Resume(intent));
     }
     for (sandbox, terminal) in app.pending_workflows()? {
         if !covered.contains(&sandbox) {
@@ -117,6 +128,13 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                         }
                         Candidate::Unload(intent) => {
                             app.advance_recorded_lifecycle_unload(&intent, &config.node)
+                        }
+                        Candidate::Resume(intent) => {
+                            app.advance_recorded_lifecycle_resume(
+                                &intent,
+                                &config.node,
+                                config.compute,
+                            )
                         }
                         Candidate::Native(sandbox, _) => app.advance_current_workflow(sandbox),
                         Candidate::Renew(intent) => app

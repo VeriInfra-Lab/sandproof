@@ -23,9 +23,9 @@ class RetainedExclusionTests(unittest.TestCase):
         self.temporary=tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root=Path(self.temporary.name)
-        self.identity='sp638u-'+'1'*16
+        self.identity='1'*64
         self.args=SimpleNamespace(ci_state_root=self.root)
-        self.quota=dict(host_lease_identity=self.identity,ci_state_root=str(self.root),deployment_control='/var/lib/sp638u-control')
+        self.quota=dict(host_lease_identity=self.identity,ci_state_root=str(self.root),mount=str(self.root),deployment_control=str(self.root/'run-evidence'))
         for name in ('paused','exclusive-host'):
             path=self.root/name
             path.write_text(json.dumps({'e2e':self.identity}));path.chmod(0o600)

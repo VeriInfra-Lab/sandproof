@@ -39,6 +39,8 @@ from tools.system_acceptance import private_path, json_file, write_once
 def add_arguments(parser):
     service_arguments(parser)
     parser.add_argument('--quota-receipt-sha256',required=True)
+    parser.add_argument('--deployment-receipt-sha256',required=True)
+    parser.add_argument('--deployment-receipt',type=Path,required=True)
     for name in ('run-root','fixture','quota-receipt','ci-state-root','native-lock'):
         parser.add_argument('--'+name,type=Path,required=True)
 
@@ -113,9 +115,8 @@ class UnloadRuntime:
         device=Path(profile['coordination_file']).parent.stat().st_dev
         material=self.captures[0]['material_project']
         if (self.quota['filesystem_device']!=device
-                or self.quota['project_id']!=material['project_id']
-                or self.quota['hard_bytes']!=material['hard_bytes']
-                or self.quota['hard_inodes']!=material['hard_inodes']
+                or self.quota['projects']!=[{key:material[key] for key in
+                    ('project_id','hard_bytes','hard_inodes')}]
                 or self.quota['accounting'] is not True or self.quota['enforcement'] is not True
                 or self.quota['actual_readback_verified'] is not True):
             raise ValueError('independently read back original kernel hard quota required')
@@ -340,9 +341,9 @@ class UnloadRuntime:
 def retained_deployment_lease(args,quota):
     """Require existing original CI exclusion; never adopt a foreign marker."""
     identity=quota['host_lease_identity']
-    if (re.fullmatch(r'sp638u-[0-9a-f]{16}',identity) is None
+    if (re.fullmatch(r'[0-9a-f]{64}',identity) is None
             or quota['ci_state_root']!=str(args.ci_state_root)
-            or quota['deployment_control']!='/var/lib/sp638u-control'):
+            or not Path(quota['deployment_control']).is_relative_to(Path(quota['mount']))):
         raise ValueError('original reviewed installation/HostLease binding required')
     for name in ('paused','exclusive-host'):
         if json_file(private_path(args.ci_state_root/name))!={'e2e':identity}:
@@ -361,7 +362,19 @@ def prepare(args):
     observed=checked_file(receipt_file,65536)
     if bytes(observed['sha256']).hex()!=args.quota_receipt_sha256:
         raise ValueError('quota receipt differs from independently approved fingerprint')
-    quota=json_file(receipt_file,limit=65536)
+    quota=original_json(receipt_file,65536)
+    deployment_file=private_path(args.deployment_receipt)
+    deployment=original_json(deployment_file,65536)
+    if bytes(checked_file(deployment_file,65536)['sha256']).hex()!=args.deployment_receipt_sha256:
+        raise ValueError('static deployment differs from independently approved fingerprint')
+    from lifecycle_unload_quota import validate_run_receipt
+    from tools.capture_acceptance import validate_settings
+    captures=validate_settings(captures,1)
+    validate_run_receipt(quota,deployment,captures,args.deployment_receipt_sha256)
+    control=private_path(quota['deployment_control'],directory=True)
+    for name,digest in quota['raw_output_sha256'].items():
+        if bytes(checked_file(control/(name+'.txt'),65536)['sha256']).hex()!=digest:
+            raise ValueError('original per-run quota output changed')
     if (type(captures) is not list or len(captures)!=1 or set(fixture)!={
             'native','catalog','registry','activation_ceiling_bytes',
             'startup_timeout_ms','timeout_ms','max_lifetime_ms'}):

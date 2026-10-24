@@ -303,7 +303,14 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     assert!(pending.unloaded.is_none());
     release_refresh.complete();
     reconcile_seen.recv_timeout(Duration::from_secs(5)).unwrap();
+    let revision_before: u64 = fixture.revision().parse().unwrap();
     let completed = public_query(&router, &session).await;
+    let revision_after: u64 = fixture.revision().parse().unwrap();
+    let revision_cost = revision_after.checked_sub(revision_before).unwrap();
+    eprintln!("unloaded_query_reaffirm_revision_delta={revision_cost}");
+    // Measure the real original Redis CAS path without injecting any fault.
+    // Do not make a future safe reduction in redundant reaffirms a failure.
+    assert!(revision_cost > 0, "public authority is durably reaffirmed");
     assert_eq!(completed.0, 200);
     let completed: sandproof_protocol::lifecycle::PublicSessionView =
         serde_json::from_value(completed.1).unwrap();
