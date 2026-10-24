@@ -3,7 +3,10 @@ use super::{
     ApplicationError, ControllerApplication, ControllerHost, JournalError, NeverCrash, core,
     map_journal,
 };
-use crate::capture::FullCaptureResult;
+use crate::capture::{CommittedCaptureExpectation, FullCaptureResult};
+use crate::SourceWorkRecord;
+
+type CaptureActionContext = (SourceWorkRecord, Option<CommittedCaptureExpectation>);
 use sandproof_protocol::{
     WorkAction, WorkReceipt,
     internal::NodeIdentity,
@@ -75,26 +78,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
         action: &WorkAction<core::EffectId>,
     ) -> Result<Result<WorkReceipt<H::Evidence>, crate::WorkerTransportError>, ApplicationError>
     {
-        let sandbox = action.command.command().sandbox();
-        let (record, expected) = {
-            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-            (
-                inner
-                    .journal
-                    .lifecycle_capture_record(sandbox)
-                    .map_err(map_journal)?,
-                inner
-                    .journal
-                    .sealed_capture_expectation(sandbox)
-                    .map_err(map_journal)?,
-            )
-        };
-        let Some(record) = record else {
+        let Some((record, expected)) = self.capture_action_context(action)? else {
             return Ok(host.execute(action));
         };
-        let Some(full) = record.full_capture() else {
-            return Ok(host.execute(action));
-        };
+        let full = record.full_capture().ok_or(ApplicationError::OutcomeUnknown)?;
         if matches!(action.command.command(), core::Command::SealSnapshot { .. }) {
             let worker =
                 host.prepare_lifecycle_capture_worker(action, full, record.work.requirement())?;
@@ -128,6 +115,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             core::Command::FreezeVm { .. }
                 | core::Command::CommitSnapshot { .. }
                 | core::Command::StopVm { .. }
+                | core::Command::CleanupVm { .. }
         ) {
             return Ok(host.execute_lifecycle_capture_action(
                 action,
@@ -144,40 +132,39 @@ impl<H: ControllerHost> ControllerApplication<H> {
         host: &H,
         action: &WorkAction<core::EffectId>,
     ) -> Result<Option<WorkReceipt<H::Evidence>>, ApplicationError> {
-        let sandbox = action.command.command().sandbox();
-        let (record, expected) = {
-            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-            (
-                inner
-                    .journal
-                    .lifecycle_capture_record(sandbox)
-                    .map_err(map_journal)?,
-                inner
-                    .journal
-                    .sealed_capture_expectation(sandbox)
-                    .map_err(map_journal)?,
-            )
+        let Some((record, expected)) = self.capture_action_context(action)? else {
+            return Ok(host.observe(action));
         };
-        if let Some(record) = &record
-            && let Some(full) = record.full_capture()
-            && matches!(
-                action.command.command(),
-                core::Command::FreezeVm { .. }
-                    | core::Command::SealSnapshot { .. }
-                    | core::Command::CommitSnapshot { .. }
-                    | core::Command::StopVm { .. }
-            )
-        {
-            return Ok(host.observe_lifecycle_capture_action(
-                action,
-                full,
-                record.work.requirement(),
-                record.capture_worker(),
-                expected.as_ref(),
-            ));
-        }
-        Ok(host.observe(action))
+        let full = record.full_capture().ok_or(ApplicationError::OutcomeUnknown)?;
+        Ok(host.observe_lifecycle_capture_action(
+            action, full, record.work.requirement(), record.capture_worker(), expected.as_ref(),
+        ))
     }
+
+    // Read routing data under the original short lock, then perform host I/O
+    // only after this guard is dropped. Historical capture never captures a
+    // later terminal Stop/Cleanup: those retain the original terminal fence.
+    fn capture_action_context(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<Option<CaptureActionContext>, ApplicationError> {
+        let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let sandbox = action.command.command().sandbox();
+        let Some(record) = inner.journal.lifecycle_capture_record(sandbox).map_err(map_journal)? else {
+            return Ok(None);
+        };
+        let world = inner.journal.world().map_err(map_journal)?;
+        if !capture_action_matches(&world, &record, action) {
+            return Ok(None);
+        }
+        let expected = if matches!(action.command.command(), core::Command::StopVm { .. } | core::Command::CleanupVm { .. }) {
+            inner.journal.committed_capture_expectation(sandbox).map_err(map_journal)?
+        } else {
+            inner.journal.sealed_capture_expectation(sandbox).map_err(map_journal)?
+        };
+        Ok(Some((record, expected)))
+    }
+
 }
 
 impl<H: ControllerHost> ControllerApplication<H> {
@@ -254,5 +241,27 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .contains(i.request.binding.session.as_protocol_id().as_str())
         });
         Ok(pending)
+    }
+}
+
+// CleanupVm deliberately has Maintenance origin in the original core (no
+// epoch on that command). Bind it instead to the current nonterminal Paused
+// operation and its original planned VM, never merely to a sandbox ID.
+fn capture_action_matches(world: &core::World, record: &SourceWorkRecord, action: &WorkAction<core::EffectId>) -> bool {
+    let Some(operation) = record.capture_operation() else { return false };
+    if record.full_capture().is_none() { return false; }
+    let command=action.command.command();
+    let sandbox=command.sandbox();
+    let key=core::OperationKey {sandbox, operation};
+    let Some(logical)=world.logical_effect(&action.command.logical) else {return false};
+    if logical.current_attempt != action.command.attempt {return false;}
+    match *command {
+        core::Command::FreezeVm { .. } | core::Command::SealSnapshot { .. } | core::Command::CommitSnapshot { .. } | core::Command::StopVm { .. } => logical.origin==core::EffectOrigin::Operation(key),
+        core::Command::CleanupVm { generation, vm, .. } => {
+            logical.origin==core::EffectOrigin::Maintenance(sandbox)
+                && world.sandbox_record(sandbox).is_some_and(|row| !row.terminal && row.phase==core::Phase::Paused && row.current_operation.is_some_and(|op|op.id==operation) && row.generation==generation)
+                && world.operation_plan(key).is_some_and(|plan| plan.key==key && plan.vm==Some(vm) && plan.generation==generation)
+        }
+        _=>false,
     }
 }
