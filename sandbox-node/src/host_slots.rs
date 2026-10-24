@@ -1677,7 +1677,8 @@ mod tests {
                 "attempt" => changed.identity.attempt += 1,
                 "protocol" => changed.identity.protocol_version += 1,
                 "resource" => {
-                    changed.identity.resource.id = ResourceId::try_from("snapshot-test-99").unwrap();
+                    changed.identity.resource.id =
+                        ResourceId::try_from("snapshot-test-99").unwrap();
                 }
                 _ => unreachable!(),
             }
