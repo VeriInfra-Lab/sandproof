@@ -136,3 +136,42 @@ fn original_resume_guard_rejects_invalid_request_versions_and_incarnations() {
     view.current_request = view.request.clone();
     assert!(!view.matches_request(&view.request));
 }
+
+#[test]
+fn renewed_resume_uses_the_same_execution_and_original_total_lifetime() {
+    let original = original();
+    let mut renewed = original.clone();
+    renewed.request.operation = LifecycleOperation::Renew {
+        incarnation: 2.try_into().unwrap(), end_at_ms: 1800, extend_only: false,
+    };
+    renewed.request.binding.expected = ExpectedSession::Version(3);
+    renewed.request.binding.key.sequence = 4.try_into().unwrap();
+    renewed.accepted_version = 4;
+    let original_facts = ready();
+    let source = UnloadedFacts {
+        source_incarnation: 1.try_into().unwrap(), capture: 1.try_into().unwrap(),
+        manifest_digest: ContentDigest::from_sha256([7; 32]), material_bytes: 3000,
+        started_at_ms: original_facts.started_at_ms, end_at_ms: original_facts.end_at_ms,
+        max_end_at_ms: original_facts.max_end_at_ms,
+        startup_deadline_ms: original_facts.startup_deadline_ms,
+    };
+    // Observation may be after the previous deadline, within the accepted
+    // renewed deadline. Renewal admission is the journal's separate obligation.
+    let facts = CurrentReadyFacts { end_at_ms: 1800, observed_at_ms: 1500, ..original_facts };
+    let mut view = ResumeObservation {
+        request: original.clone(), current_request: renewed.clone(),
+        readiness: CurrentResumeReadiness::Observed { facts: facts.clone() },
+    };
+    assert!(view.matches_request(&original));
+    assert!(facts.matches_resumed_renewal(&original, &renewed, &source));
+    assert!(!facts.matches_resumed(&original, &source));
+    if let LifecycleOperation::Renew { incarnation, .. } = &mut view.current_request.request.operation {
+        *incarnation = 1.try_into().unwrap();
+    }
+    assert!(!view.matches_request(&original));
+    assert!(!facts.matches_resumed_renewal(&original, &view.current_request, &source));
+    let overflow = CurrentReadyFacts { end_at_ms: 2001, ..facts.clone() };
+    assert!(!overflow.matches_resumed_renewal(&original, &renewed, &source));
+    let changed_start = CurrentReadyFacts { started_at_ms: 11, ..facts };
+    assert!(!changed_start.matches_resumed_renewal(&original, &renewed, &source));
+}

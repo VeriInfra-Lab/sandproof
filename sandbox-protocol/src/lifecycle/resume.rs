@@ -50,18 +50,31 @@ impl ResumeObservation {
             return false;
         }
         if self.current_request != *original {
+            if let LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } = self.current_request.request.operation {
+                let LifecycleOperation::Resume { target_incarnation, .. } = original.request.operation else {
+                    return false;
+                };
+                return self.current_request.accepted_version > original.accepted_version
+                    && current.key != binding.key
+                    && incarnation == target_incarnation
+                    && match &self.readiness {
+                        CurrentResumeReadiness::Observed { facts } => {
+                            u64::try_from(end_at_ms).is_ok_and(|end| {
+                                current_facts(facts)
+                                    && if extend_only { facts.end_at_ms >= end } else { facts.end_at_ms == end }
+                            })
+                        }
+                        CurrentResumeReadiness::NotCurrent => false,
+                        _ => true,
+                    };
+            }
             return self.current_request.accepted_version > original.accepted_version
                 && current.key != binding.key
                 && self.readiness == CurrentResumeReadiness::NotCurrent;
         }
         match &self.readiness {
             CurrentResumeReadiness::NotCurrent => false,
-            CurrentResumeReadiness::Observed { facts } => {
-                facts.started_at_ms <= facts.startup_deadline_ms
-                    && facts.started_at_ms <= facts.observed_at_ms
-                    && facts.observed_at_ms < facts.end_at_ms
-                    && facts.end_at_ms <= facts.max_end_at_ms
-            }
+            CurrentResumeReadiness::Observed { facts } => current_facts(facts),
             CurrentResumeReadiness::NotRunning
             | CurrentResumeReadiness::Expired
             | CurrentResumeReadiness::Pending
@@ -70,11 +83,28 @@ impl ResumeObservation {
     }
 }
 
+fn current_facts(facts: &CurrentReadyFacts) -> bool {
+    facts.started_at_ms <= facts.startup_deadline_ms
+        && facts.started_at_ms <= facts.observed_at_ms
+        && facts.observed_at_ms < facts.end_at_ms
+        && facts.end_at_ms <= facts.max_end_at_ms
+}
+
 impl CurrentReadyFacts {
     /// A resumed execution keeps the complete original lifetime. The source
     /// must come from the authority's preceding Unloaded, not response input.
     #[must_use]
     pub fn matches_resumed(
+        &self,
+        original: &AcceptedLifecycleIntent,
+        source: &UnloadedFacts,
+    ) -> bool {
+        self.matches_resume_source(original, source)
+            && self.end_at_ms == source.end_at_ms
+            && current_facts(self)
+    }
+
+    fn matches_resume_source(
         &self,
         original: &AcceptedLifecycleIntent,
         source: &UnloadedFacts,
@@ -88,11 +118,31 @@ impl CurrentReadyFacts {
             && source.capture == *capture
             && source.manifest_digest == *manifest_digest
             && self.started_at_ms == source.started_at_ms
-            && self.end_at_ms == source.end_at_ms
             && self.max_end_at_ms == source.max_end_at_ms
             && self.startup_deadline_ms == source.startup_deadline_ms
-            && self.started_at_ms <= self.observed_at_ms
-            && self.observed_at_ms < self.end_at_ms
+    }
+
+    /// The original resumed execution may be renewed without changing its
+    /// source, start or total limit. Actual monotonic renewal admission and
+    /// application still belong to the center and original local journal.
+    #[must_use]
+    pub fn matches_resumed_renewal(
+        &self,
+        original: &AcceptedLifecycleIntent,
+        current: &AcceptedLifecycleIntent,
+        source: &UnloadedFacts,
+    ) -> bool {
+        let LifecycleOperation::Resume { target_incarnation, .. } = original.request.operation else {
+            return false;
+        };
+        let LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } = current.request.operation else {
+            return false;
+        };
+        let Ok(end) = u64::try_from(end_at_ms) else { return false; };
+        self.matches_resume_source(original, source)
+            && incarnation == target_incarnation
+            && current_facts(self)
+            && if extend_only { self.end_at_ms >= end } else { self.end_at_ms == end }
     }
 }
 
