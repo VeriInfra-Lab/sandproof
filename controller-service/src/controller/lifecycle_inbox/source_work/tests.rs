@@ -221,14 +221,14 @@ fn source_and_inbox_initialize_atomically_with_exact_immutable_limits() {
         .journal
         .connection
         .query_row(
-            "SELECT reserve_bytes FROM controller_source_work",
+            "SELECT 8192+sum(reserve_bytes) FROM controller_source_work_records",
             [],
             |r| r.get(0),
         )
         .unwrap();
     assert_eq!(
         u64::try_from(reserve).unwrap(),
-        config().required_bytes(2 * (8 - 2))
+        8192 + 2 * (8 - 2) * config().required_bytes(1)
     );
     drop(journal);
     v3::open(&path)
@@ -262,7 +262,7 @@ fn inbox_history_cannot_exceed_the_native_deployment_bound() {
 }
 
 #[test]
-fn single_round_blob_reservation_cannot_open_a_multi_round_deployment() {
+fn per_work_reservation_cannot_shrink_below_its_declared_envelope() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let mut journal = v3::open(&path);
@@ -270,13 +270,13 @@ fn single_round_blob_reservation_cannot_open_a_multi_round_deployment() {
         .initialize_lifecycle_inbox(v3::config(), config(), &mut NeverCrash)
         .unwrap();
     // Leave the original canonical source bytes and checksum unchanged. A
-    // smaller reserve must not silently authorize twelve possible records.
+    // smaller reserve must not silently authorize its original work row.
     journal
         .journal
         .connection
         .execute(
-            "UPDATE controller_source_work SET reserve_bytes=?1 WHERE id=1",
-            [i64::try_from(config().required_bytes(2)).unwrap()],
+            "UPDATE controller_source_work_records SET reserve_bytes=?1 WHERE id=1",
+            [i64::try_from(config().required_bytes(1) - 1).unwrap()],
         )
         .unwrap();
     assert!(matches!(
@@ -310,7 +310,11 @@ fn source_and_inbox_unknown_commit_recovers_both_or_neither_without_fabricated_w
         ));
         drop(journal);
         let mut journal = v3::open(&path);
-        for table in ["controller_lifecycle_inbox", "controller_source_work"] {
+        for table in [
+            "controller_lifecycle_inbox",
+            "controller_source_work",
+            "controller_source_work_records",
+        ] {
             let exists: bool = journal
                 .journal
                 .connection
@@ -604,13 +608,22 @@ fn source_18_missing_shapes_hash_budget_node_vm_and_17_stray_table_fail_closed()
             3=>db.execute_batch("UPDATE controller_source_work SET reserve_bytes=reserve_bytes-1").unwrap(),
             4=>db.execute_batch("ALTER TABLE controller_source_work RENAME COLUMN reserve_bytes TO unrecognized").unwrap(),
             _=>{
-                let mut saved=codec::load(&db).unwrap().unwrap();
-                match mode {
-                    5=>saved.node.node_generation=2.try_into().unwrap(),
-                    6=>{saved.records[0].work.anchor.native.current_vm=Some(sandbox_controller_core::VmId(12345));saved.records[0].work.requirement.work_binding=digest(&serde_json::to_vec(&saved.records[0].work.anchor).unwrap());}
-                    _=>saved.records[0].observation.as_mut().unwrap().configuration=vec![0;1025],
+                if mode == 5 {
+                    let bytes:Vec<u8> = db.query_row("SELECT state_json FROM controller_source_work WHERE id=1",[],|r|r.get(0)).unwrap();
+                    let mut value:serde_json::Value=serde_json::from_slice(&bytes).unwrap();
+                    value["node"]["node_generation"]=2.into();
+                    let bytes=serde_json::to_vec(&value).unwrap();
+                    db.execute("UPDATE controller_source_work SET state_json=?1,sha256=?2",rusqlite::params![bytes,Sha256::digest(&bytes).as_slice()]).unwrap();
+                } else {
+                    let mut saved=codec::load(&db).unwrap().unwrap();
+                    if mode == 6 {
+                        saved.records[0].work.anchor.native.current_vm=Some(sandbox_controller_core::VmId(12345));
+                        saved.records[0].work.requirement.work_binding=digest(&serde_json::to_vec(&saved.records[0].work.anchor).unwrap());
+                    } else { saved.records[0].observation.as_mut().unwrap().configuration=vec![0;1025]; }
+                    let record=&saved.records[0];
+                    let bytes=serde_json::to_vec(record).unwrap();
+                    db.execute("UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=?3 WHERE id=1",rusqlite::params![bytes,Sha256::digest(&bytes).as_slice(),record.work.requirement.work_binding.as_bytes().as_slice()]).unwrap();
                 }
-                let bytes=serde_json::to_vec(&saved).unwrap();db.execute("UPDATE controller_source_work SET state_json=?1,sha256=?2",rusqlite::params![bytes,Sha256::digest(&bytes).as_slice()]).unwrap();
             }
         }
         drop(db);
@@ -673,7 +686,7 @@ fn old_or_modified_owner_vm_generation_or_full_key_cannot_store_facts() {
 
 #[test]
 fn current_source_store_rejects_old_or_unknown_tags_without_changing_bytes() {
-    for version in [0, 17, 19] {
+    for version in [0, 17, 19, 21, 22] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
         let (journal, _) = running_source(&path);
@@ -726,7 +739,11 @@ fn source_capacity_rejection_leaves_no_partial_inbox_or_source_table() {
         Err(JournalError::MaintenanceCapacity)
     ));
     assert_eq!(journal.world().unwrap(), before);
-    for table in ["controller_lifecycle_inbox", "controller_source_work"] {
+    for table in [
+        "controller_lifecycle_inbox",
+        "controller_source_work",
+        "controller_source_work_records",
+    ] {
         assert!(
             !journal
                 .journal
@@ -1892,17 +1909,23 @@ fn assert_cross_round_source_tampering_rejected(
         let tx = journal.journal.connection.unchecked_transaction().unwrap();
         let mut sources = codec::load(&tx).unwrap().unwrap();
         if duplicate {
-            sources.records.push(saved[0].clone());
+            let key = saved[0].work.requirement.work_binding.as_bytes().as_slice();
+            let bytes = serde_json::to_vec(&saved[0]).unwrap();
+            assert!(tx.execute("UPDATE controller_source_work_records SET work_key=?1,state_json=?2,sha256=?3 WHERE id=2",rusqlite::params![key,bytes,sha2::Sha256::digest(&bytes).as_slice()]).is_err(), "SQL uniqueness must reject a duplicate original work key");
         } else {
             sources.records[1].capture.as_mut().unwrap().action =
                 saved[0].capture.as_ref().unwrap().action.clone();
+            let bytes = serde_json::to_vec(&sources.records[1]).unwrap();
+            tx.execute(
+                "UPDATE controller_source_work_records SET state_json=?1,sha256=?2 WHERE id=2",
+                rusqlite::params![bytes, sha2::Sha256::digest(&bytes).as_slice()],
+            )
+            .unwrap();
+            assert!(matches!(
+                codec::validate(&tx, &world),
+                Err(JournalError::CorruptStore)
+            ));
         }
-        let sessions = sources.max_sessions;
-        codec::save(&tx, &sources, sessions).unwrap();
-        assert!(matches!(
-            codec::validate(&tx, &world),
-            Err(JournalError::CorruptStore)
-        ));
         // Dropping this deliberate corruption transaction preserves the real
         // source store and its original checksums for the next negative case.
         drop(tx);
@@ -2036,4 +2059,175 @@ fn second_source_question_unknown_commit_preserves_both_original_material_respon
             2
         );
     }
+}
+
+fn bounded_source_profile(
+    path: &Path,
+    sessions: u16,
+    max_sql_bytes: u64,
+) -> (
+    ControllerJournal,
+    crate::LifecycleInboxConfig,
+    SourceObservationConfig,
+) {
+    let mut maintenance = v3::maintenance();
+    let cap = maintenance.capacity.as_mut().unwrap();
+    cap.max_sql_value_bytes = 16 * 1024 * 1024;
+    cap.max_sql_bytes = max_sql_bytes;
+    let host = v3::fixture::complete_fixture::host(
+        path,
+        "0123456789abcdef",
+        64,
+        2 * 1024 * 1024,
+        v3::CLEANUP_BYTES + 1000,
+    );
+    let journal =
+        ControllerJournal::open_complete(path, "0123456789abcdef", host, maintenance, 0).unwrap();
+    let mut inbox = v3::config();
+    inbox.max_sessions = sessions;
+    let mut source = config();
+    source.max_work_bytes = 65536;
+    source.max_configuration_bytes = 65536;
+    (journal, inbox, source)
+}
+
+#[test]
+fn source_gc_plan_budget_is_reserved_per_work_for_six_sessions_without_a_global_value_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, inbox, source) = bounded_source_profile(&path, 6, 64 * 1024 * 1024);
+    let per_row = source.required_bytes(1);
+    let rows = 6 * (8 - 2);
+    assert!(8192 + rows * per_row > 16 * 1024 * 1024);
+    assert!(per_row < 16 * 1024 * 1024);
+    let inbox_bytes = inbox.required_bytes();
+    let before = crate::controller::capacity::fixture_sql_budget(
+        &journal.journal.connection,
+        &journal.world().unwrap(),
+    )
+    .unwrap();
+    journal
+        .initialize_lifecycle_inbox(inbox, source, &mut NeverCrash)
+        .unwrap();
+    let after = crate::controller::capacity::fixture_sql_budget(
+        &journal.journal.connection,
+        &journal.world().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(after.0 - before.0, rows + 2);
+    assert_eq!(
+        after.1 - before.1,
+        inbox_bytes + 48 + 8192 + 48 + rows * (per_row + 80)
+    );
+    let (actual,sum,small,large):(i64,i64,i64,i64)=journal.journal.connection.query_row("SELECT count(*),sum(reserve_bytes),min(reserve_bytes),max(reserve_bytes) FROM controller_source_work_records",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).unwrap();
+    assert_eq!(u64::try_from(actual).unwrap(), rows);
+    assert_eq!(u64::try_from(sum).unwrap(), rows * per_row);
+    assert_eq!(u64::try_from(small).unwrap(), per_row);
+    assert_eq!(small, large);
+    let max_plan = vec![255_u8; crate::capture::MATERIAL_RETIREMENT_PLAN_MAX_BYTES];
+    assert_eq!(serde_json::to_vec(&max_plan).unwrap().len(), 65_537);
+    assert!(
+        (serde_json::to_vec(&max_plan).unwrap().len() as u64)
+            < crate::capture::MATERIAL_RETIREMENT_RECORD_MAX_BYTES
+    );
+    assert!(journal.world().unwrap().sandbox_records().is_empty());
+    drop(journal);
+    let (journal, _, _) = bounded_source_profile(&path, 6, 64 * 1024 * 1024);
+    assert!(
+        codec::load(&journal.journal.connection)
+            .unwrap()
+            .unwrap()
+            .records
+            .is_empty()
+    );
+}
+
+#[test]
+fn source_gc_total_preallocation_one_byte_short_rolls_back_all_rows_and_inbox() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut source = config();
+    source.max_work_bytes = 65536;
+    source.max_configuration_bytes = 65536;
+    let rows = 10 * (8 - 2);
+    let required = 8192 + 48 + rows * (source.required_bytes(1) + 80);
+    let (mut journal, inbox, source) = bounded_source_profile(&path, 10, required - 1);
+    assert!(matches!(
+        journal.initialize_lifecycle_inbox(inbox, source, &mut NeverCrash),
+        Err(JournalError::MaintenanceCapacity)
+    ));
+    assert!(journal.lifecycle_inbox_configuration().unwrap().is_none());
+    let tables:i64=journal.journal.connection.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('controller_source_work','controller_source_work_records','controller_lifecycle_inbox')",[],|r|r.get(0)).unwrap();
+    assert_eq!(tables, 0);
+    assert!(journal.world().unwrap().sandbox_records().is_empty());
+}
+
+#[test]
+fn source_work_rows_reject_missing_slots_hash_changes_and_single_row_overflow() {
+    use sha2::{Digest, Sha256};
+    for mode in 0..3 {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, inbox, source) = bounded_source_profile(&path, 6, 64 * 1024 * 1024);
+        let per_row = source.required_bytes(1);
+        journal
+            .initialize_lifecycle_inbox(inbox, source, &mut NeverCrash)
+            .unwrap();
+        match mode {
+            0 => {
+                journal
+                    .journal
+                    .connection
+                    .execute("DELETE FROM controller_source_work_records WHERE id=2", [])
+                    .unwrap();
+            }
+            1 => {
+                journal
+                    .journal
+                    .connection
+                    .execute(
+                        "UPDATE controller_source_work_records SET sha256=zeroblob(32) WHERE id=1",
+                        [],
+                    )
+                    .unwrap();
+            }
+            _ => {
+                let bytes = vec![b'0'; usize::try_from(per_row + 1).unwrap()];
+                journal.journal.connection.execute("UPDATE controller_source_work_records SET state_json=?1,sha256=?2 WHERE id=1",rusqlite::params![bytes,Sha256::digest(&bytes).as_slice()]).unwrap();
+            }
+        }
+        assert!(matches!(
+            codec::load(&journal.journal.connection),
+            Err(JournalError::CorruptStore)
+        ));
+    }
+}
+
+#[test]
+fn original_work_key_and_payload_are_already_charged_before_source_admission() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, _) = ready(&path);
+    let before = crate::controller::capacity::fixture_sql_budget(
+        &journal.journal.connection,
+        &journal.world().unwrap(),
+    )
+    .unwrap();
+    let record = prepare(&mut journal);
+    let after = crate::controller::capacity::fixture_sql_budget(
+        &journal.journal.connection,
+        &journal.world().unwrap(),
+    )
+    .unwrap();
+    assert_eq!((after.0, after.1), (before.0, before.1));
+    let key: Vec<u8> = journal
+        .journal
+        .connection
+        .query_row(
+            "SELECT work_key FROM controller_source_work_records WHERE id=1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(key, record.work.requirement.work_binding.as_bytes());
 }
