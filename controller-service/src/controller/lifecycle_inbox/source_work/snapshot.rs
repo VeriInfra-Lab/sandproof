@@ -73,6 +73,7 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     let state = inbox.state(s, e);
     if !state.current
         || state.terminal
+        || session.entries[e].unload_resolution.is_some()
         || !matches!(intent.request.operation, LifecycleOperation::Unload { .. })
     {
         return Err(JournalError::Conflict);
@@ -99,7 +100,12 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     )?
     .view;
     let native = view.native.ok_or(JournalError::CorruptStore)?;
-    if !native.has_completed_original_execution(local)
+    let continued = if native.has_completed_original_execution(local) {
+        None
+    } else {
+        super::full::continued_ready_records::<E>(tx, world, namespace, local, &native)?
+    };
+    if (!native.has_completed_original_execution(local) && continued.is_none())
         || view.historical_result != Some(core::OperationResult::Running(native.generation))
     {
         return Err(JournalError::UnresolvedAction);
@@ -113,14 +119,22 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     ) {
         return Err(JournalError::UnresolvedAction);
     }
-    let source = capture::original_source::<E>(tx, namespace, world, local.sandbox)?;
+    let source = match &continued {
+        Some((work, ..)) => work.source().source.clone(),
+        None => capture::original_source::<E>(tx, namespace, world, local.sandbox)?,
+    };
     if source.boot_id != bootstrap.registration.boot_id
         || source.pid == 0
         || source.start_time_ticks == 0
     {
         return Err(JournalError::InvalidHostEvidence);
     }
-    let (actions, receipts) = startup_records::<E>(tx, namespace, world, local)?;
+    let (mut actions, mut receipts) = startup_records::<E>(tx, namespace, world, local)?;
+    let continued_from = continued.map(|(work, action, receipt)| {
+        actions.push(action);
+        receipts.push(receipt);
+        work.identity()
+    });
     let options = admission::read_create_options(tx, namespace, local.sandbox)
         .map_err(|_| JournalError::CorruptStore)?;
     let credential = data_credentials::snapshot(tx, world, namespace, local.sandbox, true)?
@@ -133,6 +147,7 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
         execution_origin,
         local,
         native,
+        continued_from,
         node: inbox.config.node.clone(),
         host_bootstrap: bootstrap.registration.clone(),
         source: source.clone(),
@@ -141,12 +156,16 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
         original_actions: actions.iter().map(|a| a.identity.clone()).collect(),
         original_receipts: receipts.iter().map(|r| digest(r)).collect(),
     };
+    question(anchor, limits)
+}
+
+fn question(anchor: SourceAnchor, limits: &SourceObservationConfig) -> Result<SourceWork, JournalError> {
     let requirement = SourceObservationRequirement {
         work_binding: digest(&serde_json::to_vec(&anchor)?),
-        node: inbox.config.node.clone(),
-        host_bootstrap: bootstrap.registration.clone(),
-        resource: actions[1].identity.resource.clone(),
-        source,
+        node: anchor.node.clone(),
+        host_bootstrap: anchor.host_bootstrap.clone(),
+        resource: anchor.original_actions[1].resource.clone(),
+        source: anchor.source.clone(),
         limits: limits.clone(),
     };
     Ok(SourceWork {
@@ -185,7 +204,11 @@ pub(super) fn validate_record(
             anchor.execution_origin.request.operation,
             LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
         )
-        || !anchor.native.has_completed_original_execution(anchor.local)
+        || if let Some(identity) = anchor.continued_from {
+            super::full::continued_identity(world, anchor.local, &anchor.native) != Some(identity)
+        } else {
+            !anchor.native.has_completed_original_execution(anchor.local)
+        }
         || req.limits != *config
         || req.node != inbox.config.node
         || anchor.node != req.node
@@ -197,8 +220,13 @@ pub(super) fn validate_record(
         || req.source.pid == 0
         || req.source.start_time_ticks == 0
         || req.work_binding != digest(&serde_json::to_vec(anchor)?)
-        || anchor.original_actions.len() != 5
-        || anchor.original_receipts.len() != 5
+        || anchor.original_actions.len()
+            != if anchor.continued_from.is_some() {
+                6
+            } else {
+                5
+            }
+        || anchor.original_receipts.len() != anchor.original_actions.len()
         || req.resource != anchor.original_actions[1].resource
         || serde_json::to_vec(work)?.len() as u64 > u64::from(config.max_work_bytes)
         || record.observation.as_ref().is_some_and(|o| !o.matches(req))
@@ -234,19 +262,29 @@ pub(super) fn validate_record(
     if req.resource != expected_resource {
         return Err(JournalError::CorruptStore);
     }
-    for action in &anchor.original_actions {
+    validate_original_actions(world, &namespace, anchor)
+}
+
+fn validate_original_actions(world:&core::World,namespace:&str,anchor:&SourceAnchor)->Result<(),JournalError>{
+    let origin_key = core::OperationKey {
+        sandbox: anchor.local.sandbox,
+        operation: anchor.local.operation,
+    };
+    let origin_plan = world
+        .operation_plan(origin_key)
+        .ok_or(JournalError::CorruptStore)?;
+    for (index, action) in anchor.original_actions.iter().enumerate() {
+        let (key, epoch) = if index == 5 {
+            let continued = anchor.continued_from.ok_or(JournalError::CorruptStore)?;
+            (continued.key, continued.epoch)
+        } else {
+            (origin_key, origin_plan.epoch)
+        };
         if action.owner != crate::controller::identity::owner_id(anchor.local.owner)?
             || action.sandbox
-                != crate::controller::identity::sandbox_id(&namespace, anchor.local.sandbox)?
-            || action.operation
-                != crate::controller::identity::operation_id(
-                    &namespace,
-                    core::OperationKey {
-                        sandbox: anchor.local.sandbox,
-                        operation: anchor.local.operation,
-                    },
-                )?
-            || action.epoch != anchor.native.epoch
+                != crate::controller::identity::sandbox_id(namespace, anchor.local.sandbox)?
+            || action.operation != crate::controller::identity::operation_id(namespace, key)?
+            || action.epoch != epoch
             || action.generation != anchor.native.generation
         {
             return Err(JournalError::CorruptStore);
@@ -286,9 +324,15 @@ fn validate_execution_origin(
         LifecycleOperation::Resume { .. } => core::OperationKind::Resume,
         _ => return Err(JournalError::CorruptStore),
     };
+    let epoch_matches = match anchor.continued_from {
+        Some(identity) => {
+            super::full::continued_identity(world, anchor.local, &anchor.native) == Some(identity)
+        }
+        None => origin_plan.epoch == anchor.native.epoch,
+    };
     if origin_row.operation.kind != origin_kind
         || origin_plan.generation != anchor.native.generation
-        || origin_plan.epoch != anchor.native.epoch
+        || !epoch_matches
         || origin_plan.vm != anchor.native.current_vm
         || (origin_kind == core::OperationKind::Create) != origin_plan.restore_from.is_none()
     {

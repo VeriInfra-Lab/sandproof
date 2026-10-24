@@ -10,6 +10,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use v3::fixture::{State, TestEpoch, TestHost};
+mod continue_application;
 mod original_continue;
 type Evidence = <TestHost as WorkEvidence>::Evidence;
 

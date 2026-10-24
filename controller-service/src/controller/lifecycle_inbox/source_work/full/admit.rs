@@ -29,6 +29,13 @@ impl ControllerJournal {
         let mut inbox =
             super::super::super::codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         authenticated(&inbox, work.request(), context)?;
+        let (session, entry) = inbox.find(work.request())?.ok_or(JournalError::Conflict)?;
+        if inbox.sessions[session].entries[entry]
+            .unload_resolution
+            .is_some()
+        {
+            return Err(JournalError::Conflict);
+        }
         let mut sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         let i = sources
             .records

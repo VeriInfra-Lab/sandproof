@@ -15,6 +15,7 @@ mod refusal;
 pub(in crate::controller) mod source_work;
 #[cfg(test)]
 mod tests;
+mod unload_resolution;
 
 use super::{ControllerJournal, identity, internal_inbox, transaction::WorldTransaction};
 use crate::{

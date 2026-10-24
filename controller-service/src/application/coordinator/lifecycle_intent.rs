@@ -219,7 +219,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         })
     }
 
-    fn observe_lifecycle_execution(
+    pub(super) fn observe_lifecycle_execution(
         &self,
         intent: &AcceptedLifecycleIntent,
         context: &AuthenticatedCenterContext,
@@ -264,17 +264,20 @@ impl<H: ControllerHost> ControllerApplication<H> {
             candidate
                 .actions
                 .iter()
-                .map(|action| match restore.as_ref() {
-                    Some(work)
-                        if !matches!(
-                            action.command.command(),
-                            sandbox_controller_core::Command::InstallFence { .. }
-                        ) =>
-                    {
-                        host.observe_lifecycle_restore_action(action, work)
-                    }
-                    _ => host.observe(action),
-                })
+                .map(
+                    |action| match (candidate.continuation.as_ref(), restore.as_ref()) {
+                        (Some(work), _) => host.observe_lifecycle_original_continue(action, work),
+                        (None, Some(work))
+                            if !matches!(
+                                action.command.command(),
+                                sandbox_controller_core::Command::InstallFence { .. }
+                            ) =>
+                        {
+                            host.observe_lifecycle_restore_action(action, work)
+                        }
+                        _ => host.observe(action),
+                    },
+                )
                 .collect()
         } else {
             vec![]

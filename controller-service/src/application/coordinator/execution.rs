@@ -263,34 +263,17 @@ impl<H: ControllerHost> ControllerApplication<H> {
         };
         self.prepare_unload_drain(sandbox, host.as_ref())?;
         self.prepare_execution(sandbox, host.as_ref())?;
-        // Reconciliation observes only original Dispatched/Unknown identities.
-        // It cannot race an in-process worker: this turn owns the session gate.
-        let uncertain = {
-            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-            inner
-                .journal
-                .uncertain_actions()
-                .map_err(map_journal)?
-                .into_iter()
-                .filter(|action| action.command.command().sandbox() == sandbox)
-                .collect::<Vec<_>>()
-        };
-        for action in uncertain {
-            let receipt = match self.observe_capture_action(host.as_ref(), &action)? {
-                Some(receipt) => Some(receipt),
-                None => self.continue_restore_activation(host.as_ref(), &action)?,
-            };
-            if let Some(receipt) = receipt {
-                let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-                // complete loads the latest World and validates the full action.
-                // A terminal result can add physical facts, never grant access.
-                inner
-                    .journal
-                    .reconcile_observed(&action, &receipt)
-                    .map_err(map_journal)?;
-            }
-        }
+        self.reconcile_current_actions(sandbox, host.as_ref())?;
+        self.prepare_original_continue_if_ended(sandbox, host.as_ref())?;
         for _ in 0..128 {
+            // The failed Pause can have no reserved snapshot. Publish its exact
+            // acknowledged continuation before the ordinary Pause scheduler
+            // considers reserving one on the already closed plan.
+            if let Some(published) =
+                self.publish_original_continue_if_ready(sandbox, host.as_ref())?
+            {
+                return Ok(published);
+            }
             let action = {
                 let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
                 inner
@@ -333,23 +316,74 @@ impl<H: ControllerHost> ControllerApplication<H> {
                         drop(inner);
                         return self.release_current_slot(sandbox, host.as_ref());
                     }
-                    core::workflow::WorkflowStep::Blocked => return Ok(false),
+                    core::workflow::WorkflowStep::Blocked => {
+                        drop(inner);
+                        if self.prepare_original_continue_if_ended(sandbox, host.as_ref())? {
+                            continue;
+                        }
+                        return Ok(self
+                            .publish_original_continue_if_ready(sandbox, host.as_ref())?
+                            .unwrap_or(false));
+                    }
                 }
             };
-            let result = self.execute_capture_action(host.as_ref(), &action)?;
-            let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-            match result {
-                Ok(receipt) => {
-                    inner
-                        .journal
-                        .complete(&receipt, &mut NeverCrash)
-                        .map_err(map_journal)?;
+            let result = match self.execute_capture_action(host.as_ref(), &action) {
+                Ok(result) => result,
+                Err(error) => {
+                    if self.prepare_original_continue_if_ended(sandbox, host.as_ref())? {
+                        continue;
+                    }
+                    return Err(error);
                 }
-                Err(_) => return Ok(false),
+            };
+            let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            if let Ok(receipt) = result {
+                inner.journal.complete(&receipt, &mut NeverCrash).map_err(map_journal)?;
+            } else {
+                drop(inner);
+                if self.prepare_original_continue_if_ended(sandbox, host.as_ref())? {
+                    continue;
+                }
+                return Ok(false);
             }
         }
         // A finite turn is a fairness bound, not a failure or a new job queue.
         Ok(false)
+    }
+
+    // The caller owns ActiveSandbox; host observations remain outside the lock.
+    fn reconcile_current_actions(&self, sandbox: core::SandboxId, host: &H) -> Result<(), ApplicationError> {
+        // Reconciliation observes only original Dispatched/Unknown identities.
+        // It cannot race an in-process worker: this turn owns the session gate.
+        let uncertain = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            inner
+                .journal
+                .uncertain_actions()
+                .map_err(map_journal)?
+                .into_iter()
+                .filter(|action| action.command.command().sandbox() == sandbox)
+                .collect::<Vec<_>>()
+        };
+        for action in uncertain {
+            let receipt = match self.observe_capture_action(host, &action)? {
+                Some(receipt) => Some(receipt),
+                None => match self.continue_original_activation(host, &action)? {
+                    Some(receipt) => Some(receipt),
+                    None => self.continue_restore_activation(host, &action)?,
+                },
+            };
+            if let Some(receipt) = receipt {
+                let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+                // complete loads the latest World and validates the full action.
+                // A terminal result can add physical facts, never grant access.
+                inner
+                    .journal
+                    .reconcile_observed(&action, &receipt)
+                    .map_err(map_journal)?;
+            }
+        }
+        Ok(())
     }
 
     // The caller owns ActiveSandbox. All checks remain against original state;

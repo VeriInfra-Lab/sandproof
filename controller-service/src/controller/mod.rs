@@ -917,6 +917,12 @@ impl ControllerJournal {
         }
         let capacity = capacity::config(&transaction)?.ok_or(JournalError::UnsupportedStore)?;
         let serialized = checkpoint::encode_limited(receipt, capacity.max_receipt_bytes)?;
+        lifecycle_inbox::source_work::full::validate_continue_receipt(
+            &transaction,
+            &transaction.world(),
+            &action,
+            receipt,
+        )?;
         lifecycle_inbox::source_work::full::save_receipt(
             &transaction,
             &transaction.world(),
@@ -1036,8 +1042,16 @@ fn apply_outcome<E: HostEvidence>(
             if !evidence.validates(action.command.command()) {
                 return Err(JournalError::InvalidHostEvidence);
             }
-            if !core::effect::command_result_present(&transaction.world(), action.command.command())
-            {
+            // Frozen is valid historical evidence for an OLD startup Activate,
+            // but it cannot complete the new original-continue activation.
+            // Apply its actual native worker transition before acknowledging it.
+            if core::capture::continuation::continuation_activation_pending(
+                &transaction.world(),
+                action.command.command(),
+            ) || !core::effect::command_result_present(
+                &transaction.world(),
+                action.command.command(),
+            ) {
                 storage::apply(
                     transaction,
                     namespace,
