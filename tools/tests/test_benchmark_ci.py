@@ -581,7 +581,33 @@ class BenchmarkCITests(unittest.TestCase):
             path.chmod(0o600)
             config[key] = str(path)
             config['host_assets'][str(path)] = file_digest(path)
+        project=dict(project_id=63801,hard_bytes=128*1024**3,hard_inodes=4096)
+        for key in ('chattr','lsattr'):
+            path=self.root/(key+'-capture-tool')
+            path.write_bytes(('controlled-'+key).encode())
+            path.chmod(0o600)
+            checksum=file_digest(path)
+            project[key]=dict(path=str(path),sha256=list(bytes.fromhex(checksum)))
+            config['host_assets'][str(path)]=checksum
+        profile=self.root/'capture-profile.json'
+        profile.write_text(json.dumps(dict(schema_version=1,hosts=[dict(state_copy_bytes=1_000_000,
+            memory_copy_bytes=512*1024**2,disk_copy_bytes=4*1024**3,api_timeout_ms=1000,
+            worker_timeout_ms=2000,material_project=project)])))
+        profile.chmod(0o600)
+        config['capture_profile']=str(profile)
+        config['host_assets'][str(profile)]=file_digest(profile)
         return config
+
+    def capture_hosts(self, config, count):
+        from tools.system_acceptance import digest as file_digest
+        path=Path(config['capture_profile'])
+        profile=json.loads(path.read_text())
+        base=profile['hosts'][0]
+        profile['hosts']=[copy.deepcopy(base) for _ in range(count)]
+        for index,host in enumerate(profile['hosts']):
+            host['material_project']['project_id']+=index
+        path.write_text(json.dumps(profile))
+        config['host_assets'][str(path)]=file_digest(path)
 
     def test_prepared_host_manifest_is_private_fingerprinted_and_mode_is_explicit(self):
         config = self.host_config()
@@ -610,6 +636,7 @@ class BenchmarkCITests(unittest.TestCase):
                 ci.validate_host_inputs(config)
         old = dict(config, source_kind='oci', proxy_binary=config['kernel'])
         old.pop('ci_fixtures')
+        self.capture_hosts(old,2)
         with patch.object(ci, 'trusted_path', side_effect=lambda path:path), patch.object(ci, 'redis_material'):
             ci.validate_host_inputs(old)
 
@@ -677,6 +704,7 @@ class BenchmarkCITests(unittest.TestCase):
         config = self.host_config()
         config.update(source_kind='dockerfile', proxy_binary='/approved/proxy')
         config.pop('ci_fixtures')
+        self.capture_hosts(config,2)
         for name in ('host-runtime.der', 'host-builder.der'):
             leaf = Path(config['tls_material']) / name
             leaf.write_bytes(b'the-same-invalid-node-identity')
@@ -725,6 +753,7 @@ class BenchmarkCITests(unittest.TestCase):
         # The optional mode must not strip the original proxy/build interface.
         old = dict(config, source_kind='oci', proxy_binary='/fixed-proxy', proxy_sha256='f'*64)
         old.pop('ci_fixtures')
+        self.capture_hosts(old,2)
         supervisor.config = old
         supervisor.state['id'] = 'c'*64
         old_batch = dict(names=names, oracle_mode='original', phase='new')

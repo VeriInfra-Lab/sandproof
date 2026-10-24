@@ -18,6 +18,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import socket
@@ -91,7 +92,7 @@ def exercise(args):
     namespaces = [secrets.token_hex(8), secrets.token_hex(8)]
     while namespaces[0][:6] == namespaces[1][:6]:
         namespaces[1] = secrets.token_hex(8)
-    for name in ('db', 'state', 'jails', 'images'):
+    for name in ('db', 'state', 'p', 'images'):
         (root / name).mkdir(mode=0o700)
     for source, target in ((args.kernel, root / 'images/kernel'), (args.rootfs, root / 'images/rootfs')):
         subprocess.run(['/usr/bin/cp', '--reflink=auto', '--sparse=always', str(source), str(target)], check=True)
@@ -101,7 +102,7 @@ def exercise(args):
     template = descriptor('proxy-policy', root / 'images/kernel', root / 'images/rootfs', 1, args.memory_mib)
     port, key = free_loopback_port(), secrets.token_hex(32)
     cfg = {'namespace': namespaces[0], 'database': str(root / 'db/controller.db'),
-        'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'jails'),
+        'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'p/v'),
         'jailer': str(args.jailer), 'firecracker': str(args.firecracker),
         'kernel': template['kernel']['path'], 'rootfs': template['rootfs']['path'],
         'uid_base': args.uid_base, 'vcpu_count': 1, 'memory_mib': args.memory_mib,
@@ -167,7 +168,7 @@ def exercise(args):
             for field in ('kernel','rootfs'):
                 if bound[field]['sha256']!=template[field]['sha256']:
                     raise RuntimeError('original template fingerprint changed')
-            record['network_inode']=json.loads((root/'jails/.claims'/name/'network.json').read_text())['namespace_inode']
+            record['network_inode']=json.loads((original_chroot(root) / '.claims'/name/'network.json').read_text())['namespace_inode']
             identities[name]=record
             save(root/'resource-evidence.json',identities)
         finally:

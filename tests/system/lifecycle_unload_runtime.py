@@ -1,8 +1,9 @@
 """One approved create/unload fixture on the original protected deployment.
 
 This module never creates a filesystem, mounts, enables quotas or configures
-cgroups. Those exact resources and the first snapshot layout are prepared and
-independently reviewed before this scenario. It reuses RuntimeServices, its
+cgroups. Those exact resources and the empty layout parent are prepared and
+independently reviewed before this scenario. RuntimeServices invokes the original
+host CLI once to provision that fresh layout. It reuses its
 original manager processes and the existing HostLease, with no new supervisor.
 Unknown effects preserve this run's resources and exclusive-host responsibility.
 """
@@ -365,7 +366,7 @@ def prepare(args):
             'native','catalog','registry','activation_ceiling_bytes',
             'startup_timeout_ms','timeout_ms','max_lifetime_ms'}):
         raise ValueError('one exact current bounded lifecycle fixture required')
-    # Prepared layout and quota readback predate all product processes. No
+    # Prepared empty layout parent and quota readback predate all product processes. No
     # image, mount, quota or group configuration occurs in this scenario.
     lock=os.open(args.native_lock,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
     meta=os.fstat(lock)

@@ -163,7 +163,7 @@ def worker(args):
     successful=False
     try:
         harness.start()
-        slots=harness.services.host_configs[0]['inbox']['max_sandboxes']
+        slots=harness.services.host_configs[0]['inbox']['max_sessions']
         if args.rounds<slots+2:
             raise ValueError('configured churn must actually pass the retained slot count')
         for case in (dk01,dk02,dk03,dk04,dk05):

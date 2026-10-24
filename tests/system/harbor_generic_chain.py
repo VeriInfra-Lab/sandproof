@@ -348,13 +348,13 @@ def exercise(args):
     for i in range(1 if ci_fixtures is not None else 2):
         pool = root / str(i)
         pool.mkdir(mode=0o700)
-        for name in ('db', 'state', 'jails'):
+        for name in ('db', 'state', 'p'):
             (pool / name).mkdir(mode=0o700)
         cpu = deployment['builder_shape']['cpu_count'] if i else 1
         memory = deployment['builder_shape']['memory_mib'] if i else 2048
         base = descriptor('builder-base' if i else 'runtime-base', args.kernel, args.rootfs, cpu, memory)
         cfg = {'namespace': namespaces[i], 'database': str(pool / 'db/controller.db'),
-            'node_state_dir': str(pool / 'state'), 'chroot_base': str(pool / 'jails'),
+            'node_state_dir': str(pool / 'state'), 'chroot_base': str(pool / 'p/v'),
             'jailer': str(args.jailer), 'firecracker': str(firecracker),
             'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base + stride * i,
             'vcpu_count': cpu, 'memory_mib': memory,
@@ -461,7 +461,7 @@ def exercise(args):
         try:
             native_id=services.native_id_for(env.sandbox_id)
             secret,name,claim=record_for(root/'0',native_id=native_id)
-            network=json.loads((root/'0/jails/.claims'/name/'network.json').read_text())
+            network=json.loads((Path(settings[0]['chroot_base'])/'.claims'/name/'network.json').read_text())
             if network['resource_id']!=name:
                 raise RuntimeError('original network resource differs from mapped VM')
             physical=claim|dict(network_inode=network['namespace_inode'])
@@ -476,7 +476,7 @@ def exercise(args):
         assert bound['template_id'] == template['templateId'] and bound['revision'] == template['revision']
         assert bound['rootfs']['sha256'] == template['rootfsSha256']
         assert process_start_ticks(claim['pid']) == claim['start_time_ticks']
-        disk = root / '0/jails' / firecracker.name / name / 'root/rootfs.ext4'
+        disk = Path(settings[0]['chroot_base']) / firecracker.name / name / 'root/rootfs.ext4'
         assert disk.stat().st_size == template['diskBytes']
         source = Path(bound['rootfs']['path'])
         assert (disk.stat().st_dev, disk.stat().st_ino) != (source.stat().st_dev, source.stat().st_ino)
@@ -550,7 +550,7 @@ def exercise(args):
                     pending_actions = db.execute("SELECT COUNT(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0]
                 try:
                     assert not pending_actions and all(p == 'Destroyed' for p in phases)
-                    claims = pool / 'jails/.claims'
+                    claims = Path(settings[i]['chroot_base']) / '.claims'
                     if claims.exists():
                         check_no_resources(pool, namespaces[i], firecracker, args.uid_base + i * stride,
                                            physical_identities if i==0 else (),native=settings[i])
@@ -684,14 +684,14 @@ def exercise(args):
                     phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
                 if any(p != 'Destroyed' for p in phases):
                     raise RuntimeError('durable terminal cleanup incomplete')
-                claims = root / str(i) / 'jails/.claims'
+                claims = Path(settings[i]['chroot_base']) / '.claims'
                 if claims.exists():
                     check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * stride,
                                        physical_identities if i==0 else (),native=settings[i])
                     for claim in claims.iterdir():
                         audit_gone(root / str(i), firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
                 else:
-                    for parent in (root / str(i) / 'jails', Path('/run/netns'), Path('/sys/fs/cgroup')):
+                    for parent in (Path(settings[i]['chroot_base']), Path('/run/netns'), Path('/sys/fs/cgroup')):
                         assert not list(parent.rglob(f'vm-{namespaces[i]}-*'))
                 if i==0:
                     for identity in physical_identities:

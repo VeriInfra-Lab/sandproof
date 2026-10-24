@@ -143,13 +143,13 @@ def prepare_services(args, mounted, template):
     """
     from server_templates import descriptor
     config = dict(template)
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (mounted / name).mkdir(mode=0o700)
     key = secrets.token_hex(32)
     port = free_loopback_port()
     config.update(
         namespace=secrets.token_hex(8), database=str(mounted / "db/controller.db"),
-        node_state_dir=str(mounted / "state"), chroot_base=str(mounted / "jails"),
+        node_state_dir=str(mounted / "state"), chroot_base=str(mounted / "p/v"),
         max_active_global=4, max_active_per_tenant=4,
         max_disk_bytes_global=8192 * MIB, max_disk_bytes_per_tenant=4096 * MIB,
         cleanup_reserve_bytes=RESERVE, public_ipv4_enabled=False,

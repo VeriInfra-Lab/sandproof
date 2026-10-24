@@ -1,6 +1,7 @@
 """Shared assembly contracts only: no product process, TLS, Redis or KVM."""
 import argparse
 import copy
+import json
 from contextlib import ExitStack
 import os
 from pathlib import Path
@@ -16,6 +17,66 @@ sys.path.insert(0,str(ROOT/'tests/system'))
 import _runtime_services as services
 from _complete_runtime import complete_runtime
 from tools.benchmark_ci import remove_private_tree
+
+
+class CaptureProvisionTests(unittest.TestCase):
+    def fixture(self, root):
+        control=root/'control';control.mkdir(mode=0o700)
+        parent=root/'p';parent.mkdir(mode=0o700)
+        return control,dict(inbox=dict(host_epoch=None),capture=dict(layout_parent=str(parent)))
+
+    def write_role(self,path,value,*,uid,gid):
+        self.assertEqual((uid,gid),(0,0))
+        path.write_text(json.dumps(value));path.chmod(0o600)
+
+    def test_original_capture_command_precedes_bootstrap_and_final_role_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);control,config=self.fixture(root)
+            calls=[]
+            def capture(command,**kwargs):
+                self.assertEqual(command,['original-cgroup',str(control/'sandproof-host'),
+                    'provision-capture-layout','--config',str(control/'host-provision.json')])
+                self.assertEqual(kwargs['timeout'],30)
+                self.assertTrue(kwargs['check'])
+                self.assertFalse((control/'host.json').exists())
+                calls.append('capture')
+                for name in ('v','s'):
+                    (root/'p'/name).mkdir(mode=0o700)
+            registration=dict(version=1,boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),policy=[1]*32)
+            def bootstrap(command,*args,**kwargs):
+                self.assertEqual(command,['original-cgroup',str(control/'sandproof-host'),
+                    'provision-bootstrap','--config',str(control/'host-provision.json')])
+                self.assertEqual(calls,['capture'])
+                calls.append('bootstrap')
+                return registration
+            with patch.object(services,'write_role',side_effect=self.write_role), \
+                    patch('tools.service_cgroup.prefix',return_value=['original-cgroup']), \
+                    patch.object(services.subprocess,'run',side_effect=capture), \
+                    patch('tools.ci_e2e_prepare.bounded_json_command',side_effect=bootstrap):
+                path=services._provision_host(control/'sandproof-host',control,config,root/'group.json')
+            self.assertEqual(calls,['capture','bootstrap'])
+            self.assertEqual(json.loads(path.read_text())['inbox']['host_epoch'],registration)
+            self.assertIsNone(json.loads((control/'host-provision.json').read_text())['inbox']['host_epoch'])
+
+    def test_partial_capture_error_is_preserved_and_never_starts_bootstrap_or_retries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);control,config=self.fixture(root)
+            failure=services.subprocess.CalledProcessError(1,['capture'])
+            def partial(*args,**kwargs):
+                (root/'p/v').mkdir(mode=0o700)
+                raise failure
+            with patch.object(services,'write_role',side_effect=self.write_role), \
+                    patch('tools.service_cgroup.prefix',return_value=['original-cgroup']), \
+                    patch.object(services.subprocess,'run',side_effect=partial) as command, \
+                    patch('tools.ci_e2e_prepare.bounded_json_command') as bootstrap, \
+                    self.assertRaises(services.subprocess.CalledProcessError) as caught:
+                services._provision_host(control/'sandproof-host',control,config,root/'group.json')
+            self.assertIs(caught.exception,failure)
+            command.assert_called_once()
+            bootstrap.assert_not_called()
+            self.assertTrue((root/'p/v').is_dir())
+            self.assertTrue((control/'host-provision.json').is_file())
+            self.assertFalse((control/'host.json').exists())
 
 
 class ReadinessSimulation:
@@ -171,7 +232,7 @@ class RuntimeServicesTests(unittest.TestCase):
         """Keep the original artifact validator; stop before any role allocation."""
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()
-            for part in ('db','state','jails'):
+            for part in ('db','state','p'):
                 (root/part).mkdir()
             paths={role:str(root/('sandproof-'+role)) for role in ('center','host')}
             versions=dict(internal_protocol=2,center_store=6,host_store=16)
@@ -183,7 +244,7 @@ class RuntimeServicesTests(unittest.TestCase):
                 redis_gid=1002,candidate_manifest=root/'manifest.json',redis_material=root/'redis',
                 service_staging_parent=root/'staging')
             native=dict(uid_base=3200000,database=str(root/'db/controller.db'),
-                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'))
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'))
             class BeforeStaging(RuntimeError):
                 pass
             with patch.object(services.os,'geteuid',return_value=0), \
@@ -434,7 +495,7 @@ class RuntimeServicesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()
             native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
-                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'),kernel=str(root/'kernel'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel=str(root/'kernel'),
                 rootfs=str(root/'rootfs'),firecracker=str(root/'firecracker'),uid_base=3200000,
                 max_active_global=1,max_active_per_tenant=1,max_disk_bytes_global=8192,
                 max_disk_bytes_per_tenant=4096,cleanup_reserve_bytes=4096),slots=1,file_size=lambda _:1024)
@@ -463,7 +524,7 @@ class RuntimeServicesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()
             native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
-                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'),kernel=str(root/'kernel'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel=str(root/'kernel'),
                 rootfs=str(root/'rootfs'),firecracker=str(root/'firecracker'),uid_base=3200000,
                 max_active_global=2,max_active_per_tenant=2,max_disk_bytes_global=48*gib,
                 max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=8*gib),slots=2,file_size=lambda _:1024)

@@ -21,12 +21,12 @@ class CompleteFixtureTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(dir="/tmp")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        for name in ("db", "state", "jails"):
+        for name in ("db", "state", "p"):
             (self.root / name).mkdir(mode=0o700)
         for name, size in (("kernel", 50), ("firecracker", 100), ("rootfs", 200)):
             (self.root / name).write_bytes(bytes(size))
         self.settings = dict(namespace="a" * 16, database=str(self.root / "db/controller.db"),
-                             node_state_dir=str(self.root / "state"), chroot_base=str(self.root / "jails"),
+                             node_state_dir=str(self.root / "state"), chroot_base=str(self.root / "p/v"),
                              kernel=str(self.root / "kernel"), rootfs=str(self.root / "rootfs"),
                              firecracker=str(self.root / "firecracker"), uid_base=10000,
                              max_active_global=2, max_active_per_tenant=1,

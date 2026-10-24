@@ -37,6 +37,7 @@ from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.system_acceptance import digest, json_file, private_path
 from tools.template_physical_storage import envelope
+from tools.capture_acceptance import require_capacity
 
 MIB = 1024**2
 MAX_ACTIVATION_BYTES = 200 * 1024**3
@@ -173,6 +174,37 @@ def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, ac
     return profile
 
 
+def _provision_host(binary, control, config, record):
+    """One fresh layout and epoch; errors retain the exact partial deployment."""
+    # Fresh provisioning is explicit and occurs before the final role
+    # configuration is written. serve/restart never repeats it.
+    provision=control/'host-provision.json'
+    write_role(provision,config,uid=0,gid=0)
+    from tools.service_cgroup import prefix
+    from tools.ci_e2e_prepare import bounded_json_command
+    # Only this fresh-run preparation creates the layout. Restart uses
+    # the same final role config and never re-enters this method.
+    with (control/'capture-provision.log').open('xb') as output:
+        os.chmod(control/'capture-provision.log',0o600)
+        subprocess.run([*prefix(record),str(binary),
+            'provision-capture-layout','--config',str(provision)],check=True,timeout=30,
+            stdout=output,stderr=output,env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
+    if (control/'capture-provision.log').stat().st_size>65536:
+        raise ValueError('capture provision output exceeds its finite evidence budget')
+    for child in ('v','s'):
+        private_path(Path(config['capture']['layout_parent'])/child,directory=True)
+    registration=bounded_json_command([*prefix(record),str(binary),
+        'provision-bootstrap','--config',str(provision)],
+        {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},timeout=30,max_bytes=4096)
+    if (set(registration)!={'version','boot_id','policy'} or registration['version']!=1
+            or registration['boot_id']!=Path('/proc/sys/kernel/random/boot_id').read_text().strip()):
+        raise ValueError('actual original bootstrap provisioning not confirmed')
+    config['inbox']['host_epoch']=registration
+    path=control/'host.json'
+    write_role(path,config,uid=0,gid=0)
+    return path
+
+
 class RuntimeServices:
     """One owned process assembly; every restart uses its original configuration."""
     @classmethod
@@ -185,6 +217,17 @@ class RuntimeServices:
         test_credentials(key,extra_credentials)
         root=private_path(root,directory=True)
         pools=copy.deepcopy(native_pools)
+        captures=json_file(private_path(args.capture_settings),limit=65536)
+        if (type(captures) is not list or len(captures)!=len(pools)
+                or any(type(value) is not dict for value in captures)):
+            raise ValueError('explicit current capture settings required for the whole host cohort')
+        retained=job_count+sum(pool['max_active_global'] for pool in pools)
+        for native,capture in zip(pools,captures):
+            pool_root=Path(native['database']).parent.parent
+            parent=Path(capture['layout_parent'])
+            if parent!=pool_root/'p' or parent/'v'!=Path(native['chroot_base']):
+                raise ValueError('capture profile must bind the exact fresh runtime sibling')
+            require_capacity(capture,native,retained)
         ids=identities(args.center_uid,args.center_gid,args.redis_uid,args.redis_gid,
                        uid_base=min(native['uid_base'] for native in pools))
         paths=dict(center=Path(args.center),host=Path(args.host))
@@ -198,12 +241,12 @@ class RuntimeServices:
             paths={role:str(path) for role,path in paths.items()},versions=versions)
         redis_receipt=check_material(Path(args.redis_material),protected=True)
         hosts=[]
-        for native in pools:
+        for native,capture in zip(pools,captures):
             host_root=Path(native['database']).parent.parent
             if host_root not in (root,root/'0',root/'1'):
                 raise ValueError('explicit original host roots must belong to this fresh evidence root')
             hosts.append(private_path(host_root,directory=True))
-            for path in (Path(native['database']).parent,Path(native['node_state_dir']),Path(native['chroot_base'])):
+            for path in (Path(native['database']).parent,Path(native['node_state_dir']),Path(capture['layout_parent'])):
                 private_path(path,directory=True)
                 if any(path.iterdir()):
                     raise ValueError('never adopt existing native history or physical resources')
@@ -229,14 +272,6 @@ class RuntimeServices:
         copied={}
         source_checksums={}
         pending_copies=[]
-        captures=json_file(private_path(args.capture_settings),limit=65536)
-        if (type(captures) is not list or len(captures)!=len(pools)
-                or any(type(value) is not dict for value in captures)):
-            raise ValueError('explicit current capture settings required for the whole host cohort')
-        for native,capture in zip(pools,captures):
-            if Path(capture['layout_parent'])/'v' != Path(native['chroot_base']):
-                raise ValueError('capture profile must bind the original runtime sibling')
-            private_path(Path(capture['layout_parent'])/'s',directory=True)
         catalogs=copy.deepcopy(registered_catalogs)
         asset_bytes=0
         for catalog in catalogs:
@@ -326,22 +361,7 @@ class RuntimeServices:
         write_role(center_path,center,uid=ids['center'][0],gid=ids['center'][1])
         host_paths=[]
         for control,config in zip(layout['host_controls'],host_configs):
-            # Fresh provisioning is explicit and occurs before the final role
-            # configuration is written. serve/restart never repeats it.
-            provision=control/'host-provision.json'
-            write_role(provision,config,uid=0,gid=0)
-            from tools.service_cgroup import prefix
-            from tools.ci_e2e_prepare import bounded_json_command
-            registration=bounded_json_command([*prefix(record),str(control/'sandproof-host'),
-                'provision-bootstrap','--config',str(provision)],
-                {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},timeout=30,max_bytes=4096)
-            if (set(registration)!={'version','boot_id','policy'} or registration['version']!=1
-                    or registration['boot_id']!=Path('/proc/sys/kernel/random/boot_id').read_text().strip()):
-                raise ValueError('actual original bootstrap provisioning not confirmed')
-            config['inbox']['host_epoch']=registration
-            path=control/'host.json'
-            write_role(path,config,uid=0,gid=0)
-            host_paths.append(path)
+            host_paths.append(_provision_host(control/'sandproof-host',control,config,record))
         redis_path=layout['redis']/'redis.conf'
         write_role(redis_path,redis_configuration(layout['redis'],port=redis_port,password=password).encode(),
                    uid=ids['redis'][0],gid=ids['redis'][1])

@@ -54,8 +54,8 @@ def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=
     jail = Path(result["chroot_base"])
     root = database.parent.parent
     if (database != root / "db/controller.db" or node != root / "state"
-            or jail != root / "jails"):
-        raise ValueError("fresh private test db/state/jails layout required")
+            or jail != root / "p/v"):
+        raise ValueError("fresh private test db/state/p/v layout required")
     size = file_size or (lambda path: Path(path).stat().st_size)
     kernel_bytes = size(result["kernel"])
     runtime_bytes = size(result["firecracker"])

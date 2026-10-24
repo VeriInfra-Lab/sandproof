@@ -19,6 +19,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import socket
@@ -234,7 +235,7 @@ def exercise(args: argparse.Namespace) -> None:
     vm_name = f"vm-{namespace}-0"
     api_key = secrets.token_hex(32)
     port = free_loopback_port()
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
@@ -250,7 +251,7 @@ def exercise(args: argparse.Namespace) -> None:
         "node_state_dir": str(root / "state"),
         "jailer": str(Path(args.jailer).resolve(strict=True)),
         "firecracker": str(Path(args.firecracker).resolve(strict=True)),
-        "chroot_base": str(root / "jails"),
+        "chroot_base": str(root / "p/v"),
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
@@ -309,14 +310,14 @@ def exercise(args: argparse.Namespace) -> None:
             assert not list((root / "state/fences").glob("*.json")), (
                 "opening fence was written before injected exit"
             )
-            assert not (root / "jails/.claims" / vm_name).exists(), (
+            assert not (original_chroot(root) / ".claims" / vm_name).exists(), (
                 "VM was launched before opening fence"
             )
             assert not Path(f"/run/netns/{vm_name}").exists(), (
                 "network was created before opening fence"
             )
         else:
-            record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
+            record = json.loads((original_chroot(root) / ".claims" / vm_name / "record.json").read_text())
             assert record["resource_id"] == vm_name
             pid, ticks = record["pid"], record["start_time_ticks"]
             assert process_start_ticks(pid) == ticks, "first VM is not running after server exit"
@@ -332,7 +333,7 @@ def exercise(args: argparse.Namespace) -> None:
         sandbox_id = items[0]["sandboxID"]
         assert sandbox_id == identity['binding']['session'], "recovery published a different admitted create"
         if before_host:
-            record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
+            record = json.loads((original_chroot(root) / ".claims" / vm_name / "record.json").read_text())
             assert record["resource_id"] == vm_name
             pid, ticks = record["pid"], record["start_time_ticks"]
         assert process_start_ticks(pid) == ticks, "server restart replaced the VM"
@@ -366,7 +367,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert status == 200 and json.loads(body) == [], status
         assert fetch(opener, base_url, "GET", f"/sandboxes/{sandbox_id}", api_key)[0] == 404
         assert not Path(f"/run/netns/{vm_name}").exists(), "network namespace survived cleanup"
-        jail = root / "jails" / Path(args.firecracker).name / vm_name
+        jail = original_chroot(root) / Path(args.firecracker).name / vm_name
         assert not jail.exists(), "private VM jail survived cleanup"
         assert process_start_ticks(pid) != ticks, "VM was relaunched during recovery"
         completed = True

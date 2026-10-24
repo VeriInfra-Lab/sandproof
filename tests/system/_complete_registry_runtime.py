@@ -271,7 +271,7 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
     for index, shape in enumerate((runtime_shape, builder_shape)):
         pool = root / str(index)
         pool.mkdir(mode=0o700)
-        for name in ("db", "state", "jails"):
+        for name in ("db", "state", "p"):
             (pool / name).mkdir(mode=0o700)
         cpu, memory = shape
         rootfs = builder_rootfs if index else args.rootfs
@@ -279,7 +279,7 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
         base['owner'] = None
         config = {"namespace": namespaces[index], "database": str(pool / "db/controller.db"),
             "node_state_dir": str(pool / "state"), "jailer": str(args.jailer), "firecracker": str(firecracker),
-            "chroot_base": str(pool / "jails"), "kernel": str(args.kernel), "rootfs": str(rootfs),
+            "chroot_base": str(pool / "p/v"), "kernel": str(args.kernel), "rootfs": str(rootfs),
             "uid_base": args.uid_base + index * 100, "vcpu_count": cpu, "memory_mib": memory,
             "host_resources": {"cgroup_parent": str(args.build_cgroup_parent if index else args.cgroup_parent),
                                "memory_max_bytes": (memory + 256) * MIB},

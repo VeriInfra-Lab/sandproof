@@ -20,6 +20,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import socket
@@ -71,7 +72,7 @@ def service_groups(runtime, services):
 def configuration(budgets, root, namespace, artifacts, *, uid, cgroup, base, file_size=None):
     settings = dict(budgets)
     settings.update(namespace=namespace, database=str(root / 'db/controller.db'),
-        node_state_dir=str(root / 'state'), chroot_base=str(root / 'jails'),
+        node_state_dir=str(root / 'state'), chroot_base=str(root / 'p/v'),
         **{key: spec['path'] for key, spec in artifacts.items()},
         uid_base=uid, vcpu_count=1, memory_mib=512,
         host_resources={'cgroup_parent': str(cgroup), 'memory_max_bytes': VMM_MEMORY},
@@ -84,7 +85,7 @@ def configuration(budgets, root, namespace, artifacts, *, uid, cgroup, base, fil
                        'max_memory_bytes_per_tenant': VMM_MEMORY}})
     if settings['data_transfer'] != budgets['data_transfer']:
         raise ValueError('final transfer budgets changed')
-    longest = root / 'jails' / Path(artifacts['firecracker']['path']).name / f'vm-{namespace}-1/root/api.socket'
+    longest = root / 'p/v' / Path(artifacts['firecracker']['path']).name / f'vm-{namespace}-1/root/api.socket'
     if len(os.fsencode(longest)) >= 108:
         raise ValueError('owned Firecracker socket path exceeds Linux limit')
     complete_runtime = _runpy.run_path(
@@ -153,8 +154,8 @@ def live_identity(root, args, sandbox, *, native_id, local_number):
     if [int(value) for value in uid] != [expected_uid] * 4:
         raise AssertionError('actual VMM UID differs from its exclusive configured identity')
     group = args.cgroup_parent / name
-    cgroup = json.loads((root / 'jails/.claims' / name / 'cgroup.json').read_bytes())
-    network = json.loads((root / 'jails/.claims' / name / 'network.json').read_bytes())
+    cgroup = json.loads((original_chroot(root) / '.claims' / name / 'cgroup.json').read_bytes())
+    network = json.loads((original_chroot(root) / '.claims' / name / 'network.json').read_bytes())
     group_identity = group.stat()
     if (group_identity.st_dev, group_identity.st_ino) != (cgroup['device'], cgroup['inode']):
         raise AssertionError('original VMM cgroup identity changed')
@@ -172,7 +173,7 @@ def live_identity(root, args, sandbox, *, native_id, local_number):
     if (namespace.st_ino != network['namespace_inode']
             or network.get('namespace_device') not in (None, namespace.st_dev)):
         raise AssertionError('original VM network namespace changed')
-    private = root / 'jails' / args.firecracker.name / name / 'root/rootfs.ext4'
+    private = original_chroot(root) / args.firecracker.name / name / 'root/rootfs.ext4'
     disk, source = private.stat(), args.rootfs.stat()
     if disk.st_size != source.st_size or (disk.st_dev, disk.st_ino) == (source.st_dev, source.st_ino):
         raise AssertionError('VM disk is not a full independent base copy')
@@ -273,9 +274,9 @@ def exercise(args, report):
     report['run_root'] = str(root)
     namespace = secrets.token_hex(8)
     report['namespace'], report['uid_base'] = namespace, args.uid_base
-    for child in ('db', 'state', 'jails'):
+    for child in ('db', 'state', 'p'):
         (root / child).mkdir(mode=0o700)
-    preflight = dict(approved, chroot_base=str(root / 'jails'),
+    preflight = dict(approved, chroot_base=str(root / 'p/v'),
                      min_free_disk_bytes=max(approved['min_free_disk_bytes'],
                                              3 * inputs['rootfs']['bytes'] + budgets['cleanup_reserve_bytes']),
                      min_available_memory_bytes=max(approved['min_available_memory_bytes'],

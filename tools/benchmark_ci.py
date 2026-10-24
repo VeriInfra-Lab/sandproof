@@ -155,7 +155,7 @@ def instantiate_policy(template, root, namespaces, *, job_count):
         pool = next(p for p in profile['pools'] if p['role'] == role)
         original_namespace = pool['namespace']
         pool.update(namespace=namespaces[index], database=str(root / str(index) / 'db/controller.db'),
-                    node_state_dir=str(root / str(index) / 'state'), chroot_base=str(root / str(index) / 'jails'))
+                    node_state_dir=str(root / str(index) / 'state'), chroot_base=str(root / str(index) / 'p/v'))
         for cache in profile['host_template_caches']:
             if cache['namespace'] == original_namespace:
                 cache.update(namespace=namespaces[index], root=str(root / str(index) / 'template-cache'))

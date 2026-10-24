@@ -110,7 +110,7 @@ def physical_record(root, host_audit, identity):
         raise ValueError('original physical position binding changed')
     node = json_file(Path(root)/'control/host.json')['native']
     name = 'vm-' + node['namespace'] + '-' + str(native[0]['current_vm'])
-    claim_directory = private_path(Path(root)/'jails/.claims'/name, directory=True)
+    claim_directory = private_path(Path(node['chroot_base'])/'.claims'/name, directory=True)
     directory_fd = os.open(claim_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         directory_before = os.fstat(directory_fd)
@@ -163,8 +163,9 @@ def vm_gone(root, identity, firecracker, cgroup_parent):
     name = identity['resource_id']
     if same_running_process(identity):
         return False
+    native=json_file(private_path(Path(root)/'control/host.json'))['native']
     return not any(path.exists() for path in (
-        Path(root)/'jails'/Path(firecracker).name/name,
+        Path(native['chroot_base'])/Path(firecracker).name/name,
         Path('/run/netns')/name, Path(cgroup_parent)/name))
 
 
@@ -173,7 +174,7 @@ def prepared_native(args, root, namespace):
     disk = Path(args.rootfs).stat().st_size
     return dict(namespace=namespace, database=str(root/'db/controller.db'),
         node_state_dir=str(root/'state'), jailer=str(args.jailer), firecracker=str(args.firecracker),
-        chroot_base=str(root/'jails'), kernel=str(args.kernel), rootfs=str(args.rootfs),
+        chroot_base=str(root/'p/v'), kernel=str(args.kernel), rootfs=str(args.rootfs),
         uid_base=args.uid_base, vcpu_count=1, memory_mib=256, file_policy_digest=1,
         max_active_global=2, max_active_per_tenant=2, max_disk_bytes_global=disk*4,
         max_disk_bytes_per_tenant=disk*4, cleanup_reserve_bytes=disk,
@@ -191,7 +192,7 @@ class Harness:
         self.known, self.history = {}, []
         self.cases, self.last_processes = [], None
         self.next_center_audit = 0
-        for part in ('db','state','jails'):
+        for part in ('db','state','p'):
             (self.root/part).mkdir(mode=0o700)
         native = prepared_native(args,self.root,secrets.token_hex(8))
         self.services = prepare_fault_services(args,self.root,native,slots=2,key=self.key,
