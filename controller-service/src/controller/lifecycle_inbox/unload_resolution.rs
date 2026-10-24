@@ -63,9 +63,9 @@ pub(super) fn validate_entry(entry: &Entry) -> Result<(), JournalError> {
             || result.observed_at_ms >= result.end_at_ms
             || result.end_at_ms > result.max_end_at_ms
             || result.started_at_ms > result.startup_deadline_ms)
-        {
-            return Err(JournalError::CorruptStore);
-        }
+    {
+        return Err(JournalError::CorruptStore);
+    }
     Ok(())
 }
 

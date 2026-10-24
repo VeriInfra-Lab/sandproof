@@ -423,7 +423,19 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
     fill_host_credentials(candidate, tx, namespace, world, local)
 }
 
-fn fill_host_credentials(candidate:&mut ReadyCandidate,tx:&Transaction<'_>,namespace:&str,world:&core::World,local:InternalLocalBinding)->Result<(),JournalError>{
+fn fill_host_credentials(
+    candidate: &mut ReadyCandidate,
+    tx: &Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    local: InternalLocalBinding,
+) -> Result<(), JournalError> {
+    let expected_generation = candidate
+        .view
+        .native
+        .as_ref()
+        .ok_or(JournalError::CorruptStore)?
+        .generation;
     candidate.options = Some(
         admission::read_create_options(tx, namespace, local.sandbox)
             .map_err(|_| JournalError::CorruptStore)?,
@@ -437,7 +449,7 @@ fn fill_host_credentials(candidate:&mut ReadyCandidate,tx:&Transaction<'_>,names
     candidate.view.readiness = CreateReadiness::Pending(
         if candidate
             .credential
-            .is_some_and(|(generation, _)| generation == native.generation)
+            .is_some_and(|(generation, _)| generation == expected_generation)
         {
             CreateReadinessPending::HostUnobserved
         } else {

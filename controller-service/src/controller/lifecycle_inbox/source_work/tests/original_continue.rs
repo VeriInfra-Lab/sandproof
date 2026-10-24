@@ -57,6 +57,94 @@ fn authorize(
     observation
 }
 
+#[test]
+fn explicit_no_request_retains_authorized_worker_and_fits_original_prepaid_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source, action) = pending_seal(&path);
+    let mut end = authorize(&mut journal, &source, &action);
+    end.outcome = crate::capture::CaptureRequestEndOutcome::NoRequest;
+    let before = journal.world().unwrap();
+    let receipt = journal
+        .record_lifecycle_capture_request_end(
+            &source.work,
+            &v3::context(),
+            end.clone(),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert_eq!(journal.world().unwrap(), before);
+    assert!(matches!(
+        receipt.end,
+        core::capture::CaptureWorkEnd::NoRequest { .. }
+    ));
+    let saved = journal
+        .lifecycle_capture_record(source.work.anchor.local.sandbox)
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.capture_request_end(), Some(&end));
+    assert_eq!(saved.capture_worker(), Some(&worker()));
+    assert!(
+        serde_json::to_vec(&serde_json::to_value(&saved).unwrap()["capture"]["end"])
+            .unwrap()
+            .len()
+            <= 16_384
+    );
+    assert!(
+        journal
+            .prepare_lifecycle_original_continue(
+                &source.work,
+                &v3::context(),
+                None,
+                10,
+                &mut NeverCrash
+            )
+            .is_err()
+    );
+    assert_eq!(journal.world().unwrap(), before);
+    let work = journal
+        .prepare_lifecycle_original_continue(
+            &source.work,
+            &v3::context(),
+            Some(end),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert_eq!(work.end_receipt(), receipt);
+    assert_prepared(
+        &mut journal,
+        &source,
+        &action,
+        &work,
+        before
+            .sandbox_record(source.work.anchor.local.sandbox)
+            .unwrap(),
+        false,
+    );
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap()[0]
+            .capture_work_end_receipt()
+            .unwrap(),
+        Some(receipt)
+    );
+    let (mut completed, record) = unloaded_resume_source(&dir.path().join("completed"));
+    let saved = completed.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    let mut impossible = actual_api_end(&saved);
+    impossible.outcome = crate::capture::CaptureRequestEndOutcome::NoRequest;
+    assert!(matches!(
+        completed.record_lifecycle_capture_request_end(
+            &record.work,
+            &v3::context(),
+            impossible,
+            &mut NeverCrash
+        ),
+        Err(JournalError::InvalidHostEvidence)
+    ));
+}
+
 fn assert_prepared(
     journal: &mut ControllerJournal,
     source: &SourceWorkRecord,
@@ -343,7 +431,8 @@ fn public_prepare_rejects_unended_authorized_worker_substituted_fact_expiry_and_
             }
             1 => {
                 let mut value = authorize(&mut journal, &source, &action);
-                value.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 100 };
+                value.outcome =
+                    crate::capture::CaptureRequestEndOutcome::Returned { http_status: 100 };
                 end = Some(value);
             }
             2 => {

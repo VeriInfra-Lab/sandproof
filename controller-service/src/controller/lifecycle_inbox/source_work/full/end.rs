@@ -1,7 +1,10 @@
 //! Save original writer/API facts without declaring capture success, resolving
 //! a commit, releasing material, publishing Running or granting an execution.
 use super::{CaptureWork, JournalError, SourceWorkRecord, codec, core, key};
-use crate::{ControllerJournal, CrashInjector, CrashPoint, capture::{CaptureRequestEndObservation, CaptureRequestEndOutcome}};
+use crate::{
+    ControllerJournal, CrashInjector, CrashPoint,
+    capture::{CaptureRequestEndObservation, CaptureRequestEndOutcome},
+};
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, ContentDigest};
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +59,8 @@ pub(super) fn validate_record(record: &SourceWorkRecord) -> Result<(), JournalEr
             let action = capture.action.as_ref().ok_or(JournalError::CorruptStore)?;
             let worker = capture.worker.as_ref().ok_or(JournalError::CorruptStore)?;
             observation.matches(action, &capture.full, record.work.requirement(), worker)?
-                && !(capture.completed.is_some() && matches!(observation.outcome,CaptureRequestEndOutcome::NoRequest))
+                && !(capture.completed.is_some()
+                    && matches!(observation.outcome, CaptureRequestEndOutcome::NoRequest))
         }
     };
     if !matches {
@@ -85,10 +89,14 @@ fn receipt(
             }
         }
         CaptureEndRecord::WorkerEnded { observation } => {
-            let seal=seal_end(record,&observation.action)?;
+            let seal = seal_end(record, &observation.action)?;
             match observation.outcome {
-                CaptureRequestEndOutcome::NoRequest => core::capture::CaptureWorkEnd::NoRequest { seal },
-                CaptureRequestEndOutcome::Returned { .. } => core::capture::CaptureWorkEnd::Returned { seal },
+                CaptureRequestEndOutcome::NoRequest => {
+                    core::capture::CaptureWorkEnd::NoRequest { seal }
+                }
+                CaptureRequestEndOutcome::Returned { .. } => {
+                    core::capture::CaptureWorkEnd::Returned { seal }
+                }
             }
         }
     };
@@ -319,7 +327,9 @@ fn set_end(
         if !observation.matches(action, &capture.full, record.work.requirement(), worker)? {
             return Err(JournalError::InvalidHostEvidence);
         }
-        if capture.completed.is_some() && matches!(observation.outcome,CaptureRequestEndOutcome::NoRequest) {
+        if capture.completed.is_some()
+            && matches!(observation.outcome, CaptureRequestEndOutcome::NoRequest)
+        {
             return Err(JournalError::InvalidHostEvidence);
         }
         CaptureEndRecord::WorkerEnded {
