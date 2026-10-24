@@ -174,6 +174,10 @@ pub(super) fn input_sandbox(
         I::Request(R::Pause(request)) => request.sandbox,
         I::Request(R::Resume(request)) => request.sandbox,
         I::Request(R::Compensate(request)) => request.sandbox,
+        I::Capture(
+            core::capture::CaptureInput::PrepareOriginalContinue { identity, .. }
+            | core::capture::CaptureInput::PublishOriginalContinued { identity },
+        ) => identity.key.sandbox,
         I::Scheduler(S::ReserveStartup(key) | S::ReservePauseSnapshot(key)) => key.sandbox,
         I::Scheduler(
             S::DispatchPrepare(sandbox, ..)

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 pub(in crate::controller) use claim::claim;
 pub(in crate::controller) use complete::save_receipt;
+pub(in crate::controller) use end::prepare::permits_input as permits_continue_input;
 pub(super) use validate::validate_record;
 const RECORD_BYTES: usize = 131_072;
 const MAX_FULL: usize = 2;

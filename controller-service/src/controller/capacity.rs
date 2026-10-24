@@ -53,9 +53,10 @@ struct Graph {
     operations: u64,
 }
 fn single_pause_graph() -> Graph {
-    // The one-pause profile adds fence/freeze/seal/register/stop (the final
-    // kill's stop has a different epoch). Reserve all retries before create.
-    let logical = LOGICAL + 5;
+    // The one-pause profile adds fence/freeze/seal/register/stop and the
+    // original-VM continuation Activate (the final kill has a later epoch).
+    // Reserve all retries, including a stopped activation, before create.
+    let logical = LOGICAL + 6;
     let attempts = logical * (core::DEFAULT_RETRY_LIMIT + 1);
     let receipts = attempts * 2;
     Graph {
@@ -68,7 +69,9 @@ fn single_pause_graph() -> Graph {
         inputs: INPUTS
             + 4 * (attempts - ATTEMPTS)
             + (logical - LOGICAL) * (core::DEFAULT_RETRY_LIMIT + 1)
-            + 16,
+            + 16
+            + (core::DEFAULT_RETRY_LIMIT + 1) // continuation activation retirement
+            + 2, // exact original-continue prepare and publish inputs
         sql_rows: SQL_ROWS
             + (attempts - ATTEMPTS)
             + (receipts - RECEIPTS)
@@ -78,10 +81,10 @@ fn single_pause_graph() -> Graph {
     }
 }
 
-// A three-operation deployment retains exactly the original known graph.
+// A three-operation deployment retains the original graph plus continuation.
 // For N >= 4, each additional native operation receives a whole baseline
-// graph. Its 15 logical actions dominate the <=7 new actions per operation:
-// 15*(N-2) >= 7*N. Attempts/receipts/inputs and row/scalar/policy copies scale
+// graph. Its 16 logical actions dominate the <=8 new actions per operation:
+// 16*(N-2) >= 8*N. Attempts/receipts/inputs and row/scalar/policy copies scale
 // together; no unused retry credit is silently reclaimed from old operations.
 // Each of N plans can retain N VM and N slot references, so those two arrays
 // get a separate quadratic charge rather than an assumed linear bound.

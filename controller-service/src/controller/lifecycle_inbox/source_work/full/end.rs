@@ -5,6 +5,8 @@ use crate::{ControllerJournal, CrashInjector, CrashPoint, capture::CaptureApiEnd
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, ContentDigest};
 use serde::{Deserialize, Serialize};
 
+pub(super) mod prepare;
+
 const END_RECORD_BYTES: usize = 16_384;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,10 +74,58 @@ fn receipt(
         return Ok(None);
     };
     validate_record(record)?;
+    let typed_end = match end {
+        CaptureEndRecord::NeverReleased { seal_action, .. } => {
+            core::capture::CaptureWorkEnd::NeverReleased {
+                seal: seal_action
+                    .as_deref()
+                    .map(|action| seal_end(record, action))
+                    .transpose()?,
+            }
+        }
+        CaptureEndRecord::Returned { observation } => core::capture::CaptureWorkEnd::Returned {
+            seal: seal_end(record, &observation.action)?,
+        },
+    };
     Ok(Some(core::capture::CaptureWorkEndReceipt {
         work_binding: *capture.full.binding_digest()?.as_bytes(),
         end_binding: *super::super::digest(&serde_json::to_vec(end)?).as_bytes(),
+        end: typed_end,
     }))
+}
+
+fn seal_end(
+    record: &SourceWorkRecord,
+    action: &sandproof_protocol::WorkAction<core::EffectId>,
+) -> Result<core::capture::CaptureSealEnd, JournalError> {
+    let core::Command::SealSnapshot {
+        sandbox,
+        epoch,
+        generation,
+        vm,
+        workspace,
+        snapshot,
+        manifest,
+    } = *action.command.command()
+    else {
+        return Err(JournalError::CorruptStore);
+    };
+    let original = &record.work.anchor;
+    if sandbox != original.local.sandbox
+        || generation != original.native.generation
+        || Some(vm) != original.native.current_vm
+        || action.identity.epoch != epoch
+        || action.identity.generation != generation
+        || action.identity.attempt != action.command.attempt
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(core::capture::CaptureSealEnd {
+        attempt: action.command.attempt,
+        workspace,
+        snapshot,
+        manifest,
+    })
 }
 
 impl SourceWorkRecord {
@@ -225,63 +275,70 @@ impl ControllerJournal {
         let world = tx.world();
         super::validate::validate_record(&sources.records[index], &world)?;
         let record = &sources.records[index];
-        let capture = record
-            .capture
-            .as_ref()
-            .ok_or(JournalError::UnresolvedAction)?;
-        let proposed = if let Some(observation) = observation {
-            let action = capture
-                .action
-                .as_ref()
-                .ok_or(JournalError::UnresolvedAction)?;
-            let worker = capture
-                .worker
-                .as_ref()
-                .ok_or(JournalError::UnresolvedAction)?;
-            if !observation.matches(action, &capture.full, source.requirement(), worker)? {
-                return Err(JournalError::InvalidHostEvidence);
-            }
-            CaptureEndRecord::Returned {
-                observation: Box::new(observation),
-            }
-        } else {
-            let plan = world
+        if observation.is_none()
+            && !world
                 .operation_plan(key(record).ok_or(JournalError::CorruptStore)?)
-                .ok_or(JournalError::CorruptStore)?;
-            if capture.worker.is_some()
-                || capture.completed.is_some()
-                || !plan.capture.is_some_and(|handoff| {
+                .and_then(|plan| plan.capture)
+                .is_some_and(|handoff| {
                     handoff.eligibility() == core::capture::RestoreEligibility::Revoked
                 })
-            {
-                return Err(JournalError::UnresolvedAction);
-            }
-            CaptureEndRecord::NeverReleased {
-                full_work_binding: capture.full.binding_digest()?,
-                seal_action: capture.action.clone().map(Box::new),
-            }
-        };
-        if let Some(old) = &capture.end {
-            return if old == &proposed {
-                receipt(record)?.ok_or(JournalError::CorruptStore)
-            } else {
-                Err(JournalError::Conflict)
-            };
+        {
+            return Err(JournalError::UnresolvedAction);
         }
-        if serde_json::to_vec(&proposed)?.len() > END_RECORD_BYTES {
-            return Err(JournalError::MaintenanceCapacity);
-        }
-        sources.records[index]
-            .capture
-            .as_mut()
-            .ok_or(JournalError::CorruptStore)?
-            .end = Some(proposed);
-        validate_record(&sources.records[index])?;
+        let receipt = set_end(&mut sources.records[index], observation)?;
         super::save(&tx, &sources)?;
-        let receipt = receipt(&sources.records[index])?.ok_or(JournalError::CorruptStore)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(receipt)
     }
+}
+
+fn set_end(
+    record: &mut SourceWorkRecord,
+    observation: Option<CaptureApiEndObservation>,
+) -> Result<core::capture::CaptureWorkEndReceipt, JournalError> {
+    let capture = record
+        .capture
+        .as_ref()
+        .ok_or(JournalError::UnresolvedAction)?;
+    let proposed = if let Some(observation) = observation {
+        let action = capture
+            .action
+            .as_ref()
+            .ok_or(JournalError::UnresolvedAction)?;
+        let worker = capture
+            .worker
+            .as_ref()
+            .ok_or(JournalError::UnresolvedAction)?;
+        if !observation.matches(action, &capture.full, record.work.requirement(), worker)? {
+            return Err(JournalError::InvalidHostEvidence);
+        }
+        CaptureEndRecord::Returned {
+            observation: Box::new(observation),
+        }
+    } else {
+        if capture.worker.is_some() || capture.completed.is_some() {
+            return Err(JournalError::UnresolvedAction);
+        }
+        CaptureEndRecord::NeverReleased {
+            full_work_binding: capture.full.binding_digest()?,
+            seal_action: capture.action.clone().map(Box::new),
+        }
+    };
+    if let Some(old) = &capture.end {
+        if old != &proposed {
+            return Err(JournalError::Conflict);
+        }
+    } else {
+        if serde_json::to_vec(&proposed)?.len() > END_RECORD_BYTES {
+            return Err(JournalError::MaintenanceCapacity);
+        }
+        record
+            .capture
+            .as_mut()
+            .ok_or(JournalError::CorruptStore)?
+            .end = Some(proposed);
+    }
+    receipt(record)?.ok_or(JournalError::CorruptStore)
 }

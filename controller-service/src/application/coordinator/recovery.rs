@@ -133,7 +133,11 @@ fn reclaim_uncertain_actions<H: WorkRecovery>(
 
 fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
     match world.effect_status(effect) {
-        Some(core::EffectStatus::Acknowledged(_) | core::EffectStatus::RetiredByStop(_)) => false,
+        Some(
+            core::EffectStatus::Acknowledged(_)
+            | core::EffectStatus::RetiredByStop(_)
+            | core::EffectStatus::RetiredByCaptureEnd(_),
+        ) => false,
         Some(core::EffectStatus::Committed) => {
             // A terminal intent forbids the original startup dispatch. This
             // action was never claimed, so it owns no unknown physical work.
