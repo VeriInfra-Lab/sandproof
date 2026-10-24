@@ -249,7 +249,7 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
         .unwrap()
         .unwrap();
     assert_eq!(pending.phase, PublicSessionPhase::Unloading);
-    assert!(pending.unload_outcome == Some(UnloadOutcome::Pending));
+    assert_eq!(pending.unload_outcome, Some(UnloadOutcome::Pending));
     *host.unloaded.lock().unwrap() = Some(observation.clone());
     app.reconcile_once().unwrap();
     release.complete();
@@ -318,7 +318,7 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     let pending: sandproof_protocol::lifecycle::PublicSessionView =
         serde_json::from_value(pending.1).unwrap();
     assert_eq!(pending.phase, PublicSessionPhase::Unloading);
-    assert!(pending.unload_outcome == Some(UnloadOutcome::Pending));
+    assert_eq!(pending.unload_outcome, Some(UnloadOutcome::Pending));
     release_refresh.complete();
     reconcile_seen.recv_timeout(Duration::from_secs(5)).unwrap();
     let revision_before: u64 = fixture.revision().parse().unwrap();
