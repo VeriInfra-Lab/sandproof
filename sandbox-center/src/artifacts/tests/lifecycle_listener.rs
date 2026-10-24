@@ -1,6 +1,9 @@
 //! Real bind + original Redis request-window, not a VM or isolated-router test.
 use super::*;
-use sandproof_api::{ApiCredential, admission::{RequestAdmission, RequestAdmissionLimits, RequestClass}};
+use sandproof_api::{
+    ApiCredential,
+    admission::{RequestAdmission, RequestAdmissionLimits, RequestClass},
+};
 use sandproof_center_service::{CenterApplication, CenterConfig, business::BusinessTemplates};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -12,30 +15,73 @@ async fn bound(fixture: &engine::Engine) -> (crate::boundaries::Boundaries, Arc<
     let certificates = tls::certificates_with_dual_roles();
     let identity = node();
     let client = InternalClient::new(
-        ClientTls::new(certificates.center.material(), vec![certificates.ca.der().clone()],
-            vec![certificates.host.pin()]).unwrap(),
-        RegisteredEndpoint::new("127.0.0.1:9".parse().unwrap(), "host.test".into(), identity.clone()).unwrap(),
+        ClientTls::new(
+            certificates.center.material(),
+            vec![certificates.ca.der().clone()],
+            vec![certificates.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(
+            "127.0.0.1:9".parse().unwrap(),
+            "host.test".into(),
+            identity.clone(),
+        )
+        .unwrap(),
         Limits::new(2, Duration::from_secs(1), Duration::from_secs(3)).unwrap(),
     );
-    let hosts = RegisteredHosts::new(vec![RegisteredHost { identity, client }], Handle::current()).unwrap();
+    let hosts =
+        RegisteredHosts::new(vec![RegisteredHost { identity, client }], Handle::current()).unwrap();
     let candidates = ProtectedCandidates::new(authority.clone(), hosts.clone(), store);
     let templates = BusinessTemplates::new(authority.clone(), candidates, hosts.clone()).unwrap();
-    let app = Arc::new(CenterApplication::new(authority, hosts, templates,
-        CenterConfig { domain: "example.invalid".into(), max_timeout_secs: 300,
-            max_lifetime_secs: 300, startup_timeout_secs: 30, reply_timeout: Duration::from_secs(3),
-            poll_interval: Duration::from_millis(10), public_ipv4_enabled: false },
-        &[42; 32]).unwrap());
+    let app = Arc::new(
+        CenterApplication::new(
+            authority,
+            hosts,
+            templates,
+            CenterConfig {
+                domain: "example.invalid".into(),
+                max_timeout_secs: 300,
+                max_lifetime_secs: 300,
+                startup_timeout_secs: 30,
+                reply_timeout: Duration::from_secs(3),
+                poll_interval: Duration::from_millis(10),
+                public_ipv4_enabled: false,
+            },
+            &[42; 32],
+        )
+        .unwrap(),
+    );
     let admission = RequestAdmission::new(RequestAdmissionLimits {
-        max_pending_requests: 2, control_reserve: 1 }).unwrap();
+        max_pending_requests: 2,
+        control_reserve: 1,
+    })
+    .unwrap();
     let limits = sandproof_data_transport::TransferLimits {
-        file_upload_bytes: 1024, file_download_bytes: 1024, command_input_bytes: 1024,
-        rpc_request_bytes: 1024, rpc_response_bytes: 1024, max_transfers: 2,
-        max_transfers_per_vm: 2, control_reserve: 1, request_idle_seconds: 1,
-        file_idle_seconds: 1, write_idle_seconds: 1,
+        file_upload_bytes: 1024,
+        file_download_bytes: 1024,
+        command_input_bytes: 1024,
+        rpc_request_bytes: 1024,
+        rpc_response_bytes: 1024,
+        max_transfers: 2,
+        max_transfers_per_vm: 2,
+        control_reserve: 1,
+        request_idle_seconds: 1,
+        file_idle_seconds: 1,
+        write_idle_seconds: 1,
     };
-    let boundaries = crate::boundaries::bind(app, "127.0.0.1:0".parse().unwrap(),
-        vec![ApiCredential { tenant: "1".into(), secret: SECRET.into() }], None,
-        Arc::clone(&admission), limits).await.unwrap();
+    let boundaries = crate::boundaries::bind(
+        app,
+        "127.0.0.1:0".parse().unwrap(),
+        vec![ApiCredential {
+            tenant: "1".into(),
+            secret: SECRET.into(),
+        }],
+        None,
+        Arc::clone(&admission),
+        limits,
+    )
+    .await
+    .unwrap();
     (boundaries, admission)
 }
 
@@ -64,14 +110,21 @@ async fn formal_public_listener_mounts_original_lifecycle_and_shared_admission()
     let (stop, stopped) = tokio::sync::oneshot::channel();
     let serving = tokio::spawn(async move {
         axum::serve(boundaries.public.socket, boundaries.public.router)
-            .with_graceful_shutdown(async { let _ = stopped.await; }).await.unwrap();
+            .with_graceful_shutdown(async {
+                let _ = stopped.await;
+            })
+            .await
+            .unwrap();
     });
     assert_eq!(get(address, false).await.0, 401);
     let (status, body) = get(address, true).await;
     assert_eq!(status, 200);
     // Nine comes from the existing original Redis registration in authority(),
     // not from a handler stub or a guessed new window.
-    assert_eq!(serde_json::from_slice::<serde_json::Value>(&body).unwrap(), serde_json::json!({"window": 9}));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        serde_json::json!({"window": 9})
+    );
     let held = admission.try_acquire(RequestClass::Ordinary).unwrap();
     assert_eq!(get(address, true).await.0, 429);
     assert_eq!(get(address, false).await.0, 401);

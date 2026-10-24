@@ -3,14 +3,14 @@
 use super::*;
 #[path = "tests/cache_fairness.rs"]
 mod cache_fairness;
-#[path = "tests/lifecycle_listener.rs"]
-mod lifecycle_listener;
 #[allow(
     dead_code,
     reason = "shared fixed Redis fixture exposes additional failure cases"
 )]
 #[path = "../../../sandbox-center-store/tests/support/engine.rs"]
 mod engine;
+#[path = "tests/lifecycle_listener.rs"]
+mod lifecycle_listener;
 #[path = "../../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 use sandproof_center_core::{
