@@ -29,6 +29,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+from tools.runtime_create_recovery import LIFECYCLE_PROTOCOL_VERSION
 from tools.check_kvm_host import trusted_path
 from tools.ci_e2e_supervisor import HostLease
 
@@ -91,7 +92,7 @@ def fixture(case, assets, uid, tag):
         "resource_id": "snapshot-" + tag, "store": str(case / "p" / "s"),
         "layout_parent": str(case / "p"),
         "layout_binding": fingerprint({"profile":"stage1-siblings-v1","deployment":deployment,"assets":EXPECTED,"uid":uid,"parent":str(case / "p")}),
-        "binding": {"operation": {"protocol_version": 3,
+        "binding": {"operation": {"protocol_version": LIFECYCLE_PROTOCOL_VERSION,
             "node": {"deployment_id": deployment, "node_id": "component-host", "node_generation": 1},
             "session": "session-" + tag, "key": {"deployment": deployment, "owner": "component-owner", "window": 1, "sequence": 2},
             "expected": {"state": "version", "version": 1}}, "source_incarnation": 1, "capture": 2},

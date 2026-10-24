@@ -27,7 +27,7 @@ from tools.ci_e2e_artifacts import tls_material_files
 from tools.ci_e2e_prepare import bounded_json_command
 from tools.check_kvm_host import trusted_path
 from tools.system_acceptance import private_path
-from tools.runtime_create_recovery import find_runtime_create, original_create_identity, terminal_result
+from tools.runtime_create_recovery import LIFECYCLE_PROTOCOL_VERSION, find_runtime_create, original_create_identity, terminal_result
 
 
 BLOCK_BYTES = 16 * 1024**2
@@ -417,7 +417,7 @@ def local_binding(audit, sandbox, *, expected_node):
     row = rows[0]
     if (row['binding']['node'] != expected_node
             or type(row['binding']['protocol_version']) is not int
-            or row['binding']['protocol_version'] != 3
+            or row['binding']['protocol_version'] != LIFECYCLE_PROTOCOL_VERSION
             or type(row['accepted_version']) is not int or not 0 < row['accepted_version'] < 2**64):
         raise ValueError('host audit identity mismatch')
     return row['local']

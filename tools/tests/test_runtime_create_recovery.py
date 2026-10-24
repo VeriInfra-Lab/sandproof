@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock
 
 from tools.runtime_create_recovery import (
-    CURRENT_VERSIONS, RuntimeIdentityUnknown, find_runtime_create, load_runtime_intent,
+    CURRENT_VERSIONS, LIFECYCLE_PROTOCOL_VERSION, RuntimeIdentityUnknown, find_runtime_create, load_runtime_intent,
     recover_runtime_create, terminal_result,
 )
 
@@ -25,7 +25,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.intent = dict(metadata=dict(benchmark='terminal-bench-2.0', task='sample',
             build='a'*32, revision='r1', runtime_attempt='e'*32), template=self.template)
         self.node = dict(deployment_id='test-deployment', node_id='host-runtime', node_generation=3)
-        self.binding = dict(protocol_version=3, node=copy.deepcopy(self.node), session='sandbox-17',
+        self.binding = dict(protocol_version=4, node=copy.deepcopy(self.node), session='sandbox-17',
             key=dict(deployment='test-deployment', owner='1', window=7, sequence=41),
             expected=dict(state='absent'))
         self.identity = dict(binding=copy.deepcopy(self.binding),
@@ -134,6 +134,9 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             actual[field] = int(values[0])
         self.assertEqual(CURRENT_VERSIONS, dict(internal_protocol=2, center_store=11, host_store=23))
         self.assertEqual(actual, CURRENT_VERSIONS)
+        lifecycle = (Path(__file__).resolve().parents[2] / 'sandbox-protocol/src/lifecycle.rs').read_text()
+        versions = re.findall(r'^pub const PROTOCOL_VERSION: u16 = (\d+);$', lifecycle, re.MULTILINE)
+        self.assertEqual(versions, [str(LIFECYCLE_PROTOCOL_VERSION)])
 
     def test_missing_version_fields_and_mixed_role_reports_refuse(self):
         self.insert(terminal=True)
@@ -334,7 +337,8 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             ('center',('sandboxes',0,'terminal_confirmation','request','accepted_version'),2.0),
             ('host',('operations',0,'accepted_version'),2.0),
             ('host',('operations',0,'binding','expected','version'),True),
-            ('host',('operations',0,'binding','protocol_version'),3.0),
+            ('host',('operations',0,'binding','protocol_version'),4.0),
+            ('host',('operations',0,'binding','protocol_version'),3),
             ('host',('operations',0,'confirmed_terminal','request','retention','slot'),True),
             ('host',('operations',0,'confirmed_terminal','request','accepted_version'),2.0),
         ]

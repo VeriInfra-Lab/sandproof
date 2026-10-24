@@ -18,7 +18,7 @@ SPEC.loader.exec_module(fixture)
 
 class FixtureTests(unittest.TestCase):
     def terminal_audits(self):
-        binding = dict(protocol_version=3, node=dict(deployment_id='domain', node_id='host-runtime', node_generation=1),
+        binding = dict(protocol_version=4, node=dict(deployment_id='domain', node_id='host-runtime', node_generation=1),
             session='sandbox-29', key=dict(deployment='domain', owner='tenant-1', window=7, sequence=8),
             expected=dict(state='absent'))
         identity = dict(binding=binding, center=dict(deployment='domain', center='center-a'),
@@ -478,7 +478,7 @@ class FixtureTests(unittest.TestCase):
 
     def test_global_identity_is_never_converted_by_parsing_suffix(self):
         node = dict(deployment_id='one', node_id='host-runtime', node_generation=3)
-        identity = dict(protocol_version=3, node=node, session='sandbox-999',
+        identity = dict(protocol_version=4, node=node, session='sandbox-999',
             key=dict(deployment='one', owner='4', window=1, sequence=1), expected=dict(state='absent'))
         local = dict(sandbox=17, owner=4)
         row = dict(current=True, binding=identity, accepted_version=1, local=local)

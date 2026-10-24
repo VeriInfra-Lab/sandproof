@@ -109,7 +109,7 @@ mod tests {
     fn request() -> LifecycleRequest {
         LifecycleRequest {
             binding: OperationBinding {
-                protocol_version: 3,
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 node: node(),
                 session: SessionId::try_from("session").unwrap(),
                 key: OperationKey {
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn semantic_guard_runs_after_json_and_before_encoding() {
         let mut request = request();
-        request.binding.protocol_version = 2;
+        request.binding.protocol_version = 3;
         let bytes = serde_json::to_vec(&request).unwrap();
         assert!(matches!(
             decode_request(&bytes, &node()),
