@@ -91,7 +91,7 @@ def configuration(budgets, root, namespace, artifacts, *, uid, cgroup, base, fil
     complete_runtime = _runpy.run_path(
         str(Path(__file__).with_name('_complete_runtime.py'))
     )['complete_runtime']
-    return complete_runtime(settings, slots=VM_COUNT, file_size=file_size)
+    return complete_runtime(settings, slots=VM_COUNT, inbox_sessions=4+settings["max_active_global"], file_size=file_size)
 
 
 def assert_no_oom(baseline, snapshot):

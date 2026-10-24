@@ -97,7 +97,7 @@ def main(args):
         'default_timeout_secs': 300,
         'expiry_scan_seconds': 1,
     }
-    settings = complete_runtime(settings, slots=2)
+    settings = complete_runtime(settings, slots=2, inbox_sessions=4+settings["max_active_global"])
     base_url = f'http://127.0.0.1:{port}'
     registry = {'root': str(root / 'registry'), 'max_templates_global': 1,
         'max_templates_per_tenant': 1, 'max_artifact_bytes_global': disk_bytes + kernel.stat().st_size,

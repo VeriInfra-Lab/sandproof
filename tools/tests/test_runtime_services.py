@@ -506,7 +506,7 @@ class RuntimeServicesTests(unittest.TestCase):
                 node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel=str(root/'kernel'),
                 rootfs=str(root/'rootfs'),firecracker=str(root/'firecracker'),uid_base=3200000,
                 max_active_global=1,max_active_per_tenant=1,max_disk_bytes_global=8192,
-                max_disk_bytes_per_tenant=4096,cleanup_reserve_bytes=4096),slots=1,file_size=lambda _:1024)
+                max_disk_bytes_per_tenant=4096,cleanup_reserve_bytes=4096),slots=1,inbox_sessions=2,file_size=lambda _:1024)
             original=copy.deepcopy(native['bounded_host']['physical_storage']['pools'])
             layout=dict(hosts=[root],center_identity=(1001,1001),registry=root/'registry')
             catalog=dict(templates=[dict(kernel=dict(size_bytes=1024),rootfs=dict(size_bytes=1024))])
@@ -535,7 +535,7 @@ class RuntimeServicesTests(unittest.TestCase):
                 node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel=str(root/'kernel'),
                 rootfs=str(root/'rootfs'),firecracker=str(root/'firecracker'),uid_base=3200000,
                 max_active_global=2,max_active_per_tenant=2,max_disk_bytes_global=48*gib,
-                max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=8*gib),slots=2,file_size=lambda _:1024)
+                max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=8*gib),slots=2,inbox_sessions=3,file_size=lambda _:1024)
             physical=native['bounded_host']['physical_storage']
             physical['filesystem_overhead_bytes']=2*gib
             physical['pools'][0].update(rootfs_budget_bytes=40*gib,cleanup_reserve_bytes=8*gib)

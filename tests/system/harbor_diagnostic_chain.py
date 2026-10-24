@@ -287,7 +287,7 @@ def exercise(args: argparse.Namespace) -> None:
         "cleanup_reserve_bytes": rootfs.stat().st_size, "max_timeout_secs": 86400,
         "max_lifetime_secs": 86400, "default_timeout_secs": 300,
         "expiry_scan_seconds": 1, "public_ipv4_enabled": True, "startup_timeout_secs": 300,
-    }, slots=1)
+    }, slots=1, inbox_sessions=len(selection)+3)
     registry = dict(root=str(root / 'registry'), max_templates_global=1, max_templates_per_tenant=1,
         max_artifact_bytes_global=rootfs.stat().st_size+kernel.stat().st_size,
         max_artifact_bytes_per_tenant=rootfs.stat().st_size+kernel.stat().st_size, validation_timeout_secs=60)

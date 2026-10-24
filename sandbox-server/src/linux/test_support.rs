@@ -63,31 +63,31 @@ pub(super) fn full_capacity_settings() -> Value {
     let mut value = maintained_settings();
     value["maintenance"] = json!({
         "retention_ms": 100, "max_operations_per_sandbox": 8,
-        "max_checkpoint_bytes": 4 * 1024 * 1024,
-        "max_records": 10_000, "max_references": 1_000_000,
+        "max_checkpoint_bytes": 32 * 1024 * 1024,
+        "max_records": 10_000, "max_references": 4_194_304,
         "max_tail_inputs": 8, "max_tail_bytes": 64 * 1024,
         "max_input_bytes": 8192, "prune_batch_rows": 3,
         "capacity": {
-            "max_live_sandboxes": 4, "max_sql_rows": 1024,
-            "max_sql_bytes": 16 * 1024 * 1024, "max_sql_value_bytes": 256 * 1024,
+            "max_live_sandboxes": 4, "max_sql_rows": 8192,
+            "max_sql_bytes": 256 * 1024 * 1024, "max_sql_value_bytes": 16 * 1024 * 1024,
             "max_receipt_bytes": 16 * 1024, "max_transaction_inputs": 4,
             "max_transaction_bytes": 32 * 1024,
-            "max_database_bytes": 512 * 1024 * 1024,
-            "max_wal_bytes": 520 * 1024 * 1024, "max_shm_bytes": 2 * 1024 * 1024,
-            "checkpoint_scratch_bytes": 8 * 1024 * 1024,
-            "max_online_storage_bytes": 1042_u64 * 1024 * 1024
+            "max_database_bytes": 4_294_967_296_u64,
+            "max_wal_bytes": 4_321_181_696_u64, "max_shm_bytes": 9_437_184,
+            "checkpoint_scratch_bytes": 64 * 1024 * 1024,
+            "max_online_storage_bytes": 8_692_695_040_u64
         }
     });
     value["bounded_host"]["console_policy"] = json!("discard");
-    value["cleanup_reserve_bytes"] = json!(1042_u64 * 1024 * 1024);
-    value["max_disk_bytes_global"] = json!(2048_u64 * 1024 * 1024);
+    value["cleanup_reserve_bytes"] = json!(8_692_695_040_u64);
+    value["max_disk_bytes_global"] = json!(9_747_562_496_u64);
     value["bounded_host"]["physical_storage"] = json!({
         "version": 1, "coordination_file": "/state/physical-profile",
         "pools": [{"role": "runtime", "namespace": "0123456789abcdef",
             "database": "/state/controller.db", "node_state_dir": "/state/node",
             "chroot_base": "/state/jails", "rootfs_budget_bytes": 1006_u64 * 1024 * 1024,
             "max_host_slots": 2, "kernel_copy_bytes": 50, "runtime_copy_bytes": 50,
-            "cleanup_reserve_bytes": 1042_u64 * 1024 * 1024,
+            "cleanup_reserve_bytes": 8_692_695_040_u64,
             "host_metadata_bytes": 1, "host_metadata_inodes": 20, "jail_inodes_per_slot": 12}],
         "public_build": null, "host_template_caches": [], "service_data": [], "filesystem_overhead_bytes": 1024 * 1024,
         "filesystem_overhead_inodes": 100

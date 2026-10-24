@@ -161,7 +161,7 @@ def prepare_services(args, mounted, template):
         max_vcpus_global=4,max_vcpus_per_tenant=4,
         max_memory_bytes_global=4*768*MIB,max_memory_bytes_per_tenant=4*768*MIB))
     config['templates']=catalog
-    config=complete_runtime(config,slots=4)
+    config=complete_runtime(config,slots=4,inbox_sessions=4+config["max_active_global"])
     registry=dict(root=str(mounted/'unused-registry'),max_templates_global=1,max_templates_per_tenant=1,
         max_artifact_bytes_global=2*1024*MIB,max_artifact_bytes_per_tenant=2*1024*MIB,
         max_template_disk_bytes=1024*MIB,validation_timeout_secs=120)

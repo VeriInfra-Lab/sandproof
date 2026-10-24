@@ -86,7 +86,7 @@ def exercise(args):
         'templates': {'templates': [bound], 'aliases': {'base': bound['template_id']}, 'compute_limits': {
             'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
             'max_memory_bytes_global': 512 * 1024**2, 'max_memory_bytes_per_tenant': 512 * 1024**2}}}
-    settings = complete_runtime(settings, slots=1)
+    settings = complete_runtime(settings, slots=1, inbox_sessions=2+settings["max_active_global"])
     service_record = args.service_cgroup_record
     registry = dict(root=str(root/'unused-registry'), max_templates_global=1,
         max_templates_per_tenant=1, max_artifact_bytes_global=args.rootfs.stat().st_size*2,

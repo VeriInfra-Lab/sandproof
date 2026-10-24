@@ -36,10 +36,34 @@ class CompleteFixtureTests(unittest.TestCase):
         self.free = SimpleNamespace(f_bavail=2**40, f_frsize=4096, f_favail=2**30)
 
     def complete(self):
-        return fixture.complete_runtime(self.settings, slots=2)
+        return fixture.complete_runtime(self.settings, slots=2, inbox_sessions=3)
 
     def test_stage1_operation_bound_is_an_explicit_profile_choice(self):
         self.assertEqual(self.complete()['maintenance']['max_operations_per_sandbox'],8)
+
+    def test_example_uses_its_actual_inbox_bound_and_one_profile(self):
+        example=json.loads((SOURCE.parents[2]/'deploy/host.example.json').read_text())
+        native=example['native'];slots=native['bounded_host']['maintenance']['max_host_slots']
+        policy,retained=fixture.maintenance_profile(slots=slots,
+            inbox_sessions=example['inbox']['max_sessions'],checkpoint_tail_inputs=1000)
+        self.assertEqual(native['maintenance'],policy)
+        self.assertEqual(native['bounded_host']['maintenance']['max_retained_results'],retained)
+
+    def test_producer_session_bound_is_explicit_and_growth_keeps_coupled_reserves(self):
+        with self.assertRaises(TypeError):fixture.complete_runtime(self.settings,slots=2)
+        for sessions in (None,True,0,4097):
+            with self.subTest(sessions=sessions),self.assertRaises(ValueError):
+                fixture.complete_runtime(self.settings,slots=2,inbox_sessions=sessions)
+        three=self.complete()
+        five=fixture.complete_runtime(self.settings,slots=2,inbox_sessions=5)
+        self.assertGreater(five['maintenance']['max_checkpoint_bytes'],three['maintenance']['max_checkpoint_bytes'])
+        for value in (three,five):
+            cap=value['maintenance']['capacity'];pool=value['bounded_host']['physical_storage']['pools'][0]
+            self.assertEqual(cap['max_live_sandboxes'],64)
+            self.assertEqual(value['bounded_host']['maintenance']['max_retained_results'],128)
+            self.assertEqual(value['cleanup_reserve_bytes'],cap['max_online_storage_bytes']+pool['host_metadata_bytes'])
+            self.assertEqual(pool['cleanup_reserve_bytes'],value['cleanup_reserve_bytes'])
+            self.assertEqual(cap['checkpoint_scratch_bytes'],2*value['maintenance']['max_checkpoint_bytes'])
 
     def test_explicit_single_runtime_policy_is_pure_and_has_complete_cleanup_budget(self):
         original = copy.deepcopy(self.settings)
@@ -60,9 +84,9 @@ class CompleteFixtureTests(unittest.TestCase):
         self.assertEqual(result["cleanup_reserve_bytes"], pool["host_metadata_bytes"] + cap["max_online_storage_bytes"])
         self.assertEqual(cap["max_online_storage_bytes"], sum(cap[key] for key in (
             "max_database_bytes", "max_wal_bytes", "max_shm_bytes", "checkpoint_scratch_bytes")))
-        self.assertEqual(cap["max_sql_value_bytes"],cap["max_sql_bytes"])
-        self.assertEqual(cap["max_sql_bytes"],16*fixture.MIB)
-        self.assertEqual(cap["max_online_storage_bytes"],fixture.ONLINE_BYTES)
+        self.assertLessEqual(cap["max_sql_value_bytes"],cap["max_sql_bytes"])
+        self.assertEqual(cap["max_sql_bytes"],128*fixture.MIB)
+        self.assertEqual(cap["max_online_storage_bytes"],sum(cap[key] for key in ("max_database_bytes","max_wal_bytes","max_shm_bytes","checkpoint_scratch_bytes")))
         self.assertEqual(result["max_disk_bytes_global"], pool["rootfs_budget_bytes"] + result["cleanup_reserve_bytes"])
         self.assertEqual(pool["node_state_dir"], result["node_state_dir"])
         self.assertEqual(host["console_policy"], "discard")
@@ -72,40 +96,40 @@ class CompleteFixtureTests(unittest.TestCase):
         for key, value in (("max_vm_id", 2), ("bounded_host", None), ("maintenance", None),
                            ("internal_build_vms", True), ("template_registry", {"enabled": True})):
             with self.subTest(key=key), self.assertRaises(ValueError):
-                fixture.complete_runtime(self.settings | {key: value}, slots=2)
+                fixture.complete_runtime(self.settings | {key: value}, slots=2, inbox_sessions=3)
         for key in ("database", "kernel", "uid_base", "max_active_global"):
             value = self.settings.copy()
             del value[key]
             with self.subTest(missing=key), self.assertRaises(KeyError):
-                fixture.complete_runtime(value, slots=2)
+                fixture.complete_runtime(value, slots=2, inbox_sessions=3)
         for slots in (0, True, 65):
-            with self.subTest(slots=slots), self.assertRaises(ValueError):
-                fixture.complete_runtime(self.settings, slots=slots)
+            with self.subTest(slots=slots, inbox_sessions=3), self.assertRaises(ValueError):
+                fixture.complete_runtime(self.settings, slots=slots, inbox_sessions=3)
         with self.assertRaises(ValueError):
-            fixture.complete_runtime(self.settings, slots=1)
+            fixture.complete_runtime(self.settings, slots=1, inbox_sessions=3)
 
     def test_existing_explicit_data_budgets_are_preserved_not_replaced(self):
         budgets = self.complete()["data_transfer"]
         budgets["file_upload_bytes"] = 1234
-        result = fixture.complete_runtime(self.settings | {"data_transfer": budgets}, slots=2)
+        result = fixture.complete_runtime(self.settings | {"data_transfer": budgets}, slots=2, inbox_sessions=3)
         self.assertEqual(result["data_transfer"], budgets)
         self.assertIsNot(result["data_transfer"], budgets)
         with self.assertRaises(ValueError):
-            fixture.complete_runtime(self.settings | {"data_transfer": budgets | {"max_transfers_per_vm": 129}}, slots=2)
+            fixture.complete_runtime(self.settings | {"data_transfer": budgets | {"max_transfers_per_vm": 129}}, slots=2, inbox_sessions=3)
 
     def test_explicit_checkpoint_tail_only_changes_the_fresh_declared_trigger(self):
         ordinary = self.complete()
         self.assertEqual(ordinary["maintenance"]["max_tail_inputs"], 1000)
         for inputs in (16, 128, 1000):
             with self.subTest(inputs=inputs):
-                selected = fixture.complete_runtime(self.settings, slots=2, checkpoint_tail_inputs=inputs)
+                selected = fixture.complete_runtime(self.settings, slots=2, inbox_sessions=3, checkpoint_tail_inputs=inputs)
                 expected = copy.deepcopy(ordinary)
                 expected["maintenance"]["max_tail_inputs"] = inputs
                 self.assertEqual(selected, expected)
                 self.assertGreaterEqual(inputs, selected["maintenance"]["capacity"]["max_transaction_inputs"])
         for inputs in (None, True, 0, 15, 1001, "128", 128.0):
             with self.subTest(inputs=inputs), self.assertRaises(ValueError):
-                fixture.complete_runtime(self.settings, slots=2, checkpoint_tail_inputs=inputs)
+                fixture.complete_runtime(self.settings, slots=2, inbox_sessions=3, checkpoint_tail_inputs=inputs)
 
     def test_provision_is_once_only_and_keeps_exact_coordination_identity(self):
         result = self.complete()

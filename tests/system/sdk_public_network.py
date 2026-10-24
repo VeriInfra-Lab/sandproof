@@ -294,7 +294,7 @@ def exercise(args: argparse.Namespace) -> None:
         "public_ipv4_enabled": True,
         "templates": catalog,
     }
-    settings = complete_runtime(settings, slots=2)
+    settings = complete_runtime(settings, slots=2, inbox_sessions=4+settings["max_active_global"])
     api_url = f"http://127.0.0.1:{port}"
     options = dict(api_url=api_url, sandbox_url=api_url, api_key=api_key,
                    domain="example.invalid", retries=0, request_timeout=45)

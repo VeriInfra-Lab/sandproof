@@ -136,6 +136,28 @@ fn original_host_requires_explicit_native_operation_bound() {
 }
 
 #[test]
+fn stage1_example_initializes_the_original_retained_graph_and_inbox() {
+    // Real HostConfig + original SQLite initialization, without Node/VM,
+    // provisioning, sockets, guest calls or a parallel budget validator.
+    let source = include_str!("../../../../deploy/host.example.json");
+    let value: Value = serde_json::from_str(source).unwrap();
+    let config: HostConfig = serde_json::from_value(value).unwrap();
+    let (contract, _) = config.validate_static().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = ControllerJournal::open_complete(
+        directory.path().join("controller.db"),
+        &config.native.namespace,
+        contract.bounded,
+        contract.maintenance,
+        0,
+    )
+    .unwrap();
+    journal
+        .initialize_lifecycle_inbox(config.inbox, config.source_observation, &mut NeverCrash)
+        .unwrap();
+}
+
+#[test]
 fn current_bootstrap_settings_reject_foreign_missing_and_old_shapes() {
     for (pointer, replacement) in [
         ("/inbox/center/deployment", json!("another-deployment")),

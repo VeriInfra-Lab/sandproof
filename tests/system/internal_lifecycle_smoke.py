@@ -93,7 +93,7 @@ def prepare(args, installed, root, shared):
         "uid_base": uid_base, "max_active_global": 1, "max_active_per_tenant": 1,
         "max_disk_bytes_global": disk * 2, "max_disk_bytes_per_tenant": disk,
         "cleanup_reserve_bytes": disk, "file_policy_digest": 1,
-    }, slots=1)
+    }, slots=1, inbox_sessions=1)
     peak, _ = _envelope(settings["bounded_host"]["physical_storage"])
     if peak * 2 > 200 * 1024**3:
         raise RuntimeError("minimum smoke exceeds approved total 200 GiB free-space ceiling")

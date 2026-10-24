@@ -249,7 +249,7 @@ async def exercise(args):
                 'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': 1024 * MIB},
                 'file_policy_digest': 1, 'templates': catalog, 'public_ipv4_enabled': False,
                 'max_active_global': 3, 'max_active_per_tenant': 2, 'startup_timeout_secs': 120}
-    settings = complete_runtime(settings, slots=3)
+    settings = complete_runtime(settings, slots=3, inbox_sessions=12+settings["max_active_global"])
     registry = dict(root=str(root / 'registry'), max_templates_global=1, max_templates_per_tenant=1,
         max_artifact_bytes_global=args.kernel.stat().st_size+args.rootfs.stat().st_size,
         max_artifact_bytes_per_tenant=args.kernel.stat().st_size+args.rootfs.stat().st_size,
