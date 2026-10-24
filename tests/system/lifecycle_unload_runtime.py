@@ -100,14 +100,14 @@ def validate_restore_gate(record, expected, run_identity):
     """Only the original activated candidate's consumed bootstrap input is admissible."""
     if (type(run_identity) is not str or re.fullmatch('[0-9a-f]{64}',run_identity) is None
             or type(record) is not dict or set(record)!={
-            'schema_version','run_identity','action','source','namespace','token'}
+            'schema_version','run_identity','action','candidate','namespace','token'}
             or type(record['schema_version']) is not int or record['schema_version']!=1
             or record['run_identity']!=run_identity
-            or any(record[key]!=expected[key] for key in ('action','source','namespace'))
+            or any(record[key]!=expected[key] for key in ('action','candidate','namespace'))
             or type(record['token']) is not str
             or re.fullmatch(r'[A-Za-z0-9_-]{32,128}',record['token']) is None):
         raise ValueError('exact run/action/live candidate bootstrap gate required')
-    source,namespace=record['source'],record['namespace']
+    source,namespace=record['candidate'],record['namespace']
     action=record['action']
     if (type(source) is not dict or set(source)!={'resource_id','pid','start_time_ticks','boot_id'}
             or type(namespace) is not dict or set(namespace)!={'name','device','inode'}
@@ -142,7 +142,7 @@ result=sandbox.commands.run(COMMAND,timeout=5)
 if result.exit_code!=0: raise RuntimeError('original fixed read failed')
 print(result.stdout)
 '''.replace('COMMAND',repr(command))
-    payload=json.dumps(dict(resource_id=record['source']['resource_id'],token=record['token'])).encode()
+    payload=json.dumps(dict(resource_id=record['candidate']['resource_id'],token=record['token'])).encode()
     if len(payload)>4096:
         raise ValueError('bounded private bootstrap handoff required')
     read_fd,write_fd=os.pipe2(os.O_CLOEXEC)
@@ -274,6 +274,17 @@ class UnloadRuntime:
         finally:
             self.services.processes.start('host-0')
             self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
+
+    def confirm_running(self,session,expected,deadline):
+        """Reobserve the occupying session while another restored VM is live."""
+        def observe(audit,local,lifetime,conn):
+            occupied=[context for context,phase in audit['host_slots']
+                if context['binding']['sandbox']==local['sandbox'] and phase=='Occupied']
+            if (occupied!=[expected['context']] or local!=expected['local']
+                    or lifetime!=expected['lifetime'] or not original_process(expected['source'])):
+                raise ValueError('original other-session slot occupant changed during Resume')
+            return dict(context=occupied[0],source=expected['source'],live=True)
+        return self._host_snapshot(session,deadline,observe)
 
     def record_running(self,session,deadline,resume_acceptance=None):
         def observe(audit,local,lifetime,conn):
@@ -447,23 +458,19 @@ class UnloadRuntime:
                 or network['resource_id']!=resource or network['namespace_inode']!=meta.st_ino
                 or network['namespace_device']!=meta.st_dev):
             raise ValueError('original protected network namespace required')
-        expected=dict(action=action,source=source,
+        expected=dict(action=action,candidate=source,
             namespace=dict(name=resource,device=meta.st_dev,inode=meta.st_ino))
         validate_restore_gate(gate,expected,self.lease.identity)
-        witness=namespace_witness(gate,min(10,remaining(deadline)))
-        if (set(witness)!={'nonce','activation_nonce','metadata_generation','counter','pid','start_time_ticks'}
-                or any(type(witness[key]) is not str or re.fullmatch('[0-9a-f]{64}',witness[key]) is None
-                       for key in ('nonce','activation_nonce'))
-                or any(type(witness[key]) is not int or witness[key]<0
-                       for key in ('metadata_generation','counter','pid','start_time_ticks'))):
-            raise ValueError('complete bounded original guest RAM witness required')
-        if (any(witness[key]!=baseline[key] for key in ('nonce','pid','start_time_ticks','counter'))
-                or witness['metadata_generation']!=baseline['metadata_generation']+1
-                or witness['activation_nonce']==baseline['activation_nonce']):
-            raise ValueError('new execution RAM-only random nonce was not independently observed')
+        from lifecycle_unload_scenario import wait_witness_generation
+        def read():
+            if ((namespace.lstat().st_dev,namespace.lstat().st_ino)!=(meta.st_dev,meta.st_ino)
+                    or not original_process(source)):
+                raise ValueError('candidate identity changed while awaiting MMDS observation')
+            return namespace_witness(gate,min(10,remaining(deadline)))
+        witness=wait_witness_generation(read,baseline,deadline)
         if (namespace.lstat().st_dev,namespace.lstat().st_ino)!=(meta.st_dev,meta.st_ino) or not original_process(source):
             raise ValueError('candidate identity changed during fixed read observation')
-        receipt=dict(session=session,operation=accepted['key'],source=source,
+        receipt=dict(session=session,operation=accepted['key'],candidate=source,
             action_sha256=hashlib.sha256(json.dumps(action,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
             ram_nonce_sha256=hashlib.sha256(witness['nonce'].encode()).hexdigest(),
             activation_nonce_sha256=hashlib.sha256(witness['activation_nonce'].encode()).hexdigest(),

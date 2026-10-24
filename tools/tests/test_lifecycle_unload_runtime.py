@@ -219,7 +219,7 @@ class RestoreGateBindingTests(unittest.TestCase):
     def setUp(self):
         self.expected=dict(action={'identity':{'generation':2},
             'command':{'logical':{'command':{'ActivateVm':dict(sandbox=1,epoch=1,generation=2,vm=1)}},'attempt':0}},
-            source=dict(resource_id='vm-original-1',pid=123,start_time_ticks=456,boot_id='boot'),
+            candidate=dict(resource_id='vm-original-1',pid=123,start_time_ticks=456,boot_id='boot'),
             namespace=dict(name='vm-original-1',device=7,inode=8))
         self.record=dict(schema_version=1,run_identity='1'*64,token='T'*64,**self.expected)
 
@@ -228,7 +228,7 @@ class RestoreGateBindingTests(unittest.TestCase):
 
     def test_foreign_run_action_vmm_namespace_or_unbounded_secret_is_rejected(self):
         import copy
-        mutations=[('run_identity','2'*64),('action',{}),('source',{}),('namespace',{}),
+        mutations=[('run_identity','2'*64),('action',{}),('candidate',{}),('namespace',{}),
             ('token','T'*129),('token','T'*32+'\n'),('schema_version',True)]
         for key,value in mutations:
             changed=copy.deepcopy(self.record);changed[key]=value
@@ -236,10 +236,52 @@ class RestoreGateBindingTests(unittest.TestCase):
                 runtime.validate_restore_gate(changed,self.expected,'1'*64)
         changed=copy.deepcopy(self.record);changed['command']='arbitrary-code'
         with self.assertRaises(ValueError):runtime.validate_restore_gate(changed,self.expected,'1'*64)
+        changed=copy.deepcopy(self.record);changed['source']=changed.pop('candidate')
+        with self.assertRaises(ValueError):runtime.validate_restore_gate(changed,self.expected,'1'*64)
 
     def test_guest_witness_programs_are_syntax_valid_without_running_them(self):
         for name in ('RAM_WITNESS_SERVER','RAM_WITNESS_READY','RAM_WITNESS_CLIENT'):
             compile(getattr(scene,name),'<original-guest-witness>','exec')
+
+
+class WitnessMetadataBarrierTests(unittest.TestCase):
+    def setUp(self):
+        self.baseline=dict(nonce='a'*64,activation_nonce='b'*64,metadata_generation=2,
+            counter=3,pid=4,start_time_ticks=5)
+
+    def test_unchanged_old_observations_wait_until_exact_new_generation(self):
+        current=dict(self.baseline,metadata_generation=3,activation_nonce='c'*64)
+        read=Mock(side_effect=[dict(self.baseline),dict(self.baseline),current])
+        with patch.object(scene.time,'monotonic',return_value=1):
+            self.assertIs(scene.wait_witness_generation(read,self.baseline,10),current)
+        self.assertEqual(read.call_count,3)
+
+    def test_identity_state_regression_jump_or_nonce_reuse_rejects_immediately(self):
+        mutations=[('nonce','d'*64),('counter',4),('pid',6),('start_time_ticks',7),
+            ('metadata_generation',1),('metadata_generation',4),
+            ('activation_nonce','c'*64)]
+        values=[dict(self.baseline,**{key:value}) for key,value in mutations]
+        values.append(dict(self.baseline,metadata_generation=3))
+        for value in values:
+            read=Mock(return_value=value)
+            with self.subTest(value=value),patch.object(scene.time,'monotonic',return_value=1):
+                with self.assertRaises(ValueError):
+                    scene.wait_witness_generation(read,self.baseline,10)
+            read.assert_called_once_with()
+
+    def test_old_generation_is_bounded_by_original_deadline(self):
+        read=Mock(return_value=dict(self.baseline))
+        with patch.object(scene.time,'monotonic',side_effect=[1,1,10]):
+            with self.assertRaises(TimeoutError):
+                scene.wait_witness_generation(read,self.baseline,10)
+        read.assert_called_once_with()
+
+    def test_late_success_cannot_extend_original_deadline(self):
+        read=Mock(return_value=dict(self.baseline,metadata_generation=3,activation_nonce='c'*64))
+        with patch.object(scene.time,'monotonic',side_effect=[1,10]):
+            with self.assertRaises(TimeoutError):
+                scene.wait_witness_generation(read,self.baseline,10)
+        read.assert_called_once_with()
 
 
 if __name__=='__main__':

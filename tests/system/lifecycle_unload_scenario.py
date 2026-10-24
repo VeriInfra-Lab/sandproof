@@ -128,6 +128,38 @@ def uint(value, *, positive=False):
     return type(value) is int and (1 if positive else 0) <= value < 2**64
 
 
+def wait_witness_generation(read, baseline, deadline):
+    """Only an unchanged old generation may wait for MMDS observation.
+
+    Each iteration performs a read, never a guest mutation or request replay.
+    The original total scenario deadline also bounds this observation barrier.
+    """
+    while True:
+        if time.monotonic() >= deadline:
+            raise TimeoutError('original RAM witness metadata observation deadline')
+        observed=read()
+        if time.monotonic() >= deadline:
+            raise TimeoutError('original RAM witness read exceeded scenario deadline')
+        if (type(observed) is not dict or set(observed)!={
+                'nonce','activation_nonce','metadata_generation','counter','pid','start_time_ticks'}
+                or any(type(observed[key]) is not str or len(observed[key])!=64
+                       or any(c not in '0123456789abcdef' for c in observed[key])
+                       for key in ('nonce','activation_nonce'))
+                or any(not uint(observed[key]) for key in ('counter','metadata_generation'))
+                or any(not uint(observed[key],positive=True) for key in ('pid','start_time_ticks'))
+                or any(observed[key]!=baseline[key] for key in ('nonce','counter','pid','start_time_ticks'))):
+            raise ValueError('original RAM-only witness identity/state changed')
+        generation=observed['metadata_generation']
+        if generation==baseline['metadata_generation']:
+            if observed['activation_nonce']!=baseline['activation_nonce']:
+                raise ValueError('old metadata generation changed its RAM nonce')
+            continue
+        if (generation!=baseline['metadata_generation']+1
+                or observed['activation_nonce']==baseline['activation_nonce']):
+            raise ValueError('metadata generation regressed, skipped or reused its RAM nonce')
+        return observed
+
+
 def check_center_configuration(services, owner_key, foreign_key):
     """Check final fixture consistency without fixing or increasing budgets."""
     center = services.center_config
@@ -460,12 +492,8 @@ class PublicUnloadScenario:
         sandbox=self.sdk()
         assert self.data_token!=old_token,'resumed execution reused old authorization'
         self.assert_previous_tokens_closed()
-        observed=self.witness_command(sandbox,'read')
-        assert {key:observed[key] for key in ('nonce','counter','pid','start_time_ticks')}=={
-            key:previous[key] for key in ('nonce','counter','pid','start_time_ticks')}, \
-            'Resume did not preserve the original RAM-only process state'
-        assert observed['metadata_generation']==previous['metadata_generation']+1
-        assert observed['activation_nonce']!=previous['activation_nonce']
+        observed=wait_witness_generation(lambda:self.witness_command(sandbox,'read'),
+            previous,self.deadline)
         if gate_receipt is not None:
             assert gate_receipt['guest_pid']==observed['pid']
             assert gate_receipt['guest_start_time_ticks']==observed['start_time_ticks']
@@ -476,6 +504,8 @@ class PublicUnloadScenario:
         assert {key:current[key] for key in ('nonce','pid','start_time_ticks')}=={
             key:previous[key] for key in ('nonce','pid','start_time_ticks')}
         assert current['counter']==previous['counter']+1
+        assert current['metadata_generation']==observed['metadata_generation']
+        assert current['activation_nonce']==observed['activation_nonce']
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
         self.witness=current
         assert self.query()==running
@@ -518,7 +548,7 @@ def exercise(args):
     root = private_path(runtime.root, directory=True)
     report = dict(schema=1, kind='create-unload-reopen-resume-destroy-system-scenario',
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
-    client = None
+    client = control = None
     failed = False
     try:
         report['registration'] = check_center_configuration(
@@ -571,10 +601,8 @@ def exercise(args):
         assert control.session!=client.session
         assert control_physical['context']['position']==physical['original_position']['position'], \
             'another session did not actually reuse the old running slot'
-        control.destroy(control_running)
-        control.wait_cleaned()
-        report['slot_reuse']=runtime.destroy_evidence(control.session,deadline)
-        report['slot_reuse']['position']=control_physical['context']['position']
+        report['slot_reuse']=dict(occupant_session=control.session,
+            position=control_physical['context']['position'])
         report['cycles']=[]
         for cycle in (1,2):
             report['phase']='public-resume-'+str(cycle)
@@ -586,6 +614,15 @@ def exercise(args):
             report['cycles'].append(dict(cycle=cycle,resume=accepted,
                 running=physical_running,continuity=continuity))
             if cycle==1:
+                assert physical_running['context']['position']!=control_physical['context']['position'], \
+                    'original session did not restore into a different actual slot'
+                assert control.query()==control_running
+                report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
+                    control.session,control_physical,deadline)
+                report['slot_reuse']['restored_position']=physical_running['context']['position']
+                control.destroy(control_running)
+                control.wait_cleaned()
+                report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 report['phase']='second-public-unload'
                 client.unload(resumed)
                 client.assert_data_closed()
@@ -623,6 +660,11 @@ def exercise(args):
     finally:
         if client is not None:
             report['known_session'] = client.session
+        # Preserve both exact public identities on failure; an uncertain
+        # request is never replaced by a new key or a broad cleanup action.
+        report['known_sessions']=[dict(owner=value.owner,session=value.session,
+            acceptance=value.current_acceptance) for value in (client,control)
+            if value is not None and value.session is not None]
         try:
             # Runtime finish preserves exact resources/material on uncertainty;
             # it is not permission for broad cleanup or untested GC.
