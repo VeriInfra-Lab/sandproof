@@ -296,7 +296,7 @@ pub(super) fn validate_bindings(
             || !(row.generation > original.generation
                 || row.phase == core::Phase::Destroyed
                 || paused_release(world, core::SandboxId(*sandbox))
-                || core::maintenance::released_unload_termination_history(world,original))
+                || core::maintenance::released_unload_termination_history(world, original))
             || current.binding.vm < original.vm
             || (current.binding.vm == original.vm
                 && (current != &witness.context

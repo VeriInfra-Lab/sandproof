@@ -80,8 +80,7 @@ pub(in crate::controller) fn validate(
     world: &sandbox_controller_core::World,
 ) -> Result<(), JournalError> {
     super::source_work::validate(connection, world)?;
-    let Some(inbox) = load(connection)?
-    else {
+    let Some(inbox) = load(connection)? else {
         return Ok(());
     };
     validate_confirmed(connection, world, &inbox)?;

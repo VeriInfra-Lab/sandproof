@@ -532,7 +532,7 @@ pub(super) fn runtime_resources_reclaimed(world: &core::World, sandbox: core::Sa
         // Material/snapshot history survives until its separate settled Retire.
         // The original terminal check still requires exact reclaimed runtime,
         // closed native uses, a successful fence and no unresolved effects.
-        return core::maintenance::retirement::validate_terminal_cleanup(world,sandbox).is_ok();
+        return core::maintenance::retirement::validate_terminal_cleanup(world, sandbox).is_ok();
     }
     if row.phase != core::Phase::Paused || row.terminal || row.durable_snapshot.is_none() {
         return false;

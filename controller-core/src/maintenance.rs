@@ -3,8 +3,8 @@
 
 pub mod retirement;
 pub mod slots;
-pub mod windows;
 mod unload_history;
+pub mod windows;
 pub use unload_history::released_unload_termination_history;
 
 use crate::{

@@ -42,9 +42,8 @@ pub(super) fn apply(
     let stored = StoredInput { version: 1, input };
     let serialized = checkpoint::input_bytes(transaction, &stored)?;
     let decision = core::handle_controller(&world, stored.input.clone())
-            .map_err(JournalError::ControllerRejected)?;
-    let full_capacity = super::capacity::config(transaction)?
-    .is_some();
+        .map_err(JournalError::ControllerRejected)?;
+    let full_capacity = super::capacity::config(transaction)?.is_some();
     if full_capacity && decision.next == world {
         return Ok(decision);
     }
@@ -54,25 +53,20 @@ pub(super) fn apply(
     let before = super::capacity::cursors(transaction)?;
     checkpoint::require_input_room(transaction, serialized.len())?;
     let record = decision
-            .next
-            .sandbox_record(sandbox)
-            .ok_or(JournalError::CorruptStore)?;
+        .next
+        .sandbox_record(sandbox)
+        .ok_or(JournalError::CorruptStore)?;
     let operation = record.current_operation.ok_or(JournalError::CorruptStore)?;
     let key = core::OperationKey {
         sandbox,
         operation: operation.id,
     };
     let ledger = decision
-            .next
-            .operation_record(key)
-            .ok_or(JournalError::CorruptStore)?;
+        .next
+        .operation_record(key)
+        .ok_or(JournalError::CorruptStore)?;
     if world.operation_record(key).is_none() {
-        super::capacity::require_operation_room(
-                transaction,
-                &world,
-                key,
-                ledger.operation.kind,
-            )?;
+        super::capacity::require_operation_room(transaction, &world, key, ledger.operation.kind)?;
         allocators::require_available(transaction)?;
     }
     allocators::record_accepted(transaction, &world, sandbox, operation.id)?;
@@ -92,18 +86,18 @@ pub(super) fn apply(
     let actions = identity::new_actions(transaction, namespace, &world, &decision.next, sandbox)?;
     let outbox_ids = allocators::reserve_sql(transaction, SqlId::Outbox, actions.len())?;
     write_accepted_with_ids(
-            transaction,
-            &AcceptedWrite {
-                owner: identity::owner_id(record.owner)?,
-                sandbox: public_sandbox,
-                operation: identity::operation_id(namespace, key)?,
-                expected_revision: revision,
-                sandbox_state: serde_json::to_vec(record)?,
-                operation_state: serde_json::to_vec(ledger)?,
-                actions,
-            },
-            Some(&outbox_ids),
-        )?;
+        transaction,
+        &AcceptedWrite {
+            owner: identity::owner_id(record.owner)?,
+            sandbox: public_sandbox,
+            operation: identity::operation_id(namespace, key)?,
+            expected_revision: revision,
+            sandbox_state: serde_json::to_vec(record)?,
+            operation_state: serde_json::to_vec(ledger)?,
+            actions,
+        },
+        Some(&outbox_ids),
+    )?;
     identity::update_operation_projections(transaction, namespace, &decision.next, sandbox)?;
     transaction.execute(
         "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
