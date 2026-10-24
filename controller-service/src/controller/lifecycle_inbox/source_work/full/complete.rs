@@ -13,19 +13,19 @@ pub(in crate::controller) fn save_receipt<E: HostEvidence>(
     let Some(mut sources) = codec::load(connection)? else {
         return Ok(());
     };
-    let Some(record) = sources
-        .records
-        .iter_mut()
-        .find(|r| r.work.anchor.local.sandbox == action.command.command().sandbox())
-    else {
-        return Ok(());
-    };
     if !matches!(
         action.command.command(),
         core::Command::SealSnapshot { .. } | core::Command::CommitSnapshot { .. }
     ) {
         return Ok(());
     }
+    let Some(record) = sources
+        .records
+        .iter_mut()
+        .find(|r| matches_action(r, action, world))
+    else {
+        return Err(JournalError::Conflict);
+    };
     if !matches_action(record, action, world) {
         return Err(JournalError::Conflict);
     }

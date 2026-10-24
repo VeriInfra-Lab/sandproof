@@ -126,7 +126,7 @@ impl super::SourceWork {
     }
 }
 impl super::ControllerJournal {
-    /// Read the same historical work, not an execution or repeat-Full permission.
+    /// Read the latest accepted source question, not execution permission.
     /// # Errors
     /// Corrupt storage cannot manufacture a missing capture record.
     pub fn lifecycle_capture_record(
@@ -140,7 +140,65 @@ impl super::ControllerJournal {
         let result = codec::load(&tx)?.and_then(|s| {
             s.records
                 .into_iter()
-                .find(|r| r.work.anchor.local.sandbox == sandbox)
+                .filter(|r| r.work.anchor.local.sandbox == sandbox)
+                .max_by_key(|r| r.work.request().accepted_version)
+        });
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    pub(crate) fn lifecycle_capture_action_record(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<Option<SourceWorkRecord>, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        let result = codec::load(&tx)?.and_then(|sources| {
+            sources.records.into_iter().find(|record| {
+                if matches_action(record, action, &world) {
+                    return true;
+                }
+                // Unload's maintenance cleanup belongs to the current Pause, not
+                // whichever capture happened to be first in the retained array.
+                let sandbox = record.work.anchor.local.sandbox;
+                matches!(
+                    action.command.command(),
+                    core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. }
+                ) && world
+                    .logical_effect(&action.command.logical)
+                    .is_some_and(|logical| {
+                        logical.origin == core::EffectOrigin::Maintenance(sandbox)
+                    })
+                    && world.sandbox_record(sandbox).is_some_and(|row| {
+                        !row.terminal
+                            && row.phase == core::Phase::Paused
+                            && row
+                                .current_operation
+                                .is_some_and(|op| Some(op.id) == record.capture_operation())
+                    })
+            })
+        });
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    fn original_capture_record(
+        &self,
+        source: &super::SourceWork,
+    ) -> Result<Option<SourceWorkRecord>, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        let result = codec::load(&tx)?.and_then(|sources| {
+            sources
+                .records
+                .into_iter()
+                .find(|record| record.work == *source)
         });
         self.committed_world.check_identity(&tx)?;
         tx.commit()?;
@@ -154,9 +212,9 @@ impl super::ControllerJournal {
     /// Incomplete/unknown material registration yields no expectation.
     pub fn committed_capture_expectation(
         &self,
-        sandbox: core::SandboxId,
+        source: &super::SourceWork,
     ) -> Result<Option<crate::capture::CommittedCaptureExpectation>, JournalError> {
-        let Some(record) = self.lifecycle_capture_record(sandbox)? else {
+        let Some(record) = self.original_capture_record(source)? else {
             return Ok(None);
         };
         let Some(capture) = &record.capture else {
@@ -191,9 +249,9 @@ impl super::ControllerJournal {
     /// Missing/unknown Seal cannot produce an expected material digest.
     pub fn sealed_capture_expectation(
         &self,
-        sandbox: core::SandboxId,
+        source: &super::SourceWork,
     ) -> Result<Option<crate::capture::CommittedCaptureExpectation>, JournalError> {
-        let Some(record) = self.lifecycle_capture_record(sandbox)? else {
+        let Some(record) = self.original_capture_record(source)? else {
             return Ok(None);
         };
         let Some(capture) = record.capture else {

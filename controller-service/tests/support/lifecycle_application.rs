@@ -117,7 +117,9 @@ pub fn maintenance() -> sandproof_controller_service::MaintenanceConfig {
     limits.max_checkpoint_bytes = 16 * 1024 * 1024;
     let cap = limits.capacity.as_mut().unwrap();
     cap.max_sql_bytes = 64 * 1024 * 1024;
-    cap.max_sql_value_bytes = 1024 * 1024;
+    // Two sessions, six possible retained capture questions each. The original
+    // per-record SourceWork/Full envelopes reserve about 2.1 MiB together.
+    cap.max_sql_value_bytes = 4 * 1024 * 1024;
     cap.max_database_bytes = 1024 * 1024 * 1024;
     cap.max_wal_bytes = 1040 * 1024 * 1024;
     cap.max_shm_bytes = 4 * 1024 * 1024;

@@ -181,7 +181,14 @@ impl ControllerJournal {
             },
         )?;
         if serde_json::to_vec(&work)?.len() as u64 > u64::from(sources.config.max_work_bytes)
-            || sources.records.len() >= usize::from(inbox.config.max_sessions)
+            || sources
+                .records
+                .iter()
+                .filter(|record| {
+                    record.work.request().request.binding.session == intent.request.binding.session
+                })
+                .count() as u64
+                >= codec::records_per_session(&tx)?
         {
             return Err(JournalError::MaintenanceCapacity);
         }

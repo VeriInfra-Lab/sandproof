@@ -226,7 +226,10 @@ fn source_and_inbox_initialize_atomically_with_exact_immutable_limits() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(u64::try_from(reserve).unwrap(), config().required_bytes(2));
+    assert_eq!(
+        u64::try_from(reserve).unwrap(),
+        config().required_bytes(2 * (8 - 2))
+    );
     drop(journal);
     v3::open(&path)
         .check_lifecycle_source_observations(&config())
@@ -256,6 +259,42 @@ fn inbox_history_cannot_exceed_the_native_deployment_bound() {
         journal.lifecycle_inbox_configuration().unwrap().unwrap(),
         v3::config()
     );
+}
+
+#[test]
+fn single_round_blob_reservation_cannot_open_a_multi_round_deployment() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = v3::open(&path);
+    journal
+        .initialize_lifecycle_inbox(v3::config(), config(), &mut NeverCrash)
+        .unwrap();
+    // Leave the original canonical source bytes and checksum unchanged. A
+    // smaller reserve must not silently authorize twelve possible records.
+    journal
+        .journal
+        .connection
+        .execute(
+            "UPDATE controller_source_work SET reserve_bytes=?1 WHERE id=1",
+            [i64::try_from(config().required_bytes(2)).unwrap()],
+        )
+        .unwrap();
+    assert!(matches!(
+        codec::load(&journal.journal.connection),
+        Err(JournalError::CorruptStore)
+    ));
+    drop(journal);
+    let host = v3::fixture::complete_fixture::host(
+        &path,
+        "0123456789abcdef",
+        64,
+        2 * 1024 * 1024,
+        v3::CLEANUP_BYTES + 1000,
+    );
+    assert!(matches!(
+        ControllerJournal::open_complete(&path, "0123456789abcdef", host, v3::maintenance(), 0),
+        Err(JournalError::CorruptStore)
+    ));
 }
 
 #[test]
@@ -656,19 +695,13 @@ fn current_source_store_rejects_old_or_unknown_tags_without_changing_bytes() {
                 &path,
                 "0123456789abcdef",
                 &host,
-                &v3::fixture::complete_fixture::maintenance()
+                &v3::maintenance()
             )
             .is_err()
         );
         assert!(
-            ControllerJournal::open_complete(
-                &path,
-                "0123456789abcdef",
-                host,
-                v3::fixture::complete_fixture::maintenance(),
-                0
-            )
-            .is_err()
+            ControllerJournal::open_complete(&path, "0123456789abcdef", host, v3::maintenance(), 0)
+                .is_err()
         );
         let conn = rusqlite::Connection::open(&path).unwrap();
         assert_eq!(
@@ -887,6 +920,25 @@ impl sandproof_protocol::ResourceEvidence for FullEvidence {
 impl HostEvidence for FullEvidence {
     fn validates(&self, command: &sandbox_controller_core::Command) -> bool {
         self.command == *command
+    }
+    fn source_process_identity(
+        &self,
+        command: &sandbox_controller_core::Command,
+        expected_resource: &sandproof_protocol::ResourceRef,
+    ) -> Option<SourceProcessIdentity> {
+        if self.command != *command || &self.resource != expected_resource {
+            return None;
+        }
+        let (sandbox_controller_core::Command::PrepareVm { vm, .. }
+        | sandbox_controller_core::Command::ActivateVm { vm, .. }) = command
+        else {
+            return None;
+        };
+        Some(SourceProcessIdentity {
+            pid: u32::try_from(vm.0).ok()?.checked_add(4000)?,
+            start_time_ticks: vm.0.checked_add(9000)?,
+            boot_id: "fixture-boot".into(),
+        })
     }
     fn capture_manifest_digest(
         &self,
@@ -1752,4 +1804,236 @@ fn unknown_restore_activation_reuses_only_original_live_permit_after_fresh_boots
             .unwrap(),
         permit
     );
+}
+
+fn finish_restored_component(
+    journal: &mut ControllerJournal,
+    sandbox: sandbox_controller_core::SandboxId,
+) {
+    use sandbox_controller_core::workflow::{self, WorkflowStep};
+    for _ in 0..32 {
+        match workflow::next_step(&journal.world().unwrap(), sandbox) {
+            WorkflowStep::Apply(input) => {
+                journal.apply(*input, &mut NeverCrash).unwrap();
+            }
+            WorkflowStep::Claim => {
+                let action = journal
+                    .claim_next(Some(sandbox), &mut NeverCrash)
+                    .unwrap()
+                    .unwrap();
+                journal
+                    .complete(
+                        &sandproof_protocol::WorkReceipt {
+                            identity: action.identity.clone(),
+                            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
+                                FullEvidence {
+                                    resource: action.identity.resource.clone(),
+                                    command: action.command.command().clone(),
+                                },
+                            ),
+                        },
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
+            }
+            WorkflowStep::PublishRunning => {
+                journal
+                    .publish_running_at(sandbox, 10, &mut NeverCrash)
+                    .unwrap();
+            }
+            WorkflowStep::Complete => return,
+            WorkflowStep::Blocked => panic!("original restored component blocked"),
+        }
+    }
+    panic!("bounded original restore did not complete");
+}
+
+fn second_unload(intent: &AcceptedLifecycleIntent) -> AcceptedLifecycleIntent {
+    let mut next = intent.clone();
+    next.accepted_version = 4;
+    next.request.binding.expected = ExpectedSession::Version(3);
+    next.request.binding.key.sequence = 4.try_into().unwrap();
+    next.request.operation = LifecycleOperation::Unload {
+        source_incarnation: IncarnationId::try_from(102).unwrap(),
+        capture: CaptureId::try_from(2).unwrap(),
+    };
+    next
+}
+
+fn running_successor(
+    path: &Path,
+) -> (ControllerJournal, SourceWorkRecord, AcceptedLifecycleIntent) {
+    let (mut journal, first) = unloaded_resume_source(path);
+    let sandbox = first.work.anchor.local.sandbox;
+    let intent = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &intent);
+    journal
+        .register_data_credential(sandbox, 2, [99; 32], &mut NeverCrash)
+        .unwrap();
+    finish_restored_component(&mut journal, sandbox);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        sandbox_controller_core::Phase::Running
+    );
+    (journal, first, intent)
+}
+
+fn assert_cross_round_source_tampering_rejected(
+    journal: &ControllerJournal,
+    saved: &[SourceWorkRecord],
+) {
+    let world = journal.world().unwrap();
+    for duplicate in [false, true] {
+        let tx = journal.journal.connection.unchecked_transaction().unwrap();
+        let mut sources = codec::load(&tx).unwrap().unwrap();
+        if duplicate {
+            sources.records.push(saved[0].clone());
+        } else {
+            sources.records[1].capture.as_mut().unwrap().action =
+                saved[0].capture.as_ref().unwrap().action.clone();
+        }
+        let sessions = sources.max_sessions;
+        codec::save(&tx, &sources, sessions).unwrap();
+        assert!(matches!(
+            codec::validate(&tx, &world),
+            Err(JournalError::CorruptStore)
+        ));
+        // Dropping this deliberate corruption transaction preserves the real
+        // source store and its original checksums for the next negative case.
+        drop(tx);
+    }
+}
+
+#[test]
+fn second_full_capture_keeps_first_source_and_running_backing_bound_to_their_original_operations() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, first, intent) = running_successor(&path);
+    let sandbox = first.work.anchor.local.sandbox;
+    let first_before = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    assert!(first_before.restore.as_ref().unwrap().material_use);
+    let next = second_unload(&intent);
+    journal
+        .record_lifecycle_intent(&next, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    let second = journal
+        .prepare_lifecycle_source_work::<FullEvidence>(&next, &v3::context(), 10, &mut NeverCrash)
+        .unwrap();
+    assert_eq!(second.work.anchor.native.generation, 2);
+    assert_eq!(second.work.anchor.execution_origin, intent);
+    assert_ne!(
+        second.work.requirement().work_binding,
+        first.work.requirement().work_binding
+    );
+    journal
+        .save_source_observation::<FullEvidence>(
+            &second.work,
+            &v3::context(),
+            observation(second.work.requirement()),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let admitted = journal
+        .admit_lifecycle_full_capture::<FullEvidence>(
+            &second.work,
+            &v3::context(),
+            &full_request(&second),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    finish_full_component(&mut journal, &admitted);
+    let saved = journal.lifecycle_source_work(&v3::config().node).unwrap();
+    assert_eq!(saved.len(), 2);
+    assert_eq!(
+        saved[0], first_before,
+        "a new capture cannot clear the first restore's backing-file responsibility"
+    );
+    assert_eq!(saved[1].work, second.work);
+    assert_ne!(saved[0].capture_operation(), saved[1].capture_operation());
+    assert_eq!(
+        journal.lifecycle_capture_record(sandbox).unwrap().unwrap(),
+        saved[1]
+    );
+    assert_eq!(
+        journal
+            .committed_capture_expectation(&first.work)
+            .unwrap()
+            .unwrap()
+            .work(),
+        first.full_capture().unwrap()
+    );
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap(),
+        saved
+    );
+    assert_cross_round_source_tampering_rejected(&journal, &saved);
+}
+
+#[test]
+fn second_source_question_unknown_commit_preserves_both_original_material_responsibilities() {
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, first, intent) = running_successor(&path);
+        let before = journal.lifecycle_source_work(&v3::config().node).unwrap();
+        let next = second_unload(&intent);
+        journal
+            .record_lifecycle_intent(&next, &v3::context(), &mut NeverCrash)
+            .unwrap();
+        transaction::fail_next_commit(durable);
+        assert!(matches!(
+            journal.prepare_lifecycle_source_work::<FullEvidence>(
+                &next,
+                &v3::context(),
+                10,
+                &mut NeverCrash
+            ),
+            Err(JournalError::CommitUncertain(_))
+        ));
+        drop(journal);
+        let mut journal = v3::open(&path);
+        let recovered = journal.lifecycle_source_work(&v3::config().node).unwrap();
+        assert_eq!(recovered.len(), 1 + usize::from(durable));
+        assert_eq!(recovered[0], before[0]);
+        assert!(recovered[0].restore.as_ref().unwrap().material_use);
+        bootstrap(&mut journal);
+        let question = journal
+            .prepare_lifecycle_source_work::<FullEvidence>(
+                &next,
+                &v3::context(),
+                10,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        assert_eq!(question.work.request(), &next);
+        assert_ne!(
+            question.work.requirement().work_binding,
+            first.work.requirement().work_binding
+        );
+        let replay = journal
+            .prepare_lifecycle_source_work::<FullEvidence>(
+                &next,
+                &v3::context(),
+                10,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        assert_eq!(replay, question);
+        assert_eq!(
+            journal
+                .lifecycle_source_work(&v3::config().node)
+                .unwrap()
+                .len(),
+            2
+        );
+    }
 }

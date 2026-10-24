@@ -427,7 +427,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                     .ok_or(ApplicationError::OutcomeUnknown)?;
                 let expected = inner
                     .journal
-                    .committed_capture_expectation(sandbox)
+                    .committed_capture_expectation(&record.work)
                     .map_err(map_journal)?
                     .ok_or(ApplicationError::OutcomeUnknown)?;
                 Some((record, expected))

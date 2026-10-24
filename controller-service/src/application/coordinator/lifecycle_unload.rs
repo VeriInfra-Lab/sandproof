@@ -171,10 +171,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         action: &WorkAction<core::EffectId>,
     ) -> Result<Option<CaptureActionContext>, ApplicationError> {
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        let sandbox = action.command.command().sandbox();
         let Some(record) = inner
             .journal
-            .lifecycle_capture_record(sandbox)
+            .lifecycle_capture_action_record(action)
             .map_err(map_journal)?
         else {
             return Ok(None);
@@ -191,12 +190,12 @@ impl<H: ControllerHost> ControllerApplication<H> {
         ) {
             inner
                 .journal
-                .committed_capture_expectation(sandbox)
+                .committed_capture_expectation(&record.work)
                 .map_err(map_journal)?
         } else {
             inner
                 .journal
-                .sealed_capture_expectation(sandbox)
+                .sealed_capture_expectation(&record.work)
                 .map_err(map_journal)?
         };
         Ok(Some((record, expected)))

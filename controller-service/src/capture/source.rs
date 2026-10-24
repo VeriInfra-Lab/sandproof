@@ -26,10 +26,10 @@ impl SourceObservationConfig {
             && (1..=i64::MAX as u64).contains(&self.max_material_bytes)
     }
     #[cfg(feature = "durable")]
-    pub(crate) fn required_bytes(&self, sessions: u16) -> u64 {
+    pub(crate) fn required_bytes(&self, records: u64) -> u64 {
         // Each byte in the raw JSON array takes at most four characters.
         // Fixed result envelopes and table metadata are separately reserved.
-        u64::from(sessions)
+        records
             * (u64::from(self.max_work_bytes)
                 + 4 * u64::from(self.max_configuration_bytes)
                 + 8192

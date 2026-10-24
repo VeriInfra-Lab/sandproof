@@ -15,6 +15,18 @@ pub(super) struct Sources {
     pub records: Vec<SourceWorkRecord>,
 }
 
+pub(super) fn records_per_session(connection: &Connection) -> Result<u64, JournalError> {
+    let policy =
+        super::super::super::checkpoint::config(connection)?.ok_or(JournalError::CorruptStore)?;
+    // Create and the reserved final Kill are not source captures. Every other
+    // retained native operation may require its own still-live source record.
+    Ok(policy.max_operations_per_sandbox - 2)
+}
+
+fn reserved_records(connection: &Connection, sessions: u16) -> Result<u64, JournalError> {
+    Ok(u64::from(sessions) * records_per_session(connection)?)
+}
+
 pub(super) fn load(connection: &Connection) -> Result<Option<Sources>, JournalError> {
     let version: i64 =
         connection.query_row("SELECT version FROM controller_meta WHERE id=1", [], |r| {
@@ -71,8 +83,11 @@ pub(super) fn load(connection: &Connection) -> Result<Option<Sources>, JournalEr
         serde_json::from_slice(&bytes).map_err(|_| JournalError::CorruptStore)?;
     if !sources.config.valid()
         || !(1..=4096).contains(&sources.max_sessions)
-        || sources.records.len() > usize::from(sources.max_sessions)
-        || sources.config.required_bytes(sources.max_sessions) != reserve
+        || sources.records.len() as u64 > reserved_records(connection, sources.max_sessions)?
+        || sources
+            .config
+            .required_bytes(reserved_records(connection, sources.max_sessions)?)
+            != reserve
         || Sha256::digest(&bytes).as_slice() != sha
         || serde_json::to_vec(&sources)? != bytes
     {
@@ -88,7 +103,10 @@ pub(super) fn save(
 ) -> Result<(), JournalError> {
     let bytes = serde_json::to_vec(sources)?;
     if max_sessions != sources.max_sessions
-        || bytes.len() as u64 > sources.config.required_bytes(max_sessions)
+        || bytes.len() as u64
+            > sources
+                .config
+                .required_bytes(reserved_records(connection, max_sessions)?)
     {
         return Err(JournalError::MaintenanceCapacity);
     }
@@ -110,7 +128,7 @@ pub(super) fn initialize(
     if !config.valid() {
         return Err(JournalError::UnsupportedInput);
     }
-    let reserve = config.required_bytes(inbox.max_sessions);
+    let reserve = config.required_bytes(reserved_records(connection, inbox.max_sessions)?);
     let cap =
         super::super::super::capacity::config(connection)?.ok_or(JournalError::CorruptStore)?;
     if reserve > cap.max_sql_value_bytes || reserve > 16 * 1024 * 1024 {
@@ -157,10 +175,17 @@ pub(in crate::controller) fn validate(
         super::snapshot::validate_record(connection, world, &inbox, &sources.config, record)?;
         super::full::validate_record(record, world)?;
         super::restore::validate_record(record, world)?;
-        if sources.records[..index].iter().any(|old| {
-            old.work.request().request.binding.session
-                == record.work.request().request.binding.session
-        }) {
+        let binding = &record.work.request().request.binding;
+        if sources
+            .records
+            .iter()
+            .filter(|r| r.work.request().request.binding.session == binding.session)
+            .count() as u64
+            > records_per_session(connection)?
+            || sources.records[..index]
+                .iter()
+                .any(|old| old.work.request().request.binding.key == binding.key)
+        {
             return Err(JournalError::CorruptStore);
         }
     }

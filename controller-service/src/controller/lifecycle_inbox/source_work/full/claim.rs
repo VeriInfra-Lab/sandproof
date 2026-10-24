@@ -10,41 +10,39 @@ pub(in crate::controller) fn claim(
         return Ok(true);
     };
     let sandbox = action.command.command().sandbox();
+    if matches!(
+        action.command.command(),
+        core::Command::StopVm { .. }
+            | core::Command::CleanupVm { .. }
+            | core::Command::CleanupSlot { .. }
+    ) && sources.records.iter().any(|record| {
+        record.work.anchor.local.sandbox == sandbox
+            && record
+                .capture
+                .as_ref()
+                .is_some_and(|capture| capture.action.is_some() && capture.completed.is_none())
+    }) {
+        // No unfinished writer is forgotten when a newer source is admitted.
+        return Ok(false);
+    }
+    let capture_action = matches!(
+        action.command.command(),
+        core::Command::FreezeVm { .. }
+            | core::Command::SealSnapshot { .. }
+            | core::Command::CommitSnapshot { .. }
+    );
+    if !capture_action {
+        return Ok(true);
+    }
     let Some(index) = sources
         .records
         .iter()
-        .position(|r| r.work.anchor.local.sandbox == sandbox)
+        .position(|record| matches_action(record, action, world))
     else {
-        return Ok(true);
+        return Ok(false);
     };
     let record = &sources.records[index];
-    let Some(capture) = &record.capture else {
-        return Ok(!matches!(
-            action.command.command(),
-            core::Command::FreezeVm { .. }
-                | core::Command::SealSnapshot { .. }
-                | core::Command::CommitSnapshot { .. }
-        ));
-    };
-    match action.command.command() {
-        core::Command::FreezeVm { .. }
-        | core::Command::SealSnapshot { .. }
-        | core::Command::CommitSnapshot { .. } => {
-            if !matches_action(record, action, world) {
-                return Ok(false);
-            }
-        }
-        core::Command::StopVm { .. }
-        | core::Command::CleanupVm { .. }
-        | core::Command::CleanupSlot { .. }
-            if capture.action.is_some() && capture.completed.is_none() =>
-        {
-            // Unknown Full may still write. Neither terminal intent nor a dead
-            // manager/helper proves that this physical responsibility ended.
-            return Ok(false);
-        }
-        _ => (),
-    }
+    let capture = record.capture.as_ref().ok_or(JournalError::Conflict)?;
     if matches!(action.command.command(), core::Command::SealSnapshot { .. }) {
         let active = sources
             .records
