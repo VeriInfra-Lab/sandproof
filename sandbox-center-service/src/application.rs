@@ -89,6 +89,38 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .recover()
             .map_err(authority_error)
     }
+    /// One original synchronous background round. Recovery is attempted once
+    /// only after refresh/reconciliation failure; neither branch retries work.
+    /// Retiring history retains its original failure handling until next round.
+    pub fn lifecycle_background_round(&self, refresh: impl FnOnce() -> Result<(), PortError>) {
+        use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
+        let _round = DiagnosticScope::enter(DiagnosticFlow::Background, DiagnosticStep::Refresh);
+        if let Err(error) = refresh() {
+            diagnostics::emit(diagnostics::Stage::BackgroundRefresh, diagnostics::Failure::Port(error));
+            self.recover_background_round();
+            return;
+        }
+        let reconcile = {
+            let _step = DiagnosticScope::step(DiagnosticStep::Reconcile);
+            self.reconcile_once()
+        };
+        if let Err(error) = reconcile {
+            let _step = DiagnosticScope::step(DiagnosticStep::Reconcile);
+            diagnostics::emit(diagnostics::Stage::BackgroundReconcile, diagnostics::Failure::Port(error));
+            self.recover_background_round();
+            return;
+        }
+        let _step = DiagnosticScope::step(DiagnosticStep::Retire);
+        if let Err(error) = self.retire_terminal_history_once() {
+            diagnostics::emit(diagnostics::Stage::BackgroundRetire, diagnostics::Failure::Port(error));
+        }
+    }
+    fn recover_background_round(&self) {
+        let _step = sandproof_center_store::DiagnosticScope::step(sandproof_center_store::DiagnosticStep::Recovery);
+        if let Err(error) = self.recover_authority() {
+            diagnostics::emit(diagnostics::Stage::BackgroundRecovery, diagnostics::Failure::Port(error));
+        }
+    }
     /// Run from a bounded blocking worker. Public HTTP cancellation must not
     /// discard its work permit while the actual task remains running.
     /// # Errors

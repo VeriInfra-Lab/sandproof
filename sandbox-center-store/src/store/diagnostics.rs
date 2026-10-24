@@ -5,6 +5,47 @@ use std::{
     time::Duration,
 };
 
+/// Fixed synchronous call provenance only. No request identity is accepted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiagnosticFlow { Unscoped, LifecycleQuery, Background }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiagnosticStep { Unscoped, Lookup, Expiry, Projection, Refresh, Reconcile, Retire, Recovery, Material }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiagnosticContext {
+    pub sequence: u64,
+    pub flow: DiagnosticFlow,
+    pub step: DiagnosticStep,
+}
+const UNSCOPED: DiagnosticContext = DiagnosticContext { sequence: 0, flow: DiagnosticFlow::Unscoped, step: DiagnosticStep::Unscoped };
+std::thread_local! { static CONTEXT: std::cell::Cell<DiagnosticContext> = const { std::cell::Cell::new(UNSCOPED) }; }
+static NEXT_SCOPE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn next_context(sequence: &std::sync::atomic::AtomicU64, flow: DiagnosticFlow, step: DiagnosticStep) -> DiagnosticContext {
+    match sequence.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1)) {
+        Ok(previous) => DiagnosticContext { sequence: previous + 1, flow, step },
+        Err(_) => UNSCOPED,
+    }
+}
+/// Restores the caller even on error/unwind. Deliberately cannot cross threads
+/// or an async suspension; original query/worker scopes are synchronous.
+pub struct DiagnosticScope { previous: DiagnosticContext, thread_bound: std::marker::PhantomData<std::rc::Rc<()>> }
+impl DiagnosticScope {
+    #[must_use]
+    pub fn enter(flow: DiagnosticFlow, step: DiagnosticStep) -> Self {
+        let context = next_context(&NEXT_SCOPE, flow, step);
+        Self::replace(context)
+    }
+    #[must_use]
+    pub fn step(step: DiagnosticStep) -> Self {
+        Self::replace(DiagnosticContext { step, ..diagnostic_context() })
+    }
+    fn replace(context: DiagnosticContext) -> Self {
+        Self { previous: CONTEXT.replace(context), thread_bound: std::marker::PhantomData }
+    }
+}
+impl Drop for DiagnosticScope { fn drop(&mut self) { CONTEXT.set(self.previous); } }
+#[must_use]
+pub fn diagnostic_context() -> DiagnosticContext { CONTEXT.get() }
+
 const LIMIT: usize = 64;
 static EMITTED: AtomicUsize = AtomicUsize::new(0);
 
@@ -74,9 +115,13 @@ fn record(
         .ok()
         .map(|value| value.as_millis());
     let pid = std::process::id();
+    let context = diagnostic_context();
     let _ = writeln!(
         output,
-        "center_store_query unix_ms={unix_ms:?} pid={pid} phase={phase:?} failure={failure:?} elapsed_us={} remaining_at_start_us={} remaining={}",
+        "center_store_query unix_ms={unix_ms:?} pid={pid} scope={} flow={:?} step={:?} phase={phase:?} failure={failure:?} elapsed_us={} remaining_at_start_us={} remaining={}",
+        context.sequence,
+        context.flow,
+        context.step,
         elapsed.as_micros(),
         budget.as_micros(),
         LIMIT - previous - 1
@@ -179,8 +224,57 @@ mod tests {
         }
         let text = String::from_utf8(bytes).unwrap();
         assert_eq!(text.lines().count(), LIMIT - 1);
-        assert!(text.lines().all(|line| line.len() < 256));
+        assert!(text.lines().all(|line| {
+            let (prefix, rest) = line.split_once(" scope=").unwrap();
+            let (scope, suffix) = rest.split_once(" phase=").unwrap();
+            scope.len() < 100 && prefix.len() + " phase=".len() + suffix.len() < 256
+        }));
         assert!(text.ends_with("remaining=0\n"));
         assert_eq!(count.load(Ordering::Relaxed), LIMIT);
+    }
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+    #[test]
+    fn cas_timeout_keeps_the_same_scope_and_fixed_query_stage() {
+        let _query = DiagnosticScope::enter(DiagnosticFlow::LifecycleQuery, DiagnosticStep::Lookup);
+        let sequence = diagnostic_context().sequence;
+        let _expiry = DiagnosticScope::step(DiagnosticStep::Expiry);
+        let mut bytes = vec![];
+        record(Phase::Cas, Failure::TransportTimeout, Duration::ZERO, Duration::ZERO, &AtomicUsize::new(0), &mut bytes);
+        let line = String::from_utf8(bytes).unwrap();
+        assert!(line.contains(&format!("scope={sequence} flow=LifecycleQuery step=Expiry phase=Cas failure=TransportTimeout")));
+    }
+    #[test]
+    fn exhausted_sequence_is_explicitly_uncorrelated_and_never_reuses_last_id() {
+        let sequence = std::sync::atomic::AtomicU64::new(u64::MAX - 1);
+        assert_eq!(next_context(&sequence, DiagnosticFlow::LifecycleQuery, DiagnosticStep::Lookup).sequence, u64::MAX);
+        assert_eq!(next_context(&sequence, DiagnosticFlow::Background, DiagnosticStep::Refresh), UNSCOPED);
+        assert_eq!(next_context(&sequence, DiagnosticFlow::LifecycleQuery, DiagnosticStep::Lookup), UNSCOPED);
+        assert_eq!(sequence.load(Ordering::Relaxed), u64::MAX);
+    }
+    #[test]
+    fn synchronous_scope_restores_nested_context_and_is_thread_local() {
+        assert_eq!(diagnostic_context(), UNSCOPED);
+        let outer = DiagnosticScope::enter(DiagnosticFlow::LifecycleQuery, DiagnosticStep::Lookup);
+        let query = diagnostic_context();
+        assert!(query.sequence > 0);
+        {
+            let _step = DiagnosticScope::step(DiagnosticStep::Expiry);
+            assert_eq!(diagnostic_context().sequence, query.sequence);
+            assert_eq!(diagnostic_context().step, DiagnosticStep::Expiry);
+            assert_eq!(std::thread::spawn(diagnostic_context).join().unwrap(), UNSCOPED);
+        }
+        assert_eq!(diagnostic_context(), query);
+        let _ = std::panic::catch_unwind(|| {
+            let _nested = DiagnosticScope::enter(DiagnosticFlow::Background, DiagnosticStep::Recovery);
+            assert_ne!(diagnostic_context().sequence, query.sequence);
+            panic!("controlled unwind");
+        });
+        assert_eq!(diagnostic_context(), query);
+        drop(outer);
+        assert_eq!(diagnostic_context(), UNSCOPED);
     }
 }

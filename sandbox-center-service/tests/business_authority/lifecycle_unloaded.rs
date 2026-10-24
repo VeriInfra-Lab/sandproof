@@ -375,3 +375,73 @@ fn original_continued_result_restores_running_without_unloaded_material() {
     };
     assert_eq!(route.identity.incarnation, *source_incarnation);
 }
+
+async fn assert_timeout_recovered_by_original_round(preceding_writes: usize) {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let (session, _, observation) = accept_unload(&app);
+    *host.unloaded.lock().unwrap() = Some(observation);
+    app.reconcile_once().unwrap();
+    let node = authority.snapshot().unwrap().center.nodes()[0].clone();
+    let router = sandproof_api::lifecycle::router_with_admission(
+        Arc::new(sandproof_center_service::CenterPort::new(app.clone())),
+        vec![sandproof_api::ApiCredential { tenant: "8".into(), secret: "unloaded-query-component-only-key".into() }],
+        Arc::new(sandproof_api::admission::RequestAdmission::default()),
+    ).unwrap();
+    let before = public_query(&router, &session).await;
+    assert_eq!(before.0, 200);
+    proxy.timeout_after(preceding_writes);
+    let failed = public_query(&router, &session).await;
+    proxy.release_timeout();
+    assert_eq!(failed, (500, serde_json::json!({"code":500,"message":"Internal Server Error"})));
+    assert_eq!(public_query(&router, &session).await.0, 500);
+    // This is the exact production round, not a test calling recover directly.
+    let refreshes = AtomicUsize::new(0);
+    app.lifecycle_background_round(|| {
+        refreshes.fetch_add(1, Ordering::SeqCst);
+        authority.refresh_node(&node.identity, node.healthy_until_ms, node.limit)
+    });
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(public_query(&router, &session).await, before);
+    app.lifecycle_background_round(|| authority.refresh_node(&node.identity, node.healthy_until_ms, node.limit));
+    assert_eq!(public_query(&router, &session).await, before);
+}
+
+#[tokio::test]
+async fn lookup_transport_timeout_recovers_through_original_background_round() {
+    assert_timeout_recovered_by_original_round(0).await;
+}
+#[tokio::test]
+async fn expiry_transport_timeout_recovers_through_original_background_round() {
+    assert_timeout_recovered_by_original_round(1).await;
+}
+#[tokio::test]
+async fn projection_transport_timeout_recovers_through_original_background_round() {
+    assert_timeout_recovered_by_original_round(3).await;
+}
+
+#[test]
+fn background_transport_timeout_uses_original_recovery_without_replaying_refresh() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let (session, _, observation) = accept_unload(&app);
+    *host.unloaded.lock().unwrap() = Some(observation);
+    app.reconcile_once().unwrap();
+    let before = app.query_lifecycle("8", &session).unwrap();
+    let node = authority.snapshot().unwrap().center.nodes()[0].clone();
+    proxy.timeout_after(0);
+    let refreshes = AtomicUsize::new(0);
+    app.lifecycle_background_round(|| {
+        refreshes.fetch_add(1, Ordering::SeqCst);
+        let failed = authority.refresh_node(&node.identity, node.healthy_until_ms, node.limit);
+        proxy.release_timeout();
+        assert!(failed.is_err());
+        failed
+    });
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(app.query_lifecycle("8", &session).unwrap(), before);
+}
