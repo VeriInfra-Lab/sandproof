@@ -607,9 +607,10 @@ fn exhausted_retention_lanes_never_wrap_and_advertise_no_fresh_logical_capacity(
 }
 
 #[test]
-fn running_stopped_unknown_release_and_unconfirmed_native_work_keep_window_pinned() {
+fn unknown_release_pins_native_work_and_native_retirement_preserves_unconfirmed_window() {
     let dir = tempfile::tempdir().unwrap();
-    let mut journal = fixture::initialize(&dir.path().join("db"));
+    let path = dir.path().join("db");
+    let mut journal = fixture::initialize(&path);
     let (create, local) = running_native(
         &mut journal,
         fixture::create("alpha", "session-a"),
@@ -678,24 +679,94 @@ fn running_stopped_unknown_release_and_unconfirmed_native_work_keep_window_pinne
         journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
         Err(JournalError::UnresolvedAction)
     ));
-    assert!(journal.retirement_candidates().unwrap().is_empty());
+    // Native details may retire before the center confirms its SDK window,
+    // but only with the original release and a durable, request-bound receipt.
+    let candidates = journal.retirement_candidates().unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].sandbox, local.sandbox);
+    assert_eq!(candidates[0].owner, local.owner);
+    assert_eq!(candidates[0].operation, core::OperationId(2));
+    assert_eq!(candidates[0].release.unwrap().context, position);
+    let original = journal.lifecycle_work_state(&destroy, &context()).unwrap();
+    assert_eq!(original.intent, destroy);
+    assert_eq!(original.local, Some(local));
+    assert_eq!(original.local_operation, Some(core::OperationId(2)));
+    assert!(original.current && original.terminal);
+    let before = inbox(&journal);
+    assert_eq!(before.lanes[0].retired_through, 0);
     journal
-        .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
-        .unwrap();
-    journal
-        .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+        .retire_reclaimed(
+            local.sandbox,
+            700_000,
+            |candidate| {
+                assert_eq!(candidate, &candidates[0]);
+                Ok(())
+            },
+            &mut NeverCrash,
+        )
         .unwrap();
     assert!(
         journal
             .world()
             .unwrap()
             .sandbox_record(local.sandbox)
-            .is_some()
+            .is_none()
+    );
+    let saved = inbox(&journal);
+    assert_eq!(saved.sessions.len(), 1);
+    assert_eq!(saved.sessions[0].entries, before.sessions[0].entries);
+    assert_eq!(saved.sessions[0].local, Some(local));
+    assert!(saved.sessions[0].native_retirement.is_some());
+    assert!(saved.sessions[0].confirmed_terminal.is_none());
+    assert_eq!(saved.lanes, before.lanes);
+    assert_eq!(saved.owners, before.owners);
+    drop(journal);
+    let mut journal = fixture::open(&path);
+    fixture::refresh_epoch(&mut journal);
+    assert_eq!(inbox(&journal), saved);
+    assert_eq!(
+        journal.lifecycle_work_state(&destroy, &context()).unwrap(),
+        original
     );
     assert_eq!(
-        journal.retirement_candidates().unwrap()[0].sandbox,
-        local.sandbox
+        journal
+            .record_lifecycle_intent(&destroy, &context(), &mut NeverCrash)
+            .unwrap(),
+        original
     );
+    assert!(
+        journal
+            .lifecycle_destroy_cleaned(&destroy, &context())
+            .unwrap()
+    );
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert!(journal.retirement_candidates().unwrap().is_empty());
+    assert_eq!(inbox(&journal), saved);
+    assert_eq!(
+        journal
+            .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
+            .unwrap()
+            .result,
+        close.terminal
+    );
+    let closed = journal
+        .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+        .unwrap();
+    assert_eq!(closed.terminal, close.terminal);
+    assert_eq!(closed.retired_through, destroy.retention.window);
+    assert_eq!(
+        journal
+            .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+            .unwrap(),
+        closed
+    );
+    let saved = inbox(&journal);
+    assert!(saved.sessions.is_empty());
+    assert_eq!(saved.lanes[0].retired_through, closed.retired_through.get());
+    assert_eq!(saved.lanes[0].last_retired, Some(close.terminal));
 }
 
 #[test]
