@@ -336,6 +336,7 @@ fn actual_maintain_retries_original_material_plan_before_retiring_native_source_
     let app = v3::application(&path, state.clone(), false);
     app.establish_lifecycle_host_epoch().unwrap();
     assert!(app.advance_current_workflow(sandbox).unwrap());
+    drop(app);
     let journal = v3::open(&path);
     let question = journal
         .lifecycle_material_retirement_questions(sandbox)
@@ -360,7 +361,10 @@ fn actual_maintain_retries_original_material_plan_before_retiring_native_source_
         wrong.plan_binding = ContentDigest::from_sha256([0; 32]);
         state.material_observation = Some(wrong);
     }
+    let app = v3::application(&path, state.clone(), false);
+    app.establish_lifecycle_host_epoch().unwrap();
     assert_eq!(app.maintain().unwrap().retired_sandboxes, 0);
+    drop(app);
     let journal = v3::open(&path);
     assert_eq!(
         super::super::retirement::material_charge(
@@ -376,7 +380,10 @@ fn actual_maintain_retries_original_material_plan_before_retiring_native_source_
     );
     drop(journal);
     state.lock().unwrap().material_observation = Some(reply);
+    let app = v3::application(&path, state.clone(), false);
+    app.establish_lifecycle_host_epoch().unwrap();
     assert_eq!(app.maintain().unwrap().retired_sandboxes, 1);
+    drop(app);
     let journal = v3::open(&path);
     assert!(journal.world().unwrap().sandbox_record(sandbox).is_none());
     assert!(
