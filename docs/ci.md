@@ -68,6 +68,16 @@ SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tool
 
 这套普通执行环境不运行 KVM 系统验收、真实题目或 Lean 完整证明；普通绿灯和旧 2.0 报告不能代替高权限验收或 2.1 通过。自建执行器不绕过分支保护。
 
+### 显式退休的临时产物
+
+[回收工具](../tools/ci_retention.py)只处理它为新任务显式分配的私有目录；当前代码未安装或启用宿主定时回收。普通 CI 工作盘仍由原监督器收尾，共享构建缓存、现役镜像、恢复基线、原始证据和 Lean 的 `.lake` 不纳入这个工具。历史散落目录也不会因名称或年龄被自动接管。
+
+受信运维可在专用的 root/0700 根目录使用 `allocate --kind build|acceptance --candidate <40位提交>` 分配一次性材料。原执行器确认进程、挂载、网络和 cgroup 均已收尾后，在回收根之外独立保留原报告，再提供 root/0600 的交接 JSON：`candidate`、原 `status=passed|failed|cancelled`、`resource_cleanup_confirmed=true` 和原报告的 `evidence_sha256`。`retire --id <原编号> --receipt <交接JSON> --evidence <原报告>` 核对摘要后登记退休；其中资源已收尾由原执行器和可信交接提供，工具不会仅凭退出码、报告年龄或磁盘紧张推断成功。未知、在途、未登记材料保持不动，失败结果不会被改为成功。
+
+`collect` 默认列清单，只有 `collect --apply` 执行删除。默认保留七天、最新二十份及100 GiB实际分配量，新退休材料至少保留一天；这些是已退休副本的保留目标，不是宿主硬配额，不改变原监督器按实际配置计算的容量准入。删除前持久写入意图，按原设备/inode、所有者和目录描述符核对，不跟随符号链接或跨挂载；失败保留原删除意图，后续仅续清同一身份。独立原报告不随副本删除，完全回收的小收据最多保留四十份。
+
+[服务](../tools/ci_retention.service)和[定时单元](../tools/ci_retention.timer)仅提供待审核安装的配置，不由源码合入自动启用。安装须另核实际路径、权限、同所有者要求、精确代码和受控文件夹具，验证 `systemd-analyze verify`，并由运维明确授权。服务使用独立非阻塞锁和有限CPU/内存/期限，不持普通CI准入锁，不创建暂停标记或停止任务。组件测试不是已安装、已回收真实任务或产品GC通过的证据。
+
 ### 中心与宿主拆分的 CI 扩展
 
 [#292](https://github.com/ningZhang-cs/sandproof/issues/292) 使用同仓库、两套独立服务产物。普通 PR 四项检查及 test/main 后的 Rust 检查节奏保持；此扩展不增设 root runner，也不要求每 PR 真题或完整 Lean 证明。
