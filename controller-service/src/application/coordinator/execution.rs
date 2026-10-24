@@ -338,7 +338,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
             };
             let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             if let Ok(receipt) = result {
-                inner.journal.complete(&receipt, &mut NeverCrash).map_err(map_journal)?;
+                inner
+                    .journal
+                    .complete(&receipt, &mut NeverCrash)
+                    .map_err(map_journal)?;
             } else {
                 drop(inner);
                 if self.prepare_original_continue_if_ended(sandbox, host.as_ref())? {
@@ -352,7 +355,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
     }
 
     // The caller owns ActiveSandbox; host observations remain outside the lock.
-    fn reconcile_current_actions(&self, sandbox: core::SandboxId, host: &H) -> Result<(), ApplicationError> {
+    fn reconcile_current_actions(
+        &self,
+        sandbox: core::SandboxId,
+        host: &H,
+    ) -> Result<(), ApplicationError> {
         // Reconciliation observes only original Dispatched/Unknown identities.
         // It cannot race an in-process worker: this turn owns the session gate.
         let uncertain = {

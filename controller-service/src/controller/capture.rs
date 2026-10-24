@@ -120,7 +120,11 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
         let source = evidence
             .source_process_identity(command, &action.identity.resource)
             .ok_or(JournalError::UnresolvedAction)?;
-        let observed = if is_prepare { &mut prepared } else { &mut activated };
+        let observed = if is_prepare {
+            &mut prepared
+        } else {
+            &mut activated
+        };
         agree(observed, source)?;
     }
     match (prepared, activated) {
