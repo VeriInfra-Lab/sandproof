@@ -28,10 +28,14 @@ class FixtureTests(unittest.TestCase):
         latest['expected'] = dict(state='version', version=2)
         response = dict(request=dict(request=dict(binding=latest, operation=dict(kind='destroy')),
             accepted_version=3, center=copy.deepcopy(identity['center']), retention=dict(slot=1, window=1)), status='cleaned')
-        versions = dict(internal_protocol=2, center_store=8, host_store=20)
-        first = copy.deepcopy(identity) | dict(operation=dict(kind='create', target_incarnation=1), terminal=None)
+        versions = dict(internal_protocol=2, center_store=9, host_store=21)
+        first = copy.deepcopy(identity) | dict(operation=dict(kind='create', target_incarnation=1),
+            acceptance_time=dict(kind='sampled', at_ms=1000), running=None,
+            create_refusal=None, terminal=None, unloaded=None)
         last = dict(binding=latest, accepted_version=3, center=copy.deepcopy(identity['center']),
-            retention=dict(slot=1, window=1), operation=dict(kind='destroy'), terminal=copy.deepcopy(response))
+            retention=dict(slot=1, window=1), operation=dict(kind='destroy'),
+            acceptance_time=dict(kind='unsampled'), running=None, create_refusal=None,
+            terminal=copy.deepcopy(response), unloaded=None)
         center = dict(schema_version=3, versions=copy.deepcopy(versions), deployment='domain',
             retention_lanes=[dict(node=copy.deepcopy(binding['node']), retention_slot=1, retired_through=0,
                 phase='open', last_retired=None)], sandboxes=[dict(create=dict(binding=binding), released=True,
@@ -469,9 +473,10 @@ class FixtureTests(unittest.TestCase):
         identity['binding']['key']['deployment'] = 'one'
         identity['center']['deployment'] = 'one'
         checksum = hashlib.sha256(b'{"benchmark":"terminal-bench","runtime_attempt":"test-attempt-42"}').hexdigest()
-        first = copy.deepcopy(identity) | dict(operation=dict(kind='create', target_incarnation=1))
+        first = copy.deepcopy(_center['sandboxes'][0]['operations'][0])
+        first.update(copy.deepcopy(identity))
         record = dict(private=False, create=dict(binding=identity['binding'], metadata_sha256=checksum), operations=[first])
-        audit = dict(schema_version=3, versions=dict(internal_protocol=2,center_store=8,host_store=20), deployment='one', sandboxes=[record])
+        audit = dict(schema_version=3, versions=dict(internal_protocol=2,center_store=9,host_store=21), deployment='one', sandboxes=[record])
         self.assertEqual(fixture.find_runtime_create(audit,metadata,deployment='one'),identity)
         with self.assertRaisesRegex(RuntimeError, 'ambiguous'):
             fixture.find_runtime_create(dict(audit,sandboxes=[record,record]),metadata,deployment='one')
