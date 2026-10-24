@@ -12,8 +12,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod reaper;
 mod preparation;
+mod reaper;
 use reaper::Slot;
 
 /// Trusted operation policy, not a client-selected guest command budget.

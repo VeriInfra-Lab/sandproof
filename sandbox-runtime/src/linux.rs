@@ -57,9 +57,9 @@ pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
 pub use snapshot::{
-    CapturedFullSnapshot, FullCaptureApiContext, FullCaptureRequestEnd, FullCaptureRequestOutcome, FullCaptureLimits,
-    OriginalConfigurationObservation, OriginalPauseObservation, PausedOriginalVm,
-    PublishedFullCapture, SourceConfigurationLimits,
+    CapturedFullSnapshot, FullCaptureApiContext, FullCaptureLimits, FullCaptureRequestEnd,
+    FullCaptureRequestOutcome, OriginalConfigurationObservation, OriginalPauseObservation,
+    PausedOriginalVm, PublishedFullCapture, SourceConfigurationLimits,
 };
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
