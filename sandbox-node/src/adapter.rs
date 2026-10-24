@@ -15,7 +15,7 @@ use sandproof_controller_service::{
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use std::sync::Arc;
 #[cfg(debug_assertions)]
-mod faults;
+pub(crate) mod faults;
 
 /// Production adapter: one worker, physical lease and trusted relay executable.
 pub struct NodeHost {
@@ -304,6 +304,34 @@ impl NodeHost {
     }
 }
 
+fn restore_action_receipt(
+    action: &WorkAction<core::EffectId>,
+    observation: Result<HostObservation, Box<dyn std::error::Error>>,
+) -> Result<WorkReceipt<HostObservation>, WorkerTransportError> {
+    let outcome = match observation {
+        Ok(observed) => sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
+        Err(error) => {
+            project(
+                FaultStage::Execute,
+                FaultContext::action(action),
+                error.as_ref(),
+            )
+            .emit();
+            sandproof_protocol::WorkOutcome::Unknown {
+                reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                last_observation: None,
+            }
+        }
+    };
+    let result = Ok(WorkReceipt {
+        identity: action.identity.clone(),
+        outcome,
+    });
+    #[cfg(debug_assertions)]
+    faults::after_execute(action, &result);
+    result
+}
+
 impl WorkEvidence for NodeHost {
     type Evidence = HostObservation;
 }
@@ -338,25 +366,10 @@ impl WorkExecution for NodeHost {
         work: &sandproof_controller_service::capture::RestoreWorkRequest,
         activation: Option<&sandproof_controller_service::capture::RestoreActivationPermit>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
-        let outcome = match self.restore_action_observation(action, work, activation, false) {
-            Ok(observed) => sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
-            Err(error) => {
-                project(
-                    FaultStage::Execute,
-                    FaultContext::action(action),
-                    error.as_ref(),
-                )
-                .emit();
-                sandproof_protocol::WorkOutcome::Unknown {
-                    reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                }
-            }
-        };
-        Ok(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome,
-        })
+        restore_action_receipt(
+            action,
+            self.restore_action_observation(action, work, activation, false),
+        )
     }
 
     fn execute_lifecycle_capture_action(
@@ -1143,3 +1156,7 @@ impl NodeHost {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "adapter/restore_receipt_tests.rs"]
+mod restore_receipt_tests;

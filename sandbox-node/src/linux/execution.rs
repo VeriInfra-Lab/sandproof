@@ -273,9 +273,20 @@ impl LinuxWorker {
         vm: core::VmId,
     ) -> NodeResult<()> {
         let name = self.vm_name(vm);
+        let secret = self.secret_for_vm(sandbox, vm)?;
+        self.initialize_guest_authorization(&name, &secret)
+    }
+
+    // Both callers obtain this exact immutable generation record from the
+    // original VM binding. Restore keeps the same value for its final check.
+    pub(super) fn initialize_guest_authorization(
+        &self,
+        name: &str,
+        secret: &super::GuestSecret,
+    ) -> NodeResult<()> {
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            if self.guest_status(&name, "GET", "/health", None)? == "204" {
+            if self.guest_status(name, "GET", "/health", None)? == "204" {
                 break;
             }
             if Instant::now() >= deadline {
@@ -283,14 +294,13 @@ impl LinuxWorker {
             }
             thread::sleep(Duration::from_millis(100));
         }
-        let secret = self.secret_for_vm(sandbox, vm)?;
         let startup = secret
             .template
             .as_ref()
             .and_then(|value| value.startup.as_ref());
         let init = crate::startup::init_payload(&secret.token, &secret.env_vars, startup);
         let body = serde_json::to_vec(&init)?;
-        if self.guest_status(&name, "POST", "/init", Some(&body))? != "204" {
+        if self.guest_status(name, "POST", "/init", Some(&body))? != "204" {
             return Err("envd rejected authenticated initialization".into());
         }
         // A debug-only crash window after envd accepted the request but
@@ -303,7 +313,7 @@ impl LinuxWorker {
         {
             std::process::exit(88);
         }
-        if self.guest_file_status(&name, &secret.token)? != "200" {
+        if self.guest_file_status(name, &secret.token)? != "200" {
             return Err("envd authenticated file access not ready".into());
         }
         Ok(())

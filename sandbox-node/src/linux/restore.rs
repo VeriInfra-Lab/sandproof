@@ -314,14 +314,12 @@ impl LinuxWorker {
         observe_only: bool,
     ) -> NodeResult<ObservedResult> {
         let before = context.observe()?;
+        let secret = self.secret(context.sandbox, context.generation)?;
         let confirm = || {
             let after = context.observe()?;
             if after.process != before.process
                 || after.state != LoadedSnapshotState::Running
-                || self.guest_file_status(
-                    &context.name,
-                    &self.secret(context.sandbox, context.generation)?.token,
-                )? != "200"
+                || self.guest_file_status(&context.name, &secret.token)? != "200"
             {
                 return Err("restore activation/current guest credential not observed".into());
             }
@@ -350,15 +348,61 @@ impl LinuxWorker {
                 },
                 // RAM already contains the template process. Only rotate
                 // authorization; never dispatch startup a second time.
-                || self.initialize_guest(context.sandbox, context.vm),
+                || self.initialize_guest_authorization(&context.name, &secret),
                 confirm,
             )?
         };
+        #[cfg(debug_assertions)]
+        if !observe_only && Self::restore_activation_gate(context, &after, &secret.token)? {
+            confirm()?;
+        }
         Ok(ObservedResult::Activated {
             pid: after.process.pid,
             start_ticks: after.process.start_time_ticks,
             boot_id: after.process.boot_id,
         })
+    }
+
+    #[cfg(debug_assertions)]
+    fn restore_activation_gate(
+        context: &RestoreContext<'_>,
+        after: &LoadedSnapshotObservation,
+        token: &str,
+    ) -> NodeResult<bool> {
+        use std::{fs::File, os::unix::fs::MetadataExt};
+        let Some(gate) = crate::adapter::faults::RestoreActivationGate::configured(context.action)?
+        else {
+            return Ok(false);
+        };
+        let path = std::path::Path::new("/run/netns").join(&context.name);
+        sandbox_runtime::check_trusted_path(&path)?;
+        let expected_inode = context.runtime.observe_recorded_network(&context.name)?;
+        let namespace = File::from(rustix::fs::open(
+            &path,
+            rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )?);
+        let actual = namespace.metadata()?;
+        let process_namespace =
+            File::open(format!("/proc/{}/ns/net", after.process.pid))?.metadata()?;
+        if actual.ino() != expected_inode
+            || (actual.dev(), actual.ino()) != (process_namespace.dev(), process_namespace.ino())
+            || context.observe()?.process != after.process
+        {
+            return Err("restore gate candidate or original namespace differs".into());
+        }
+        gate.wait(
+            context.action,
+            &context.name,
+            &after.process,
+            &namespace,
+            token,
+        )?;
+        let current = std::fs::symlink_metadata(path)?;
+        if (current.dev(), current.ino()) != (actual.dev(), actual.ino()) {
+            return Err("restore gate namespace changed while waiting".into());
+        }
+        Ok(true)
     }
 }
 
