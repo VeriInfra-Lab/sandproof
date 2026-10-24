@@ -140,10 +140,6 @@ pub fn seal_full_capture(
     Ok(SealedFullSnapshot { manifest, physical })
 }
 
-#[cfg(test)]
-#[path = "full_snapshot_tests.rs"]
-mod tests;
-
 // Matches the original durable Full reservation's two bounded manifest copies.
 // Runtime's general bundle reader retains its independent 1 MiB input ceiling.
 fn require_reserved_manifest_bytes(bytes: &[u8]) -> SealResult<()> {
@@ -152,3 +148,8 @@ fn require_reserved_manifest_bytes(bytes: &[u8]) -> SealResult<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "full_snapshot_tests.rs"]
+mod tests;
+

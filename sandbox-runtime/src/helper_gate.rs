@@ -1222,7 +1222,10 @@ mod tests {
 
     fn stopped_cleanup_fixture(root: &Path, context: &RuntimeHostSlot) -> (Runtime, String) {
         let id = format!("vm-0123456789abcdef-{}", context.vm);
-        fs::create_dir_all(root.join(".claims").join(&id)).unwrap();
+        let mut directories = fs::DirBuilder::new();
+        directories.recursive(true);
+        std::os::unix::fs::DirBuilderExt::mode(&mut directories, 0o700);
+        directories.create(root.join(".claims").join(&id)).unwrap();
         let runtime = Runtime {
             config: super::super::RuntimeConfig {
                 console_policy: None,
