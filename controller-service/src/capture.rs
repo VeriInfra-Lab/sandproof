@@ -5,11 +5,13 @@
 //! before a host effect; deserializing these values grants no authority.
 
 use serde::{Deserialize, Serialize};
+mod continuation;
 mod launch;
 mod restore;
 mod retirement;
 mod source;
 mod work;
+pub use continuation::{OriginalContinuePermit, OriginalContinueWorkRequest};
 pub use launch::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureResult, PreparedFullCapture,
 };

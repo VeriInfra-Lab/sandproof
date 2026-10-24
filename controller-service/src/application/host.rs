@@ -16,6 +16,20 @@ pub trait WorkEvidence {
 
 /// Execute only controller-claimed work; transport loss remains unknown.
 pub trait WorkExecution: WorkEvidence {
+    /// Continue only the same original VM under the exact saved end fact and
+    /// confirmed original dispatch. The provider must match the whole action
+    /// and work digest, recheck the same PID/boot, policies and authorization,
+    /// and never load a snapshot, initialize a guest or allocate a successor.
+    /// # Errors
+    /// Any uncertain action or physical prerequisite remains unknown.
+    fn execute_lifecycle_original_continue(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::OriginalContinueWorkRequest,
+        _permit: &crate::capture::OriginalContinuePermit,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        Err(WorkerTransportError::ConnectionLost)
+    }
     /// Delete only the exact saved physical plan authorized by the journal.
     /// Partial failure remains unknown and retains this same plan and charge.
     /// # Errors
@@ -90,6 +104,15 @@ pub trait WorkExecution: WorkEvidence {
 
 /// Observe or reconcile exact previously dispatched work, never arbitrary replay.
 pub trait WorkRecovery: WorkEvidence {
+    /// Read only the original candidate. This may not PATCH, retry Full,
+    /// initialize a guest, or turn a current Running GET into a new permission.
+    fn observe_lifecycle_original_continue(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::OriginalContinueWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        None
+    }
     /// Read an exact bounded physical plan without creating or deleting files.
     /// An old source VMM may already be absent; current CPU/boot readiness is
     /// not a substitute for the original file and native execution identities.
