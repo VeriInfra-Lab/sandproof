@@ -36,12 +36,12 @@ pub(in crate::controller) fn claim(
         }
         core::Command::StopVm { .. }
         | core::Command::CleanupVm { .. }
-        | core::Command::CleanupSlot { .. } => {
+        | core::Command::CleanupSlot { .. }
+            if capture.action.is_some() && capture.completed.is_none() =>
+        {
             // Unknown Full may still write. Neither terminal intent nor a dead
             // manager/helper proves that this physical responsibility ended.
-            if capture.action.is_some() && capture.completed.is_none() {
-                return Ok(false);
-            }
+            return Ok(false);
         }
         _ => (),
     }
