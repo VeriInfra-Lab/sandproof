@@ -10,6 +10,9 @@
 #[cfg(test)]
 mod tests;
 
+pub mod continuation;
+pub use continuation::{CaptureWorkEndReceipt, OriginalContinueIdentity};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CaptureCommit {
