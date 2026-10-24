@@ -40,7 +40,7 @@ fn authorize(
     journal: &mut ControllerJournal,
     source: &SourceWorkRecord,
     action: &WorkAction<core::EffectId>,
-) -> crate::capture::CaptureApiEndObservation {
+) -> crate::capture::CaptureRequestEndObservation {
     journal
         .authorize_lifecycle_full_capture(
             &source.work,
@@ -53,7 +53,7 @@ fn authorize(
         .unwrap();
     let record = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
     let mut observation = actual_api_end(&record);
-    observation.http_status = 500;
+    observation.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 500 };
     observation
 }
 
@@ -343,7 +343,7 @@ fn public_prepare_rejects_unended_authorized_worker_substituted_fact_expiry_and_
             }
             1 => {
                 let mut value = authorize(&mut journal, &source, &action);
-                value.http_status = 100;
+                value.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 100 };
                 end = Some(value);
             }
             2 => {

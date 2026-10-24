@@ -2268,14 +2268,14 @@ fn public_unload_observation_keeps_pending_and_persisted_unloaded_mutually_exclu
     }
 }
 
-fn actual_api_end(record: &SourceWorkRecord) -> crate::capture::CaptureApiEndObservation {
+fn actual_api_end(record: &SourceWorkRecord) -> crate::capture::CaptureRequestEndObservation {
     let capture = record.capture.as_ref().unwrap();
-    crate::capture::CaptureApiEndObservation {
+    crate::capture::CaptureRequestEndObservation {
         action: capture.action.clone().unwrap(),
         full_work_binding: capture.full.binding_digest().unwrap(),
         worker: capture.worker.clone().unwrap(),
         source: record.work.requirement().source.clone(),
-        http_status: 204,
+        outcome: crate::capture::CaptureRequestEndOutcome::Returned { http_status: 204 },
     }
 }
 
@@ -2288,7 +2288,7 @@ fn original_api_end_fact_is_durable_but_changes_no_native_or_material_responsibi
     let before = journal.world().unwrap();
     let observation = actual_api_end(&saved);
     let receipt = journal
-        .record_lifecycle_capture_api_end(
+        .record_lifecycle_capture_request_end(
             &source.work,
             &v3::context(),
             observation.clone(),
@@ -2335,7 +2335,7 @@ fn original_api_end_fact_is_durable_but_changes_no_native_or_material_responsibi
     assert_eq!(after.capture_work_end_receipt().unwrap(), Some(receipt));
     assert_eq!(
         journal
-            .record_lifecycle_capture_api_end(
+            .record_lifecycle_capture_request_end(
                 &source.work,
                 &v3::context(),
                 observation,
@@ -2366,7 +2366,7 @@ fn original_api_end_rejects_substituted_source_action_worker_digest_and_incomple
             0 => end.source.pid += 1,
             1 => end.action.identity.generation += 1,
             2 => end.full_work_binding = ContentDigest::from_sha256([0; 32]),
-            3 => end.http_status = 100,
+            3 => end.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 100 },
             _ => {
                 end.worker = crate::capture::CaptureWorkerBinding::new(
                     SourceProcessIdentity {
@@ -2380,7 +2380,7 @@ fn original_api_end_rejects_substituted_source_action_worker_digest_and_incomple
             }
         }
         assert!(matches!(
-            journal.record_lifecycle_capture_api_end(
+            journal.record_lifecycle_capture_request_end(
                 &source.work,
                 &v3::context(),
                 end,
@@ -2416,7 +2416,7 @@ fn original_api_end_unknown_commit_reopens_the_exact_saved_or_absent_fact() {
         let observation = actual_api_end(&saved);
         transaction::fail_next_commit(durable);
         assert!(matches!(
-            journal.record_lifecycle_capture_api_end(
+            journal.record_lifecycle_capture_request_end(
                 &source.work,
                 &v3::context(),
                 observation.clone(),
@@ -2431,7 +2431,7 @@ fn original_api_end_unknown_commit_reopens_the_exact_saved_or_absent_fact() {
             .unwrap();
         assert_eq!(recovered.is_some(), durable);
         let retried = journal
-            .record_lifecycle_capture_api_end(
+            .record_lifecycle_capture_request_end(
                 &source.work,
                 &v3::context(),
                 observation,
