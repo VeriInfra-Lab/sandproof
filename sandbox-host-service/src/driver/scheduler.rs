@@ -1,6 +1,9 @@
 //! In-process occupancy only; restart responsibility belongs to the outbox.
 use super::{DriveReport, DriverConfig, HostLifecycle, TemplateSource};
-use sandproof_controller_service::application::{ApplicationError, ControllerHost};
+use sandproof_controller_service::application::{
+    ApplicationError, ControllerApplication, ControllerHost,
+};
+use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation};
 use std::sync::atomic::Ordering;
 use std::{collections::BTreeSet, sync::Arc};
@@ -9,7 +12,52 @@ use tokio::{sync::watch, task::JoinSet};
 enum Candidate {
     Create(AcceptedLifecycleIntent),
     Renew(AcceptedLifecycleIntent),
+    Unload(AcceptedLifecycleIntent),
     Native(sandbox_controller_core::SandboxId, bool),
+}
+
+// Called inside the original blocking callback and its control permit.
+fn recorded_candidates<H: ControllerHost>(
+    app: &ControllerApplication<H>,
+    node: &NodeIdentity,
+) -> Result<Vec<Candidate>, ApplicationError> {
+    app.check_internal_authority(node)
+        .map_err(|_| ApplicationError::OutcomeUnknown)?;
+    app.accept_due_work()?;
+    let creates = app
+        .lifecycle_pending_creates(node)
+        .map_err(|_| ApplicationError::OutcomeUnknown)?;
+    let mut covered = BTreeSet::new();
+    let mut result = Vec::new();
+    for intent in creates {
+        let state = app.lifecycle_work_state_for_recorded(&intent, node)?;
+        if let Some(local) = state.local {
+            covered.insert(local.sandbox);
+        }
+        result.push(Candidate::Create(intent));
+    }
+    for intent in app
+        .lifecycle_pending_renewals(node)
+        .map_err(|_| ApplicationError::OutcomeUnknown)?
+    {
+        result.push(Candidate::Renew(intent));
+    }
+    for intent in app
+        .lifecycle_pending_unloads(node)
+        .map_err(|_| ApplicationError::OutcomeUnknown)?
+    {
+        let state = app.lifecycle_work_state_for_recorded(&intent, node)?;
+        if let Some(local) = state.local {
+            covered.insert(local.sandbox);
+        }
+        result.push(Candidate::Unload(intent));
+    }
+    for (sandbox, terminal) in app.pending_workflows()? {
+        if !covered.contains(&sandbox) {
+            result.push(Candidate::Native(sandbox, terminal));
+        }
+    }
+    Ok(result)
 }
 
 impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
@@ -21,35 +69,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
     ) -> Result<DriveReport, ApplicationError> {
         let node = config.node.clone();
         let mut candidates = self
-            .blocking(move |app| {
-                app.check_internal_authority(&node)
-                    .map_err(|_| ApplicationError::OutcomeUnknown)?;
-                app.accept_due_work()?;
-                let creates = app
-                    .lifecycle_pending_creates(&node)
-                    .map_err(|_| ApplicationError::OutcomeUnknown)?;
-                let mut covered = BTreeSet::new();
-                let mut result = Vec::new();
-                for intent in creates {
-                    let state = app.lifecycle_work_state_for_recorded(&intent, &node)?;
-                    if let Some(local) = state.local {
-                        covered.insert(local.sandbox);
-                    }
-                    result.push(Candidate::Create(intent));
-                }
-                for intent in app
-                    .lifecycle_pending_renewals(&node)
-                    .map_err(|_| ApplicationError::OutcomeUnknown)?
-                {
-                    result.push(Candidate::Renew(intent));
-                }
-                for (sandbox, terminal) in app.pending_workflows()? {
-                    if !covered.contains(&sandbox) {
-                        result.push(Candidate::Native(sandbox, terminal));
-                    }
-                }
-                Ok(result)
-            })
+            .blocking(move |app| recorded_candidates(app, &node))
             .await?;
         if !candidates.is_empty() {
             // A bounded, non-authoritative hint. Unknown/busy first entries
@@ -94,6 +114,9 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                                 verification.as_deref(),
                             )
                             .map(|_| true)
+                        }
+                        Candidate::Unload(intent) => {
+                            app.advance_recorded_lifecycle_unload(&intent, &config.node)
                         }
                         Candidate::Native(sandbox, _) => app.advance_current_workflow(sandbox),
                         Candidate::Renew(intent) => app

@@ -17,7 +17,8 @@ fn saved_host(first: &SandboxSession, second: &SandboxSession) -> FakeHost {
         secrets: BTreeMap::from([
             (1, (first.envd_access_token.clone(), BTreeMap::new())),
             (2, (second.envd_access_token.clone(), BTreeMap::new())),
-        ]).into(),
+        ])
+        .into(),
         ..FakeHost::default()
     }
 }
@@ -107,7 +108,8 @@ fn starting_credential_fault_is_local_and_never_rotates_or_repairs_a_claimed_ide
             secrets: BTreeMap::from([
                 (1, (first_token, BTreeMap::new())),
                 (2, (healthy_token.clone(), BTreeMap::new())),
-            ]).into(),
+            ])
+            .into(),
             prepare: PrepareObservation::Successful.into(),
             prepare_calls: Some(Arc::clone(&prepare_calls)),
             ..FakeHost::default()

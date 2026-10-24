@@ -5,6 +5,7 @@ use sandproof_protocol::internal::{
 };
 use sandproof_protocol::lifecycle::{
     ClosedLifecycleWindow, LifecycleWindowClose, RENEWAL_CONFIRMATION_BODY_BYTES,
+    TERMINAL_RESULT_BODY_BYTES,
 };
 fn make_create(image: &CenterState) -> (CenterState, AcceptedLifecycleIntent) {
     let owner = "1".try_into().unwrap();
@@ -45,7 +46,10 @@ fn future_envelope_explicitly_reserves_confirmations_and_every_retention_lane() 
         prior
             + usize::from(b.max_sandboxes) * usize::from(b.operations_per_sandbox) * 128
             + usize::from(b.max_sandboxes)
-                * (RESULT_CONFIRMATION_BODY_BYTES + RENEWAL_CONFIRMATION_BODY_BYTES + 256)
+                * (RESULT_CONFIRMATION_BODY_BYTES
+                    + RENEWAL_CONFIRMATION_BODY_BYTES
+                    + TERMINAL_RESULT_BODY_BYTES
+                    + 256)
             + usize::from(b.max_nodes) * usize::from(b.max_sandboxes) * RETENTION_LANE_BYTES
     );
     for slots in [0, b.max_sandboxes + 1] {

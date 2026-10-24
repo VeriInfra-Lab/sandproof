@@ -19,6 +19,9 @@ use std::{
     time::Duration,
 };
 
+#[path = "lifecycle_unloaded.rs"]
+mod unloaded;
+
 struct Time(AtomicU64);
 impl Clock for Time {
     fn now_ms(&self) -> Result<i64, ApplicationError> {
@@ -52,6 +55,7 @@ struct Host {
     recordings: Arc<AtomicUsize>,
     blocked: Arc<Mutex<Option<Block>>>,
     notify_recorded: RecordedSignal,
+    unloaded: Arc<Mutex<Option<sandproof_protocol::lifecycle::UnloadObservation>>>,
 }
 impl Host {
     fn new(clock: Arc<Time>) -> Self {
@@ -62,6 +66,7 @@ impl Host {
             recordings: Arc::new(AtomicUsize::new(0)),
             blocked: Arc::new(Mutex::new(None)),
             notify_recorded: Arc::new(Mutex::new(None)),
+            unloaded: Arc::new(Mutex::new(None)),
         }
     }
     fn block_next(&self, session: SessionId) -> (mpsc::Receiver<()>, Release) {
@@ -100,6 +105,19 @@ impl Host {
     }
 }
 impl HostPort for Host {
+    fn observe_lifecycle_unload(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        _: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, PortError> {
+        Ok(self.unloaded.lock().unwrap().clone().unwrap_or(
+            sandproof_protocol::lifecycle::UnloadObservation {
+                request: intent.clone(),
+                unloaded: None,
+            },
+        ))
+    }
+
     fn observe_lifecycle_create(
         &self,
         intent: &AcceptedLifecycleIntent,

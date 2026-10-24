@@ -10,6 +10,7 @@ use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
 pub(super) enum Call {
     Record,
     CreateObservation,
+    UnloadObservation,
     TerminalObservation,
     Confirm,
     Close,
@@ -82,6 +83,18 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     };
     if intent.validate(&context).is_err() {
         return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    if matches!(call, Call::UnloadObservation) {
+        return match handler.observe_unload(intent.clone(), context).await {
+            Ok(view) if view.matches_request(&intent) => json_response(
+                &view,
+                sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES,
+            ),
+            Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+                response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+            }
+        };
     }
     if matches!(call, Call::CreateObservation) {
         return match handler.observe_create(intent.clone(), context).await {

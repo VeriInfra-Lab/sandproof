@@ -763,9 +763,58 @@ fn foreign_sql_writer_cannot_acknowledge_or_advance_an_original_confirmed_window
     );
 }
 
+fn fill_history_and_record_destroy(
+    journal: &mut ControllerJournal,
+    create: &AcceptedLifecycleIntent,
+    incarnation: sandproof_protocol::lifecycle::IncarnationId,
+) -> AcceptedLifecycleIntent {
+    use sandproof_protocol::lifecycle::{ExpectedSession, LifecycleOperation};
+    let mut last = create.clone();
+    for version in 2..=7 {
+        let mut renew = create.clone();
+        renew.accepted_version = version;
+        renew.request.binding.expected = ExpectedSession::Version(version - 1);
+        renew.request.binding.key.sequence = (u64::MAX - 8 + version).try_into().unwrap();
+        renew.request.operation = LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms: 60_020 + i64::try_from(version).unwrap() * 100,
+            extend_only: true,
+        };
+        journal
+            .record_lifecycle_intent(&renew, &context(), &mut NeverCrash)
+            .unwrap();
+        journal
+            .apply_lifecycle_renew(&renew, &context(), 20, &mut NeverCrash)
+            .unwrap();
+        last = renew;
+    }
+    assert_eq!(inbox(journal).sessions[0].entries.len(), 7);
+    let mut extra = last.clone();
+    extra.accepted_version = 8;
+    extra.request.binding.expected = ExpectedSession::Version(7);
+    extra.request.binding.key.sequence = u64::MAX.try_into().unwrap();
+    assert!(matches!(
+        journal.record_lifecycle_intent(&extra, &context(), &mut NeverCrash),
+        Err(JournalError::Conflict)
+    ));
+    assert_eq!(
+        journal
+            .record_lifecycle_intent(&last, &context(), &mut NeverCrash)
+            .unwrap()
+            .intent,
+        last
+    );
+    extra.request.operation = LifecycleOperation::Destroy {};
+    journal
+        .record_lifecycle_intent(&extra, &context(), &mut NeverCrash)
+        .unwrap();
+    assert_eq!(inbox(journal).sessions[0].entries.len(), 8);
+    extra
+}
+
 #[test]
 fn full_operation_history_preserves_destroy_confirmation_and_recent_stamp_capacity() {
-    use sandproof_protocol::lifecycle::{ExpectedSession, LifecycleOperation};
+    use sandproof_protocol::lifecycle::LifecycleOperation;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let mut journal = fixture::initialize(&path);
@@ -786,46 +835,7 @@ fn full_operation_history_preserves_destroy_confirmation_and_recent_stamp_capaci
         .insert("long-value".into(), "x".repeat(600));
     parameters.options = options.encoded().unwrap();
     let (create, local) = running_native(&mut journal, create, fixture::admission());
-    let mut last = create.clone();
-    for version in 2..=7 {
-        let mut renew = create.clone();
-        renew.accepted_version = version;
-        renew.request.binding.expected = ExpectedSession::Version(version - 1);
-        renew.request.binding.key.sequence = (u64::MAX - 8 + version).try_into().unwrap();
-        renew.request.operation = LifecycleOperation::Renew {
-            incarnation,
-            end_at_ms: 60_020 + i64::try_from(version).unwrap() * 100,
-            extend_only: true,
-        };
-        journal
-            .record_lifecycle_intent(&renew, &context(), &mut NeverCrash)
-            .unwrap();
-        journal
-            .apply_lifecycle_renew(&renew, &context(), 20, &mut NeverCrash)
-            .unwrap();
-        last = renew;
-    }
-    assert_eq!(inbox(&journal).sessions[0].entries.len(), 7);
-    let mut extra = last.clone();
-    extra.accepted_version = 8;
-    extra.request.binding.expected = ExpectedSession::Version(7);
-    extra.request.binding.key.sequence = u64::MAX.try_into().unwrap();
-    assert!(matches!(
-        journal.record_lifecycle_intent(&extra, &context(), &mut NeverCrash),
-        Err(JournalError::Conflict)
-    ));
-    assert_eq!(
-        journal
-            .record_lifecycle_intent(&last, &context(), &mut NeverCrash)
-            .unwrap()
-            .intent,
-        last
-    );
-    extra.request.operation = LifecycleOperation::Destroy {};
-    journal
-        .record_lifecycle_intent(&extra, &context(), &mut NeverCrash)
-        .unwrap();
-    assert_eq!(inbox(&journal).sessions[0].entries.len(), 8);
+    let extra = fill_history_and_record_destroy(&mut journal, &create, incarnation);
     crate::finish_accepted_kill(
         &mut journal,
         local.sandbox,

@@ -390,6 +390,15 @@ pub(crate) fn authority_error(error: AuthorityError) -> PortError {
         AuthorityError::Decision(DecisionError::Capacity | DecisionError::Exhausted) => {
             PortError::QuotaExceeded
         }
-        AuthorityError::Store(_) | AuthorityError::RecoveryRequired => PortError::OutcomeUnknown,
+        AuthorityError::Store(_) => {
+            // Preserve the closed original cause before a background caller
+            // discards this result or attempts recovery of the same authority.
+            diagnostics::emit(
+                diagnostics::Stage::AuthorityStore,
+                diagnostics::Failure::Authority(error),
+            );
+            PortError::OutcomeUnknown
+        }
+        AuthorityError::RecoveryRequired => PortError::OutcomeUnknown,
     }
 }

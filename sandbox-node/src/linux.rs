@@ -30,7 +30,9 @@ use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
 mod capture;
+mod capture_cleanup;
 mod capture_profile;
+mod capture_stop;
 mod capture_worker;
 pub use capture_worker::{
     CAPTURE_WORKER_INPUT_BYTES, CAPTURE_WORKER_OUTPUT_BYTES, PreparedCaptureWorker,
@@ -189,6 +191,14 @@ enum ObservedResult {
         start_ticks: u64,
         boot_id: String,
     },
+    SnapshotSealed {
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest,
+        material_bytes: u64,
+    },
+    SnapshotCommitted {
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest,
+        material_bytes: u64,
+    },
     FilePolicy {
         disk_inode: u64,
     },
@@ -220,6 +230,35 @@ impl ResourceEvidence for HostObservation {
 impl HostEvidence for HostObservation {
     fn validates(&self, command: &core::Command) -> bool {
         decisions::evidence_matches(self, command)
+    }
+
+    fn capture_manifest_digest(
+        &self,
+        command: &core::Command,
+    ) -> Option<sandproof_protocol::lifecycle::ContentDigest> {
+        if !decisions::evidence_matches(self, command) {
+            return None;
+        }
+        match &self.result {
+            ObservedResult::SnapshotSealed {
+                manifest_digest, ..
+            }
+            | ObservedResult::SnapshotCommitted {
+                manifest_digest, ..
+            } => Some(*manifest_digest),
+            _ => None,
+        }
+    }
+
+    fn capture_material_bytes(&self, command: &core::Command) -> Option<u64> {
+        if !decisions::evidence_matches(self, command) {
+            return None;
+        }
+        match &self.result {
+            ObservedResult::SnapshotSealed { material_bytes, .. }
+            | ObservedResult::SnapshotCommitted { material_bytes, .. } => Some(*material_bytes),
+            _ => None,
+        }
     }
 
     fn source_process_identity(

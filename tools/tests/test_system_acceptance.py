@@ -123,7 +123,9 @@ def original_center(count=4):
             expected=dict(state='absent'))
         operation = dict(binding=copy.deepcopy(binding), center=dict(deployment='domain', center='center'),
             retention=dict(slot=number+1, window=1), accepted_version=1,
-            operation=dict(kind='create', target_incarnation=1))
+            operation=dict(kind='create', target_incarnation=1),
+            acceptance_time=dict(kind='sampled', at_ms=1000), running=None,
+            create_refusal=None, terminal=None, unloaded=None)
         records.append(dict(private=False, create=dict(binding=binding), operations=[operation]))
     return dict(schema_version=3, sandboxes=records)
 

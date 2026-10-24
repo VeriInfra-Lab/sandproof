@@ -14,6 +14,7 @@ mod public;
 mod renewal;
 mod request;
 mod terminal;
+mod unload;
 
 pub use access::{AccessIdentityError, LifecycleAccessIdentity};
 pub use authority::{
@@ -40,11 +41,13 @@ pub use public::{
 pub use renewal::{ConfirmedRenewal, RenewalConfirmation};
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
+pub use unload::{UnloadObservation, UnloadedFacts};
 
 /// The only supported lifecycle wire format. Mismatches are refused.
 pub const PROTOCOL_VERSION: u16 = 3;
 pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
 pub const CREATE_OBSERVATION_PATH: &str = "/internal/lifecycle/create-observation";
+pub const UNLOAD_OBSERVATION_PATH: &str = "/internal/lifecycle/unload-observation";
 pub const TERMINAL_OBSERVATION_PATH: &str = "/internal/lifecycle/terminal-observation";
 /// Terminal envelopes carry no Create options; fixed full identities fit here.
 pub const TERMINAL_RESULT_BODY_BYTES: usize = 8192;

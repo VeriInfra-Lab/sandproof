@@ -20,19 +20,22 @@ use std::{
 mod engine;
 use engine::{Engine, KEY, MEMORY, connect, deployment, endpoint};
 
-#[allow(
-    dead_code,
-    reason = "shared original application fixture serves selected component scenarios"
-)]
-#[path = "../../controller-service/tests/support/internal_application.rs"]
-mod host_application;
-use host_application::complete_fixture as local_fixture;
+use current_application::fixture as host_application;
 use host_application::wire as lifecycle_fixture;
 use sandproof_center_core::{Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget};
-use sandproof_center_store::authority::{AuthorityError, CenterAuthority, LifecycleTransport};
-use sandproof_protocol::internal::lifecycle::{
-    Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
+use sandproof_center_core::{CreateParameters, LifecycleSubmission, LifecycleWindow};
+use sandproof_center_store::authority::{AuthorityError, CenterAuthority};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, ClosedLifecycleWindow,
+    ConfirmedLifecycleResult, CurrentCreateReadiness, LifecycleOperation, OperationKey,
+    TerminalLifecycleObservation, TerminalStatus,
 };
+#[allow(
+    dead_code,
+    reason = "shared current application fixture serves selected component scenarios"
+)]
+#[path = "../../controller-service/tests/support/lifecycle_application.rs"]
+mod current_application;
 
 #[path = "redis_ledger/aof.rs"]
 mod aof;
@@ -62,6 +65,7 @@ fn center_state_with_resources(
             max_sandboxes: 2,
             operations_per_sandbox: 3,
             max_options_bytes: 128,
+            result_retention_ms: 100,
             platform: resources,
         },
         vec![NodeRegistration {
@@ -78,10 +82,21 @@ fn center_state_with_resources(
             }],
             protocol_version: 2,
         }],
-        vec![TenantBudget {
-            tenant: "1".try_into().unwrap(),
-            limit: resources,
-        }],
+        ["1", "2"]
+            .into_iter()
+            .map(|tenant| TenantBudget {
+                tenant: tenant.try_into().unwrap(),
+                limit: resources,
+            })
+            .collect(),
+        current_application::config().center,
+        ["1", "2"]
+            .into_iter()
+            .map(|owner| LifecycleWindow {
+                owner: owner.try_into().unwrap(),
+                window: 9.try_into().unwrap(),
+            })
+            .collect(),
     )
     .unwrap()
 }
@@ -93,7 +108,7 @@ fn center_authority_with_state(
     address: SocketAddrV4,
     state: &CenterState,
 ) -> CenterAuthority {
-    let limit = state.bounds().required_block_bytes();
+    let limit = state.required_authority_bytes();
     let (ledger, _) = RedisLedger::initialize(
         endpoint(address),
         Engine::config(limit),
@@ -104,513 +119,67 @@ fn center_authority_with_state(
     CenterAuthority::attach(ledger).unwrap()
 }
 
-struct InboxTransport<'a>(&'a mut sandproof_controller_service::ControllerJournal);
-impl LifecycleTransport for InboxTransport<'_> {
-    type Error = sandproof_controller_service::JournalError;
-    async fn send(&mut self, request: &LifecycleRequest) -> Result<LifecycleResponse, Self::Error> {
-        self.0
-            .record_internal_intent(request, &mut sandproof_controller_service::NeverCrash)
-    }
-}
+#[path = "redis_ledger/components.rs"]
+mod components;
 
-#[path = "../../sandbox-internal/tests/support/tls.rs"]
-mod tls_fixture;
-
-#[tokio::test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "one ordered real Redis/HTTPS/SQLite lost-reply scenario"
-)]
-async fn committed_outbox_real_https_sqlite_and_lost_reply_preserve_one_operation() {
-    use sandproof_internal::{
-        ClientTls, InternalClient, InternalServer, LifecycleReceiver, Limits, ReceiveError,
-        RegisteredEndpoint, ServerTls,
-    };
-    struct LoseFirst {
-        inbox: sandproof_host_service::HostLifecycle<host_application::TestHost>,
-        lose: AtomicBool,
-    }
-    impl sandproof_internal::ValidationReceiver for LoseFirst {
-        async fn validation_evidence(
-            &self,
-            request: sandproof_internal::template::ValidationRequest,
-        ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
-            self.inbox.validation_evidence(request).await
-        }
-    }
-    impl LifecycleReceiver for LoseFirst {
-        async fn close(
-            &self,
-            request: sandproof_protocol::internal::window::WindowCloseRequest,
-        ) -> Result<sandproof_protocol::internal::window::WindowCloseAck, ReceiveError> {
-            self.inbox.close(request).await
-        }
-        async fn confirm(
-            &self,
-            result: LifecycleResponse,
-        ) -> Result<LifecycleResponse, ReceiveError> {
-            self.inbox.confirm(result).await
-        }
-        async fn receive(
-            &self,
-            request: LifecycleRequest,
-        ) -> Result<LifecycleResponse, ReceiveError> {
-            let response = self.inbox.receive(request).await?;
-            // Actual SQLite commit happened, but no receipt reaches the center.
-            if self.lose.swap(false, Ordering::SeqCst) {
-                Err(ReceiveError::Unavailable)
-            } else {
-                Ok(response)
-            }
-        }
-    }
-    impl sandproof_internal::DataReceiver for LoseFirst {
-        async fn receive_data(
-            &self,
-            _: sandproof_protocol::lifecycle::LifecycleAccessIdentity,
-            _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
-            _: axum::http::Request<axum::body::Body>,
-        ) -> axum::http::Response<axum::body::Body> {
-            // This storage/lifecycle fixture has no guest data handler, never a
-            // production default implementation or synthetic data success.
-            let mut response = axum::http::Response::new(axum::body::Body::empty());
-            *response.status_mut() = axum::http::StatusCode::SERVICE_UNAVAILABLE;
-            response
-        }
-    }
-    let fixture = Engine::new();
-    let binding = host_application::request().create;
-    let resources = binding.resources.checked_add(binding.resources).unwrap();
-    let state = center_state_with_resources(resources, &binding);
-    let limit = state.bounds().required_block_bytes();
-    let mut center = center_authority_with_state(&fixture, fixture.address, &state);
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("host.db");
-    let physical = Arc::new(std::sync::Mutex::new(host_application::State::default()));
-    let clock = Arc::new(host_application::TestClock(
-        std::sync::atomic::AtomicI64::new(10),
-    ));
-    let host = host_application::application(&path, Arc::clone(&physical), clock, true);
-    let certs = tls_fixture::certificates();
-    let limits = Limits::new(4, Duration::from_secs(2), Duration::from_secs(5)).unwrap();
-    let inbox = sandproof_host_service::HostLifecycle::new(Arc::clone(&host));
-    let server = InternalServer::new(
-        ServerTls::new(
-            certs.host.material(),
-            vec![certs.ca.der().clone()],
-            vec![certs.center.pin()],
-        )
-        .unwrap(),
-        lifecycle_fixture::node("host-a"),
-        limits,
-        sandproof_internal::diagnostic::RejectTemplateCache::new(LoseFirst {
-            inbox: inbox.clone(),
-            lose: AtomicBool::new(true),
-        }),
-    );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let client = Arc::new(InternalClient::new(
-        ClientTls::new(
-            certs.center.material(),
-            vec![certs.ca.der().clone()],
-            vec![certs.host.pin()],
-        )
-        .unwrap(),
-        RegisteredEndpoint::new(
-            listener.local_addr().unwrap(),
-            "host.test".into(),
-            lifecycle_fixture::node("host-a"),
-        )
-        .unwrap(),
-        limits,
-    ));
-    let (stop, shutdown) = tokio::sync::oneshot::channel();
-    let run = server.clone();
-    let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
-    let mut transport = |request: LifecycleRequest| {
-        let client = Arc::clone(&client);
-        async move { client.lifecycle(&request).await }
-    };
-    let create = center.create(&"1".try_into().unwrap(), binding, 0).unwrap();
-    assert!(
-        center
-            .dispatch_batch()
-            .unwrap()
-            .pop()
-            .unwrap()
-            .send(&mut transport)
-            .await
-            .is_err()
-    );
-    assert_eq!(center.state().unwrap().pending(), vec![create.clone()]);
-    assert_eq!(
-        center.state().unwrap().reserved(None, None),
-        Some(create.create.resources)
-    );
-    assert_eq!(
-        host.internal_pending(&lifecycle_fixture::node("host-a"))
-            .unwrap(),
-        vec![create.clone()]
-    );
-    let response = center
-        .dispatch_batch()
-        .unwrap()
-        .pop()
-        .unwrap()
-        .send(&mut transport)
-        .await
-        .unwrap();
-    assert_eq!(response.fact, LifecycleFact::Recorded);
-    center.apply_response(&response).unwrap();
-    let replay = center
-        .dispatch_batch()
-        .unwrap()
-        .pop()
-        .unwrap()
-        .send(&mut transport)
-        .await
-        .unwrap();
-    assert_eq!(response, replay);
-    assert!(physical.lock().unwrap().actions.is_empty());
-    // Original VM workflow/fact is durable, but the center never receives Ready.
-    let ready = inbox
-        .advance(
-            create.clone(),
-            Some(host_application::template()),
-            host_application::compute(),
-        )
-        .await
-        .unwrap();
-    assert!(matches!(ready.fact, LifecycleFact::Ready { .. }));
-    drop(center);
-    let (ledger, _) = RedisLedger::<CenterState>::open(
-        endpoint(fixture.address),
-        Engine::config(limit),
-        fixture.lease(),
-    )
-    .unwrap();
-    let mut center = CenterAuthority::attach(ledger).unwrap();
-    let replay_ready = center
-        .dispatch_batch()
-        .unwrap()
-        .pop()
-        .unwrap()
-        .send(&mut transport)
-        .await
-        .unwrap();
-    assert_eq!(replay_ready, ready);
-    center.apply_response(&replay_ready).unwrap();
-    assert_eq!(
-        physical
-            .lock()
-            .unwrap()
-            .actions
-            .iter()
-            .filter(|a| matches!(
-                a.command.command(),
-                sandbox_controller_core::Command::PrepareVm { .. }
-            ))
-            .count(),
-        1
-    );
-    let destroy = center
-        .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
-        .unwrap();
-    let response = center
-        .dispatch_batch()
-        .unwrap()
-        .pop()
-        .unwrap()
-        .send(&mut transport)
-        .await
-        .unwrap();
-    center.apply_response(&response).unwrap();
-    assert_eq!(
-        host.internal_pending(&lifecycle_fixture::node("host-a"))
-            .unwrap(),
-        vec![destroy.clone()]
-    );
-    assert!(center.apply_response(&replay).is_err());
-    assert_eq!(
-        center.state().unwrap().reserved(None, None),
-        Some(create.create.resources)
-    );
-    let cleaned = inbox
-        .advance(destroy, None, host_application::compute())
-        .await
-        .unwrap();
-    assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
-    let response = center
-        .dispatch_batch()
-        .unwrap()
-        .pop()
-        .unwrap()
-        .send(&mut transport)
-        .await
-        .unwrap();
-    assert_eq!(response, cleaned);
-    center.apply_response(&response).unwrap();
-    assert_eq!(
-        center.state().unwrap().reserved(None, None),
-        Some(sandproof_protocol::internal::lifecycle::Resources::ZERO)
-    );
-    stop.send(()).unwrap();
-    task.await.unwrap().unwrap();
-    assert_eq!(inbox.active_work(), 0);
-    assert_eq!(server.active_connections(), 0);
-    assert_eq!(client.active_calls(), 0);
-}
-
-#[tokio::test]
-async fn real_redis_commit_dispatch_sqlite_record_and_replay_are_one_identity_not_vm_success() {
-    let fixture = Engine::new();
-    let mut center = center_authority(&fixture, fixture.address);
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("host.db");
-    let namespace = "0123456789abcdef";
-    let mut host = sandproof_controller_service::ControllerJournal::open_complete(
-        &path,
-        namespace,
-        local_fixture::host(&path, namespace, 64, 100_000, local_fixture::CLEANUP_BYTES),
-        local_fixture::maintenance(),
-        0,
-    )
-    .unwrap();
-    host.initialize_internal_inbox(
-        sandproof_controller_service::InternalInboxConfig {
-            node: lifecycle_fixture::node("host-a"),
-            max_sandboxes: 2,
-            operations_per_sandbox: 3,
-            max_options_bytes: 128,
+fn create_submission(
+    binding: sandproof_protocol::internal::lifecycle::CreateBinding,
+    sequence: u64,
+) -> LifecycleSubmission {
+    LifecycleSubmission::Create {
+        key: OperationKey {
+            deployment: deployment(),
+            owner: "1".try_into().unwrap(),
+            window: 9.try_into().unwrap(),
+            sequence: sequence.try_into().unwrap(),
         },
-        &mut sandproof_controller_service::NeverCrash,
-    )
-    .unwrap();
-    let create = center
-        .create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0)
-        .unwrap();
-    let batch = center.dispatch_batch().unwrap();
-    assert_eq!(batch.len(), 1);
-    assert_eq!(batch[0].request(), &create);
-    let answer = batch
-        .into_iter()
-        .next()
-        .unwrap()
-        .send(&mut InboxTransport(&mut host))
-        .await
-        .unwrap();
-    assert_eq!(answer.fact, LifecycleFact::Recorded);
-    center.apply_response(&answer).unwrap();
-    let replay = center
-        .dispatch_batch()
-        .unwrap()
-        .pop()
-        .unwrap()
-        .send(&mut InboxTransport(&mut host))
-        .await
-        .unwrap();
-    assert_eq!(answer, replay);
-    assert!(host.world().unwrap().sandbox_records().is_empty());
-    assert!(
-        center.state().unwrap().sandboxes()[0]
-            .started_at_ms
-            .is_none()
-    );
-    let destroy = center
-        .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
-        .unwrap();
-    let answer = center
-        .dispatch_batch()
-        .unwrap()
-        .pop()
-        .unwrap()
-        .send(&mut InboxTransport(&mut host))
-        .await
-        .unwrap();
-    center.apply_response(&answer).unwrap();
-    assert_eq!(
-        host.internal_pending(&lifecycle_fixture::node("host-a"))
-            .unwrap(),
-        vec![destroy]
-    );
-    assert_eq!(
-        center.state().unwrap().reserved(None, None),
-        Some(lifecycle_fixture::resources(1))
-    );
-    let old = host
-        .record_internal_intent(&create, &mut sandproof_controller_service::NeverCrash)
-        .unwrap();
-    assert_eq!(old, replay);
-    assert!(matches!(
-        center.apply_response(&old),
-        Err(AuthorityError::Decision(_))
-    ));
-    assert_eq!(
-        host.internal_pending(&lifecycle_fixture::node("host-a"))
-            .unwrap()[0]
-            .intent,
-        Intent::Destroy
-    );
-}
-
-#[test]
-fn center_actual_commit_reply_loss_blocks_dispatch_then_recovers_same_outbox() {
-    let fixture = Engine::new();
-    let proxy = ReplyLoss::new(fixture.address);
-    let mut center = center_authority(&fixture, proxy.address);
-    proxy.lose_after(0);
-    assert_eq!(
-        center.create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0),
-        Err(AuthorityError::Store(StoreError::OutcomeUnknown))
-    );
-    assert!(matches!(
-        center.dispatch_batch(),
-        Err(AuthorityError::RecoveryRequired)
-    ));
-    assert!(center.state().is_err());
-    center.recover().unwrap();
-    let pending = center.state().unwrap().pending();
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].identity.sandbox_id.as_str(), "sandbox-1");
-    assert_eq!(pending[0].identity.operation_id.as_str(), "operation-1");
-    assert_eq!(center.dispatch_batch().unwrap()[0].request(), &pending[0]);
-}
-
-#[tokio::test]
-async fn host_transport_failure_and_old_fact_do_not_release_or_reroute() {
-    struct Failed;
-    impl LifecycleTransport for Failed {
-        type Error = ();
-        async fn send(&mut self, _: &LifecycleRequest) -> Result<LifecycleResponse, ()> {
-            Err(())
-        }
-    }
-    let fixture = Engine::new();
-    let mut center = center_authority(&fixture, fixture.address);
-    let create = center
-        .create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0)
-        .unwrap();
-    assert!(
-        center
-            .dispatch_batch()
-            .unwrap()
-            .pop()
-            .unwrap()
-            .send(&mut Failed)
-            .await
-            .is_err()
-    );
-    assert_eq!(center.state().unwrap().pending(), vec![create.clone()]);
-    let destroy = center
-        .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
-        .unwrap();
-    assert_eq!(destroy.intent, Intent::Destroy);
-    let old = lifecycle_fixture::response(
-        &create,
-        1,
-        LifecycleFact::Ready {
-            started_at_ms: 100,
-            end_at_ms: 200,
-            max_end_at_ms: 600,
+        parameters: CreateParameters {
+            template_revision: binding.template_revision,
+            template_digest: binding.template_digest,
+            resources: binding.resources,
+            options: binding.options,
+            startup_timeout_ms: 1000,
+            timeout_ms: binding.timeout_ms,
+            max_lifetime_ms: binding.max_lifetime_ms,
         },
-    );
-    assert!(matches!(
-        center.apply_response(&old),
-        Err(AuthorityError::Decision(_))
-    ));
-    assert_eq!(center.state().unwrap().pending(), vec![destroy]);
-    assert_eq!(
-        center.state().unwrap().reserved(None, None),
-        Some(lifecycle_fixture::resources(1))
-    );
-    fixture.field("payload", b"corrupted");
-    assert!(center.dispatch_batch().is_err());
-    assert!(center.dispatch_batch().is_err());
-}
-
-#[test]
-fn full_future_envelope_is_required_before_any_admission() {
-    let fixture = Engine::new();
-    let (ledger, _) = RedisLedger::initialize(
-        endpoint(fixture.address),
-        Engine::config(16_384),
-        fixture.lease(),
-        &center_state(),
-    )
-    .unwrap();
-    assert!(matches!(
-        CenterAuthority::attach(ledger),
-        Err(AuthorityError::Store(StoreError::Configuration))
-    ));
-}
-
-#[test]
-fn slow_detached_transport_does_not_hold_center_decision_lock() {
-    use std::sync::{Mutex, mpsc};
-    struct Slow {
-        entered: mpsc::SyncSender<()>,
-        release: mpsc::Receiver<()>,
     }
-    impl LifecycleTransport for Slow {
-        type Error = ();
-        async fn send(&mut self, request: &LifecycleRequest) -> Result<LifecycleResponse, ()> {
-            self.entered.send(()).map_err(|_| ())?;
-            self.release
-                .recv_timeout(Duration::from_secs(5))
-                .map_err(|_| ())?;
-            Ok(lifecycle_fixture::response(
-                request,
-                1,
-                LifecycleFact::Ready {
-                    started_at_ms: 100,
-                    end_at_ms: 200,
-                    max_end_at_ms: 600,
-                },
-            ))
-        }
-    }
-    let fixture = Engine::new();
-    let center = Arc::new(Mutex::new(center_authority(&fixture, fixture.address)));
-    let create = center
-        .lock()
+}
+fn accept_create(
+    center: &mut CenterAuthority,
+    binding: sandproof_protocol::internal::lifecycle::CreateBinding,
+    sequence: u64,
+) -> AcceptedLifecycleIntent {
+    let owner = "1".try_into().unwrap();
+    let mut submission = create_submission(binding, sequence);
+    let LifecycleSubmission::Create { key, .. } = &mut submission else {
+        unreachable!()
+    };
+    key.window = center
+        .state()
         .unwrap()
-        .create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0)
-        .unwrap();
-    let dispatch = center
-        .lock()
+        .public_request_window(&owner)
         .unwrap()
-        .dispatch_batch()
+        .unwrap();
+    center.accept_lifecycle(&owner, &submission, 10).unwrap()
+}
+fn accept_destroy(
+    center: &mut CenterAuthority,
+    create: &AcceptedLifecycleIntent,
+    sequence: u64,
+) -> AcceptedLifecycleIntent {
+    let mut key = create.request.binding.key.clone();
+    key.sequence = sequence.try_into().unwrap();
+    center
+        .accept_lifecycle(
+            &key.owner.clone(),
+            &LifecycleSubmission::Destroy {
+                key,
+                session: create.request.binding.session.clone(),
+                expected_version: create.accepted_version,
+            },
+            20,
+        )
         .unwrap()
-        .pop()
-        .unwrap();
-    let (entered, wait) = mpsc::sync_channel(0);
-    let (release, gate) = mpsc::sync_channel(0);
-    let worker = thread::spawn(move || {
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(dispatch.send(&mut Slow {
-                entered,
-                release: gate,
-            }))
-    });
-    wait.recv_timeout(Duration::from_secs(5)).unwrap();
-    let mut authority = center
-        .try_lock()
-        .expect("no authority borrow/lock spans detached RPC");
-    authority
-        .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
-        .unwrap();
-    drop(authority);
-    release.send(()).unwrap();
-    let late = worker.join().unwrap().unwrap();
-    assert!(matches!(
-        center.lock().unwrap().apply_response(&late),
-        Err(AuthorityError::Decision(_))
-    ));
-    assert_eq!(
-        center.lock().unwrap().state().unwrap().reserved(None, None),
-        Some(lifecycle_fixture::resources(1))
-    );
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]

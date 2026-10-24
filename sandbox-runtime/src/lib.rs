@@ -36,3 +36,8 @@ pub mod snapshot_store;
 
 #[cfg(target_os = "linux")]
 mod snapshot_policy;
+
+#[cfg(target_os = "linux")]
+mod material_project;
+#[cfg(target_os = "linux")]
+pub use material_project::{MaterialProjectSettings, ProjectTool};

@@ -4,8 +4,8 @@
 
 本组件直接调用 `controller-core/src/capture.rs` 的生产值方法，不使用另一套业务解释器。
 `verification/extract-capture-handoff/src/lib.rs` 只提供透明抽取根。
-产品暂停/恢复仍未启用；旧 checkpoint schema 1 仍拒绝包含捕获状态的历史。
-后续显式 schema 2 的结构化恢复范围见 [V5](../../../docs/formal/05-local-service.md#5-显式卸载检查点)，不属于本值方法证明。
+本目录的原值方法证明不覆盖后来接通的产品卸载；当前 Resume 仍未启用。
+当前检查点与结构化恢复范围见 [V5](../../../docs/formal/05-local-service.md#5-显式卸载检查点)，不属于本值方法证明。
 本组件通过也不表示整个控制器或真实 VM 已验证。
 
 ## 接口、性质与调用方责任

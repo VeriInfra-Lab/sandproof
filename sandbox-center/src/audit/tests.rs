@@ -138,6 +138,7 @@ fn operation_projection_keeps_binding_and_version_without_create_payload() {
         running: None,
         create_refusal: None,
         terminal: None,
+        unloaded: None,
     };
     let bytes = serde_json::to_string(&audit).unwrap();
     assert!(!bytes.contains("private-env-content"));

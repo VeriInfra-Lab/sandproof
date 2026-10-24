@@ -57,9 +57,10 @@ struct OperationAudit<'a> {
     running: Option<&'a CurrentReadyFacts>,
     create_refusal: Option<CreateRefusalReason>,
     terminal: Option<&'a TerminalLifecycleObservation>,
+    unloaded: Option<&'a sandproof_protocol::lifecycle::UnloadObservation>,
 }
 /// The complete operation parameters except user Create options. Those are
-/// represented only by the allowlisted CreateAudit fields and content hashes.
+/// represented only by the allowlisted `CreateAudit` fields and content hashes.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum OperationKind {
@@ -163,6 +164,7 @@ pub fn view(envelope: &Envelope, revision: Revision) -> Result<AuditView<'_>, &'
                         running: operation.running(),
                         create_refusal: operation.create_refusal(),
                         terminal: operation.terminal(),
+                        unloaded: operation.unloaded(),
                     })
                     .collect(),
                 terminating: record.terminating(),

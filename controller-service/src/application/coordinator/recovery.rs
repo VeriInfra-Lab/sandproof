@@ -135,6 +135,12 @@ fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
     match world.effect_status(effect) {
         Some(core::EffectStatus::Acknowledged(_) | core::EffectStatus::RetiredByStop(_)) => false,
         Some(core::EffectStatus::Committed) => {
+            // A terminal intent forbids the original startup dispatch. This
+            // action was never claimed, so it owns no unknown physical work.
+            // Already Dispatched/OutcomeUnknown actions still block below.
+            if core::effect::startup_dispatch_revoked(world, effect.command()) {
+                return false;
+            }
             // Failed creates can retain unclaimed startup actions. Use the
             // dispatcher's core preview to distinguish obsolete work; never
             // suppress a dispatched action whose physical result is unknown.
@@ -791,3 +797,6 @@ impl<H: ControllerHost> ControllerApplication<H> {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+mod tests;

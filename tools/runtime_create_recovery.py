@@ -14,7 +14,14 @@ import stat
 import time
 
 
-CURRENT_VERSIONS = dict(internal_protocol=2, center_store=8, host_store=20)
+# Current production ContractVersions only. Center audit schema 3 adds the
+# required unloaded projection; host schema 2 retains its existing identity,
+# confirmation and retention-lane fields. This observer does not infer material
+# cleanup or consume the host's source-work/material configuration.
+CURRENT_VERSIONS = dict(internal_protocol=2, center_store=9, host_store=21)
+CENTER_OPERATION_FIELDS = frozenset(('binding', 'center', 'retention',
+    'accepted_version', 'acceptance_time', 'operation', 'running',
+    'create_refusal', 'terminal', 'unloaded'))
 
 BENCHMARKS = frozenset(('terminal-bench-2.0', 'terminal-bench@2.1'))
 
@@ -147,6 +154,9 @@ def original_create_identity(record):
     if type(operations) is not list or not operations:
         raise ValueError('complete original Create operation required')
     first = operations[0]
+    if (type(first) is not dict or set(first) != CENTER_OPERATION_FIELDS
+            or first['unloaded'] is not None):
+        raise ValueError('complete current original Create operation required')
     identity = {key: first[key] for key in ('binding', 'center', 'retention', 'accepted_version')}
     if (not _control_shape(identity) or identity['accepted_version'] != 1
             or identity['binding']['expected'] != {'state': 'absent'}
@@ -274,6 +284,9 @@ def terminal_result(center, host, create_identity):
     if record['released'] is not True or not record['operations']:
         return None
     latest = record['operations'][-1]
+    if (type(latest) is not dict or set(latest) != CENTER_OPERATION_FIELDS
+            or latest['unloaded'] is not None):
+        raise ValueError('complete current original terminal operation required')
     response = latest['terminal']
     if response is None:
         return None

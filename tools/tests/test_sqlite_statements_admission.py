@@ -10,7 +10,9 @@ import unittest
 
 from tools import check_sqlite_statements as gate
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT = reference_root()
 
 
 class ActualStatementAdmissionTests(unittest.TestCase):
@@ -19,7 +21,7 @@ class ActualStatementAdmissionTests(unittest.TestCase):
         cls.correct = gate.read_json(ROOT / 'verification/aeneas/llbc/sandproof_sqlite_statements.llbc')
         cls.wrong = gate.read_json(ROOT / 'verification/aeneas/llbc/sandproof_sqlite_statements_wrong_count.llbc')
 
-    def test_current_source_ast_and_all_audits_admitted(self):
+    def test_frozen_reference_ast_and_all_audits_admitted(self):
         registry = gate.check_pair(ROOT, self.correct, self.wrong)
         self.assertEqual(len(registry['interfaces']), 9)
         self.assertEqual(len(gate.expected_audits(ROOT)), 38)

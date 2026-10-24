@@ -399,6 +399,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         if !received.matches(intent) || !received.current {
             return Ok(false);
         }
+        if matches!(intent.request.operation, LifecycleOperation::Unload { .. }) {
+            return self.reconcile_unload(intent, deadline);
+        }
         if matches!(intent.request.operation, LifecycleOperation::Destroy {}) {
             return self.reconcile_terminal(intent, deadline);
         }
@@ -545,6 +548,35 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         }
         time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
         Ok(true)
+    }
+
+    fn reconcile_unload(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        deadline: Instant,
+    ) -> Result<bool, PortError> {
+        let Ok(observation) = self
+            .hosts
+            .observe_lifecycle_unload(intent, time_left(deadline)?)
+        else {
+            return Ok(false);
+        };
+        if !observation.matches_request(intent) || observation.unloaded.is_none() {
+            return Ok(false);
+        }
+        time_left(deadline)?;
+        let saved = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .accept_lifecycle_unload_observation(&observation, self.now()?);
+        match saved {
+            Ok(()) => Ok(true),
+            Err(AuthorityError::Decision(
+                DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
+            )) => Ok(false),
+            Err(error) => Err(authority_error(error)),
+        }
     }
 
     fn reconcile_terminal(

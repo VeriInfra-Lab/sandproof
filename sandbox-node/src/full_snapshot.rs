@@ -135,8 +135,18 @@ pub fn seal_full_capture(
     let measured = captured.measurements();
     let manifest = manifest_from_measurements(expected.binding, expected.compatibility, &measured)?;
     let bytes = serde_json::to_vec(&manifest)?;
+    require_reserved_manifest_bytes(&bytes)?;
     let physical = captured.publish(&bytes, &measured)?;
     Ok(SealedFullSnapshot { manifest, physical })
+}
+
+// Matches the original durable Full reservation's two bounded manifest copies.
+// Runtime's general bundle reader retains its independent 1 MiB input ceiling.
+fn require_reserved_manifest_bytes(bytes: &[u8]) -> SealResult<()> {
+    if bytes.is_empty() || bytes.len() > 262_144 {
+        return Err("Full manifest exceeds its original reserved byte bound".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]

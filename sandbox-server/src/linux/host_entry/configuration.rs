@@ -16,6 +16,7 @@ pub(super) struct HostConfig {
     pub(super) inbox: LifecycleInboxConfig,
     pub(super) protected_bootstrap_path: PathBuf,
     pub(super) source_observation: SourceObservationConfig,
+    pub(super) capture: sandproof_node::ProtectedCaptureSettings,
     pub(super) internal: InternalSettings,
     pub(super) template_cache: PhysicalTemplateCache,
     pub(super) artifact_source: ArtifactSource,
@@ -93,6 +94,33 @@ impl InternalSettings {
 }
 
 impl HostConfig {
+    fn validate_capture(&self, contract: &DeploymentContract) -> Result<(), Box<dyn Error>> {
+        self.capture.validate()?;
+        let material = &self.capture.material_project;
+        let store = self.capture.layout_parent.join("s");
+        let profile = contract
+            .bounded
+            .physical_storage
+            .as_ref()
+            .ok_or("missing physical profile")?;
+        if self.capture.layout_parent.join("v") != self.native.chroot_base
+            || self.source_observation.max_material_bytes != material.hard_bytes
+            || self.source_observation.max_disk_bytes < self.capture.disk_copy_bytes
+            || !profile.service_data.iter().any(|entry| {
+                entry.root == store
+                    && entry.owner_uid == 0
+                    && entry.peak_bytes >= material.hard_bytes
+                    && entry.inode_budget >= material.hard_inodes
+            })
+        {
+            return Err(
+                "capture layout and material limits must match original physical reservation"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn validate_static(
         &self,
     ) -> Result<(DeploymentContract, DriverConfig), Box<dyn Error>> {
@@ -109,6 +137,7 @@ impl HostConfig {
             return Err("host cache must match the original physical reservation".into());
         }
         self.artifact_source.validate(&self.template_cache)?;
+        self.validate_capture(&contract)?;
         if !self.inbox.valid()
             || !self.protected_bootstrap_path.is_absolute()
             || !self.source_observation.valid()

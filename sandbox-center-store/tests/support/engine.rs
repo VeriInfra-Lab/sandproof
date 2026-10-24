@@ -10,12 +10,17 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     os::unix::fs::PermissionsExt,
     process::{Child, Command, Stdio},
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
 
 pub(crate) const MEMORY: u64 = 64 << 20;
 pub(crate) const KEY: &str = "sandproof:authority:fixture-deployment";
+// Keep this process's parallel fixtures from selecting a just-released port
+// before the original Redis child binds it. Only startup holds this guard;
+// test bodies and their concurrency scenarios remain independent.
+static STARTUP: Mutex<()> = Mutex::new(());
 const PASSWORD: &str = "component-fixture-not-a-production-credential";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +77,7 @@ impl Engine {
                 .split_whitespace()
                 .any(|field| field == format!("v={REDIS_VERSION}"))
         );
+        let _startup = STARTUP.lock().expect("fixture startup lock");
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let root = tempfile::tempdir().unwrap();

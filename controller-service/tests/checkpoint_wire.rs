@@ -128,9 +128,16 @@ fn unknown_fields_reject_recursively_in_records_enum_variants_and_private_window
 fn duplicate_json_fields_and_duplicate_record_keys_fail_closed() {
     let bytes =
         serde_json::to_string(&checkpoint::capture(&pending_world(), LIMITS).unwrap()).unwrap();
-    let duplicate_version = bytes.replacen("\"version\":1", "\"version\":1,\"version\":1", 1);
+    let version = checkpoint::CHECKPOINT_VERSION;
+    let duplicate_version = bytes.replacen(
+        &format!("\"version\":{version}"),
+        &format!("\"version\":{version},\"version\":{version}"),
+        1,
+    );
+    assert_ne!(duplicate_version, bytes);
     assert!(serde_json::from_str::<Checkpoint>(&duplicate_version).is_err());
     let duplicate_epoch = bytes.replacen("\"epoch\":1", "\"epoch\":1,\"epoch\":1", 1);
+    assert_ne!(duplicate_epoch, bytes);
     assert!(serde_json::from_str::<Checkpoint>(&duplicate_epoch).is_err());
     let mut value = wire();
     let duplicate = value["sandboxes"][0].clone();
@@ -142,41 +149,28 @@ fn duplicate_json_fields_and_duplicate_record_keys_fail_closed() {
 }
 
 #[test]
-fn both_supported_versions_restore_their_actual_captured_world() {
+fn current_supported_version_restores_its_actual_captured_world() {
     let world = pending_world();
-    for (version, captured) in [
-        (
-            checkpoint::CHECKPOINT_VERSION,
-            checkpoint::capture(&world, LIMITS).unwrap(),
-        ),
-        (
-            checkpoint::UNLOAD_CHECKPOINT_VERSION,
-            checkpoint::capture_unload(&world, LIMITS).unwrap(),
-        ),
-    ] {
-        let value = serde_json::to_value(captured).unwrap();
-        assert_eq!(value["version"], json!(version));
-        assert_eq!(
-            checkpoint::restore(decode(&value).unwrap(), LIMITS),
-            Ok(world.clone())
-        );
-    }
+    let captured = checkpoint::capture(&world, LIMITS).unwrap();
+    let value = serde_json::to_value(captured).unwrap();
+    assert_eq!(value["version"], json!(checkpoint::CHECKPOINT_VERSION));
+    assert_eq!(
+        checkpoint::restore(decode(&value).unwrap(), LIMITS),
+        Ok(world)
+    );
 }
 
 #[test]
 fn valid_json_does_not_bypass_version_references_or_record_limits() {
-    let mut value = wire();
-    let unsupported = checkpoint::CHECKPOINT_VERSION
-        .max(checkpoint::UNLOAD_CHECKPOINT_VERSION)
-        .checked_add(1)
-        .unwrap();
-    assert_ne!(unsupported, checkpoint::CHECKPOINT_VERSION);
-    assert_ne!(unsupported, checkpoint::UNLOAD_CHECKPOINT_VERSION);
-    value["version"] = json!(unsupported);
-    assert_eq!(
-        checkpoint::restore(decode(&value).unwrap(), LIMITS),
-        Err(CheckpointReject::UnsupportedVersion)
-    );
+    for unsupported in [1, checkpoint::CHECKPOINT_VERSION.checked_add(1).unwrap()] {
+        assert_ne!(unsupported, checkpoint::CHECKPOINT_VERSION);
+        let mut value = wire();
+        value["version"] = json!(unsupported);
+        assert_eq!(
+            checkpoint::restore(decode(&value).unwrap(), LIMITS),
+            Err(CheckpointReject::UnsupportedVersion)
+        );
+    }
     let mut value = wire();
     value["operations"][0][1]["sandbox"] = json!(99);
     assert!(checkpoint::restore(decode(&value).unwrap(), LIMITS).is_err());
