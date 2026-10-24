@@ -7,6 +7,7 @@ use crate::maintenance::{
 use crate::*;
 mod history;
 use history::*;
+mod continuation;
 mod malformed;
 mod resume;
 mod unload;

@@ -14,6 +14,9 @@ use crate::{
 #[must_use]
 pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool {
     let command = effect.command();
+    if crate::capture::continuation::activation_in_current_abort(world, effect) {
+        return true;
+    }
     let (sandbox, epoch, generation) = match *command {
         Command::InstallFence {
             sandbox,
@@ -199,16 +202,7 @@ pub(crate) fn record_late_startup(
             WorkerEvent::ConfigureNetwork { sandbox, slot }
         }
         Command::ActivateVm { vm, generation, .. } => {
-            let stored = world.vm_record(vm).ok_or(WorkerReject::ResourceNotFound)?;
-            if stored.owner != record.owner
-                || stored.sandbox != sandbox
-                || stored.generation != generation
-                || stored.status != VmStatus::Prepared
-            {
-                return Err(WorkerReject::IdentityMismatch);
-            }
-            let mut updated = *stored;
-            updated.status = VmStatus::Executing;
+            let updated = late_activated_vm(world, effect, record, vm, generation)?;
             next.vms.put(vm, updated);
             WorkerEvent::ActivateVm { sandbox, vm }
         }
@@ -233,6 +227,29 @@ pub(crate) fn record_late_startup(
         _ => return Err(WorkerReject::IdentityMismatch),
     };
     Ok(WorkerDecision { event, next })
+}
+
+fn late_activated_vm(
+    world: &World,
+    effect: &EffectId,
+    record: &crate::SandboxRecord,
+    vm: crate::VmId,
+    generation: crate::Generation,
+) -> Result<crate::Vm, crate::WorkerReject> {
+    use crate::WorkerReject;
+    let stored = world.vm_record(vm).ok_or(WorkerReject::ResourceNotFound)?;
+    if stored.owner != record.owner
+        || stored.sandbox != effect.command().sandbox()
+        || stored.generation != generation
+        || (stored.status != VmStatus::Prepared
+            && !(crate::capture::continuation::activation_in_current_abort(world, effect)
+                && matches!(stored.status, VmStatus::Frozen | VmStatus::Executing)))
+    {
+        return Err(WorkerReject::IdentityMismatch);
+    }
+    let mut updated = *stored;
+    updated.status = VmStatus::Executing;
+    Ok(updated)
 }
 
 fn late_prepare(
@@ -276,6 +293,9 @@ fn late_prepare(
 /// This is not permission to execute it again; only fence/stop may proceed.
 #[must_use]
 pub fn activation_in_current_abort(world: &World, effect: &EffectId) -> bool {
+    if crate::capture::continuation::activation_bound_in_current_abort(world, effect) {
+        return true;
+    }
     let Command::ActivateVm {
         sandbox,
         epoch,
@@ -502,11 +522,16 @@ pub fn activation_coverage_origin(
         && coverage.epoch > epoch
         && stop_ledger.operation.kind == OperationKind::Kill;
     original_key.sandbox == sandbox
-        && original.operation.kind == OperationKind::Create
-        && original_plan.sealed
+        && (original.operation.kind == OperationKind::Create
+            && original_plan.sealed
+            && original_plan.vm == Some(vm)
+            || original.operation.kind == OperationKind::Pause
+                && crate::capture::continuation::activation_belongs_to_continuation(
+                    original_plan,
+                    effect.command(),
+                ))
         && original_plan.epoch == epoch
         && original_plan.generation == generation
-        && original_plan.vm == Some(vm)
         && (same || later)
         && stop_ledger.operation.epoch == coverage.epoch
         && stop_plan.epoch == coverage.epoch

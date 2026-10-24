@@ -834,7 +834,11 @@ fn origin_bound(world: &World, command: &Command, logical: &LogicalEffectRecord)
                     }
                 }
                 Command::ActivateVm { generation, vm, .. } => {
-                    if !matches_start(*generation, *vm, None) {
+                    if !matches_start(*generation, *vm, None)
+                        && !crate::capture::continuation::activation_belongs_to_continuation(
+                            plan, command,
+                        )
+                    {
                         return false;
                     }
                 }
@@ -987,7 +991,8 @@ fn obsolete_committed(world: &World, id: &EffectId, logical: &LogicalEffectRecor
             // Current attempt, no result and queue membership were checked
             // above. The same terminal guard forbids all future issuance;
             // unlike Dispatched work this committed action has no host effect.
-            return crate::effect::startup_dispatch_revoked(world, id.command());
+            return crate::effect::startup_dispatch_revoked(world, id.command())
+                || crate::capture::continuation::capture_dispatch_permanently_revoked(world, id);
         }
         Err(_) => return false,
     };

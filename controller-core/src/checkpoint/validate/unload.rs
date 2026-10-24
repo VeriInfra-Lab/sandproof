@@ -113,9 +113,26 @@ pub(super) fn plan(world: &World, key: OperationKey, plan: &OperationPlan) -> Re
         || plan.sealed != plan.target_snapshot.is_some()
         || plan.vm.is_some() != plan.target_snapshot.is_some()
         || plan.vm.is_some_and(|vm| startup.vm != Some(vm))
-        || !capture.has_capture_work()
+        || capture.has_capture_work() != capture.original_continuation().is_none()
     {
         return Err(Reject::InvalidLedger);
+    }
+    if let Some(continued) = capture.original_continuation() {
+        if !capture.may_reactivate_original() || startup.vm != Some(continued.vm) {
+            return Err(Reject::InvalidLedger);
+        }
+        let command = Command::ActivateVm {
+            sandbox: key.sandbox,
+            epoch: plan.epoch,
+            generation: plan.generation,
+            vm: continued.vm,
+        };
+        if !world
+            .logical_effect(&crate::LogicalEffectId { command })
+            .is_some_and(|logical| logical.origin == crate::EffectOrigin::Operation(key))
+        {
+            return Err(Reject::InvalidEffect);
+        }
     }
     if let Some(target) = plan.target_snapshot {
         if target.snapshot.0 >= world.next_snapshot_id

@@ -589,8 +589,15 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
             let Some(record) = world.sandboxes.get(&sandbox) else {
                 return Err(WorkerReject::SandboxNotFound);
             };
-            if record.phase != Phase::Starting {
+            let continuing =
+                crate::capture::continuation::continuation_activation_pending(world, &command);
+            if record.phase != Phase::Starting && !continuing {
                 return Err(WorkerReject::WrongPhase);
+            }
+            if continuing
+                && !crate::capture::continuation::continuation_resources_ready(world, &command)
+            {
+                return Err(WorkerReject::ResourceBusy);
             }
             if record.terminal {
                 return Err(WorkerReject::Terminal);
@@ -610,7 +617,10 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
             {
                 return Err(WorkerReject::IdentityMismatch);
             }
-            if stored_vm.status != VmStatus::Prepared {
+            if (!continuing && stored_vm.status != VmStatus::Prepared)
+                || (continuing
+                    && !matches!(stored_vm.status, VmStatus::Frozen | VmStatus::Executing))
+            {
                 return Err(WorkerReject::WrongPhase);
             }
             let Some(slot_id) = record.net_slot else {
@@ -630,7 +640,7 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
             {
                 return Err(WorkerReject::FenceNotReady);
             }
-            if !indexed_no_executing_vm(world, sandbox) {
+            if !indexed_no_executing_vm(world, sandbox) && !continuing {
                 return Err(WorkerReject::ResourceBusy);
             }
             let mut next = world.clone();

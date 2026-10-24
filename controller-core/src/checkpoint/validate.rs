@@ -158,11 +158,22 @@ fn sandbox_phase(
         }
         Phase::Running => {
             !value.terminal
-                && matches!(
+                && (matches!(
                     operation.kind,
                     OperationKind::Create | OperationKind::Resume
-                )
-                && operation.status == OperationStatus::Succeeded
+                ) && operation.status == OperationStatus::Succeeded
+                    || operation.kind == OperationKind::Pause
+                        && matches!(operation.status, OperationStatus::Failed(_))
+                        && world
+                            .operation_plan(OperationKey {
+                                sandbox,
+                                operation: operation.id,
+                            })
+                            .is_some_and(|plan| {
+                                plan.capture.is_some_and(
+                                    crate::capture::CaptureHandoff::may_reactivate_original,
+                                )
+                            }))
                 && value.desired == value.effective
                 && matches!(value.effective, Authority::Running { .. })
         }
@@ -282,6 +293,21 @@ fn running_evidence(world: &World, sandbox: SandboxId, row: &SandboxRecord) -> R
     let vm = row.current_vm.ok_or(Reject::InvalidResource)?;
     let slot = row.net_slot.ok_or(Reject::InvalidResource)?;
     let startup = startup_plan(world, sandbox).ok_or(Reject::InvalidReference)?;
+    if row
+        .current_operation
+        .is_some_and(|operation| operation.kind == OperationKind::Pause)
+        && !effect::effect_succeeded_check(
+            world,
+            &Command::ActivateVm {
+                sandbox,
+                epoch: row.epoch,
+                generation: row.generation,
+                vm,
+            },
+        )
+    {
+        return Err(Reject::InvalidAuthority);
+    }
     let commands = [
         Command::InstallFence {
             sandbox,
@@ -323,7 +349,7 @@ fn running_evidence(world: &World, sandbox: SandboxId, row: &SandboxRecord) -> R
         .any(|command| !effect::effect_succeeded_check(world, command))
         || world.worker_fences.get(&sandbox)
             != Some(&WorkerFence {
-                epoch: startup.epoch,
+                epoch: row.epoch,
                 terminal: false,
             })
         || world.applied_file_policies.get(&sandbox)

@@ -356,12 +356,11 @@ fn supersede_current_operation(world: &mut World, sandbox: SandboxId, current: O
     let Some(operation) = current else {
         return;
     };
-    if !matches!(
-        operation.status,
-        OperationStatus::Pending | OperationStatus::OutcomeUnknown
-    ) {
-        return;
-    }
+    let failure = match operation.status {
+        OperationStatus::Pending | OperationStatus::OutcomeUnknown => FailureKind::Cancelled,
+        OperationStatus::Compensating(failure) if operation.kind == OperationKind::Pause => failure,
+        _ => return,
+    };
     let key = operation_key(sandbox, operation.id);
     let Some(ledger) = world.operations.get(&key) else {
         return;
@@ -370,8 +369,8 @@ fn supersede_current_operation(world: &mut World, sandbox: SandboxId, current: O
         return;
     }
     let mut superseded = ledger.clone();
-    superseded.operation.status = OperationStatus::Failed(FailureKind::Cancelled);
-    superseded.result = Some(OperationResult::Failed(FailureKind::Cancelled));
+    superseded.operation.status = OperationStatus::Failed(failure);
+    superseded.result = Some(OperationResult::Failed(failure));
     world.operations.put(key, superseded);
 }
 

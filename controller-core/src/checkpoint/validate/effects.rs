@@ -179,7 +179,9 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
         }
         Command::ActivateVm { generation, vm, .. } => {
             let plan = plan.ok_or(Reject::InvalidEffect)?;
-            if !plan.sealed || plan.vm != Some(*vm) || plan.generation != *generation {
+            if (!plan.sealed || plan.vm != Some(*vm) || plan.generation != *generation)
+                && !crate::capture::continuation::activation_belongs_to_continuation(plan, command)
+            {
                 return Err(Reject::InvalidEffect);
             }
             vm_reference(world, sandbox, *vm, *generation)?;
@@ -336,6 +338,10 @@ fn historical_success(world: &World, command: &Command) -> Result<(), Reject> {
             vm_reference(world, *sandbox, *vm, *generation)?;
             slot_reference(world, *sandbox, *slot, *generation, Some(*vm))?;
             true
+        }
+        Command::FreezeVm { .. } => {
+            effect::command_result_present(world, command)
+                || crate::capture::continuation::historical_freeze_after_continue(world, command)
         }
         _ => effect::command_result_present(world, command),
     };

@@ -461,21 +461,8 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
             if startup_dispatch_revoked(world, id.command()) {
                 return Err(EffectReject::NotDispatchable);
             }
-            if matches!(
-                id.command(),
-                Command::FreezeVm { .. }
-                    | Command::SealSnapshot { .. }
-                    | Command::CommitSnapshot { .. }
-            ) {
-                let sandbox = id.command().sandbox();
-                let Some(record) = world.sandboxes.get(&sandbox) else {
-                    return Err(EffectReject::NotDispatchable);
-                };
-                if !crate::transition::current_capture(world, sandbox, record)
-                    .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
-                {
-                    return Err(EffectReject::NotDispatchable);
-                }
+            if !crate::capture::continuation::capture_dispatch_allowed(world, &id) {
+                return Err(EffectReject::NotDispatchable);
             }
             Ok(EffectDecision {
                 event: Event::DispatchEffect(id.clone()),
@@ -508,6 +495,7 @@ pub fn handle_effect_receipt(
                     .get(&id.command().sandbox())
                     .is_some_and(|record| record.terminal)
                 && !crate::terminal::startup_effect_in_current_abort(world, &id)
+                && !crate::capture::continuation::activation_in_current_abort(world, &id)
             {
                 return Err(EffectReject::NotAwaitingResult);
             }

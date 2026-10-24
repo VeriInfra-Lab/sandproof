@@ -90,10 +90,16 @@ pub(super) fn validate(world: &World, sandbox: SandboxId) -> Result<(), Reject> 
                     .ok_or(Reject::InvalidLedger)?
             }
             OperationKind::Pause => {
-                if !matches!(
+                let resumed_original = prior.operation.kind == OperationKind::Pause
+                    && matches!(prior.operation.status, OperationStatus::Failed(_))
+                    && previous
+                        .capture
+                        .is_some_and(crate::capture::CaptureHandoff::may_reactivate_original);
+                if !(matches!(
                     prior.operation.kind,
                     OperationKind::Create | OperationKind::Resume
-                ) || prior.operation.status != OperationStatus::Succeeded
+                ) && prior.operation.status == OperationStatus::Succeeded
+                    || resumed_original)
                 {
                     return Err(Reject::InvalidLedger);
                 }
