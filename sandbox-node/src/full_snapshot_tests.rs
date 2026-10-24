@@ -224,3 +224,10 @@ fn stored_capture_uses_the_original_capture_operation_not_a_later_resume_key() {
             .is_err()
     );
 }
+
+#[test]
+fn full_manifest_cannot_exceed_original_durable_reservation() {
+    assert!(require_reserved_manifest_bytes(&[]).is_err());
+    assert!(require_reserved_manifest_bytes(&vec![b'x'; 262_144]).is_ok());
+    assert!(require_reserved_manifest_bytes(&vec![b'x'; 262_145]).is_err());
+}

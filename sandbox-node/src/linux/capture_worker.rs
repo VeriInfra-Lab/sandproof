@@ -159,6 +159,7 @@ pub(super) struct CaptureWorkerJob {
     pub(super) bootstrap_path: PathBuf,
     pub(super) layout_parent: PathBuf,
     pub(super) layout_binding: ContentDigest,
+    pub(super) material_project: sandbox_runtime::MaterialProjectSettings,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,7 +273,8 @@ impl CaptureWorkerJob {
         if expected != self.full.compatibility {
             return Err("capture worker independent compatibility differs".into());
         }
-        let layout = SnapshotLayout::reopen(&self.layout_parent, *self.layout_binding.as_bytes())?;
+        let layout = SnapshotLayout::reopen(&self.layout_parent, *self.layout_binding.as_bytes())?
+            .with_material_project(self.material_project.clone())?;
         if layout.runtime_root() != self.runtime.chroot_base {
             return Err("capture worker layout differs".into());
         }

@@ -193,6 +193,19 @@ fn protected_copy_settings_do_not_accept_unbounded_or_zero_values() {
         disk_copy_bytes: 8192,
         api_timeout_ms: 1000,
         worker_timeout_ms: 300_000,
+        material_project: sandbox_runtime::MaterialProjectSettings {
+            project_id: 63801,
+            hard_bytes: 1_073_741_824,
+            hard_inodes: 1024,
+            chattr: sandbox_runtime::ProjectTool {
+                path: "/protected/chattr".into(),
+                sha256: [2; 32],
+            },
+            lsattr: sandbox_runtime::ProjectTool {
+                path: "/protected/lsattr".into(),
+                sha256: [3; 32],
+            },
+        },
     };
     assert!(good.validate().is_ok());
     for (field, value) in [

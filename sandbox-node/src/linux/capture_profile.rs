@@ -22,9 +22,14 @@ pub struct ProtectedCaptureSettings {
     pub api_timeout_ms: u64,
     /// Whole helper exchange deadline, separate from the Firecracker API call.
     pub worker_timeout_ms: u64,
+    pub material_project: sandbox_runtime::MaterialProjectSettings,
 }
 impl ProtectedCaptureSettings {
-    pub(super) fn validate(&self) -> NodeResult<()> {
+    /// Check explicit protected input bounds; this does not attest a live quota.
+    /// # Errors
+    /// Rejects missing/unsupported copy, deadline or project settings.
+    pub fn validate(&self) -> NodeResult<()> {
+        self.material_project.validate()?;
         // The fixed dependency loads at most 10,000,000 state bytes. This is
         // a read/copy acceptance cap, NEVER a bound on the VMM's initial write.
         if !self.layout_parent.is_absolute()
@@ -55,6 +60,7 @@ pub(crate) struct ProtectedCaptureProfile {
     pub(super) disk_bytes: u64,
     pub(super) api_timeout: Duration,
     pub(super) worker_timeout: Duration,
+    pub(super) material_project: sandbox_runtime::MaterialProjectSettings,
 }
 impl ProtectedCaptureProfile {
     pub(crate) fn assemble(
@@ -67,7 +73,8 @@ impl ProtectedCaptureProfile {
         worker.host_lease.validate()?;
         provider.observe(epoch, worker.host_bootstrap_inputs())?;
         let layout =
-            SnapshotLayout::reopen(&settings.layout_parent, *settings.layout_binding.as_bytes())?;
+            SnapshotLayout::reopen(&settings.layout_parent, *settings.layout_binding.as_bytes())?
+                .with_material_project(settings.material_project.clone())?;
         if layout.runtime_root() != worker.config.chroot_base {
             return Err("protected Full layout differs from original runtime root".into());
         }
@@ -81,6 +88,7 @@ impl ProtectedCaptureProfile {
             disk_bytes: settings.disk_copy_bytes,
             api_timeout: Duration::from_millis(settings.api_timeout_ms),
             worker_timeout: Duration::from_millis(settings.worker_timeout_ms),
+            material_project: settings.material_project.clone(),
         })
     }
     pub(super) fn require_original_source(

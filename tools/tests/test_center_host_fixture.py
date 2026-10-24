@@ -163,9 +163,19 @@ class FixtureTests(unittest.TestCase):
                     max_vcpus_per_tenant=2, max_memory_bytes_global=4000,
                     max_memory_bytes_per_tenant=2000)))
 
+    @staticmethod
+    def captures(pools):
+        # Explicit controlled inputs only; no quota/tool-success claim.
+        return [dict(layout_parent='/approved/capture-'+str(index),layout_binding=[1]*32,
+            state_copy_bytes=1000000,memory_copy_bytes=536870912,disk_copy_bytes=8000,
+            api_timeout_ms=1000,worker_timeout_ms=300000,
+            material_project=dict(project_id=63801+index,hard_bytes=1073741824,hard_inodes=1024,
+                chattr=dict(path='/protected/chattr',sha256=[2]*32),
+                lsattr=dict(path='/protected/lsattr',sha256=[3]*32))) for index,_ in enumerate(pools)]
+
     def render(self, pools=None):
         native = pools or [self.native()]
-        return fixture.render(native, registered_catalogs=[p['templates'] for p in native], deployment='one-approved-deployment',
+        return fixture.render(native, capture_settings=self.captures(native), registered_catalogs=[p['templates'] for p in native], deployment='one-approved-deployment',
             center_root='/approved/center', host_tls_roots=['/approved/host/tls'],
             host_addresses=['127.0.0.1:9001'], public_address='127.0.0.1:9000',
             artifact_address='127.0.0.1:9002', redis_address='127.0.0.1:9003',
@@ -183,14 +193,14 @@ class FixtureTests(unittest.TestCase):
         self.assertNotIn('credentials', hosts[0])
         self.assertNotIn('TESTONLYPUBLICKEY', str(hosts))
         self.assertEqual(hosts[0]['inbox']['node'], center['nodes'][0]['registration']['identity'])
-        self.assertEqual(center['nodes'][0]['registration']['retention_slots'],hosts[0]['inbox']['max_sandboxes'])
+        self.assertEqual(center['nodes'][0]['registration']['retention_slots'],hosts[0]['inbox']['max_sessions'])
         self.assertNotIn('template_registrations', hosts[0])
         self.assertEqual(center['template_registrations'][0]['template_id'], center['templates']['templates'][0]['template_id'])
 
     def test_explicit_two_owner_fixture_preserves_shared_platform_and_host_has_no_keys(self):
         native=self.native()
         def render(extra):
-            return fixture.render([native],registered_catalogs=[native['templates']],deployment='one',
+            return fixture.render([native],capture_settings=self.captures([native]),registered_catalogs=[native['templates']],deployment='one',
                 center_root='/approved/center',host_tls_roots=['/approved/host/tls'],
                 host_addresses=['127.0.0.1:9001'],public_address='127.0.0.1:9000',
                 artifact_address='127.0.0.1:9002',redis_address='127.0.0.1:9003',
@@ -217,7 +227,7 @@ class FixtureTests(unittest.TestCase):
     def test_retention_slots_use_existing_inbox_capacity_and_overflow_is_not_wrapped(self):
         source=self.native()
         center,hosts=self.render([source])
-        self.assertEqual(hosts[0]['inbox']['max_sandboxes'],4)
+        self.assertEqual(hosts[0]['inbox']['max_sessions'],4)
         self.assertEqual(center['nodes'][0]['registration']['retention_slots'],4)
         self.assertEqual(source,self.native())
         source['max_active_global']=2**16-2
@@ -257,7 +267,7 @@ class FixtureTests(unittest.TestCase):
         builder['templates']['aliases'] = dict(base='builder-base')
         cache = builder['bounded_host']['physical_storage']['host_template_caches'][0]
         cache.update(namespace=builder['namespace'], root='/approved/builder/cache')
-        center, hosts = fixture.render([runtime, builder],
+        center, hosts = fixture.render([runtime, builder],capture_settings=self.captures([runtime,builder]),
             registered_catalogs=[p['templates'] for p in (runtime,builder)], deployment='one-deployment',
             center_root='/approved/center', host_tls_roots=['/approved/runtime/tls','/approved/builder/tls'],
             host_addresses=['127.0.0.1:9001','127.0.0.1:9004'], public_address='127.0.0.1:9000',
@@ -296,7 +306,7 @@ class FixtureTests(unittest.TestCase):
                                         file_download_bytes=10*1024**3)
         pools = [runtime, builder]
         before = copy.deepcopy(pools)
-        center, hosts = fixture.render(pools,
+        center, hosts = fixture.render(pools,capture_settings=self.captures(pools),
             registered_catalogs=[p['templates'] for p in pools], deployment='one-deployment',
             center_root='/approved/center', host_tls_roots=['/approved/runtime/tls','/approved/builder/tls'],
             host_addresses=['127.0.0.1:9001','127.0.0.1:9004'], public_address='127.0.0.1:9000',

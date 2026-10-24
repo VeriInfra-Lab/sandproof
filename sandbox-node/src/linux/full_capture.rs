@@ -236,6 +236,7 @@ impl LinuxWorker {
                 bootstrap_path: provider.original_path().to_path_buf(),
                 layout_parent: profile.layout_parent.clone(),
                 layout_binding: profile.layout_binding,
+                material_project: profile.material_project.clone(),
             },
         )
     }

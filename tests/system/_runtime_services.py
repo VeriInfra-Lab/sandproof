@@ -46,7 +46,7 @@ RETIRED_NATIVE_FIELDS = frozenset({'bind','domain','credentials','request_admiss
 
 def add_arguments(parser, *, required=True):
     for name in ('center','host','candidate-manifest','redis-material','tls-material',
-                 'service-staging-parent','service-cgroup-record'):
+                 'service-staging-parent','service-cgroup-record','capture-settings'):
         parser.add_argument('--' + name, type=Path, required=required)
     for name in ('center-uid','center-gid','redis-uid','redis-gid'):
         parser.add_argument('--' + name, type=int, required=required)
@@ -229,6 +229,14 @@ class RuntimeServices:
         copied={}
         source_checksums={}
         pending_copies=[]
+        captures=json_file(private_path(args.capture_settings),limit=65536)
+        if (type(captures) is not list or len(captures)!=len(pools)
+                or any(type(value) is not dict for value in captures)):
+            raise ValueError('explicit current capture settings required for the whole host cohort')
+        for native,capture in zip(pools,captures):
+            if Path(capture['layout_parent'])/'v' != Path(native['chroot_base']):
+                raise ValueError('capture profile must bind the original runtime sibling')
+            private_path(Path(capture['layout_parent'])/'s',directory=True)
         catalogs=copy.deepcopy(registered_catalogs)
         asset_bytes=0
         for catalog in catalogs:
@@ -260,6 +268,10 @@ class RuntimeServices:
                   for control in layout['host_controls']))]
         if private_builds is not None:
             service_peaks.append(dict(root=str(layout['build_control']),owner_uid=0,peak_bytes=8*MIB,inode_budget=32))
+        for capture in captures:
+            material=capture['material_project']
+            service_peaks.append(dict(root=str(Path(capture['layout_parent'])/'s'),owner_uid=0,
+                peak_bytes=material['hard_bytes'],inode_budget=material['hard_inodes']))
         profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
                               activation_ceiling_bytes=activation_ceiling_bytes)
         # Complete original byte/inode activation is checked BEFORE any large
@@ -307,13 +319,26 @@ class RuntimeServices:
             host_addresses=host_addresses,public_address=public_address,
             artifact_address='127.0.0.1:'+str(artifact_port),redis_address='127.0.0.1:'+str(redis_port),
             password=password,key=key,job_count=job_count,registry=registry,versions=versions,
-            private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials)
+            capture_settings=captures,private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials)
         center['redis']['writer_root']=str(layout['writer'])
         write_role(layout['center_control']/'token.key',secrets.token_bytes(32),uid=ids['center'][0],gid=ids['center'][1])
         center_path=layout['center_control']/'center.json'
         write_role(center_path,center,uid=ids['center'][0],gid=ids['center'][1])
         host_paths=[]
         for control,config in zip(layout['host_controls'],host_configs):
+            # Fresh provisioning is explicit and occurs before the final role
+            # configuration is written. serve/restart never repeats it.
+            provision=control/'host-provision.json'
+            write_role(provision,config,uid=0,gid=0)
+            from tools.service_cgroup import prefix
+            from tools.ci_e2e_prepare import bounded_json_command
+            registration=bounded_json_command([*prefix(record),str(control/'sandproof-host'),
+                'provision-bootstrap','--config',str(provision)],
+                {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},timeout=30,max_bytes=4096)
+            if (set(registration)!={'version','boot_id','policy'} or registration['version']!=1
+                    or registration['boot_id']!=Path('/proc/sys/kernel/random/boot_id').read_text().strip()):
+                raise ValueError('actual original bootstrap provisioning not confirmed')
+            config['inbox']['host_epoch']=registration
             path=control/'host.json'
             write_role(path,config,uid=0,gid=0)
             host_paths.append(path)

@@ -39,6 +39,7 @@ pub struct SnapshotLayout {
     store: File,
     record: LayoutRecord,
     owner: u32,
+    material_project: Option<crate::material_project::MaterialProject>,
 }
 
 fn error(message: &'static str) -> RuntimeError {
@@ -165,6 +166,24 @@ impl SnapshotLayout {
         require_root()?;
         Self::initialize_for_owner(path, binding, 0)
     }
+    /// Explicit deployment only: create the fresh layout and label its empty
+    /// store. This never enables or changes filesystem quotas. A partial error
+    /// preserves the same layout and cannot be retried as fresh initialization.
+    /// # Errors
+    /// Rejects existing/unsafe roots, changed tools or failed project readback.
+    pub fn initialize_material_project(
+        path: &Path,
+        binding: [u8; 32],
+        settings: crate::MaterialProjectSettings,
+    ) -> Result<Self, RuntimeError> {
+        let mut layout = Self::initialize(path, binding)?;
+        layout.material_project = Some(crate::material_project::MaterialProject::provision(
+            settings,
+            &layout.store,
+        )?);
+        Ok(layout)
+    }
+
     fn initialize_for_owner(
         path: &Path,
         binding: [u8; 32],
@@ -195,6 +214,7 @@ impl SnapshotLayout {
             store,
             record,
             owner,
+            material_project: None,
         })
     }
     /// Reopen the original registered layout, including populated runtime/store
@@ -234,8 +254,32 @@ impl SnapshotLayout {
             store,
             record,
             owner,
+            material_project: None,
         })
     }
+    /// Bind the original store's pre-provisioned project to protected tools.
+    /// This checks labels only; deployment must have read back actual hard quotas.
+    /// # Errors
+    /// Changed tools, device, labels or original store identities reject assembly.
+    pub fn with_material_project(
+        mut self,
+        settings: crate::MaterialProjectSettings,
+    ) -> Result<Self, RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?;
+        self.material_project = Some(crate::material_project::MaterialProject::open(
+            settings,
+            &self.store,
+        )?);
+        Ok(self)
+    }
+
+    pub(super) fn assign_new_capture_project(&self, directory: &File) -> Result<(), RuntimeError> {
+        if let Some(project) = &self.material_project {
+            project.assign_new_empty(directory)?;
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn runtime_root(&self) -> PathBuf {
         self.path.join("v")
@@ -289,6 +333,9 @@ impl SnapshotLayout {
             || !self.record.store.matches(&self.store)?
         {
             return Err(error("cached layout no longer matches original"));
+        }
+        if let Some(project) = &self.material_project {
+            project.require(&self.store)?;
         }
         let store =
             SnapshotStore::from_layout(self.store_root(), self.store.try_clone()?, self.owner);
