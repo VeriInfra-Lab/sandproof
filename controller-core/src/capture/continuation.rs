@@ -745,10 +745,10 @@ pub fn publish_original_continued(
         .sandbox_record(id.key.sandbox)
         .ok_or(CaptureReject::SandboxNotFound)?;
     if row.phase == Phase::Running
-        && matches!(
-            row.current_operation.map(|operation| operation.status),
-            Some(OperationStatus::Failed(_))
-        )
+        && match row.current_operation {
+            Some(operation) => matches!(operation.status, OperationStatus::Failed(_)),
+            None => false,
+        }
     {
         return Ok(CaptureDecision {
             event: CaptureEvent::PublishOriginalContinued(id),
