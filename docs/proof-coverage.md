@@ -4,7 +4,7 @@
 
 ## 适用版本与证明开工边界（2026-10-25 开发候选）
 
-统一开发候选 `c102534b785c2469b8ab9a9bd9e727583492ad29` 已组合原失败继续的核心、原 SQL Prepare、Node 执行方法及中心新鲜查询；外层执行许可/调度、终止排空及最终 GC 仍未闭合，不能称完整继续路径通过。
+统一开发候选 `e54cc8f689983be84bc13c84789b147d4fc8c13f` 已组合原失败继续的核心、原 SQL Prepare、Node 执行方法、中心新鲜查询、终止捕获观察及原工作器未发送请求的核心结果类型；外层执行许可/调度、真实结束事实的持久接线及最终 GC 仍未闭合，不能称完整继续路径通过。下列组件证据分别绑定其输入，不合并解释为当前候选整套通过。
 
 - 核心 `5997fb764b73e4a5f053feb0b78c81a84990ab29` 在 ning 通过 193 项及严格 Clippy。`NeverReleased / Returned` 精确绑定原 Seal，`RetiredByCaptureEnd` 不冒充 Host 回执；同一个 Prepare 输入先核条件，再经原补偿准备继续，覆盖 Pending/OutcomeUnknown 的实际可达路径。原 `3cc9` 的 188 项仅是前序证据，不覆盖后继规则。
 - 服务 `2b3eee845497af82e0c531b96473d4688c5eea1d` 在 ning 通过生命周期 109 项、容量 17 项及严格 Clippy，共 109.574 秒。原事务同时保存 typed End、native 输入和 outbox；未知提交的两种持久结果、错误 End、到期、Destroy 与未知 Freeze 均经公开 journal 入口检查。12 个变更文件及三份日志摘要已核对。它不提供已接通的 application 执行许可或实际激活证据。
@@ -13,7 +13,13 @@
 
 Full worker 后继 `a344225cec1119179e2e712b9abfc3c817605364` 已按 8 个 runtime 文件集成为 `36789be5`。ning 同一输入通过两包全目标严格 Clippy、52 项定向组件及格式检查；覆盖已交接工作 timeout/Drop 不 kill、原进程名额保持、父句柄丢弃后真实 helper 锁仍被占用、同 HTTP 解析器跨 socket timeout、EOF 拒绝，以及原受保护 stage 在短写/ENOSPC/EIO 后完成同 inode 的完整记录发布。原 Full shell 的 `exec 2>&1` 曾关闭 worker 的锁 FD，此后继显式保留 FD，不能把前序源码描述为已有该保证。组件使用真实进程、锁、回环连接和文件；没有产品 VM、完整基础入口或 Lean 证据。完整 job 截断、API-end 前任意 worker 死亡/真实断连仍为未解 Unknown；显式终止的实际 Stop 路由与 writer 排空须组合，不能由单独组件推出无等待环。旧 Child/锁/记录对应证明不自动覆盖本次所有权与发布改动。
 
-前序源码 `15b8968140f51cba537665215cb412f69967feb8` 的两个真实 Prepare/Publish 薄根在 msra 完成 Charon（1.27 秒，LLBC 无错误），Aeneas 在 0.71 秒因循环内提前返回拒绝，生成 Lean 文件为零。`5997fb` 已将相关扫描改为保持顺序、首次错误和短路的结构。后继 `c102534b` 同两个薄根复验 Charon 成功（1.293 秒），原提前返回错误未再出现；Aeneas 在 10.478 秒于 `source_resources` 的 VM 记录 match/状态分支报告 `InterpReduceCollapse.ml:1137`，仍未生成 Lean。此时尚不能断言已定位内部错误唯一原因，需保持行为的窄改写后复查；不能据原生测试或旧生成体宣称翻译已成功。固定工具、库模型及冻结记录均未改。
+终止捕获核心 `295fa66f7aa4fedf5b7af5643c9b1f2f9a92bf0b` 的 196 项原生测试及严格 Clippy 通过，覆盖依据绑定的停止、写者和描述符排空事实退休旧捕获责任；这些事实在核心测试中是输入，不证明真实进程已排空。Node `9a140ad76a7bfc9b3d20a1a97b08b188977f9839` 接入原 VM、工作器退出和 helper 门观察：127 项组件通过、原 8 项环境用例未运行，最后测试格式修正后两项相关用例及严格 Clippy 通过。服务当前显式拒绝尚未接线的 `RetireTerminatedCapture` 输入，不能把观察接口存在称为终止回收已启用。
+
+核心 `0cc0bae2096c61975c43a6ec0f6606dcdc5d2e24` 区分 `NeverReleased / NoRequest / Returned`，11 项继续相关测试及严格 Clippy 通过。`NoRequest` 需要原工作器明确且持久的未发送事实；不能由 EOF、无工作器或等待超时推出。真实 Ready/Release 交接及该结果的 SQL、调用方接线仍在开发，不包含在这份核心证据中。
+
+继续入口的抽取历程：`15b89681` 因循环内提前返回未生成 Lean；`c102534b` 改写后仍在资源查询借用分支失败；`295fa66f` 经总派发入口还引入了终止排空分支的翻译障碍。后继 `0cc0bae2` 的薄根直接调用生产派发器使用的 `prepare_original_continue` 和 `publish_original_continued`，资源查询返回自有布尔值。msra 单轮 Charon（1.40 秒）及 Aeneas（12.22 秒）均成功，新生成 Types、Funs 和外部声明模板，LLBC 无错误；固定工具、库模型及冻结记录均未改。47 个核心源文件与当时统一候选一致。
+
+该轮仅 Types 通过内核和原服务完整检查。Funs 因缺少已实现的 `FunsExternal` 模块未通过，模板的 14 个外部声明没有导入为公理；原 `Option.map` 审计也未通过，定位在继续发布的重入判断。`e54cc8f6` 已将该处改为同语义 `Some/None` 匹配，尚待下一集中批测试及生成体复核，不能沿用前序结果证明新源码。总派发器到这两个函数的对应、终止排空算法、实际异步连接及业务性质均未证明；抽取成功不等于函数检查或完整证明验收通过。
 
 上述新核心和真实连接需要对应证明；旧 capture-handoff、多代核心、SQL 和查询定理不自动适用。外部结束事实及实际运行、网络、文件策略和授权仍需各提供方落实。准入前无 native Pause 的失败关闭、API-end 丢失、终止排空及最终引用结算均保留为未完成义务。
 
