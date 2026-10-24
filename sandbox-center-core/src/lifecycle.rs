@@ -790,19 +790,10 @@ impl CenterState {
         if number.checked_add(remaining).is_none() {
             return Err(DecisionError::Exhausted);
         }
-        let incarnation = match &prior.intent.request.operation {
-            LifecycleOperation::Create {
-                target_incarnation, ..
-            }
-            | LifecycleOperation::Resume {
-                target_incarnation, ..
-            } => *target_incarnation,
-            LifecycleOperation::Renew { incarnation, .. } => *incarnation,
-            LifecycleOperation::Unload {
-                source_incarnation, ..
-            } if prior.running().is_some() => *source_incarnation,
-            _ if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
-            _ => return Err(DecisionError::Conflict),
+        let incarnation = match prior.running_incarnation() {
+            Some(incarnation) => incarnation,
+            None if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
+            None => return Err(DecisionError::Conflict),
         };
         let mut request = prior.intent.request.clone();
         request.binding.key = submission.key().clone();
