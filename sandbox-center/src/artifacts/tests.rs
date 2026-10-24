@@ -3,6 +3,8 @@
 use super::*;
 #[path = "tests/cache_fairness.rs"]
 mod cache_fairness;
+#[path = "tests/lifecycle_listener.rs"]
+mod lifecycle_listener;
 #[allow(
     dead_code,
     reason = "shared fixed Redis fixture exposes additional failure cases"
