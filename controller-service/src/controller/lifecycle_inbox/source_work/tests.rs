@@ -12,6 +12,7 @@ use std::{
 use v3::fixture::{State, TestEpoch, TestHost};
 mod continue_application;
 mod original_continue;
+mod terminal_drain;
 type Evidence = <TestHost as WorkEvidence>::Evidence;
 
 fn config() -> SourceObservationConfig {
@@ -928,9 +929,9 @@ fn full_pause_commit_reply_loss_preserves_exact_durable_or_uncommitted_outcome()
 // Synthetic physical observations exercise the original reducer/SQL protocol;
 // this component test neither runs a VMM nor claims a physical Full passed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct FullEvidence {
-    resource: sandproof_protocol::ResourceRef,
-    command: sandbox_controller_core::Command,
+pub(super) struct FullEvidence {
+    pub(super) resource: sandproof_protocol::ResourceRef,
+    pub(super) command: sandbox_controller_core::Command,
 }
 impl sandproof_protocol::ResourceEvidence for FullEvidence {
     fn resource(&self) -> &sandproof_protocol::ResourceRef {
@@ -1458,7 +1459,7 @@ fn resume_lifetime(
     .unwrap()
 }
 
-fn unloaded_resume_source(path: &Path) -> (ControllerJournal, SourceWorkRecord) {
+pub(super) fn unloaded_resume_source(path: &Path) -> (ControllerJournal, SourceWorkRecord) {
     let (mut journal, _) = ready(path);
     let source = observed_for_full(&mut journal);
     let accepted = journal
@@ -2268,7 +2269,7 @@ fn public_unload_observation_keeps_pending_and_persisted_unloaded_mutually_exclu
     }
 }
 
-fn actual_api_end(record: &SourceWorkRecord) -> crate::capture::CaptureRequestEndObservation {
+pub(super) fn actual_api_end(record: &SourceWorkRecord) -> crate::capture::CaptureRequestEndObservation {
     let capture = record.capture.as_ref().unwrap();
     crate::capture::CaptureRequestEndObservation {
         action: capture.action.clone().unwrap(),

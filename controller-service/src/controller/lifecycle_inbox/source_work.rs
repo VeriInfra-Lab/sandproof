@@ -2,6 +2,7 @@
 mod codec;
 pub(in crate::controller) mod full;
 pub(in crate::controller) mod restore;
+mod retirement;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -43,6 +44,7 @@ pub(in crate::controller) fn retire_unadmitted(
         )?;
         if record.capture.is_some()
             || record.restore.is_some()
+            || record.retirement.is_some()
             || record.work.anchor.native != *original
         {
             return Err(JournalError::UnresolvedAction);
@@ -104,6 +106,8 @@ pub struct SourceWorkRecord {
     /// source, not reconstructed from a manager's in-memory handles.
     #[serde(deserialize_with = "required_option")]
     restore: Option<restore::RestoreClaim>,
+    #[serde(deserialize_with = "required_option")]
+    retirement: Option<retirement::MaterialRetirementState>,
 }
 
 fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -119,6 +123,9 @@ fn digest(bytes: &[u8]) -> ContentDigest {
 }
 
 pub(in crate::controller) use codec::{charged_bytes, validate};
+pub(in crate::controller) use codec::remove_retired;
+pub(in crate::controller) use retirement::validate_terminal_sources;
+pub use retirement::MaterialRetirementQuestion;
 pub(super) fn initialize(
     connection: &rusqlite::Connection,
     config: SourceObservationConfig,
@@ -232,6 +239,7 @@ impl ControllerJournal {
             observation: None,
             capture: None,
             restore: None,
+            retirement: None,
         };
         sources.records.push(record.clone());
         codec::save(&tx, &sources, inbox.config.max_sessions)?;

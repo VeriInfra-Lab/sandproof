@@ -233,6 +233,37 @@ pub(super) fn save(
     Ok(())
 }
 
+// Only final native Retire may consume the exact rows validated against its
+// OLD World in the same transaction. General save still cannot drop a row.
+pub(super) fn remove_retired(connection:&Connection,expected:&[SourceWorkRecord])->Result<(),JournalError>{
+    if connection.is_autocommit(){return Err(JournalError::UnsupportedInput)}
+    let current=load(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    let mut keys=BTreeSet::new();
+    for record in expected {
+        let key=record.work.requirement.work_binding;
+        if !keys.insert(key.as_bytes().to_vec())
+            || !current.records.contains(record)
+            || (record.capture.is_some() && !super::retirement::is_settled(record))
+            || (record.capture.is_none() && record.retirement.is_some())
+            || super::retirement::material_charge(record)?!=0
+        {return Err(JournalError::UnresolvedAction)}
+        let (id,bytes,sha,reserve):(i64,Vec<u8>,Vec<u8>,i64)=connection.query_row(
+            "SELECT id,state_json,sha256,reserve_bytes FROM controller_source_work_records WHERE work_key=?1",
+            [key.as_bytes().as_slice()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+        )?;
+        let stored:Option<SourceWorkRecord>=checked(&bytes,&sha)?;
+        if id<1 || stored.as_ref()!=Some(record) || bytes!=serde_json::to_vec(record)? || reserve!=sql(current.config.required_bytes(1))? {
+            return Err(JournalError::CorruptStore)
+        }
+        let empty=b"null";
+        if connection.execute(
+            "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=NULL WHERE id=?3 AND state_json=?4 AND sha256=?5 AND work_key=?6",
+            params![empty.as_slice(),Sha256::digest(empty).as_slice(),id,bytes,sha,key.as_bytes().as_slice()],
+        )?!=1 {return Err(JournalError::CorruptStore)}
+    }
+    Ok(())
+}
+
 pub(super) fn initialize(
     connection: &Connection,
     config: SourceObservationConfig,
@@ -299,7 +330,7 @@ pub(in crate::controller) fn validate(
         return Err(JournalError::CorruptStore);
     }
     let reserved = sources.records.iter().try_fold(0_u64, |sum, r| {
-        sum.checked_add(r.capture.as_ref().map_or(0, |c| c.reserved_material_bytes))
+        sum.checked_add(super::retirement::material_charge(r)?)
             .ok_or(JournalError::CorruptStore)
     })?;
     if reserved > sources.config.max_material_bytes {
@@ -309,6 +340,7 @@ pub(in crate::controller) fn validate(
         super::snapshot::validate_record(connection, world, &inbox, &sources.config, record)?;
         super::full::validate_record(record, world)?;
         super::restore::validate_record(record, world)?;
+        super::retirement::validate_record(record, world)?;
         let binding = &record.work.request().request.binding;
         if sources
             .records

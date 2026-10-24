@@ -35,7 +35,7 @@ use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
 };
 use sha2::{Digest, Sha256};
-pub use source_work::{SourceWork, SourceWorkRecord};
+pub use source_work::{MaterialRetirementQuestion, SourceWork, SourceWorkRecord};
 
 #[cfg(test)]
 thread_local! {

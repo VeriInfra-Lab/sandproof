@@ -4,6 +4,7 @@ mod authorize;
 mod claim;
 mod complete;
 mod continuation;
+pub(super) mod drain;
 mod end;
 mod unloaded;
 mod validate;
@@ -27,6 +28,11 @@ pub(in crate::controller) use end::prepare::permits_input as permits_continue_in
 pub(super) use validate::validate_record;
 const RECORD_BYTES: usize = 131_072;
 const MAX_FULL: usize = 2;
+
+pub(in crate::controller) fn material_writer_closed(record:&SourceWorkRecord,world:&core::World)->Result<bool,JournalError>{
+    validate_record(record,world)?;
+    end::material_writer_closed(record)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -104,7 +110,7 @@ impl SourceWorkRecord {
     pub fn capture_request_end(&self) -> Option<&crate::capture::CaptureRequestEndObservation> {
         match self.capture.as_ref()?.end.as_ref()? {
             end::CaptureEndRecord::WorkerEnded { observation } => Some(observation),
-            end::CaptureEndRecord::NeverReleased { .. } => None,
+            end::CaptureEndRecord::NeverReleased { .. } | end::CaptureEndRecord::Terminated { .. } => None,
         }
     }
     #[must_use]

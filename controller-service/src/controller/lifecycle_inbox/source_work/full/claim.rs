@@ -10,18 +10,17 @@ pub(in crate::controller) fn claim(
         return Ok(true);
     };
     let sandbox = action.command.command().sandbox();
-    if matches!(
-        action.command.command(),
-        core::Command::StopVm { .. }
-            | core::Command::CleanupVm { .. }
-            | core::Command::CleanupSlot { .. }
-    ) && sources.records.iter().any(|record| {
+    let unfinished = sources.records.iter().any(|record| {
         record.work.anchor.local.sandbox == sandbox
             && record.capture.as_ref().is_some_and(|capture| {
-                capture.action.is_some() && capture.completed.is_none() && capture.end.is_none()
+                capture.action.is_some() && capture.end.is_none()
+                    && (capture.completed.is_none() || !matches!(action.command.command(),core::Command::StopVm { .. }))
             })
-    }) {
-        // No unfinished writer is forgotten when a newer source is admitted.
+    });
+    let protected = matches!(action.command.command(),core::Command::StopVm { .. } | core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. });
+    if protected && unfinished && !core::capture::drain::terminal_capture_drain_allowed(world,action.command.command()) {
+        // Stop of the exact terminal original source may precede writer drain.
+        // Cleanup still requires actual saved end, even after successful Full.
         return Ok(false);
     }
     let capture_action = matches!(

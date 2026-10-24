@@ -33,7 +33,7 @@ pub use lifecycle_inbox::{
     CreateReadiness, CreateReadinessPending, LifecycleAudit, LifecycleAuditOperation,
     LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
     LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState, NativeCreateSnapshot,
-    SourceWork, SourceWorkRecord,
+    MaterialRetirementQuestion, SourceWork, SourceWorkRecord,
 };
 mod private_build;
 mod registry;
@@ -64,6 +64,13 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
 type ReceiptRow = (i64, Vec<u8>, String, Option<Vec<u8>>);
+
+fn terminal_capture_stop_input(world:&core::World,input:&core::ControllerInput)->bool{
+    let core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(sandbox,generation,vm))=input else {return false};
+    world.sandbox_record(*sandbox).is_some_and(|row|core::capture::drain::terminal_capture_drain_allowed(world,&core::Command::StopVm{
+        sandbox:*sandbox,epoch:row.epoch,generation:*generation,vm:*vm,
+    }))
+}
 
 /// Only the controller owns this lease; a child never receives its authority.
 struct ControllerLease {
@@ -705,6 +712,7 @@ impl ControllerJournal {
         if storage::unresolved(&world, sandbox)
             && !terminal_prepare_abort
             && !terminal_activation_abort
+            && !terminal_capture_stop_input(&world,&input)
         {
             return Err(JournalError::UnresolvedAction);
         }
@@ -824,6 +832,7 @@ impl ControllerJournal {
             }
             if storage::unresolved(&world, action.command.command().sandbox())
                 && !core::scheduler::dispatch_allowed_during_abort(&world, action.command.command())
+                && !core::capture::drain::terminal_capture_drain_allowed(&world,action.command.command())
             {
                 continue;
             }
