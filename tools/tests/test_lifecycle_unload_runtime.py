@@ -58,6 +58,7 @@ class RetainedExclusionTests(unittest.TestCase):
         state.services.native_pools=[dict(uid_base=3100000,bounded_host=dict(maintenance=dict(max_host_slots=2)))]
         state.running={'source':{'pid':123,'start_time_ticks':1,'boot_id':'test'}}
         state.physical_complete=True
+        state.gc_complete=True
         state.lease=Mock(identity=self.identity)
         state.quota={'deployment_control':str(self.root)}
         report={'complete':True}
@@ -149,6 +150,96 @@ class ScenarioDiagnosticsTests(unittest.TestCase):
             self.assertFalse(runner.finish.call_args.args[0]['complete'])
             for secret in ('BODY_SECRET', 'API_SECRET', 'TOKEN_SECRET', 'FOREIGN_SECRET'):
                 self.assertNotIn(secret, json.dumps(report))
+
+
+class RepeatedLifecycleRequestTests(unittest.TestCase):
+    def client(self,owner='1'):
+        import time
+        client=scene.PublicUnloadScenario('http://127.0.0.1:12345','key','other',
+            'deployment',time.monotonic()+60,owner=owner)
+        client.window=1;client.session='original-session';client.sequence=1
+        client.create_acceptance=dict(session=client.session,key=client.key(1),accepted_version=1)
+        client.current_acceptance=client.create_acceptance
+        return client
+
+    def view(self,client,phase):
+        accepted=client.current_acceptance
+        return dict(session=client.session,operation=accepted['key'],
+            current_version=accepted['accepted_version'],phase=phase,
+            unloaded={} if phase=='unloaded' else None,create_refusal=None)
+
+    def test_two_restore_cycles_keep_session_owner_and_monotone_original_keys(self):
+        client=self.client()
+        calls=[]
+        def accepted(method,path,*,key,body,status):
+            self.assertEqual((method,key,status),('POST','key',202))
+            calls.append((path,dict(body)))
+            return dict(session=client.session,key=client.key(body['sequence']),
+                accepted_version=body['expected_version']+1)
+        with patch.object(client,'read_json',side_effect=accepted):
+            client.unload(self.view(client,'running'))
+            client.resume(self.view(client,'unloaded'))
+            client.unload(self.view(client,'running'))
+            client.resume(self.view(client,'unloaded'))
+            client.destroy(self.view(client,'running'))
+        self.assertEqual([row[1]['sequence'] for row in calls],[2,3,4,5,6])
+        self.assertEqual([row[1]['expected_version'] for row in calls],[1,2,3,4,5])
+        self.assertEqual([row[0].rsplit('/',1)[-1] for row in calls],
+            ['unload','resume','unload','resume','destroy'])
+        self.assertTrue(all('/sessions/original-session/' in row[0] for row in calls))
+        self.assertEqual(client.current_acceptance['key']['owner'],'1')
+
+    def test_second_owner_does_not_reuse_first_owner_operation_identity(self):
+        first,second=self.client(),self.client('2')
+        self.assertNotEqual(first.key(1),second.key(1))
+        self.assertEqual(second.key(1)['owner'],'2')
+
+    def test_uncertain_resume_does_not_retry_or_allocate_a_replacement_key(self):
+        client=self.client()
+        client.sequence=2
+        client.current_acceptance=dict(session=client.session,key=client.key(2),accepted_version=2)
+        before=client.current_acceptance.copy()
+        with patch.object(client,'read_json',side_effect=TimeoutError) as call,self.assertRaises(TimeoutError):
+            client.resume(self.view(client,'unloaded'))
+        self.assertEqual(call.call_count,1)
+        self.assertEqual(client.resume_request,dict(window=1,sequence=3,expected_version=2))
+        self.assertEqual(client.current_acceptance,before)
+
+    def test_success_without_gc_oracle_never_authorizes_manager_teardown(self):
+        state=object.__new__(runtime.UnloadRuntime)
+        state.physical_complete=True;state.gc_complete=False
+        state.services=Mock()
+        report=dict(complete=True)
+        state.finish(report)
+        self.assertEqual(report['cleanup'],'unknown-preserved-original-resources-and-host-lease')
+        state.services.stop_all.assert_not_called()
+
+
+class RestoreGateBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.expected=dict(action={'identity':{'generation':2},
+            'command':{'logical':{'command':{'ActivateVm':dict(sandbox=1,epoch=1,generation=2,vm=1)}},'attempt':0}},
+            source=dict(resource_id='vm-original-1',pid=123,start_time_ticks=456,boot_id='boot'),
+            namespace=dict(name='vm-original-1',device=7,inode=8))
+        self.record=dict(schema_version=1,run_identity='1'*64,token='T'*64,**self.expected)
+
+    def test_exact_private_run_and_candidate_is_admitted_without_executing_observer(self):
+        self.assertIs(runtime.validate_restore_gate(self.record,self.expected,'1'*64),self.record)
+
+    def test_foreign_run_action_vmm_namespace_or_unbounded_secret_is_rejected(self):
+        import copy
+        mutations=[('run_identity','2'*64),('action',{}),('source',{}),('namespace',{}),
+            ('token','T'*129),('token','T'*32+'\n'),('schema_version',True)]
+        for key,value in mutations:
+            changed=copy.deepcopy(self.record);changed[key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                runtime.validate_restore_gate(changed,self.expected,'1'*64)
+        changed=copy.deepcopy(self.record);changed['command']='arbitrary-code'
+        with self.assertRaises(ValueError):runtime.validate_restore_gate(changed,self.expected,'1'*64)
+
+    def test_guest_witness_programs_are_syntax_valid_without_running_them(self):
+        for name in ('RAM_WITNESS_SERVER','RAM_WITNESS_READY','RAM_WITNESS_CLIENT'):
+            compile(getattr(scene,name),'<original-guest-witness>','exec')
 
 
 if __name__=='__main__':

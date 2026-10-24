@@ -2,7 +2,7 @@
 
 The sibling runtime helper owns deployment, processes, snapshots and physical
 observations. HTTP acceptance is never used as proof of physical completion.
-This entry does not test Resume/GC and never retries a write with a fresh key.
+This entry checks repeated Resume/GC and never retries a write with a fresh key.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
@@ -16,6 +16,7 @@ import copy
 import hashlib
 import json
 import math
+import shlex
 from pathlib import Path
 import sys
 import time
@@ -35,6 +36,92 @@ PREFIX = '/sandproof/lifecycle'
 FACT_FIELDS = frozenset(('source_incarnation', 'capture', 'manifest_digest',
     'material_bytes', 'started_at_ms', 'end_at_ms', 'max_end_at_ms',
     'startup_deadline_ms'))
+
+
+# Generated inside the original guest process, never provided in a command,
+# environment variable, disk marker or reusable input. Capture must preserve it.
+RAM_WITNESS_SERVER = r'''
+import json, os, secrets, socket, urllib.request
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+def metadata_hash():
+    request=urllib.request.Request('http://169.254.169.254/latest/api/token',method='PUT',
+        headers={'x-metadata-token-ttl-seconds':'60'})
+    with opener.open(request,timeout=1) as response:
+        token=response.read(8193)
+        if response.status!=200 or not 0<len(token)<=8192:
+            raise RuntimeError('bounded original MMDS token required')
+    request=urllib.request.Request('http://169.254.169.254/',
+        headers={'x-metadata-token':token.decode('ascii'),'accept':'application/json'})
+    with opener.open(request,timeout=1) as response:
+        payload=response.read(8193)
+        if response.status!=200 or not 0<len(payload)<=8192:
+            raise RuntimeError('bounded original MMDS required')
+    value=json.loads(payload)['accessTokenHash']
+    if not isinstance(value,str) or len(value)!=128 or any(c not in '0123456789abcdef' for c in value):
+        raise RuntimeError('original MMDS credential digest required')
+    return value
+previous_metadata_hash=metadata_hash()
+nonce=secrets.token_hex(32)
+activation_nonce=secrets.token_hex(32)
+metadata_generation=0
+counter=0
+pid=os.getpid()
+start_ticks=int(open('/proc/self/stat').read().rsplit(')',1)[1].split()[19])
+listener=socket.socket(socket.AF_UNIX)
+listener.bind('/tmp/sandproof-ram-witness.sock')
+listener.listen(1)
+listener.settimeout(.25)
+while True:
+    try:
+        current_metadata_hash=metadata_hash()
+    except (OSError,ValueError,KeyError):
+        current_metadata_hash=None
+    if current_metadata_hash is not None and current_metadata_hash!=previous_metadata_hash:
+        # Only RAM holds both the credential hash and this fresh random value.
+        # Reloading the old capture creates a different activation nonce.
+        activation_nonce=secrets.token_hex(32)
+        metadata_generation+=1
+        previous_metadata_hash=current_metadata_hash
+    try:
+        connection,_=listener.accept()
+    except socket.timeout:
+        continue
+    with connection:
+        connection.settimeout(3)
+        command=connection.recv(64)
+        if command==b'advance':
+            counter+=1
+            with open('/tmp/sandproof-unload-marker','w') as marker:
+                marker.write('disk-counter:'+str(counter))
+                marker.flush()
+                os.fsync(marker.fileno())
+        elif command!=b'read':
+            raise RuntimeError('unknown witness command')
+        connection.sendall(json.dumps(dict(nonce=nonce,activation_nonce=activation_nonce,
+            metadata_generation=metadata_generation,counter=counter,pid=pid,
+            start_time_ticks=start_ticks)).encode())
+'''
+RAM_WITNESS_READY = r'''
+import os,sys,time
+pid=int(sys.argv[1])
+while not os.path.exists('/tmp/sandproof-ram-witness.sock'):
+    os.kill(pid,0)
+    time.sleep(.01)
+'''
+RAM_WITNESS_CLIENT = r'''
+import json,socket,sys
+with socket.socket(socket.AF_UNIX) as connection:
+    connection.settimeout(3)
+    connection.connect('/tmp/sandproof-ram-witness.sock')
+    connection.sendall(sys.argv[1].encode())
+    data=bytearray()
+    while True:
+        part=connection.recv(4096)
+        if not part: break
+        data.extend(part)
+        if len(data)>8192: raise RuntimeError('bounded original witness required')
+print(data.decode())
+'''
 
 
 def uint(value, *, positive=False):
@@ -86,7 +173,7 @@ def failure_details(error, client, phase):
 
 class PublicUnloadScenario:
     """One known owner/window and two saved complete requests, not a client SDK."""
-    def __init__(self, base_url, owner_key, foreign_key, deployment, deadline):
+    def __init__(self, base_url, owner_key, foreign_key, deployment, deadline, *, owner='1'):
         assert type(deadline) in (int, float) and math.isfinite(deadline)
         address = urlsplit(base_url)
         assert address.scheme == 'http' and address.hostname == '127.0.0.1'
@@ -96,6 +183,11 @@ class PublicUnloadScenario:
         self.owner_key, self.foreign_key = owner_key, foreign_key
         self.deployment, self.deadline = deployment, deadline
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self.owner = owner
+        self.sequence = 0
+        self.current_acceptance = None
+        self.witness = None
+        self.previous_tokens = []
         self.window = None
         self.session = None
         self.create_request = self.create_acceptance = None
@@ -131,7 +223,7 @@ class PublicUnloadScenario:
         return value
 
     def key(self, sequence):
-        return dict(deployment=self.deployment, owner='1', window=self.window, sequence=sequence)
+        return dict(deployment=self.deployment, owner=self.owner, window=self.window, sequence=sequence)
 
     def acceptance(self, value, *, sequence, version):
         assert set(value) == {'session', 'key', 'accepted_version'}
@@ -155,6 +247,8 @@ class PublicUnloadScenario:
                                 body=self.create_request, status=202)
         self.create_acceptance = self.acceptance(result, sequence=1, version=1)
         self.session = result['session']
+        self.current_acceptance = self.create_acceptance
+        self.sequence = 1
         return copy.deepcopy(result)
 
     def path(self):
@@ -197,7 +291,7 @@ class PublicUnloadScenario:
             time.sleep(min(.1, self.remaining()))
 
     def wait_running(self):
-        return self.wait_phase(self.create_acceptance, waiting={'creating'}, complete='running')
+        return self.wait_phase(self.current_acceptance, waiting={'creating','resuming'}, complete='running')
 
     def assert_owner_isolation(self):
         path = self.path()
@@ -212,16 +306,46 @@ class PublicUnloadScenario:
 
     def unload(self, running):
         self.step('unload-input')
-        self.check_view(running, self.create_acceptance)
-        assert running['phase'] == 'running' and self.unload_request is None
-        self.unload_request = dict(window=self.window, sequence=2,
+        self.check_view(running, self.current_acceptance)
+        assert running['phase'] == 'running'
+        self.sequence += 1
+        self.unload_request = dict(window=self.window, sequence=self.sequence,
                                   expected_version=running['current_version'])
         self.step('unload-acceptance', 202)
         result = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
                                 body=self.unload_request, status=202)
-        self.unload_acceptance = self.acceptance(result, sequence=2,
+        self.unload_acceptance = self.acceptance(result, sequence=self.sequence,
             version=running['current_version'] + 1)
+        self.current_acceptance = self.unload_acceptance
         return copy.deepcopy(result)
+
+    def resume(self, unloaded):
+        self.check_view(unloaded,self.current_acceptance)
+        assert unloaded['phase']=='unloaded'
+        self.sequence += 1
+        self.resume_request=dict(window=self.window,sequence=self.sequence,
+            expected_version=unloaded['current_version'])
+        self.step('resume-acceptance',202)
+        result=self.read_json('POST',self.path()+'/resume',key=self.owner_key,
+            body=self.resume_request,status=202)
+        self.current_acceptance=self.acceptance(result,sequence=self.sequence,
+            version=unloaded['current_version']+1)
+        return copy.deepcopy(self.current_acceptance)
+
+    def destroy(self, current):
+        self.check_view(current,self.current_acceptance)
+        self.sequence += 1
+        self.destroy_request=dict(window=self.window,sequence=self.sequence,
+            expected_version=current['current_version'])
+        self.step('destroy-acceptance',202)
+        result=self.read_json('POST',self.path()+'/destroy',key=self.owner_key,
+            body=self.destroy_request,status=202)
+        self.current_acceptance=self.acceptance(result,sequence=self.sequence,
+            version=current['current_version']+1)
+        return copy.deepcopy(self.current_acceptance)
+
+    def wait_cleaned(self):
+        return self.wait_phase(self.current_acceptance,waiting={'terminating'},complete='cleaned')
 
     def wait_unloaded(self):
         return self.wait_phase(self.unload_acceptance, waiting={'unloading'}, complete='unloaded')
@@ -270,44 +394,104 @@ class PublicUnloadScenario:
         self.assert_original_replay(saved)
         self.remaining()
 
-    def run_public_workload(self, running):
-        """Use the pinned SDK constructor after an owner-authenticated GET.
-
-        SDK connect renews the session. This original no-create constructor
-        follows the existing DK fixture and leaves lifecycle version/time alone.
-        """
+    def sdk(self):
+        """Original no-create SDK constructor; does not renew the lifetime."""
         import importlib.metadata
         from e2b import Sandbox
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
-        self.step('sdk-version')
         assert importlib.metadata.version('e2b') == '2.51.0'
         self.step('owner-sdk-detail', 200)
-        detail = self.read_json('GET', '/sandboxes/' + self.session, key=self.owner_key)
-        assert detail['sandboxID'] == self.session and detail['clientID'] == 'tenant-1'
-        assert detail['state'] == 'running'
-        self.step('foreign-sdk-detail', 404)
-        assert self.call('GET', '/sandboxes/' + self.session, key=self.foreign_key)[0] == 404
-        self.data_token = detail['envdAccessToken']
-        assert type(self.data_token) is str and self.data_token
-        connection = ConnectionConfig(api_url=self.base_url, sandbox_url=self.base_url,
-            domain=detail['domain'], api_key=self.owner_key, retries=0,
-            request_timeout=min(30, self.remaining()),
-            extra_sandbox_headers={'X-Access-Token': self.data_token})
-        sandbox = Sandbox(sandbox_id=self.session, sandbox_domain=detail['domain'],
-            envd_version=Version(detail['envdVersion']), envd_access_token=self.data_token,
+        detail=self.read_json('GET','/sandboxes/'+self.session,key=self.owner_key)
+        assert detail['sandboxID']==self.session and detail['clientID']=='tenant-'+self.owner
+        assert detail['state']=='running'
+        token=detail['envdAccessToken']
+        assert type(token) is str and token
+        if hasattr(self,'data_token') and token!=self.data_token:
+            self.previous_tokens.append(self.data_token)
+        self.data_token=token
+        connection=ConnectionConfig(api_url=self.base_url,sandbox_url=self.base_url,
+            domain=detail['domain'],api_key=self.owner_key,retries=0,
+            request_timeout=min(30,self.remaining()),
+            extra_sandbox_headers={'X-Access-Token':token})
+        return Sandbox(sandbox_id=self.session,sandbox_domain=detail['domain'],
+            envd_version=Version(detail['envdVersion']),envd_access_token=token,
             connection_config=connection)
-        marker = 'sandproof-live-unload-v1'
-        path = '/tmp/sandproof-unload-marker'
-        command = "printf '%s' 'sandproof-live-unload-v1' > /tmp/sandproof-unload-marker && sync && cat /tmp/sandproof-unload-marker"
-        self.step('sdk-workload')
-        result = sandbox.commands.run(command, timeout=min(30, self.remaining()))
-        assert result.exit_code == 0 and result.stdout == marker
-        self.step('workload-query', 200)
-        assert self.query() == running, 'workload or SDK setup changed the lifecycle version'
-        self.remaining()
-        return dict(sdk='2.51.0', entry='owner-detail/original-sdk-constructor/public-gateway',
-                    path=path, marker_sha256=hashlib.sha256(marker.encode()).hexdigest())
+
+    def witness_command(self,sandbox,command):
+        self.step('ram-witness-'+command)
+        result=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_CLIENT)+' '+command,
+            timeout=min(30,self.remaining()))
+        assert result.exit_code==0
+        value=json.loads(result.stdout,object_pairs_hook=unique_keys)
+        assert set(value)=={'nonce','activation_nonce','metadata_generation','counter','pid','start_time_ticks'}
+        assert type(value['nonce']) is str and len(value['nonce'])==64
+        assert all(c in '0123456789abcdef' for c in value['nonce'])
+        assert all(uint(value[key],positive=True) for key in ('pid','start_time_ticks'))
+        assert uint(value['counter']) and uint(value['metadata_generation'])
+        assert type(value['activation_nonce']) is str and len(value['activation_nonce'])==64
+        assert all(c in '0123456789abcdef' for c in value['activation_nonce'])
+        return value
+
+    def run_public_workload(self,running):
+        sandbox=self.sdk()
+        self.step('start-original-ram-process')
+        process=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_SERVER),
+            background=True,timeout=0)
+        # SDK command completion is not a startup barrier. A separate real
+        # command waits for the socket while checking the original guest PID.
+        self.step('ram-process-ready')
+        ready=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_READY)+' '+str(process.pid),
+            timeout=min(30,self.remaining()))
+        assert ready.exit_code==0
+        self.witness=self.witness_command(sandbox,'advance')
+        assert self.witness['pid']==process.pid and self.witness['counter']==1
+        disk=sandbox.files.read('/tmp/sandproof-unload-marker')
+        assert disk=='disk-counter:1'
+        assert self.query()==running
+        return dict(sdk='2.51.0',entry='owner-detail/original-sdk-constructor/public-gateway',
+            path='/tmp/sandproof-unload-marker',ram_nonce_sha256=hashlib.sha256(
+                self.witness['nonce'].encode()).hexdigest(),guest_pid=process.pid,
+            guest_start_time_ticks=self.witness['start_time_ticks'],counter=1)
+
+    def assert_resumed_workload(self,running,gate_receipt=None):
+        previous=copy.deepcopy(self.witness)
+        old_token=self.data_token
+        sandbox=self.sdk()
+        assert self.data_token!=old_token,'resumed execution reused old authorization'
+        self.assert_previous_tokens_closed()
+        observed=self.witness_command(sandbox,'read')
+        assert {key:observed[key] for key in ('nonce','counter','pid','start_time_ticks')}=={
+            key:previous[key] for key in ('nonce','counter','pid','start_time_ticks')}, \
+            'Resume did not preserve the original RAM-only process state'
+        assert observed['metadata_generation']==previous['metadata_generation']+1
+        assert observed['activation_nonce']!=previous['activation_nonce']
+        if gate_receipt is not None:
+            assert gate_receipt['guest_pid']==observed['pid']
+            assert gate_receipt['guest_start_time_ticks']==observed['start_time_ticks']
+            assert gate_receipt['activation_nonce_sha256']==hashlib.sha256(
+                observed['activation_nonce'].encode()).hexdigest(), 'old capture was loaded after lost activation acknowledgement'
+        assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(previous['counter'])
+        current=self.witness_command(sandbox,'advance')
+        assert {key:current[key] for key in ('nonce','pid','start_time_ticks')}=={
+            key:previous[key] for key in ('nonce','pid','start_time_ticks')}
+        assert current['counter']==previous['counter']+1
+        assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
+        self.witness=current
+        assert self.query()==running
+        return dict(ram_nonce_sha256=hashlib.sha256(current['nonce'].encode()).hexdigest(),
+            guest_pid=current['pid'],guest_start_time_ticks=current['start_time_ticks'],
+            counter=current['counter'],metadata_generation=current['metadata_generation'],
+            activation_nonce_sha256=hashlib.sha256(current['activation_nonce'].encode()).hexdigest(),
+            new_authorization=True,old_authorizations_rejected=True)
+
+    def assert_previous_tokens_closed(self):
+        import httpx
+        with httpx.Client(base_url=self.base_url,trust_env=False,timeout=min(10,self.remaining())) as client:
+            for token in self.previous_tokens:
+                response=client.get('/files',params={'path':'/tmp/sandproof-unload-marker'},
+                    headers={'X-Access-Token':token})
+                assert response.status_code==401,'a prior execution token regained authority'
 
     def assert_data_closed(self):
         import httpx
@@ -332,8 +516,8 @@ def exercise(args):
     deadline = time.monotonic() + seconds
     runtime = prepare(args)
     root = private_path(runtime.root, directory=True)
-    report = dict(schema=1, kind='create-unload-manager-reopen-system-scenario',
-                  complete=False, phase='configuration', scope='no Resume/GC or formal proof')
+    report = dict(schema=1, kind='create-unload-reopen-resume-destroy-system-scenario',
+                  complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = None
     failed = False
     try:
@@ -362,7 +546,7 @@ def exercise(args):
         client.assert_owner_isolation()
         report['phase'] = 'original-physical-evidence'
         client.step('unload-physical-evidence')
-        physical = runtime.unload_evidence(client.session, deadline)
+        physical = runtime.unload_evidence(client.session, deadline, client.unload_acceptance['key'])
         client.assert_unloaded_facts(saved, physical['facts'])
         assert {key: physical['facts'][key] for key in lifetime} == lifetime
         report['before_restart'] = saved
@@ -374,9 +558,59 @@ def exercise(args):
         client.assert_reopened(saved)
         client.assert_data_closed()
         client.step('unload-physical-evidence')
-        physical = runtime.unload_evidence(client.session, deadline)
+        physical = runtime.unload_evidence(client.session, deadline, client.unload_acceptance['key'])
         client.assert_unloaded_facts(saved, physical['facts'])
         report['physical_after_restart'] = physical
+        report['phase']='actual-slot-reuse'
+        control=PublicUnloadScenario(runtime.services.sdk_url,runtime.foreign_key,
+            runtime.owner_key,report['registration']['deployment'],deadline,owner='2')
+        control.create(runtime.create_parameters(owner=2))
+        control_running=control.wait_running()
+        control.assert_owner_isolation()
+        control_physical=runtime.record_running(control.session,deadline)
+        assert control.session!=client.session
+        assert control_physical['context']['position']==physical['original_position']['position'], \
+            'another session did not actually reuse the old running slot'
+        control.destroy(control_running)
+        control.wait_cleaned()
+        report['slot_reuse']=runtime.destroy_evidence(control.session,deadline)
+        report['slot_reuse']['position']=control_physical['context']['position']
+        report['cycles']=[]
+        for cycle in (1,2):
+            report['phase']='public-resume-'+str(cycle)
+            accepted=client.resume(saved)
+            resumed=client.wait_running()
+            physical_running=runtime.record_running(client.session,deadline,resume_acceptance=accepted)
+            continuity=client.assert_resumed_workload(resumed)
+            client.assert_owner_isolation()
+            report['cycles'].append(dict(cycle=cycle,resume=accepted,
+                running=physical_running,continuity=continuity))
+            if cycle==1:
+                report['phase']='second-public-unload'
+                client.unload(resumed)
+                client.assert_data_closed()
+                saved=client.wait_unloaded()
+                physical=runtime.unload_evidence(client.session,deadline,client.unload_acceptance['key'])
+                client.assert_unloaded_facts(saved,physical['facts'])
+                report['cycles'][-1]['unloaded']=copy.deepcopy(saved)
+                report['cycles'][-1]['physical_unloaded']=physical
+                client.assert_original_replay(saved)
+        report['phase']='public-destroy-and-physical-gc'
+        report['destroy']=client.destroy(resumed)
+        client.assert_data_closed()
+        client.wait_cleaned()
+        report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+        # Quota settlement and historical refusal-frontier retirement use the
+        # original owner-provided persisted accounting oracle; they are never
+        # inferred solely from filesystem absence or an HTTP acceptance.
+        report['phase']='quota-settlement'
+        report['settlement']=runtime.settlement_evidence(deadline)
+        report['acceptance_cases']={
+            'E1':'normal RAM/disk/process continuity and actual slot reuse observed',
+            'E12':'two owners, two sessions and two complete restore cycles observed',
+            'E14':'old execution tokens rejected and new token accepted',
+            'other_cases':'not claimed by this normal scenario',
+        }
         report['phase'] = 'accepted-scenario'
         report['complete'] = True
     except BaseException as error:

@@ -1,4 +1,4 @@
-"""One approved create/unload fixture on the original protected deployment.
+"""Approved repeated create/unload/resume/destroy on the original deployment.
 
 This module never creates a filesystem, mounts, enables quotas or configures
 cgroups. Those exact resources and the empty layout parent are prepared and
@@ -26,6 +26,9 @@ from pathlib import Path
 import secrets
 import sqlite3
 import stat
+import selectors
+import subprocess
+import sys
 import time
 
 from _runtime_services import RuntimeServices, add_arguments as service_arguments
@@ -93,6 +96,88 @@ def original_json(path,limit):
     return json.loads(raw,object_pairs_hook=unique_keys)
 
 
+def validate_restore_gate(record, expected, run_identity):
+    """Only the original activated candidate's consumed bootstrap input is admissible."""
+    if (type(run_identity) is not str or re.fullmatch('[0-9a-f]{64}',run_identity) is None
+            or type(record) is not dict or set(record)!={
+            'schema_version','run_identity','action','source','namespace','token'}
+            or type(record['schema_version']) is not int or record['schema_version']!=1
+            or record['run_identity']!=run_identity
+            or any(record[key]!=expected[key] for key in ('action','source','namespace'))
+            or type(record['token']) is not str
+            or re.fullmatch(r'[A-Za-z0-9_-]{32,128}',record['token']) is None):
+        raise ValueError('exact run/action/live candidate bootstrap gate required')
+    source,namespace=record['source'],record['namespace']
+    action=record['action']
+    if (type(source) is not dict or set(source)!={'resource_id','pid','start_time_ticks','boot_id'}
+            or type(namespace) is not dict or set(namespace)!={'name','device','inode'}
+            or namespace['name']!=source['resource_id']
+            or any(type(source[key]) is not int or source[key]<=0 for key in ('pid','start_time_ticks'))
+            or any(type(namespace[key]) is not int or namespace[key]<=0 for key in ('device','inode'))
+            or type(action) is not dict or set(action)!={'identity','command'}
+            or set(action['command']['logical']['command'])!={'ActivateVm'}):
+        raise ValueError('complete original activation/process/namespace binding required')
+    return record
+
+
+def namespace_witness(record, timeout):
+    """Fixed original SDK transport in one independently checked host namespace.
+
+    Secret data enters only stdin. No /init, public route, caller command or
+    guest mutation is available through this physical observation helper.
+    """
+    from lifecycle_unload_scenario import RAM_WITNESS_CLIENT
+    command='python3 -c '+__import__('shlex').quote(RAM_WITNESS_CLIENT)+' read'
+    program='''import json,sys
+from e2b import Sandbox
+from e2b.connection_config import ConnectionConfig
+from packaging.version import Version
+value=json.load(sys.stdin)
+connection=ConnectionConfig(api_key='private-physical-oracle',api_url='http://127.0.0.1:1',
+    sandbox_url='http://172.16.0.2:49983',domain='example.invalid',retries=0,request_timeout=5,
+    extra_sandbox_headers={'X-Access-Token':value['token']})
+sandbox=Sandbox(sandbox_id=value['resource_id'],sandbox_domain='example.invalid',
+    envd_version=Version('0.9.0'),envd_access_token=value['token'],connection_config=connection)
+result=sandbox.commands.run(COMMAND,timeout=5)
+if result.exit_code!=0: raise RuntimeError('original fixed read failed')
+print(result.stdout)
+'''.replace('COMMAND',repr(command))
+    payload=json.dumps(dict(resource_id=record['source']['resource_id'],token=record['token'])).encode()
+    if len(payload)>4096:
+        raise ValueError('bounded private bootstrap handoff required')
+    read_fd,write_fd=os.pipe2(os.O_CLOEXEC)
+    process=None
+    try:
+        if os.write(write_fd,payload)!=len(payload):
+            raise ValueError('complete private bootstrap handoff required')
+        os.close(write_fd);write_fd=None
+        process=subprocess.Popen(['/usr/bin/ip','netns','exec',record['namespace']['name'],
+            sys.executable,'-c',program],stdin=read_fd,stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
+        result=bytearray();deadline=time.monotonic()+timeout
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout,selectors.EVENT_READ)
+            while True:
+                left=remaining(deadline)
+                if not selector.select(left):
+                    raise TimeoutError('original namespace witness deadline')
+                data=os.read(process.stdout.fileno(),min(4096,8193-len(result)))
+                if not data:break
+                result.extend(data)
+                if len(result)>8192:
+                    raise ValueError('original namespace witness exceeds bound')
+        if process.wait(timeout=max(.001,remaining(deadline)))!=0:
+            raise ValueError('original namespace witness command failed')
+        return json.loads(result,object_pairs_hook=unique_keys)
+    finally:
+        os.close(read_fd)
+        if write_fd is not None:os.close(write_fd)
+        if process is not None:
+            process.stdout.close()
+            if process.poll() is None:
+                process.kill();process.wait(timeout=5)
+
+
 class UnloadRuntime:
     def __init__(self,args,fixture,root,captures,quota,lease,lock):
         self.root,self.args,self.inputs,self.captures=root,args,fixture,captures
@@ -100,6 +185,9 @@ class UnloadRuntime:
         self.owner_key,self.foreign_key=secrets.token_hex(32),secrets.token_hex(32)
         self.services=None
         self.running=None
+        self.runs={}
+        self.material_paths={}
+        self.gc_complete=False
         self.deadline=None
         self.physical_complete=False
         self._prepare()
@@ -134,10 +222,10 @@ class UnloadRuntime:
         self.services.start()
         self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=True)
 
-    def create_parameters(self):
+    def create_parameters(self,owner=1):
         remaining(self.deadline)
         catalogs=self.services.processes.center_readiness(timeout=min(10,remaining(self.deadline)))['catalogs']
-        descriptors=[item for item in self.services.center_config['templates']['templates'] if item['owner']==1]
+        descriptors=[item for item in self.services.center_config['templates']['templates'] if item['owner']==owner]
         if len(descriptors)!=1:
             raise ValueError('one original registered template for owner one required')
         descriptor=descriptors[0]
@@ -187,8 +275,8 @@ class UnloadRuntime:
             self.services.processes.start('host-0')
             self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
 
-    def record_running(self,session,deadline):
-        def observe(audit,local,lifetime,_conn):
+    def record_running(self,session,deadline,resume_acceptance=None):
+        def observe(audit,local,lifetime,conn):
             slots=[context for context,phase in audit['host_slots']
                 if context['binding']['sandbox']==local['sandbox'] and phase=='Occupied']
             if len(slots)!=1:
@@ -201,11 +289,32 @@ class UnloadRuntime:
             if source['resource_id']!=resource or not original_process(source):
                 raise ValueError('original live VMM not observed')
             result=dict(session=session,local=local,context=context,source=source,lifetime=lifetime)
+            if resume_acceptance is not None:
+                encoded,checksum=conn.execute(
+                    'SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
+                if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
+                    raise ValueError('original running material-use envelope changed')
+                sources=json.loads(encoded,object_pairs_hook=unique_keys)
+                records=[row for row in sources['records'] if row['restore'] is not None
+                    and row['restore']['intent']['request']['binding']['session']==session
+                    and row['restore']['intent']['request']['binding']['key']==resume_acceptance['key']]
+                if len(records)!=1 or records[0]['restore']['material_use'] is not True:
+                    raise ValueError('running restored VMM lacks its original backing pin')
+                result['running_backing']=self._materials(records[0]['capture']['full'],records[0]['capture'])
+                result['material_use_pin']=True
+            prior=self.runs.get(session)
+            if prior is not None:
+                if (any(local[key]!=prior['local'][key] for key in ('sandbox','owner'))
+                        or lifetime!=prior['lifetime'] or source==prior['source']
+                        or context['binding']['generation']<=prior['context']['binding']['generation']):
+                    raise ValueError('Resume must preserve native session/lifetime with a fresh VMM generation')
             self.running=copy.deepcopy(result)
+            self.runs[session]=copy.deepcopy(result)
             return result
         return self._host_snapshot(session,deadline,observe)
 
-    def unload_evidence(self,session,deadline):
+    def unload_evidence(self,session,deadline,operation):
+        self.running=self.runs.get(session)
         if self.running is None or self.running['session']!=session:
             raise ValueError('missing original running observation')
         def observe(audit,local,lifetime,conn):
@@ -220,7 +329,9 @@ class UnloadRuntime:
             if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
                 raise ValueError('original checked source record changed')
             sources=json.loads(encoded,object_pairs_hook=unique_keys)
-            records=[record for record in sources['records'] if record['work']['anchor']['request']['request']['binding']['session']==session]
+            records=[record for record in sources['records']
+                if record['work']['anchor']['request']['request']['binding']['session']==session
+                and record['work']['anchor']['request']['request']['binding']['key']==operation]
             if len(records)!=1:
                 raise ValueError('one original saved capture responsibility required')
             record=records[0]
@@ -234,6 +345,7 @@ class UnloadRuntime:
             if original_process(expected_source) or original_process(captured['worker']['process']):
                 raise ValueError('original VMM or Full helper still holds a process identity')
             physical=self._materials(full,captured)
+            self.material_paths.setdefault(session,set()).update(physical['material_paths'])
             facts=dict(source_incarnation=full['pause']['binding']['source_incarnation'],
                 capture=full['pause']['binding']['capture'],manifest_digest=captured['completed'],
                 material_bytes=captured['material_bytes'],**lifetime)
@@ -244,17 +356,21 @@ class UnloadRuntime:
 
     def _materials(self,full,captured):
         store=private_path(Path(self.captures[0]['layout_parent'])/'s',directory=True)
-        bundles=[path for path in store.iterdir() if path.name.startswith('capture-')]
+        bundles=[]
+        for path in store.iterdir():
+            if not path.name.startswith('capture-'):
+                continue
+            private_path(path,directory=True)
+            if checked_file(path/'manifest.json',262144,mode=0o400)['sha256']==captured['completed']:
+                bundles.append(path)
         if len(bundles)!=1:
-            raise ValueError('this isolated scenario requires exactly one original bundle')
+            raise ValueError('exact original manifest-bound bundle required')
         bundle=bundles[0]
         private_path(bundle,directory=True)
         key=bundle.name.removeprefix('capture-')
         if len(key)!=64 or any(c not in '0123456789abcdef' for c in key):
             raise ValueError('invalid original directory key')
         witness=store/('completed-'+key)
-        if {path.name for path in store.iterdir()}!={bundle.name,witness.name}:
-            raise ValueError('unresolved material staging remains')
         manifest_file=bundle/'manifest.json'
         measured=checked_file(manifest_file,262144,mode=0o400)
         manifest=original_json(manifest_file,262144)
@@ -281,7 +397,162 @@ class UnloadRuntime:
             raise ValueError('physical completion original action/source/worker mismatch')
         if completion['manifest_digest']!=captured['completed'] or completion['material_bytes']!=total or total!=captured['material_bytes']:
             raise ValueError('original durable completion differs from adopted bytes')
-        return dict(materials=files,manifest=measured,completion=checked_file(witness,16384,mode=0o400))
+        return dict(materials=files,manifest=measured,completion=checked_file(witness,16384,mode=0o400),
+            material_paths=[str(bundle),str(witness)])
+
+    def observe_resume_gate(self,session,accepted,baseline,record_path,deadline):
+        """Independent E7 physical oracle; never a public readiness assertion."""
+        remaining(deadline)
+        record_path=private_path(record_path)
+        control=private_path(self.quota['deployment_control'],directory=True)
+        if not record_path.is_relative_to(control):
+            raise ValueError('gate material must belong to this private run control')
+        observed_file=checked_file(record_path,16384,mode=0o600)
+        gate=original_json(record_path,16384)
+        native=self.services.native_pools[0]
+        database=private_path(native['database'])
+        with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
+                timeout=min(2,remaining(deadline)))) as conn:
+            conn.execute('BEGIN')
+            encoded,checksum=conn.execute(
+                'SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
+            if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
+                raise ValueError('original restore responsibility checksum changed')
+            sources=json.loads(encoded,object_pairs_hook=unique_keys)
+        claims=[row['restore'] for row in sources['records'] if row['restore'] is not None
+            and row['restore']['intent']['request']['binding']['session']==session
+            and row['restore']['intent']['request']['binding']['key']==accepted['key']
+            and row['restore']['intent']['accepted_version']==accepted['accepted_version']]
+        if len(claims)!=1 or claims[0]['activation'] is None:
+            raise ValueError('one durable original MayHaveExecuted claim required')
+        claim=claims[0]
+        if (claim['intent']['request']['binding']['node']!=self.services.host_configs[0]['inbox']['node']
+                or any(claim['local'][key]!=self.runs[session]['local'][key] for key in ('sandbox','owner'))):
+            raise ValueError('original current global/native restore identity changed')
+        action=claim['activation']
+        command=action['command']['logical']['command']['ActivateVm']
+        if (command['sandbox']!=claim['local']['sandbox']
+                or command['generation']!=claim['generation']
+                or action['identity']['generation']!=claim['generation']):
+            raise ValueError('original activated native generation differs')
+        resource='vm-'+native['namespace']+'-'+str(command['vm'])
+        original=original_json(Path(native['chroot_base'])/'.claims'/resource/'record.json',16384)
+        source={key:original[key] for key in ('resource_id','pid','start_time_ticks','boot_id')}
+        if source['resource_id']!=resource or not original_process(source):
+            raise ValueError('original activated VMM identity is not live')
+        namespace=Path('/run/netns')/resource
+        meta=namespace.lstat()
+        network=original_json(Path(native['chroot_base'])/'.claims'/resource/'network.json',16384)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid!=0
+                or network['resource_id']!=resource or network['namespace_inode']!=meta.st_ino
+                or network['namespace_device']!=meta.st_dev):
+            raise ValueError('original protected network namespace required')
+        expected=dict(action=action,source=source,
+            namespace=dict(name=resource,device=meta.st_dev,inode=meta.st_ino))
+        validate_restore_gate(gate,expected,self.lease.identity)
+        witness=namespace_witness(gate,min(10,remaining(deadline)))
+        if (set(witness)!={'nonce','activation_nonce','metadata_generation','counter','pid','start_time_ticks'}
+                or any(type(witness[key]) is not str or re.fullmatch('[0-9a-f]{64}',witness[key]) is None
+                       for key in ('nonce','activation_nonce'))
+                or any(type(witness[key]) is not int or witness[key]<0
+                       for key in ('metadata_generation','counter','pid','start_time_ticks'))):
+            raise ValueError('complete bounded original guest RAM witness required')
+        if (any(witness[key]!=baseline[key] for key in ('nonce','pid','start_time_ticks','counter'))
+                or witness['metadata_generation']!=baseline['metadata_generation']+1
+                or witness['activation_nonce']==baseline['activation_nonce']):
+            raise ValueError('new execution RAM-only random nonce was not independently observed')
+        if (namespace.lstat().st_dev,namespace.lstat().st_ino)!=(meta.st_dev,meta.st_ino) or not original_process(source):
+            raise ValueError('candidate identity changed during fixed read observation')
+        receipt=dict(session=session,operation=accepted['key'],source=source,
+            action_sha256=hashlib.sha256(json.dumps(action,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
+            ram_nonce_sha256=hashlib.sha256(witness['nonce'].encode()).hexdigest(),
+            activation_nonce_sha256=hashlib.sha256(witness['activation_nonce'].encode()).hexdigest(),
+            guest_pid=witness['pid'],guest_start_time_ticks=witness['start_time_ticks'],
+            counter=witness['counter'],metadata_generation=witness['metadata_generation'],
+            public_authorization_proven=False)
+        # Seal the observation before any caller releases the original gate.
+        write_once(control/'restore-gate-observed.json',receipt)
+        if checked_file(record_path,16384,mode=0o600)!=observed_file:
+            raise ValueError('original gate bootstrap file changed; preserve responsibility')
+        record_path.unlink()
+        return receipt
+
+    def destroy_evidence(self,session,deadline):
+        """Observe physical exit and exact adopted paths after public Cleaned.
+
+        Historical metadata may remain for its original result-retention period;
+        this does not require deleting that refusal frontier or old receipts.
+        """
+        remaining(deadline)
+        original=self.runs[session]
+        self.services.processes.stop('host-0')
+        try:
+            audit=self.services.processes.audit('host-0')
+            local=original['local']
+            rows=[row for row in audit['native'] if row['sandbox']==local['sandbox']]
+            if (any(not row['terminal'] or row['current_vm'] is not None for row in rows)
+                    or any(phase!='Free' for context,phase in audit['host_slots']
+                           if context['binding']['sandbox']==local['sandbox'])
+                    or original_process(original['source'])):
+                raise ValueError('Destroy has not released the original running resources')
+            paths=sorted(self.material_paths.get(session,set()))
+            if any(Path(path).exists() or Path(path).is_symlink() for path in paths):
+                raise ValueError('Destroy has not collected the exact original material paths')
+            return dict(session=session,original_source_exited=True,position_released=True,
+                adopted_material_paths_absent=paths,historical_metadata_may_be_retained=True)
+        finally:
+            self.services.processes.start('host-0')
+            self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
+
+    def settlement_evidence(self,deadline):
+        """Original accounting, with historical result retention left intact."""
+        remaining(deadline)
+        self.services.processes.stop('center')
+        self.services.processes.stop('host-0')
+        try:
+            center=self.services.processes.audit('center')
+            if center['reserved_resources']!={
+                    'instances':0,'cpu':0,'memory_bytes':0,'disk_bytes':0}:
+                raise ValueError('original center resource reservations remain after final Destroy')
+            host=self.services.processes.audit('host-0')
+            if any(phase!='Free' for _context,phase in host['host_slots']):
+                raise ValueError('original running slot remains occupied after final Destroy')
+            native=self.services.native_pools[0]
+            database=private_path(native['database'])
+            identity=(database.stat().st_dev,database.stat().st_ino)
+            with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
+                    timeout=min(2,remaining(deadline)))) as conn:
+                conn.execute('BEGIN')
+                encoded,checksum=conn.execute(
+                    'SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
+                if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
+                    raise ValueError('original source accounting envelope changed')
+                sources=json.loads(encoded,object_pairs_hook=unique_keys)
+            if (database.stat().st_dev,database.stat().st_ino)!=identity:
+                raise ValueError('original SQLite replaced during settlement audit')
+            charges=[0 if record['capture'] is None else record['capture']['reserved_material_bytes']
+                for record in sources['records']]
+            pins=[False if record['restore'] is None else record['restore']['material_use']
+                for record in sources['records']]
+            if (any(type(value) is not int or value<0 for value in charges)
+                    or any(type(value) is not bool for value in pins)):
+                raise ValueError('complete original material accounting fields required')
+            reserved=sum(charges)
+            uses=sum(pins)
+            if reserved!=0 or uses!=0:
+                raise ValueError('original material charge or live backing pin was not settled')
+            store=private_path(Path(self.captures[0]['layout_parent'])/'s',directory=True)
+            if any(store.iterdir()):
+                raise ValueError('original material/staging filesystem has not been collected')
+            self.gc_complete=True
+            return dict(center_reserved_resources=center['reserved_resources'],
+                material_reserved_bytes=reserved,material_use_pins=uses,
+                source_history_records=len(sources['records']),material_directory_empty=True,
+                result_retention_not_bypassed=True)
+        finally:
+            self.services.processes.start('host-0')
+            self.services.processes.start('center')
+            self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
 
     def restart_managers(self,deadline):
         remaining(deadline)
@@ -305,10 +576,10 @@ class UnloadRuntime:
         return dict(before=before,after=after,original_configs=self.configs,redis_preserved=True)
 
     def finish(self,report):
-        # Successful physical checks are not product GC. All original SQLite,
-        # immutable materials, byte charges and pins remain for independent
-        # exact-resource test teardown, never automatic blanket removal here.
-        if not report.get('complete') or not self.physical_complete:
+        # Only product GC and original accounting success permit stopping
+        # test managers. An unknown result retains exact resources and lease;
+        # neither this path nor failure cleanup removes broad directories.
+        if not report.get('complete') or not self.physical_complete or not self.gc_complete:
             report['cleanup']='unknown-preserved-original-resources-and-host-lease'
             return
         self.services.stop_all()
@@ -323,7 +594,7 @@ class UnloadRuntime:
         if processes_in_uid_range(native['uid_base'],native['uid_base']+slots-1):
             raise RuntimeError('original exclusive VM UID domain not empty')
         self.services.storage_peaks()
-        report['cleanup']='exact-runtime-audit-free-managers-exited-original-materials-retained'
+        report['cleanup']='product-gc-settled-exact-runtime-free-managers-exited'
         # Actual host audit calls original observe_position_free, including
         # exact retirement of VMM/helpers/network. Product material references
         # and charges remain; CI exclusion continues through test-disk teardown.
