@@ -362,4 +362,15 @@ fn original_continued_result_restores_running_without_unloaded_material() {
     let replay = app.unload_lifecycle("8", &session, &request).unwrap();
     assert_eq!(replay.key, saved.operation);
     assert_eq!(replay.session, session);
+    let detail = app.get("8", session.as_protocol_id().as_str()).unwrap();
+    let route = app.resolve_data_route(&detail.envd_access_token).unwrap();
+    assert_eq!(route.identity.operation, saved.operation);
+    assert_eq!(route.identity.accepted_version, saved.current_version);
+    let LifecycleOperation::Unload { source_incarnation, .. } =
+        &snapshot.lifecycle_session(&"8".try_into().unwrap(), &session)
+            .unwrap().operations().last().unwrap().intent().request.operation
+    else {
+        unreachable!()
+    };
+    assert_eq!(route.identity.incarnation, *source_incarnation);
 }
