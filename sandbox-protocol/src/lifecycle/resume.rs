@@ -32,13 +32,16 @@ impl ResumeObservation {
     pub fn matches_request(&self, original: &AcceptedLifecycleIntent) -> bool {
         let binding = &original.request.binding;
         let current = &self.current_request.request.binding;
-        if self.request != *original
-            || !matches!(
-                original.request.operation,
-                LifecycleOperation::Resume { .. }
-            )
-            || !matches!(original.request.validate(&binding.node), Ok(()))
-            || original.center.deployment != binding.node.deployment_id
+        if self.request != *original {
+            return false;
+        }
+        let LifecycleOperation::Resume { .. } = &original.request.operation else {
+            return false;
+        };
+        let Ok(()) = original.request.validate(&binding.node) else {
+            return false;
+        };
+        if original.center.deployment != binding.node.deployment_id
             || original.accepted_version == 0
             || original.accepted_version_for_request() != Some(original.accepted_version)
             || !original.retention.valid_for(4096)
@@ -48,9 +51,14 @@ impl ResumeObservation {
             || current.session != binding.session
             || current.key.owner != binding.key.owner
             || current.key.deployment != binding.key.deployment
-            || !matches!(self.current_request.request.validate(&binding.node), Ok(()))
-            || self.current_request.accepted_version_for_request()
-                != Some(self.current_request.accepted_version)
+        {
+            return false;
+        }
+        let Ok(()) = self.current_request.request.validate(&binding.node) else {
+            return false;
+        };
+        if self.current_request.accepted_version_for_request()
+            != Some(self.current_request.accepted_version)
         {
             return false;
         }

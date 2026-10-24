@@ -316,3 +316,59 @@ fn renewal_conversion_stays_inside_the_observed_branch() {
     }
     assert!(view.matches_request(&original));
 }
+
+#[test]
+fn original_prefix_guards_reject_non_resume_and_invalid_complete_inputs() {
+    let valid = original();
+    let view = ResumeObservation {
+        request: valid.clone(),
+        current_request: valid.clone(),
+        readiness: CurrentResumeReadiness::Pending,
+    };
+    assert!(view.matches_request(&valid));
+    let mut changed = view.clone();
+    changed.request.request.binding.session = "changed".try_into().unwrap();
+    assert!(!changed.matches_request(&valid));
+
+    let mut invalid = valid.clone();
+    invalid.request.operation = LifecycleOperation::Destroy {};
+    let mut wrong_version = valid.clone();
+    wrong_version.request.binding.protocol_version = 0;
+    let mut wrong_expectation = valid.clone();
+    wrong_expectation.request.binding.expected = ExpectedSession::Absent;
+    let mut wrong_deployment = valid;
+    wrong_deployment.request.binding.key.deployment = "foreign".try_into().unwrap();
+    for original in [invalid, wrong_version, wrong_expectation, wrong_deployment] {
+        let view = ResumeObservation {
+            request: original.clone(),
+            current_request: original.clone(),
+            readiness: CurrentResumeReadiness::Pending,
+        };
+        assert!(!view.matches_request(&original));
+    }
+}
+
+#[test]
+fn current_validation_and_version_guards_reject_an_otherwise_valid_later_result() {
+    let original = original();
+    let mut view = ResumeObservation {
+        request: original.clone(),
+        current_request: original.clone(),
+        readiness: CurrentResumeReadiness::NotCurrent,
+    };
+    view.current_request.request.operation = LifecycleOperation::Destroy {};
+    view.current_request.request.binding.expected = ExpectedSession::Version(3);
+    view.current_request.request.binding.key.sequence = 4.try_into().unwrap();
+    view.current_request.accepted_version = 4;
+    assert!(view.matches_request(&original));
+
+    let mut changed = view.clone();
+    changed.current_request.request.binding.protocol_version = 0;
+    assert!(!changed.matches_request(&original));
+    changed = view.clone();
+    changed.current_request.accepted_version = 5;
+    assert!(!changed.matches_request(&original));
+    changed = view;
+    changed.current_request.request.binding.expected = ExpectedSession::Absent;
+    assert!(!changed.matches_request(&original));
+}
