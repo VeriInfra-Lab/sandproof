@@ -32,7 +32,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             center=dict(deployment='test-deployment', center='center-a'),
             retention=dict(slot=1, window=2), accepted_version=1)
         previous = self.response(session='sandbox-16', window=1, sequence=39)
-        versions = dict(internal_protocol=2, center_store=10, host_store=23)
+        versions = dict(internal_protocol=2, center_store=11, host_store=23)
         self.center = dict(schema_version=3, versions=copy.deepcopy(versions),
             deployment='test-deployment', revision=1, sandbox_highwater=17, operation_highwater=42, nodes=[], sandboxes=[], retention_lanes=[dict(node=copy.deepcopy(self.node),
                 retention_slot=1, retired_through=1, phase='open', last_retired=copy.deepcopy(previous))])
@@ -107,9 +107,10 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
 
     def test_equal_but_noninteger_versions_and_old_paired_store_formats_refuse(self):
         self.insert()
-        for versions in (dict(internal_protocol=2.0,center_store=10,host_store=23),
-                         dict(internal_protocol=2,center_store=10,host_store=21),
-                         dict(internal_protocol=2,center_store=10,host_store=22),
+        for versions in (dict(internal_protocol=2,center_store=10,host_store=23),
+                         dict(internal_protocol=2.0,center_store=11,host_store=23),
+                         dict(internal_protocol=2,center_store=11,host_store=21),
+                         dict(internal_protocol=2,center_store=11,host_store=22),
                          dict(internal_protocol=2,center_store=9,host_store=23),
                          dict(internal_protocol=2,center_store=8,host_store=20),
                          dict(internal_protocol=2,center_store=8,host_store=21),
@@ -131,7 +132,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             values = re.findall(r'^pub const ' + name + r': \w+ = (\d+);$', source, re.MULTILINE)
             self.assertEqual(len(values), 1, name)
             actual[field] = int(values[0])
-        self.assertEqual(CURRENT_VERSIONS, dict(internal_protocol=2, center_store=10, host_store=23))
+        self.assertEqual(CURRENT_VERSIONS, dict(internal_protocol=2, center_store=11, host_store=23))
         self.assertEqual(actual, CURRENT_VERSIONS)
 
     def test_missing_version_fields_and_mixed_role_reports_refuse(self):
