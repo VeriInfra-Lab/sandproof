@@ -2,11 +2,11 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#633](https://github.com/VeriInfra-Lab/sandproof/issues/633)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#633](https://github.com/VeriInfra-Lab/sandproof/issues/633)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 实现与模型
 
-对应 [sandbox-center-core](../../sandbox-center-core/src/lib.rs)。新增 unload/resume 前需扩展实际状态与决定，不能把旧 create/renew/destroy 的证明原样标为覆盖。模型只管全局会话、owner、固定节点、期望版本、操作键/全文输入、阶段意图、预留与已确认事实；不远程重写节点 VM 子步骤。
+对应 [sandbox-center-core](../../sandbox-center-core/src/lib.rs)。卸载已加入真实状态与决定，恢复仍需扩展；旧 create/renew/destroy 的证明不能原样标为新状态已证。模型只管全局会话、owner、固定节点、期望版本、操作键/全文输入、阶段意图、预留与已确认事实；不远程重写节点 VM 子步骤。
 
 输入是经 V7 规范化但仍需校验的请求、显式时间、V3 绑定回执与 V2 提交结果。输出是拒绝/原结果，或拟提交状态及高级意图；纯函数不发送网络、不创建 VM。全局终止单调；宿主有效撤销和物理停止另有证据。
 
@@ -23,21 +23,19 @@
 
 创建固定节点，恢复保持同一节点与逻辑会话。总寿命沿原起点和上限，不因 pause/resume 或管理重启延长。终止可以改变用户状态保存义务，但不能释放未知资源责任。
 
-### 首个受限实现的接口和剩余条件
+### 当前实现与尚缺接口
 
-[`CenterState::enable_lifecycle`](../../sandbox-center-core/src/lifecycle.rs)只允许显式初始化没有历史、没有旧编号分配的原中心状态；普通启动、缺库和恢复不调用它。新增 `LifecycleProfile` 是原状态的一个受检查字段，不是第二份资源或编号账本。未选择 profile 时省略该字段，旧行为保留；原格式下的新 profile 自带版本 1，旧读者因未知字段拒绝，不支持混合版本写者或隐式迁移。
+中心沿原单一会话行保存当前操作、完整请求、运行事实及终态；不保留第二张生命周期权威表或旧协议备用写入口。当前 `LifecycleSubmission` 为 Create、Renew、Unload、Destroy；公开入口、后台枚举与结果查询已经连接同一 Redis 包络。
 
-| 接口 | 本片实际决定 | 尚须提供 |
+| 实际接口 | 已有行为 | 仍需证明或实现 |
 |---|---|---|
-| `accept_lifecycle(owner, submission, now)` | 独立校验认证 owner/部署；已有键比较完整 `LifecycleSubmission` 并返回原规范意图，先于当前时间、窗口、版本和阶段检查 | V7 将完整公共参数规范化一次，owner 不从正文取得；当前有限窗口无轮换/退休 |
-| Create | 保存相对参数，沿原分配器生成会话/操作/原 lane、预留和完整规范请求；初始化运行代为 1，接受版本为 1 | 模板事实、当前时钟和认证来源；正式 API/后台派发及原 Host 准入 |
-| Ready | 原规范意图全文匹配，连接原分配及原 Ready 寿命守卫，再保存 Running | V3 认证原 Host，V5/V6 提供真实运行及就绪事实；DTO 本身不是凭证 |
-| Unload | 新键检查当前版本和 Running；保存 source/capture 及接受版本，不释放原资源 | 完整材料、原 VM 退出和规定清理；本片只有 Unloading，尚不能发布 Unloaded |
-| Destroy | 可抢占当前普通操作，沿原 append 分配终止责任；保留普通操作外的终止容量，不因旧 Ready 复活 | 正式内部到期/失败收尾驱动及其预留身份、真实停止/清理和最终结算 |
+| `LifecycleOperationRecord::replay` / `next_lifecycle_version` | 全文匹配重放；受检版本后继 | 当前真实函数抽取和任意输入性质；历史生成不能直接适用 |
+| `accept_lifecycle` | 认证身份、原键重放、新请求版本/阶段与预留检查 | 完整状态修改及拒绝路径的实现对应 |
+| Ready / Unloaded 保存 | 匹配原意图、寿命及当前结果，卸载事实不由 Paused 单独推出 | V3/V5/V6 事实来源及原事务连接 |
+| Destroy / 结果退休 | 终止责任及有限保留、确认与关闭条件 | 卸载材料引用退休尚缺，不能把普通 Create/Destroy 推广到捕获后完整清理 |
+| Resume | 协议有形状，业务提交及公开端口尚不支持 | 唯一新代、重叠预留、激活及再次卸载 |
 
-固定窗口和操作历史按原有容量有界，至少保留 Create、Unload 和 Destroy 的位置；两个 owner 可以分别创建并卸载。额度用尽在接受前拒绝，现有责任不被删除。本片不支持 Resume、再次 Unload、窗口轮换、材料 GC 或终态退休；这些能力不得通过修改状态字段绕过准入。旧 v2 写入口和 pending 不处理此 profile 的会话，同一权威状态提供独立可枚举的 v3 pending。正式 driver、公共查询和内部收尾尚未接通时，生产默认入口保持关闭。
-
-`AcceptedLifecycleIntent` 保存完整原请求、中心接受版本和稳定的逻辑中心身份。其版本不是 Redis 修订、本地 epoch 或观察序号。类型检查和 `validate` 仅校验独立上下文、表示和版本，不证明持久接受或物理成功。实际机器证明范围与工具预检结果只在[覆盖记录](../proof-coverage.md)记录。
+`AcceptedLifecycleIntent` 的接受版本不是 Redis 修订、本地 epoch 或观察序号。DTO 合法不证明持久接受或物理成功。完整中心决定与新状态的机器证明仍需逐根补齐，先证明小纯函数不代表整个中心已证。
 
 ## 3. Rust 对应与验收
 

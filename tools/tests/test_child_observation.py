@@ -12,7 +12,9 @@ from tools.check_child_observation import (ASSETS, ENVIRONMENT, VARIANTS,
 from tools.check_sqlite_statements import check_record
 from tools.check_sqlite_extraction import proof_sources_digest
 
-ROOT=Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT=reference_root()
 
 class ChildObservationAdmission(unittest.TestCase):
     def test_registered_inputs_and_audits(self):
