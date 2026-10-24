@@ -294,21 +294,28 @@ fn restore_copy_rejects_substituted_source_and_destination_symlink() {
 fn exact_bundle_retirement_is_restartable_and_never_deletes_a_replacement() {
     let fixture = Fixture::new();
     let bundle = fixture.open().unwrap();
-    let plan = bundle.retirement_plan().unwrap();
-    let plan: crate::snapshot_store::BundleRetirement =
+    let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
+    let plan: crate::snapshot_store::CaptureStoreRetirement =
         serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
     assert_eq!(plan.directory_key(), &fixture.key);
-    assert_eq!(plan.manifest_sha256(), &bundle.manifest_sha256());
+    assert_eq!(
+        fixture
+            .store
+            .retirement_manifest_sha256(fixture.key)
+            .unwrap(),
+        bundle.manifest_sha256()
+    );
+    drop(bundle);
     // A service crash after unlinking one exact original file resumes using
     // its original persisted plan, without reopening an incomplete Full.
     fixture.writable_directory();
     fs::remove_file(fixture.bundle_path().join("state.bin")).unwrap();
-    fixture.store.retire_bundle(&plan).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
     assert!(!fixture.bundle_path().exists());
-    fixture.store.retire_bundle(&plan).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
     fs::create_dir(fixture.bundle_path()).unwrap();
     fixture.seal_directory();
-    assert!(fixture.store.retire_bundle(&plan).is_err());
+    assert!(fixture.store.retire_capture_material(&plan).is_err());
     assert!(fixture.bundle_path().is_dir());
 }
 
@@ -316,8 +323,8 @@ fn exact_bundle_retirement_is_restartable_and_never_deletes_a_replacement() {
 fn retirement_refuses_unknown_files_changed_inodes_and_other_store() {
     for variant in 0..3 {
         let fixture = Fixture::new();
-        let bundle = fixture.open().unwrap();
-        let plan = bundle.retirement_plan().unwrap();
+        fixture.open().unwrap().verify_unchanged().unwrap();
+        let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
         fixture.writable_directory();
         match variant {
             0 => fs::write(fixture.bundle_path().join("unknown"), b"keep").unwrap(),
@@ -332,13 +339,13 @@ fn retirement_refuses_unknown_files_changed_inodes_and_other_store() {
             }
             2 => {
                 let other = Fixture::new();
-                assert!(other.store.retire_bundle(&plan).is_err());
+                assert!(other.store.retire_capture_material(&plan).is_err());
             }
             _ => unreachable!(),
         }
         fixture.seal_directory();
         if variant != 2 {
-            assert!(fixture.store.retire_bundle(&plan).is_err());
+            assert!(fixture.store.retire_capture_material(&plan).is_err());
         }
         assert!(fixture.bundle_path().join("manifest.json").exists());
         assert!(fixture.bundle_path().join("disk-0.img").exists());
@@ -381,8 +388,31 @@ fn retirement_also_reclaims_the_exact_completion_and_interrupted_stage() {
         .unwrap();
     file.write_all(b"partial original completion").unwrap();
     file.sync_all().unwrap();
-    let plan = fixture.open().unwrap().retirement_plan().unwrap();
-    fixture.store.retire_bundle(&plan).unwrap();
+    fixture.open().unwrap().verify_unchanged().unwrap();
+    let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
     assert_eq!(fs::read_dir(&fixture.store.path).unwrap().count(), 0);
-    fixture.store.retire_bundle(&plan).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
+}
+
+#[test]
+fn general_retirement_covers_a_published_bundle_without_reading_payloads_again() {
+    let fixture = Fixture::new();
+    assert_eq!(
+        fixture
+            .store
+            .retirement_manifest_sha256(fixture.key)
+            .unwrap(),
+        <[u8; 32]>::from(Sha256::digest(b"actual manifest bytes"))
+    );
+    let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
+    assert!(!fixture.bundle_path().exists());
+    fixture.store.retire_capture_material(&plan).unwrap();
+    assert!(
+        fixture
+            .store
+            .retirement_manifest_sha256(fixture.key)
+            .is_err()
+    );
 }

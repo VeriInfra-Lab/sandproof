@@ -30,10 +30,12 @@ use std::{
 mod bundle;
 #[path = "snapshot_completion.rs"]
 mod completion;
+#[path = "snapshot_material_retirement.rs"]
+pub(crate) mod material_retirement;
 #[path = "snapshot_retirement.rs"]
 mod retirement;
 pub use bundle::{BundleReadLimits, SnapshotBundle};
-pub use retirement::BundleRetirement;
+pub use material_retirement::CaptureStoreRetirement;
 
 const MAX_MANIFEST_BYTES: usize = 1_048_576;
 const COPY_BUFFER_BYTES: usize = 65_536;

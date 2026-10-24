@@ -61,7 +61,7 @@ fn names_only(directory: &File) -> Result<(), RuntimeError> {
     Ok(())
 }
 
-fn original_file(
+pub(super) fn original_file(
     directory: &File,
     name: &str,
     owner: u32,

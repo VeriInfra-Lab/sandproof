@@ -78,6 +78,113 @@ struct JailRecord {
     root: DirectoryIdentity,
 }
 
+/// Read only the registered original jail root for finite Full-material
+/// retirement. No live slot, credential, current boot, or KVM is required.
+/// The caller already holds the protected layout's original runtime FD.
+pub(super) fn capture_root_for_retirement(
+    runtime: &File,
+    executable: &str,
+    id: &str,
+    owner: u32,
+) -> Result<Option<(File, u32)>, RuntimeError> {
+    let mut parts = Path::new(executable).components();
+    if executable.len() > 255
+        || !matches!(parts.next(), Some(std::path::Component::Normal(_)))
+        || parts.next().is_some()
+    {
+        return Err(RuntimeError::InvalidId);
+    }
+    validate_id(id)?;
+    let executable = std::ffi::CString::new(executable).map_err(|_| RuntimeError::InvalidId)?;
+    let Some(parent) = directory_at(runtime, &executable)? else {
+        runtime.sync_all()?;
+        return Ok(None);
+    };
+    let parent_metadata = parent.metadata()?;
+    if parent_metadata.uid() != owner || parent_metadata.mode() & 0o022 != 0 {
+        return Err(RuntimeError::IdentityMismatch(
+            "capture jail parent owner or mode",
+        ));
+    }
+    let name = std::ffi::CString::new(id).map_err(|_| RuntimeError::InvalidId)?;
+    let Some(jail) = directory_at(&parent, &name)? else {
+        parent.sync_all()?;
+        return Ok(None);
+    };
+    let claims = directory_at(runtime, c".claims")?.ok_or(RuntimeError::MissingRecord)?;
+    let claim = directory_at(&claims, &name)?.ok_or(RuntimeError::MissingRecord)?;
+    for directory in [&claims, &claim, &jail] {
+        let metadata = directory.metadata()?;
+        if metadata.uid() != owner || metadata.mode() & 0o077 != 0 {
+            return Err(RuntimeError::IdentityMismatch(
+                "capture original claim or jail owner",
+            ));
+        }
+    }
+    let file = File::from(
+        rustix::fs::openat(
+            &claim,
+            "jail.json",
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::NONBLOCK
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(io::Error::from)?,
+    );
+    let before = file.metadata()?;
+    if !before.is_file()
+        || before.uid() != owner
+        || before.mode() & 0o077 != 0
+        || before.nlink() != 1
+        || before.len() > MAX_CLAIM_RECORD_BYTES
+    {
+        return Err(RuntimeError::IdentityMismatch(
+            "capture original jail witness",
+        ));
+    }
+    let mut bytes = Vec::new();
+    (&file)
+        .take(MAX_CLAIM_RECORD_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 != before.len()
+        || before.ctime() != file.metadata()?.ctime()
+        || before.ctime_nsec() != file.metadata()?.ctime_nsec()
+    {
+        return Err(RuntimeError::IdentityMismatch(
+            "capture jail witness changed",
+        ));
+    }
+    crate::snapshot_store::matches_entry(&claim, std::ffi::OsStr::new("jail.json"), &file)?;
+    let record: JailRecord = serde_json::from_slice(&bytes)?;
+    if record.version != 1
+        || record.resource_id != id
+        || record.vm_uid == 0
+        || record.vm_gid == 0
+        || !record.parent.matches(&parent)?
+        || !record.jail.matches(&jail)?
+    {
+        return Err(RuntimeError::IdentityMismatch(
+            "capture jail original binding",
+        ));
+    }
+    let Some(root) = directory_at(&jail, c"root")? else {
+        jail.sync_all()?;
+        return Ok(None);
+    };
+    let metadata = root.metadata()?;
+    if ![owner, record.vm_uid].contains(&metadata.uid())
+        || metadata.mode() & 0o077 != 0
+        || !record.root.matches(&root)?
+    {
+        return Err(RuntimeError::IdentityMismatch(
+            "capture original jail root changed",
+        ));
+    }
+    Ok(Some((root, record.vm_uid)))
+}
+
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>, RuntimeError> {
     match fs::symlink_metadata(path) {
         Ok(value) => Ok(Some(value)),

@@ -42,7 +42,7 @@ mod snapshot_restore;
 pub use snapshot_restore::{LoadedSnapshotObservation, LoadedSnapshotState};
 #[path = "snapshot_layout.rs"]
 mod snapshot_layout;
-pub use snapshot_layout::SnapshotLayout;
+pub use snapshot_layout::{FullMaterialRetirement, SnapshotLayout};
 #[path = "staging.rs"]
 mod staging;
 #[path = "uid_retirement.rs"]

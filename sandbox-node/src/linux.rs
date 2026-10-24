@@ -48,6 +48,7 @@ mod execution;
 mod guest_transport;
 mod identity;
 mod inventory;
+mod material_retirement;
 mod observation;
 mod readonly;
 mod recovery;

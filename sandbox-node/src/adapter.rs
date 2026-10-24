@@ -308,6 +308,30 @@ impl WorkEvidence for NodeHost {
     type Evidence = HostObservation;
 }
 impl WorkExecution for NodeHost {
+    fn retire_lifecycle_material(
+        &self,
+        request: &sandproof_controller_service::capture::CaptureMaterialRetirementRequest,
+        plan: &[u8],
+        permit: &sandproof_controller_service::capture::MaterialRetirementPermit,
+    ) -> Result<
+        sandproof_controller_service::capture::MaterialRetirementObservation,
+        ApplicationError,
+    > {
+        let profile = self
+            .capture_profile
+            .as_ref()
+            .ok_or(ApplicationError::Invalid)?;
+        self.worker
+            .retire_material(profile, request, plan, permit)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Execute,
+                    FaultContext::instance(request.sandbox(), None),
+                )
+            })
+    }
+
     fn execute_lifecycle_restore_action(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -433,6 +457,25 @@ impl WorkExecution for NodeHost {
 }
 
 impl WorkRecovery for NodeHost {
+    fn prepare_lifecycle_material_retirement(
+        &self,
+        request: &sandproof_controller_service::capture::CaptureMaterialRetirementRequest,
+    ) -> Result<Vec<u8>, ApplicationError> {
+        let profile = self
+            .capture_profile
+            .as_ref()
+            .ok_or(ApplicationError::Invalid)?;
+        self.worker
+            .prepare_material_retirement(profile, request)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Observe,
+                    FaultContext::instance(request.sandbox(), None),
+                )
+            })
+    }
+
     fn observe_lifecycle_capture_api_end(
         &self,
         action: &WorkAction<core::EffectId>,

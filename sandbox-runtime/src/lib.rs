@@ -22,7 +22,7 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     CLAIM_RECORD_NAMES, CapturedFullSnapshot, ConsolePolicy, FullCaptureApiContext,
-    FullCaptureApiEnd, FullCaptureLimits, HostResources, JailObservation,
+    FullCaptureApiEnd, FullCaptureLimits, FullMaterialRetirement, HostResources, JailObservation,
     LoadedSnapshotObservation, LoadedSnapshotState, MAX_CLAIM_RECORD_BYTES,
     MAX_HELPER_MARKER_BYTES, Observation, OriginalConfigurationObservation,
     OriginalPauseObservation, PausedOriginalVm, PreparedTrackedChild, PublishedFullCapture,
