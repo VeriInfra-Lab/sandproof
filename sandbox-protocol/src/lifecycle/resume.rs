@@ -179,10 +179,7 @@ impl CurrentReadyFacts {
             return false;
         }
         // Nonnegative i64 values fit exactly in u64.
-        #[allow(
-            clippy::cast_sign_loss,
-            reason = "negative lifetime rejected above"
-        )]
+        #[allow(clippy::cast_sign_loss, reason = "negative lifetime rejected above")]
         let end = end_at_ms as u64;
         self.matches_resume_source(original, source)
             && incarnation == target_incarnation

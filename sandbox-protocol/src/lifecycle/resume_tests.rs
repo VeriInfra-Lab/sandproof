@@ -310,7 +310,8 @@ fn renewal_conversion_stays_inside_the_observed_branch() {
     assert!(view.matches_request(&original));
     view.readiness = CurrentResumeReadiness::Observed { facts: ready() };
     assert!(!view.matches_request(&original));
-    if let LifecycleOperation::Renew { end_at_ms, .. } = &mut view.current_request.request.operation {
+    if let LifecycleOperation::Renew { end_at_ms, .. } = &mut view.current_request.request.operation
+    {
         *end_at_ms = 0;
     }
     assert!(view.matches_request(&original));
