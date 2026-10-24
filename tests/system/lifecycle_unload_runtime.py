@@ -103,13 +103,8 @@ class UnloadRuntime:
                 or Path(native['node_state_dir'])!=self.root/'state'
                 or Path(native['chroot_base'])!=Path(self.captures[0]['layout_parent'])/'v'):
             raise ValueError('fixture paths must name the exact prepared run')
-        self.services=RuntimeServices.prepare(self.args,self.root,[native],[self.inputs['catalog']],
-            self.owner_key,'127.0.0.1:'+str(free_loopback_port()),self.args.service_cgroup_record,
-            1,registry_config=self.inputs['registry'],
-            extra_credentials=[dict(tenant=2,secret=self.foreign_key)],
-            activation_ceiling_bytes=self.inputs['activation_ceiling_bytes'])
         # Deployment receipt is independent of the configuration it checks.
-        profile=self.services.native_pools[0]['bounded_host']['physical_storage']
+        profile=native['bounded_host']['physical_storage']
         device=Path(profile['coordination_file']).parent.stat().st_dev
         material=self.captures[0]['material_project']
         if (self.quota['filesystem_device']!=device
@@ -119,6 +114,11 @@ class UnloadRuntime:
                 or self.quota['accounting'] is not True or self.quota['enforcement'] is not True
                 or self.quota['actual_readback_verified'] is not True):
             raise ValueError('independently read back original kernel hard quota required')
+        self.services=RuntimeServices.prepare(self.args,self.root,[native],[self.inputs['catalog']],
+            self.owner_key,'127.0.0.1:'+str(free_loopback_port()),self.args.service_cgroup_record,
+            1,registry_config=self.inputs['registry'],
+            extra_credentials=[dict(tenant=2,secret=self.foreign_key)],
+            activation_ceiling_bytes=self.inputs['activation_ceiling_bytes'])
         self.configs={name:role_facts(Path(role['config']).parent,role['config'],
             uid=role['uid'],gid=role['gid']) for name,role in self.services.processes.bindings.items()}
 
