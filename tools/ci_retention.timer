@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily disposable Sandproof CI artifact reclamation
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=ci_retention.service
+
+[Install]
+WantedBy=timers.target

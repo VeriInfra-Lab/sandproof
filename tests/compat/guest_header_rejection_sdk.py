@@ -23,23 +23,13 @@ from sdk_rejection_body import finish_gate, gated_async, gated_sync
 from sdk_event_loop import JoinedCallbackLoop
 from sdk_support import isolated_sdk_environment
 
-settings = json.loads(sys.stdin.read())
+settings = {}
 original_sync = _client_sync._streaming_request_content
 original_async = _client_async._streaming_request_content
 events = []
 upload_settled = asyncio.Event()
 sync_upload_settled = threading.Event()
-control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-control.settimeout(5)
-control.connect(settings['control'])
-
-
-_client_sync._streaming_request_content = partial(
-    gated_sync, original_sync, control, events, settings.get('partial', False),
-    settled=sync_upload_settled)
-_client_async._streaming_request_content = partial(
-    gated_async, original_async, control, events, settings.get('partial', False),
-    settled=upload_settled)
+control = None
 
 
 async def main():
@@ -52,38 +42,71 @@ async def main():
         headers={'x-access-token': 'token', 'keepalive-ping-interval': '0'},
         timeout_ms=10000,
     )
+    first_error = None
     try:
-        if asynchronous:
-            await anext(stream)
+        try:
+            if asynchronous:
+                await anext(stream)
+            else:
+                next(stream)
+        except ConnectError as error:
+            assert (error.code, error.message) == (
+                Code.INVALID_ARGUMENT,
+                'keepalive interval must be between 1 and 9223372036 seconds',
+            ), repr(error)
         else:
-            next(stream)
-    except ConnectError as error:
-        assert (error.code, error.message) == (
-            Code.INVALID_ARGUMENT,
-            'keepalive interval must be between 1 and 9223372036 seconds',
-        ), repr(error)
-    else:
-        raise AssertionError('invalid keepalive unexpectedly accepted')
+            raise AssertionError('invalid keepalive unexpectedly accepted')
+    except BaseException as error:
+        first_error = error
+        raise
     finally:
-        if asynchronous:
-            await stream.aclose()
-            await asyncio.wait_for(upload_settled.wait(), 5)
-        else:
-            stream.close()
-            assert sync_upload_settled.wait(5), 'request iterator did not settle'
-        expected = ['message', 'waiting', 'released']
-        if settings.get('partial'):
-            expected.append('tail')
-        # 'tail' records bytes offered by the encoder, not delivery to a peer.
-        # Response completion and upload cancellation/resumption are distinct
-        # observations. Neither the SDK error nor response aclose orders them.
-        cancelled = ['message', 'waiting', 'cancelled']
-        assert events == expected or (asynchronous and events == cancelled), events
-        await asyncio.wait_for(finish_gate(control, cancelled=events == cancelled), 5)
+        try:
+            if asynchronous:
+                await stream.aclose()
+                await asyncio.wait_for(upload_settled.wait(), 5)
+            else:
+                stream.close()
+                assert sync_upload_settled.wait(5), 'request iterator did not settle'
+            expected = ['message', 'waiting', 'released']
+            if settings.get('partial'):
+                expected.append('tail')
+            # 'tail' records bytes offered by the encoder, not delivery to a peer.
+            # Response completion and upload cancellation/resumption are distinct
+            # observations. Neither the SDK error nor response aclose orders them.
+            cancelled = ['message', 'waiting', 'cancelled']
+            assert events == expected or (asynchronous and events == cancelled), events
+            await asyncio.wait_for(finish_gate(control, cancelled=events == cancelled), 5)
+        except BaseException as cleanup_error:
+            if first_error is not None:
+                # Keep the original SDK/protocol failure primary, while also
+                # retaining the actual settlement/observation failure as cause.
+                raise first_error from cleanup_error
+            raise
 
 
-with isolated_sdk_environment():
+def run():
+    global settings, control, upload_settled, sync_upload_settled
+    settings = json.loads(sys.stdin.read())
+    events.clear()
+    upload_settled = asyncio.Event()
+    sync_upload_settled = threading.Event()
+    control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    control.settimeout(5)
     try:
-        asyncio.run(main(), loop_factory=JoinedCallbackLoop)
+        control.connect(settings['control'])
+        _client_sync._streaming_request_content = partial(
+            gated_sync, original_sync, control, events, settings.get('partial', False),
+            settled=sync_upload_settled)
+        _client_async._streaming_request_content = partial(
+            gated_async, original_async, control, events, settings.get('partial', False),
+            settled=upload_settled)
+        with isolated_sdk_environment():
+            asyncio.run(main(), loop_factory=JoinedCallbackLoop)
     finally:
+        _client_sync._streaming_request_content = original_sync
+        _client_async._streaming_request_content = original_async
         control.close()
+
+
+if __name__ == '__main__':
+    run()
