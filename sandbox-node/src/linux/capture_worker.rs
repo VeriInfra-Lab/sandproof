@@ -149,7 +149,8 @@ impl PreparedCaptureWorker {
         let process = prepared.process().clone();
         let mut child = gate.release_tracked(prepared)?;
         let frame = handshake::job_frame(body)?;
-        let ready = child.prepare_full(&frame, HelperLimits {
+        let expected_ready = handshake::ready_frame(job_digest, process.clone())?;
+        let ready = child.prepare_full(&frame, &expected_ready, HelperLimits {
             timeout: Duration::from_millis(job.full.worker_timeout_ms),
             input_bytes: CAPTURE_WORKER_INPUT_BYTES,
             stdout_bytes: 1024,

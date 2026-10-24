@@ -2080,7 +2080,7 @@ mod tests {
             )
             .unwrap();
         let mut child = guard.release_tracked(prepared).unwrap();
-        let ready = child.prepare_full(&[], HelperLimits::CONTROL).unwrap();
+        let ready = child.prepare_full(&[], b"ready\n", HelperLimits::CONTROL).unwrap();
         assert_eq!(ready, b"ready\n");
         drop(child);
         drop(guard);

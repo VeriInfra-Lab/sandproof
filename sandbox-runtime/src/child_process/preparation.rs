@@ -7,8 +7,10 @@ impl OwnedChild {
     /// ready worker. The original pre-spawn slot remains owned until exit.
     /// # Errors
     /// Incomplete input, timeout, EOF and surplus/budget errors grant no Ready.
-    pub fn prepare_full(&mut self, input: &[u8], limits: HelperLimits) -> io::Result<Vec<u8>> {
-        if input.len() > limits.input_bytes || self.stderr.is_some() {
+    pub fn prepare_full(&mut self, input: &[u8], expected_ready: &[u8], limits: HelperLimits) -> io::Result<Vec<u8>> {
+        if input.len() > limits.input_bytes || self.stderr.is_some()
+            || expected_ready.is_empty() || expected_ready.len() > limits.stdout_bytes
+            || !expected_ready.ends_with(b"\n") {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Full preparation pipe/budget"));
         }
         let deadline = Instant::now().checked_add(limits.timeout)
@@ -35,6 +37,7 @@ impl OwnedChild {
             }
             drain_chunk(&mut stdout, &mut ready, limits.stdout_bytes)?;
             if written == input.len() && ready.contains(&b'\n') {
+                if ready != expected_ready { return Err(io::Error::new(io::ErrorKind::InvalidData, "Full Ready differs from original worker/job")); }
                 self.stdin = Some(stdin);
                 self.stdout = stdout;
                 self.retain_until_exit();
@@ -56,14 +59,14 @@ mod tests {
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())).unwrap()
     }
     fn limits() -> HelperLimits {
-        HelperLimits { timeout: Duration::from_millis(100), input_bytes: 64, stdout_bytes: 64, stderr_bytes: 0 }
+        HelperLimits { timeout: Duration::from_secs(3), input_bytes: 64, stdout_bytes: 64, stderr_bytes: 0 }
     }
     #[test]
     fn ready_preserves_same_pipe_and_slot_for_later_release() {
         let _serial = crate::linux::PROCESS_TEST_LOCK.lock().unwrap();
         let mut worker = child("IFS= read -r job; printf 'ready\n'; IFS= read -r release; printf '%s' \"$release\"");
         let pid = worker.id();
-        assert_eq!(worker.prepare_full(b"job\n", limits()).unwrap(), b"ready\n");
+        assert_eq!(worker.prepare_full(b"job\n", b"ready\n", limits()).unwrap(), b"ready\n");
         assert_eq!(worker.id(), pid);
         assert!(worker.slot.is_some() && worker.retain_on_drop);
         assert!(worker.try_wait().unwrap().is_none());
@@ -76,12 +79,26 @@ mod tests {
         let _serial = crate::linux::PROCESS_TEST_LOCK.lock().unwrap();
         let mut worker = child("IFS= read -r job; printf partial; IFS= read -r release");
         let pid = worker.id();
-        assert!(worker.prepare_full(b"job\n", limits()).is_err());
+        let mut deadline = limits();
+        deadline.timeout = Duration::from_millis(100);
+        assert!(worker.prepare_full(b"job\n", b"ready\n", deadline).is_err());
         assert!(!worker.retain_on_drop);
         drop(worker);
         let pid = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
         assert!(matches!(rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG), Err(rustix::io::Errno::CHILD)));
     }
+    #[test]
+    fn wrong_ready_line_never_transfers_owner_even_when_complete() {
+        let _serial = crate::linux::PROCESS_TEST_LOCK.lock().unwrap();
+        let mut worker = child("IFS= read -r job; printf 'wrong\n'; IFS= read -r release");
+        let pid = worker.id();
+        assert_eq!(worker.prepare_full(b"job\n", b"ready\n", limits()).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert!(!worker.retain_on_drop);
+        drop(worker);
+        let pid = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
+        assert!(matches!(rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG), Err(rustix::io::Errno::CHILD)));
+    }
+
     #[test]
     fn ready_drop_closes_release_pipe_instead_of_killing_worker() {
         let _serial = crate::linux::PROCESS_TEST_LOCK.lock().unwrap();
@@ -90,7 +107,7 @@ mod tests {
         rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR, 0).unwrap();
         let script = format!("IFS= read -r job; printf 'ready\n'; if IFS= read -r release; then exit 4; fi; printf no_request > '{}'", fifo.display());
         let mut worker = child(&script);
-        assert_eq!(worker.prepare_full(b"job\n", limits()).unwrap(), b"ready\n");
+        assert_eq!(worker.prepare_full(b"job\n", b"ready\n", limits()).unwrap(), b"ready\n");
         drop(worker);
         let mut decision = String::new();
         std::fs::File::open(fifo).unwrap().read_to_string(&mut decision).unwrap();

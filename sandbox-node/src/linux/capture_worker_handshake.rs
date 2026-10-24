@@ -18,7 +18,8 @@ pub(super) fn job_frame(mut body: Vec<u8>) -> NodeResult<Vec<u8>> {
         return Err("Full job frame exceeds original byte budget".into());
     }
     let length = u32::try_from(body.len())?.to_be_bytes();
-    body.splice(..0, length);
+    body.extend_from_slice(&length);
+    body.rotate_right(4);
     Ok(body)
 }
 pub(super) fn frame_payload(frame: &[u8]) -> NodeResult<&[u8]> {
@@ -42,7 +43,7 @@ fn read_job(input: &mut impl Read, expected: ContentDigest) -> NodeResult<Captur
     job.validate_job()?;
     Ok(job)
 }
-fn ready_frame(job_digest: ContentDigest, worker: RuntimeProcessIdentity) -> NodeResult<Vec<u8>> {
+pub(super) fn ready_frame(job_digest: ContentDigest, worker: RuntimeProcessIdentity) -> NodeResult<Vec<u8>> {
     let mut bytes = serde_json::to_vec(&Ready { job_digest, worker })?;
     bytes.push(b'\n');
     if bytes.len() > READY_BYTES { return Err("Full Ready exceeds original output budget".into()); }

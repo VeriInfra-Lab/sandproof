@@ -220,7 +220,9 @@ mod tests {
         let bytes = serde_json::to_vec(&record).unwrap();
         assert!(bytes.len() as u64 <= crate::snapshot_store::MAX_COMPLETION_BYTES);
         let store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        store.require_request_end_absent(key).unwrap();
         store.publish_retained_request_end(key, &bytes, || Ok(true)).unwrap();
+        assert!(store.require_request_end_absent(key).is_err());
         drop(store);
         for _ in 0..2 {
             let reopened = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
@@ -229,6 +231,14 @@ mod tests {
             actual.require_original("source-1", &source, key, context, &worker).unwrap();
             assert!(actual.require_original("source-1", &source, key, context, &process(11)).is_err());
         }
+    }
+
+    #[test]
+    fn untagged_end_is_rejected_and_future_outcomes_fit_reserved_budget() {
+        let source = process(10);
+        let context = FullCaptureApiContext { work_sha256: [255;32], job_sha256: [255;32], action_sha256: [255;32] };
+        let key = [255;32];
+        let record = FullCaptureRequestEnd::no_request("source-1", &source, key, context).unwrap();
         let mut old = serde_json::to_value(&record).unwrap();
         old.as_object_mut().unwrap().remove("outcome");
         old["status"] = serde_json::json!(400);
