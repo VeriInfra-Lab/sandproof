@@ -96,6 +96,9 @@ impl ControllerJournal {
         let state = self.lifecycle_work_state(&request.terminal.request, context);
         if let Ok(state) = state.as_ref()
             && let Some(local) = state.local
+            // Retired details have no create_options to probe. The original
+            // bound native-retirement receipt is checked again below.
+            && self.world()?.sandbox_record(local.sandbox).is_some()
             && self.host_slot_release_pinned(local.sandbox)?
         {
             return Err(JournalError::UnresolvedAction);
@@ -138,7 +141,8 @@ impl ControllerJournal {
         {
             return Err(JournalError::UnresolvedAction);
         }
-        if let Some(local) = inbox.sessions[s].local {
+        if let Some(local) = inbox.sessions[s].local
+            && !super::native_retirement::cleaned(&inbox.sessions[s],&world)? {
             sandbox_controller_core::maintenance::retirement::validate_terminal_cleanup(
                 &world,
                 local.sandbox,

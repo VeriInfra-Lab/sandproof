@@ -90,11 +90,12 @@ pub(in crate::controller) fn validate(
             continue;
         };
         let Some(row) = world.sandbox_record(local.sandbox) else {
-            if session.terminal {
+            if super::native_retirement::cleaned(session,world)? {
                 continue;
             }
             return Err(JournalError::CorruptStore);
         };
+        if session.native_retirement.is_some(){return Err(JournalError::CorruptStore)}
         let origin = session
             .entries
             .iter()

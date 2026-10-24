@@ -1,6 +1,7 @@
 //! V3 identity/order on the original controller connection and writer lease.
 //! The original reducer/admission/outbox remains the local phase authority.
 mod access;
+pub(in crate::controller) mod native_retirement;
 pub(in crate::controller) mod audit;
 mod codec;
 mod renewal;

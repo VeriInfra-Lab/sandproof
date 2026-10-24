@@ -172,7 +172,8 @@ fn pinned(
     sandbox: core::SandboxId,
 ) -> Result<bool, JournalError> {
     if super::super::internal_inbox::pinned(connection, sandbox)?
-        || super::super::lifecycle_inbox::pinned(connection, sandbox)?
+        || (super::super::lifecycle_inbox::pinned(connection, sandbox)?
+            && !super::super::lifecycle_inbox::native_retirement::ready(connection,world,sandbox)?)
     {
         return Ok(true);
     }
@@ -347,6 +348,8 @@ impl ControllerJournal {
         let world = tx.world();
         projections::validate(&tx, &world, &self.namespace)?;
         let candidate = candidate(&tx, &world, sandbox)?.ok_or(JournalError::UnresolvedAction)?;
+        // Validate OLD native/source pairs before native Retire removes them.
+        let terminal_sources=super::super::lifecycle_inbox::source_work::validate_terminal_sources(&tx,&world,sandbox)?;
         let now_ms = now_ms.max(
             world
                 .maintenance_state()
@@ -358,10 +361,13 @@ impl ControllerJournal {
             .ok_or(JournalError::MaintenanceCapacity)?;
         verifier(&candidate).map_err(|_| JournalError::UnresolvedAction)?;
         storage::apply_maintenance(&tx, MaintenanceInput::ExpireResults { now_ms })?;
-        storage::apply_maintenance(
+        let retirement=request(&candidate,retain_until);
+        let retired=storage::apply_maintenance(
             &tx,
-            MaintenanceInput::Retire(request(&candidate, retain_until)),
+            MaintenanceInput::Retire(retirement),
         )?;
+        super::super::lifecycle_inbox::native_retirement::record(&tx,&world,&retired.next,retirement)?;
+        super::super::lifecycle_inbox::source_work::remove_retired(&tx,&terminal_sources)?;
         delete_details(&tx, &world, &self.namespace, sandbox)?;
         crashes.hit(CrashPoint::AfterRetirementDelete)?;
         crashes.hit(CrashPoint::BeforeCommit)?;

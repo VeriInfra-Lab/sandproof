@@ -12,6 +12,7 @@ use std::{
 use v3::fixture::{State, TestEpoch, TestHost};
 mod continue_application;
 mod original_continue;
+mod end_pipeline;
 mod terminal_drain;
 type Evidence = <TestHost as WorkEvidence>::Evidence;
 
@@ -1040,6 +1041,10 @@ fn finish_full_component(journal: &mut ControllerJournal, record: &SourceWorkRec
                         &mut NeverCrash,
                     )
                     .unwrap();
+                if matches!(action.command.command(),sandbox_controller_core::Command::SealSnapshot { .. }) {
+                    let ended=journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+                    journal.record_lifecycle_capture_request_end(&record.work,&v3::context(),actual_api_end(&ended),&mut NeverCrash).unwrap();
+                }
             }
             WorkflowStep::Complete => return,
             other => panic!("original full workflow blocked: {other:?}"),
@@ -2269,9 +2274,18 @@ fn public_unload_observation_keeps_pending_and_persisted_unloaded_mutually_exclu
     }
 }
 
-pub(super) fn actual_api_end(
-    record: &SourceWorkRecord,
-) -> crate::capture::CaptureRequestEndObservation {
+pub(super) fn sealed_before_end(path:&Path)->(ControllerJournal,Arc<Mutex<State>>,SourceWorkRecord){
+    let (mut journal,state)=ready(path);
+    let source=observed_for_full(&mut journal);
+    let accepted=journal.admit_lifecycle_full_capture::<Evidence>(&source.work,&v3::context(),&full_request(&source),10,&mut NeverCrash).unwrap();
+    let seal=claim_full_before_worker_release(&mut journal,source.work.anchor.local.sandbox);
+    let worker=crate::capture::CaptureWorkerBinding::new(SourceProcessIdentity{pid:2345,start_time_ticks:9876,boot_id:"fixture-boot".into()},ContentDigest::from_sha256([9;32])).unwrap();
+    journal.authorize_lifecycle_full_capture(&source.work,&v3::context(),&seal,worker,10,&mut NeverCrash).unwrap();
+    journal.complete(&sandproof_protocol::WorkReceipt{identity:seal.identity.clone(),outcome:sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence{resource:seal.identity.resource.clone(),command:seal.command.command().clone()})},&mut NeverCrash).unwrap();
+    (journal,state,accepted)
+}
+
+pub(super) fn actual_api_end(record: &SourceWorkRecord) -> crate::capture::CaptureRequestEndObservation {
     let capture = record.capture.as_ref().unwrap();
     crate::capture::CaptureRequestEndObservation {
         action: capture.action.clone().unwrap(),
@@ -2286,7 +2300,7 @@ pub(super) fn actual_api_end(
 fn original_api_end_fact_is_durable_but_changes_no_native_or_material_responsibility() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (mut journal, source) = unloaded_resume_source(&path);
+    let (mut journal, _state, source) = sealed_before_end(&path);
     let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
     let before = journal.world().unwrap();
     let observation = actual_api_end(&saved);
@@ -2360,7 +2374,7 @@ fn original_api_end_fact_is_durable_but_changes_no_native_or_material_responsibi
 #[test]
 fn original_api_end_rejects_substituted_source_action_worker_digest_and_incomplete_status() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut journal, source) = unloaded_resume_source(&dir.path().join("db"));
+    let (mut journal, _state, source) = sealed_before_end(&dir.path().join("db"));
     let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
     let before = journal.world().unwrap();
     for mode in 0..5 {
@@ -2417,7 +2431,7 @@ fn original_api_end_unknown_commit_reopens_the_exact_saved_or_absent_fact() {
     for durable in [false, true] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
-        let (mut journal, source) = unloaded_resume_source(&path);
+        let (mut journal, _state, source) = sealed_before_end(&path);
         let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
         let observation = actual_api_end(&saved);
         transaction::fail_next_commit(durable);

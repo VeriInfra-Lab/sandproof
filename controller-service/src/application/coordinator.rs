@@ -1,5 +1,6 @@
 //! Serialized durable decisions and revocations; slow physical work runs outside the lock.
 mod lifecycle_continue;
+mod lifecycle_capture_end;
 mod lifecycle_material_retirement;
 mod lifecycle_restore;
 mod lifecycle_source;

@@ -118,14 +118,17 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
-fn digest(bytes: &[u8]) -> ContentDigest {
+pub(super) fn digest(bytes: &[u8]) -> ContentDigest {
     ContentDigest::from_sha256(Sha256::digest(bytes).into())
 }
 
-pub(in crate::controller) use codec::remove_retired;
 pub(in crate::controller) use codec::{charged_bytes, validate};
+pub(in crate::controller) use codec::remove_retired;
 pub use retirement::MaterialRetirementQuestion;
-pub(in crate::controller) use retirement::validate_terminal_sources;
+pub(in crate::controller) fn validate_terminal_sources(connection:&rusqlite::Connection,world:&sandbox_controller_core::World,sandbox:sandbox_controller_core::SandboxId)->Result<Vec<SourceWorkRecord>,JournalError>{
+    if codec::load(connection)?.is_none(){return Ok(Vec::new())}
+    retirement::validate_terminal_sources(connection,world,sandbox)
+}
 pub(super) fn initialize(
     connection: &rusqlite::Connection,
     config: SourceObservationConfig,
