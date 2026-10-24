@@ -896,6 +896,15 @@ impl ControllerJournal {
                 return Err(JournalError::ConflictingReceipt);
             }
         }
+        // An identical confirmed receipt was handled above. A new activation
+        // observation cannot change an already terminal instance, even after
+        // exact Stop retired the original uncertain activation.
+        if matches!(action.command.command(), core::Command::ActivateVm { .. })
+            && transaction.world().sandbox_record(action.command.command().sandbox())
+                .is_some_and(|record| record.terminal)
+        {
+            return Err(JournalError::ObsoleteReceipt);
+        }
         let capacity = capacity::config(&transaction)?.ok_or(JournalError::UnsupportedStore)?;
         let serialized = checkpoint::encode_limited(receipt, capacity.max_receipt_bytes)?;
         lifecycle_inbox::source_work::full::save_receipt(

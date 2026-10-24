@@ -481,19 +481,20 @@ fn current_renewal_fields_require_explicit_null_instead_of_missing_old_format_fi
 }
 
 #[test]
-fn current_renewal_store_refuses_prior_format_nineteen_without_mutation() {
+fn current_renewal_store_refuses_prior_formats_nineteen_and_twenty_without_mutation() {
+    for prior in [19, 20] {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let journal = fixture::initialize(&path);
     assert_eq!(
         crate::LIFECYCLE_STORE_FORMAT_VERSION,
-        20,
-        "run only the complete shared 8/20 candidate"
+        21,
+        "run only the complete lifecycle format 21 candidate"
     );
     journal
         .journal
         .connection
-        .execute("UPDATE controller_meta SET version=19 WHERE id=1", [])
+        .execute("UPDATE controller_meta SET version=?1 WHERE id=1", [prior])
         .unwrap();
     drop(journal);
     let before = std::fs::read(&path).unwrap();
@@ -508,4 +509,5 @@ fn current_renewal_store_refuses_prior_format_nineteen_without_mutation() {
         Err(JournalError::UnsupportedStore)
     ));
     assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
 }

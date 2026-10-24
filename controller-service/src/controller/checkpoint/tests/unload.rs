@@ -12,6 +12,9 @@ fn open_unload(path: &std::path::Path) -> ControllerJournal {
 fn accepted_pause(journal: &mut ControllerJournal, id: u64) {
     // Exercise the original lower-level acceptance transaction while the
     // public route remains closed pending source/bundle admission work.
+    // The private reserved path accepts the original Pause above. A second
+    // Pause while already pausing is rejected by the original phase guard;
+    // the public entry points remain UnsupportedInput as checked above.
     let namespace = journal.namespace.clone();
     let tx =
         WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
@@ -292,7 +295,9 @@ fn recovery_profile_does_not_open_unreserved_public_pause_or_resume() {
                 operation: core::OperationId(3),
             }))
         ),
-        Err(JournalError::UnsupportedInput)
+        Err(JournalError::ControllerRejected(core::controller::ControllerReject::Request(
+            core::request::Reject::WrongPhase
+        )))
     ));
     drop(tx);
     assert_eq!(journal.world().unwrap(), before);

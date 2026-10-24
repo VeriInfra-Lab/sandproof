@@ -31,6 +31,28 @@ fn kill_request() -> core::KillRequest {
 }
 
 #[test]
+fn admitted_running_replay_neither_dispatches_work_nor_resamples_running_clock() {
+    let (_directory, mut journal) = setup();
+    let request = create_request();
+    let operation = request.operation;
+    let running = admit_and_finish(&mut journal, request, &mut worker).unwrap();
+    let mut calls = 0;
+    {
+        let mut host = |action: &WorkAction<core::EffectId>| {
+            calls += 1;
+            worker(action)
+        };
+        assert_eq!(finish_admitted_create(&mut journal, SANDBOX, operation, &mut host).unwrap(), running);
+        assert_eq!(finish_admitted_create_timed(
+            &mut journal, SANDBOX, operation, &mut host,
+            &mut || panic!("a completed Running replay must not resample its clock"),
+        ).unwrap(), running);
+    }
+    assert_eq!(calls, 0);
+    assert_eq!(journal.world().unwrap(), running);
+}
+
+#[test]
 fn create_publishes_after_all_results_and_kill_publishes_after_stop() {
     let (directory, mut journal) = setup();
     let running = admit_and_finish(&mut journal, create_request(), &mut worker).unwrap();
