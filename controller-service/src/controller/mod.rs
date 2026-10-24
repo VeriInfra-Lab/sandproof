@@ -655,9 +655,10 @@ impl ControllerJournal {
         }
         if matches!(
             input,
-            core::ControllerInput::Request(
-                core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
-            )
+            core::ControllerInput::Capture(_)
+                | core::ControllerInput::Request(
+                    core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
+                )
         ) {
             // Recovery schema support alone does not admit physical work.
             // Create uses its existing admission; pause needs the separately

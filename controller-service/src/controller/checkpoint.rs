@@ -143,6 +143,13 @@ pub(super) fn check_input_profile(
     world: &core::World,
     input: &core::ControllerInput,
 ) -> Result<(), JournalError> {
+    if let core::ControllerInput::Capture(input) = input
+        && !super::lifecycle_inbox::source_work::full::permits_continue_input(
+            connection, world, input,
+        )?
+    {
+        return Err(JournalError::UnsupportedInput);
+    }
     if let core::ControllerInput::Request(core::Request::Resume(request)) = input
         && !super::lifecycle_inbox::source_work::restore::permits_resume_input(
             connection, world, request,

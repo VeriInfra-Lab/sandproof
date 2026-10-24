@@ -1,6 +1,7 @@
 use super::*;
 use crate::controller::{tests_support::lifecycle_application as v3, transaction};
 use crate::{NeverCrash, application::WorkEvidence, capture::HostEpochObservation};
+use sandbox_controller_core as core;
 use sandproof_protocol::lifecycle::{
     CaptureId, ExpectedSession, IncarnationId, LifecycleOperation,
 };
@@ -9,6 +10,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use v3::fixture::{State, TestEpoch, TestHost};
+mod original_continue;
 type Evidence = <TestHost as WorkEvidence>::Evidence;
 
 fn config() -> SourceObservationConfig {
@@ -2292,6 +2294,23 @@ fn original_api_end_fact_is_durable_but_changes_no_native_or_material_responsibi
             &mut NeverCrash,
         )
         .unwrap();
+    let core::capture::CaptureWorkEnd::Returned { seal } = receipt.end else {
+        panic!("a returned API end cannot become a never-released fact");
+    };
+    let action = saved.capture.as_ref().unwrap().action.as_ref().unwrap();
+    assert_eq!(seal.attempt, action.command.attempt);
+    assert_eq!(
+        seal.command(core::capture::OriginalContinueIdentity {
+            key: core::OperationKey {
+                sandbox: source.work.anchor.local.sandbox,
+                operation: saved.capture_operation().unwrap(),
+            },
+            epoch: action.identity.epoch,
+            generation: action.identity.generation,
+            vm: source.work.anchor.native.current_vm.unwrap(),
+        }),
+        *action.command.command()
+    );
     assert_eq!(
         receipt.work_binding,
         *saved

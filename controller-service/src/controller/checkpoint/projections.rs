@@ -376,6 +376,7 @@ fn validate_receipts(
             core::EffectStatus::Dispatched
                 | core::EffectStatus::OutcomeUnknown
                 | core::EffectStatus::RetiredByStop(_)
+                | core::EffectStatus::RetiredByCaptureEnd(_)
         ),
         ("receipted", Some(value)) if value.identity == action.identity => match &value.outcome {
             WorkOutcome::ObservedSuccess(_) => {
@@ -397,7 +398,9 @@ fn validate_receipts(
             }
             _ => matches!(
                 status,
-                core::EffectStatus::OutcomeUnknown | core::EffectStatus::RetiredByStop(_)
+                core::EffectStatus::OutcomeUnknown
+                    | core::EffectStatus::RetiredByStop(_)
+                    | core::EffectStatus::RetiredByCaptureEnd(_)
             ),
         },
         _ => false,

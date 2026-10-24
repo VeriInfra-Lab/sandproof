@@ -2,11 +2,11 @@ use super::*;
 use crate::{CapacityConfig, ConsolePolicy, WorkerTransportError};
 use sandproof_protocol::WorkReceipt;
 
-// One Create/Pause/Kill envelope: 15 logical effects, all retry attempts,
+// One Create/Pause/Kill envelope with original continuation: 16 logical effects, all retry attempts,
 // fourteen fixed records/references, and three eventual operation results.
 pub(super) const RESERVED_RESULTS: u64 = 3;
-pub(super) const RESERVED_RECORDS: u64 = 14 + 15 * (core::DEFAULT_RETRY_LIMIT + 2);
-pub(super) const RESERVED_REFERENCES: u64 = 14 + 2 * 15 * (core::DEFAULT_RETRY_LIMIT + 1);
+pub(super) const RESERVED_RECORDS: u64 = 14 + 16 * (core::DEFAULT_RETRY_LIMIT + 2);
+pub(super) const RESERVED_REFERENCES: u64 = 14 + 2 * 16 * (core::DEFAULT_RETRY_LIMIT + 1);
 
 pub(super) fn full_config() -> MaintenanceConfig {
     MaintenanceConfig {
@@ -22,9 +22,9 @@ pub(super) fn full_config() -> MaintenanceConfig {
         capacity: Some(CapacityConfig {
             max_live_sandboxes: 4,
             max_sql_rows: 1024,
-            // Four current 4,943,872-byte lifecycle leases plus fixed SQL rows.
-            // Eighteen MiB cannot hold them; nineteen is the first whole-MiB cap.
-            max_sql_bytes: 19 * 1024 * 1024,
+            // Four current 5,255,168-byte lifecycle leases plus fixed SQL rows.
+            // Twenty MiB cannot hold them; twenty-one is the first whole-MiB cap.
+            max_sql_bytes: 21 * 1024 * 1024,
             max_sql_value_bytes: 256 * 1024,
             max_receipt_bytes: 16 * 1024,
             max_transaction_inputs: 4,
