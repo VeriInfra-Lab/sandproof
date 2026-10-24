@@ -446,8 +446,10 @@ fn assert_other_quotas_fit_a_second_create(bounded: &BoundedHostConfig, settings
     assert!(settings.limits.max_active_per_tenant >= 1);
     assert!(bounded.maintenance.max_host_slots >= 2);
     assert!(settings.limits.max_disk_bytes_per_tenant >= settings.disk_bytes);
-    assert!(settings.limits.max_disk_bytes_global
-        - settings.limits.cleanup_reserve_bytes >= 2 * settings.disk_bytes);
+    assert!(
+        settings.limits.max_disk_bytes_global - settings.limits.cleanup_reserve_bytes
+            >= 2 * settings.disk_bytes
+    );
     assert!(maintenance_config().capacity.unwrap().max_sql_bytes >= 2 * 4_943_872);
 }
 
@@ -505,9 +507,12 @@ fn retained_results_leave_insufficient_capacity_for_the_next_create_promise() {
     let remaining_results = retention_limit.checked_sub(retained_count).unwrap();
     assert_eq!(remaining_results, 1);
     assert!(remaining_results < REQUIRED_RESULTS_PER_CREATE);
-    let kill = retained.retained_result(core::OperationKey {
-        sandbox: core::SandboxId(1), operation: core::OperationId(2),
-    }).unwrap();
+    let kill = retained
+        .retained_result(core::OperationKey {
+            sandbox: core::SandboxId(1),
+            operation: core::OperationId(2),
+        })
+        .unwrap();
     assert_eq!(kill.ledger.operation.kind, core::OperationKind::Kill);
     assert_eq!(kill.ledger.result, Some(core::OperationResult::Destroyed));
     assert!(world.sandbox_record(core::SandboxId(1)).is_none());

@@ -921,33 +921,46 @@ fn assert_first_expiry_keeps_original_sql_responsibility(directory: &TempDir) {
     let connection = rusqlite::Connection::open_with_flags(
         directory.path().join("controller.db"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    ).unwrap();
+    )
+    .unwrap();
     connection.execute_batch("BEGIN").unwrap();
     let sandbox = format!("sb-{NAMESPACE}-1");
-    let reservations: i64 = connection.query_row(
-        "SELECT count(*) FROM controller_capacity_reservations WHERE sandbox_id=?1",
-        [&sandbox], |row| row.get(0),
-    ).unwrap();
+    let reservations: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM controller_capacity_reservations WHERE sandbox_id=?1",
+            [&sandbox],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert_eq!(reservations, 1);
-    let releases: i64 = connection.query_row(
-        "SELECT count(*) FROM controller_release_witnesses WHERE sandbox_id=?1",
-        [&sandbox], |row| row.get(0),
-    ).unwrap();
+    let releases: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM controller_release_witnesses WHERE sandbox_id=?1",
+            [&sandbox],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert_eq!(releases, 0);
-    let binding: Vec<u8> = connection.query_row(
-        "SELECT context_json FROM controller_host_slots WHERE position=0",
-        [], |row| row.get(0),
-    ).unwrap();
-    let context: sandproof_controller_service::HostSlotContext = serde_json::from_slice(&binding).unwrap();
+    let binding: Vec<u8> = connection
+        .query_row(
+            "SELECT context_json FROM controller_host_slots WHERE position=0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let context: sandproof_controller_service::HostSlotContext =
+        serde_json::from_slice(&binding).unwrap();
     assert_eq!(context.binding.sandbox, core::SandboxId(1));
     assert_eq!(context.binding.vm, core::VmId(0));
     assert_eq!(context.binding.generation, 1);
-    let mut query = connection.prepare(
-        "SELECT action_json,receipt_json FROM outbox WHERE sandbox_id=?1 ORDER BY id",
-    ).unwrap();
-    let rows = query.query_map([&sandbox], |row| {
-        Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<Vec<u8>>>(1)?))
-    }).unwrap();
+    let mut query = connection
+        .prepare("SELECT action_json,receipt_json FROM outbox WHERE sandbox_id=?1 ORDER BY id")
+        .unwrap();
+    let rows = query
+        .query_map([&sandbox], |row| {
+            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<Vec<u8>>>(1)?))
+        })
+        .unwrap();
     let mut prepares = 0;
     for row in rows {
         let (action, receipt) = row.unwrap();
