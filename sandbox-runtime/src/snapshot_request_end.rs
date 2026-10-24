@@ -247,7 +247,11 @@ mod tests {
         let worker = record.worker.clone();
         let bytes = serde_json::to_vec(&record).unwrap();
         assert!(bytes.len() as u64 <= crate::snapshot_store::MAX_COMPLETION_BYTES);
-        let store = SnapshotStore::from_layout(root.path().to_path_buf(), crate::snapshot_store::open_store(root.path(), owner).unwrap(), owner);
+        let store = SnapshotStore::from_layout(
+            root.path().to_path_buf(),
+            crate::snapshot_store::open_store(root.path(), owner).unwrap(),
+            owner,
+        );
         store.require_request_end_absent(key).unwrap();
         store
             .publish_retained_request_end(key, &bytes, || Ok(true))
@@ -255,7 +259,11 @@ mod tests {
         assert!(store.require_request_end_absent(key).is_err());
         drop(store);
         for _ in 0..2 {
-            let reopened = SnapshotStore::from_layout(root.path().to_path_buf(), crate::snapshot_store::open_store(root.path(), owner).unwrap(), owner);
+            let reopened = SnapshotStore::from_layout(
+                root.path().to_path_buf(),
+                crate::snapshot_store::open_store(root.path(), owner).unwrap(),
+                owner,
+            );
             let actual: FullCaptureRequestEnd =
                 serde_json::from_slice(&reopened.read_request_end(key).unwrap()).unwrap();
             assert_eq!(actual.outcome(), FullCaptureRequestOutcome::NoRequest);

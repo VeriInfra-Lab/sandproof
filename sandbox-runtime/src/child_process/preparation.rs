@@ -1,5 +1,8 @@
 //! Full preparation exchanges bytes without consuming its later release pipe.
-use super::{CHUNK_BYTES, HelperLimits, Instant, OwnedChild, Read, Write, drain_chunk, io, nonblocking, wait_readiness};
+use super::{
+    CHUNK_BYTES, HelperLimits, Instant, OwnedChild, Write, drain_chunk, io, nonblocking,
+    wait_readiness,
+};
 
 impl OwnedChild {
     /// Deliver one bounded Full job frame and receive its bounded Ready line.
@@ -85,7 +88,11 @@ impl OwnedChild {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{process::{Command, Stdio}, time::Duration};
+    use std::{
+        io::Read,
+        process::{Command, Stdio},
+        time::Duration,
+    };
     fn child(script: &str) -> OwnedChild {
         OwnedChild::spawn(
             Command::new("/bin/sh")
