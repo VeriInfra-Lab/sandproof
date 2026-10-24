@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import selectors
@@ -100,6 +101,19 @@ def readback(args):
     captures=json_file(private_path(args.capture_settings),limit=65536)
     if type(captures) is not list or len(captures)!=1:
         raise ValueError('one original protected capture profile required')
+    deployment_path=private_path(args.deployment_receipt)
+    deployment_raw=deployment_path.read_bytes()
+    if len(deployment_raw)>65536 or hashlib.sha256(deployment_raw).hexdigest()!=args.deployment_receipt_sha256:
+        raise ValueError('original installation receipt differs from independent approval')
+    deployment=json.loads(deployment_raw)
+    if (deployment['phase']!='layout-provisioned' or deployment['mount']!=str(root)
+            or deployment['filesystem_uuid']!=args.filesystem_uuid
+            or deployment['deployment_control']!='/var/lib/sp638u-control'
+            or re.fullmatch(r'sp638u-[0-9a-f]{16}',deployment['host_lease_identity']) is None):
+        raise ValueError('one exact approved installation and original HostLease required')
+    for name in ('paused','exclusive-host'):
+        if json_file(private_path(Path(deployment['ci_state_root'])/name))!={'e2e':deployment['host_lease_identity']}:
+            raise ValueError('original deployment does not retain exclusive CI admission')
     settings=captures[0]['material_project']
     if settings['project_id']!=PROJECT or settings['hard_bytes']%1024:
         raise ValueError('fixed project and exact block-representable hard limit required')
@@ -112,7 +126,8 @@ def readback(args):
     mount=bounded_json_command(['/usr/bin/findmnt','--json','--target',str(root),
         '--output','TARGET,SOURCE,FSTYPE,OPTIONS,UUID'],ENV,timeout=10,max_bytes=16384)
     rows=mount['filesystems']
-    if len(rows)!=1 or rows[0]['target']!=str(root) or rows[0]['fstype']!='xfs':
+    if (len(rows)!=1 or rows[0]['target']!=str(root) or rows[0]['fstype']!='xfs'
+            or rows[0]['source']!=deployment['source']):
         raise ValueError('one exact original private XFS mount required')
     view=rows[0]
     if not {'pquota','prjquota'}&set(view['options'].split(',')) or view['uuid']!=args.filesystem_uuid:
@@ -137,6 +152,8 @@ def readback(args):
             raise ValueError('original private native lock required')
     finally:
         os.close(descriptor)
+    if dict(device=lock.st_dev,inode=lock.st_ino,owner_uid=lock.st_uid)!=deployment['native_lock_identity']:
+        raise ValueError('original installation/native coordination identity differs')
     evidence={}
     for name,text in reports.items():
         path=output/(name+'.txt')
@@ -147,15 +164,19 @@ def readback(args):
         mount=str(root),source=view['source'],project_id=PROJECT,hard_bytes=hard_bytes,
         hard_inodes=hard_inodes,accounting=True,enforcement=True,actual_readback_verified=True,
         native_lock_identity=dict(device=lock.st_dev,inode=lock.st_ino,owner_uid=lock.st_uid),
-        xfs_quota_sha256=tool_hash,raw_output_sha256=evidence)
+        xfs_quota_sha256=tool_hash,raw_output_sha256=evidence,
+        host_lease_identity=deployment['host_lease_identity'],ci_state_root=deployment['ci_state_root'],
+        deployment_control=deployment['deployment_control'],
+        deployment_receipt_sha256=args.deployment_receipt_sha256)
     write_once(output/'quota-receipt.json',receipt)
     return receipt
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    for name in ('mount','capture-settings','native-lock','output'):
+    for name in ('mount','capture-settings','native-lock','output','deployment-receipt'):
         parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--deployment-receipt-sha256',required=True)
     parser.add_argument('--filesystem-uuid',required=True)
     parser.add_argument('--xfs-quota-sha256',required=True)
     args=parser.parse_args()

@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import secrets
 import sqlite3
@@ -319,12 +320,30 @@ class UnloadRuntime:
         self.services.storage_peaks()
         report['cleanup']='exact-runtime-audit-free-managers-exited-original-materials-retained'
         # Actual host audit calls original observe_position_free, including
-        # exact retirement of VMM/helpers/network. This releases only this test
-        # HostLease, not any product material reference or logical byte charge.
-        self.lease.release()
-        fcntl.flock(self.lock,fcntl.LOCK_UN)
-        os.close(self.lock)
-        report['host_lease']='original-test-lease-released'
+        # exact retirement of VMM/helpers/network. Product material references
+        # and charges remain; CI exclusion continues through test-disk teardown.
+        # Exact environment teardown exports evidence and reclaims only this
+        # newly created filesystem before restoring CI's original capacity.
+        # Keep the original CI exclusion through that separate reviewed step.
+        report['host_lease']='retained-until-exact-filesystem-teardown'
+        report['host_lease_identity']=self.lease.identity
+        write_once(Path(self.quota['deployment_control'])/'scenario-stopped.json',
+            dict(host_lease_identity=self.lease.identity,physical_audit='Free',
+                 original_vmm_exited=True,managers_exited=True,
+                 source=self.running['source']))
+
+
+def retained_deployment_lease(args,quota):
+    """Require existing original CI exclusion; never adopt a foreign marker."""
+    identity=quota['host_lease_identity']
+    if (re.fullmatch(r'sp638u-[0-9a-f]{16}',identity) is None
+            or quota['ci_state_root']!=str(args.ci_state_root)
+            or quota['deployment_control']!='/var/lib/sp638u-control'):
+        raise ValueError('original reviewed installation/HostLease binding required')
+    for name in ('paused','exclusive-host'):
+        if json_file(private_path(args.ci_state_root/name))!={'e2e':identity}:
+            raise ValueError('existing original deployment exclusion required; cannot acquire another lease')
+    return HostLease(args.ci_state_root,identity)
 
 
 def prepare(args):
@@ -352,14 +371,20 @@ def prepare(args):
             or actual_lock!=quota['native_lock_identity']):
         os.close(lock)
         raise ValueError('original approved native coordination identity changed')
-    lease=HostLease(args.ci_state_root,'lifecycle-unload-'+secrets.token_hex(8))
-    paused=False
     try:
-        lease.pause();paused=True
+        lease=retained_deployment_lease(args,quota)
+    except BaseException:
+        os.close(lock)
+        raise
+    try:
+        lease.pause()
         deadline=time.monotonic()+args.scenario_timeout
         while not lease.exclusive():
             remaining(deadline);time.sleep(min(.2,remaining(deadline)))
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        write_once(private_path(quota['deployment_control'],directory=True)/'scenario-starting.json',
+            dict(identity=lease.identity,boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+                 pid=os.getpid(),start_time_ticks=process_start_ticks(os.getpid())))
         runtime=UnloadRuntime(args,fixture,root,captures,quota,lease,lock)
         write_once(root/'lifecycle-unload-admission.json',dict(operator_pid=os.getpid(),
             operator_start_time_ticks=process_start_ticks(os.getpid()),identity=lease.identity,
@@ -367,9 +392,8 @@ def prepare(args):
             quota_receipt_sha256=args.quota_receipt_sha256))
         return runtime
     except BaseException:
-        # prepare has no service start/create/Full/VM effect. Preserve exact
-        # partially staged files, but do not strand CI admission before a VM.
-        if paused:
-            lease.release()
+        # The installed image/mount remain even before a VM. Never reopen CI
+        # while that reserved backing space or a staging outcome is unresolved.
+        # Preserve the original exclusion for the reviewed exact teardown.
         os.close(lock)
         raise
