@@ -233,30 +233,25 @@ impl ControllerJournal {
         context: &AuthenticatedCenterContext,
         crashes: &mut impl CrashInjector,
     ) -> Result<LifecycleWorkState, JournalError> {
-        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        let mut inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
-        authenticated(&inbox, intent, context)?;
-        if let Some((s, e)) = inbox.find(intent)? {
+        let tx = super::diagnose_stage("record.begin",WorldTransaction::begin(&mut self.journal.connection, &self.committed_world))?;
+        let loaded = super::diagnose_stage("record.inbox-load",codec::load(&tx))?;
+        let mut inbox = super::diagnose_stage("record.inbox-required",loaded.ok_or(JournalError::UnsupportedStore))?;
+        super::diagnose_stage("record.authenticated",authenticated(&inbox, intent, context))?;
+        if let Some((s, e)) = super::diagnose_stage("record.find",inbox.find(intent))? {
             return Ok(inbox.state(s, e));
         }
-        let (s, e) = inbox.record(intent)?;
+        let (s, e) = super::diagnose_stage("record.accept",inbox.record(intent))?;
         if matches!(intent.request.operation, LifecycleOperation::Destroy {})
             && let Some(local) = inbox.sessions[s].local
         {
-            internal_inbox::terminate_local(&tx, &self.namespace, local)?;
-            let operation = tx
-                .world()
-                .sandbox_record(local.sandbox)
-                .ok_or(JournalError::CorruptStore)?
-                .current_operation
-                .ok_or(JournalError::CorruptStore)?
-                .id;
+            super::diagnose_stage("record.native-terminate",internal_inbox::terminate_local(&tx, &self.namespace, local))?;
+            let operation = super::diagnose_stage("record.native-operation",tx.world().sandbox_record(local.sandbox).and_then(|row|row.current_operation).ok_or(JournalError::CorruptStore))?.id;
             inbox.sessions[s].entries[e].local_operation = Some(operation);
         }
-        codec::save(&tx, &inbox)?;
+        super::diagnose_stage("record.inbox-save",codec::save(&tx, &inbox))?;
         let state = inbox.state(s, e);
         crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit()?;
+        super::diagnose_stage("record.commit",tx.commit())?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(state)
     }

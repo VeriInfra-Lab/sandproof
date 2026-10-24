@@ -79,12 +79,12 @@ pub(in crate::controller) fn validate(
     connection: &Connection,
     world: &sandbox_controller_core::World,
 ) -> Result<(), JournalError> {
-    super::source_work::validate(connection, world)?;
-    let Some(inbox) = load(connection)? else {
+    crate::controller::diagnose_stage("lifecycle.sources",super::source_work::validate(connection, world))?;
+    let Some(inbox) = crate::controller::diagnose_stage("lifecycle.inbox",load(connection))? else {
         return Ok(());
     };
-    validate_confirmed(connection, world, &inbox)?;
-    super::refusal::validate(connection, &inbox)?;
+    crate::controller::diagnose_stage("lifecycle.confirmed",validate_confirmed(connection, world, &inbox))?;
+    crate::controller::diagnose_stage("lifecycle.refusals",super::refusal::validate(connection, &inbox))?;
     for session in &inbox.sessions {
         let Some(local) = session.local else {
             continue;

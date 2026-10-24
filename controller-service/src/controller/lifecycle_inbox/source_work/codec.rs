@@ -336,25 +336,25 @@ pub(in crate::controller) fn validate(
     connection: &Connection,
     world: &sandbox_controller_core::World,
 ) -> Result<(), JournalError> {
-    let Some(sources) = load(connection)? else {
+    let Some(sources) = crate::controller::diagnose_stage("source.load",load(connection))? else {
         return Ok(());
     };
-    let inbox = super::super::codec::load(connection)?.ok_or(JournalError::CorruptStore)?;
+    let inbox = super::super::codec::crate::controller::diagnose_stage("source.load",load(connection))?.ok_or(JournalError::CorruptStore)?;
     if sources.node != inbox.config.node || sources.max_sessions != inbox.config.max_sessions {
         return Err(JournalError::CorruptStore);
     }
     let reserved = sources.records.iter().try_fold(0_u64, |sum, r| {
-        sum.checked_add(super::retirement::material_charge(r)?)
+        sum.checked_add(crate::controller::diagnose_stage("source.charge",super::retirement::material_charge(r))?)
             .ok_or(JournalError::CorruptStore)
     })?;
     if reserved > sources.config.max_material_bytes {
         return Err(JournalError::CorruptStore);
     }
     for (index, record) in sources.records.iter().enumerate() {
-        super::snapshot::validate_record(connection, world, &inbox, &sources.config, record)?;
-        super::full::validate_record(record, world)?;
-        super::restore::validate_record(record, world)?;
-        super::retirement::validate_record(record, world)?;
+        crate::controller::diagnose_stage("source.snapshot",super::snapshot::validate_record(connection, world, &inbox, &sources.config, record))?;
+        crate::controller::diagnose_stage("source.full",super::full::validate_record(record, world))?;
+        crate::controller::diagnose_stage("source.restore",super::restore::validate_record(record, world))?;
+        crate::controller::diagnose_stage("source.retirement",super::retirement::validate_record(record, world))?;
         let binding = &record.work.request().request.binding;
         if sources
             .records

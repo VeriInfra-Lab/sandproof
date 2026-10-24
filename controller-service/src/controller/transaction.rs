@@ -75,10 +75,10 @@ impl<'a> WorldTransaction<'a> {
         connection: &'a mut Connection,
         committed: &'a CommittedWorld,
     ) -> Result<Self, JournalError> {
-        let world = committed.world(connection)?;
-        super::checkpoint::prepare_write(connection, &world, committed)?;
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let input_start = super::allocators::input_high_water(&transaction)?;
+        let world = super::diagnose_stage("transaction.world",committed.world(connection))?;
+        super::diagnose_stage("transaction.prepare-write",super::checkpoint::prepare_write(connection, &world, committed))?;
+        let transaction = super::diagnose_stage("transaction.begin-immediate",connection.transaction_with_behavior(TransactionBehavior::Immediate))?;
+        let input_start = super::diagnose_stage("transaction.input-frontier",super::allocators::input_high_water(&transaction))?;
         let guard = Self {
             input_start,
             transaction: Some(transaction),
@@ -86,7 +86,7 @@ impl<'a> WorldTransaction<'a> {
             candidate: RefCell::new(Some(world)),
         };
         // Check again under BEGIN IMMEDIATE to close the external-writer gap.
-        committed.check_identity(&guard)?;
+        super::diagnose_stage("transaction.writer-identity",committed.check_identity(&guard))?;
         Ok(guard)
     }
 
@@ -105,10 +105,10 @@ impl<'a> WorldTransaction<'a> {
     }
 
     pub(super) fn commit(self) -> Result<(), JournalError> {
-        super::checkpoint::validate_candidate(&self, &self.world())?;
-        super::lifecycle_inbox::validate(&self, &self.world())?;
-        super::capacity::validate(&self, &self.world())?;
-        super::checkpoint::validate_transaction(&self)?;
+        super::diagnose_stage("commit.checkpoint",super::checkpoint::validate_candidate(&self, &self.world()))?;
+        super::diagnose_stage("commit.lifecycle",super::lifecycle_inbox::validate(&self, &self.world()))?;
+        super::diagnose_stage("commit.capacity",super::capacity::validate(&self, &self.world()))?;
+        super::diagnose_stage("commit.input-tail",super::checkpoint::validate_transaction(&self))?;
         #[cfg(test)]
         if let Some(durable) = COMMIT_FAILURE.with(std::cell::Cell::take) {
             return self.commit_with(|transaction| {
