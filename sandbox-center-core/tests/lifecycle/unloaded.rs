@@ -360,7 +360,7 @@ fn continued_allows_new_unload_and_renew_with_current_version_and_same_incarnati
         unreachable!()
     };
     assert_eq!(source_incarnation, old);
-    assert!(capture > old_capture);
+    assert!(capture.get() > old_capture.get());
     assert!(intent.accepted_version > expected_version);
     let renew = LifecycleSubmission::Renew {
         key: key.clone(),
