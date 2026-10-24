@@ -19,6 +19,7 @@ import math
 from pathlib import Path
 import sys
 import time
+import traceback
 import urllib.request
 from urllib.parse import urlsplit
 
@@ -73,6 +74,16 @@ def check_center_configuration(services, owner_key, foreign_key):
         node=copy.deepcopy(node), owners=['1', '2'], templates=len(catalog))
 
 
+def failure_details(error, client, phase):
+    """Finite diagnostics only; never exception text, locals or HTTP content."""
+    return dict(
+        failure_step=client.failure_step if client is not None else phase,
+        last_http_status=copy.deepcopy(client.last_http_status) if client is not None else None,
+        failure_stack=[dict(file=Path(frame.filename).name[:128],
+                            function=frame.name[:96], line=frame.lineno)
+                       for frame in traceback.extract_tb(error.__traceback__, limit=16)])
+
+
 class PublicUnloadScenario:
     """One known owner/window and two saved complete requests, not a client SDK."""
     def __init__(self, base_url, owner_key, foreign_key, deployment, deadline):
@@ -89,6 +100,13 @@ class PublicUnloadScenario:
         self.session = None
         self.create_request = self.create_acceptance = None
         self.unload_request = self.unload_acceptance = None
+        self.failure_step = 'client-initialization'
+        self.last_http_status = None
+        self._http_expected = None
+
+    def step(self, name, expected=None):
+        self.failure_step = name
+        self._http_expected = expected
 
     def remaining(self):
         remaining = self.deadline - time.monotonic()
@@ -99,10 +117,13 @@ class PublicUnloadScenario:
     def call(self, method, path, *, key, body=None):
         # Existing HTTP helper supplies the original X-API-Key header. Failure
         # of a write propagates: a new window/sequence is never allocated here.
-        return fetch(self.opener, self.base_url, method, path, key, body,
-                     timeout=min(40, self.remaining()))
+        result = fetch(self.opener, self.base_url, method, path, key, body,
+                       timeout=min(40, self.remaining()))
+        self.last_http_status = dict(expected=self._http_expected, actual=result[0])
+        return result
 
     def read_json(self, method, path, *, key, body=None, status=200):
+        self._http_expected = status
         actual, encoded = self.call(method, path, key=key, body=body)
         assert actual == status, f'public {method} returned {actual}, expected {status}'
         value = json.loads(encoded, object_pairs_hook=unique_keys)
@@ -124,10 +145,12 @@ class PublicUnloadScenario:
 
     def create(self, parameters):
         assert self.create_request is None, 'one original create only'
+        self.step('request-window', 200)
         window = self.read_json('GET', PREFIX + '/request-window', key=self.owner_key)
         assert set(window) == {'window'} and uint(window['window'], positive=True)
         self.window = window['window']
         self.create_request = dict(window=self.window, sequence=1, parameters=copy.deepcopy(parameters))
+        self.step('create-acceptance', 202)
         result = self.read_json('POST', PREFIX + '/create', key=self.owner_key,
                                 body=self.create_request, status=202)
         self.create_acceptance = self.acceptance(result, sequence=1, version=1)
@@ -155,6 +178,7 @@ class PublicUnloadScenario:
         return view
 
     def wait_phase(self, acceptance, *, waiting, complete):
+        self.step('wait-' + complete, 200)
         while True:
             # A transient unavailable authority is never converted into a
             # successful fact. Authentication/not-found/conflict errors fail.
@@ -177,17 +201,22 @@ class PublicUnloadScenario:
 
     def assert_owner_isolation(self):
         path = self.path()
+        self.step('foreign-lifecycle-query', 404)
         assert self.call('GET', path, key=self.foreign_key)[0] == 404
+        self.step('unauthenticated-lifecycle-query', 401)
         assert self.call('GET', path, key=None)[0] == 401
         if self.unload_request is not None:
+            self.step('foreign-unload', 404)
             assert self.call('POST', path + '/unload', key=self.foreign_key,
                              body=self.unload_request)[0] == 404
 
     def unload(self, running):
+        self.step('unload-input')
         self.check_view(running, self.create_acceptance)
         assert running['phase'] == 'running' and self.unload_request is None
         self.unload_request = dict(window=self.window, sequence=2,
                                   expected_version=running['current_version'])
+        self.step('unload-acceptance', 202)
         result = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
                                 body=self.unload_request, status=202)
         self.unload_acceptance = self.acceptance(result, sequence=2,
@@ -198,6 +227,7 @@ class PublicUnloadScenario:
         return self.wait_phase(self.unload_acceptance, waiting={'unloading'}, complete='unloaded')
 
     def assert_unloaded_facts(self, view, independent_facts):
+        self.step('unloaded-facts')
         self.check_view(view, self.unload_acceptance)
         assert view['phase'] == 'unloaded'
         facts = view['unloaded']
@@ -215,18 +245,25 @@ class PublicUnloadScenario:
         assert all(type(byte) is int and 0 <= byte <= 255 for byte in digest)
 
     def assert_original_replay(self, saved):
+        self.step('replay-create', 202)
         create = self.read_json('POST', PREFIX + '/create', key=self.owner_key,
                                body=self.create_request, status=202)
+        self.step('replay-unload', 202)
         unload = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
                                body=self.unload_request, status=202)
         assert create == self.create_acceptance and unload == self.unload_acceptance
+        self.step('replay-query', 200)
         assert self.query() == saved
         changed = dict(self.unload_request, expected_version=self.unload_acceptance['accepted_version'])
+        self.step('altered-unload-replay', 409)
         assert self.call('POST', self.path() + '/unload', key=self.owner_key, body=changed)[0] == 409
+        self.step('altered-replay-query', 200)
         assert self.query() == saved, 'rejected altered replay changed the saved result'
 
     def assert_reopened(self, saved):
+        self.step('reopened-query', 200)
         assert self.query() == saved, 'manager reopen changed the original complete public result'
+        self.step('request-window', 200)
         window = self.read_json('GET', PREFIX + '/request-window', key=self.owner_key)
         assert window == {'window': self.window}
         self.assert_owner_isolation()
@@ -243,10 +280,13 @@ class PublicUnloadScenario:
         from e2b import Sandbox
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
+        self.step('sdk-version')
         assert importlib.metadata.version('e2b') == '2.51.0'
+        self.step('owner-sdk-detail', 200)
         detail = self.read_json('GET', '/sandboxes/' + self.session, key=self.owner_key)
         assert detail['sandboxID'] == self.session and detail['clientID'] == 'tenant-1'
         assert detail['state'] == 'running'
+        self.step('foreign-sdk-detail', 404)
         assert self.call('GET', '/sandboxes/' + self.session, key=self.foreign_key)[0] == 404
         self.data_token = detail['envdAccessToken']
         assert type(self.data_token) is str and self.data_token
@@ -260,8 +300,10 @@ class PublicUnloadScenario:
         marker = 'sandproof-live-unload-v1'
         path = '/tmp/sandproof-unload-marker'
         command = "printf '%s' 'sandproof-live-unload-v1' > /tmp/sandproof-unload-marker && sync && cat /tmp/sandproof-unload-marker"
+        self.step('sdk-workload')
         result = sandbox.commands.run(command, timeout=min(30, self.remaining()))
         assert result.exit_code == 0 and result.stdout == marker
+        self.step('workload-query', 200)
         assert self.query() == running, 'workload or SDK setup changed the lifecycle version'
         self.remaining()
         return dict(sdk='2.51.0', entry='owner-detail/original-sdk-constructor/public-gateway',
@@ -269,12 +311,15 @@ class PublicUnloadScenario:
 
     def assert_data_closed(self):
         import httpx
+        self.step('old-data-token', 401)
         assert self.data_token
         with httpx.Client(base_url=self.base_url, trust_env=False,
                           timeout=min(10, self.remaining())) as client:
             response = client.get('/files', params={'path': '/tmp/sandproof-unload-marker'},
                                   headers={'X-Access-Token': self.data_token})
+            self.last_http_status = dict(expected=401, actual=response.status_code)
             assert response.status_code == 401, 'original token still authorizes data after Unload'
+        self.step('old-sdk-detail', 404)
         assert self.call('GET', '/sandboxes/' + self.session, key=self.owner_key)[0] == 404
 
 
@@ -304,6 +349,7 @@ def exercise(args):
         client.assert_owner_isolation()
         report['phase'] = 'public-workload'
         report['workload'] = client.run_public_workload(running)
+        client.step('running-native-evidence')
         report['running'] = runtime.record_running(client.session, deadline)
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
@@ -315,6 +361,7 @@ def exercise(args):
         saved = client.wait_unloaded()
         client.assert_owner_isolation()
         report['phase'] = 'original-physical-evidence'
+        client.step('unload-physical-evidence')
         physical = runtime.unload_evidence(client.session, deadline)
         client.assert_unloaded_facts(saved, physical['facts'])
         assert {key: physical['facts'][key] for key in lifetime} == lifetime
@@ -322,9 +369,11 @@ def exercise(args):
         report['physical_before_restart'] = physical
         client.assert_original_replay(saved)
         report['phase'] = 'same-manager-config-reopen'
+        client.step('restart-managers')
         report['manager_restart'] = runtime.restart_managers(deadline)
         client.assert_reopened(saved)
         client.assert_data_closed()
+        client.step('unload-physical-evidence')
         physical = runtime.unload_evidence(client.session, deadline)
         client.assert_unloaded_facts(saved, physical['facts'])
         report['physical_after_restart'] = physical
@@ -335,6 +384,7 @@ def exercise(args):
         report['complete'] = False
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
+        report.update(failure_details(error, client, report['phase']))
         raise
     finally:
         if client is not None:
