@@ -11,7 +11,7 @@ use sandproof_api::{PortError, lifecycle::LifecyclePort};
 use sandproof_center_core::SessionPhase;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentCreateReadiness, LifecycleOperation, PublicAcceptance,
-    PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase, PublicSessionView,
+    PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase, PublicSessionView,
     PublicUnloadRequest, SessionId,
 };
 
@@ -95,6 +95,24 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
             .accept_public_unload(&owner, session, request, &observation, now)?;
+        Ok(acceptance(intent))
+    }
+
+    /// # Errors
+    /// Replay uses the complete original input before current phase or time.
+    /// This accepts durable work only, not a completed resumed execution.
+    pub fn resume_lifecycle(
+        &self,
+        owner: &str,
+        session: &SessionId,
+        request: &PublicResumeRequest,
+    ) -> Result<PublicAcceptance, PortError> {
+        let owner = tenant_id(owner)?;
+        let intent = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .accept_public_resume(&owner, session, request, || self.now())?;
         Ok(acceptance(intent))
     }
 
@@ -276,6 +294,14 @@ impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusine
         session: SessionId,
     ) -> Result<PublicSessionView, PortError> {
         self.application().query_lifecycle(owner, &session)
+    }
+    fn resume_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicResumeRequest,
+    ) -> Result<PublicAcceptance, PortError> {
+        self.application().resume_lifecycle(owner, &session, &request)
     }
 }
 
