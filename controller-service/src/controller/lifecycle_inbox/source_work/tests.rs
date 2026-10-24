@@ -1345,6 +1345,169 @@ fn recorded_resume_rejects_changed_source_digest_and_skipped_incarnation() {
     );
 }
 
+fn resume_lifetime(
+    journal: &ControllerJournal,
+    sandbox: sandbox_controller_core::SandboxId,
+) -> crate::Lifetime {
+    let world = journal.world().unwrap();
+    let owner = world.sandbox_record(sandbox).unwrap().owner;
+    crate::controller::admission::read_lifetime(
+        &journal.journal.connection,
+        &journal.namespace,
+        sandbox,
+        owner,
+    )
+    .unwrap()
+    .unwrap()
+}
+
+fn unloaded_resume_source(path: &Path) -> (ControllerJournal, SourceWorkRecord) {
+    let (mut journal, _) = ready(path);
+    let source = observed_for_full(&mut journal);
+    let accepted = journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full_request(&source),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    finish_full_component(&mut journal, &accepted);
+    let sandbox = source.work.anchor.local.sandbox;
+    let release = journal.host_slot_context(sandbox).unwrap().unwrap();
+    journal
+        .release_host_slot(release, |_| Ok(()), &mut NeverCrash)
+        .unwrap();
+    (journal, accepted)
+}
+
+fn record_real_resume(journal: &mut ControllerJournal) -> AcceptedLifecycleIntent {
+    let mut request = resume_request();
+    if let LifecycleOperation::Resume {
+        manifest_digest, ..
+    } = &mut request.request.operation
+    {
+        *manifest_digest = ContentDigest::from_sha256([88; 32]);
+    }
+    journal
+        .record_lifecycle_intent(&request, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    request
+}
+
+fn admit_real_resume(
+    journal: &mut ControllerJournal,
+    request: &AcceptedLifecycleIntent,
+) -> crate::LifecycleWorkState {
+    journal
+        .admit_lifecycle_resume(
+            request,
+            &v3::context(),
+            10,
+            crate::controller::tests_support::limits(),
+            v3::fixture::compute(),
+            &mut NeverCrash,
+        )
+        .unwrap()
+}
+
+#[test]
+fn resume_sql_claim_reserves_one_successor_withdraws_old_credential_and_reopens_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source) = unloaded_resume_source(&path);
+    let sandbox = source.work.anchor.local.sandbox;
+    let before = journal.world().unwrap();
+    let lifetime = resume_lifetime(&journal, sandbox);
+    let credential = journal.data_credential(sandbox).unwrap().unwrap();
+    let request = record_real_resume(&mut journal);
+    let admitted = admit_real_resume(&mut journal, &request);
+    let next = journal.world().unwrap();
+    let row = next.sandbox_record(sandbox).unwrap();
+    assert_eq!(row.generation, 2);
+    assert_eq!(row.phase, sandbox_controller_core::Phase::Starting);
+    assert_eq!(resume_lifetime(&journal, sandbox), lifetime);
+    assert_eq!(journal.data_credential(sandbox).unwrap(), None);
+    assert_eq!(journal.lookup_data_credential(&credential.1).unwrap(), None);
+    let plan = next
+        .operation_plan(sandbox_controller_core::OperationKey {
+            sandbox,
+            operation: admitted.local_operation.unwrap(),
+        })
+        .unwrap();
+    assert_eq!(
+        plan.restore_from,
+        before.sandbox_record(sandbox).unwrap().durable_snapshot
+    );
+    assert!(plan.vm.unwrap().0 > source.work.anchor.native.current_vm.unwrap().0);
+    assert!(before.vm_record(plan.vm.unwrap()).is_none());
+    assert_eq!(journal.retained_resource_usage().unwrap().instances, 1);
+    assert_eq!(admit_real_resume(&mut journal, &request), admitted);
+    assert_eq!(journal.world().unwrap(), next);
+    drop(journal);
+    let mut journal = v3::open(&path);
+    assert_eq!(journal.world().unwrap(), next);
+    assert_eq!(journal.data_credential(sandbox).unwrap(), None);
+    assert_eq!(admit_real_resume(&mut journal, &request), admitted);
+    assert_eq!(resume_lifetime(&journal, sandbox), lifetime);
+}
+
+#[test]
+fn resume_unknown_sql_commit_keeps_source_claim_index_and_native_mapping_atomic() {
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, source) = unloaded_resume_source(&path);
+        let sandbox = source.work.anchor.local.sandbox;
+        let original = journal.data_credential(sandbox).unwrap();
+        let request = record_real_resume(&mut journal);
+        transaction::fail_next_commit(durable);
+        assert!(matches!(
+            journal.admit_lifecycle_resume(
+                &request,
+                &v3::context(),
+                10,
+                crate::controller::tests_support::limits(),
+                v3::fixture::compute(),
+                &mut NeverCrash
+            ),
+            Err(JournalError::CommitUncertain(_))
+        ));
+        drop(journal);
+        let mut journal = v3::open(&path);
+        let local = journal
+            .lifecycle_work_state(&request, &v3::context())
+            .unwrap();
+        assert_eq!(local.local_operation.is_some(), durable);
+        assert_eq!(
+            journal.data_credential(sandbox).unwrap(),
+            if durable { None } else { original }
+        );
+        assert_eq!(
+            journal
+                .world()
+                .unwrap()
+                .sandbox_record(sandbox)
+                .unwrap()
+                .generation,
+            if durable { 2 } else { 1 }
+        );
+        let accepted = admit_real_resume(&mut journal, &request);
+        assert!(accepted.local_operation.is_some());
+        assert_eq!(
+            journal
+                .world()
+                .unwrap()
+                .sandbox_record(sandbox)
+                .unwrap()
+                .generation,
+            2
+        );
+        assert_eq!(journal.data_credential(sandbox).unwrap(), None);
+    }
+}
+
 #[test]
 fn material_plan_question_keeps_unsealed_native_identity_without_deletion_authority() {
     let dir = tempfile::tempdir().unwrap();
@@ -1384,4 +1547,73 @@ fn material_plan_question_keeps_unsealed_native_identity_without_deletion_author
         journal.lifecycle_material_retirement_request(&changed, &v3::context()),
         Err(JournalError::Conflict)
     ));
+}
+
+#[test]
+fn resumed_store_rejects_historical_action_rebound_to_new_generation_or_epoch() {
+    for changed_generation in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut journal, source) = unloaded_resume_source(&dir.path().join("db"));
+        let request = record_real_resume(&mut journal);
+        admit_real_resume(&mut journal, &request);
+        let world = journal.world().unwrap();
+        let current = world
+            .sandbox_record(source.work.anchor.local.sandbox)
+            .unwrap();
+        let (id, mut action) = {
+            let mut query = journal
+                .journal
+                .connection
+                .prepare("SELECT id,action_json FROM outbox ORDER BY id")
+                .unwrap();
+            let rows = query
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+                })
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            rows.into_iter()
+                .map(|(id, bytes)| {
+                    (
+                        id,
+                        serde_json::from_slice::<
+                            sandproof_protocol::WorkAction<sandbox_controller_core::EffectId>,
+                        >(&bytes)
+                        .unwrap(),
+                    )
+                })
+                .find(|(_, action)| {
+                    if changed_generation {
+                        matches!(
+                            action.command.command(),
+                            sandbox_controller_core::Command::InstallFence { epoch: 1, .. }
+                        )
+                    } else {
+                        matches!(
+                            action.command.command(),
+                            sandbox_controller_core::Command::CleanupVm { generation: 1, .. }
+                        )
+                    }
+                })
+                .unwrap()
+        };
+        if changed_generation {
+            action.identity.generation = current.generation;
+        } else {
+            action.identity.epoch = current.epoch;
+        }
+        journal
+            .journal
+            .connection
+            .execute(
+                "UPDATE outbox SET action_json=?1 WHERE id=?2",
+                rusqlite::params![serde_json::to_vec(&action).unwrap(), id],
+            )
+            .unwrap();
+        assert!(matches!(
+            crate::controller::checkpoint::load_world(&journal.journal.connection),
+            Err(JournalError::CorruptStore)
+        ));
+    }
 }

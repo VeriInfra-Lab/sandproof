@@ -172,6 +172,7 @@ pub(super) fn input_sandbox(
         I::Request(R::Create(request)) => request.sandbox,
         I::Request(R::Kill(request)) => request.sandbox,
         I::Request(R::Pause(request)) => request.sandbox,
+        I::Request(R::Resume(request)) => request.sandbox,
         I::Request(R::Compensate(request)) => request.sandbox,
         I::Scheduler(S::ReserveStartup(key) | S::ReservePauseSnapshot(key)) => key.sandbox,
         I::Scheduler(

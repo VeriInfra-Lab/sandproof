@@ -234,6 +234,7 @@ fn effects_and_outbox(
             .find(|(key, _)| key == &action.command.logical)
             .ok_or(JournalError::CorruptStore)?
             .1;
+        let scope = original_action_scope(world, namespace, &action)?;
         if id == 0
             || effects.contains(&action.command)
             || action.identity.sandbox.as_str() != sandbox
@@ -246,8 +247,8 @@ fn effects_and_outbox(
             || identity::sandbox_id(namespace, action.command.command().sandbox())?.as_str()
                 != sandbox
             || identity::owner_id(record.owner)?.as_str() != owner
-            || action.identity.epoch != action.command.command().epoch().unwrap_or(record.epoch)
-            || action.identity.generation != record.generation
+            || action.identity.epoch != scope.epoch
+            || action.identity.generation != scope.generation
             || identity::resource(namespace, action.command.command())? != action.identity.resource
             || serde_json::to_vec(&action)? != bytes
         {
@@ -270,6 +271,71 @@ fn effects_and_outbox(
         return Err(JournalError::CorruptStore);
     }
     Ok(())
+}
+
+// Outbox rows keep their original operation and native generation after a
+// later Resume. Current sandbox fields cannot rewrite a historical action.
+fn original_action_scope<'a>(
+    world: &'a core::World,
+    namespace: &str,
+    action: &WorkAction<core::EffectId>,
+) -> Result<&'a core::OperationPlan, JournalError> {
+    let sandbox = action.command.command().sandbox();
+    let key = world
+        .operation_records()
+        .iter()
+        .find_map(|(key, _)| {
+            (key.sandbox == sandbox
+                && identity::operation_id(namespace, *key)
+                    .is_ok_and(|id| id == action.identity.operation))
+            .then_some(*key)
+        })
+        .ok_or(JournalError::CorruptStore)?;
+    let plan = world
+        .operation_plan(key)
+        .ok_or(JournalError::CorruptStore)?;
+    let logical = world
+        .logical_effect(&action.command.logical)
+        .ok_or(JournalError::CorruptStore)?;
+    match logical.origin {
+        core::EffectOrigin::Operation(original) if original == key => {}
+        core::EffectOrigin::Maintenance(original) if original == sandbox => {
+            let ledger = world
+                .operation_record(key)
+                .ok_or(JournalError::CorruptStore)?;
+            let retiring = match ledger.operation.kind {
+                core::OperationKind::Pause => {
+                    ledger.operation.status == core::OperationStatus::Succeeded
+                }
+                core::OperationKind::Kill => true,
+                core::OperationKind::Create | core::OperationKind::Resume => matches!(
+                    ledger.operation.status,
+                    core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
+                ),
+            };
+            if !retiring {
+                return Err(JournalError::CorruptStore);
+            }
+            match action.command.command() {
+                core::Command::CleanupVm { generation, vm, .. }
+                    if *generation == plan.generation && plan.stop_vms.contains(vm) => {}
+                core::Command::CleanupSlot {
+                    generation, slot, ..
+                } if *generation == plan.generation && plan.close_slots.contains(slot) => {}
+                _ => return Err(JournalError::CorruptStore),
+            }
+        }
+        _ => return Err(JournalError::CorruptStore),
+    }
+    if action
+        .command
+        .command()
+        .epoch()
+        .is_some_and(|epoch| epoch != plan.epoch)
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(plan)
 }
 
 fn uncertain(outcome: &WorkOutcome<serde_json::Value>) -> bool {
