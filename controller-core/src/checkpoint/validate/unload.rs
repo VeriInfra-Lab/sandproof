@@ -92,6 +92,28 @@ pub(super) fn source(
     Ok(())
 }
 
+fn terminal_drain_record(
+    world: &World,
+    key: OperationKey,
+    startup: &OperationPlan,
+    drained: crate::capture::drain::CaptureDrainCoverage,
+) -> Result<(), Reject> {
+    let seal = crate::EffectId {
+        logical: crate::LogicalEffectId {
+            command: drained.end_receipt.seal.command(drained.identity),
+        },
+        attempt: drained.end_receipt.seal.attempt,
+    };
+    if drained.identity.key != key
+        || startup.vm != Some(drained.identity.vm)
+        || world.effect_status(&seal) != Some(crate::EffectStatus::RetiredByCaptureDrain(drained))
+        || !crate::capture::drain::retired_capture_drain_valid(world, &seal, drained)
+    {
+        return Err(Reject::InvalidLedger);
+    }
+    Ok(())
+}
+
 pub(super) fn plan(world: &World, key: OperationKey, plan: &OperationPlan) -> Result<(), Reject> {
     let startup =
         history::startup(world, key.sandbox, plan.generation).ok_or(Reject::InvalidReference)?;
@@ -113,7 +135,9 @@ pub(super) fn plan(world: &World, key: OperationKey, plan: &OperationPlan) -> Re
         || plan.sealed != plan.target_snapshot.is_some()
         || plan.vm.is_some() != plan.target_snapshot.is_some()
         || plan.vm.is_some_and(|vm| startup.vm != Some(vm))
-        || capture.has_capture_work() != capture.original_continuation().is_none()
+        || capture.has_capture_work()
+            != (capture.original_continuation().is_none() && capture.terminal_drain().is_none())
+        || (capture.original_continuation().is_some() && capture.terminal_drain().is_some())
     {
         return Err(Reject::InvalidLedger);
     }
@@ -133,6 +157,9 @@ pub(super) fn plan(world: &World, key: OperationKey, plan: &OperationPlan) -> Re
         {
             return Err(Reject::InvalidEffect);
         }
+    }
+    if let Some(drained) = capture.terminal_drain() {
+        terminal_drain_record(world, key, startup, drained)?;
     }
     if let Some(target) = plan.target_snapshot {
         if target.snapshot.0 >= world.next_snapshot_id

@@ -57,7 +57,7 @@ fn compensate(world: &World) -> World {
         })),
     )
 }
-fn pause_source(frozen: bool) -> World {
+pub(super) fn pause_source(frozen: bool) -> World {
     let (world, _) = live();
     let world = advance(
         &world,
@@ -459,7 +459,7 @@ fn unknown_continue_then_destroy_is_closed_and_original_stop_can_retire_only_tha
     assert!(world.sandbox_record(id.key.sandbox).is_none());
 }
 
-fn pending_capture(unknown: bool) -> (World, EffectId, crate::capture::CaptureSealEnd) {
+pub(super) fn pending_capture(unknown: bool) -> (World, EffectId, crate::capture::CaptureSealEnd) {
     let world = pause_source(true);
     let id = identity(&world);
     let target = world

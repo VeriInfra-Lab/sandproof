@@ -130,6 +130,9 @@ fn current_terminal_fence(world: &World, command: &Command) -> bool {
 #[must_use]
 pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
     let sandbox = command.sandbox();
+    if crate::capture::drain::terminal_capture_drain_allowed(world, command) {
+        return true;
+    }
     if crate::terminal::only_uncertain_activation_for_abort(world, sandbox) {
         let terminal_fence = current_terminal_fence(world, command);
         let mut index = 0;
