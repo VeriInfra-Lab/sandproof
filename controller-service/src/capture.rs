@@ -16,6 +16,37 @@ pub use restore::{RestoreActivationPermit, RestoreWorkRequest};
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
 pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 
+/// Fact supplied only after the exact Full API response was received and its
+/// original worker is confirmed exited. This is neither a successful bundle
+/// nor permission to continue the VM; the journal separately resolves commit
+/// uncertainty, revokes restore eligibility and records the continuation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CaptureApiEndObservation {
+    pub action: sandproof_protocol::WorkAction<sandbox_controller_core::EffectId>,
+    pub full_work_binding: sandproof_protocol::lifecycle::ContentDigest,
+    pub worker: CaptureWorkerBinding,
+    pub source: SourceProcessIdentity,
+    pub http_status: u16,
+}
+impl CaptureApiEndObservation {
+    /// Complete saved input matching, not independent process/API evidence.
+    /// # Errors
+    /// Full work encoding failure cannot manufacture a matching observation.
+    pub fn matches(
+        &self,
+        action: &sandproof_protocol::WorkAction<sandbox_controller_core::EffectId>,
+        full: &FullCaptureWorkRequest,
+        source: &SourceObservationRequirement,
+        worker: &CaptureWorkerBinding,
+    ) -> serde_json::Result<bool> {
+        Ok(self.action == *action
+            && self.full_work_binding == full.binding_digest()?
+            && self.worker == *worker
+            && self.source == source.source
+            && (200..=599).contains(&self.http_status))
+    }
+}
+
 /// Original committed material expectation for readonly reopen after the
 /// source position has been released. It grants no restore, delete or access
 /// permission. The original journal must eventually provide this only after

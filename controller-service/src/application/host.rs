@@ -77,6 +77,18 @@ pub trait WorkExecution: WorkEvidence {
 
 /// Observe or reconcile exact previously dispatched work, never arbitrary replay.
 pub trait WorkRecovery: WorkEvidence {
+    /// Observe an exact persisted API-end record and the actual original
+    /// worker's exit. A helper exit or a timeout alone must return None.
+    fn observe_lifecycle_capture_api_end(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _full: &crate::capture::FullCaptureWorkRequest,
+        _source: &crate::capture::SourceObservationRequirement,
+        _worker: &crate::capture::CaptureWorkerBinding,
+    ) -> Option<crate::capture::CaptureApiEndObservation> {
+        None
+    }
+
     /// Observe the same persisted restore; this must not load another VMM.
     fn observe_lifecycle_restore_action(
         &self,
