@@ -1,14 +1,15 @@
 """Private, content-addressed inputs for validator algorithm tests.
 
 These are historical reference inputs, never current production admission.
-Unchanged LLBC/Lean artifacts are reused byte-for-byte; the archive only supplies
-Git bytes no longer present in the checkout. No Git history is needed at runtime.
+Unchanged LLBC/Lean artifacts are reused byte-for-byte; the archive supplies
+the complete non-generated reference closure as original Git bytes. No Git history is needed at runtime.
 """
 import atexit
 import hashlib
 import json
 from pathlib import Path
 import tarfile
+import subprocess
 import tempfile
 
 CHECKOUT = Path(__file__).resolve().parents[2]
@@ -29,7 +30,10 @@ def reference_root():
     atexit.register(_temporary.cleanup)
     root = Path(_temporary.name)
     with tarfile.open(archive) as source:
-        members = {member.name: member for member in source.getmembers()}
+        entries = source.getmembers()
+        members = {member.name: member for member in entries}
+        if len(members) != len(entries):
+            raise ValueError('duplicate historical fixture archive entry')
         if set(members) != set(manifest['archived_paths']):
             raise ValueError('historical fixture archive inventory changed')
         for name, record in manifest['files'].items():
@@ -49,5 +53,9 @@ def reference_root():
             destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             destination.write_bytes(data)
             destination.chmod(0o600)
+    # Source admission genuinely inspects the private reference index.
+    subprocess.run(['git', 'init', '--quiet', str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), 'add', '--',
+                    *manifest['files']], check=True)
     _root = root
     return root

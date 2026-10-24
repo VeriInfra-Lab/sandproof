@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import unittest
 
-from tools.tests.proof_input_fixture import reference_root
+from tools.tests.proof_input_fixture import CHECKOUT, reference_root
 
 ROOT = reference_root()
 
@@ -33,6 +33,27 @@ class ProofInputPreflightTests(unittest.TestCase):
             destination = self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
+        # Execute the current entry and its actual Python/shell tool closure.
+        # Only data comes from the historical reference; no program version is
+        # selected by the frozen evidence. The temporary seals below bind this
+        # explicit test composition, never the published production manifests.
+        programs = {
+            'scripts/verify-controller.sh', 'scripts/verify-use-inventory.sh',
+            'scripts/python-entry.sh', 'tools/v0_use_inventory.py',
+            'tools/check_os_boundary_catalogue.py',
+            'tools/check_tls_certificate_binding.py',
+            'tools/check_shared_field_bindings.py',
+            'tools/check_btree_set_binding.py',
+            'tools/check_foundations_extraction.py',
+            'tools/check_loop_callbacks_contract.py',
+            'verification/experiments/protected-directory/check.py',
+            'verification/experiments/tokio-mutex/check.py',
+        }
+        for name in programs:
+            destination = self.root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(CHECKOUT / name, destination)
+        names.update(programs)
         # Ordinary product changes intentionally leave prior proof inputs stale.
         # Construct only this TEMPORARY fixture's consistent checksum closure;
         # never refresh the repository's published proof/census evidence. The

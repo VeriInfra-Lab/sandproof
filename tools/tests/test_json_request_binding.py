@@ -127,10 +127,29 @@ class JsonRequestBindingTests(unittest.TestCase):
                     snapshot(llbc, kind)
 
 class CurrentProductionAdmissionTests(unittest.TestCase):
-    def test_current_tree_is_not_certified_by_historical_binding(self):
+    def test_actual_source_differences_cannot_reuse_historical_binding(self):
+        import shutil
+        import tempfile
         from tools.tests.proof_input_fixture import CHECKOUT
-        with self.assertRaisesRegex(ValueError, 'production binding source changed'):
-            check_registry(CHECKOUT)
+        changed = [name for name in self.registry_sources()
+                   if (CHECKOUT / name).read_bytes() != (ROOT / name).read_bytes()]
+        # A future legitimately re-proved tree may equal the reference; source
+        # drift rejection itself remains covered by the existing hash mutation.
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / 'reference'
+            shutil.copytree(ROOT, candidate)
+            for name in changed:
+                shutil.copyfile(CHECKOUT / name, candidate / name)
+            if changed:
+                with self.assertRaisesRegex(ValueError, 'production binding source changed'):
+                    check_registry(candidate)
+            else:
+                self.assertEqual(set(check_registry(candidate)['entries']),
+                                 {'json_request::decode', 'json_request::encode'})
+
+    @staticmethod
+    def registry_sources():
+        return json.loads((ROOT / 'verification/json-request-binding.json').read_text())['production_sources']
 
 
 if __name__ == '__main__':
