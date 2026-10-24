@@ -4,6 +4,7 @@ use sandbox_controller_core as core;
 use tempfile::TempDir;
 mod complete;
 mod support;
+mod unload;
 mod validation_certificates;
 use support::*;
 
@@ -322,7 +323,7 @@ fn only_unsettled_template_validation_pins_release_and_retirement() {
                 &mut NeverCrash,
             )
             .unwrap();
-        crate::finish_admitted_create_v1(
+        crate::finish_admitted_create(
             &mut journal,
             core::SandboxId(1),
             core::OperationId(1),

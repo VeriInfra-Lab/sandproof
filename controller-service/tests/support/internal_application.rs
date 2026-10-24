@@ -41,17 +41,48 @@ impl Clock for TestClock {
         Ok(self.0.load(Ordering::SeqCst))
     }
 }
+#[derive(Clone, Copy, Debug, Default)]
+pub enum TestEpoch {
+    #[default]
+    Unavailable,
+    Matching,
+    WrongBoot,
+}
+
+pub type SourceProbe = Box<
+    dyn FnOnce(
+            &sandproof_controller_service::capture::SourceObservationRequirement,
+        ) -> Result<
+            sandproof_controller_service::capture::RawSourceObservation,
+            WorkerTransportError,
+        > + Send,
+>;
+
 #[derive(Default)]
 pub struct State {
+    pub source_probe: Option<SourceProbe>,
+    pub source_calls: usize,
     pub actions: Vec<WorkAction<core::EffectId>>,
     pub configurations: BTreeMap<u64, (String, CreateOptions)>,
     pub lose_activation: bool,
     pub block_prepare: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub block_release: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub block_health: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub released_slots: Vec<HostSlotContext>,
+    pub bound_slots: Vec<HostSlotContext>,
     pub release_unknown: bool,
     pub disk_available: Option<u64>,
+    pub disk_probe: Option<Box<dyn FnOnce() -> Result<u64, ApplicationError> + Send>>,
     pub template_error: Option<ApplicationError>,
     pub template_checks: usize,
     pub cached_verifications: usize,
+    pub epoch: TestEpoch,
+    pub epoch_checks: usize,
+    pub recovery_observations: usize,
+    pub source: Option<sandproof_controller_service::capture::SourceProcessIdentity>,
+    pub observe_unavailable: bool,
+    pub lose_stop: Option<core::SandboxId>,
+    pub observe_hook: Option<Box<dyn FnOnce() + Send>>,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -59,7 +90,7 @@ impl WorkEvidence for TestHost {
 }
 impl WorkExecution for TestHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
         let mut state = self.0.lock().unwrap();
@@ -67,55 +98,89 @@ impl WorkExecution for TestHost {
         if matches!(action.command.command(), core::Command::PrepareVm { .. })
             && let Some((entered, release)) = state.block_prepare.take()
         {
+            drop(state);
             entered.send(()).unwrap();
             release
                 .recv_timeout(std::time::Duration::from_secs(15))
                 .unwrap();
+            state = self.0.lock().unwrap();
         }
         if state.lose_activation
             && matches!(action.command.command(), core::Command::ActivateVm { .. })
         {
             return Err(WorkerTransportError::ReplyLost);
         }
-        workflow::worker(action)
+        if matches!(action.command.command(), core::Command::StopVm { sandbox, .. }
+            if state.lose_stop == Some(*sandbox))
+        {
+            return Err(WorkerTransportError::ReplyLost);
+        }
+        let mut receipt = workflow::worker(action)?;
+        if let sandproof_protocol::WorkOutcome::ObservedSuccess(evidence) = &mut receipt.outcome {
+            evidence.source.clone_from(&state.source);
+        }
+        Ok(receipt)
     }
 }
 impl WorkRecovery for TestHost {
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
-        self.0
-            .lock()
-            .unwrap()
-            .actions
-            .contains(action)
-            .then(|| workflow::success(action))
+        let mut state = self.0.lock().unwrap();
+        state.recovery_observations += 1;
+        if let Some(hook) = state.observe_hook.take() {
+            hook();
+        }
+        (state.actions.contains(action) && !state.observe_unavailable).then(|| {
+            let mut receipt = workflow::success(action);
+            if let sandproof_protocol::WorkOutcome::ObservedSuccess(evidence) = &mut receipt.outcome
+            {
+                evidence.source.clone_from(&state.source);
+            }
+            receipt
+        })
     }
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
     }
     fn reclaim_incomplete_activation(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Ok(())
     }
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Ok(())
     }
 }
 impl HostSlots for TestHost {
-    fn bind_host_slot(&mut self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
+    fn bind_host_slot(&self, context: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
+        let mut state = self.0.lock().unwrap();
+        state.bound_slots.push(*context);
+        if state.released_slots.contains(context) {
+            return Err(ApplicationError::Busy);
+        }
         Ok(())
     }
-    fn release_host_slot(&mut self, _: &HostSlotContext) -> Result<(), ApplicationError> {
-        if self.0.lock().unwrap().release_unknown {
+    fn release_host_slot(&self, context: &HostSlotContext) -> Result<(), ApplicationError> {
+        let blocked = self.0.lock().unwrap().block_release.take();
+        if let Some((entered, release)) = blocked {
+            entered.send(()).unwrap();
+            release
+                .recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap();
+        }
+        let mut state = self.0.lock().unwrap();
+        if state.release_unknown {
             Err(ApplicationError::Busy)
         } else {
+            if !state.released_slots.contains(context) {
+                state.released_slots.push(*context);
+            }
             Ok(())
         }
     }
@@ -136,8 +201,50 @@ impl DataRelay for TestHost {
     }
 }
 impl HostCapacity for TestHost {
+    fn observe_lifecycle_source(
+        &self,
+        requirement: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::RawSourceObservation, WorkerTransportError>
+    {
+        let probe = {
+            let mut state = self.0.lock().unwrap();
+            state.source_calls += 1;
+            state.source_probe.take()
+        };
+        probe.ok_or(WorkerTransportError::ConnectionLost)?(requirement)
+    }
+    fn observe_host_epoch(
+        &self,
+        requirement: &sandproof_controller_service::capture::HostEpochRequirement,
+    ) -> Result<sandproof_controller_service::capture::HostEpochObservation, WorkerTransportError>
+    {
+        let mut state = self.0.lock().unwrap();
+        state.epoch_checks += 1;
+        if matches!(state.epoch, TestEpoch::Unavailable) {
+            return Err(WorkerTransportError::ConnectionLost);
+        }
+        // Explicit component boundary fact only, never production attestation.
+        let mut registration = requirement.registration().clone();
+        if matches!(state.epoch, TestEpoch::WrongBoot) {
+            registration.boot_id = "wrong-boot".into();
+        }
+        Ok(
+            sandproof_controller_service::capture::HostEpochObservation {
+                node: requirement.node().clone(),
+                registration,
+            },
+        )
+    }
+
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
-        Ok(self.0.lock().unwrap().disk_available.unwrap_or(u64::MAX))
+        let (probe, available) = {
+            let mut state = self.0.lock().unwrap();
+            (
+                state.disk_probe.take(),
+                state.disk_available.unwrap_or(u64::MAX),
+            )
+        };
+        probe.map_or(Ok(available), |probe| probe())
     }
     fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
         Ok((2, 512 * 1024 * 1024))
@@ -147,11 +254,18 @@ impl HostCapacity for TestHost {
         profile: &PhysicalStorageProfile,
         _: &PhysicalPool,
     ) -> Result<(), ApplicationError> {
+        let blocked = self.0.lock().unwrap().block_health.take();
+        if let Some((entered, release)) = blocked {
+            entered.send(()).unwrap();
+            release
+                .recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap();
+        }
         profile.validate().map_err(|_| ApplicationError::Busy)
     }
 }
 impl LaunchConfiguration for TestHost {
-    fn put_secret(&mut self, _: core::SandboxId, _: &str) -> Result<(), ApplicationError> {
+    fn put_secret(&self, _: core::SandboxId, _: &str) -> Result<(), ApplicationError> {
         Err(ApplicationError::Invalid)
     }
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
@@ -172,7 +286,7 @@ impl LaunchConfiguration for TestHost {
             .ok_or(ApplicationError::Busy)
     }
     fn put_bound_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         options: &CreateOptions,

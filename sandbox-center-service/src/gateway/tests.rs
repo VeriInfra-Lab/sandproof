@@ -21,11 +21,23 @@ impl DataRouteAuthorizer for Routes {
             ready = wake.wait(ready).unwrap();
         }
         Ok(DataRoute {
-            request: wire::request(
-                1,
-                1,
-                sandproof_protocol::internal::lifecycle::Intent::Create,
-            ),
+            identity: sandproof_protocol::lifecycle::LifecycleAccessIdentity {
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
+                center: sandproof_protocol::lifecycle::CenterIdentity {
+                    deployment: wire::node("host-a").deployment_id,
+                    center: "center".try_into().unwrap(),
+                },
+                node: wire::node("host-a"),
+                session: "sandbox-1".try_into().unwrap(),
+                operation: sandproof_protocol::lifecycle::OperationKey {
+                    deployment: wire::node("host-a").deployment_id,
+                    owner: "1".try_into().unwrap(),
+                    window: 2.try_into().unwrap(),
+                    sequence: 1.try_into().unwrap(),
+                },
+                accepted_version: 1,
+                incarnation: 1.try_into().unwrap(),
+            },
             authorized_at_ms: 100,
             max_end_at_ms: 1000,
         })

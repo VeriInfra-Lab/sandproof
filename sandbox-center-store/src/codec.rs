@@ -21,6 +21,7 @@ impl Write for BoundedWriter {
 }
 
 pub(crate) fn encode<T: ControlState>(state: &T, limit: usize) -> Result<Vec<u8>, StoreError> {
+    state.check_supported_profiles()?;
     if !state.is_valid() {
         return Err(StoreError::InvalidState);
     }
@@ -45,6 +46,7 @@ pub(crate) fn decode<T: ControlState>(value: &[u8], limit: usize) -> Result<T, S
         return Err(StoreError::InvalidRecord);
     }
     let state: T = serde_json::from_slice(value).map_err(|_| StoreError::InvalidRecord)?;
+    state.check_supported_profiles()?;
     if !state.is_valid() {
         return Err(StoreError::InvalidState);
     }

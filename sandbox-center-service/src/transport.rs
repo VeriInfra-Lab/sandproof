@@ -2,11 +2,7 @@
 use crate::HostPort;
 use sandproof_api::PortError;
 use sandproof_internal::InternalClient;
-use sandproof_protocol::internal::{
-    NodeIdentity,
-    lifecycle::{LifecycleRequest, LifecycleResponse},
-    window::{WindowCloseAck, WindowCloseRequest},
-};
+use sandproof_protocol::internal::NodeIdentity;
 use std::{collections::BTreeSet, time::Duration};
 use tokio::runtime::Handle;
 
@@ -82,54 +78,79 @@ impl RegisteredHosts {
     }
 }
 impl HostPort for RegisteredHosts {
-    fn send(
+    fn confirm_lifecycle_renewal(
         &self,
-        request: &LifecycleRequest,
+        result: &sandproof_protocol::lifecycle::RenewalConfirmation,
         deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError> {
-        let host = self
-            .hosts
-            .iter()
-            .find(|host| host.identity == request.identity.node)
-            .ok_or(PortError::OutcomeUnknown)?;
-        // ControllerPort calls run inside the API's bounded spawn_blocking.
-        // Never invoke this sync adapter on a Tokio runtime worker thread.
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, PortError> {
+        let client = self.client(&result.request.request.binding.node)?;
         self.runtime.block_on(async {
-            tokio::time::timeout(deadline, host.client.lifecycle(request))
+            tokio::time::timeout(deadline, client.confirm_lifecycle_renewal(result))
                 .await
                 .map_err(|_| PortError::OutcomeUnknown)?
                 .map_err(|_| PortError::OutcomeUnknown)
         })
     }
-    fn confirm(
+    fn confirm_lifecycle_terminal(
         &self,
-        result: &LifecycleResponse,
+        result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
         deadline: Duration,
-    ) -> Result<LifecycleResponse, PortError> {
-        let host = self
-            .hosts
-            .iter()
-            .find(|host| host.identity == result.identity.node)
-            .ok_or(PortError::OutcomeUnknown)?;
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedLifecycleResult, PortError> {
+        let client = self.client(&result.request.request.binding.node)?;
         self.runtime.block_on(async {
-            tokio::time::timeout(deadline, host.client.confirm_result(result))
+            tokio::time::timeout(deadline, client.confirm_lifecycle_terminal(result))
                 .await
                 .map_err(|_| PortError::OutcomeUnknown)?
                 .map_err(|_| PortError::OutcomeUnknown)
         })
     }
-    fn close(
+    fn close_lifecycle_window(
         &self,
-        request: &WindowCloseRequest,
+        request: &sandproof_protocol::lifecycle::LifecycleWindowClose,
         deadline: Duration,
-    ) -> Result<WindowCloseAck, PortError> {
-        let host = self
-            .hosts
-            .iter()
-            .find(|host| host.identity == request.terminal.identity.node)
-            .ok_or(PortError::OutcomeUnknown)?;
+    ) -> Result<sandproof_protocol::lifecycle::ClosedLifecycleWindow, PortError> {
+        let client = self.client(&request.terminal.request.request.binding.node)?;
         self.runtime.block_on(async {
-            tokio::time::timeout(deadline, host.client.close_window(request))
+            tokio::time::timeout(deadline, client.close_lifecycle_window(request))
+                .await
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .map_err(|_| PortError::OutcomeUnknown)
+        })
+    }
+    fn observe_lifecycle_terminal(
+        &self,
+        intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, PortError> {
+        let client = self.client(&intent.request.binding.node)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, client.observe_lifecycle_terminal(intent))
+                .await
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .map_err(|_| PortError::OutcomeUnknown)
+        })
+    }
+    fn observe_lifecycle_create(
+        &self,
+        intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::CreateObservation, PortError> {
+        let client = self.client(&intent.request.binding.node)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, client.observe_lifecycle_create(intent))
+                .await
+                .map_err(|_| PortError::Busy)?
+                .map_err(|_| PortError::Busy)
+        })
+    }
+    fn record_lifecycle(
+        &self,
+        intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::RecordedLifecycleIntent, PortError> {
+        let client = self.client(&intent.request.binding.node)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, client.record_lifecycle(intent))
                 .await
                 .map_err(|_| PortError::OutcomeUnknown)?
                 .map_err(|_| PortError::OutcomeUnknown)

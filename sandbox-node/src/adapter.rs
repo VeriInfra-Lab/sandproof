@@ -1,7 +1,7 @@
 //! Host worker adaptation and deterministic debug-only fault boundaries.
 
 use crate::fault::{busy, project};
-use crate::{HostObservation, LinuxWorker, PhysicalProfileLease};
+use crate::{HostObservation, LinuxWorker, PhysicalProfileLease, ProtectedHostEpochSource};
 use sandbox_controller_core as core;
 use sandproof_controller_service::application::fault::{FaultContext, FaultStage};
 use sandproof_controller_service::application::{
@@ -21,6 +21,8 @@ pub struct NodeHost {
     worker: LinuxWorker,
     physical_storage: PhysicalProfileLease,
     relay_executable: std::path::PathBuf,
+    host_epoch_source: Option<ProtectedHostEpochSource>,
+    capture_profile: Option<crate::linux::ProtectedCaptureProfile>,
 }
 impl NodeHost {
     /// The relay executable is selected only by trusted service assembly.
@@ -34,7 +36,207 @@ impl NodeHost {
             worker,
             physical_storage,
             relay_executable,
+            host_epoch_source: None,
+            capture_profile: None,
         }
+    }
+    /// Select only the original protected registration path. This does not
+    /// establish an epoch; every bootstrap invocation checks its declared fields.
+    #[must_use]
+    pub fn with_host_epoch_source(mut self, source: ProtectedHostEpochSource) -> Self {
+        self.host_epoch_source = Some(source);
+        self
+    }
+}
+
+impl NodeHost {
+    /// Pause only the source of an already committed and claimed `FreezeVm`.
+    /// The service independently binds the full external operation to this
+    /// native action and supplies the requirement from the original saved work.
+    /// # Errors
+    /// Any failure may follow a physical Pause. Keep the original work/VM;
+    /// never translate the error into no effect, retry or Stop permission.
+    pub fn pause_original(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::PauseWorkRequest,
+        original_source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.pause_original(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            action,
+            request,
+            original_source,
+        )
+    }
+
+    /// Observe the same original Pause without reissuing PATCH or Full.
+    /// A current Paused observation does not prove a prior Full worker ended.
+    /// # Errors
+    /// Running, exited, foreign and unknown sources remain unresolved here;
+    /// no cleanup, resource refund or Stop permission follows.
+    pub fn observe_pause_original(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::PauseWorkRequest,
+        original_source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.observe_pause_original(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            action,
+            request,
+            original_source,
+        )
+    }
+}
+
+impl NodeHost {
+    /// Assemble the one adapter-held profile from protected server settings and
+    /// the ORIGINAL journal epoch. This only reopens an existing layout; it
+    /// never creates a new layout or takes settings from an incoming work DTO.
+    /// Copy caps do not grant a durable claim, reservation or permission to run.
+    /// # Errors
+    /// Missing/changed protected source, epoch or layout refuses assembly.
+    pub fn with_capture_settings(
+        mut self,
+        settings: &crate::ProtectedCaptureSettings,
+        original: &sandproof_controller_service::capture::HostEpochRequirement,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let provider = self
+            .host_epoch_source
+            .as_ref()
+            .ok_or("missing original protected bootstrap source")?;
+        self.capture_profile = Some(crate::linux::ProtectedCaptureProfile::assemble(
+            &self.worker,
+            provider,
+            settings,
+            original,
+        )?);
+        Ok(self)
+    }
+
+    /// Propose parameters from the original sealed source and local profile.
+    /// The service must persist/check its original plan and budgets before
+    /// dispatching any physical Full. This proposal is never a permission.
+    /// # Errors
+    /// Missing profile, incompatible source or unknown facts remain errors.
+    pub fn prepare_full_capture(
+        &self,
+        pause: &sandproof_controller_service::capture::PauseWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<
+        sandproof_controller_service::capture::FullCaptureWorkRequest,
+        Box<dyn std::error::Error>,
+    > {
+        self.worker.prepare_full_capture(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            pause,
+            original,
+        )
+    }
+
+    /// Prepare one waiting child for an already claimed original Full.
+    /// Save its exact process/job under the original work before any release.
+    /// No Full socket is opened by preparation or EOF/cancellation.
+    /// # Errors
+    /// Preparation failures retain original work/material/process responsibility.
+    pub fn prepare_capture_worker(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<crate::PreparedCaptureWorker, Box<dyn std::error::Error>> {
+        self.worker.prepare_capture_worker(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            action,
+            request,
+            original,
+            &self.relay_executable,
+        )
+    }
+
+    /// Execute only an originally claimed Full with independently checked local
+    /// parameters. The original V5 claim/resource plan and closed/drained V8
+    /// access are required; no untrusted DTO can install the private profile.
+    /// # Errors
+    /// Every error may follow actual Full/Seal or publication. Preserve original
+    /// Dispatched/Unknown Full concurrency and material responsibility: callback
+    /// return, Paused/Exited or a directory does NOT prove the FC writer ended.
+    pub fn capture_original(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<crate::full_snapshot::FullCaptureObservation, Box<dyn std::error::Error>> {
+        self.worker.capture_original(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            action,
+            request,
+            original,
+        )
+    }
+
+    /// Read only the exact saved key. Returned file facts have no captured-source
+    /// provenance, durable handoff, worker-end, Stop or resource-release claim.
+    /// # Errors
+    /// Missing, foreign or incomplete materials remain unresolved; no retry Full.
+    pub fn observe_full_capture(
+        &self,
+        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        original: &sandproof_controller_service::capture::SourceObservationRequirement,
+        manifest: Option<sandproof_protocol::lifecycle::ContentDigest>,
+    ) -> Result<crate::full_snapshot::CheckedStoredCapture, Box<dyn std::error::Error>> {
+        self.worker.observe_full_capture(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            request,
+            original,
+            manifest.map(|digest| *digest.as_bytes()),
+        )
+    }
+}
+
+impl NodeHost {
+    /// Reopen only the original journal's committed material expectation.
+    /// This does not consult an old position, launch credential or live VMM.
+    /// The journal provider is not implemented yet; this API grants no load,
+    /// delete, pin, access or resource-release permission.
+    /// # Errors
+    /// Missing protected profile, wrong epoch, altered or incomplete bytes
+    /// remain errors. No physical lifecycle action or repair follows.
+    pub fn observe_committed_capture(
+        &self,
+        expected: &sandproof_controller_service::capture::CommittedCaptureExpectation,
+    ) -> Result<crate::full_snapshot::CheckedStoredCapture, Box<dyn std::error::Error>> {
+        crate::linux::observe_committed_capture(
+            self.capture_profile
+                .as_ref()
+                .ok_or("protected Full profile not assembled")?,
+            expected,
+        )
     }
 }
 
@@ -43,7 +245,7 @@ impl WorkEvidence for NodeHost {
 }
 impl WorkExecution for NodeHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
         #[cfg(debug_assertions)]
@@ -72,7 +274,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         #[cfg(debug_assertions)]
@@ -93,7 +295,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_network(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -108,7 +310,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_activation(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -123,7 +325,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_terminal_fence(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -138,7 +340,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_open_fence(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -153,7 +355,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_stop(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         #[cfg(debug_assertions)]
@@ -174,7 +376,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_abort_prepare(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -189,7 +391,7 @@ impl WorkRecovery for NodeHost {
     }
 
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         self.worker
@@ -206,7 +408,7 @@ impl WorkRecovery for NodeHost {
 
 impl HostSlots for NodeHost {
     fn bind_host_slot(
-        &mut self,
+        &self,
         context: &HostSlotContext,
         allow_install: bool,
     ) -> Result<(), ApplicationError> {
@@ -221,7 +423,7 @@ impl HostSlots for NodeHost {
             })
     }
 
-    fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), ApplicationError> {
+    fn release_host_slot(&self, context: &HostSlotContext) -> Result<(), ApplicationError> {
         self.worker.release_host_slot(context).map_err(|error| {
             busy(
                 error.as_ref(),
@@ -256,7 +458,7 @@ impl DataRelay for NodeHost {
     }
 
     fn spawn_data_relay(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         vm: core::VmId,
         generation: core::Generation,
@@ -298,6 +500,38 @@ impl DataRelay for NodeHost {
 }
 
 impl HostCapacity for NodeHost {
+    fn observe_host_epoch(
+        &self,
+        requirement: &sandproof_controller_service::capture::HostEpochRequirement,
+    ) -> Result<sandproof_controller_service::capture::HostEpochObservation, WorkerTransportError>
+    {
+        let result = self
+            .host_epoch_source
+            .as_ref()
+            .ok_or(sandbox_runtime::RuntimeError::InvalidConfiguration(
+                "protected bootstrap source missing",
+            ))
+            .and_then(|source| source.observe(requirement, self.worker.host_bootstrap_inputs()));
+        result.map_err(|error| {
+            project(FaultStage::Observe, FaultContext::default(), &error).emit();
+            WorkerTransportError::ConnectionLost
+        })
+    }
+    fn observe_lifecycle_source(
+        &self,
+        requirement: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::RawSourceObservation, WorkerTransportError>
+    {
+        crate::source_observation::observe(
+            &self.worker,
+            self.host_epoch_source.as_ref(),
+            requirement,
+        )
+        .map_err(|error| {
+            project(FaultStage::Observe, FaultContext::default(), error.as_ref()).emit();
+            WorkerTransportError::ConnectionLost
+        })
+    }
     fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
         crate::host_capacity::available_compute().map_err(|error| {
             busy(
@@ -341,11 +575,7 @@ impl HostCapacity for NodeHost {
 }
 
 impl LaunchConfiguration for NodeHost {
-    fn put_secret(
-        &mut self,
-        sandbox: core::SandboxId,
-        token: &str,
-    ) -> Result<(), ApplicationError> {
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError> {
         self.worker.put_secret(sandbox, token).map_err(|error| {
             busy(
                 error.as_ref(),
@@ -376,7 +606,7 @@ impl LaunchConfiguration for NodeHost {
     }
 
     fn put_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         env_vars: &std::collections::BTreeMap<String, String>,
@@ -409,7 +639,7 @@ impl LaunchConfiguration for NodeHost {
     }
 
     fn put_bound_launch_config(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         token: &str,
         options: &CreateOptions,

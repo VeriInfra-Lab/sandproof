@@ -1,5 +1,6 @@
 {
   "deployment_id": "example-deployment",
+  "center_id": "example-center",
   "bind": "127.0.0.1:3000",
   "domain": "example.invalid",
   "credentials": [
@@ -64,6 +65,7 @@
     "max_sandboxes": 4,
     "operations_per_sandbox": 4,
     "max_options_bytes": 4096,
+    "result_retention_ms": 300000,
     "platform": {
       "instances": 2,
       "cpu": 2,

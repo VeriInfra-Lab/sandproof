@@ -6,12 +6,16 @@
 //! boundaries. They do not replace the reducer in `sandbox-controller-core`,
 //! establish transaction durability, or certify any host observation.
 
+#[cfg(test)]
+extern crate self as sandproof_protocol;
+
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display};
 
 mod identifiers;
 pub mod internal;
+pub mod lifecycle;
 pub mod numeric;
 pub use identifiers::parse_allocated_number;
 
@@ -185,6 +189,8 @@ pub enum ResourceKind {
     Sandbox,
     Vm,
     Workspace,
+    /// A committed snapshot bundle; distinct from a workspace or running VM.
+    Snapshot,
     NetworkSlot,
 }
 

@@ -1,9 +1,11 @@
 //! The storage/host substitutes inject faults around the SAME pure center
 //! transitions. These tests do not claim Redis, TLS or KVM acceptance.
+mod host;
 mod late_observation;
 mod query_snapshot;
 mod retired_destroy;
 mod session_wait;
+use host::Host;
 #[test]
 fn physical_observation_has_bounded_freshness_and_clock_skew() {
     let policy = super::NodeObservationPolicy {
@@ -27,19 +29,23 @@ fn physical_observation_has_bounded_freshness_and_clock_skew() {
 use super::*;
 use sandproof_api::{ControllerPort, CreateRequest, ListQuery, PortError};
 use sandproof_center_core::{
-    AvailableTemplate, Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget,
+    AvailableTemplate, Bounds, CenterState, LifecycleSubmission, LifecycleWindow, NodeMode,
+    NodeRegistration, TenantBudget,
 };
-use sandproof_center_store::{StoreError, authority::AuthorityError};
+use sandproof_center_store::authority::AuthorityError;
 use sandproof_controller_service::{
     application::{Clock, ConnectCommand, CreateCommand},
     templates::ResourceShape,
 };
 use sandproof_protocol::internal::{
     NodeIdentity,
-    lifecycle::{
-        CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
-    },
-    window::{WindowCloseAck, WindowCloseRequest},
+    lifecycle::{CreateBinding, Resources},
+};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, CenterIdentity, ClosedLifecycleWindow, ConfirmedLifecycleResult,
+    ConfirmedRenewal, CreateObservation, CreateRefusalReason, CurrentCreateReadiness,
+    CurrentReadyFacts, LifecycleOperation, LifecycleWindowClose, RecordedLifecycleIntent,
+    RenewalConfirmation, SessionId, TerminalLifecycleObservation, TerminalStatus,
 };
 use sandproof_protocol::{SandboxId, TenantId};
 use std::{
@@ -162,6 +168,10 @@ fn state() -> CenterState {
         node_id: "host".try_into().unwrap(),
         node_generation: 1.try_into().unwrap(),
     };
+    let center = CenterIdentity {
+        deployment: identity.deployment_id.clone(),
+        center: "center".try_into().unwrap(),
+    };
     CenterState::new(
         identity.deployment_id.clone(),
         Bounds {
@@ -170,6 +180,7 @@ fn state() -> CenterState {
             max_sandboxes: 8,
             operations_per_sandbox: 8,
             max_options_bytes: 4096,
+            result_retention_ms: RESULT_RETENTION_MS,
             platform: resources(8),
         },
         vec![NodeRegistration {
@@ -196,11 +207,20 @@ fn state() -> CenterState {
                 limit: resources(8),
             },
         ],
+        center,
+        ["1", "2"]
+            .into_iter()
+            .map(|owner| LifecycleWindow {
+                owner: owner.try_into().unwrap(),
+                window: 9.try_into().unwrap(),
+            })
+            .collect(),
     )
     .unwrap()
 }
 struct MemoryAuthority {
     state: CenterState,
+    clock: TestClock,
     hidden_sandboxes: Vec<SandboxId>,
     query_templates: Vec<PublicTemplate>,
     unreadable: Arc<AtomicBool>,
@@ -209,6 +229,52 @@ struct MemoryAuthority {
     projection_reads: u64,
     fence_after_stale: bool,
     retirement_step: Option<retired_destroy::RetirementStep>,
+}
+const RESULT_RETENTION_MS: u64 = 100;
+impl MemoryAuthority {
+    fn accept_current_followup(
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
+        renewal: Option<(u64, bool)>,
+        now_ms: u64,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        self.snapshot()?;
+        if self.hidden_sandboxes.contains(sandbox) {
+            return Err(sandproof_center_core::DecisionError::NotFound.into());
+        }
+        let session = SessionId::from_protocol_id(sandbox.clone());
+        let record = self
+            .state
+            .lifecycle_session(owner, &session)
+            .ok_or(sandproof_center_core::DecisionError::NotFound)?;
+        let prior = record
+            .operations()
+            .last()
+            .ok_or(sandproof_center_core::DecisionError::Invalid)?
+            .intent();
+        if renewal.is_none() && record.terminating() {
+            return Ok(prior.clone());
+        }
+        let key = self.state.next_sdk_operation_key(owner)?;
+        let submission = match renewal {
+            Some((timeout_secs, extend_only)) => LifecycleSubmission::Renew {
+                key,
+                session,
+                expected_version: prior.accepted_version,
+                timeout_secs,
+                extend_only,
+            },
+            None => LifecycleSubmission::Destroy {
+                key,
+                session,
+                expected_version: prior.accepted_version,
+            },
+        };
+        let (next, intent) = self.state.accept_lifecycle(owner, &submission, now_ms)?;
+        self.state = next;
+        Ok(intent)
+    }
 }
 enum ProjectionStep {
     Health(u64),
@@ -223,8 +289,35 @@ fn consume_reply_budget(budget: Duration) {
     );
 }
 impl AuthorityPort for MemoryAuthority {
+    fn create_current(
+        &mut self,
+        owner: &TenantId,
+        parameters: &sandproof_protocol::lifecycle::CreateParameters,
+        _: crate::LifecyclePolicy,
+        now_ms: u64,
+    ) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, PortError> {
+        self.snapshot()
+            .map_err(crate::application::authority_error)?;
+        let key = self
+            .state
+            .next_sdk_operation_key(owner)
+            .map_err(|error| crate::application::authority_error(error.into()))?;
+        let submission = sandproof_center_core::LifecycleSubmission::Create {
+            key,
+            parameters: parameters.clone(),
+        };
+        let (state, intent) = self
+            .state
+            .accept_lifecycle(owner, &submission, now_ms)
+            .map_err(|error| crate::application::authority_error(error.into()))?;
+        self.state = state;
+        if self.unknown_create.load(Ordering::SeqCst) {
+            self.unreadable.store(true, Ordering::SeqCst);
+            return Err(PortError::OutcomeUnknown);
+        }
+        Ok(intent)
+    }
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
-        self.retire_at_checkpoint(retired_destroy::Checkpoint::BeforeConfirmationSnapshot)?;
         self.retire_at_checkpoint(retired_destroy::Checkpoint::RetiredSnapshot)?;
         if self.unreadable.load(Ordering::SeqCst) {
             return Err(AuthorityError::RecoveryRequired);
@@ -250,53 +343,71 @@ impl AuthorityPort for MemoryAuthority {
             templates: self.query_templates.clone(),
         })
     }
-    fn create(
-        &mut self,
-        tenant: &TenantId,
-        binding: CreateBinding,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
+    fn expire_current(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        let (state, request) = self.state.create(tenant, binding, now)?;
-        self.state = state;
-        if self.unknown_create.load(Ordering::SeqCst) {
-            self.unreadable.store(true, Ordering::SeqCst);
-            return Err(AuthorityError::Store(StoreError::OutcomeUnknown));
-        }
-        Ok(request)
+        self.state = self.state.terminate_expired(now_ms)?;
+        Ok(())
     }
-    fn renew(
+    fn renew_current(
         &mut self,
         tenant: &TenantId,
         sandbox: &SandboxId,
-        end: u64,
-        now: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.snapshot()?;
-        let (state, request) = self.state.renew(tenant, sandbox, end, now)?;
-        self.state = state;
-        Ok(request)
+        timeout_secs: u64,
+        extend_only: bool,
+        now_ms: u64,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        self.accept_current_followup(tenant, sandbox, Some((timeout_secs, extend_only)), now_ms)
     }
-    fn destroy(
+    fn destroy_current(
         &mut self,
         tenant: &TenantId,
         sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        self.snapshot()?;
-        let (state, request) = self.state.destroy(tenant, sandbox)?;
-        self.state = state;
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
+        let request = self.accept_current_followup(tenant, sandbox, None, 0)?;
         self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterDestroyAccepted)?;
         Ok(request)
     }
-    fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+    fn accept_lifecycle_create_refusal(
+        &mut self,
+        observation: &CreateObservation,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
-        match self.state.apply_response(response) {
+        let (next, destroy) = self.state.accept_lifecycle_create_refusal(observation)?;
+        self.state = next;
+        Ok(destroy)
+    }
+    fn accept_lifecycle_create_observation(
+        &mut self,
+        observation: &CreateObservation,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        match self.state.accept_lifecycle_create_observation(observation) {
+            Ok(next) => {
+                self.state = next;
+                Ok(())
+            }
+            Err(error) => {
+                if self.fence_after_stale && error == sandproof_center_core::DecisionError::Stale {
+                    self.unreadable.store(true, Ordering::SeqCst);
+                }
+                Err(error.into())
+            }
+        }
+    }
+    fn accept_lifecycle_terminal_observation(
+        &mut self,
+        response: &TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::BeforeTerminalApply)?;
+        self.snapshot()?;
+        match self
+            .state
+            .accept_lifecycle_terminal_observation(response, now_ms)
+        {
             Ok(next) => self.state = next,
             Err(error) => {
-                if error == sandproof_center_core::DecisionError::Stale {
-                    self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterStaleApply)?;
-                }
-                if self.fence_after_stale && error == sandproof_center_core::DecisionError::Stale {
+                if error == sandproof_center_core::DecisionError::Stale && self.fence_after_stale {
                     self.unreadable.store(true, Ordering::SeqCst);
                 }
                 return Err(error.into());
@@ -304,12 +415,43 @@ impl AuthorityPort for MemoryAuthority {
         }
         Ok(())
     }
-    fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+    fn destroy_bound_create(
+        &mut self,
+        original: &AcceptedLifecycleIntent,
+    ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
-        self.state = self.state.compact_confirmed(response)?;
+        let owner = &original.request.binding.key.owner;
+        let session = &original.request.binding.session;
+        let record = self
+            .state
+            .lifecycle_session(owner, session)
+            .ok_or(sandproof_center_core::DecisionError::NotFound)?;
+        if record.operations().first().map(|op| op.intent()) != Some(original) {
+            return Err(sandproof_center_core::DecisionError::Stale.into());
+        }
+        let current = record.operations().last().unwrap().intent();
+        if record.terminating() {
+            return Ok(current.clone());
+        }
+        let submission = LifecycleSubmission::Destroy {
+            key: self.state.next_sdk_operation_key(owner)?,
+            session: session.clone(),
+            expected_version: current.accepted_version,
+        };
+        let (next, intent) = self.state.accept_lifecycle(owner, &submission, 0)?;
+        self.state = next;
+        Ok(intent)
+    }
+    fn confirm_lifecycle_renewal(&mut self, ack: &ConfirmedRenewal) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        self.state = self.state.confirm_lifecycle_renewal(ack)?;
         Ok(())
     }
-    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+    fn confirm_terminal(
+        &mut self,
+        response: &ConfirmedLifecycleResult,
+    ) -> Result<(), AuthorityError> {
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::BeforeConfirmationCommit)?;
         self.snapshot()?;
         self.state = self.state.confirm_terminal(response)?;
         Ok(())
@@ -321,19 +463,24 @@ impl AuthorityPort for MemoryAuthority {
     }
     fn begin_close(
         &mut self,
-        terminal: &LifecycleResponse,
-    ) -> Result<WindowCloseRequest, AuthorityError> {
+        terminal: &TerminalLifecycleObservation,
+        now_ms: u64,
+    ) -> Result<LifecycleWindowClose, AuthorityError> {
         self.snapshot()?;
-        let (state, request) = self.state.begin_close(terminal)?;
+        let (state, request) = self.state.begin_close(terminal, now_ms)?;
         self.state = state;
         Ok(request)
     }
-    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
+    fn close_batch(&mut self, _now_ms: u64) -> Result<Vec<LifecycleWindowClose>, AuthorityError> {
         Ok(self.snapshot()?.pending_closes())
     }
-    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError> {
+    fn apply_close_ack(
+        &mut self,
+        ack: &ClosedLifecycleWindow,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        self.state = self.state.apply_close_ack(ack)?;
+        self.state = self.state.apply_close_ack(ack, now_ms)?;
         Ok(())
     }
     fn recover(&mut self) -> Result<(), AuthorityError> {
@@ -341,158 +488,41 @@ impl AuthorityPort for MemoryAuthority {
         Ok(())
     }
 }
-#[derive(Clone)]
-struct Host {
-    calls: Arc<AtomicU64>,
-    observations: Arc<AtomicU64>,
-    unknown: Arc<AtomicBool>,
-    transient_unknown: Arc<AtomicU64>,
-    consume_reply_budget: Arc<AtomicBool>,
-    unknown_confirmation: Arc<AtomicBool>,
-    unknown_close: Arc<AtomicBool>,
-    close_requests: Arc<Mutex<Vec<WindowCloseRequest>>>,
-    confirmation_budgets: Arc<Mutex<Vec<Duration>>>,
-    confirmation_gate: Arc<Mutex<Option<NetworkGate>>>,
-    recorded: Arc<AtomicBool>,
-    capacity_refusal: Arc<AtomicBool>,
-    last: Arc<Mutex<Option<LifecycleRequest>>>,
-    responses: Arc<Mutex<std::collections::BTreeMap<String, LifecycleResponse>>>,
-    fence_after_send: Arc<Mutex<Option<Arc<AtomicBool>>>>,
-    gate: Arc<Mutex<Option<NetworkGate>>>,
-    late_response: Arc<Mutex<Option<LifecycleResponse>>>,
-}
 struct NetworkGate {
     entered: std::sync::mpsc::SyncSender<()>,
     release: std::sync::mpsc::Receiver<()>,
 }
-impl Default for Host {
-    fn default() -> Self {
-        Self {
-            calls: Arc::new(AtomicU64::new(0)),
-            observations: Arc::new(AtomicU64::new(0)),
-            unknown: Arc::new(AtomicBool::new(false)),
-            transient_unknown: Arc::new(AtomicU64::new(0)),
-            consume_reply_budget: Arc::new(AtomicBool::new(false)),
-            unknown_confirmation: Arc::new(AtomicBool::new(false)),
-            unknown_close: Arc::new(AtomicBool::new(false)),
-            close_requests: Arc::new(Mutex::new(Vec::new())),
-            confirmation_budgets: Arc::new(Mutex::new(Vec::new())),
-            confirmation_gate: Arc::new(Mutex::new(None)),
-            recorded: Arc::new(AtomicBool::new(false)),
-            capacity_refusal: Arc::new(AtomicBool::new(false)),
-            last: Arc::new(Mutex::new(None)),
-            responses: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
-            fence_after_send: Arc::new(Mutex::new(None)),
-            gate: Arc::new(Mutex::new(None)),
-            late_response: Arc::new(Mutex::new(None)),
-        }
+fn create_binding(intent: &AcceptedLifecycleIntent) -> &CreateBinding {
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+        panic!("original Create required")
+    };
+    create
+}
+fn ready_observation(
+    original: &AcceptedLifecycleIntent,
+    current: &AcceptedLifecycleIntent,
+    now: u64,
+) -> CreateObservation {
+    let create = create_binding(original);
+    // Fixture creates sample this exact configured duration at admission.
+    let started_at_ms = create.startup_deadline_ms - config().startup_timeout_secs * 1000;
+    CreateObservation {
+        request: original.clone(),
+        current_request: current.clone(),
+        historical_create_succeeded: true,
+        readiness: CurrentCreateReadiness::Observed {
+            facts: CurrentReadyFacts {
+                started_at_ms,
+                end_at_ms: started_at_ms + create.timeout_ms,
+                max_end_at_ms: started_at_ms + create.max_lifetime_ms,
+                startup_deadline_ms: create.startup_deadline_ms,
+                observed_at_ms: now,
+            },
+        },
     }
 }
-impl HostPort for Host {
-    fn close(
-        &self,
-        request: &WindowCloseRequest,
-        _: Duration,
-    ) -> Result<WindowCloseAck, PortError> {
-        self.close_requests.lock().unwrap().push(request.clone());
-        if self.unknown_close.load(Ordering::SeqCst) {
-            return Err(PortError::OutcomeUnknown);
-        }
-        // This controlled unit port does NOT attest host persistence. A separate
-        // real mTLS + original SQLite test exercises actual host-close storage.
-        Ok(WindowCloseAck {
-            terminal: request.terminal.clone(),
-        })
-    }
-    fn confirm(
-        &self,
-        result: &LifecycleResponse,
-        budget: Duration,
-    ) -> Result<LifecycleResponse, PortError> {
-        self.confirmation_budgets.lock().unwrap().push(budget);
-        if self.unknown_confirmation.load(Ordering::SeqCst) {
-            return Err(PortError::OutcomeUnknown);
-        }
-        if self
-            .responses
-            .lock()
-            .unwrap()
-            .get(result.identity.operation_id.as_str())
-            != Some(result)
-        {
-            return Err(PortError::Conflict);
-        }
-        let gate = self.confirmation_gate.lock().unwrap().take();
-        if let Some(gate) = gate {
-            gate.entered.send(()).unwrap();
-            gate.release.recv().unwrap();
-        }
-        Ok(result.clone())
-    }
-    fn send(
-        &self,
-        request: &LifecycleRequest,
-        budget: Duration,
-    ) -> Result<LifecycleResponse, PortError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        *self.last.lock().unwrap() = Some(request.clone());
-        let gate = self.gate.lock().unwrap().take();
-        if let Some(gate) = gate {
-            gate.entered.send(()).unwrap();
-            gate.release.recv().unwrap();
-        }
-        if let Some(response) = self.late_response.lock().unwrap().take() {
-            return Ok(response);
-        }
-        if self.consume_reply_budget.load(Ordering::SeqCst) {
-            consume_reply_budget(budget);
-        }
-        if self.unknown.load(Ordering::SeqCst)
-            || self
-                .transient_unknown
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
-                    remaining.checked_sub(1)
-                })
-                .is_ok()
-        {
-            return Err(PortError::Busy);
-        }
-        let fact =
-            if self.capacity_refusal.load(Ordering::SeqCst) && request.intent == Intent::Create {
-                LifecycleFact::NotAccepted
-            } else if self.recorded.load(Ordering::SeqCst) {
-                LifecycleFact::Recorded
-            } else {
-                match request.intent {
-                    Intent::Create => LifecycleFact::Ready {
-                        started_at_ms: 1000,
-                        end_at_ms: 1000 + request.create.timeout_ms,
-                        max_end_at_ms: 1000 + request.create.max_lifetime_ms,
-                    },
-                    Intent::Renew { end_at_ms } => LifecycleFact::Renewed { end_at_ms },
-                    Intent::Destroy => LifecycleFact::Cleaned,
-                }
-            };
-        let mut responses = self.responses.lock().unwrap();
-        let key = request.identity.operation_id.as_str().to_owned();
-        if let Some(previous) = responses.get(&key)
-            && previous.fact == fact
-        {
-            return Ok(previous.clone());
-        }
-        let response = LifecycleResponse {
-            identity: request.identity.clone(),
-            observation_version: (self.observations.fetch_add(1, Ordering::SeqCst) + 1)
-                .try_into()
-                .unwrap(),
-            fact,
-        };
-        responses.insert(key, response.clone());
-        if let Some(fence) = self.fence_after_send.lock().unwrap().take() {
-            fence.store(true, Ordering::SeqCst);
-        }
-        Ok(response)
-    }
+fn advance_retention(f: &Fixture) {
+    f.clock.0.fetch_add(RESULT_RETENTION_MS, Ordering::SeqCst);
 }
 #[test]
 fn confirmation_uses_remaining_attempt_budget_without_resetting_original_wait() {
@@ -502,11 +532,10 @@ fn confirmation_uses_remaining_attempt_budget_without_resetting_original_wait() 
     f.app.kill("1", &session.sandbox_id).unwrap();
     let state = f.app.snapshot().unwrap();
     let result = state.sandboxes()[0]
-        .operations
+        .operations()
         .last()
         .unwrap()
-        .response
-        .as_ref()
+        .terminal()
         .unwrap();
     assert!(
         f.app.snapshot().unwrap().sandboxes()[0]
@@ -530,6 +559,43 @@ fn confirmation_uses_remaining_attempt_budget_without_resetting_original_wait() 
             .all(|budget| *budget < f.app.config.reply_timeout)
     );
 }
+struct UnavailableClock;
+impl Clock for UnavailableClock {
+    fn now_ms(&self) -> Result<i64, PortError> {
+        Err(PortError::OutcomeUnknown)
+    }
+}
+
+#[test]
+fn nonpositive_timeout_persists_original_destroy_when_clock_is_unavailable() {
+    for seconds in [-1, 0] {
+        let mut f = fixture();
+        let session = f.app.create("1", command()).unwrap();
+        let calls = f.host.calls.load(Ordering::SeqCst);
+        let app = Arc::try_unwrap(f.app).ok().expect("one application owner");
+        f.app = Arc::new(app.with_clock(Arc::new(UnavailableClock)));
+        assert_eq!(
+            f.app.set_timeout("1", &session.sandbox_id, 1),
+            Err(PortError::OutcomeUnknown)
+        );
+        assert_eq!(f.app.snapshot().unwrap().identity_frontiers(), (1, 1));
+        assert_eq!(f.app.set_timeout("1", &session.sandbox_id, seconds), Ok(()));
+        let state = f.app.snapshot().unwrap();
+        assert_eq!(state.identity_frontiers(), (1, 2));
+        assert_eq!(state.reserved(None, None), Some(resources(1)));
+        let record = &state.sandboxes()[0];
+        assert!(record.terminating());
+        assert!(!record.released());
+        assert_eq!(
+            record.operations().last().unwrap().acceptance_time(),
+            sandproof_center_core::AcceptanceTime::Unsampled
+        );
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), calls);
+        assert_eq!(f.app.set_timeout("1", &session.sandbox_id, seconds), Ok(()));
+        assert_eq!(f.app.snapshot().unwrap(), state);
+    }
+}
+
 fn config() -> CenterConfig {
     CenterConfig {
         domain: "example.invalid".into(),
@@ -548,19 +614,42 @@ fn durable_confirmation_keeps_repeated_renewals_bounded_and_lost_ack_is_retried(
     let session = f.app.create("1", command()).unwrap();
     for _ in 0..20 {
         f.app.set_timeout("1", &session.sandbox_id, 200).unwrap();
-        assert_eq!(f.app.snapshot().unwrap().sandboxes()[0].operations.len(), 2);
+        assert_eq!(
+            f.app.snapshot().unwrap().sandboxes()[0].operations().len(),
+            2
+        );
     }
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
     f.app.set_timeout("1", &session.sandbox_id, 100).unwrap();
     let retained = f.app.snapshot().unwrap();
-    assert_eq!(retained.sandboxes()[0].operations.len(), 3);
-    assert_eq!(retained.sandboxes()[0].end_at_ms, Some(101_000));
-    assert!(retained.pending().is_empty());
+    assert_eq!(retained.sandboxes()[0].operations().len(), 3);
+    assert_eq!(
+        retained.sandboxes()[0]
+            .current_running()
+            .map(|facts| facts.end_at_ms),
+        Some(101_000)
+    );
+    assert_eq!(
+        retained.pending_lifecycle(),
+        vec![
+            retained.sandboxes()[0]
+                .operations()
+                .last()
+                .unwrap()
+                .intent()
+                .clone()
+        ]
+    );
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     let compacted = f.app.snapshot().unwrap();
-    assert_eq!(compacted.sandboxes()[0].operations.len(), 2);
-    assert_eq!(compacted.sandboxes()[0].end_at_ms, Some(101_000));
+    assert_eq!(compacted.sandboxes()[0].operations().len(), 2);
+    assert_eq!(
+        compacted.sandboxes()[0]
+            .current_running()
+            .map(|facts| facts.end_at_ms),
+        Some(101_000)
+    );
     assert!(f.app.resolve_data_route(&session.envd_access_token).is_ok());
     f.app.kill("1", &session.sandbox_id).unwrap();
 }
@@ -576,17 +665,24 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
         .unwrap()
         .as_ref()
         .unwrap()
-        .identity
+        .request
+        .binding
         .node
         .clone();
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
     f.app.kill("1", &session.sandbox_id).unwrap();
     let terminal = f.app.snapshot().unwrap();
     let record = &terminal.sandboxes()[0];
-    assert_eq!(record.operations.len(), 2);
-    assert!(!record.has_compaction_work());
+    assert_eq!(record.operations().len(), 2);
+    assert!(record.unconfirmed_sdk_renewal().is_none());
     assert!(record.terminal_confirmation.is_none());
-    let cleaned = record.operations.last().unwrap().response.clone().unwrap();
+    let cleaned = record
+        .operations()
+        .last()
+        .unwrap()
+        .terminal()
+        .unwrap()
+        .clone();
     assert_eq!(f.app.begin_close(&cleaned), Err(PortError::Conflict));
     assert!(f.host.close_requests.lock().unwrap().is_empty());
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
@@ -595,13 +691,13 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
     assert_eq!(
         confirmed.sandboxes()[0].terminal_confirmation.as_ref(),
         confirmed.sandboxes()[0]
-            .operations
+            .operations()
             .last()
             .unwrap()
-            .response
-            .as_ref()
+            .terminal()
     );
     f.host.unknown_close.store(true, Ordering::SeqCst);
+    advance_retention(&f);
     let close = f.app.begin_close(&cleaned).unwrap();
     assert!(f.host.close_requests.lock().unwrap().is_empty()); // decision committed before detached I/O
     f.app.reconcile_once().unwrap();
@@ -615,7 +711,7 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
     assert!(reopened.sandboxes().is_empty());
     assert_eq!(
         reopened
-            .lane(&node, cleaned.identity.retention_slot)
+            .lane(&node, cleaned.request.retention.slot)
             .unwrap()
             .current()
             .unwrap()
@@ -629,42 +725,36 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
 }
 
 #[test]
-fn one_operation_not_accepted_requires_exact_terminal_confirmation() {
+fn refused_create_keeps_original_destroy_until_exact_terminal_confirmation() {
     let f = fixture();
-    f.host.unknown.store(true, Ordering::SeqCst);
-    assert!(f.app.create("1", command()).is_err());
-    let request = f.host.last.lock().unwrap().clone().unwrap();
-    let terminal = LifecycleResponse {
-        identity: request.identity.clone(),
-        observation_version: 1.try_into().unwrap(),
-        fact: LifecycleFact::NotAccepted,
-    };
-    f.app
-        .authority
-        .lock()
-        .unwrap()
-        .apply_response(&terminal)
-        .unwrap();
-    f.host.responses.lock().unwrap().insert(
-        request.identity.operation_id.as_str().to_owned(),
-        terminal.clone(),
-    );
+    f.host.capacity_refusal.store(true, Ordering::SeqCst);
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
-    f.app.reconcile_once().unwrap();
-    assert!(
-        f.app.snapshot().unwrap().sandboxes()[0]
-            .terminal_confirmation
-            .is_none()
+    assert_eq!(f.app.create("1", command()), Err(PortError::QuotaExceeded));
+    let snapshot = f.app.snapshot().unwrap();
+    let record = &snapshot.sandboxes()[0];
+    assert_eq!(record.operations().len(), 2);
+    assert_eq!(
+        record.operations()[0].create_refusal(),
+        Some(CreateRefusalReason::Capacity)
     );
+    let terminal = record
+        .operations()
+        .last()
+        .unwrap()
+        .terminal()
+        .unwrap()
+        .clone();
+    assert!(record.terminal_confirmation.is_none());
     assert_eq!(f.app.begin_close(&terminal), Err(PortError::Conflict));
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
-    let state = f.app.snapshot().unwrap();
-    assert_eq!(state.sandboxes()[0].operations.len(), 1);
+    let snapshot = f.app.snapshot().unwrap();
     assert_eq!(
-        state.sandboxes()[0].terminal_confirmation,
+        snapshot.sandboxes()[0].terminal_confirmation,
         Some(terminal.clone())
     );
+    assert!(f.app.begin_close(&terminal).is_err());
+    advance_retention(&f);
     assert!(f.app.begin_close(&terminal).is_ok());
 }
 
@@ -682,13 +772,17 @@ fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successor
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     f.host.unknown_close.store(true, Ordering::SeqCst);
+    advance_retention(&f);
     f.app.retire_terminal_history_once().unwrap();
     let pending = f.app.snapshot().unwrap().pending_closes();
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].terminal.identity.node, original.identity.node);
     assert_eq!(
-        pending[0].terminal.identity.request_window,
-        original.identity.request_window
+        pending[0].terminal.request.request.binding.node,
+        original.request.binding.node
+    );
+    assert_eq!(
+        pending[0].terminal.request.retention.window,
+        original.retention.window
     );
     f.host.unknown_close.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
@@ -696,7 +790,7 @@ fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successor
     assert!(successor.sandboxes().is_empty());
     assert_eq!(
         successor
-            .lane(&original.identity.node, original.identity.retention_slot)
+            .lane(&original.request.binding.node, original.retention.slot)
             .unwrap()
             .current()
             .unwrap()
@@ -716,8 +810,8 @@ fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successor
             .unwrap()
             .as_ref()
             .unwrap()
-            .identity
-            .request_window
+            .retention
+            .window
             .get(),
         2
     );
@@ -732,18 +826,26 @@ fn background_retirement_keeps_a_live_sibling_and_its_original_data_token() {
     for round in 1..=8 {
         let peer = f.app.create("1", command()).unwrap();
         let request = f.host.last.lock().unwrap().clone().unwrap();
-        assert_eq!(request.identity.request_window.get(), round);
+        assert_eq!(request.retention.window.get(), round);
         assert_ne!(
-            request.identity.retention_slot,
-            original.operations[0].request.identity.retention_slot
+            request.retention.slot,
+            original.operations()[0].intent().retention.slot
         );
         f.app.kill("1", &peer.sandbox_id).unwrap();
         f.host.unknown_close.store(true, Ordering::SeqCst);
+        advance_retention(&f);
         f.app.retire_terminal_history_once().unwrap();
         let pending = f.app.snapshot().unwrap().pending_closes();
         assert_eq!(pending.len(), 1);
         assert_eq!(
-            pending[0].terminal.identity.sandbox_id.as_str(),
+            pending[0]
+                .terminal
+                .request
+                .request
+                .binding
+                .session
+                .as_protocol_id()
+                .as_str(),
             peer.sandbox_id
         );
         assert!(
@@ -765,21 +867,29 @@ fn background_retirement_keeps_a_live_sibling_and_its_original_data_token() {
 }
 
 #[test]
-fn durable_original_capacity_refusal_is_429_and_never_waits_for_a_fake_destroy() {
+fn durable_capacity_refusal_is_429_after_original_destroy_cleanup() {
     let f = fixture();
     f.host.capacity_refusal.store(true, Ordering::SeqCst);
     assert_eq!(f.app.create("1", command()), Err(PortError::QuotaExceeded));
     let snapshot = f.app.snapshot().unwrap();
     let record = &snapshot.sandboxes()[0];
-    assert_eq!(record.operations.len(), 1);
-    let terminal = record.operations[0].response.as_ref().unwrap();
-    assert_eq!(terminal.fact, LifecycleFact::NotAccepted);
+    assert_eq!(record.operations().len(), 2);
+    assert_eq!(
+        record.operations()[0].create_refusal(),
+        Some(CreateRefusalReason::Capacity)
+    );
+    let terminal = record.operations()[1].terminal().unwrap();
+    assert_eq!(terminal.status, TerminalStatus::Cleaned);
     assert_eq!(record.terminal_confirmation.as_ref(), Some(terminal));
     assert_eq!(snapshot.reserved(None, None), Some(Resources::ZERO));
     f.app.retire_terminal_history_once().unwrap();
+    assert_eq!(f.app.snapshot().unwrap().sandboxes().len(), 1);
+    advance_retention(&f);
+    f.app.retire_terminal_history_once().unwrap();
     assert!(f.app.snapshot().unwrap().sandboxes().is_empty());
-    assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
 }
+
 type App = CenterApplication<MemoryAuthority, Host, Templates>;
 struct Fixture {
     app: Arc<App>,
@@ -792,11 +902,12 @@ fn fixture() -> Fixture {
     let unreadable = Arc::new(AtomicBool::new(false));
     let unknown_create = Arc::new(AtomicBool::new(false));
     let host = Host::default();
-    let clock = TestClock(Arc::new(AtomicU64::new(1000)));
+    let clock = host.clock.clone();
     let app = Arc::new(
         CenterApplication::new(
             MemoryAuthority {
                 state: state(),
+                clock: clock.clone(),
                 hidden_sandboxes: Vec::new(),
                 query_templates: vec![template()],
                 unreadable: Arc::clone(&unreadable),
@@ -814,7 +925,12 @@ fn fixture() -> Fixture {
             &[13; 32],
         )
         .unwrap()
-        .with_clock(Arc::new(clock.clone())),
+        .with_clock(Arc::new(clock.clone()))
+        .with_lifecycle_observation_policy(NodeObservationPolicy {
+            health_window_ms: 1000,
+            max_clock_skew_ms: 10,
+        })
+        .unwrap(),
     );
     Fixture {
         app,
@@ -890,17 +1006,17 @@ fn private_validation_cannot_issue_public_tokens_or_receive_user_management() {
     );
     // Hiding is NOT cleanup. The trusted internal driver still sees the SAME
     // record and can commit its original Destroy; no public bypass is added.
+    let original = f.app.snapshot().unwrap().sandboxes()[0].operations()[0]
+        .intent()
+        .clone();
     let destroy = f
         .app
         .authority
         .lock()
         .unwrap()
-        .destroy(
-            &"1".try_into().unwrap(),
-            &hidden.sandbox_id.as_str().try_into().unwrap(),
-        )
+        .destroy_bound_create(&original)
         .unwrap();
-    assert!(f.app.wait(&destroy).is_ok());
+    assert!(f.app.wait_current_terminal(&destroy).is_ok());
     assert_eq!(
         f.app.snapshot().unwrap().reserved(None, None),
         Some(resources(1))
@@ -917,7 +1033,7 @@ fn public_create_get_list_reuse_original_options_and_sdk_pagination() {
     assert_eq!(session.sandbox_id, "sandbox-1");
     let wire = f.host.last.lock().unwrap().clone().unwrap();
     let options: sandproof_controller_service::CreateOptions =
-        serde_json::from_slice(&wire.create.options).unwrap();
+        serde_json::from_slice(&create_binding(&wire).options).unwrap();
     assert!(
         options.template.is_none(),
         "local host paths are never center input"
@@ -978,10 +1094,8 @@ fn connect_defaults_extend_only_after_host_confirmation_and_keep_public_token() 
         f.app
             .resolve_data_route(&original.envd_access_token)
             .unwrap()
-            .request
             .identity
-            .intent_version
-            .get(),
+            .accepted_version,
         3
     );
 }
@@ -1036,7 +1150,7 @@ fn unhealthy_node_still_accepts_nonpositive_expiry_and_reconciles_original_destr
         f.app
             .set_timeout("1", &session.sandbox_id, seconds)
             .unwrap();
-        assert!(f.app.snapshot().unwrap().sandboxes()[0].terminating);
+        assert!(f.app.snapshot().unwrap().sandboxes()[0].terminating());
         assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             f.app.snapshot().unwrap().reserved(None, None),
@@ -1103,8 +1217,11 @@ fn host_transport_failure_after_admission_is_unknown_and_retains_original_identi
     let f = fixture();
     f.host.unknown.store(true, Ordering::SeqCst);
     assert_eq!(f.app.create("1", command()), Err(PortError::OutcomeUnknown));
-    let original = f.app.snapshot().unwrap().pending()[0].clone();
-    assert_eq!(original.identity.sandbox_id.as_str(), "sandbox-1");
+    let original = f.app.snapshot().unwrap().pending_lifecycle()[0].clone();
+    assert_eq!(
+        original.request.binding.session.as_protocol_id().as_str(),
+        "sandbox-1"
+    );
     f.host.unknown.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     assert_eq!(f.host.last.lock().unwrap().as_ref().unwrap(), &original);
@@ -1119,10 +1236,13 @@ fn transient_host_budget_refusal_retries_only_the_original_durable_intent() {
     assert_eq!(f.host.calls.load(Ordering::SeqCst), 3);
     let state = f.app.snapshot().unwrap();
     assert_eq!(state.sandboxes().len(), 1);
-    assert_eq!(state.sandboxes()[0].operations.len(), 1);
-    let request = &state.sandboxes()[0].operations[0].request;
-    assert_eq!(request.identity.sandbox_id.as_str(), session.sandbox_id);
-    assert_eq!(request.identity.operation_id.as_str(), "operation-1");
+    assert_eq!(state.sandboxes()[0].operations().len(), 1);
+    let request = state.sandboxes()[0].operations()[0].intent();
+    assert_eq!(
+        request.request.binding.session.as_protocol_id().as_str(),
+        session.sandbox_id
+    );
+    assert_eq!(request.request.binding.key.sequence.get(), 1);
     assert_eq!(f.host.last.lock().unwrap().as_ref(), Some(request));
 }
 
@@ -1144,8 +1264,10 @@ fn unknown_redis_commit_prevents_dispatch_and_cached_read_authorization() {
             .unwrap()
             .as_ref()
             .unwrap()
-            .identity
-            .sandbox_id
+            .request
+            .binding
+            .session
+            .as_protocol_id()
             .as_str(),
         "sandbox-1"
     );
@@ -1184,9 +1306,9 @@ fn public_tokens_are_instance_bound_and_do_not_route_after_kill_or_expiry() {
         f.app
             .resolve_data_route(&first.envd_access_token)
             .unwrap()
-            .request
             .identity
-            .tenant_id
+            .operation
+            .owner
             .as_str(),
         "1"
     );
@@ -1243,7 +1365,7 @@ fn recorded_receipt_timeout_is_not_success_and_original_pending_survives() {
     let f = fixture();
     f.host.recorded.store(true, Ordering::SeqCst);
     assert_eq!(f.app.create("1", command()), Err(PortError::OutcomeUnknown));
-    assert_eq!(f.app.snapshot().unwrap().pending().len(), 1);
+    assert_eq!(f.app.snapshot().unwrap().pending_lifecycle().len(), 1);
     assert_eq!(f.app.get("1", "sandbox-1"), Err(PortError::NotFound));
 }
 
@@ -1283,18 +1405,25 @@ fn startup_timeout_creates_destroy_intent_without_guessing_absence() {
     let f = fixture();
     f.host.unknown.store(true, Ordering::SeqCst);
     assert_eq!(f.app.create("1", command()), Err(PortError::OutcomeUnknown));
-    let original = f.app.snapshot().unwrap().pending()[0].clone();
-    f.clock
-        .0
-        .store(original.create.startup_deadline_ms, Ordering::SeqCst);
-    assert_eq!(f.app.reconcile_once(), Ok(0));
-    let terminating = f.app.snapshot().unwrap().pending()[0].clone();
-    assert_eq!(terminating.intent, Intent::Destroy);
-    assert_eq!(
-        terminating.identity.sandbox_id,
-        original.identity.sandbox_id
+    let original = f.app.snapshot().unwrap().pending_lifecycle()[0].clone();
+    f.clock.0.store(
+        create_binding(&original).startup_deadline_ms,
+        Ordering::SeqCst,
     );
-    assert_eq!(terminating.create, original.create);
+    assert_eq!(f.app.reconcile_once(), Ok(0));
+    let terminating = f.app.snapshot().unwrap().pending_lifecycle()[0].clone();
+    assert_eq!(
+        terminating.request.operation,
+        LifecycleOperation::Destroy {}
+    );
+    assert_eq!(
+        terminating.request.binding.session.as_protocol_id(),
+        original.request.binding.session.as_protocol_id()
+    );
+    assert_eq!(
+        f.app.snapshot().unwrap().sandboxes()[0].operations()[0].intent(),
+        &original
+    );
     assert_eq!(
         f.app.snapshot().unwrap().reserved(None, None),
         Some(resources(1))
@@ -1320,7 +1449,8 @@ fn background_shared_storage_failure_is_reported_not_counted_as_host_unknown() {
 
 #[test]
 fn slow_network_does_not_hold_center_decision_lock_and_late_ready_cannot_revive_destroy() {
-    let f = fixture();
+    let mut f = fixture();
+    Arc::get_mut(&mut f.app).unwrap().config.reply_timeout = Duration::from_secs(2);
     let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
     let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
     *f.host.gate.lock().unwrap() = Some(NetworkGate {
@@ -1335,7 +1465,7 @@ fn slow_network_does_not_hold_center_decision_lock_and_late_ready_cannot_revive_
     f.app.kill("1", "sandbox-1").unwrap();
     release_tx.send(()).unwrap();
     assert_eq!(creator.join().unwrap(), Err(PortError::OutcomeUnknown));
-    assert!(f.app.snapshot().unwrap().sandboxes()[0].released);
+    assert!(f.app.snapshot().unwrap().sandboxes()[0].released());
     assert_eq!(f.app.get("1", "sandbox-1"), Err(PortError::NotFound));
 }
 
@@ -1360,7 +1490,6 @@ fn data_token_is_stable_on_same_deployment_restart_but_not_another_key_or_node_g
         .app
         .resolve_data_route(&session.envd_access_token)
         .unwrap()
-        .request
         .identity;
     let same = crate::token::Tokens::new(&[13; 32]).unwrap();
     assert_eq!(same.issue(&identity).unwrap(), session.envd_access_token);

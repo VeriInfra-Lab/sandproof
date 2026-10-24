@@ -144,13 +144,13 @@ def exercise(args):
         rows.append({'protocol': protocol, 'address': address, 'port': port, 'allowed': actual})
 
     def capture(attempt, identity, center, host):
-        if attempt in known and known[attempt] != identity['sandbox_id']:
+        if attempt in known and known[attempt] != identity['binding']['session']:
             raise RuntimeError('saved original global identity changed')
-        known[attempt] = identity['sandbox_id']
+        known[attempt] = identity['binding']['session']
         save(root/'original-identities.json',known)
         create_identities[attempt] = identity
         save(root/'original-create-identities.json',create_identities)
-        local = local_binding(host,identity['sandbox_id'],expected_node=identity['node'])
+        local = local_binding(host,identity['binding']['session'],expected_node=identity['binding']['node'])
         original = [row for row in host['native'] if row['sandbox']==local['sandbox']]
         if len(original)!=1:
             raise RuntimeError('original native observation unknown')
@@ -158,7 +158,7 @@ def exercise(args):
             return False
         services.processes.stop('host-0')
         try:
-            native_id=services.native_id_for(identity['sandbox_id'])
+            native_id=services.native_id_for(identity['binding']['session'])
             secret,name,record=record_for(root,native_id=native_id)
             bound=secret['template']
             for field in ('template_id','revision','resources','envd_version'):
@@ -183,7 +183,7 @@ def exercise(args):
         save(root / 'original-identities.json', known)
         center=services.planned_audit('center')
         identity=find_runtime_create(center,intents[attempt],deployment=services.center_config['deployment_id'])
-        if identity['sandbox_id']!=sb.sandbox_id:
+        if identity['binding']['session']!=sb.sandbox_id:
             raise RuntimeError('original SDK identity changed')
         if capture(attempt,identity,center,services.planned_audit('host-0')) is False:
             raise RuntimeError('successful SDK create lacks its original running VM')

@@ -8,14 +8,15 @@ _require_assertions()
 
 from concurrent.futures import ThreadPoolExecutor
 import http.client
+import copy
 import json
 import os
 import secrets
 import signal
 
-from _center_fault_harness import center_record, physical_record, same_running_process, vm_gone
+from _center_fault_harness import center_record, captured_create_matches, physical_record, same_running_process, vm_gone
 from server_unready_abort import wait_for
-from tools.runtime_create_recovery import find_runtime_create
+from tools.runtime_create_recovery import find_runtime_create, original_create_identity
 
 
 def sdk_from_detail(harness, sandbox_id):
@@ -51,14 +52,14 @@ def dk01(h):
     original=center_record(h.center(),h.known[ident]['create'])
     Sandbox.set_timeout(ident,240,**h.sdk_options())
     renewed=center_record(h.center(),h.known[ident]['create'])
-    assert renewed['started_at_ms']==original['started_at_ms']
-    assert renewed['max_end_at_ms']==original['max_end_at_ms']
-    assert renewed['end_at_ms']>original['end_at_ms']
+    assert renewed['operations'][-1]['running']['started_at_ms']==original['operations'][-1]['running']['started_at_ms']
+    assert renewed['operations'][-1]['running']['max_end_at_ms']==original['operations'][-1]['running']['max_end_at_ms']
+    assert renewed['operations'][-1]['running']['end_at_ms']>original['operations'][-1]['running']['end_at_ms']
     assert same_running_process(h.known[ident]['physical'])
     terminal=h.kill(ident)
     assert h.fetch('GET','/sandboxes/'+ident)[0]==404
-    h.complete_case('DK01',dict(create=h.known[ident]['create'],renewed_end_at_ms=renewed['end_at_ms'],
-        original_started_at_ms=original['started_at_ms'],terminal=terminal,
+    h.complete_case('DK01',dict(create=h.known[ident]['create'],renewed_end_at_ms=renewed['operations'][-1]['running']['end_at_ms'],
+        original_started_at_ms=original['operations'][-1]['running']['started_at_ms'],terminal=terminal,
         sdk='2.51.0',management='create/get/list/renew/kill',data='command/file'))
 
 
@@ -70,16 +71,22 @@ def dk02(h):
         response=worker.submit(h.fetch,'POST','/v2/sandboxes',dict(templateID='base',timeout=180,
             allow_internet_access=False,metadata=metadata))
         try:
-            assert barrier.ready.wait(timeout=h.args.wait_seconds), 'no real durable Ready reached test barrier'
-            captured=barrier.captured.copy()
+            assert barrier.ready.wait(timeout=h.args.wait_seconds), 'no real current Create observation reached test barrier'
+            captured=copy.deepcopy(barrier.captured)
+            accepted=captured['request']
+            identity=dict(binding=accepted['request']['binding'],center=accepted['center'],
+                retention=accepted['retention'],accepted_version=accepted['accepted_version'])
             assert barrier.forwarded==0 and not barrier.release.is_set()
             host_before_audit=h.services.processes.observe()['host-0']
             # The Ready barrier must not let the ordinary readiness helper
             # restart the center before the explicit receipt-loss fault.
             host=h.host(resume_ready=False)
-            current=[row for row in host['operations'] if row['current'] and row['identity']==captured['identity']]
-            assert len(current)==1 and current[0]['response']['fact']==captured['fact']
-            before=physical_record(h.root,host,captured['identity'])
+            # The current Host audit has no saved Ready packet; bind its real mapping.
+            current=[row for row in host['operations'] if row['current'] is True
+                and row['binding']==identity['binding']
+                and row['accepted_version']==identity['accepted_version']]
+            assert len(current)==1
+            before=physical_record(h.root,host,identity)
             processes=h.services.processes
             old_center=processes.observe()['center']
             old_host=processes.observe()['host-0']
@@ -88,11 +95,12 @@ def dk02(h):
             # The barrier was reached BEFORE a single centerward response byte;
             # center's original Redis record still cannot contain this Ready.
             audit=processes.audit('center')
-            identity=find_runtime_create(audit,metadata,deployment=h.services.center_config['deployment_id'])
-            assert identity==captured['identity']
+            assert identity==find_runtime_create(audit,metadata,deployment=h.services.center_config['deployment_id'])
             record=center_record(audit,identity)
-            assert record['started_at_ms'] is None
-            assert record['operations'][-1]['response'] is None or record['operations'][-1]['response']['fact']['kind']=='recorded'
+            assert captured_create_matches(record,captured)==identity
+            assert record['last_running'] is None
+            assert record['operations'][-1]['running'] is None
+            assert record['operations'][-1]['terminal'] is None
             assert same_running_process(before) and same_running_process(old_host)
             barrier.unblock(discard=True)
             try:
@@ -104,20 +112,22 @@ def dk02(h):
             h.services.wait_ready(for_admission=False)
             def recovered():
                 value=center_record(h.center(),identity)
-                return value if value['started_at_ms'] is not None else None
-            record=wait_for(recovered,h.args.wait_seconds,'original Ready replay into the center')
-            assert (record['started_at_ms'],record['end_at_ms'],record['max_end_at_ms'])==(
-                captured['fact']['started_at_ms'],captured['fact']['end_at_ms'],captured['fact']['max_end_at_ms'])
+                return value if value['operations'][-1]['running'] is not None else None
+            record=wait_for(recovered,h.args.wait_seconds,'original execution freshly observed and committed by center')
+            assert (record['operations'][-1]['running']['started_at_ms'],record['operations'][-1]['running']['end_at_ms'],record['operations'][-1]['running']['max_end_at_ms'])==(
+                captured['readiness']['facts']['started_at_ms'],captured['readiness']['facts']['end_at_ms'],captured['readiness']['facts']['max_end_at_ms'])
+            assert captured_create_matches(record,captured)==identity
+            assert record['operations'][-1]['running']['startup_deadline_ms']==captured['readiness']['facts']['startup_deadline_ms']
             assert same_running_process(old_host), 'healthy host restarted during center receipt recovery'
             after=physical_record(h.root,h.host(),identity)
             assert before==after
-            h.known[identity['sandbox_id']]=dict(create=identity,physical=after)
-            sandbox=sdk_from_detail(h,identity['sandbox_id'])
+            h.known[identity['binding']['session']]=dict(create=identity,physical=after)
+            sandbox=sdk_from_detail(h,identity['binding']['session'])
             assert sandbox.commands.run('printf after-ready-loss').stdout=='after-ready-loss'
             terminal=h.kill(sandbox.sandbox_id)
             h.complete_case('DK02',dict(original_ready=captured,original_vm=before,
                 old_center=old_center,host_independent=old_host,centerward_ready_bytes=0,
-                planned_offline_ready_audit=dict(before=host_before_audit,after=old_host),
+                planned_offline_mapping_audit=dict(before=host_before_audit,after=old_host),
                 terminal=terminal))
         finally:
             barrier.unblock(discard=True)
@@ -137,15 +147,15 @@ def dk03(h):
     center=h.center()
     identity=find_runtime_create(center,metadata,deployment=h.services.center_config['deployment_id'])
     before=physical_record(h.root,h.host(),identity)
-    assert center_record(center,identity)['started_at_ms'] is None
+    assert center_record(center,identity)['last_running'] is None
     processes.start('host-0')
     h.services.wait_ready(for_admission=False)
-    wait_for(lambda:h.fetch('GET','/sandboxes/'+identity['sandbox_id'])[0]==200,
+    wait_for(lambda:h.fetch('GET','/sandboxes/'+identity['binding']['session'])[0]==200,
              h.args.wait_seconds,'same accepted startup reconciliation')
     after=physical_record(h.root,h.host(),identity)
     assert before==after
-    h.known[identity['sandbox_id']]=dict(create=identity,physical=after)
-    sandbox=sdk_from_detail(h,identity['sandbox_id'])
+    h.known[identity['binding']['session']]=dict(create=identity,physical=after)
+    sandbox=sdk_from_detail(h,identity['binding']['session'])
     assert sandbox.commands.run('printf host-recovered').stdout=='host-recovered'
     processes.stop('host-0')
     processes.start('host-0',env={'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION':'stop_vm'})
@@ -179,7 +189,7 @@ def dk04(h):
         rows=[center_record(pending,h.known[ident]['create']) for ident in ids]
         assert all(not row['released'] for row in rows)
         assert rows[0]['terminating']
-        assert all(row['create']['identity']['node']==old['create']['node'] for row,old in zip(rows,[h.known[i] for i in ids]))
+        assert all(row['create']['binding']['node']==old['create']['binding']['node'] for row,old in zip(rows,[h.known[i] for i in ids]))
         # Both quotas remain held while the authenticated host cannot report
         # cleanup, even after its independent local expiry has stopped a VM.
         assert h.fetch('POST','/v2/sandboxes',dict(templateID='base',timeout=60,allow_internet_access=False))[0] in (429,503)
@@ -189,8 +199,8 @@ def dk04(h):
         pending=h.center()
         assert all(not center_record(pending,h.known[ident]['create'])['released'] for ident in ids)
         assert h.fetch('GET','/sandboxes/'+expiring.sandbox_id,foreign=True)[0]==404
-        partitioned=list(h.relay.partition_identities)
-        assert all(value['node']==h.known[destroy.sandbox_id]['create']['node'] for value in partitioned)
+        partitioned=list(h.relay.partition_requests)
+        assert all(value['request']['binding']['node']==h.known[destroy.sandbox_id]['create']['binding']['node'] for value in partitioned)
     finally:
         h.relay.partition.clear()
     h.services.wait_ready(for_admission=False)
@@ -229,8 +239,8 @@ def dk05(h):
     processes.start('center')
     h.services.wait_ready(for_admission=False)
     restored=center_record(h.center(),identity)
-    assert restored['create']==original['create'] and restored['started_at_ms']==original['started_at_ms']
-    assert restored['end_at_ms']==original['end_at_ms']
+    assert restored['create']==original['create'] and restored['operations'][-1]['running']['started_at_ms']==original['operations'][-1]['running']['started_at_ms']
+    assert restored['operations'][-1]['running']['end_at_ms']==original['operations'][-1]['running']['end_at_ms']
     assert len(h.center()['sandboxes'])==1 and same_running_process(original_vm)
     assert sandbox.commands.run('printf redis-resumed').stdout=='redis-resumed'
     before_restart=processes.observe()['redis']
@@ -246,8 +256,8 @@ def dk05(h):
     assert after_restart['pid']!=before_restart['pid'] or after_restart['start_time_ticks']!=before_restart['start_time_ticks']
     assert same_running_process(actual['host-0']) and same_running_process(original_vm)
     final=center_record(h.center(),identity)
-    assert final['started_at_ms']==original['started_at_ms'] and final['create']==original['create']
-    assert final['end_at_ms']==original['end_at_ms']
+    assert final['operations'][-1]['running']['started_at_ms']==original['operations'][-1]['running']['started_at_ms'] and final['create']==original['create']
+    assert final['operations'][-1]['running']['end_at_ms']==original['operations'][-1]['running']['end_at_ms']
     sandbox.files.write('/tmp/sandproof-redis-restart','same-vm')
     assert sandbox.files.read('/tmp/sandproof-redis-restart')=='same-vm'
     terminal=h.kill(sandbox.sandbox_id)

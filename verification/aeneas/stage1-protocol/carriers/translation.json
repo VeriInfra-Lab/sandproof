@@ -1,0 +1,248 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_stage1_protocol_extract",
+  "functions": [
+    {
+      "def_id": 30,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.internal.PositiveCounter.get",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 85,
+        "end_line": 85
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 31,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.internal.PositiveCounter.checked_next",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::checked_next",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::from_sha256",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs",
+        "begin_line": 16,
+        "end_line": 16
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 27,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.lifecycle.digest.ContentDigest.into_bytes",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::into_bytes",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs",
+        "begin_line": 26,
+        "end_line": 26
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.lifecycle.identity.CaptureId.get",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::CaptureId}::get",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 38,
+        "end_line": 38
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.lifecycle.identity.CaptureId.checked_next",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::CaptureId}::checked_next",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 44,
+        "end_line": 44
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreConvertTryFromU64InternalError.try_from",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::lifecycle::identity::CaptureId}::try_from",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 55,
+        "end_line": 55
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofStage1CarriersRust.capture_from_u64",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_stage1_protocol_extract::capture_from_u64",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 44, "end_line": 46 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofStage1CarriersRust.capture_value",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_stage1_protocol_extract::capture_value",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 48, "end_line": 50 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofStage1CarriersRust.capture_next",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_stage1_protocol_extract::capture_next",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 52, "end_line": 54 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofStage1CarriersRust.digest_roundtrip",
+      "lean_file": "SandproofStage1Carriers/Funs.lean",
+      "rust_name": "sandproof_stage1_protocol_extract::digest_roundtrip",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 56, "end_line": 58 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 10,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.internal.PositiveCounter",
+      "lean_file": "SandproofStage1Carriers/Types.lean",
+      "rust_name": "sandproof_protocol::internal::PositiveCounter",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 49,
+        "end_line": 49
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.internal.InternalError",
+      "lean_file": "SandproofStage1Carriers/Types.lean",
+      "rust_name": "sandproof_protocol::internal::InternalError",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 225,
+        "end_line": 225
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.lifecycle.digest.ContentDigest",
+      "lean_file": "SandproofStage1Carriers/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::digest::ContentDigest",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs",
+        "begin_line": 11,
+        "end_line": 11
+      }
+    },
+    {
+      "def_id": 3,
+      "lean_name": "SandproofStage1CarriersRust.sandproof_protocol.lifecycle.identity.CaptureId",
+      "lean_file": "SandproofStage1Carriers/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::CaptureId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 34,
+        "end_line": 34
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}

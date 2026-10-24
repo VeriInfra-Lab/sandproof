@@ -14,13 +14,13 @@ The first stage focuses on three connected problems:
 
 The system retains a real center-to-host network path: one active center writer with authoritative Redis, and one fixed Linux/KVM host with SQLite, supporting multiple users and sessions. The center owns global authorization, bindings, reservations, and intent; the host owns local control, persistence, physical execution, and precise cleanup. Redis, SQLite, files, and the VMM do not share an atomic transaction.
 
-The [project plan (#1)](https://github.com/VeriInfra-Lab/sandproof/issues/1) and [stage1 blueprint](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md) define the current scope. The new V0–V9 work is tracked in #632–#641, linked from the project plan. Delivery requires a working system, conditional proofs for the designated Rust implementation, and reproducible experiments covering state continuity, failures, and resources.
+The [project plan (#1)](https://github.com/VeriInfra-Lab/sandproof/issues/1) and [stage1 blueprint](docs/project-blueprint.md) define the current scope. The new V0–V9 work is tracked in #632–#641, linked from the project plan. Delivery requires a working system, conditional proofs for the designated Rust implementation, and reproducible experiments covering state continuity, failures, and resources.
 
 ## Goals and implementation status
 
 Existing center/host components, cold boot and cleanup, core E2B compatibility, the template pipeline, gateways, and shared proofs provide the foundation. **The new stateful lifecycle is being implemented and verified incrementally. The complete create → unload → management-process restart → resume → destroy path cannot yet be described as accepted or proved.** Pause/Resume types in a pure core, isolated component tests, and historical proofs do not establish acceptance of the actual product path.
 
-The current stage design is maintained on `stage1` and has not been integrated wholesale into this branch's documentation tree. Use the stage1 links below for the latest scope, contracts, and acceptance requirements. Code and [proof coverage](docs/proof-coverage.md) in this branch describe their respective integrated baseline; issues and PRs record the actual results for later candidates.
+This branch includes the current Stage1 design and committed implementation candidate. The lifecycle is incomplete and the full acceptance gates have not passed. This is a team development baseline, not a deployment release; exact proof applicability is recorded in [proof coverage](docs/proof-coverage.md).
 
 The first stage requires full snapshots on the same host and loading a restored VM in a paused state. Suspension and restoration must not reset the session's total lifetime. New lifecycle operations require an operation key known to the client before its first send. Existing SDK create calls without a key do not automatically acquire safe retry semantics, and existing TCP/vsock connections are not guaranteed to survive restoration.
 
@@ -33,8 +33,8 @@ Detailed documentation is currently primarily in Chinese. This English README is
 - [Project plan and tasks](https://github.com/VeriInfra-Lab/sandproof/issues/1), [milestones](https://github.com/VeriInfra-Lab/sandproof/milestones)
 - [Contributing guide](CONTRIBUTING.md): branches, commits, PRs, testing, and documentation; task branch → integration → test → main
 - [Documentation index for this branch](docs/README.md): integrated baseline documentation and tooling
-- [Current stage blueprint](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md), [architecture](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/ARCHITECTURE.md), and [module contracts](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/module-contracts.md): current goals, responsibilities, and failure semantics
-- [Current verification design](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/formal-verification-design.md), [proof coverage](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/proof-coverage.md), and [acceptance plan](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/testing-plan.md): target properties, applicability, and real-machine acceptance criteria
+- [Current stage blueprint](docs/project-blueprint.md), [architecture](docs/ARCHITECTURE.md), and [module contracts](docs/module-contracts.md): current goals, responsibilities, and failure semantics
+- [Current verification design](docs/formal-verification-design.md), [proof coverage](docs/proof-coverage.md), and [acceptance plan](docs/testing-plan.md): target properties, applicability, and real-machine acceptance criteria
 - [CI runs](https://github.com/VeriInfra-Lab/sandproof/actions)
 
 ## Code and proofs

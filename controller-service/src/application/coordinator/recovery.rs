@@ -4,8 +4,8 @@ use super::super::{HostSlots, LaunchConfiguration, WorkRecovery};
 use super::{
     ApplicationError, BTreeSet, Clock, ControllerApplication, ControllerHost, ControllerJournal,
     DataLease, Inner, JournalError, NeverCrash, RecoveryReport, WorkAction, WorkReceipt,
-    WorkerTransportError, core, data_credentials, finish_accepted_kill_v1,
-    finish_admitted_create_v1_timed, finish_compensating_create_v1, map_admission, map_journal,
+    WorkerTransportError, core, data_credentials, finish_accepted_kill,
+    finish_admitted_create_timed, finish_compensating_create, map_admission, map_journal,
     map_journal_at, same_secret, token,
 };
 
@@ -61,7 +61,7 @@ fn matches_current_reclaim(
 
 fn reclaim_uncertain_actions<H: WorkRecovery>(
     journal: &ControllerJournal,
-    host: &mut H,
+    host: &H,
     world: &core::World,
     blocked: &mut BTreeSet<core::SandboxId>,
     selected: Option<core::SandboxId>,
@@ -236,7 +236,7 @@ fn observe_recovery_action<H: WorkRecovery>(
 
 fn blocked_launch_configs<H: LaunchConfiguration>(
     journal: &mut ControllerJournal,
-    host: &mut H,
+    host: &H,
     initial: &core::World,
     selected: Option<core::SandboxId>,
     prior_blocked: &BTreeSet<core::SandboxId>,
@@ -371,7 +371,7 @@ fn register_recovered_credential(
 }
 
 fn ensure_launch_config<H: LaunchConfiguration>(
-    host: &mut H,
+    host: &H,
     sandbox: core::SandboxId,
     options: &crate::CreateOptions,
     registered: bool,
@@ -398,7 +398,10 @@ fn ensure_launch_config<H: LaunchConfiguration>(
     Ok(false)
 }
 
-fn host_routes_drained<H: ControllerHost>(host: &H, context: &crate::HostSlotContext) -> bool {
+pub(super) fn host_routes_drained<H: ControllerHost>(
+    host: &H,
+    context: &crate::HostSlotContext,
+) -> bool {
     host.data_gate_drained(context).unwrap_or_else(|error| {
         FaultRecord::application(FaultStage::DataGate, &error, FaultContext::slot(context)).emit();
         false
@@ -430,15 +433,17 @@ pub fn can_install_host_slot_binding(world: &core::World, sandbox: core::Sandbox
 
 pub(super) fn bind_recovery_slots<H: HostSlots>(
     journal: &ControllerJournal,
-    host: &mut H,
+    host: &H,
     world: &core::World,
     selected: Option<core::SandboxId>,
+    prior_blocked: &BTreeSet<core::SandboxId>,
     first_fault: &mut Option<FaultRecord>,
 ) -> Result<BTreeSet<core::SandboxId>, ApplicationError> {
     let mut blocked = BTreeSet::new();
     for (context, phase) in journal.host_slot_inventory().map_err(map_journal)? {
         if phase != core::maintenance::slots::HostSlotPhase::Occupied
             || selected.is_some_and(|id| id != context.binding.sandbox)
+            || prior_blocked.contains(&context.binding.sandbox)
         {
             continue;
         }
@@ -491,7 +496,7 @@ pub(super) fn release_reclaimed_slots<H: ControllerHost>(
             .data_drains
             .get(&sandbox.0)
             .is_none_or(DataLease::drained)
-            || (drained && host_routes_drained(&inner.host, &context));
+            || (drained && host_routes_drained(inner.host.as_ref(), &context));
         if !drained
             || !known_exit
             || inner
@@ -558,6 +563,24 @@ pub(super) fn release_reclaimed_slots<H: ControllerHost>(
 // Recovery is serialized by ControllerApplication's mutex. The optional sandbox filter
 // lets a repeated kill observe and finish its *existing* operation without
 // changing unrelated instances. It never accepts a second lifecycle input.
+fn epoch_blocked_startups(
+    journal: &ControllerJournal,
+    world: &core::World,
+    selected: Option<core::SandboxId>,
+) -> Result<BTreeSet<core::SandboxId>, ApplicationError> {
+    if journal.startup_epoch_ready().map_err(map_journal)? {
+        return Ok(BTreeSet::new());
+    }
+    Ok(world
+        .sandbox_records()
+        .iter()
+        .filter_map(|(sandbox, record)| {
+            (record.phase == core::Phase::Starting && selected.is_none_or(|id| id == *sandbox))
+                .then_some(*sandbox)
+        })
+        .collect())
+}
+
 pub(super) fn recover_locked<H: ControllerHost>(
     inner: &mut Inner<H>,
     selected: Option<core::SandboxId>,
@@ -578,10 +601,21 @@ pub(super) fn recover_locked<H: ControllerHost>(
     // each completed workflow while holding the management/data admission lock.
     let reclaimed = reclaimed_sandboxes(&initial);
     let mut first_fault = None;
-    let mut blocked = bind_recovery_slots(journal, host, &initial, selected, &mut first_fault)?;
+    // Missing fresh V3 bootstrap cannot be bypassed by reclaiming an already
+    // dispatched activation. Terminal/cleanup responsibility remains eligible.
+    let epoch_blocked = epoch_blocked_startups(journal, &initial, selected)?;
+    let mut blocked = bind_recovery_slots(
+        journal,
+        host.as_ref(),
+        &initial,
+        selected,
+        &epoch_blocked,
+        &mut first_fault,
+    )?;
+    blocked.extend(epoch_blocked.iter().copied());
     let launch_blocked = blocked_launch_configs(
         journal,
-        host,
+        host.as_ref(),
         &initial,
         selected,
         &blocked,
@@ -590,7 +624,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
     blocked.extend(launch_blocked);
     reclaim_uncertain_actions(
         journal,
-        host,
+        host.as_ref(),
         &initial,
         &mut blocked,
         selected,
@@ -599,7 +633,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
     let recovery_world = journal.world().map_err(map_journal)?;
     let receipts_recovered = recover_receipts(
         journal,
-        host,
+        host.as_ref(),
         &recovery_world,
         &mut blocked,
         selected,
@@ -628,7 +662,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
         let Some(operation) = record.current_operation else {
             continue;
         };
-        let Some(resume) = resume_workflow(journal, host, clock, *sandbox, record) else {
+        let Some(resume) = resume_workflow(journal, host.as_ref(), clock, *sandbox, record) else {
             continue;
         };
         match resume {
@@ -660,7 +694,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
         unresolved.insert(action.command.command().sandbox());
     }
     report.unresolved_sandboxes = unresolved.len();
-    report.failed_sandboxes = blocked.len();
+    report.failed_sandboxes = blocked.difference(&epoch_blocked).count();
     Ok(report)
 }
 
@@ -704,14 +738,14 @@ fn recover_receipts<H: WorkRecovery>(
 
 fn resume_workflow<H: ControllerHost>(
     journal: &mut ControllerJournal,
-    host: &mut H,
+    host: &H,
     clock: &dyn Clock,
     sandbox: core::SandboxId,
     record: &core::SandboxRecord,
 ) -> Option<Result<(), JournalError>> {
     let operation = record.current_operation?;
     let result = match (record.phase, operation.kind) {
-        (core::Phase::Starting, core::OperationKind::Create) => finish_admitted_create_v1_timed(
+        (core::Phase::Starting, core::OperationKind::Create) => finish_admitted_create_timed(
             journal,
             sandbox,
             operation.id,
@@ -725,13 +759,13 @@ fn resume_workflow<H: ControllerHost>(
                 core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
             ) =>
         {
-            finish_compensating_create_v1(journal, sandbox, operation.id, &mut |action| {
+            finish_compensating_create(journal, sandbox, operation.id, &mut |action| {
                 host.execute(action)
             })
             .map(|_| ())
         }
         (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Kill) => {
-            finish_accepted_kill_v1(journal, sandbox, operation.id, &mut |action| {
+            finish_accepted_kill(journal, sandbox, operation.id, &mut |action| {
                 host.execute(action)
             })
             .map(|_| ())

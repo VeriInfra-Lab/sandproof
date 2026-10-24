@@ -18,125 +18,133 @@ SPEC.loader.exec_module(fixture)
 
 class FixtureTests(unittest.TestCase):
     def terminal_audits(self):
-        identity=dict(protocol_version=2,node=dict(deployment_id='domain',node_id='host-runtime',node_generation=1),
-            tenant_id='tenant-1',sandbox_id='sandbox-29',operation_id='operation-8',intent_version=1,
-            retention_slot=1,request_window=1)
-        latest=dict(identity,operation_id='operation-10',intent_version=3)
-        response=dict(identity=latest,observation_version=5,fact=dict(kind='cleaned'))
-        versions=dict(internal_protocol=2,center_store=6,host_store=16)
-        center=dict(schema_version=2,versions=copy.deepcopy(versions),deployment='domain',
-            retention_lanes=[dict(node=identity['node'],retention_slot=1,retired_through=0,
-                phase='open',last_retired=None)],sandboxes=[dict(
-            create=dict(identity=identity),released=True,operations=[dict(response=response)],
-            terminal_confirmation=copy.deepcopy(response))])
-        host=dict(schema_version=2,versions=versions,node=identity['node'],
-            lanes=[dict(retention_slot=1,retired_through=0,current_window=1,last_retired=None)],
-            operations=[dict(identity=latest,current=True,
-            response=copy.deepcopy(response),confirmed=copy.deepcopy(response))])
-        return identity,center,host
+        binding = dict(protocol_version=3, node=dict(deployment_id='domain', node_id='host-runtime', node_generation=1),
+            session='sandbox-29', key=dict(deployment='domain', owner='tenant-1', window=7, sequence=8),
+            expected=dict(state='absent'))
+        identity = dict(binding=binding, center=dict(deployment='domain', center='center-a'),
+            retention=dict(slot=1, window=1), accepted_version=1)
+        latest = copy.deepcopy(binding)
+        latest['key']['sequence'] = 10
+        latest['expected'] = dict(state='version', version=2)
+        response = dict(request=dict(request=dict(binding=latest, operation=dict(kind='destroy')),
+            accepted_version=3, center=copy.deepcopy(identity['center']), retention=dict(slot=1, window=1)), status='cleaned')
+        versions = dict(internal_protocol=2, center_store=8, host_store=20)
+        first = copy.deepcopy(identity) | dict(operation=dict(kind='create', target_incarnation=1), terminal=None)
+        last = dict(binding=latest, accepted_version=3, center=copy.deepcopy(identity['center']),
+            retention=dict(slot=1, window=1), operation=dict(kind='destroy'), terminal=copy.deepcopy(response))
+        center = dict(schema_version=3, versions=copy.deepcopy(versions), deployment='domain',
+            retention_lanes=[dict(node=copy.deepcopy(binding['node']), retention_slot=1, retired_through=0,
+                phase='open', last_retired=None)], sandboxes=[dict(create=dict(binding=binding), released=True,
+                operations=[first, last], terminal_confirmation=copy.deepcopy(response))])
+        host = dict(schema_version=2, versions=copy.deepcopy(versions), node=copy.deepcopy(binding['node']),
+            retention_lanes=[dict(slot=1, retired_through=0, current_window=1, last_retired=None)],
+            operations=[dict(binding=copy.deepcopy(latest), accepted_version=3, current=True, terminal=True,
+                local=None, local_operation=None, confirmed_terminal=copy.deepcopy(response))])
+        return identity, center, host
 
     def test_terminal_observation_requires_exact_two_layer_confirmation_not_stopped_or_absence(self):
-        identity,center,host=self.terminal_audits()
-        self.assertEqual(fixture.terminal_result(center,host,identity)['status'],'cleaned')
-        for target,field,value in ((center['sandboxes'][0],'released',False),
-                                  (center['sandboxes'][0],'terminal_confirmation',None),
-                                  (host['operations'][0],'confirmed',None)):
-            before=copy.deepcopy(target[field])
-            target[field]=value
-            self.assertIsNone(fixture.terminal_result(center,host,identity))
-            target[field]=before
-        center['sandboxes'][0]['operations'][-1]['response']['fact']['kind']='stopped'
-        self.assertIsNone(fixture.terminal_result(center,host,identity))
-        center['sandboxes']=[]
-        self.assertIsNone(fixture.terminal_result(center,host,identity))
-        host['operations']=[]
-        self.assertIsNone(fixture.terminal_result(center,host,identity))
+        identity, center, host = self.terminal_audits()
+        self.assertEqual(fixture.terminal_result(center, host, identity)['status'], 'cleaned')
+        for target, field, value in ((center['sandboxes'][0], 'released', False),
+                (center['sandboxes'][0], 'terminal_confirmation', None),
+                (host['operations'][0], 'confirmed_terminal', None)):
+            before = copy.deepcopy(target[field])
+            target[field] = value
+            self.assertIsNone(fixture.terminal_result(center, host, identity))
+            target[field] = before
+        center['sandboxes'][0]['operations'][-1]['terminal']['status'] = 'pending'
+        self.assertIsNone(fixture.terminal_result(center, host, identity))
+        center['sandboxes'] = []
+        self.assertIsNone(fixture.terminal_result(center, host, identity))
+        host['operations'] = []
+        self.assertIsNone(fixture.terminal_result(center, host, identity))
 
     def test_retired_evidence_requires_both_exact_original_slot_frontiers_and_saved_incarnation(self):
-        identity,center,host=self.terminal_audits()
-        response=copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
-        center['sandboxes']=[]
-        host['operations']=[]
-        center['retention_lanes'][0].update(retired_through=1,last_retired=copy.deepcopy(response))
-        self.assertIsNone(fixture.terminal_result(center,host,identity))
-        host['lanes'][0].update(retired_through=1,current_window=2,last_retired=copy.deepcopy(response))
-        self.assertEqual(fixture.terminal_result(center,host,identity)['status'],'retired_terminal_slot')
-        foreign=copy.deepcopy(host)
-        foreign['node']['node_generation']=2
+        identity, center, host = self.terminal_audits()
+        response = copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
+        center['sandboxes'] = []
+        host['operations'] = []
+        center['retention_lanes'][0].update(retired_through=1, last_retired=copy.deepcopy(response))
+        self.assertIsNone(fixture.terminal_result(center, host, identity))
+        host['retention_lanes'][0].update(retired_through=1, current_window=2, last_retired=copy.deepcopy(response))
+        self.assertEqual(fixture.terminal_result(center, host, identity)['status'], 'retired_terminal_slot')
+        foreign = copy.deepcopy(host)
+        foreign['node']['node_generation'] = 2
         with self.assertRaises(ValueError):
-            fixture.terminal_result(center,foreign,identity)
-        for bad in (True,0,2**64):
-            with self.subTest(window=bad),self.assertRaises(ValueError):
-                fixture.terminal_result(center,host,dict(identity,request_window=bad))
-        host['lanes'][0]['retired_through']=True
+            fixture.terminal_result(center, foreign, identity)
+        for bad in (True, 0, 2**64):
+            altered = copy.deepcopy(identity)
+            altered['retention']['window'] = bad
+            with self.subTest(window=bad), self.assertRaises(ValueError):
+                fixture.terminal_result(center, host, altered)
+        host['retention_lanes'][0]['retired_through'] = True
         with self.assertRaises(ValueError):
-            fixture.terminal_result(center,host,identity)
+            fixture.terminal_result(center, host, identity)
 
     def test_retired_stamp_is_exact_and_other_slot_cannot_retire_the_saved_identity(self):
-        identity,center,host=self.terminal_audits()
-        response=copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
-        center['sandboxes']=[]
-        host['operations']=[]
-        other=copy.deepcopy(response)
-        other['identity'].update(retention_slot=2,request_window=8,sandbox_id='unrelated-sandbox')
-        center['retention_lanes'].append(dict(node=identity['node'],retention_slot=2,
-            retired_through=8,phase='open',last_retired=copy.deepcopy(other)))
-        host['lanes'].append(dict(retention_slot=2,retired_through=8,current_window=9,last_retired=copy.deepcopy(other)))
-        self.assertIsNone(fixture.terminal_result(center,host,identity))
-        for lane in (center['retention_lanes'][0],host['lanes'][0]):
-            lane.update(retired_through=1,last_retired=copy.deepcopy(response))
-        malformed=[]
-        for field,value in (('tenant_id','other-owner'),('sandbox_id','other-sandbox'),
-                ('retention_slot',2),('request_window',2),('protocol_version',1)):
-            stamp=copy.deepcopy(response)
-            stamp['identity'][field]=value
+        identity, center, host = self.terminal_audits()
+        response = copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
+        center['sandboxes'] = []
+        host['operations'] = []
+        other = copy.deepcopy(response)
+        other['request']['retention'] = dict(slot=2, window=8)
+        other['request']['request']['binding']['session'] = 'unrelated-sandbox'
+        center['retention_lanes'].append(dict(node=identity['binding']['node'], retention_slot=2,
+            retired_through=8, phase='open', last_retired=copy.deepcopy(other)))
+        host['retention_lanes'].append(dict(slot=2, retired_through=8, current_window=9, last_retired=copy.deepcopy(other)))
+        self.assertIsNone(fixture.terminal_result(center, host, identity))
+        for lane in (center['retention_lanes'][0], host['retention_lanes'][0]):
+            lane.update(retired_through=1, last_retired=copy.deepcopy(response))
+        malformed = []
+        for path, value in ((('request', 'request', 'binding', 'key', 'owner'), 'other-owner'),
+                (('request', 'request', 'binding', 'session'), 'other-sandbox'),
+                (('request', 'retention', 'slot'), 2), (('request', 'retention', 'window'), 2),
+                (('request', 'request', 'binding', 'protocol_version'), 1),
+                (('request', 'request', 'binding', 'key', 'sequence'), 11), (('status',), 'pending')):
+            stamp = copy.deepcopy(response)
+            target = stamp
+            for part in path[:-1]: target = target[part]
+            target[path[-1]] = value
             malformed.append(stamp)
-        malformed.extend((None,dict(response,observation_version=6),
-                          dict(response,fact=dict(kind='stopped'))))
+        malformed.append(None)
         for stamp in malformed:
-            changed=copy.deepcopy(host)
-            changed['lanes'][0]['last_retired']=stamp
-            with self.subTest(stamp=stamp),self.assertRaises(ValueError):
-                fixture.terminal_result(center,changed,identity)
-        newer=copy.deepcopy(response)
-        newer['identity'].update(sandbox_id='later-sandbox',operation_id='later-operation',request_window=2)
-        for lane in (center['retention_lanes'][0],host['lanes'][0]):
-            lane.update(retired_through=2,last_retired=copy.deepcopy(newer))
-        self.assertEqual(fixture.terminal_result(center,host,identity)['status'],'retired_terminal_slot')
+            changed = copy.deepcopy(host)
+            changed['retention_lanes'][0]['last_retired'] = stamp
+            with self.subTest(stamp=stamp), self.assertRaises(ValueError):
+                fixture.terminal_result(center, changed, identity)
+        newer = copy.deepcopy(response)
+        newer['request']['request']['binding']['session'] = 'later-sandbox'
+        newer['request']['request']['binding']['key']['sequence'] = 12
+        newer['request']['retention']['window'] = 2
+        for lane in (center['retention_lanes'][0], host['retention_lanes'][0]):
+            lane.update(retired_through=2, last_retired=copy.deepcopy(newer))
+        self.assertEqual(fixture.terminal_result(center, host, identity)['status'], 'retired_terminal_slot')
 
     def test_audit_schema_and_full_terminal_stamp_refuse_missing_or_loosely_typed_fields(self):
-        identity,center,host=self.terminal_audits()
-        response=copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
-        for lane in (center['retention_lanes'][0],host['lanes'][0]):
-            lane.update(retired_through=1,last_retired=copy.deepcopy(response))
-        for audit in (center,host):
-            for schema in (1,True,2.0):
-                changed=copy.deepcopy(audit)
-                changed['schema_version']=schema
-                pair=(changed,host) if audit is center else (center,changed)
-                with self.subTest(schema=schema),self.assertRaises(ValueError):
-                    fixture.terminal_result(*pair,identity)
-        malformed=[]
-        for field in ('observation_version','identity','fact'):
-            stamp=copy.deepcopy(response)
-            del stamp[field]
-            malformed.append(stamp)
-        for field in ('operation_id','intent_version'):
-            stamp=copy.deepcopy(response)
-            del stamp['identity'][field]
-            malformed.append(stamp)
-        for field,value in (('retention_slot',True),('request_window',True),('intent_version',True)):
-            stamp=copy.deepcopy(response)
-            stamp['identity'][field]=value
-            malformed.append(stamp)
-        malformed.extend((dict(response,observation_version=True),
-                          dict(response,fact=dict(kind='cleaned',extra='unexpected'))))
-        for stamp in malformed:
-            changed_center,changed_host=copy.deepcopy(center),copy.deepcopy(host)
-            changed_center['retention_lanes'][0]['last_retired']=copy.deepcopy(stamp)
-            changed_host['lanes'][0]['last_retired']=copy.deepcopy(stamp)
-            with self.subTest(stamp=stamp),self.assertRaises(ValueError):
-                fixture.terminal_result(changed_center,changed_host,identity)
+        identity, center, host = self.terminal_audits()
+        response = copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
+        for lane in (center['retention_lanes'][0], host['retention_lanes'][0]):
+            lane.update(retired_through=1, last_retired=copy.deepcopy(response))
+        for audit in (center, host):
+            for schema in (1, True, float(audit['schema_version'])):
+                changed = copy.deepcopy(audit)
+                changed['schema_version'] = schema
+                pair = (changed, host) if audit is center else (center, changed)
+                with self.subTest(schema=schema), self.assertRaises(ValueError):
+                    fixture.terminal_result(*pair, identity)
+        for path, value in ((('request',), None), (('request', 'accepted_version'), True),
+                (('request', 'retention', 'slot'), True), (('request', 'retention', 'window'), True),
+                (('request', 'request', 'operation'), {}), (('request', 'request', 'binding'), {}),
+                (('extra',), 'unknown')):
+            stamp = copy.deepcopy(response)
+            target = stamp
+            for part in path[:-1]: target = target[part]
+            target[path[-1]] = value
+            changed_center, changed_host = copy.deepcopy(center), copy.deepcopy(host)
+            changed_center['retention_lanes'][0]['last_retired'] = copy.deepcopy(stamp)
+            changed_host['retention_lanes'][0]['last_retired'] = copy.deepcopy(stamp)
+            with self.subTest(stamp=stamp), self.assertRaises(ValueError):
+                fixture.terminal_result(changed_center, changed_host, identity)
 
     def native(self):
         return dict(namespace='a'*16,
@@ -429,10 +437,11 @@ class FixtureTests(unittest.TestCase):
 
     def test_global_identity_is_never_converted_by_parsing_suffix(self):
         node = dict(deployment_id='one', node_id='host-runtime', node_generation=3)
-        identity = dict(sandbox_id='sandbox-999', node=node)
-        local = dict(sandbox=17, owner=4, operation=23)
-        row = dict(current=True, identity=identity, local=local, response=dict(identity=identity))
-        audit = dict(node=node, operations=[row])
+        identity = dict(protocol_version=3, node=node, session='sandbox-999',
+            key=dict(deployment='one', owner='4', window=1, sequence=1), expected=dict(state='absent'))
+        local = dict(sandbox=17, owner=4)
+        row = dict(current=True, binding=identity, accepted_version=1, local=local)
+        audit = dict(schema_version=2, node=node, operations=[row])
         self.assertEqual(fixture.local_binding(audit, 'sandbox-999', expected_node=node), local)
         for changed in (dict(audit, operations=[]), dict(audit, operations=[row, row]),
                         dict(audit, operations=[dict(row, local=None)]),
@@ -444,10 +453,15 @@ class FixtureTests(unittest.TestCase):
     def test_lost_sdk_reply_correlates_hashed_saved_intent_not_raw_user_values_or_absence(self):
         metadata = dict(runtime_attempt='test-attempt-42', benchmark='terminal-bench')
         node = dict(deployment_id='one', node_id='host-runtime', node_generation=3)
-        identity = dict(sandbox_id='sandbox-999', node=node)
+        identity, _center, _host = self.terminal_audits()
+        identity = copy.deepcopy(identity)
+        identity['binding'].update(node=node, session='sandbox-999')
+        identity['binding']['key']['deployment'] = 'one'
+        identity['center']['deployment'] = 'one'
         checksum = hashlib.sha256(b'{"benchmark":"terminal-bench","runtime_attempt":"test-attempt-42"}').hexdigest()
-        record = dict(private=False, create=dict(identity=identity, metadata_sha256=checksum))
-        audit = dict(deployment='one', sandboxes=[record])
+        first = copy.deepcopy(identity) | dict(operation=dict(kind='create', target_incarnation=1))
+        record = dict(private=False, create=dict(binding=identity['binding'], metadata_sha256=checksum), operations=[first])
+        audit = dict(schema_version=3, versions=dict(internal_protocol=2,center_store=8,host_store=20), deployment='one', sandboxes=[record])
         self.assertEqual(fixture.find_runtime_create(audit,metadata,deployment='one'),identity)
         with self.assertRaisesRegex(RuntimeError, 'ambiguous'):
             fixture.find_runtime_create(dict(audit,sandboxes=[record,record]),metadata,deployment='one')

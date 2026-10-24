@@ -17,11 +17,23 @@ fn main() {
 mod linux;
 
 #[cfg(target_os = "linux")]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let command = cli::parse(std::env::args_os().skip(1))?;
+    // The original gated child reads its finite job and invokes only the Node
+    // worker. It must run before Tokio, NodeHost or any product HostLease exists.
+    if let cli::Command::CaptureWorker(digest) = command {
+        return sandproof_node::run_capture_worker(&digest);
+    }
+    run(command)
+}
+
+#[cfg(target_os = "linux")]
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn run(command: cli::Command) -> Result<(), Box<dyn std::error::Error>> {
     use cli::Command;
-    match cli::parse(std::env::args_os().skip(1))? {
+    match command {
         Command::Initialize(path) => linux::host_entry::initialize(&path),
+        Command::ProvisionBootstrap(path) => linux::host_entry::provision_bootstrap(&path),
         Command::Serve(path) => linux::host_entry::serve(&path).await,
         Command::Audit(path) => linux::host_entry::audit(&path),
         Command::ObserveCenter(path) => linux::host_entry::observe_center(&path).await,
@@ -35,6 +47,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             writeln!(output)?;
             Ok(())
+        }
+        Command::CaptureWorker(_) => {
+            Err("capture worker must execute before the async runtime".into())
         }
     }
 }

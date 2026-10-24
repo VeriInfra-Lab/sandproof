@@ -53,7 +53,7 @@ fn admit(
 }
 fn create(journal: &mut ControllerJournal, id: u64) {
     admit(journal, id, &mut NeverCrash).unwrap();
-    crate::finish_admitted_create_v1(
+    crate::finish_admitted_create(
         journal,
         core::SandboxId(id),
         core::OperationId(1),
@@ -283,7 +283,7 @@ fn unknown_commit_preserves_reservation_and_contiguous_ids() {
             i64::from(durable)
         );
         if durable {
-            crate::finish_admitted_create_v1(
+            crate::finish_admitted_create(
                 &mut journal,
                 core::SandboxId(1),
                 core::OperationId(1),
@@ -333,7 +333,7 @@ fn all_create_commands_retry_then_kill_consumes_only_its_lease() {
     let mut journal = open_full(&path);
     admit(&mut journal, 1, &mut NeverCrash).unwrap();
     let mut observed = std::collections::BTreeSet::new();
-    crate::finish_admitted_create_v1(
+    crate::finish_admitted_create(
         &mut journal,
         core::SandboxId(1),
         core::OperationId(1),
@@ -386,7 +386,7 @@ fn failed_prepare_and_failed_activation_have_reserved_terminal_paths() {
         let path = dir.path().join("db");
         let mut journal = open_full(&path);
         admit(&mut journal, 1, &mut NeverCrash).unwrap();
-        let result = crate::finish_admitted_create_v1(
+        let result = crate::finish_admitted_create(
             &mut journal,
             core::SandboxId(1),
             core::OperationId(1),
@@ -563,7 +563,7 @@ fn noops_do_not_spend_inputs_receipts_revisions_or_checkpoint_generations() {
             .unwrap(),
         credit
     );
-    crate::finish_admitted_create_v1(
+    crate::finish_admitted_create(
         &mut journal,
         core::SandboxId(1),
         record.current_operation.unwrap().id,
@@ -686,7 +686,7 @@ fn retained_expiry_credits_are_spendable_at_the_input_frontier() {
     let mut journal = open_full(&path);
     for (id, now) in [(1, 1001), (2, 1051)] {
         admit(&mut journal, id, &mut NeverCrash).unwrap();
-        let result = crate::finish_admitted_create_v1(
+        let result = crate::finish_admitted_create(
             &mut journal,
             core::SandboxId(id),
             core::OperationId(1),

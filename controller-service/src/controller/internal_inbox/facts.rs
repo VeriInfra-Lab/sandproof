@@ -7,6 +7,35 @@ use sandproof_protocol::internal::lifecycle::{
     Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
 };
 
+/// The original native Ready projection shared by both envelope versions.
+/// This is historical committed progress, not a fresh host observation.
+pub(in crate::controller) fn native_ready_fact(
+    tx: &rusqlite::Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    local: super::InternalLocalBinding,
+) -> Result<Option<LifecycleFact>, JournalError> {
+    let record = world
+        .sandbox_record(local.sandbox)
+        .ok_or(JournalError::CorruptStore)?;
+    if record.owner != local.owner {
+        return Err(JournalError::CorruptStore);
+    }
+    if record.phase != core::Phase::Running {
+        return Ok(None);
+    }
+    let lifetime = admission::read_lifetime(tx, namespace, local.sandbox, local.owner)
+        .map_err(|_| JournalError::CorruptStore)?
+        .ok_or(JournalError::CorruptStore)?;
+    Ok(Some(LifecycleFact::Ready {
+        started_at_ms: u64::try_from(lifetime.started_at_ms.ok_or(JournalError::CorruptStore)?)
+            .map_err(|_| JournalError::CorruptStore)?,
+        end_at_ms: u64::try_from(lifetime.deadline_ms).map_err(|_| JournalError::CorruptStore)?,
+        max_end_at_ms: u64::try_from(lifetime.max_deadline_ms)
+            .map_err(|_| JournalError::CorruptStore)?,
+    }))
+}
+
 fn observed(
     tx: &WorldTransaction<'_>,
     namespace: &str,
@@ -35,26 +64,10 @@ fn observed(
     }
     match request.intent {
         Intent::Create if record.phase == core::Phase::Running => {
-            let lifetime = admission::read_lifetime(tx, namespace, local.sandbox, local.owner)
-                .map_err(|_| JournalError::CorruptStore)?
-                .ok_or(JournalError::CorruptStore)?;
-            let started_at_ms =
-                u64::try_from(lifetime.started_at_ms.ok_or(JournalError::CorruptStore)?)
-                    .map_err(|_| JournalError::CorruptStore)?;
-            Ok(Some(LifecycleFact::Ready {
-                started_at_ms,
-                end_at_ms: u64::try_from(lifetime.deadline_ms)
-                    .map_err(|_| JournalError::CorruptStore)?,
-                max_end_at_ms: u64::try_from(lifetime.max_deadline_ms)
-                    .map_err(|_| JournalError::CorruptStore)?,
-            }))
+            native_ready_fact(tx, namespace, &world, local)
         }
         Intent::Destroy if record.phase == core::Phase::Destroyed => {
-            if !admission::accounted(&world, local.sandbox, record)
-                && checkpoint::release_witnesses(tx, &world)?
-                    .iter()
-                    .any(|w| w.context.binding.sandbox == local.sandbox)
-            {
+            if native_cleaned(tx, &world, local)? {
                 Ok(Some(LifecycleFact::Cleaned))
             } else {
                 // Original Destroyed publication already requires exact stop
@@ -64,6 +77,26 @@ fn observed(
         }
         _ => Ok(None),
     }
+}
+
+// Shared current native predicate, not a cached wire success. Physical release
+// remains historical evidence even when the same position is later reused.
+pub(in crate::controller) fn native_cleaned(
+    connection: &rusqlite::Connection,
+    world: &core::World,
+    local: super::InternalLocalBinding,
+) -> Result<bool, JournalError> {
+    let record = world
+        .sandbox_record(local.sandbox)
+        .ok_or(JournalError::CorruptStore)?;
+    if record.owner != local.owner {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(record.phase == core::Phase::Destroyed
+        && !admission::accounted(world, local.sandbox, record)
+        && checkpoint::release_witnesses(connection, world)?
+            .iter()
+            .any(|w| w.context.binding.sandbox == local.sandbox))
 }
 
 impl ControllerJournal {

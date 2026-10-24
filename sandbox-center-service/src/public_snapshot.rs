@@ -33,7 +33,7 @@ impl PublicSnapshot {
         record.operations.first().is_some_and(|operation| {
             !self
                 .hidden_sandboxes
-                .contains(&operation.request.identity.sandbox_id)
+                .contains(operation.intent().request.binding.session.as_protocol_id())
         })
     }
     /// # Errors

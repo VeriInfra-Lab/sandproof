@@ -1,0 +1,1145 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_stage1_protocol_extract",
+  "functions": [
+    {
+      "def_id": 55,
+      "lean_name": "core.str.Str.len",
+      "lean_file": "SandproofStage1Manifest/FunsExternal_Template.lean",
+      "rust_name": "core::str::{str}::len",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/mod.rs",
+        "begin_line": 155,
+        "end_line": 155
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 54,
+      "lean_name": "core.str.Str.is_empty",
+      "lean_file": "SandproofStage1Manifest/FunsExternal_Template.lean",
+      "rust_name": "core::str::{str}::is_empty",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/mod.rs",
+        "begin_line": 175,
+        "end_line": 175
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 56,
+      "lean_name": "core.str.Str.as_bytes",
+      "lean_file": "SandproofStage1Manifest/FunsExternal_Template.lean",
+      "rust_name": "core::str::{str}::as_bytes",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/mod.rs",
+        "begin_line": 514,
+        "end_line": 514
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 44,
+      "lean_name": "Str.Insts.AllocBorrowToOwnedString.to_owned",
+      "lean_file": "SandproofStage1Manifest/FunsExternal_Template.lean",
+      "rust_name": "alloc::str::{impl alloc::borrow::ToOwned<alloc::string::String> for str}::to_owned",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/str.rs",
+        "begin_line": 250,
+        "end_line": 250
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 50,
+      "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+      "lean_file": "SandproofStage1Manifest/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 38,
+      "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+      "lean_file": "SandproofStage1Manifest/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2859,
+        "end_line": 2859
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 37,
+      "lean_name": "alloc.vec.Vec.is_empty",
+      "lean_file": "SandproofStage1Manifest/FunsExternal_Template.lean",
+      "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/vec/mod.rs",
+        "begin_line": 3125,
+        "end_line": 3125
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 66,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 44,
+        "end_line": 44
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 72,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 62,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 101,
+        "end_line": 101
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 60,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 73,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 74,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 51,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs",
+        "begin_line": 9,
+        "end_line": 9
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 63,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId> for sandproof_protocol::lifecycle::identity::SessionId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 6,
+        "end_line": 6
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 48,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 32,
+        "end_line": 32
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 49,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 32,
+        "end_line": 32
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 75,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId> for sandproof_protocol::lifecycle::identity::RequestWindowId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 32,
+        "end_line": 32
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 76,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence> for sandproof_protocol::lifecycle::identity::RequestSequence}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 32,
+        "end_line": 32
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 64,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 91,
+        "end_line": 91
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 65,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 101,
+        "end_line": 101
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 47,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 114,
+        "end_line": 114
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 33,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCmpPartialEqCaptureBinding.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::manifest::CaptureBinding> for sandproof_protocol::lifecycle::manifest::CaptureBinding}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 9,
+        "end_line": 9
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 69,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCmpPartialEqWritableDrive.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::manifest::WritableDrive> for sandproof_protocol::lifecycle::manifest::WritableDrive}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 18,
+        "end_line": 18
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 36,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCmpPartialEqVmCompatibility.eq",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::manifest::VmCompatibility> for sandproof_protocol::lifecycle::manifest::VmCompatibility}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 26,
+        "end_line": 26
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 45,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.disk_bundle_path",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::disk_bundle_path",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 83,
+        "end_line": 83
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 39,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.valid_jail_relative_path_loop.body",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::valid_jail_relative_path",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 116,
+        "end_line": 131
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.valid_jail_relative_path"
+    },
+    {
+      "def_id": 39,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.valid_jail_relative_path_loop",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::valid_jail_relative_path",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 116,
+        "end_line": 131
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.valid_jail_relative_path"
+    },
+    {
+      "def_id": 39,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.valid_jail_relative_path",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::valid_jail_relative_path",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 107,
+        "end_line": 107
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 58,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.different_drive",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::different_drive",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 145,
+        "end_line": 145
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.distinct_drive_loop.body",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::distinct_drive",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 138,
+        "end_line": 141
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.distinct_drive"
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.distinct_drive_loop",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::distinct_drive",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 138,
+        "end_line": 141
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.distinct_drive"
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.distinct_drive",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::distinct_drive",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 135,
+        "end_line": 135
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility.validate_loop.body",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{sandproof_protocol::lifecycle::manifest::VmCompatibility}::validate",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 161,
+        "end_line": 165
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility.validate"
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility.validate_loop",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{sandproof_protocol::lifecycle::manifest::VmCompatibility}::validate",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 161,
+        "end_line": 165
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility.validate"
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility.validate",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{sandproof_protocol::lifecycle::manifest::VmCompatibility}::validate",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 152,
+        "end_line": 152
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.file_length",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::file_length",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 174,
+        "end_line": 178
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 20,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotManifest.validate_loop.body",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{sandproof_protocol::lifecycle::manifest::SnapshotManifest}::validate",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 249,
+        "end_line": 257
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotManifest.validate"
+    },
+    {
+      "def_id": 20,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotManifest.validate_loop",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{sandproof_protocol::lifecycle::manifest::SnapshotManifest}::validate",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 249,
+        "end_line": 257
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotManifest.validate"
+    },
+    {
+      "def_id": 20,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotManifest.validate",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{sandproof_protocol::lifecycle::manifest::SnapshotManifest}::validate",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 222,
+        "end_line": 226
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofStage1ManifestRust.manifest_validate",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_stage1_protocol_extract::manifest_validate",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 36, "end_line": 42 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 28,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.internal.PositiveCounter",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::internal::PositiveCounter",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 49,
+        "end_line": 49
+      }
+    },
+    {
+      "def_id": 34,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.NodeId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::NodeId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 19,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.DeploymentId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::DeploymentId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.internal.NodeIdentity",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::internal::NodeIdentity",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/internal.rs",
+        "begin_line": 103,
+        "end_line": 103
+      }
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.ResourceId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::ResourceId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 36,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.SandboxId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::SandboxId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 31,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.TenantId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::TenantId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 17,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.digest.ContentDigest",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::digest::ContentDigest",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/digest.rs",
+        "begin_line": 11,
+        "end_line": 11
+      }
+    },
+    {
+      "def_id": 27,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.SessionId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::SessionId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 8,
+        "end_line": 8
+      }
+    },
+    {
+      "def_id": 15,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.IncarnationId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::IncarnationId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 34,
+        "end_line": 34
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.CaptureId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::CaptureId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 34,
+        "end_line": 34
+      }
+    },
+    {
+      "def_id": 32,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.RequestWindowId",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::RequestWindowId",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 34,
+        "end_line": 34
+      }
+    },
+    {
+      "def_id": 33,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.RequestSequence",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::RequestSequence",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 34,
+        "end_line": 34
+      }
+    },
+    {
+      "def_id": 22,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.OperationKey",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::OperationKey",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 93,
+        "end_line": 93
+      }
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.ExpectedSession",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::ExpectedSession",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 108,
+        "end_line": 108
+      }
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.identity.OperationBinding",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::identity::OperationBinding",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/identity.rs",
+        "begin_line": 116,
+        "end_line": 116
+      }
+    },
+    {
+      "def_id": 3,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.CaptureBinding",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::CaptureBinding",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 11,
+        "end_line": 11
+      }
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.WritableDrive",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::WritableDrive",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 20,
+        "end_line": 20
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::VmCompatibility",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 28,
+        "end_line": 28
+      }
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotFileKind",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::SnapshotFileKind",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 40,
+        "end_line": 40
+      }
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotFile",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::SnapshotFile",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 48,
+        "end_line": 48
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.SnapshotManifest",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::SnapshotManifest",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 61,
+        "end_line": 61
+      }
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.ManifestError",
+      "lean_file": "SandproofStage1Manifest/Types.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::ManifestError",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    }
+  ],
+  "globals": [
+    {
+      "def_id": 6,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.MANIFEST_FORMAT_VERSION",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::MANIFEST_FORMAT_VERSION",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 5,
+        "end_line": 5
+      },
+      "can_fail": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.MAX_WRITABLE_DRIVES",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::MAX_WRITABLE_DRIVES",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 7,
+        "end_line": 7
+      },
+      "can_fail": false
+    },
+    {
+      "def_id": 7,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.PROTOCOL_VERSION",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::PROTOCOL_VERSION",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs",
+        "begin_line": 45,
+        "end_line": 45
+      },
+      "can_fail": false
+    }
+  ],
+  "trait_decls": [],
+  "trait_impls": [
+    {
+      "def_id": 18,
+      "lean_name": "SandproofStage1ManifestRust.alloc.string.String.Insts.CoreCmpPartialEqString",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 7,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 19,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 71,
+        "end_line": 71
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCmpPartialEqCaptureBinding",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::manifest::CaptureBinding> for sandproof_protocol::lifecycle::manifest::CaptureBinding}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 9,
+        "end_line": 9
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 26,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCmpPartialEqWritableDrive",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::manifest::WritableDrive> for sandproof_protocol::lifecycle::manifest::WritableDrive}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 18,
+        "end_line": 18
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 8,
+      "lean_name": "SandproofStage1ManifestRust.sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCmpPartialEqVmCompatibility",
+      "lean_file": "SandproofStage1Manifest/Funs.lean",
+      "rust_name": "sandproof_protocol::lifecycle::manifest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::manifest::VmCompatibility> for sandproof_protocol::lifecycle::manifest::VmCompatibility}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs",
+        "begin_line": 26,
+        "end_line": 26
+      },
+      "impl_trait_def_id": 5,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    }
+  ]
+}

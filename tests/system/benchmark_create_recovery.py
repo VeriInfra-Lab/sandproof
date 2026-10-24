@@ -120,12 +120,12 @@ def exercise(args):
     def capture(identity, center, host):
         nonlocal native_identity
         row = [r for r in host['operations'] if r['current'] and
-               r['identity']['sandbox_id'] == identity['sandbox_id']]
+               r['binding']['session'] == identity['binding']['session']]
         assert len(row) == 1, 'original host responsibility unknown'
         if row[0]['local'] is None:
             report['no_local_admission'] = True
             return
-        local = local_binding(host, identity['sandbox_id'], expected_node=identity['node'])
+        local = local_binding(host, identity['binding']['session'], expected_node=identity['binding']['node'])
         native = [value for value in host['native'] if value['sandbox'] == local['sandbox']]
         assert len(native) == 1 and native[0]['owner'] == local['owner']
         if native[0]['phase'] == 'Starting':
@@ -133,7 +133,7 @@ def exercise(args):
         native_identity = f"sb-{namespace}-{local['sandbox']}"
         services.processes.stop('host-0')
         try:
-            assert services.native_id_for(identity['sandbox_id']) == native_identity
+            assert services.native_id_for(identity['binding']['session']) == native_identity
             secret, name, claim = record_for(root, native_id=native_identity)
             actual = secret['template']
             assert actual['template_id'] == view['templateId'] and actual['revision'] == view['revision']
@@ -188,7 +188,7 @@ def exercise(args):
             report['service_live'] = services.processes.observe()
             report['original_create_identity'] = find_runtime_create(services.planned_audit('center'),
                 env.runtime_intent['metadata'], deployment=services.center_config['deployment_id'])
-            assert report['original_create_identity']['sandbox_id'] == data['sandboxID']
+            assert report['original_create_identity']['binding']['session'] == data['sandboxID']
             await response.aclose()
             raise httpx.ReadError('injected lost create response', request=request)
         httpx.AsyncClient.send = drop_receipt

@@ -9,6 +9,7 @@ rust-version.workspace = true
 sdk-contract-tests = []
 
 [dependencies]
+sandbox-controller-core = { path = "../controller-core" }
 sandproof-api = { path = "../sandbox-api" }
 sandproof-data-transport = { path = "../sandbox-data-transport" }
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }

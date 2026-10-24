@@ -63,7 +63,9 @@ pub async fn serve(inputs: CenterAssemblyInputs) -> Result<(), &'static str> {
             inputs.application,
             &inputs.token_key,
         )
-        .map_err(|_| "center application assembly rejected")?,
+        .map_err(|_| "center application assembly rejected")?
+        .with_lifecycle_observation_policy(inputs.node_observation)
+        .map_err(|_| "center lifecycle observation policy rejected")?,
     );
     let boundaries = crate::boundaries::bind(
         Arc::clone(&application),

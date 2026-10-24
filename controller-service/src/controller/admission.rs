@@ -4,7 +4,7 @@
 use super::{ControllerJournal, identity, storage, transaction::WorldTransaction};
 use crate::templates::ComputeLimits;
 use crate::{CrashInjector, CrashPoint, JournalError};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use sandbox_controller_core as core;
 use sandproof_protocol::numeric::seconds_to_milliseconds;
 
@@ -84,7 +84,8 @@ pub struct CreateAdmission {
     pub options: CreateOptions,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Lifetime {
     /// `None` before successful startup is published.
     pub started_at_ms: Option<i64>,
@@ -119,7 +120,7 @@ fn checked_deadline(now_ms: i64, seconds: u64) -> Result<i64, AdmissionError> {
 }
 
 pub(super) fn read_lifetime(
-    tx: &Transaction<'_>,
+    tx: &rusqlite::Connection,
     namespace: &str,
     sandbox: core::SandboxId,
     owner: core::TenantId,
@@ -470,6 +471,7 @@ impl ControllerJournal {
             return Err(AdmissionError::InvalidCreateOptions);
         }
         let world = tx.world();
+        super::lifecycle_inbox::check_admission(&tx, internal)?;
         if storage::unresolved(&world, request.sandbox) {
             return Err(JournalError::UnresolvedAction.into());
         }
@@ -521,7 +523,8 @@ impl ControllerJournal {
             // across native tenant retirement. Native options remain the exact
             // LOCAL owner projection used by the original core/worker rules.
             let immutable = if let Some(attachment) = internal {
-                let registered = &attachment.registered_template;
+                let registered = attachment.registered_template();
+                let local = attachment.local();
                 let mut projected = registered.clone();
                 if projected.owner.is_some() {
                     projected.owner = Some(request.owner.0);
@@ -532,12 +535,12 @@ impl ControllerJournal {
                 projected.rootfs.path.clone_from(&template.rootfs.path);
                 if !registered.is_valid()
                     || registered.owner.is_some_and(|owner| {
-                        owner.to_string() != attachment.request.identity.tenant_id.as_str()
+                        owner.to_string() != attachment.authenticated_owner().as_str()
                     })
                     || projected != *template
-                    || attachment.local.owner != request.owner
-                    || attachment.local.sandbox != request.sandbox
-                    || attachment.local.operation != request.operation
+                    || local.owner != request.owner
+                    || local.sandbox != request.sandbox
+                    || local.operation != request.operation
                 {
                     return Err(AdmissionError::InvalidCreateOptions);
                 }

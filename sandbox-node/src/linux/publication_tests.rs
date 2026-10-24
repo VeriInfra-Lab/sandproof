@@ -48,7 +48,6 @@ fn worker(path: &Path) -> LinuxWorker {
     LinuxWorker {
         config,
         host_lease: lease,
-        last_error: None,
         validated_artifacts: Mutex::default(),
     }
 }
@@ -178,5 +177,61 @@ fn sealed_registry_hash_is_reused_but_restart_and_mutation_force_revalidation() 
     fresh.cache_candidate_verification(binding, &verification);
     assert!(fresh.validate_artifact(&binding.rootfs).is_err());
     drop(file);
+    directory.close().unwrap();
+}
+
+struct ResumeOnDrop(std::sync::mpsc::Sender<()>);
+impl Drop for ResumeOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
+
+#[test]
+#[ignore = "requires root and SANDPROOF_ARTIFACT_TEST_PARENT; real file I/O, no VM"]
+fn slow_artifact_hash_does_not_hold_shared_cache_or_block_another_artifact() {
+    use std::sync::mpsc;
+    assert_eq!(geteuid().as_raw(), 0);
+    let directory = tempfile::tempdir_in(
+        std::env::var_os("SANDPROOF_ARTIFACT_TEST_PARENT").expect("private parent"),
+    )
+    .unwrap();
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    let store = stage(directory.path());
+    let (publication, _) = store
+        .verified_candidate(1, "00000000000000000000000000000001")
+        .unwrap();
+    store.seal(&publication).unwrap();
+    let binding = &publication.binding;
+    let node = worker(directory.path());
+    let (entered, waiting) = mpsc::channel();
+    let (release, resume) = mpsc::channel();
+    std::thread::scope(|scope| {
+        let release = ResumeOnDrop(release);
+        let node = &node;
+        let first = scope.spawn(move || {
+            node.validate_artifact_with(&binding.rootfs, |file| {
+                entered.send(()).unwrap();
+                resume.recv().unwrap();
+                artifact_file_digest(file)
+            })
+            .is_ok()
+        });
+        waiting
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let cache_available = node.validated_artifacts.try_lock().is_ok();
+        // A failing cache-lock mutant must not block the second hash. The
+        // guard also releases the worker on every panic/timeout return path.
+        let other = cache_available.then(|| node.validate_artifact(&binding.kernel).is_ok());
+        drop(release);
+        let first_succeeded = first.join().unwrap();
+        assert!(
+            cache_available,
+            "slow hash held the shared artifact cache lock"
+        );
+        assert_eq!(other, Some(true));
+        assert!(first_succeeded);
+    });
     directory.close().unwrap();
 }

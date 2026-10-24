@@ -6,6 +6,8 @@
 
 获批薄异步接线按[依赖登记 B1–B4](../docs/formal/dependencies.md#逐符号可信适配登记)保留可信条件，业务决定仍需实际实现证明。
 
+第一阶段目标已收缩为同宿主有状态卸载/恢复，任务见[新 V0–V9](../docs/formal-verification-design.md)。本目录已有工具与证据继续按原输入适用；新 snapshot/claim/pin/GC 仍需实现及证明，不因文档重排而完成。普通测试在测试环境、证明在当前证明环境；下文具体旧批次路径/主机属于历史复现信息，不是新的调度要求。
+
 固定工具链如下：
 
 - Rust 控制核心：Rust 1.97.0；
@@ -60,7 +62,7 @@ JSON 非零计数器叶子另执行 `bash scripts/verify-json-counter.sh`，检�
 
 SQLite 提交回执与缓存发布的隔离候选执行 `bash scripts/verify-sqlite.sh`；[实验说明](experiments/sqlite-commit/README.md)给出固定输入与复现。它从原事务文件的小范围隔离重构提取真实同步决定，核对完整核心/包装/析构中间表示，保留外部 A4、RefCell B2 和参数/回调 B4 条件；同一接口分别检查确认成功、两种提交未知及 rollback。它不证明整个 SQL、验证器、恢复或生产外壳，不能关闭 T7/V0。此入口附加到原完整验收，不替换已有模块。
 
-模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；退役旧生成链不消除当前生命周期等业务的实现证明义务，也不使其成为 V0 的关单前置。完整入口按保留集合执行，局部/当前集合验收/全系统完成分别登记。
+模块范围按 [V0 计划](../docs/formal/00-foundations.md#5-开工与完成条件)区分：公共模块的一批检查成功不表示 V0 全部交付；退役旧生成链不消除当前生命周期等业务的实现证明义务，也不使其成为 V0 的关单前置。完整入口按保留集合执行，局部/当前集合验收/全系统完成分别登记。
 
 完整生命周期请求执行 `bash scripts/verify-json-request.sh`。入口冻结[实际调用与字段/字典登记](json-request-binding.json)、原生产协议与服务器/客户端调用、完整公共生成物以及 `verification/json-request-inputs.sha256`；先按原工具重抽取并比对，再检查两个直接库调用的完整 LLBC 和 AST、全部请求定理及其真实依赖。原 `LifecycleRequest::validate`、编号/计数器校验和转换保留生成体；固定 Serde/serde_json 引擎、标准派生及单次参数/结果接线采用明确 A6/B4 条件，不能称整个 async 服务已自动证明。具体输入/错误/解析位置/正常分配和有界合法接受条件见[唯一依赖合同](../docs/formal/dependencies.md#a6-json-与标准派生的最小合同)。
 
@@ -93,7 +95,7 @@ bash scripts/python-entry.sh tools/check_tls_pin_contract.py \
 
 Linux 回执批次执行 `bash scripts/verify-first-chain-linux.sh`，冻结环境与输入分别见 [first-chain-linux-environment.json](first-chain-linux-environment.json) 和 [first-chain-linux-inputs.sha256](first-chain-linux-inputs.sha256)。固定工具修订相同不意味着不同平台的工具二进制、cfg 或抽取物相同；二者分开登记，不覆盖 [V0 环境](foundations-environment.json)。[Linux Lake 视图](../lake-first-chain.toml) 必须逐字保留原 Lake 配置，只追加新抽取库；检查器拒绝其它差异，避免修改 V0 冻结配置或维护另一套依赖版本。生成的全局枚举实例名称在两个类型集合中可能重名，故通过同一数学 Binding 合同连接、分别编译审计，不把两套名义类型同时导入一个环境或修改生成文件绕过冲突。标准证明客户端的源码指纹包括所有抽取目录。服务器连接、代理、私有工具路径和运行配置放仓库之外，公共清单不保存这些信息。
 
-新增中心/存储/通信/网关等入口的任务按[V0–V9详细计划](../docs/formal-verification-design.md#2-按真实模块划分证明责任)推进。重新抽取各已登记模块的明确子集，不覆盖统一控制器、整个中心、存储或通信；各模块首次证明批次须增加实际抽取根、窄接口模型/可信适配登记或自有脚本连接、版本清单与定理依赖审计，再纳入完整验收。旧生成文件编译成功不是新模块抽取或证明通过。
+新增中心/存储/通信/网关等入口的任务按[V0–V9详细计划](../docs/formal-verification-design.md#3-按真实模块划分证明责任)推进。重新抽取各已登记模块的明确子集，不覆盖统一控制器、整个中心、存储或通信；各模块首次证明批次须增加实际抽取根、窄接口模型/可信适配登记或自有脚本连接、版本清单与定理依赖审计，再纳入完整验收。旧生成文件编译成功不是新模块抽取或证明通过。
 
 ## 离线轨迹辅助工具
 

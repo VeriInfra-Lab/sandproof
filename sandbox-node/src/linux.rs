@@ -29,6 +29,17 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
+mod capture;
+mod capture_profile;
+mod capture_worker;
+pub use capture_worker::{
+    CAPTURE_WORKER_INPUT_BYTES, CAPTURE_WORKER_OUTPUT_BYTES, PreparedCaptureWorker,
+    run_capture_worker,
+};
+mod full_capture;
+pub(crate) use capture_profile::ProtectedCaptureProfile;
+pub use capture_profile::ProtectedCaptureSettings;
+pub(crate) use full_capture::observe_committed_capture;
 mod credentials;
 mod decisions;
 mod execution;
@@ -38,7 +49,10 @@ mod inventory;
 mod observation;
 mod readonly;
 mod recovery;
+mod source_observation;
+mod source_process;
 use decisions::fence_can_advance;
+pub use execution::ExecutionReport;
 pub use readonly::LinuxObservation;
 #[path = "host_lease.rs"]
 mod host_lease;
@@ -157,11 +171,31 @@ struct Fence {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum ObservedResult {
     Fence(Fence),
-    Prepared { pid: u32, start_ticks: u64 },
-    Network { namespace_inode: u64 },
-    Activated { pid: u32, start_ticks: u64 },
-    FilePolicy { disk_inode: u64 },
-    Stopped { pid: u32, start_ticks: u64 },
+    Prepared {
+        pid: u32,
+        start_ticks: u64,
+        boot_id: String,
+    },
+    Network {
+        namespace_inode: u64,
+    },
+    Activated {
+        pid: u32,
+        start_ticks: u64,
+        boot_id: String,
+    },
+    Frozen {
+        pid: u32,
+        start_ticks: u64,
+        boot_id: String,
+    },
+    FilePolicy {
+        disk_inode: u64,
+    },
+    Stopped {
+        pid: u32,
+        start_ticks: u64,
+    },
     PrepareAborted,
     VmCleaned,
     SlotClosed,
@@ -187,6 +221,21 @@ impl HostEvidence for HostObservation {
     fn validates(&self, command: &core::Command) -> bool {
         decisions::evidence_matches(self, command)
     }
+
+    fn source_process_identity(
+        &self,
+        command: &core::Command,
+        expected_resource: &ResourceRef,
+    ) -> Option<sandproof_controller_service::capture::SourceProcessIdentity> {
+        self.recorded_source_identity(command, expected_resource)
+            .map(
+                |source| sandproof_controller_service::capture::SourceProcessIdentity {
+                    pid: source.pid,
+                    start_time_ticks: source.start_time_ticks,
+                    boot_id: source.boot_id,
+                },
+            )
+    }
 }
 
 /// The durable relay census reached a configured global or per-slot budget.
@@ -202,7 +251,6 @@ impl Error for RouteCapacityExceeded {}
 pub struct LinuxWorker {
     config: NodeConfig,
     host_lease: host_lease::HostLease,
-    last_error: Option<String>,
     validated_artifacts: Mutex<BTreeMap<PathBuf, ArtifactStamp>>,
 }
 
@@ -359,16 +407,31 @@ impl LinuxWorker {
         let worker = Self {
             config,
             host_lease,
-            last_error: None,
             validated_artifacts: Mutex::new(BTreeMap::new()),
         };
         worker.initialize_host_slots()?;
         Ok(worker)
     }
 
-    #[must_use]
-    pub fn last_error(&self) -> Option<&str> {
-        self.last_error.as_deref()
+    pub(crate) fn host_bootstrap_inputs(&self) -> crate::host_epoch::Inputs<'_> {
+        crate::host_epoch::Inputs {
+            namespace: &self.config.namespace,
+            firecracker: &self.config.firecracker,
+            jailer: &self.config.jailer,
+        }
+    }
+
+    /// Read the existing protected bootstrap and verify its actual host facts.
+    /// Only explicit service initialization may persist this registration;
+    /// restarting serve must compare the original stored registration instead.
+    /// # Errors
+    /// Rejects changed host facts, unsafe or replaced files and foreign bindings.
+    pub fn host_epoch_registration(
+        &self,
+        source: &crate::ProtectedHostEpochSource,
+        node: &sandproof_protocol::internal::NodeIdentity,
+    ) -> Result<sandproof_controller_service::capture::HostEpochRegistration, RuntimeError> {
+        source.registration(node, self.host_bootstrap_inputs())
     }
 
     fn sync_node_record(&self, path: &Path) -> NodeResult<()> {

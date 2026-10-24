@@ -23,7 +23,8 @@ import time
 import urllib.request
 
 from tools import ci_e2e_artifacts, service_cgroup
-from tools.runtime_create_recovery import find_runtime_create, terminal_result
+from tools.check_kvm_host import unique_keys
+from tools.runtime_create_recovery import find_runtime_create, original_create_identity, terminal_result
 from tools.system_acceptance import digest, json_file, private_path, write_once
 from _center_host_services import local_binding, process_facts
 from _internal_fault_relay import InternalFaultRelay, RelayMaterials
@@ -40,32 +41,121 @@ HISTORY_RECORDS = 256
 
 
 def same_running_process(facts):
-    """A PID alone is not an observation of the original living process."""
+    """VM claims carry boot identity; service-process facts retain their own shape."""
+    if 'resource_id' in facts:
+        if (type(facts.get('boot_id')) is not str
+                or facts['boot_id'] != Path('/proc/sys/kernel/random/boot_id').read_text().strip()):
+            return False
     return process_start_ticks(facts['pid']) == facts['start_time_ticks']
 
 
 def center_record(audit, identity):
-    found = [row for row in audit['sandboxes'] if row['create']['identity'] == identity]
+    found = [row for row in audit['sandboxes'] if original_create_identity(row) == identity]
     if len(found) != 1:
         raise ValueError('original center record missing or ambiguous')
     return found[0]
 
 
+def captured_create_matches(record, observation):
+    """Compare real captured bytes with the secret-free original center audit.
+
+    Host create-observation returns a fresh observation, not a stored Ready
+    packet. Center exposes a hash of options; this comparison never reconstructs
+    them or calls a hash equality a full-options equality.
+    """
+    accepted = observation['request']
+    if (observation['current_request'] != accepted
+            or observation['historical_create_succeeded'] is not True
+            or observation['readiness']['state'] != 'observed'):
+        raise ValueError('exact current Create observation required')
+    expected = dict(binding=accepted['request']['binding'], center=accepted['center'],
+        retention=accepted['retention'], accepted_version=accepted['accepted_version'])
+    if original_create_identity(record) != expected:
+        raise ValueError('captured Create changed original center association')
+    operation = accepted['request']['operation']
+    if (operation['kind'] != 'create' or record['operations'][0]['operation'] != {
+            'kind': 'create', 'target_incarnation': operation['target_incarnation']}):
+        raise ValueError('captured Create incarnation changed')
+    create, stored = operation['create'], record['create']
+    for name in ('template_revision', 'template_digest', 'resources',
+                 'startup_deadline_ms', 'timeout_ms', 'max_lifetime_ms'):
+        if stored[name] != create[name]:
+            raise ValueError('captured Create parameters changed')
+    if stored['options_sha256'] != hashlib.sha256(bytes(create['options'])).hexdigest():
+        raise ValueError('captured Create options digest differs')
+    return expected
+
+
 def physical_record(root, host_audit, identity):
-    """Read one exact claim through checked native mapping, not an ID suffix."""
-    local = local_binding(host_audit, identity['sandbox_id'], expected_node=identity['node'])
+    """Read original binding -> local/native/slot -> claim; never derive a PID."""
+    binding = identity['binding']
+    local = local_binding(host_audit, binding['session'], expected_node=binding['node'])
+    current = [row for row in host_audit['operations'] if row['current'] is True
+               and row['binding'] == binding and row['accepted_version'] == identity['accepted_version']]
     native = [row for row in host_audit['native'] if row['sandbox'] == local['sandbox']]
-    if len(native) != 1 or native[0]['current_vm'] is None:
+    if (len(current) != 1 or len(native) != 1 or native[0]['current_vm'] is None
+            or native[0]['owner'] != local['owner']):
         raise ValueError('original admitted VM binding unknown')
+    contexts = [(context, phase) for context, phase in host_audit['host_slots']
+                if context['binding']['sandbox'] == local['sandbox']]
+    if len(contexts) != 1:
+        raise ValueError('original physical position unknown or ambiguous')
+    context, phase = contexts[0]
+    expected = context['binding']
+    if (phase != 'Occupied' or expected['owner'] != local['owner']
+            or expected['vm'] != native[0]['current_vm']
+            or expected['generation'] != native[0]['generation']
+            or expected['vm'] not in native[0]['resources']['vms']
+            or expected['network'] not in native[0]['resources']['slots']):
+        raise ValueError('original physical position binding changed')
     node = json_file(Path(root)/'control/host.json')['native']
     name = 'vm-' + node['namespace'] + '-' + str(native[0]['current_vm'])
-    claim_path = Path(root)/'jails/.claims'/name/'record.json'
-    claim = json_file(private_path(claim_path), limit=MIB)
-    if claim['resource_id'] != name or not same_running_process(claim):
-        raise ValueError('exact original VM process is not living')
-    metadata = claim_path.parent.stat()
-    return dict(resource_id=name, pid=claim['pid'], start_time_ticks=claim['start_time_ticks'],
-                claim_directory=dict(device=metadata.st_dev, inode=metadata.st_ino), local=local)
+    claim_directory = private_path(Path(root)/'jails/.claims'/name, directory=True)
+    directory_fd = os.open(claim_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        directory_before = os.fstat(directory_fd)
+        if (not stat.S_ISDIR(directory_before.st_mode) or directory_before.st_uid != os.geteuid()
+                or directory_before.st_mode & 0o077):
+            raise ValueError('original claim directory is not private')
+        descriptor = os.open('record.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            dir_fd=directory_fd)
+        try:
+            with os.fdopen(descriptor, 'rb', closefd=False) as source:
+                before = os.fstat(source.fileno())
+                if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
+                        or before.st_mode & 0o077 or before.st_nlink != 1 or before.st_size > MIB):
+                    raise ValueError('original claim is not a bounded private regular file')
+                raw = source.read(MIB + 1)
+                if len(raw) > MIB:
+                    raise ValueError('original physical claim exceeds bound')
+                claim = json.loads(raw, object_pairs_hook=unique_keys)
+                if (claim['resource_id'] != name
+                        or type(claim['pid']) is not int or not 0 < claim['pid'] < 2**32
+                        or type(claim['start_time_ticks']) is not int or not 0 < claim['start_time_ticks'] < 2**64
+                        or not same_running_process(claim)):
+                    raise ValueError('exact original VM process is not living')
+                after = os.fstat(source.fileno())
+                linked = os.stat('record.json', dir_fd=directory_fd, follow_symlinks=False)
+                directory_after = os.fstat(directory_fd)
+                named_directory = os.stat(claim_directory, follow_symlinks=False)
+                fields = ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink',
+                          'st_size', 'st_mtime_ns', 'st_ctime_ns')
+                if (any(getattr(before, field) != getattr(after, field) for field in fields)
+                        or any(getattr(after, field) != getattr(linked, field) for field in fields)
+                        or any(getattr(directory_before, field) != getattr(directory_after, field)
+                               for field in ('st_dev','st_ino','st_mode','st_uid','st_gid'))
+                        or any(getattr(directory_after, field) != getattr(named_directory, field)
+                               for field in ('st_dev','st_ino','st_mode','st_uid','st_gid'))):
+                    raise ValueError('original physical claim descriptor or path identity changed')
+                return dict(resource_id=name, pid=claim['pid'], start_time_ticks=claim['start_time_ticks'],
+                    boot_id=claim['boot_id'],
+                    claim_directory=dict(device=directory_after.st_dev, inode=directory_after.st_ino),
+                    claim_file=dict(device=after.st_dev, inode=after.st_ino), local=copy.deepcopy(local),
+                    host_context=copy.deepcopy(context))
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(directory_fd)
 
 
 def vm_gone(root, identity, firecracker, cgroup_parent):
@@ -276,10 +366,10 @@ class Harness:
         audit = self.center()
         if metadata is not None:
             identity = find_runtime_create(audit,metadata,deployment=self.services.center_config['deployment_id'])
-            assert identity['sandbox_id'] == sandbox_id
+            assert identity['binding']['session'] == sandbox_id
         else:
-            rows = [row['create']['identity'] for row in audit['sandboxes']
-                    if row['create']['identity']['sandbox_id']==sandbox_id]
+            rows = [original_create_identity(row) for row in audit['sandboxes']
+                    if row['create']['binding']['session']==sandbox_id]
             assert len(rows)==1
             identity = rows[0]
         physical = physical_record(self.root,self.host(),identity)

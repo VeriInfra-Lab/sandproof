@@ -7,6 +7,7 @@ use sandproof_api::{
     ApiCredential,
     admission::{RequestAdmission, RequestAdmissionLimits},
 };
+use sandproof_center_core::LifecycleWindow;
 use sandproof_center_core::{Bounds, CenterState, NodeRegistration, TenantBudget};
 use sandproof_center_store::{
     ControlState, RedisEndpoint, StoreConfig, authority::AuthorityState, business::BusinessEnvelope,
@@ -20,6 +21,7 @@ use sandproof_internal::{
     check_protected_directory, read_protected,
 };
 use sandproof_protocol::DeploymentId;
+use sandproof_protocol::lifecycle::{CenterId, CenterIdentity, RequestWindowId};
 use serde::Deserialize;
 use std::{
     collections::BTreeSet,
@@ -107,6 +109,7 @@ struct NodeFile {
 #[serde(deny_unknown_fields)]
 struct DeploymentFile {
     deployment_id: DeploymentId,
+    center_id: CenterId,
     bind: SocketAddr,
     domain: String,
     credentials: Vec<CredentialFile>,
@@ -332,6 +335,41 @@ fn validate_templates(
     Ok(())
 }
 
+fn lifecycle_registration(
+    center: CenterIdentity,
+    bounds: Bounds,
+    nodes: &[NodeFile],
+    tenants: Vec<TenantBudget>,
+) -> Result<CenterState, AssemblyError> {
+    let windows = tenants
+        .iter()
+        .map(|tenant| {
+            Ok(LifecycleWindow {
+                owner: tenant.tenant.clone(),
+                window: RequestWindowId::try_from(1)
+                    .map_err(|_| AssemblyError::InvalidConfiguration)?,
+            })
+        })
+        .collect::<Result<Vec<_>, AssemblyError>>()?;
+    CenterState::new(
+        center.deployment.clone(),
+        bounds,
+        nodes.iter().map(|node| node.registration.clone()).collect(),
+        tenants,
+        center,
+        windows,
+    )
+    .map_err(|_| AssemblyError::InvalidConfiguration)
+}
+
+fn data_token_key(path: &Path, owner: u32) -> Result<Vec<u8>, AssemblyError> {
+    let key = read_protected(path, owner, 4096).map_err(|_| AssemblyError::ProtectedInput)?;
+    if key.len() < 32 {
+        return Err(AssemblyError::InvalidConfiguration);
+    }
+    Ok(key)
+}
+
 impl CenterAssemblyInputs {
     /// Load root/service-account-protected configuration and DER TLS material.
     /// The center cannot accept host `database`, jailer, UID or VM configuration;
@@ -379,18 +417,16 @@ impl CenterAssemblyInputs {
         file.data_transfer.validate().map_err(|_| invalid())?;
         let admission = RequestAdmission::new(file.request_admission).map_err(|_| invalid())?;
         let credentials = credentials(file.credentials, &file.tenants)?;
-        let token_key = read_protected(&file.data_token_key, owner, 4096)
-            .map_err(|_| AssemblyError::ProtectedInput)?;
-        if token_key.len() < 32 {
-            return Err(invalid());
-        }
-        let registration = CenterState::new(
-            file.deployment_id.clone(),
+        let token_key = data_token_key(&file.data_token_key, owner)?;
+        let registration = lifecycle_registration(
+            CenterIdentity {
+                deployment: file.deployment_id.clone(),
+                center: file.center_id,
+            },
             file.bounds,
-            file.nodes.iter().map(|n| n.registration.clone()).collect(),
+            &file.nodes,
             file.tenants,
-        )
-        .map_err(|_| invalid())?;
+        )?;
         let store = StoreConfig::new(
             file.deployment_id,
             file.redis.max_block_bytes,
@@ -398,7 +434,7 @@ impl CenterAssemblyInputs {
             Duration::from_millis(file.redis.operation_timeout_ms),
         )
         .map_err(|_| invalid())?;
-        if registration.bounds().required_block_bytes() > file.redis.max_block_bytes {
+        if registration.required_authority_bytes() > file.redis.max_block_bytes {
             return Err(invalid());
         }
         let redis_endpoint =

@@ -86,7 +86,7 @@ fn lost_launch_receipt_and_restart_keep_original_build_identity() {
     let port = complete_fixture::builder_port(
         &path,
         FakeHost {
-            prepare: PrepareObservation::LiveUnready,
+            prepare: PrepareObservation::LiveUnready.into(),
             prepare_calls: Some(Arc::clone(&calls)),
             ..FakeHost::default()
         },

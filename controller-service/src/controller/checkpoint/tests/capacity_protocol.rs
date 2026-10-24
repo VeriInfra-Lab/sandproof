@@ -107,7 +107,7 @@ fn automatic_publication_unknown_commit_recovers_both_durable_roots() {
                 .unwrap(),
             generation + 1
         );
-        crate::finish_admitted_create_v1(&mut journal, SID, core::OperationId(1), &mut success)
+        crate::finish_admitted_create(&mut journal, SID, core::OperationId(1), &mut success)
             .unwrap();
         destroy(&mut journal, 1);
         release(&mut journal, 1);
@@ -271,7 +271,7 @@ fn running_terminal_path(
     final_success: bool,
 ) -> bool {
     admit_full(journal);
-    crate::finish_admitted_create_v1(journal, SID, core::OperationId(1), &mut success).unwrap();
+    crate::finish_admitted_create(journal, SID, core::OperationId(1), &mut success).unwrap();
     apply(
         journal,
         core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
@@ -407,7 +407,7 @@ fn aborted_terminal_path(journal: &mut ControllerJournal, final_success: bool) -
         final_success,
     );
     if completed {
-        crate::finish_compensating_create_v1(journal, SID, core::OperationId(1), &mut success)
+        crate::finish_compensating_create(journal, SID, core::OperationId(1), &mut success)
             .unwrap();
     }
     completed

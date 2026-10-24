@@ -161,6 +161,10 @@ def run_locked_suite(output):
         call(['verification/experiments/protected-directory/test_checks.py'])
         call(['verification/experiments/protected-directory/native.py','--archive',library_archive,'--output',target])
     native_case('protected-directory',ROOT,target,protected_directory_native)
+    target = work / 'stage1-protocol'
+    native_case('stage1-protocol', ROOT, target, lambda p=target:
+        call(['verification/experiments/stage1-protocol/component.py',
+              '--native-only', '--output', p]))
     target = work / 'schema-domains'
     native_case('schema-domains', ROOT, target, lambda p=target:
         call(['verification/experiments/schema-domains/native.py', '--output', p]))
@@ -238,7 +242,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex'])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol'])
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':

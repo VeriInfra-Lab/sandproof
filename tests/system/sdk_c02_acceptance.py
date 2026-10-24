@@ -48,7 +48,7 @@ if not sys.flags.optimize:
     )
     from _process_utils import stop_child
     from _runtime_services import RuntimeServices
-    from _center_host_services import terminal_result
+    from _center_host_services import original_create_identity, terminal_result
     from tools import ci_e2e_artifacts as artifacts
 
 # Existing system supervisors import this public helper.
@@ -283,18 +283,19 @@ def record_requests(root,services,report):
                     and acknowledgement['sandbox']==ident and acknowledgement['recorded'] is True,'identity_unknown')
             continue
         center=services.planned_audit('center')
-        matching=[row for row in center['sandboxes'] if row['create']['identity']['sandbox_id']==ident
-                  and row['private'] is False and row['create']['identity']['tenant_id']=='1']
+        matching=[row for row in center['sandboxes'] if row['create']['binding']['session']==ident
+                  and row['private'] is False and row['create']['binding']['key']['owner']=='1']
         require(len(matching)==1,'identity_unknown')
-        identity=matching[0]['create']['identity']
+        identity=original_create_identity(matching[0])
         services.processes.stop('host-0')
         try:
             audit=services.processes.audit('host-0')
             local=local_binding(audit,ident,expected_node=services.host_configs[0]['inbox']['node'])
             require(type(local['owner']) is int and 0 < local['owner'] < 2**64,'identity_unknown')
             current=[row for row in audit['operations']
-                     if row['current'] is True and row['identity']['sandbox_id']==ident]
-            require(len(current)==1 and current[0]['identity']==identity,'identity_unknown')
+                     if row['current'] is True and row['binding']['session']==ident]
+            require(len(current)==1 and current[0]['binding']==identity['binding']
+                and current[0]['accepted_version']==identity['accepted_version'],'identity_unknown')
             number=local['sandbox']
             native_id='sb-'+services.native_pools[0]['namespace']+'-'+str(number)
             contexts=[context for context,_phase in audit['host_slots']
@@ -524,11 +525,11 @@ def cleanup(root, namespace, args, opener, base_url, owner_key, services, report
     deadline=time.monotonic()+30
     while True:
         center=services.planned_audit('center')
-        records={row['create']['identity']['sandbox_id']:row for row in center['sandboxes']
-                 if row['private'] is False and row['create']['identity']['tenant_id']=='1'}
+        records={row['create']['binding']['session']:row for row in center['sandboxes']
+                 if row['private'] is False and row['create']['binding']['key']['owner']=='1'}
         require(len(records)<=EXPECTED_SANDBOXES,'identity_unknown')
         for ident,row in records.items():
-            identity=row['create']['identity']
+            identity=original_create_identity(row)
             require(ident not in observed or observed[ident]==identity,'identity_unknown')
             observed[ident]=identity
         report['global_identities']=dict(observed)
@@ -544,7 +545,7 @@ def cleanup(root, namespace, args, opener, base_url, owner_key, services, report
             row=records.get(ident)
             if row is None:
                 continue  # Missing original record is UNKNOWN, not Cleaned.
-            latest=row['operations'][-1]['intent'] if row['operations'] else None
+            latest=row['operations'][-1]['operation'] if row['operations'] else None
             if latest is not None and latest['kind']=='destroy':
                 attempted.add(ident)
                 continue

@@ -94,7 +94,7 @@ impl WorkEvidence for BoundedHost {
 }
 impl WorkExecution for BoundedHost {
     fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
         let mut state = self.0.lock().unwrap();
@@ -136,14 +136,14 @@ impl WorkRecovery for BoundedHost {
     }
 
     fn reclaim_incomplete_prepare(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 
     fn reclaim_incomplete_terminal_fence(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         assert!(matches!(
@@ -156,7 +156,7 @@ impl WorkRecovery for BoundedHost {
     }
 
     fn reclaim_incomplete_cleanup(
-        &mut self,
+        &self,
         _action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
         Err(PortError::Busy)
@@ -165,7 +165,7 @@ impl WorkRecovery for BoundedHost {
 
 impl HostSlots for BoundedHost {
     fn bind_host_slot(
-        &mut self,
+        &self,
         context: &HostSlotContext,
         allow_install: bool,
     ) -> Result<(), PortError> {
@@ -198,7 +198,7 @@ impl HostSlots for BoundedHost {
         Ok(())
     }
 
-    fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
+    fn release_host_slot(&self, context: &HostSlotContext) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         let (current, phase) = state.row.ok_or(PortError::Busy)?;
         if current != *context {
@@ -257,7 +257,7 @@ impl DataRelay for BoundedHost {
     }
 
     fn spawn_data_relay(
-        &mut self,
+        &self,
         sandbox: core::SandboxId,
         vm: core::VmId,
         generation: core::Generation,
@@ -321,7 +321,7 @@ impl HostCapacity for BoundedHost {
 }
 
 impl LaunchConfiguration for BoundedHost {
-    fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
+    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
             context.binding.sandbox != sandbox || phase != HostSlotPhase::Occupied
@@ -480,7 +480,7 @@ fn unknown_terminal_fence_before_binding_recovers_only_the_original_cancel() {
     let mut journal = open_journal(&path);
     // Inject cancellation's claim/host-loss boundary: it claimed its fence even
     // though physical binding had never succeeded. It never dispatched prepare.
-    let failure = kill_v1::<Evidence, _>(
+    let failure = kill::<Evidence, _>(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),

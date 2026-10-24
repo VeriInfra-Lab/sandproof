@@ -52,7 +52,7 @@ fn audit(
 
 #[test]
 fn startup_reopens_only_terminal_fence_without_any_launch_dispatch() {
-    use sandproof_controller_service::{NeverCrash, kill_v1};
+    use sandproof_controller_service::{NeverCrash, kill};
     struct Scratch(PathBuf);
     impl Drop for Scratch {
         fn drop(&mut self) {
@@ -113,7 +113,7 @@ fn startup_reopens_only_terminal_fence_without_any_launch_dispatch() {
             ));
         }
         assert!(
-            kill_v1::<HostObservation, _>(
+            kill::<HostObservation, _>(
                 &mut journal,
                 core::KillRequest {
                     actor: core::Actor::Tenant(core::TenantId(1)),

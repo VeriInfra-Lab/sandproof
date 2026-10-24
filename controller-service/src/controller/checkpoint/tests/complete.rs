@@ -46,7 +46,7 @@ fn complete_opener_preserves_nonempty_current_world_and_checkpoint() {
     journal
         .admit_create(request(1), 1000, 60, 1000, limits, &mut NeverCrash)
         .unwrap();
-    crate::finish_admitted_create_v1(
+    crate::finish_admitted_create(
         &mut journal,
         core::SandboxId(1),
         core::OperationId(1),

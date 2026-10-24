@@ -7,7 +7,7 @@ use rustix::process::{Signal, getpid, kill_process};
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, DispatchResult, JournalError,
-    NeverCrash, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
+    NeverCrash, finish_accepted_kill, finish_admitted_create, kill,
 };
 use sandproof_node::{LinuxWorker, NodeConfig};
 use sandproof_protocol::{TenantId, UnknownReason, WorkOutcome, WorkReceipt};
@@ -150,7 +150,7 @@ fn test_create_request(config: &NodeConfig) -> core::CreateRequest {
 
 fn uncertain_prepare_without_launch(
     config: &NodeConfig,
-    worker: &mut LinuxWorker,
+    worker: &LinuxWorker,
 ) -> (
     ControllerJournal,
     sandproof_protocol::WorkAction<core::EffectId>,
@@ -160,7 +160,7 @@ fn uncertain_prepare_without_launch(
     worker
         .put_secret(core::SandboxId(1), &test_token())
         .unwrap();
-    let result = finish_admitted_create_v1(
+    let result = finish_admitted_create(
         &mut journal,
         core::SandboxId(1),
         core::OperationId(1),
@@ -191,8 +191,8 @@ fn uncertain_prepare_without_launch(
 #[ignore = "requires root, isolated Linux namespaces and dedicated state directory"]
 fn partial_prepare_without_first_slot_is_reclaimed_without_launch() {
     let config = test_config();
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let (mut journal, action) = uncertain_prepare_without_launch(&config, &mut worker);
+    let worker = LinuxWorker::new(config.clone()).unwrap();
+    let (mut journal, action) = uncertain_prepare_without_launch(&config, &worker);
     let core::Command::PrepareVm { vm, slot, .. } = action.command.command() else {
         unreachable!();
     };
@@ -233,8 +233,8 @@ fn partial_prepare_without_first_slot_is_reclaimed_without_launch() {
 #[ignore = "requires root, isolated Linux namespaces and dedicated state directory"]
 fn partial_prepare_network_intent_is_reclaimed_by_exact_identity() {
     let config = test_config();
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let (mut journal, action) = uncertain_prepare_without_launch(&config, &mut worker);
+    let worker = LinuxWorker::new(config.clone()).unwrap();
+    let (mut journal, action) = uncertain_prepare_without_launch(&config, &worker);
     let core::Command::PrepareVm {
         sandbox,
         generation,
@@ -308,34 +308,32 @@ fn partial_prepare_network_intent_is_reclaimed_by_exact_identity() {
 fn create_and_kill_use_real_host_receipts() {
     let config = test_config();
     let namespace = config.namespace.clone();
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     let token = test_token();
     let sandbox = core::SandboxId(1);
     let request = test_create_request(&config);
     admit_for_test(&config, &mut journal, &worker, request);
     worker.put_secret(sandbox, &token).unwrap();
-    let lost =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
-            let receipt = worker.execute(action)?;
-            if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
-                assert_eq!(worker.observe_action(action).unwrap(), receipt);
-            }
-            if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
-                return Ok(WorkReceipt {
-                    identity: action.identity.clone(),
-                    outcome: WorkOutcome::Unknown {
-                        reason: UnknownReason::ObservationUnavailable,
-                        last_observation: None,
-                    },
-                });
-            }
-            Ok(receipt)
-        });
+    let lost = finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        let receipt = worker.execute(action)?;
+        if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
+            assert_eq!(worker.observe_action(action).unwrap(), receipt);
+        }
+        if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+            return Ok(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
+        Ok(receipt)
+    });
     assert!(
         matches!(lost, Err(JournalError::UnresolvedAction)),
-        "{lost:?}; host: {:?}",
-        worker.last_error()
+        "{lost:?}"
     );
     drop(journal); // simulated controller process restart after the VM launched
     let mut journal = test_journal(&config);
@@ -365,16 +363,11 @@ fn create_and_kill_use_real_host_receipts() {
     );
     let mut repeated_prepare = false;
     let running =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             repeated_prepare |= matches!(action.command.command(), core::Command::PrepareVm { .. });
             worker.execute(action)
         })
-        .unwrap_or_else(|error| {
-            panic!(
-                "resumed create failed: {error}; host: {:?}",
-                worker.last_error()
-            )
-        });
+        .unwrap_or_else(|error| panic!("resumed create failed: {error}"));
     assert!(!repeated_prepare);
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
@@ -444,7 +437,7 @@ fn create_and_kill_use_real_host_receipts() {
          add rule inet sandproof_guard guest_out iifname \"tap0\" drop\n",
     );
     assert_eq!(worker.inventory().unwrap().slots.len(), 1);
-    let lost = kill_v1(
+    let lost = kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -484,8 +477,7 @@ fn create_and_kill_use_real_host_receipts() {
     );
     assert!(
         matches!(lost, Err(JournalError::UnresolvedAction)),
-        "{lost:?}; host: {:?}",
-        worker.last_error()
+        "{lost:?}"
     );
     drop(journal);
     let mut journal = test_journal(&config);
@@ -503,17 +495,11 @@ fn create_and_kill_use_real_host_receipts() {
         1
     );
     let mut repeated_stop = false;
-    let killed =
-        finish_accepted_kill_v1(&mut journal, sandbox, core::OperationId(2), &mut |action| {
-            repeated_stop |= matches!(action.command.command(), core::Command::StopVm { .. });
-            worker.execute(action)
-        })
-        .unwrap_or_else(|error| {
-            panic!(
-                "resumed kill failed: {error}; host: {:?}",
-                worker.last_error()
-            )
-        });
+    let killed = finish_accepted_kill(&mut journal, sandbox, core::OperationId(2), &mut |action| {
+        repeated_stop |= matches!(action.command.command(), core::Command::StopVm { .. });
+        worker.execute(action)
+    })
+    .unwrap_or_else(|error| panic!("resumed kill failed: {error}"));
     assert!(!repeated_stop);
     assert_eq!(
         killed.sandbox_record(sandbox).unwrap().phase,
@@ -580,7 +566,7 @@ fn create_and_kill_use_real_host_receipts() {
 #[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
 fn repeated_stop_and_cleanup_preserve_another_live_vm() {
     let config = test_config();
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     let survivor = core::SandboxId(2);
     let mut survivor_activation = None;
@@ -591,7 +577,7 @@ fn repeated_stop_and_cleanup_preserve_another_live_vm() {
         request.operation = core::OperationId(number);
         admit_for_test(&config, &mut journal, &worker, request.clone());
         worker.put_secret(request.sandbox, &test_token()).unwrap();
-        let running = finish_admitted_create_v1(
+        let running = finish_admitted_create(
             &mut journal,
             request.sandbox,
             request.operation,
@@ -638,7 +624,7 @@ fn repeated_stop_and_cleanup_preserve_another_live_vm() {
         assert_eq!(worker.observe_action(&activation).unwrap(), ready);
     };
     let mut completed = Vec::new();
-    kill_v1(
+    kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -665,13 +651,13 @@ fn repeated_stop_and_cleanup_preserve_another_live_vm() {
     assert_eq!(completed.len(), 3);
     // Reopen the worker after complete cleanup, then replay the same precise
     // actions. Tombstones must not resolve to a different, still-live VM.
-    let mut worker = LinuxWorker::new(config).unwrap();
+    let worker = LinuxWorker::new(config).unwrap();
     for (action, receipt) in completed {
         assert_eq!(worker.execute(&action).unwrap(), receipt);
         assert_eq!(worker.observe_action(&action).unwrap(), receipt);
         assert_survivor(&worker);
     }
-    kill_v1(
+    kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -722,7 +708,7 @@ impl CrashInjector for TerminateAfterWorker {
 
 fn exit_child(stage: &str, sigkill: bool) {
     let config = test_config();
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     journal
         .dispatch_next(
@@ -784,7 +770,7 @@ fn worker_termination_reconciles_prepare_and_stop(
     }
     let config = test_config();
     let sandbox = core::SandboxId(1);
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
     worker.put_secret(sandbox, &test_token()).unwrap();
@@ -818,7 +804,7 @@ fn worker_termination_reconciles_prepare_and_stop(
     drop(worker);
     spawn_exit_child("prepare", test_name, sigkill);
 
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
@@ -853,11 +839,11 @@ fn worker_termination_reconciles_prepare_and_stop(
     );
     let mut repeated_prepare = false;
     let running =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             repeated_prepare |= matches!(action.command.command(), core::Command::PrepareVm { .. });
             worker.execute(action)
         })
-        .unwrap_or_else(|error| panic!("resumed create: {error}; host: {:?}", worker.last_error()));
+        .unwrap_or_else(|error| panic!("resumed create: {error}"));
     assert!(!repeated_prepare);
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
@@ -913,7 +899,7 @@ fn worker_termination_reconciles_prepare_and_stop(
         sigkill,
     );
 
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
@@ -955,11 +941,11 @@ fn worker_termination_reconciles_prepare_and_stop(
     );
     let mut repeated_stop = false;
     let destroyed =
-        finish_accepted_kill_v1(&mut journal, sandbox, core::OperationId(2), &mut |action| {
+        finish_accepted_kill(&mut journal, sandbox, core::OperationId(2), &mut |action| {
             repeated_stop |= matches!(action.command.command(), core::Command::StopVm { .. });
             worker.execute(action)
         })
-        .unwrap_or_else(|error| panic!("resumed kill: {error}; host: {:?}", worker.last_error()));
+        .unwrap_or_else(|error| panic!("resumed kill: {error}"));
     assert!(!repeated_stop);
     assert_eq!(
         destroyed.sandbox_record(sandbox).unwrap().phase,
@@ -1027,7 +1013,7 @@ fn real_worker_sigkill_before_opening_fence_resumes_one_create() {
     drop(worker);
     spawn_exit_child("open_fence_before_host", TEST_NAME, true);
 
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
@@ -1052,15 +1038,15 @@ fn real_worker_sigkill_before_opening_fence_resumes_one_create() {
         1
     );
     let running =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             worker.execute(action)
         })
-        .unwrap_or_else(|error| panic!("resumed create: {error}; host: {:?}", worker.last_error()));
+        .unwrap_or_else(|error| panic!("resumed create: {error}"));
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Running
     );
-    let destroyed = kill_v1(
+    let destroyed = kill(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -1069,7 +1055,7 @@ fn real_worker_sigkill_before_opening_fence_resumes_one_create() {
         },
         &mut |action| worker.execute(action),
     )
-    .unwrap_or_else(|error| panic!("kill: {error}; host: {:?}", worker.last_error()));
+    .unwrap_or_else(|error| panic!("kill: {error}"));
     assert_eq!(
         destroyed.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Destroyed
@@ -1099,15 +1085,15 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
     }
     let config = test_config();
     let sandbox = core::SandboxId(1);
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
     worker.put_secret(sandbox, &test_token()).unwrap();
     let running =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+        finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             worker.execute(action)
         })
-        .unwrap_or_else(|error| panic!("create: {error}; host: {:?}", worker.last_error()));
+        .unwrap_or_else(|error| panic!("create: {error}"));
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Running
@@ -1185,7 +1171,7 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
     drop(worker);
     spawn_exit_child("cleanup", TEST_NAME, true);
 
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
@@ -1218,7 +1204,7 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
     );
     let mut repeated_cleanup = false;
     let destroyed =
-        finish_accepted_kill_v1(&mut journal, sandbox, core::OperationId(2), &mut |action| {
+        finish_accepted_kill(&mut journal, sandbox, core::OperationId(2), &mut |action| {
             repeated_cleanup |= matches!(action.command.command(), core::Command::CleanupVm { .. });
             worker.execute(action)
         })

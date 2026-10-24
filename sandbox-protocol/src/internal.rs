@@ -10,8 +10,8 @@ use std::{error::Error, fmt};
 pub const INTERNAL_PROTOCOL_VERSION: u16 = 2;
 /// Formats deployed by the sole center/host products. Kept alongside the wire
 /// contract so the host does not link the Redis adapter to report compatibility.
-pub const CENTER_STORE_FORMAT_VERSION: u32 = 6;
-pub const HOST_STORE_FORMAT_VERSION: i64 = 16;
+pub const CENTER_STORE_FORMAT_VERSION: u32 = 8;
+pub const HOST_STORE_FORMAT_VERSION: i64 = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct ContractVersions {
@@ -29,11 +29,11 @@ impl ContractVersions {
         }
     }
 }
-pub const PROBE_PATH: &str = "/internal/v2/probe";
+pub const PROBE_PATH: &str = "/internal/probe";
 pub const PROBE_BODY_BYTES: usize = 4096;
 /// Namespace-specific data requests use the original envd URI after this prefix.
 /// The only routable destination is the node's original, authorized namespace.
-pub const DATA_PATH_PREFIX: &str = "/internal/v2/data";
+pub const DATA_PATH_PREFIX: &str = "/internal/data";
 pub const DATA_IDENTITY_HEADER: &str = "x-sandproof-control-identity";
 pub const DATA_IDENTITY_BYTES: usize = 2048;
 

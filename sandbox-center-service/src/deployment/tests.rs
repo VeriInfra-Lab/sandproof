@@ -96,7 +96,7 @@ impl Fixture {
         };
         let resources = json!({"instances":4,"cpu":4,"memory_bytes":516*1024*1024u64,"disk_bytes":4*1024*1024*1024u64});
         let config = json!({
-            "deployment_id":"assembly-fixture","bind":"127.0.0.1:3000","domain":"sandbox.test",
+            "deployment_id":"assembly-fixture","center_id":"center","bind":"127.0.0.1:3000","domain":"sandbox.test",
             "credentials":[{"tenant":1,"secret":"center-config-user-fixture-only-key-0001"}],
             "data_token_key":path("token.key"),"max_timeout_secs":300,"max_lifetime_secs":3600,
             "startup_timeout_secs":300,"reply_timeout_ms":1000,"poll_interval_ms":10,"expiry_scan_ms":1000,
@@ -109,7 +109,7 @@ impl Fixture {
                 "max_block_bytes":8_388_608,"memory_bytes":67_108_864,"operation_timeout_ms":1000,"writer_root":path("writer")},
             "tls":{"certificate_chain_der":[path("center.der")],"private_key_der":path("center-key.der"),
                 "trusted_roots_der":[path("ca.der")],"max_connections":12,"handshake_timeout_ms":500,"request_timeout_ms":1000},
-            "bounds":{"max_nodes":2,"max_templates_per_node":4,"max_sandboxes":4,"operations_per_sandbox":4,"max_options_bytes":4096,"platform":resources},
+            "bounds":{"max_nodes":2,"max_templates_per_node":4,"max_sandboxes":4,"operations_per_sandbox":4,"max_options_bytes":4096,"result_retention_ms":300000,"platform":resources},
             "tenants":[{"tenant":"1","limit":resources}],
             "nodes":[{"registration":{"identity":{"deployment_id":"assembly-fixture","node_id":"host-a","node_generation":1},
                 "role":"runtime","limit":resources,"mode":"accepting","healthy_until_ms":0,"free":{"instances":0,"cpu":0,"memory_bytes":0,"disk_bytes":0},
@@ -207,6 +207,7 @@ fn documented_center_example_loads_with_operator_material_through_the_original_v
     let result = fixture.load(&example);
     assert!(result.is_ok(), "original validator: {:?}", result.err());
     for field in [
+        "center_id",
         "nodes",
         "artifact_service",
         "node_observation",
@@ -370,6 +371,21 @@ fn unknown_host_fields_missing_budgets_and_invalid_defaults_fail_before_serving(
     missing.as_object_mut().unwrap().remove("data_transfer");
     assert!(matches!(
         fixture.load(&missing),
+        Err(AssemblyError::InvalidConfiguration)
+    ));
+    let mut missing_retention = fixture.config.clone();
+    missing_retention["bounds"]
+        .as_object_mut()
+        .unwrap()
+        .remove("result_retention_ms");
+    assert!(matches!(
+        fixture.load(&missing_retention),
+        Err(AssemblyError::InvalidConfiguration)
+    ));
+    let mut zero_retention = fixture.config.clone();
+    zero_retention["bounds"]["result_retention_ms"] = json!(0);
+    assert!(matches!(
+        fixture.load(&zero_retention),
         Err(AssemblyError::InvalidConfiguration)
     ));
     let mut foreign_user = fixture.config.clone();

@@ -142,9 +142,37 @@ fn duplicate_json_fields_and_duplicate_record_keys_fail_closed() {
 }
 
 #[test]
+fn both_supported_versions_restore_their_actual_captured_world() {
+    let world = pending_world();
+    for (version, captured) in [
+        (
+            checkpoint::CHECKPOINT_VERSION,
+            checkpoint::capture(&world, LIMITS).unwrap(),
+        ),
+        (
+            checkpoint::UNLOAD_CHECKPOINT_VERSION,
+            checkpoint::capture_unload(&world, LIMITS).unwrap(),
+        ),
+    ] {
+        let value = serde_json::to_value(captured).unwrap();
+        assert_eq!(value["version"], json!(version));
+        assert_eq!(
+            checkpoint::restore(decode(&value).unwrap(), LIMITS),
+            Ok(world.clone())
+        );
+    }
+}
+
+#[test]
 fn valid_json_does_not_bypass_version_references_or_record_limits() {
     let mut value = wire();
-    value["version"] = json!(2);
+    let unsupported = checkpoint::CHECKPOINT_VERSION
+        .max(checkpoint::UNLOAD_CHECKPOINT_VERSION)
+        .checked_add(1)
+        .unwrap();
+    assert_ne!(unsupported, checkpoint::CHECKPOINT_VERSION);
+    assert_ne!(unsupported, checkpoint::UNLOAD_CHECKPOINT_VERSION);
+    value["version"] = json!(unsupported);
     assert_eq!(
         checkpoint::restore(decode(&value).unwrap(), LIMITS),
         Err(CheckpointReject::UnsupportedVersion)
