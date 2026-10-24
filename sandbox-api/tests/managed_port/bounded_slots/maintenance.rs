@@ -115,16 +115,29 @@ impl HostCapacity for FleetHost {
 }
 
 impl LaunchConfiguration for FleetHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
-        self.sandbox(sandbox)?.put_secret(sandbox, token)
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), PortError> {
+        self.sandbox(sandbox)?.put_secret(sandbox, generation, token)
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
-        self.sandbox(sandbox)?.has_secret(sandbox)
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, PortError> {
+        self.sandbox(sandbox)?.has_secret(sandbox, generation)
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
-        self.sandbox(sandbox)?.token_for(sandbox)
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, PortError> {
+        self.sandbox(sandbox)?.token_for(sandbox, generation)
     }
 }
 
