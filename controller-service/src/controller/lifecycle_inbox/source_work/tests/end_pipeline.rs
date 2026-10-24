@@ -105,7 +105,7 @@ fn ordinary_stop_waits_for_persisted_end_and_recovers_at_dispatch_and_receipt() 
             core::Command::StopVm { .. }
         ));
         if receipt_before_restart {
-            success(&mut journal, &stop)
+            success(&mut journal, &stop);
         }
         drop(journal);
         let mut journal = v3::open(&path);
@@ -120,7 +120,7 @@ fn ordinary_stop_waits_for_persisted_end_and_recovers_at_dispatch_and_receipt() 
         );
         if !receipt_before_restart {
             assert!(journal.uncertain_actions().unwrap().contains(&stop));
-            success(&mut journal, &stop)
+            success(&mut journal, &stop);
         }
         finish_full_component(&mut journal, &source);
         assert_eq!(
@@ -343,7 +343,7 @@ fn final_retire_source_clear_and_cleanup_receipt_recover_as_one_commit() {
         if !durable {
             journal
                 .retire_reclaimed(sandbox, 20, |_| Ok(()), &mut NeverCrash)
-                .unwrap()
+                .unwrap();
         }
         let inbox = super::super::super::codec::load(&journal.journal.connection)
             .unwrap()
