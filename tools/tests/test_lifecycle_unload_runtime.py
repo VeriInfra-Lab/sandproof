@@ -559,3 +559,49 @@ class ActivationGateProtocolTests(unittest.TestCase):
                     with self.assertRaises(ValueError):gate.recover_resume_gate(receipt,time.monotonic()+10)
                     processes.start.assert_not_called()
             gate.release_resume_gate.assert_called_once_with('continue')
+
+    def test_exact_cleanup_removes_only_sealed_final_files_and_rejects_unknown_entries(self):
+        import os
+        from contextlib import ExitStack
+        # Only privilege metadata is controlled; bytes, descriptors, hashes,
+        # no-follow opens, single links and unlink identities are real files.
+        real_stat,real_fstat=os.stat,os.fstat
+        def root_metadata(value):
+            names=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_mode','st_uid','st_nlink')
+            result={name:getattr(value,name) for name in names}
+            result['st_uid']=0
+            return SimpleNamespace(**result)
+        for unknown in (False,True):
+            with tempfile.TemporaryDirectory() as directory,ExitStack() as guards:
+                control=Path(directory)
+                path=control/'restore-activation-gate';path.mkdir(mode=0o700)
+                for name in runtime.GATE_FINAL_NAMES:
+                    (path/name).write_text(json.dumps(dict(fixture=name)))
+                    (path/name).chmod(0o600)
+                if unknown:(path/'foreign.json').write_text('{}')
+                descriptor=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+                gate=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+                gate.physical_complete=gate.gc_complete=True
+                meta=real_fstat(descriptor);parent=real_stat(control)
+                gate.restore_gate=dict(path=path,fd=descriptor,directory_identity=(meta.st_dev,meta.st_ino),
+                    control_identity=(parent.st_dev,parent.st_ino),files={},command='continue',
+                    command_sent=True,exit86_observed=True)
+                guards.enter_context(patch.object(runtime.os,'stat',side_effect=lambda *a,**kw:root_metadata(real_stat(*a,**kw))))
+                guards.enter_context(patch.object(runtime.os,'fstat',side_effect=lambda *a,**kw:root_metadata(real_fstat(*a,**kw))))
+                try:
+                    for name in runtime.GATE_FINAL_NAMES:
+                        _,digest,identity=runtime.gate_json(path/name,16384 if name=='observation.json' else 1024,
+                            directory_fd=descriptor)
+                        gate.restore_gate['files'][name]=(digest,identity)
+                    if unknown:
+                        with self.assertRaises(ValueError):gate.cleanup_restore_gate()
+                        self.assertEqual(set(os.listdir(descriptor)),runtime.GATE_FINAL_NAMES|{'foreign.json'})
+                    else:
+                        result=gate.cleanup_restore_gate()
+                        self.assertEqual(result['protocol_names'],sorted(runtime.GATE_NAMES))
+                        self.assertEqual(result['transient_stages_absent'],sorted(runtime.GATE_STAGE_NAMES))
+                        self.assertTrue(result['private_token_record_removed'])
+                        self.assertFalse(path.exists())
+                        self.assertTrue(control.is_dir())
+                finally:
+                    gate.close_restore_gate()
