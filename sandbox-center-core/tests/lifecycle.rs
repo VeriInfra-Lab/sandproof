@@ -8,12 +8,12 @@ mod fixture;
 use fixture::*;
 #[path = "lifecycle/acceptance_time.rs"]
 mod acceptance_time;
-#[path = "lifecycle/unloaded.rs"]
-mod unloaded;
 #[path = "lifecycle/refusal.rs"]
 mod refusal;
 #[path = "lifecycle/renewal_confirmation.rs"]
 mod renewal_confirmation;
+#[path = "lifecycle/unloaded.rs"]
+mod unloaded;
 
 fn state() -> CenterState {
     CenterState::new(
@@ -827,7 +827,7 @@ fn recovery_rejects_malformed_lanes_duplicate_occupancy_and_changed_frontiers() 
                 value["sandboxes"][1]["operations"][0]["intent"]["retention"]["slot"] = slot;
             }
             "wrong_frontier" => {
-                value["sandboxes"][0]["operations"][0]["intent"]["retention"]["window"] = 2.into()
+                value["sandboxes"][0]["operations"][0]["intent"]["retention"]["window"] = 2.into();
             }
             "empty_operations" => value["sandboxes"][0]["operations"] = serde_json::json!([]),
             _ => unreachable!(),

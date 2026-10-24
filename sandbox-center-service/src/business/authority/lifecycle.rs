@@ -426,7 +426,11 @@ impl SharedBusinessAuthority {
             operation: current.request.binding.key.clone(),
             current_version: current.accepted_version,
             phase,
-            unloaded: record.operations().last().and_then(|operation| operation.unloaded()).and_then(|observation| observation.unloaded.clone()),
+            unloaded: record
+                .operations()
+                .last()
+                .and_then(|operation| operation.unloaded())
+                .and_then(|observation| observation.unloaded.clone()),
             create_refusal: record
                 .operations()
                 .first()

@@ -32,7 +32,11 @@ impl UnloadObservation {
     /// journal supplies the material/exit facts; the center checks its ledger.
     #[must_use]
     pub fn matches_request(&self, original: &AcceptedLifecycleIntent) -> bool {
-        let LifecycleOperation::Unload { source_incarnation, capture } = &original.request.operation else {
+        let LifecycleOperation::Unload {
+            source_incarnation,
+            capture,
+        } = &original.request.operation
+        else {
             return false;
         };
         self.request == *original

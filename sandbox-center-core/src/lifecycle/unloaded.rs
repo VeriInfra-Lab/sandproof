@@ -25,21 +25,35 @@ impl CenterState {
             return Ok(self.clone());
         };
         if let Some(saved) = current.unloaded.as_ref() {
-            return if saved == observation { Ok(self.clone()) } else { Err(DecisionError::Conflict) };
+            return if saved == observation {
+                Ok(self.clone())
+            } else {
+                Err(DecisionError::Conflict)
+            };
         }
         let prior = session.last_running().ok_or(DecisionError::Invalid)?;
         if facts.started_at_ms != prior.started_at_ms
             || facts.end_at_ms != prior.end_at_ms
             || facts.max_end_at_ms != prior.max_end_at_ms
             || facts.startup_deadline_ms != prior.startup_deadline_ms
-            || now_ms < current.acceptance_time.sampled_at_ms().ok_or(DecisionError::Invalid)?
+            || now_ms
+                < current
+                    .acceptance_time
+                    .sampled_at_ms()
+                    .ok_or(DecisionError::Invalid)?
             || now_ms >= prior.end_at_ms
         {
             return Err(DecisionError::Stale);
         }
         let mut next = self.clone();
-        next.sandboxes[index].operations.last_mut().ok_or(DecisionError::Invalid)?.unloaded = Some(observation.clone());
-        if !next.is_valid() { return Err(DecisionError::Invalid); }
+        next.sandboxes[index]
+            .operations
+            .last_mut()
+            .ok_or(DecisionError::Invalid)?
+            .unloaded = Some(observation.clone());
+        if !next.is_valid() {
+            return Err(DecisionError::Invalid);
+        }
         Ok(next)
     }
 }

@@ -35,7 +35,9 @@ pub trait LifecycleReceiver: Send + Sync + 'static {
         &self,
         _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
-    ) -> impl std::future::Future<Output = Result<sandproof_protocol::lifecycle::UnloadObservation, ReceiveError>> + Send {
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::UnloadObservation, ReceiveError>,
+    > + Send {
         std::future::ready(Err(ReceiveError::Unavailable))
     }
 
@@ -274,30 +276,32 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             || request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH
             || request.uri().path() == VALIDATION_PATH
         {
-            let call =
-                if request.uri().path() == sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH {
-                    lifecycle::Call::UnloadObservation
-                } else if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH {
-                    lifecycle::Call::CreateObservation
-                } else if request.uri().path()
-                    == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
-                {
-                    lifecycle::Call::TerminalObservation
-                } else if request.uri().path()
-                    == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
-                {
-                    lifecycle::Call::Confirm
-                } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
-                    lifecycle::Call::Close
-                } else if request.uri().path()
-                    == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
-                {
-                    lifecycle::Call::RenewalConfirm
-                } else if request.uri().path() == VALIDATION_PATH {
-                    lifecycle::Call::Validation
-                } else {
-                    lifecycle::Call::Record
-                };
+            let call = if request.uri().path()
+                == sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH
+            {
+                lifecycle::Call::UnloadObservation
+            } else if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
+            {
+                lifecycle::Call::CreateObservation
+            } else if request.uri().path()
+                == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
+            {
+                lifecycle::Call::TerminalObservation
+            } else if request.uri().path()
+                == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
+            {
+                lifecycle::Call::Confirm
+            } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
+                lifecycle::Call::Close
+            } else if request.uri().path()
+                == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
+            {
+                lifecycle::Call::RenewalConfirm
+            } else if request.uri().path() == VALIDATION_PATH {
+                lifecycle::Call::Validation
+            } else {
+                lifecycle::Call::Record
+            };
             let work =
                 lifecycle::respond(request, peer, self.lifecycle.as_ref(), &*self.handler, call);
             return Ok(timeout(self.limits.request_timeout, work)

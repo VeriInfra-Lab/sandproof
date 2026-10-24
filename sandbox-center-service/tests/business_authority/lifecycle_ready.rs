@@ -110,9 +110,12 @@ impl HostPort for Host {
         intent: &AcceptedLifecycleIntent,
         _: Duration,
     ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, PortError> {
-        Ok(self.unloaded.lock().unwrap().clone().unwrap_or(sandproof_protocol::lifecycle::UnloadObservation {
-            request: intent.clone(), unloaded: None,
-        }))
+        Ok(self.unloaded.lock().unwrap().clone().unwrap_or(
+            sandproof_protocol::lifecycle::UnloadObservation {
+                request: intent.clone(),
+                unloaded: None,
+            },
+        ))
     }
 
     fn observe_lifecycle_create(

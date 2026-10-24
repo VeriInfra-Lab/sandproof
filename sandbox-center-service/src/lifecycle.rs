@@ -104,7 +104,10 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .map_err(|_| PortError::OutcomeUnknown)?
             .public_lifecycle_intent(&owner, session)?;
         if phase == SessionPhase::Unloaded {
-            let mut authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+            let mut authority = self
+                .authority
+                .lock()
+                .map_err(|_| PortError::OutcomeUnknown)?;
             crate::AuthorityPort::expire_current(&mut *authority, self.now()?)
                 .map_err(crate::application::authority_error)?;
             return authority.query_public_lifecycle(&owner, session);

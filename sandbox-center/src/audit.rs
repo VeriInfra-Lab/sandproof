@@ -60,7 +60,7 @@ struct OperationAudit<'a> {
     unloaded: Option<&'a sandproof_protocol::lifecycle::UnloadObservation>,
 }
 /// The complete operation parameters except user Create options. Those are
-/// represented only by the allowlisted CreateAudit fields and content hashes.
+/// represented only by the allowlisted `CreateAudit` fields and content hashes.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum OperationKind {

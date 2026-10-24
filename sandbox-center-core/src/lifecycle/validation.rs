@@ -219,14 +219,24 @@ impl CenterState {
         position: usize,
     ) -> bool {
         if let Some(observation) = op.unloaded.as_ref() {
-            let Some(facts) = observation.unloaded.as_ref() else { return false; };
-            let Some(prior) = position.checked_sub(1).and_then(|i| session.operations.get(i)).and_then(|previous| previous.running.as_ref()) else { return false; };
+            let Some(facts) = observation.unloaded.as_ref() else {
+                return false;
+            };
+            let Some(prior) = position
+                .checked_sub(1)
+                .and_then(|i| session.operations.get(i))
+                .and_then(|previous| previous.running.as_ref())
+            else {
+                return false;
+            };
             if !observation.matches_request(&op.intent)
                 || facts.started_at_ms != prior.started_at_ms
                 || facts.end_at_ms != prior.end_at_ms
                 || facts.max_end_at_ms != prior.max_end_at_ms
                 || facts.startup_deadline_ms != prior.startup_deadline_ms
-            { return false; }
+            {
+                return false;
+            }
         }
         if position != 0 && op.create_refusal.is_some() {
             return false;

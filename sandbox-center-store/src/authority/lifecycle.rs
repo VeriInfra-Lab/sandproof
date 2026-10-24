@@ -120,8 +120,14 @@ impl<S: AuthorityState> CenterAuthority<S> {
         now_ms: u64,
     ) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        let next = self.state()?.accept_lifecycle_unload_observation(observation, now_ms)?;
-        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        let next = self
+            .state()?
+            .accept_lifecycle_unload_observation(observation, now_ms)?;
+        if &next == self.state()? {
+            self.snapshot()?;
+        } else {
+            self.commit_center(next)?;
+        }
         Ok(())
     }
 

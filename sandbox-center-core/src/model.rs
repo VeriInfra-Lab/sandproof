@@ -329,7 +329,11 @@ impl CenterState {
                 sum = match (&op.intent().request.operation, sum) {
                     (LifecycleOperation::Create { create, .. }, Some(total)) => {
                         let mut held = create.resources;
-                        if sandbox.operations().iter().any(|operation| operation.unloaded().is_some()) {
+                        if sandbox
+                            .operations()
+                            .iter()
+                            .any(|operation| operation.unloaded().is_some())
+                        {
                             held.instances = 0;
                             held.cpu = 0;
                             held.memory_bytes = 0;

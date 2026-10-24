@@ -247,7 +247,9 @@ impl Sandbox {
             LifecycleOperation::Renew { .. } => SessionPhase::Renewing,
             LifecycleOperation::Destroy {} if self.released() => SessionPhase::Cleaned,
             LifecycleOperation::Destroy {} => SessionPhase::Terminating,
-            LifecycleOperation::Unload { .. } if operation.unloaded.is_some() => SessionPhase::Unloaded,
+            LifecycleOperation::Unload { .. } if operation.unloaded.is_some() => {
+                SessionPhase::Unloaded
+            }
             LifecycleOperation::Unload { .. } | LifecycleOperation::Resume { .. } => {
                 SessionPhase::Unloading
             }
