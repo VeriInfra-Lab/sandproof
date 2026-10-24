@@ -1209,6 +1209,7 @@ mod tests {
 
     #[test]
     fn cleanup_requires_original_exclusive_context_not_shared_or_successor() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (_root, context) = fixture(2);
         let exclusive = acquire(&context, false).unwrap();
         exclusive.require_exclusive_context(&context).unwrap();
@@ -1269,6 +1270,7 @@ mod tests {
 
     #[test]
     fn held_cleanup_reuses_original_helpers_and_preserves_separate_materials() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
         let (root, context) = fixture(2);
         let (runtime, id) = stopped_cleanup_fixture(root.path(), &context);
         let materials = root.path().join("s");
