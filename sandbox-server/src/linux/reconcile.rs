@@ -2,11 +2,8 @@
 
 use core::maintenance::slots::HostSlotPhase;
 use sandbox_controller_core as core;
-use sandproof_controller_service::application::{
-    ControllerApplication, can_install_host_slot_binding,
-};
+use sandproof_controller_service::application::can_install_host_slot_binding;
 use sandproof_controller_service::{ControllerJournal, HostSlotContext};
-use sandproof_node::NodeHost;
 use sandproof_node::{CredentialFault, LaunchCredentialStatus, LinuxWorker, ObservedSlot};
 use sandproof_protocol::WorkAction;
 use std::error::Error;
@@ -279,26 +276,6 @@ fn audit_launch_credential_binding(
         LaunchCredentialStatus::Intact => Ok(None),
         LaunchCredentialStatus::Unavailable(fault) => Ok(Some(fault)),
     }
-}
-
-pub(super) fn recover_before_serving(
-    port: &ControllerApplication<NodeHost>,
-) -> Result<(), Box<dyn Error>> {
-    port.maintain()
-        .map_err(|error| std::io::Error::other(format!("startup maintenance failed: {error:?}")))?;
-    let recovery = port
-        .recover_on_startup()
-        .map_err(|error| std::io::Error::other(format!("startup recovery failed: {error:?}")))?;
-    if recovery.unresolved_sandboxes != 0 {
-        eprintln!(
-            "startup recovery left {} sandboxes unresolved ({} after host or receipt errors); no uncertain host action was repeated",
-            recovery.unresolved_sandboxes, recovery.failed_sandboxes
-        );
-        if let Some(fault) = recovery.first_fault {
-            fault.emit();
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
