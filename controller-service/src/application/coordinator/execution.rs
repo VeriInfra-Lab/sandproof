@@ -186,8 +186,17 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .journal
                 .data_credential(sandbox)
                 .map_err(map_journal)?;
+            let key = core::OperationKey {
+                sandbox,
+                operation: record
+                    .current_operation
+                    .ok_or(ApplicationError::OutcomeUnknown)?
+                    .id,
+            };
             let unclaimed = world.effect_ids().iter().all(|effect| {
-                effect.command().sandbox() != sandbox
+                world
+                    .logical_effect(&effect.logical)
+                    .is_none_or(|logical| logical.origin != core::EffectOrigin::Operation(key))
                     || world.effect_status(effect) == Some(core::EffectStatus::Committed)
             });
             (options, registered, unclaimed, record.generation)
@@ -196,13 +205,13 @@ impl<H: ControllerHost> ControllerApplication<H> {
         if registered.is_none() && !unclaimed {
             return Err(ApplicationError::OutcomeUnknown);
         }
-        if !host.has_bound_launch_config(sandbox, &options)? {
+        if !host.has_bound_launch_config(sandbox, generation, &options)? {
             if registered.is_some() || !unclaimed {
                 return Err(ApplicationError::OutcomeUnknown);
             }
-            host.put_bound_launch_config(sandbox, &token()?, &options)?;
+            host.put_bound_launch_config(sandbox, generation, &token()?, &options)?;
         }
-        let secret = host.token_for(sandbox)?;
+        let secret = host.token_for(sandbox, generation)?;
         let digest = data_credentials::digest(&secret)?;
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         if inner
@@ -267,7 +276,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .collect::<Vec<_>>()
         };
         for action in uncertain {
-            if let Some(receipt) = self.observe_capture_action(host.as_ref(), &action)? {
+            let receipt = match self.observe_capture_action(host.as_ref(), &action)? {
+                Some(receipt) => Some(receipt),
+                None => self.continue_restore_activation(host.as_ref(), &action)?,
+            };
+            if let Some(receipt) = receipt {
                 let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
                 // complete loads the latest World and validates the full action.
                 // A terminal result can add physical facts, never grant access.

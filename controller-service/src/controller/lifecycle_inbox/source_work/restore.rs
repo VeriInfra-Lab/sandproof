@@ -275,6 +275,44 @@ fn check_runtime_capacity(
     Ok(())
 }
 
+fn install_original_resume(
+    tx: &crate::controller::transaction::WorldTransaction<'_>,
+    namespace: &str,
+    target: InternalLocalBinding,
+    credential: (core::Generation, [u8; 32]),
+) -> Result<(), JournalError> {
+    crate::controller::data_credentials::withdraw_for_resume(
+        tx,
+        &tx.world(),
+        namespace,
+        target.sandbox,
+        credential,
+    )?;
+    crate::controller::storage::apply(
+        tx,
+        namespace,
+        core::ControllerInput::Request(core::Request::Resume(core::ResumeRequest {
+            actor: core::Actor::Tenant(target.owner),
+            sandbox: target.sandbox,
+            operation: target.operation,
+        })),
+    )?;
+    crate::controller::admission::reserve_startup_in_admission(
+        tx,
+        namespace,
+        core::OperationKey {
+            sandbox: target.sandbox,
+            operation: target.operation,
+        },
+    )
+    .map_err(|error| match error {
+        crate::AdmissionError::Journal(error) => error,
+        crate::AdmissionError::QuotaExceeded => JournalError::MaintenanceCapacity,
+        _ => JournalError::CorruptStore,
+    })?;
+    Ok(())
+}
+
 impl ControllerJournal {
     /// Acquire the source and install the original core Resume in one `SQLite`
     /// commit. No load can start from an uncommitted claim or another key.
@@ -362,14 +400,11 @@ impl ControllerJournal {
         // this transaction before accepting Resume. Neither write is visible
         // alone, including when SQLite's commit result is unknown.
         codec::save(&tx, &sources, sources.max_sessions)?;
-        crate::controller::storage::apply(
+        install_original_resume(
             &tx,
             &self.namespace,
-            core::ControllerInput::Request(core::Request::Resume(core::ResumeRequest {
-                actor: core::Actor::Tenant(local.owner),
-                sandbox: local.sandbox,
-                operation,
-            })),
+            target,
+            sources.records[index].work.anchor.credential,
         )?;
         inbox.sessions[s].entries[e].local_operation = Some(operation);
         inbox.sessions[s].local = Some(target);
@@ -420,6 +455,7 @@ impl ControllerJournal {
         request: &RestoreWorkRequest,
         action: &WorkAction<core::EffectId>,
         context: &AuthenticatedCenterContext,
+        now_ms: i64,
     ) -> Result<RestoreActivationPermit, JournalError> {
         let world = self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
@@ -449,6 +485,41 @@ impl ControllerJournal {
             return Err(JournalError::Conflict);
         }
         let claim = record.restore.as_ref().ok_or(JournalError::CorruptStore)?;
+        let row = world
+            .sandbox_record(claim.local.sandbox)
+            .ok_or(JournalError::CorruptStore)?;
+        let lifetime = crate::controller::admission::read_lifetime(
+            &tx,
+            &self.namespace,
+            claim.local.sandbox,
+            claim.local.owner,
+        )
+        .map_err(|_| JournalError::CorruptStore)?
+        .ok_or(JournalError::CorruptStore)?;
+        let credential = crate::controller::data_credentials::snapshot(
+            &tx,
+            &world,
+            &self.namespace,
+            claim.local.sandbox,
+            true,
+        )?;
+        if row.terminal
+            || row.phase != core::Phase::Starting
+            || row.generation != claim.generation
+            || row.current_operation.is_none_or(|operation| {
+                operation.id != claim.local.operation
+                    || operation.kind != core::OperationKind::Resume
+            })
+            || now_ms < 0
+            || lifetime.started_at_ms.is_none_or(|start| now_ms < start)
+            || now_ms >= lifetime.deadline_ms
+            || now_ms >= lifetime.max_deadline_ms
+            || credential.is_none_or(|(generation, digest)| {
+                generation != claim.generation || digest == record.work.anchor.credential.1
+            })
+        {
+            return Err(JournalError::Conflict);
+        }
         if claim.activation.as_ref() != Some(action)
             || !matches!(
                 world.effect_status(&action.command),

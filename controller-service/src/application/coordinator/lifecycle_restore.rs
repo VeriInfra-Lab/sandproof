@@ -109,12 +109,60 @@ impl<H: ControllerHost> ControllerApplication<H> {
             Some(
                 inner
                     .journal
-                    .lifecycle_restore_activation_permit(&work, action, &context)
+                    .lifecycle_restore_activation_permit(
+                        &work,
+                        action,
+                        &context,
+                        self.clock.now_ms()?,
+                    )
                     .map_err(map_journal)?,
             )
         } else {
             None
         };
         Ok(Some((work, activation)))
+    }
+
+    // Called only by the owner of ActiveSandbox, after a readonly observation
+    // did not recover a result. This is an explicit effectful continuation of
+    // the same saved activation, never an upgraded observation or a new load.
+    pub(super) fn continue_restore_activation(
+        &self,
+        host: &H,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<Option<sandproof_protocol::WorkReceipt<H::Evidence>>, ApplicationError> {
+        if !matches!(action.command.command(), core::Command::ActivateVm { .. }) {
+            return Ok(None);
+        }
+        {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            let world = inner.journal.world().map_err(map_journal)?;
+            if world
+                .sandbox_record(action.command.command().sandbox())
+                .is_none_or(|row| {
+                    row.terminal
+                        || row.phase != core::Phase::Starting
+                        || row
+                            .current_operation
+                            .is_none_or(|operation| operation.kind != core::OperationKind::Resume)
+                })
+            {
+                return Ok(None);
+            }
+        }
+        let Some((work, Some(permit))) = self.restore_execution_context(action)? else {
+            return Ok(None);
+        };
+        match host.execute_lifecycle_restore_action(action, &work, Some(&permit)) {
+            Ok(receipt)
+                if matches!(
+                    &receipt.outcome,
+                    sandproof_protocol::WorkOutcome::ObservedSuccess(_)
+                ) =>
+            {
+                Ok(Some(receipt))
+            }
+            Ok(_) | Err(_) => Ok(None),
+        }
     }
 }

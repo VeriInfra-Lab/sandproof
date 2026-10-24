@@ -343,17 +343,30 @@ pub trait HostCapacity {
 pub trait LaunchConfiguration {
     /// # Errors
     /// A host credential creation failure leaves the admitted create pending.
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError>;
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), ApplicationError>;
 
     /// Return false only when no credential was ever stored. A malformed or
     /// unreadable credential must be an error, not permission to replace it.
     /// # Errors
     /// Refuses to classify an untrusted or corrupt host credential as absent.
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError>;
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, ApplicationError>;
 
     /// # Errors
     /// Missing credentials cannot be replaced by a new token on connect.
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError>;
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, ApplicationError>;
 
     /// Persist the exact guest initialization environment with its credential
     /// before a VM can be reserved. Hosts without this capability reject
@@ -363,13 +376,14 @@ pub trait LaunchConfiguration {
     fn put_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<(), ApplicationError> {
         if !env_vars.is_empty() {
             return Err(ApplicationError::Invalid);
         }
-        self.put_secret(sandbox, token)
+        self.put_secret(sandbox, generation, token)
     }
 
     /// A present credential with different initialization data is not a
@@ -379,12 +393,13 @@ pub trait LaunchConfiguration {
     fn has_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<bool, ApplicationError> {
         if !env_vars.is_empty() {
             return Err(ApplicationError::Invalid);
         }
-        self.has_secret(sandbox)
+        self.has_secret(sandbox, generation)
     }
 
     /// Persist the exact admitted template alongside the one-time launch credential.
@@ -393,13 +408,14 @@ pub trait LaunchConfiguration {
     fn put_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &CreateOptions,
     ) -> Result<(), ApplicationError> {
         if options.template.is_some() {
             return Err(ApplicationError::Invalid);
         }
-        self.put_launch_config(sandbox, token, &options.env_vars)
+        self.put_launch_config(sandbox, generation, token, &options.env_vars)
     }
 
     /// # Errors
@@ -407,12 +423,13 @@ pub trait LaunchConfiguration {
     fn has_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
     ) -> Result<bool, ApplicationError> {
         if options.template.is_some() {
             return Err(ApplicationError::Invalid);
         }
-        self.has_launch_config(sandbox, &options.env_vars)
+        self.has_launch_config(sandbox, generation, &options.env_vars)
     }
 }
 

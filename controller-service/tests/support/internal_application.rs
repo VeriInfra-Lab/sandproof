@@ -63,7 +63,7 @@ pub struct State {
     pub source_probe: Option<SourceProbe>,
     pub source_calls: usize,
     pub actions: Vec<WorkAction<core::EffectId>>,
-    pub configurations: BTreeMap<u64, (String, CreateOptions)>,
+    pub configurations: BTreeMap<(u64, core::Generation), (String, CreateOptions)>,
     pub lose_activation: bool,
     pub block_prepare: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
     pub block_release: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
@@ -265,48 +265,63 @@ impl HostCapacity for TestHost {
     }
 }
 impl LaunchConfiguration for TestHost {
-    fn put_secret(&self, _: core::SandboxId, _: &str) -> Result<(), ApplicationError> {
+    fn put_secret(
+        &self,
+        _: core::SandboxId,
+        _: core::Generation,
+        _: &str,
+    ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Invalid)
     }
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, ApplicationError> {
         Ok(self
             .0
             .lock()
             .unwrap()
             .configurations
-            .contains_key(&sandbox.0))
+            .contains_key(&(sandbox.0, generation)))
     }
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, ApplicationError> {
         self.0
             .lock()
             .unwrap()
             .configurations
-            .get(&sandbox.0)
+            .get(&(sandbox.0, generation))
             .map(|v| v.0.clone())
             .ok_or(ApplicationError::Busy)
     }
     fn put_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &CreateOptions,
     ) -> Result<(), ApplicationError> {
         let mut state = self.0.lock().unwrap();
-        if state.configurations.contains_key(&sandbox.0) {
+        if state.configurations.contains_key(&(sandbox.0, generation)) {
             return Err(ApplicationError::Conflict);
         }
         state
             .configurations
-            .insert(sandbox.0, (token.into(), options.clone()));
+            .insert((sandbox.0, generation), (token.into(), options.clone()));
         Ok(())
     }
     fn has_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
     ) -> Result<bool, ApplicationError> {
         let state = self.0.lock().unwrap();
-        match state.configurations.get(&sandbox.0) {
+        match state.configurations.get(&(sandbox.0, generation)) {
             None => Ok(false),
             Some((_, original)) if original == options => Ok(true),
             _ => Err(ApplicationError::Conflict),

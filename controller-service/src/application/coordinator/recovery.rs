@@ -279,7 +279,9 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
             Err(error) => return Err(map_journal(error)),
         };
         let unclaimed = initial.effect_ids().iter().all(|effect| {
-            effect.command().sandbox() != *sandbox
+            initial
+                .logical_effect(&effect.logical)
+                .is_none_or(|logical| logical.origin != core::EffectOrigin::Operation(key))
                 || matches!(
                     initial.effect_status(effect),
                     Some(core::EffectStatus::Committed)
@@ -299,7 +301,7 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
         }
         if !ensure_launch_config(
             host,
-            *sandbox,
+            (*sandbox, record.generation),
             &options,
             registered.is_some(),
             unclaimed,
@@ -310,7 +312,7 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
             continue;
         }
         let credential = host
-            .token_for(*sandbox)
+            .token_for(*sandbox, record.generation)
             .and_then(|value| data_credentials::digest(&value));
         let digest = match credential {
             Ok(value) => value,
@@ -378,14 +380,15 @@ fn register_recovered_credential(
 
 fn ensure_launch_config<H: LaunchConfiguration>(
     host: &H,
-    sandbox: core::SandboxId,
+    execution: (core::SandboxId, core::Generation),
     options: &crate::CreateOptions,
     registered: bool,
     unclaimed: bool,
     context: FaultContext,
     first_fault: &mut Option<FaultRecord>,
 ) -> Result<bool, ApplicationError> {
-    let fault = match host.has_bound_launch_config(sandbox, options) {
+    let (sandbox, generation) = execution;
+    let fault = match host.has_bound_launch_config(sandbox, generation, options) {
         Ok(true) => return Ok(true),
         // A registered credential or a claimed action forbids token rotation,
         // even if the original descriptor is no longer readable.
@@ -394,7 +397,7 @@ fn ensure_launch_config<H: LaunchConfiguration>(
             FaultKind::CredentialUnavailable,
             context,
         ),
-        Ok(false) => match host.put_bound_launch_config(sandbox, &token()?, options) {
+        Ok(false) => match host.put_bound_launch_config(sandbox, generation, &token()?, options) {
             Ok(()) => return Ok(true),
             Err(error) => FaultRecord::application(FaultStage::PutCredential, &error, context),
         },

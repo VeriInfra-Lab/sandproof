@@ -29,17 +29,42 @@ pub(in crate::controller) fn original_binding(
     world: &core::World,
     sandbox: core::SandboxId,
 ) -> Result<Option<HostBinding>, JournalError> {
+    let generation = world
+        .sandbox_record(sandbox)
+        .ok_or(JournalError::CorruptStore)?
+        .generation;
+    execution_binding(world, sandbox, generation)
+}
+
+/// Resolve a retained execution's own immutable plan, including a released
+/// older generation. This does not make that generation currently usable.
+pub(in crate::controller) fn execution_binding(
+    world: &core::World,
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+) -> Result<Option<HostBinding>, JournalError> {
     let row = world
         .sandbox_record(sandbox)
         .ok_or(JournalError::CorruptStore)?;
+    if generation == 0 || generation > row.generation {
+        return Err(JournalError::CorruptStore);
+    }
     let mut binding = None;
     for (key, operation) in world.operation_records() {
-        if key.sandbox != sandbox || operation.operation.kind != core::OperationKind::Create {
+        if key.sandbox != sandbox
+            || !matches!(
+                operation.operation.kind,
+                core::OperationKind::Create | core::OperationKind::Resume
+            )
+        {
             continue;
         }
         let plan = world
             .operation_plan(*key)
             .ok_or(JournalError::CorruptStore)?;
+        if plan.generation != generation {
+            continue;
+        }
         match (plan.vm, plan.slot) {
             (Some(vm), Some(network)) => {
                 if binding.is_some() {
@@ -67,7 +92,7 @@ pub(super) fn store_witness(
     let sandbox =
         super::super::identity::sandbox_id(&namespace(tx)?, witness.context.binding.sandbox)?;
     tx.execute(
-        "INSERT INTO controller_release_witnesses(sandbox_id,witness_json) VALUES(?1,?2)",
+        "INSERT INTO controller_release_witnesses(sandbox_id,witness_json) VALUES(?1,?2) ON CONFLICT(sandbox_id) DO UPDATE SET witness_json=excluded.witness_json",
         params![sandbox.as_str(), serde_json::to_vec(&witness)?],
     )?;
     Ok(())
@@ -90,7 +115,7 @@ pub(in crate::controller) fn witnesses(
         if serde_json::to_vec(&witness)? != bytes
             || super::super::identity::sandbox_id(&namespace, binding.sandbox)?.as_str() != id
             || world.sandbox_record(binding.sandbox).is_none()
-            || original_binding(world, binding.sandbox)? != Some(binding)
+            || execution_binding(world, binding.sandbox, binding.generation)? != Some(binding)
             || witness.input_sequence == 0
             || witness.input_sequence > allocators::input_high_water(connection)?
             || values.insert(binding.sandbox.0, witness).is_some()
@@ -116,7 +141,9 @@ pub(super) fn record_release(
         }
         return Ok(());
     }
-    if existing.is_some() {
+    if existing.is_some_and(|old| old.context.binding.generation >= context.binding.generation)
+        || original_binding(&world, context.binding.sandbox)? != Some(context.binding)
+    {
         return Err(JournalError::CorruptStore);
     }
     let sequence = allocators::input_high_water(tx)?;
@@ -181,9 +208,10 @@ fn candidate(
     {
         return Ok(None);
     }
-    let release = witnesses(connection, world)?
-        .into_iter()
-        .find(|witness| witness.context.binding.sandbox == sandbox);
+    let release = witnesses(connection, world)?.into_iter().find(|witness| {
+        witness.context.binding.sandbox == sandbox
+            && witness.context.binding.generation == row.generation
+    });
     if release.is_none() {
         return Ok(None);
     }
