@@ -265,6 +265,49 @@ class RestoreGateBindingTests(unittest.TestCase):
         with self.assertRaises(ValueError):runtime.assert_same_restore_candidate(changed,receipt)
 
 
+class LifecycleTimingTests(unittest.TestCase):
+    def client(self):
+        client=scene.PublicUnloadScenario('http://127.0.0.1:12345','key','other','deployment',100)
+        client.session='original-session'
+        client.current_acceptance=dict(key={'sequence':1},accepted_version=1)
+        return client
+
+    def test_acceptance_is_separate_from_public_and_physical_completion(self):
+        client=self.client()
+        with patch.object(scene.time,'monotonic',side_effect=[10,12,17,20]):
+            client.operation_sent('resume')
+            client.operation_accepted()
+            accepted=client.timing_report()[0]
+            self.assertEqual(accepted['send_to_accept_seconds'],2)
+            self.assertFalse(accepted['complete'])
+            self.assertIsNone(accepted['send_to_public_completion_seconds'])
+            client.operation_completed('running')
+            client.operation_evidence_completed()
+        sample=client.timing_report()[0]
+        self.assertEqual(sample['send_to_public_completion_seconds'],7)
+        self.assertEqual(sample['accept_to_public_completion_seconds'],5)
+        self.assertEqual(sample['send_to_evidence_completion_seconds'],10)
+        self.assertEqual(sample['public_completion_to_evidence_seconds'],3)
+        self.assertEqual(sample['acceptance'],client.current_acceptance)
+
+    def test_wrong_phase_replay_and_unknown_acceptance_cannot_fabricate_completion(self):
+        client=self.client()
+        with patch.object(scene.time,'monotonic',side_effect=[10,12,17]):
+            client.operation_sent('unload')
+            client.operation_accepted()
+            client.operation_completed('running')
+            self.assertFalse(client.timing_report()[0]['complete'])
+            client.operation_completed('unloaded')
+            client.operation_completed('unloaded')
+        self.assertEqual(client.timing_report()[0]['send_to_public_completion_seconds'],7)
+        with patch.object(scene.time,'monotonic',return_value=20):
+            client.operation_sent('destroy')
+            client.operation_completed('cleaned')
+        unknown=client.timing_report()[-1]
+        self.assertIsNone(unknown['send_to_accept_seconds'])
+        self.assertFalse(unknown['complete'])
+
+
 class WitnessMetadataBarrierTests(unittest.TestCase):
     def setUp(self):
         self.baseline=dict(nonce='a'*64,activation_nonce='b'*64,metadata_generation=2,

@@ -222,6 +222,7 @@ class PublicUnloadScenario:
         self.current_acceptance = None
         self.witness = None
         self.previous_tokens = []
+        self.timings = []
         self.window = None
         self.session = None
         self.create_request = self.create_acceptance = None
@@ -239,6 +240,49 @@ class PublicUnloadScenario:
         if remaining <= 0:
             raise TimeoutError('original lifecycle scenario deadline; no completion inferred')
         return remaining
+
+    def operation_sent(self, operation):
+        self.timings.append(dict(operation=operation,owner=self.owner,
+            sent_monotonic=time.monotonic(),accepted_monotonic=None,completed_monotonic=None))
+
+    def operation_accepted(self):
+        sample=self.timings[-1]
+        sample['accepted_monotonic']=time.monotonic()
+        sample['session']=self.session
+        sample['acceptance']=copy.deepcopy(self.current_acceptance)
+
+    def operation_completed(self, phase):
+        if not self.timings:
+            return
+        sample=self.timings[-1]
+        expected={'create':'running','resume':'running','unload':'unloaded','destroy':'cleaned'}
+        if (sample['accepted_monotonic'] is not None and sample['completed_monotonic'] is None
+                and expected[sample['operation']]==phase):
+            sample['completed_monotonic']=time.monotonic()
+
+    def operation_evidence_completed(self):
+        sample=self.timings[-1]
+        assert sample['completed_monotonic'] is not None
+        assert 'evidence_monotonic' not in sample
+        sample['evidence_monotonic']=time.monotonic()
+
+    def timing_report(self):
+        result=[]
+        for sample in self.timings:
+            sent,accepted,completed=(sample[key+'_monotonic'] for key in ('sent','accepted','completed'))
+            result.append(dict(operation=sample['operation'],owner=sample['owner'],
+                session=sample.get('session',self.session),acceptance=sample.get('acceptance'),
+                send_to_accept_seconds=None if accepted is None else accepted-sent,
+                accept_to_public_completion_seconds=None if completed is None else completed-accepted,
+                send_to_public_completion_seconds=None if completed is None else completed-sent,
+                send_to_evidence_completion_seconds=None if 'evidence_monotonic' not in sample
+                    else sample['evidence_monotonic']-sent,
+                public_completion_to_evidence_seconds=None if 'evidence_monotonic' not in sample
+                    else sample['evidence_monotonic']-completed,
+                completion_condition={'create':'running','resume':'running','unload':'unloaded',
+                    'destroy':'cleaned'}[sample['operation']],
+                complete=completed is not None))
+        return result
 
     def call(self, method, path, *, key, body=None):
         # Existing HTTP helper supplies the original X-API-Key header. Failure
@@ -277,12 +321,14 @@ class PublicUnloadScenario:
         self.window = window['window']
         self.create_request = dict(window=self.window, sequence=1, parameters=copy.deepcopy(parameters))
         self.step('create-acceptance', 202)
+        self.operation_sent('create')
         result = self.read_json('POST', PREFIX + '/create', key=self.owner_key,
                                 body=self.create_request, status=202)
         self.create_acceptance = self.acceptance(result, sequence=1, version=1)
         self.session = result['session']
         self.current_acceptance = self.create_acceptance
         self.sequence = 1
+        self.operation_accepted()
         return copy.deepcopy(result)
 
     def path(self):
@@ -320,6 +366,7 @@ class PublicUnloadScenario:
             self.check_view(view, acceptance)
             if view['phase'] == complete:
                 self.remaining()
+                self.operation_completed(complete)
                 return view
             assert view['phase'] in waiting, 'unexpected lifecycle phase; no completion inferred'
             time.sleep(min(.1, self.remaining()))
@@ -346,11 +393,13 @@ class PublicUnloadScenario:
         self.unload_request = dict(window=self.window, sequence=self.sequence,
                                   expected_version=running['current_version'])
         self.step('unload-acceptance', 202)
+        self.operation_sent('unload')
         result = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
                                 body=self.unload_request, status=202)
         self.unload_acceptance = self.acceptance(result, sequence=self.sequence,
             version=running['current_version'] + 1)
         self.current_acceptance = self.unload_acceptance
+        self.operation_accepted()
         return copy.deepcopy(result)
 
     def resume(self, unloaded):
@@ -360,10 +409,12 @@ class PublicUnloadScenario:
         self.resume_request=dict(window=self.window,sequence=self.sequence,
             expected_version=unloaded['current_version'])
         self.step('resume-acceptance',202)
+        self.operation_sent('resume')
         result=self.read_json('POST',self.path()+'/resume',key=self.owner_key,
             body=self.resume_request,status=202)
         self.current_acceptance=self.acceptance(result,sequence=self.sequence,
             version=unloaded['current_version']+1)
+        self.operation_accepted()
         return copy.deepcopy(self.current_acceptance)
 
     def destroy(self, current):
@@ -372,10 +423,12 @@ class PublicUnloadScenario:
         self.destroy_request=dict(window=self.window,sequence=self.sequence,
             expected_version=current['current_version'])
         self.step('destroy-acceptance',202)
+        self.operation_sent('destroy')
         result=self.read_json('POST',self.path()+'/destroy',key=self.owner_key,
             body=self.destroy_request,status=202)
         self.current_acceptance=self.acceptance(result,sequence=self.sequence,
             version=current['current_version']+1)
+        self.operation_accepted()
         return copy.deepcopy(self.current_acceptance)
 
     def wait_cleaned(self):
@@ -555,6 +608,7 @@ def exercise(args):
     client = control = None
     failed = False
     try:
+        report['measurement_identity']=runtime.measurement_identity()
         report['registration'] = check_center_configuration(
             runtime.services, runtime.owner_key, runtime.foreign_key)
         report['phase'] = 'original-services-start'
@@ -569,6 +623,7 @@ def exercise(args):
         report['workload'] = client.run_public_workload(running)
         client.step('running-native-evidence')
         report['running'] = runtime.record_running(client.session, deadline)
+        client.operation_evidence_completed()
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
         report['phase'] = 'public-unload'
@@ -582,14 +637,23 @@ def exercise(args):
         client.step('unload-physical-evidence')
         physical = runtime.unload_evidence(client.session, deadline, client.unload_acceptance['key'])
         client.assert_unloaded_facts(saved, physical['facts'])
+        client.operation_evidence_completed()
         assert {key: physical['facts'][key] for key in lifetime} == lifetime
         report['before_restart'] = saved
         report['physical_before_restart'] = physical
         client.assert_original_replay(saved)
         report['phase'] = 'same-manager-config-reopen'
         client.step('restart-managers')
+        restart_started=time.monotonic()
         report['manager_restart'] = runtime.restart_managers(deadline)
+        restart_ready=time.monotonic()
         client.assert_reopened(saved)
+        restart_query_completed=time.monotonic()
+        report['manager_restart_timing']=dict(
+            restart_to_managers_ready_seconds=restart_ready-restart_started,
+            ready_to_original_unloaded_query_seconds=restart_query_completed-restart_ready,
+            restart_to_original_unloaded_query_seconds=restart_query_completed-restart_started,
+            completion_condition='same accepted Unloaded result from original public query')
         client.assert_data_closed()
         client.step('unload-physical-evidence')
         physical = runtime.unload_evidence(client.session, deadline, client.unload_acceptance['key'])
@@ -602,6 +666,7 @@ def exercise(args):
         control_running=control.wait_running()
         control.assert_owner_isolation()
         control_physical=runtime.record_running(control.session,deadline)
+        control.operation_evidence_completed()
         assert control.session!=client.session
         assert control_physical['context']['position']==physical['original_position']['position'], \
             'another session did not actually reuse the old running slot'
@@ -614,6 +679,7 @@ def exercise(args):
             resumed=client.wait_running()
             physical_running=runtime.record_running(client.session,deadline,resume_acceptance=accepted)
             continuity=client.assert_resumed_workload(resumed)
+            client.operation_evidence_completed()
             client.assert_owner_isolation()
             report['cycles'].append(dict(cycle=cycle,resume=accepted,
                 running=physical_running,continuity=continuity))
@@ -627,12 +693,14 @@ def exercise(args):
                 control.destroy(control_running)
                 control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                control.operation_evidence_completed()
                 report['phase']='second-public-unload'
                 client.unload(resumed)
                 client.assert_data_closed()
                 saved=client.wait_unloaded()
                 physical=runtime.unload_evidence(client.session,deadline,client.unload_acceptance['key'])
                 client.assert_unloaded_facts(saved,physical['facts'])
+                client.operation_evidence_completed()
                 report['cycles'][-1]['unloaded']=copy.deepcopy(saved)
                 report['cycles'][-1]['physical_unloaded']=physical
                 client.assert_original_replay(saved)
@@ -641,11 +709,17 @@ def exercise(args):
         client.assert_data_closed()
         client.wait_cleaned()
         report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+        client.operation_evidence_completed()
         # Quota settlement and historical refusal-frontier retirement use the
         # original owner-provided persisted accounting oracle; they are never
         # inferred solely from filesystem absence or an HTTP acceptance.
         report['phase']='quota-settlement'
+        settlement_started=time.monotonic()
         report['settlement']=runtime.settlement_evidence(deadline)
+        settlement_completed=time.monotonic()
+        report['settlement_timing']=dict(check_seconds=settlement_completed-settlement_started,
+            final_destroy_send_to_settled_seconds=settlement_completed-client.timings[-1]['sent_monotonic'],
+            completion_condition='original physical materials/VM absence plus zero resources, material charge and backing pins')
         report['acceptance_cases']={
             'E1':'normal RAM/disk/process continuity and actual slot reuse observed',
             'E12':'two owners, two sessions and two complete restore cycles observed',
@@ -669,6 +743,25 @@ def exercise(args):
         report['known_sessions']=[dict(owner=value.owner,session=value.session,
             acceptance=value.current_acceptance) for value in (client,control)
             if value is not None and value.session is not None]
+        report['operation_timings']=[sample for value in (client,control) if value is not None
+            for sample in value.timing_report()]
+        report['operation_timing_summary']={}
+        for operation in ('create','unload','resume','destroy'):
+            values=sorted(sample['send_to_public_completion_seconds']
+                for sample in report['operation_timings']
+                if sample['operation']==operation and sample['complete'])
+            report['operation_timing_summary'][operation]=dict(samples=len(values),
+                p50_seconds=values[math.ceil(.5*len(values))-1] if values else None,
+                p95_seconds=values[math.ceil(.95*len(values))-1] if values else None,
+                method='nearest rank over completed public operations only; observational small sample')
+        report['timing_scope']=dict(clock='host monotonic seconds',
+            public_completion='strict original Running/Unloaded/Cleaned query; not HTTP 202',
+            evidence_completion='existing workload/physical evidence checks, including their observation overhead',
+            internal_stages={name:'unknown:not separately instrumented' for name in
+                ('freeze','capture','copy','sync','stop','load','activate','ready')},
+            cache_condition='unknown:not controlled as cold or warm',
+            cpu_rss_disk_peak='unknown:not sampled by this timing instrumentation',
+            e16_complete=False)
         try:
             # Runtime finish preserves exact resources/material on uncertainty;
             # it is not permission for broad cleanup or untested GC.

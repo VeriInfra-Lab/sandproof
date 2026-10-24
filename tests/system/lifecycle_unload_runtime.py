@@ -235,6 +235,22 @@ class UnloadRuntime:
         self.services.start()
         self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=True)
 
+    def measurement_identity(self):
+        """Reuse validated artifact identities; disclose no configuration secrets."""
+        from tools.ci_e2e_artifacts import public_identity
+        def fingerprint(value):
+            return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        return dict(candidate=public_identity(self.services.manifest),
+            candidate_manifest_sha256=self.services.manifest_sha256,
+            fixture_sha256=fingerprint(self.inputs),capture_settings_sha256=fingerprint(self.captures),
+            role_configuration_identity_sha256=fingerprint(self.configs),
+            quota_readback_sha256=fingerprint(self.quota),
+            images=[{kind+'_sha256':template[kind]['sha256'] for kind in ('kernel','rootfs')}
+                for template in self.inputs['catalog']['templates']],
+            cpu_condition='unknown:not separately fingerprinted by this timing instrumentation',
+            cache_condition='unknown:not controlled as cold or warm',
+            workload='original fixed RAM witness, disk marker and repeated lifecycle; no added performance rounds')
+
     def create_parameters(self,owner=1):
         remaining(self.deadline)
         catalogs=self.services.processes.center_readiness(timeout=min(10,remaining(self.deadline)))['catalogs']
