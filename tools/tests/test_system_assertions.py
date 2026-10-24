@@ -264,6 +264,10 @@ print("all_resource_imports_rejected")
     def test_normal_importlib_guard_and_stdlib_resource_helper_are_unchanged(self):
         code = f'''
 import importlib.util
+import sys
+# The reusable helper imports the repository tools package. This probe runs
+# outside the checkout with PYTHONPATH removed, so supply its explicit root.
+sys.path.insert(0, {str(ROOT)!r})
 for path in {str(GUARD)!r}, {str(SYSTEM / "server_process_crash.py")!r}:
     spec = importlib.util.spec_from_file_location("isolated_normal_probe", path)
     module = importlib.util.module_from_spec(spec)
