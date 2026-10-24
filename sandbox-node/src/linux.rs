@@ -30,9 +30,9 @@ use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
 mod capture;
+mod capture_cleanup;
 mod capture_profile;
 mod capture_stop;
-mod capture_cleanup;
 mod capture_worker;
 pub use capture_worker::{
     CAPTURE_WORKER_INPUT_BYTES, CAPTURE_WORKER_OUTPUT_BYTES, PreparedCaptureWorker,

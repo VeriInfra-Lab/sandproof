@@ -974,14 +974,21 @@ impl NodeHost {
                 }
             }
             core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. } => {
-                let expected=committed.ok_or("missing original adopted capture expectation")?;
-                if expected.work()!=full {
+                let expected = committed.ok_or("missing original adopted capture expectation")?;
+                if expected.work() != full {
                     return Err("Unload cleanup differs from original saved Full".into());
                 }
                 self.worker.cleanup_capture_source(
-                    self.host_epoch_source.as_ref().ok_or("missing protected bootstrap source")?,
-                    self.capture_profile.as_ref().ok_or("protected Full profile not assembled")?,
-                    action,source,expected,observe_only,
+                    self.host_epoch_source
+                        .as_ref()
+                        .ok_or("missing protected bootstrap source")?,
+                    self.capture_profile
+                        .as_ref()
+                        .ok_or("protected Full profile not assembled")?,
+                    action,
+                    source,
+                    expected,
+                    observe_only,
                 )
             }
             // A gate-exited helper or existing bundle cannot establish that an

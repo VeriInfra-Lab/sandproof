@@ -646,17 +646,32 @@ impl Runtime {
     /// This grants no SQL permission and never changes the saved material store.
     /// # Errors
     /// Refuses a shared/foreign/busy guard, live source or unknown cleanup.
-    pub fn cleanup_under_gate(&self, id: &str, gate: &RuntimeHelperGuard) -> Result<(), RuntimeError> {
-        let context=self.config.host_slot.as_ref().ok_or(RuntimeError::IdentityMismatch("missing original cleanup slot"))?;
+    pub fn cleanup_under_gate(
+        &self,
+        id: &str,
+        gate: &RuntimeHelperGuard,
+    ) -> Result<(), RuntimeError> {
+        let context = self
+            .config
+            .host_slot
+            .as_ref()
+            .ok_or(RuntimeError::IdentityMismatch(
+                "missing original cleanup slot",
+            ))?;
         gate.require_exclusive_context(context)?;
-        self.cleanup_for_owner_with_gate(id,0,Some(gate))
+        self.cleanup_for_owner_with_gate(id, 0, Some(gate))
     }
 
     fn cleanup_for_owner(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
-        self.cleanup_for_owner_with_gate(id,owner,None)
+        self.cleanup_for_owner_with_gate(id, owner, None)
     }
 
-    fn cleanup_for_owner_with_gate(&self, id: &str, owner: u32, gate: Option<&RuntimeHelperGuard>) -> Result<(), RuntimeError> {
+    fn cleanup_for_owner_with_gate(
+        &self,
+        id: &str,
+        owner: u32,
+        gate: Option<&RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
         validate_id(id)?;
         self.validate_network_id(id)?;
         let record = self.read_record(id)?;
@@ -669,7 +684,7 @@ impl Runtime {
         self.cleanup_cgroup(id, false)?;
         self.cleanup_jail(id, owner, false)?;
         if self.config.private_netns.is_some() {
-            self.cleanup_private_network_with_gate(id,gate)?;
+            self.cleanup_private_network_with_gate(id, gate)?;
         }
         Ok(())
     }
@@ -766,7 +781,11 @@ impl Runtime {
         Ok(())
     }
 
-    fn cleanup_private_network_with_gate(&self, id: &str, gate: Option<&RuntimeHelperGuard>) -> Result<(), RuntimeError> {
+    fn cleanup_private_network_with_gate(
+        &self,
+        id: &str,
+        gate: Option<&RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
         let namespace =
             self.config
                 .private_netns
@@ -787,7 +806,7 @@ impl Runtime {
         let metadata = match fs::symlink_metadata(namespace) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return self.cleanup_uplink_after_namespace_with_gate(id,gate);
+                return self.cleanup_uplink_after_namespace_with_gate(id, gate);
             }
             Err(error) => return Err(error.into()),
         };
@@ -800,24 +819,40 @@ impl Runtime {
         {
             return Err(RuntimeError::IdentityMismatch("network namespace handle"));
         }
-        let pids = if let Some(held)=gate {
-            helper_gate::helper_output(Some(held),self.config.host_slot.as_ref(),
-                "list namespace processes","/usr/bin/ip",&["netns","pids",id],None)?
+        let pids = if let Some(held) = gate {
+            helper_gate::helper_output(
+                Some(held),
+                self.config.host_slot.as_ref(),
+                "list namespace processes",
+                "/usr/bin/ip",
+                &["netns", "pids", id],
+                None,
+            )?
         } else {
-            self.read_host_helper("list namespace processes","/usr/bin/ip",&["netns","pids",id])?
+            self.read_host_helper(
+                "list namespace processes",
+                "/usr/bin/ip",
+                &["netns", "pids", id],
+            )?
         };
         if !pids.is_empty() {
             return Err(RuntimeError::InvalidConfiguration(
                 "namespace still contains a process or cannot be checked",
             ));
         }
-        if let Some(held)=gate {
-            helper_gate::helper_output(Some(held),self.config.host_slot.as_ref(),
-                "delete namespace","/usr/bin/ip",&["netns","delete",id],None)?;
+        if let Some(held) = gate {
+            helper_gate::helper_output(
+                Some(held),
+                self.config.host_slot.as_ref(),
+                "delete namespace",
+                "/usr/bin/ip",
+                &["netns", "delete", id],
+                None,
+            )?;
         } else {
             self.run_ip("delete namespace", &["netns", "delete", id])?;
         }
-        self.cleanup_uplink_after_namespace_with_gate(id,gate)
+        self.cleanup_uplink_after_namespace_with_gate(id, gate)
     }
 
     /// Read-only check of the exact namespace handle and its guest-facing
