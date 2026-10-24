@@ -36,6 +36,7 @@ pub(super) enum CaptureEndRecord {
     Terminated {
         stop: core::StopCoverage,
         observation: Box<crate::capture::TerminatedCaptureObservation>,
+        prior: Option<super::drain::PriorCaptureEnd>,
     },
 }
 
@@ -77,7 +78,7 @@ pub(super) fn validate_record(record: &SourceWorkRecord) -> Result<(), JournalEr
                 && !(capture.completed.is_some()
                     && matches!(observation.outcome, CaptureRequestEndOutcome::NoRequest))
         }
-        CaptureEndRecord::Terminated { stop, observation } => {
+        CaptureEndRecord::Terminated { stop, observation, .. } => {
             super::drain::validate_record(record,*stop,observation)?;
             true
         }
@@ -125,6 +126,10 @@ fn receipt(
         end_binding: *super::super::digest(&serde_json::to_vec(end)?).as_bytes(),
         end: typed_end,
     }))
+}
+
+pub(super) fn continuation_allowed(record:&SourceWorkRecord)->bool{
+    record.capture.as_ref().is_some_and(|capture|matches!(capture.end,Some(CaptureEndRecord::NeverReleased{..}|CaptureEndRecord::WorkerEnded{..})))
 }
 
 pub(super) fn seal_end(

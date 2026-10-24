@@ -130,8 +130,7 @@ pub(in crate::controller) fn work(
         return Ok(None);
     };
     super::validate_record(record, world)?;
-    let end = record
-        .capture_work_end_receipt()?
+    let end = record.capture_work_end_receipt()?
         .ok_or(JournalError::CorruptStore)?;
     if saved.end_receipt != end || Some(saved.vm) != record.work.anchor.native.current_vm {
         return Err(JournalError::CorruptStore);
@@ -343,6 +342,7 @@ impl ControllerJournal {
             &world,
         )?;
         if current != request.identity()
+            || !super::end::continuation_allowed(record)
             || work(record, &world)?.as_ref() != Some(request)
             || !stored_action(&tx, action)?
             || !core::capture::continuation::continuation_activation_pending(
