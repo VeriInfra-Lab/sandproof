@@ -1,7 +1,9 @@
 //! Real Redis persistence with a controlled host result; not a VM-exit test.
 use super::*;
 use sandproof_center_store::authority::AuthorityState;
-use sandproof_protocol::lifecycle::{ContentDigest, UnloadObservation, UnloadOutcome, UnloadedFacts};
+use sandproof_protocol::lifecycle::{
+    ContentDigest, UnloadObservation, UnloadOutcome, UnloadedFacts,
+};
 
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
@@ -247,7 +249,7 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
         .unwrap()
         .unwrap();
     assert_eq!(pending.phase, PublicSessionPhase::Unloading);
-    assert!(pending.unload_outcome == Some(UnloadOutcome::Pending));
+    assert_eq!(pending.unload_outcome, Some(UnloadOutcome::Pending));
     *host.unloaded.lock().unwrap() = Some(observation.clone());
     app.reconcile_once().unwrap();
     release.complete();
@@ -257,7 +259,16 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
     assert_eq!(completed.current_version, pending.current_version);
     assert_eq!(completed.operation, pending.operation);
     assert_eq!(completed.session, pending.session);
-    assert!(clock.0.load(Ordering::SeqCst) < completed.unload_outcome.as_ref().unwrap().unloaded().unwrap().end_at_ms);
+    assert!(
+        clock.0.load(Ordering::SeqCst)
+            < completed
+                .unload_outcome
+                .as_ref()
+                .unwrap()
+                .unloaded()
+                .unwrap()
+                .end_at_ms
+    );
 }
 
 #[tokio::test]
@@ -307,7 +318,7 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     let pending: sandproof_protocol::lifecycle::PublicSessionView =
         serde_json::from_value(pending.1).unwrap();
     assert_eq!(pending.phase, PublicSessionPhase::Unloading);
-    assert!(pending.unload_outcome == Some(UnloadOutcome::Pending));
+    assert_eq!(pending.unload_outcome, Some(UnloadOutcome::Pending));
     release_refresh.complete();
     reconcile_seen.recv_timeout(Duration::from_secs(5)).unwrap();
     let revision_before: u64 = fixture.revision().parse().unwrap();
@@ -335,9 +346,17 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
             .unwrap(),
         completed
     );
-    assert!(clock.0.load(Ordering::SeqCst) < completed.unload_outcome.as_ref().unwrap().unloaded().unwrap().end_at_ms);
+    assert!(
+        clock.0.load(Ordering::SeqCst)
+            < completed
+                .unload_outcome
+                .as_ref()
+                .unwrap()
+                .unloaded()
+                .unwrap()
+                .end_at_ms
+    );
 }
-
 
 #[test]
 fn original_continued_result_restores_running_without_unloaded_material() {
@@ -367,9 +386,17 @@ fn original_continued_result_restores_running_without_unloaded_material() {
     let route = app.resolve_data_route(&detail.envd_access_token).unwrap();
     assert_eq!(route.identity.operation, saved.operation);
     assert_eq!(route.identity.accepted_version, saved.current_version);
-    let LifecycleOperation::Unload { source_incarnation, .. } =
-        &snapshot.lifecycle_session(&"8".try_into().unwrap(), &session)
-            .unwrap().operations().last().unwrap().intent().request.operation
+    let LifecycleOperation::Unload {
+        source_incarnation, ..
+    } = &snapshot
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap()
+        .operations()
+        .last()
+        .unwrap()
+        .intent()
+        .request
+        .operation
     else {
         unreachable!()
     };

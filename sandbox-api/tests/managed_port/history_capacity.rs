@@ -93,7 +93,10 @@ impl Calls {
                         .unwrap()
                         .parse()
                         .unwrap();
-                    ((id, 1), (session.envd_access_token.clone(), BTreeMap::new()))
+                    (
+                        (id, 1),
+                        (session.envd_access_token.clone(), BTreeMap::new()),
+                    )
                 })
                 .collect::<BTreeMap<_, _>>()
                 .into(),

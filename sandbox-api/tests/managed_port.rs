@@ -657,7 +657,11 @@ impl LaunchConfiguration for FakeHost {
         sandbox: core::SandboxId,
         generation: core::Generation,
     ) -> Result<bool, PortError> {
-        Ok(self.secrets.lock().unwrap().contains_key(&(sandbox.0, generation)))
+        Ok(self
+            .secrets
+            .lock()
+            .unwrap()
+            .contains_key(&(sandbox.0, generation)))
     }
 
     fn token_for(
@@ -736,7 +740,8 @@ impl LaunchConfiguration for FakeHost {
         if !self.has_secret(sandbox, generation)? {
             return Ok(false);
         }
-        if self.templates.lock().unwrap().get(&(sandbox.0, generation)) != options.template.as_ref() {
+        if self.templates.lock().unwrap().get(&(sandbox.0, generation)) != options.template.as_ref()
+        {
             return Err(PortError::Busy);
         }
         self.has_launch_config(sandbox, generation, &options.env_vars)
@@ -758,14 +763,19 @@ fn launch_fixture_keeps_secret_environment_and_template_in_the_exact_generation(
         template: Some(catalog.templates[1].clone()),
         ..Default::default()
     };
-    host.put_bound_launch_config(sandbox, 1, "first-token", &first).unwrap();
+    host.put_bound_launch_config(sandbox, 1, "first-token", &first)
+        .unwrap();
     assert!(!host.has_secret(sandbox, 2).unwrap());
     assert!(host.token_for(sandbox, 2).is_err());
     assert!(!host.has_bound_launch_config(sandbox, 2, &first).unwrap());
-    host.put_bound_launch_config(sandbox, 2, "second-token", &second).unwrap();
+    host.put_bound_launch_config(sandbox, 2, "second-token", &second)
+        .unwrap();
     assert_eq!(host.token_for(sandbox, 1).unwrap(), "first-token");
     assert_eq!(host.token_for(sandbox, 2).unwrap(), "second-token");
-    assert!(host.has_launch_config(sandbox, 1, &second.env_vars).is_err());
+    assert!(
+        host.has_launch_config(sandbox, 1, &second.env_vars)
+            .is_err()
+    );
     let changed = sandproof_controller_service::CreateOptions {
         template: first.template.clone(),
         ..second.clone()
@@ -2881,8 +2891,11 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
         assert_eq!(before.domain, configured.domain);
         drop(port);
         let host = FakeHost {
-            secrets: BTreeMap::from([((1, 1), (created.envd_access_token.clone(), BTreeMap::new()))])
-                .into(),
+            secrets: BTreeMap::from([(
+                (1, 1),
+                (created.envd_access_token.clone(), BTreeMap::new()),
+            )])
+            .into(),
             ..FakeHost::default()
         };
         let port = new_port(
@@ -3519,8 +3532,11 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
-            secrets: BTreeMap::from([((2, 1), (survivor.envd_access_token.clone(), BTreeMap::new()))])
-                .into(),
+            secrets: BTreeMap::from([(
+                (2, 1),
+                (survivor.envd_access_token.clone(), BTreeMap::new()),
+            )])
+            .into(),
             ..FakeHost::default()
         },
         policy,
