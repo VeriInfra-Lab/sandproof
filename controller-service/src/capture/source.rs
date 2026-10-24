@@ -35,7 +35,11 @@ impl SourceObservationConfig {
                 + 8192
                 // Original Full/action/worker record cap is reserved before
                 // source reception; later authorization cannot add a debt.
-                + 131_072)
+                + 131_072
+                // The same source can eventually require its exact original
+                // physical retirement plan. Reserve before any capture/Load,
+                // including unknown outcomes; do not rely on spare row bytes.
+                + super::MATERIAL_RETIREMENT_RECORD_MAX_BYTES)
             + 8192
     }
 }

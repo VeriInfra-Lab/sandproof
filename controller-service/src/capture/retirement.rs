@@ -5,7 +5,19 @@ use sandbox_controller_core::{EffectId, Generation, SandboxId};
 use sandproof_protocol::{WorkAction, lifecycle::ContentDigest};
 use sha2::{Digest, Sha256};
 
-pub const MATERIAL_RETIREMENT_PLAN_MAX_BYTES: usize = 65_536;
+// Fixed Full plan: fourteen <=512-byte file stamps, five <=256-byte
+// directory identities, two <=255-byte components (<=6 JSON bytes/input byte),
+// and <=4096 bytes of fixed keys/envelopes fit within 16 KiB. This does not
+// contain a manifest body, absolute paths, RAM/disk bytes or arbitrary files.
+pub const MATERIAL_RETIREMENT_PLAN_MAX_BYTES: usize = 16_384;
+
+// Persist the exact opaque Node bytes once; no second business authority.
+// A JSON byte array needs <=4*len+1 bytes; the remaining envelope includes
+// its delimiters, digests and finite progress/settlement fields. A writer must
+// enforce this whole-record bound before returning any deletion permission.
+#[cfg(feature = "durable")]
+pub(crate) const MATERIAL_RETIREMENT_RECORD_MAX_BYTES: u64 =
+    4 * MATERIAL_RETIREMENT_PLAN_MAX_BYTES as u64 + 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CaptureMaterialRetirementRequest {
