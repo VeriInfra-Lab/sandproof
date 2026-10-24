@@ -37,33 +37,82 @@ pub(super) fn apply(
     input: core::ControllerInput,
 ) -> Result<core::ControllerDecision, JournalError> {
     let world = transaction.world();
-    super::diagnose_stage("apply.profile",checkpoint::check_input_profile(transaction, &world, &input))?;
-    let sandbox = super::diagnose_stage("apply.sandbox",identity::input_sandbox(&input))?;
+    super::diagnose_stage(
+        "apply.profile",
+        checkpoint::check_input_profile(transaction, &world, &input),
+    )?;
+    let sandbox = super::diagnose_stage("apply.sandbox", identity::input_sandbox(&input))?;
     let stored = StoredInput { version: 1, input };
-    let serialized = super::diagnose_stage("apply.encode",checkpoint::input_bytes(transaction, &stored))?;
-    let decision = super::diagnose_stage("apply.native",core::handle_controller(&world, stored.input.clone()).map_err(JournalError::ControllerRejected))?;
-    let full_capacity = super::diagnose_stage("apply.capacity-config",super::capacity::config(transaction))?.is_some();
+    let serialized = super::diagnose_stage(
+        "apply.encode",
+        checkpoint::input_bytes(transaction, &stored),
+    )?;
+    let decision = super::diagnose_stage(
+        "apply.native",
+        core::handle_controller(&world, stored.input.clone())
+            .map_err(JournalError::ControllerRejected),
+    )?;
+    let full_capacity = super::diagnose_stage(
+        "apply.capacity-config",
+        super::capacity::config(transaction),
+    )?
+    .is_some();
     if full_capacity && decision.next == world {
         return Ok(decision);
     }
     if let core::ControllerInput::Request(core::Request::Create(request)) = &stored.input {
         super::capacity::admit(transaction, request)?;
     }
-    let before = super::diagnose_stage("apply.cursors",super::capacity::cursors(transaction))?;
-    super::diagnose_stage("apply.input-room",checkpoint::require_input_room(transaction, serialized.len()))?;
-    let record = super::diagnose_stage("apply.native-row",decision.next.sandbox_record(sandbox).ok_or(JournalError::CorruptStore))?;
-    let operation = super::diagnose_stage("apply.native-operation",record.current_operation.ok_or(JournalError::CorruptStore))?;
+    let before = super::diagnose_stage("apply.cursors", super::capacity::cursors(transaction))?;
+    super::diagnose_stage(
+        "apply.input-room",
+        checkpoint::require_input_room(transaction, serialized.len()),
+    )?;
+    let record = super::diagnose_stage(
+        "apply.native-row",
+        decision
+            .next
+            .sandbox_record(sandbox)
+            .ok_or(JournalError::CorruptStore),
+    )?;
+    let operation = super::diagnose_stage(
+        "apply.native-operation",
+        record.current_operation.ok_or(JournalError::CorruptStore),
+    )?;
     let key = core::OperationKey {
         sandbox,
         operation: operation.id,
     };
-    let ledger = super::diagnose_stage("apply.native-ledger",decision.next.operation_record(key).ok_or(JournalError::CorruptStore))?;
+    let ledger = super::diagnose_stage(
+        "apply.native-ledger",
+        decision
+            .next
+            .operation_record(key)
+            .ok_or(JournalError::CorruptStore),
+    )?;
     if world.operation_record(key).is_none() {
-        super::diagnose_stage("apply.operation-room",super::capacity::require_operation_room(transaction, &world, key, ledger.operation.kind))?;
-        super::diagnose_stage("apply.identity-room",allocators::require_available(transaction))?;
+        super::diagnose_stage(
+            "apply.operation-room",
+            super::capacity::require_operation_room(
+                transaction,
+                &world,
+                key,
+                ledger.operation.kind,
+            ),
+        )?;
+        super::diagnose_stage(
+            "apply.identity-room",
+            allocators::require_available(transaction),
+        )?;
     }
-    super::diagnose_stage("apply.record-identities",allocators::record_accepted(transaction, &world, sandbox, operation.id))?;
-    let sequence = super::diagnose_stage("apply.input-id",allocators::next_sql(transaction, SqlId::Input))?;
+    super::diagnose_stage(
+        "apply.record-identities",
+        allocators::record_accepted(transaction, &world, sandbox, operation.id),
+    )?;
+    let sequence = super::diagnose_stage(
+        "apply.input-id",
+        allocators::next_sql(transaction, SqlId::Input),
+    )?;
     let public_sandbox = identity::sandbox_id(namespace, sandbox)?;
     let revision: Option<i64> = transaction
         .query_row(
@@ -76,27 +125,42 @@ pub(super) fn apply(
         .map(u64::try_from)
         .transpose()
         .map_err(|_| JournalError::CorruptStore)?;
-    let actions = super::diagnose_stage("apply.actions",identity::new_actions(transaction, namespace, &world, &decision.next, sandbox))?;
-    let outbox_ids = super::diagnose_stage("apply.outbox-ids",allocators::reserve_sql(transaction, SqlId::Outbox, actions.len()))?;
-    super::diagnose_stage("apply.sql-write",write_accepted_with_ids(
-        transaction,
-        &AcceptedWrite {
-            owner: identity::owner_id(record.owner)?,
-            sandbox: public_sandbox,
-            operation: identity::operation_id(namespace, key)?,
-            expected_revision: revision,
-            sandbox_state: serde_json::to_vec(record)?,
-            operation_state: serde_json::to_vec(ledger)?,
-            actions,
-        },
-        Some(&outbox_ids),
-    ))?;
-    super::diagnose_stage("apply.operation-projections",identity::update_operation_projections(transaction, namespace, &decision.next, sandbox))?;
+    let actions = super::diagnose_stage(
+        "apply.actions",
+        identity::new_actions(transaction, namespace, &world, &decision.next, sandbox),
+    )?;
+    let outbox_ids = super::diagnose_stage(
+        "apply.outbox-ids",
+        allocators::reserve_sql(transaction, SqlId::Outbox, actions.len()),
+    )?;
+    super::diagnose_stage(
+        "apply.sql-write",
+        write_accepted_with_ids(
+            transaction,
+            &AcceptedWrite {
+                owner: identity::owner_id(record.owner)?,
+                sandbox: public_sandbox,
+                operation: identity::operation_id(namespace, key)?,
+                expected_revision: revision,
+                sandbox_state: serde_json::to_vec(record)?,
+                operation_state: serde_json::to_vec(ledger)?,
+                actions,
+            },
+            Some(&outbox_ids),
+        ),
+    )?;
+    super::diagnose_stage(
+        "apply.operation-projections",
+        identity::update_operation_projections(transaction, namespace, &decision.next, sandbox),
+    )?;
     transaction.execute(
         "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
         params![sequence, serialized],
     )?;
-    super::diagnose_stage("apply.charge",super::capacity::spend(transaction, sandbox, before))?;
+    super::diagnose_stage(
+        "apply.charge",
+        super::capacity::spend(transaction, sandbox, before),
+    )?;
     transaction.advance(decision.next.clone());
     Ok(decision)
 }

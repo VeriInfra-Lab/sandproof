@@ -67,10 +67,15 @@ type ReceiptRow = (i64, Vec<u8>, String, Option<Vec<u8>>);
 
 // Temporary fixed-category test output. Non-test builds return the same
 // result unchanged; neither the error nor any request data is formatted.
-pub(in crate::controller) fn diagnose_stage<T,E>(stage:&'static str,result:Result<T,E>)->Result<T,E>{
+pub(in crate::controller) fn diagnose_stage<T, E>(
+    stage: &'static str,
+    result: Result<T, E>,
+) -> Result<T, E> {
     #[cfg(test)]
-    if result.is_err(){eprintln!("stage1-fixed-diagnostic: {stage}");}
-    let _=stage;
+    if result.is_err() {
+        eprintln!("stage1-fixed-diagnostic: {stage}");
+    }
+    let _ = stage;
     result
 }
 

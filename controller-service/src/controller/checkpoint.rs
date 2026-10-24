@@ -200,17 +200,32 @@ fn envelope(
     world: &core::World,
     config: &MaintenanceConfig,
 ) -> Result<Envelope, JournalError> {
-    let host = super::diagnose_stage("envelope.host",bounded::config(connection)?.ok_or(JournalError::CorruptStore))?;
-    let contexts = super::diagnose_stage("envelope.host-contexts",bounded::validate_contexts(connection, world, &host))?;
-    let released = super::diagnose_stage("envelope.release-witnesses",retirement::witnesses(connection, world))?;
+    let host = super::diagnose_stage(
+        "envelope.host",
+        bounded::config(connection)?.ok_or(JournalError::CorruptStore),
+    )?;
+    let contexts = super::diagnose_stage(
+        "envelope.host-contexts",
+        bounded::validate_contexts(connection, world, &host),
+    )?;
+    let released = super::diagnose_stage(
+        "envelope.release-witnesses",
+        retirement::witnesses(connection, world),
+    )?;
     let envelope = Envelope {
         version: core::checkpoint::CHECKPOINT_VERSION,
-        namespace: super::diagnose_stage("envelope.namespace",namespace(connection))?,
+        namespace: super::diagnose_stage("envelope.namespace", namespace(connection))?,
         host,
         maintenance: config.clone(),
-        input_cut: super::diagnose_stage("envelope.input-frontier",allocators::input_high_water(connection))?,
-        core: super::diagnose_stage("envelope.core",core::checkpoint::capture(world, config.core_limits()).map_err(map_core))?,
-        allocators: super::diagnose_stage("envelope.allocators",allocators::snapshot(connection))?,
+        input_cut: super::diagnose_stage(
+            "envelope.input-frontier",
+            allocators::input_high_water(connection),
+        )?,
+        core: super::diagnose_stage(
+            "envelope.core",
+            core::checkpoint::capture(world, config.core_limits()).map_err(map_core),
+        )?,
+        allocators: super::diagnose_stage("envelope.allocators", allocators::snapshot(connection))?,
         host_contexts: contexts,
         release_witnesses: released,
     };
@@ -226,8 +241,14 @@ fn envelope(
             .map(|witness| (witness.context.binding.sandbox.0, *witness))
             .collect(),
     };
-    super::diagnose_stage("envelope.bindings",recovery::validate_bindings(&bindings, world, envelope.input_cut))?;
-    super::diagnose_stage("envelope.cursors",recovery::validate_saved_cursors(&envelope.allocators, world, envelope.input_cut))?;
+    super::diagnose_stage(
+        "envelope.bindings",
+        recovery::validate_bindings(&bindings, world, envelope.input_cut),
+    )?;
+    super::diagnose_stage(
+        "envelope.cursors",
+        recovery::validate_saved_cursors(&envelope.allocators, world, envelope.input_cut),
+    )?;
     Ok(envelope)
 }
 
@@ -237,9 +258,15 @@ pub(super) fn validate_candidate(
     connection: &Connection,
     world: &core::World,
 ) -> Result<(), JournalError> {
-    let config = super::diagnose_stage("candidate.configuration",config(connection)?.ok_or(JournalError::UnsupportedStore))?;
-    let value = super::diagnose_stage("candidate.envelope",envelope(connection, world, &config))?;
-    super::diagnose_stage("candidate.encoding",encode_limited(&value, config.max_checkpoint_bytes))?;
+    let config = super::diagnose_stage(
+        "candidate.configuration",
+        config(connection)?.ok_or(JournalError::UnsupportedStore),
+    )?;
+    let value = super::diagnose_stage("candidate.envelope", envelope(connection, world, &config))?;
+    super::diagnose_stage(
+        "candidate.encoding",
+        encode_limited(&value, config.max_checkpoint_bytes),
+    )?;
     Ok(())
 }
 
