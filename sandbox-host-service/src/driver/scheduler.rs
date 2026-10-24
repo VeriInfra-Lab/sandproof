@@ -1,6 +1,8 @@
 //! In-process occupancy only; restart responsibility belongs to the outbox.
 use super::{DriveReport, DriverConfig, HostLifecycle, TemplateSource};
-use sandproof_controller_service::application::{ApplicationError, ControllerApplication, ControllerHost};
+use sandproof_controller_service::application::{
+    ApplicationError, ControllerApplication, ControllerHost,
+};
 use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation};
 use std::sync::atomic::Ordering;
