@@ -63,8 +63,10 @@ impl ResumeObservation {
             return false;
         }
         if self.current_request != *original {
-            if matches!(self.current_request.request.operation, LifecycleOperation::Unload { .. })
-                && self.readiness != CurrentResumeReadiness::NotCurrent
+            if matches!(
+                self.current_request.request.operation,
+                LifecycleOperation::Unload { .. }
+            ) && self.readiness != CurrentResumeReadiness::NotCurrent
             {
                 return super::observation::continued_request(original, &self.current_request)
                     && match &self.readiness {

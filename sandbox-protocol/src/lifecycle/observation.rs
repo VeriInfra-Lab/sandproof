@@ -152,8 +152,10 @@ impl CreateObservation {
                     && current.key != requested.key);
         }
         if self.current_request != *original {
-            if matches!(self.current_request.request.operation, LifecycleOperation::Unload { .. })
-                && self.readiness != CurrentCreateReadiness::NotCurrent
+            if matches!(
+                self.current_request.request.operation,
+                LifecycleOperation::Unload { .. }
+            ) && self.readiness != CurrentCreateReadiness::NotCurrent
             {
                 return continued_request(original, &self.current_request)
                     && match &self.readiness {
@@ -208,15 +210,26 @@ impl CreateObservation {
 #[path = "observation_tests.rs"]
 mod tests;
 
-
 // Shape only: both authorities must independently retain OriginalContinued.
-pub(super) fn continued_request(origin: &AcceptedLifecycleIntent, current: &AcceptedLifecycleIntent) -> bool {
-    let target = match origin.request.operation {
-        LifecycleOperation::Create { target_incarnation, .. }
-        | LifecycleOperation::Resume { target_incarnation, .. } => target_incarnation,
-        _ => return false,
+pub(super) fn continued_request(
+    origin: &AcceptedLifecycleIntent,
+    current: &AcceptedLifecycleIntent,
+) -> bool {
+    let (LifecycleOperation::Create {
+        target_incarnation: target,
+        ..
+    }
+    | LifecycleOperation::Resume {
+        target_incarnation: target,
+        ..
+    }) = origin.request.operation
+    else {
+        return false;
     };
-    let LifecycleOperation::Unload { source_incarnation, .. } = current.request.operation else {
+    let LifecycleOperation::Unload {
+        source_incarnation, ..
+    } = current.request.operation
+    else {
         return false;
     };
     target == source_incarnation

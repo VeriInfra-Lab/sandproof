@@ -381,10 +381,12 @@ fn continued_unload_observation_keeps_original_resume_without_inferred_state_los
     current.request.binding.expected = ExpectedSession::Version(3);
     current.request.binding.key.sequence = 4.try_into().unwrap();
     current.request.operation = LifecycleOperation::Unload {
-        source_incarnation: 2.try_into().unwrap(), capture: 2.try_into().unwrap(),
+        source_incarnation: 2.try_into().unwrap(),
+        capture: 2.try_into().unwrap(),
     };
     let mut view = ResumeObservation {
-        request: original.clone(), current_request: current,
+        request: original.clone(),
+        current_request: current,
         readiness: CurrentResumeReadiness::Observed { facts: ready() },
     };
     assert!(view.matches_request(&original));
@@ -393,7 +395,8 @@ fn continued_unload_observation_keeps_original_resume_without_inferred_state_los
     view.readiness = CurrentResumeReadiness::Pending;
     assert!(view.matches_request(&original));
     view.current_request.request.operation = LifecycleOperation::Unload {
-        source_incarnation: 1.try_into().unwrap(), capture: 2.try_into().unwrap(),
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 2.try_into().unwrap(),
     };
     assert!(!view.matches_request(&original));
 }

@@ -105,23 +105,32 @@ fn continued_unload_observation_keeps_original_create_and_exact_current_incarnat
     current.request.binding.expected = ExpectedSession::Version(1);
     current.request.binding.key.sequence = 2.try_into().unwrap();
     current.request.operation = LifecycleOperation::Unload {
-        source_incarnation: 1.try_into().unwrap(), capture: 1.try_into().unwrap(),
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
     };
     let mut view = CreateObservation {
-        request: original.clone(), current_request: current,
+        request: original.clone(),
+        current_request: current,
         historical_create_succeeded: true,
-        readiness: CurrentCreateReadiness::Observed { facts: CurrentReadyFacts {
-            started_at_ms: 1, startup_deadline_ms: 1000, observed_at_ms: 2,
-            end_at_ms: 101, max_end_at_ms: 501,
-        } },
+        readiness: CurrentCreateReadiness::Observed {
+            facts: CurrentReadyFacts {
+                started_at_ms: 1,
+                startup_deadline_ms: 1000,
+                observed_at_ms: 2,
+                end_at_ms: 101,
+                max_end_at_ms: 501,
+            },
+        },
     };
     assert!(view.matches_request(&original));
     view.current_request.request.operation = LifecycleOperation::Unload {
-        source_incarnation: 2.try_into().unwrap(), capture: 1.try_into().unwrap(),
+        source_incarnation: 2.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
     };
     assert!(!view.matches_request(&original));
     view.current_request.request.operation = LifecycleOperation::Unload {
-        source_incarnation: 1.try_into().unwrap(), capture: 1.try_into().unwrap(),
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
     };
     view.historical_create_succeeded = false;
     assert!(!view.matches_request(&original));

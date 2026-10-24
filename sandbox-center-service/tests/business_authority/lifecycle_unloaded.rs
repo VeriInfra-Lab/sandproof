@@ -404,9 +404,18 @@ fn original_continued_result_restores_running_without_unloaded_material() {
     host.ready.store(false, Ordering::SeqCst);
     assert_eq!(app.query_lifecycle("8", &session), Err(PortError::Busy));
     let retained = app.snapshot().unwrap();
-    assert_eq!(retained.lifecycle_session(&"8".try_into().unwrap(), &session)
-        .unwrap().operations().last().unwrap().unloaded().unwrap().outcome,
-        expected_outcome);
+    assert_eq!(
+        retained
+            .lifecycle_session(&"8".try_into().unwrap(), &session)
+            .unwrap()
+            .operations()
+            .last()
+            .unwrap()
+            .unloaded()
+            .unwrap()
+            .outcome,
+        expected_outcome
+    );
 }
 
 async fn assert_timeout_recovered_by_original_round(preceding_writes: usize) {
@@ -491,12 +500,15 @@ fn background_transport_timeout_uses_original_recovery_without_replaying_refresh
     assert_eq!(app.query_lifecycle("8", &session).unwrap(), before);
 }
 
-
 fn complete_continued(app: &Application, host: &Host) -> (SessionId, u64) {
     let (session, _, mut observation) = accept_unload(app);
     let snapshot = app.snapshot().unwrap();
-    let facts = snapshot.lifecycle_session(&"8".try_into().unwrap(), &session)
-        .unwrap().last_running().unwrap().clone();
+    let facts = snapshot
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap()
+        .last_running()
+        .unwrap()
+        .clone();
     let end = facts.end_at_ms;
     observation.outcome = UnloadOutcome::OriginalContinued { facts };
     *host.unloaded.lock().unwrap() = Some(observation);
@@ -518,7 +530,10 @@ fn continued_query_does_not_publish_stale_or_expired_ready() {
             *host.observed_at_override.lock().unwrap() = Some(0);
         }
         let result = app.query_lifecycle("8", &session);
-        assert!(match result { Ok(view) => view.phase != PublicSessionPhase::Running, Err(_) => true });
+        assert!(match result {
+            Ok(view) => view.phase != PublicSessionPhase::Running,
+            Err(_) => true,
+        });
     }
 }
 
@@ -534,9 +549,17 @@ fn continued_query_cannot_overwrite_a_destroy_accepted_during_observation() {
     let queried = session.clone();
     let query = std::thread::spawn(move || querying.query_lifecycle("8", &queried));
     observed.recv_timeout(Duration::from_secs(2)).unwrap();
-    let destroyed = app.destroy_lifecycle("8", &session, &PublicDestroyRequest {
-        window: 1.try_into().unwrap(), sequence: 3.try_into().unwrap(), expected_version: 2,
-    }).unwrap();
+    let destroyed = app
+        .destroy_lifecycle(
+            "8",
+            &session,
+            &PublicDestroyRequest {
+                window: 1.try_into().unwrap(),
+                sequence: 3.try_into().unwrap(),
+                expected_version: 2,
+            },
+        )
+        .unwrap();
     release.complete();
     assert!(query.join().unwrap().is_err());
     let current = app.query_lifecycle("8", &session).unwrap();

@@ -5,8 +5,8 @@ use crate::{AuthorityPort, CenterApplication, HostPort, TemplateProvider};
 use sandproof_api::PortError;
 use sandproof_center_core::SessionPhase;
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CurrentCreateReadiness, CurrentReadyFacts, CurrentResumeReadiness, LifecycleOperation,
-    PublicSessionPhase, PublicSessionView, SessionId,
+    AcceptedLifecycleIntent, CurrentCreateReadiness, CurrentReadyFacts, CurrentResumeReadiness,
+    LifecycleOperation, PublicSessionPhase, PublicSessionView, SessionId,
 };
 
 impl<H: HostPort, T: TemplateProvider>
@@ -48,7 +48,9 @@ impl<H: HostPort, T: TemplateProvider>
         };
         let after = self.now()?;
         time_left(deadline)?;
-        if policy.healthy_until(before, after, facts.observed_at_ms).is_none()
+        if policy
+            .healthy_until(before, after, facts.observed_at_ms)
+            .is_none()
             || after >= facts.end_at_ms
         {
             return Err(PortError::Busy);
@@ -64,14 +66,19 @@ impl<H: HostPort, T: TemplateProvider>
     ) -> Result<PublicSessionView, PortError> {
         let deadline = self.reply_deadline()?;
         let snapshot = self.snapshot()?;
-        let record = snapshot.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
+        let record = snapshot
+            .lifecycle_session(owner, session)
+            .ok_or(PortError::NotFound)?;
         let current = record.operations().last().ok_or(PortError::Busy)?;
         if current.intent() != intent || record.phase() != SessionPhase::Running {
             return Err(PortError::Busy);
         }
         let saved = current.unloaded().ok_or(PortError::Busy)?.clone();
         let prior = saved.outcome.continued().ok_or(PortError::Busy)?;
-        let origin = record.current_execution_origin().ok_or(PortError::Busy)?.clone();
+        let origin = record
+            .current_execution_origin()
+            .ok_or(PortError::Busy)?
+            .clone();
         let facts = self.observe_continued_before(&origin, intent, deadline)?;
         let after = self.now()?;
         if after >= facts.end_at_ms
@@ -82,15 +89,22 @@ impl<H: HostPort, T: TemplateProvider>
         {
             return Err(PortError::Busy);
         }
-        let mut authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        let mut authority = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?;
         // Reaffirm the SAME immutable historical outcome in the original CAS.
         // Fresh readiness is detached evidence, never a replacement saved Ready.
-        authority.accept_lifecycle_unload_observation(&saved, after).map_err(authority_error)?;
+        authority
+            .accept_lifecycle_unload_observation(&saved, after)
+            .map_err(authority_error)?;
         let current = authority.public_lifecycle_record(owner, session)?;
         let operation = current.operations().last().ok_or(PortError::Busy)?;
-        if operation.intent() != intent || operation.unloaded() != Some(&saved)
+        if operation.intent() != intent
+            || operation.unloaded() != Some(&saved)
             || current.current_execution_origin() != Some(&origin)
-            || current.phase() != SessionPhase::Running || self.now()? >= facts.end_at_ms
+            || current.phase() != SessionPhase::Running
+            || self.now()? >= facts.end_at_ms
         {
             return Err(PortError::Busy);
         }

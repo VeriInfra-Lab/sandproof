@@ -92,7 +92,10 @@ impl Host {
                     end_at_ms: 100 + create.timeout_ms,
                     max_end_at_ms: 100 + create.max_lifetime_ms,
                     startup_deadline_ms: create.startup_deadline_ms,
-                    observed_at_ms: self.observed_at_override.lock().unwrap()
+                    observed_at_ms: self
+                        .observed_at_override
+                        .lock()
+                        .unwrap()
                         .unwrap_or_else(|| self.clock.0.load(Ordering::SeqCst)),
                 },
             }
@@ -101,7 +104,11 @@ impl Host {
         };
         CreateObservation {
             request: intent.clone(),
-            current_request: self.unloaded.lock().unwrap().as_ref()
+            current_request: self
+                .unloaded
+                .lock()
+                .unwrap()
+                .as_ref()
                 .filter(|observation| observation.outcome.continued().is_some())
                 .map_or_else(|| intent.clone(), |observation| observation.request.clone()),
             historical_create_succeeded: true,
