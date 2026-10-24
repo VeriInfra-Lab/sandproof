@@ -14,8 +14,12 @@ pub(crate) const MAX_COMPLETION_BYTES: u64 = 16_384;
 impl SnapshotStore {
     pub(crate) fn require_request_end_absent(&self, key: [u8; 32]) -> Result<(), RuntimeError> {
         for prefix in ["api-returned-", "api-return-stage-"] {
-            match statat(&self.directory, key_name(prefix, &key).as_str(), AtFlags::SYMLINK_NOFOLLOW) {
-                Err(rustix::io::Errno::NOENT) => {},
+            match statat(
+                &self.directory,
+                key_name(prefix, &key).as_str(),
+                AtFlags::SYMLINK_NOFOLLOW,
+            ) {
+                Err(rustix::io::Errno::NOENT) => {}
                 Err(error) => return Err(os_error(error)),
                 Ok(_) => return Err(invalid("original request end slot already used")),
             }
@@ -32,7 +36,11 @@ impl SnapshotStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn publish_request_end(&self, key: [u8; 32], bytes: &[u8]) -> Result<(), RuntimeError> {
+    pub(crate) fn publish_request_end(
+        &self,
+        key: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<(), RuntimeError> {
         self.publish_record("api-returned-", "api-return-stage-", key, bytes)
     }
 
@@ -259,14 +267,23 @@ mod tests {
         std::fs::set_permissions(root.path(), Permissions::from_mode(0o700)).unwrap();
         let owner = rustix::process::geteuid().as_raw();
         let store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
-        let key = [27;32];
+        let key = [27; 32];
         store.require_request_end_absent(key).unwrap();
-        store.publish_retained_request_end(key, b"original tagged record", || Ok(true)).unwrap();
+        store
+            .publish_retained_request_end(key, b"original tagged record", || Ok(true))
+            .unwrap();
         assert!(store.require_request_end_absent(key).is_err());
-        let partial = [28;32];
-        std::fs::write(root.path().join(key_name("api-return-stage-", &partial)), b"partial").unwrap();
+        let partial = [28; 32];
+        std::fs::write(
+            root.path().join(key_name("api-return-stage-", &partial)),
+            b"partial",
+        )
+        .unwrap();
         assert!(store.require_request_end_absent(partial).is_err());
-        assert_eq!(store.read_request_end(key).unwrap(), b"original tagged record");
+        assert_eq!(
+            store.read_request_end(key).unwrap(),
+            b"original tagged record"
+        );
     }
 
     #[test]

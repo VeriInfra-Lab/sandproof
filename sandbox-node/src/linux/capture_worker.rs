@@ -7,9 +7,9 @@ use crate::{
     full_snapshot::{self, ExpectedFullCapture},
 };
 use sandbox_runtime::{
-    FullCaptureApiContext, FullCaptureLimits, HelperLimits, OwnedChild, OriginalPauseObservation,
-    RuntimeConfig, RuntimeHelperGuard, RuntimeProcessIdentity,
-    SnapshotLayout, snapshot_store::BundleReadLimits,
+    FullCaptureApiContext, FullCaptureLimits, HelperLimits, OriginalPauseObservation, OwnedChild,
+    RuntimeConfig, RuntimeHelperGuard, RuntimeProcessIdentity, SnapshotLayout,
+    snapshot_store::BundleReadLimits,
 };
 use sandproof_controller_service::capture::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureWorkRequest, RawSourceObservation,
@@ -102,7 +102,8 @@ impl PreparedCaptureWorker {
         // Consume this unique post-commit permission before opening the child gate.
         drop(permit);
         let timeout = Duration::from_millis(self.job.full.worker_timeout_ms)
-            .checked_sub(self.started.elapsed()).filter(|value| !value.is_zero())
+            .checked_sub(self.started.elapsed())
+            .filter(|value| !value.is_zero())
             .ok_or("Full caller deadline elapsed before release")?;
         let limits = HelperLimits {
             timeout,
@@ -117,7 +118,7 @@ impl PreparedCaptureWorker {
     }
 
     /// Close the Ready worker's release pipe. Only that worker may persist its
-    /// NoRequest decision; dropping these handles supplies no end receipt.
+    /// `NoRequest` decision; dropping these handles supplies no end receipt.
     pub fn cancel(self) {
         drop(self.child);
         drop(self.gate);
@@ -150,14 +151,20 @@ impl PreparedCaptureWorker {
         let mut child = gate.release_tracked(prepared)?;
         let frame = handshake::job_frame(body)?;
         let expected_ready = handshake::ready_frame(job_digest, process.clone())?;
-        let ready = child.prepare_full(&frame, &expected_ready, HelperLimits {
-            timeout: Duration::from_millis(job.full.worker_timeout_ms),
-            input_bytes: CAPTURE_WORKER_INPUT_BYTES,
-            stdout_bytes: 1024,
-            stderr_bytes: 0,
-        })?;
+        let ready = child.prepare_full(
+            &frame,
+            &expected_ready,
+            HelperLimits {
+                timeout: Duration::from_millis(job.full.worker_timeout_ms),
+                input_bytes: CAPTURE_WORKER_INPUT_BYTES,
+                stdout_bytes: 1024,
+                stderr_bytes: 0,
+            },
+        )?;
         handshake::check_ready(&ready, job_digest, &process)?;
-        if !process.is_alive()? { return Err("Full worker exited before Ready handoff".into()); }
+        if !process.is_alive()? {
+            return Err("Full worker exited before Ready handoff".into());
+        }
         Ok(Self {
             child,
             process,
@@ -410,7 +417,6 @@ impl CaptureWorkerJob {
 /// Invalid invocation or reply I/O fails the process; no VM Stop/Resume occurs.
 pub fn run_capture_worker(expected_job_digest: &str) -> NodeResult<()> {
     handshake::run(expected_job_digest)
-
 }
 
 #[cfg(test)]

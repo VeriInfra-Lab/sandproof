@@ -153,8 +153,16 @@ impl LinuxWorker {
                 worker: worker.clone(),
                 source: source.source.clone(),
                 outcome: match record.outcome() {
-                    sandbox_runtime::FullCaptureRequestOutcome::NoRequest => sandproof_controller_service::capture::CaptureRequestEndOutcome::NoRequest,
-                    sandbox_runtime::FullCaptureRequestOutcome::Returned { http_status, .. } => sandproof_controller_service::capture::CaptureRequestEndOutcome::Returned { http_status },
+                    sandbox_runtime::FullCaptureRequestOutcome::NoRequest => {
+                        sandproof_controller_service::capture::CaptureRequestEndOutcome::NoRequest
+                    }
+                    sandbox_runtime::FullCaptureRequestOutcome::Returned {
+                        http_status, ..
+                    } => {
+                        sandproof_controller_service::capture::CaptureRequestEndOutcome::Returned {
+                            http_status,
+                        }
+                    }
                 },
             },
         )

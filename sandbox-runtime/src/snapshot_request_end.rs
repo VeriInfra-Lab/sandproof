@@ -30,7 +30,10 @@ pub struct FullCaptureRequestEnd {
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FullCaptureRequestOutcome {
     NoRequest,
-    Returned { http_status: u16, response_sha256: [u8; 32] },
+    Returned {
+        http_status: u16,
+        response_sha256: [u8; 32],
+    },
 }
 
 fn invalid(message: &'static str) -> RuntimeError {
@@ -77,13 +80,18 @@ impl FullCaptureRequestEnd {
         })
     }
     fn no_request(
-        id: &str, source: &RuntimeProcessIdentity, key: [u8; 32],
+        id: &str,
+        source: &RuntimeProcessIdentity,
+        key: [u8; 32],
         context: FullCaptureApiContext,
     ) -> Result<Self, RuntimeError> {
         source.validate_fields()?;
         Ok(Self {
-            version: 1, resource_id: id.into(), source: source.clone(),
-            directory_key: key, context,
+            version: 1,
+            resource_id: id.into(),
+            source: source.clone(),
+            directory_key: key,
+            context,
             worker: RuntimeProcessIdentity::capture(std::process::id())?,
             request_sha256: Runtime::full_capture_request_sha256(key)?,
             outcome: FullCaptureRequestOutcome::NoRequest,
@@ -93,14 +101,23 @@ impl FullCaptureRequestEnd {
     /// # Errors
     /// Oversize original bindings cannot create an unreserved future end record.
     pub fn validate_capacity(
-        id: &str, source: &RuntimeProcessIdentity, key: [u8; 32],
+        id: &str,
+        source: &RuntimeProcessIdentity,
+        key: [u8; 32],
         context: FullCaptureApiContext,
     ) -> Result<(), RuntimeError> {
         let mut record = Self::no_request(id, source, key, context)?;
-        for outcome in [FullCaptureRequestOutcome::NoRequest,
-            FullCaptureRequestOutcome::Returned { http_status: 599, response_sha256: [255; 32] }] {
+        for outcome in [
+            FullCaptureRequestOutcome::NoRequest,
+            FullCaptureRequestOutcome::Returned {
+                http_status: 599,
+                response_sha256: [255; 32],
+            },
+        ] {
             record.outcome = outcome;
-            if serde_json::to_vec(&record)?.len() as u64 > crate::snapshot_store::MAX_COMPLETION_BYTES {
+            if serde_json::to_vec(&record)?.len() as u64
+                > crate::snapshot_store::MAX_COMPLETION_BYTES
+            {
                 return Err(invalid("Full request end exceeds original record budget"));
             }
         }
@@ -155,7 +172,8 @@ impl SnapshotLayout {
     /// # Errors
     /// Existing canonical or partial records remain charged and are not removed.
     pub fn require_full_request_unstarted(&self, key: [u8; 32]) -> Result<(), RuntimeError> {
-        self.store_for_runtime(&self.runtime_root())?.require_request_end_absent(key)
+        self.store_for_runtime(&self.runtime_root())?
+            .require_request_end_absent(key)
     }
 
     /// The complete original worker irrevocably declines its release before
@@ -163,7 +181,10 @@ impl SnapshotLayout {
     /// # Errors
     /// Publication failures retain responsibility and cannot supply end facts.
     pub fn publish_full_no_request(
-        &self, id: &str, source: &RuntimeProcessIdentity, key: [u8; 32],
+        &self,
+        id: &str,
+        source: &RuntimeProcessIdentity,
+        key: [u8; 32],
         context: FullCaptureApiContext,
     ) -> Result<(), RuntimeError> {
         let record = FullCaptureRequestEnd::no_request(id, source, key, context)?;
@@ -185,7 +206,10 @@ impl SnapshotLayout {
     /// Read the original bounded request-end record, never dispatching any request.
     /// # Errors
     /// Missing/changed/partial publications remain unknown.
-    pub fn read_full_request_end(&self, key: [u8; 32]) -> Result<FullCaptureRequestEnd, RuntimeError> {
+    pub fn read_full_request_end(
+        &self,
+        key: [u8; 32],
+    ) -> Result<FullCaptureRequestEnd, RuntimeError> {
         let bytes = self
             .store_for_runtime(&self.runtime_root())?
             .read_request_end(key)?;
@@ -213,39 +237,67 @@ mod tests {
         std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let owner = rustix::process::geteuid().as_raw();
         let source = process(10);
-        let context = FullCaptureApiContext { work_sha256: [255;32], job_sha256: [255;32], action_sha256: [255;32] };
-        let key = [255;32];
+        let context = FullCaptureApiContext {
+            work_sha256: [255; 32],
+            job_sha256: [255; 32],
+            action_sha256: [255; 32],
+        };
+        let key = [255; 32];
         let record = FullCaptureRequestEnd::no_request("source-1", &source, key, context).unwrap();
         let worker = record.worker.clone();
         let bytes = serde_json::to_vec(&record).unwrap();
         assert!(bytes.len() as u64 <= crate::snapshot_store::MAX_COMPLETION_BYTES);
-        let store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        let store = SnapshotStore::from_layout(
+            root.path().to_path_buf(),
+            crate::snapshot_store::open_store(root.path(), owner).unwrap(),
+            owner,
+        );
         store.require_request_end_absent(key).unwrap();
-        store.publish_retained_request_end(key, &bytes, || Ok(true)).unwrap();
+        store
+            .publish_retained_request_end(key, &bytes, || Ok(true))
+            .unwrap();
         assert!(store.require_request_end_absent(key).is_err());
         drop(store);
         for _ in 0..2 {
-            let reopened = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
-            let actual: FullCaptureRequestEnd = serde_json::from_slice(&reopened.read_request_end(key).unwrap()).unwrap();
+            let reopened = SnapshotStore::from_layout(
+                root.path().to_path_buf(),
+                crate::snapshot_store::open_store(root.path(), owner).unwrap(),
+                owner,
+            );
+            let actual: FullCaptureRequestEnd =
+                serde_json::from_slice(&reopened.read_request_end(key).unwrap()).unwrap();
             assert_eq!(actual.outcome(), FullCaptureRequestOutcome::NoRequest);
-            actual.require_original("source-1", &source, key, context, &worker).unwrap();
-            assert!(actual.require_original("source-1", &source, key, context, &process(11)).is_err());
+            actual
+                .require_original("source-1", &source, key, context, &worker)
+                .unwrap();
+            assert!(
+                actual
+                    .require_original("source-1", &source, key, context, &process(11))
+                    .is_err()
+            );
         }
     }
 
     #[test]
     fn untagged_end_is_rejected_and_future_outcomes_fit_reserved_budget() {
         let source = process(10);
-        let context = FullCaptureApiContext { work_sha256: [255;32], job_sha256: [255;32], action_sha256: [255;32] };
-        let key = [255;32];
+        let context = FullCaptureApiContext {
+            work_sha256: [255; 32],
+            job_sha256: [255; 32],
+            action_sha256: [255; 32],
+        };
+        let key = [255; 32];
         let record = FullCaptureRequestEnd::no_request("source-1", &source, key, context).unwrap();
         let mut old = serde_json::to_value(&record).unwrap();
         old.as_object_mut().unwrap().remove("outcome");
         old["status"] = serde_json::json!(400);
-        old["response_sha256"] = serde_json::to_value([0_u8;32]).unwrap();
+        old["response_sha256"] = serde_json::to_value([0_u8; 32]).unwrap();
         assert!(serde_json::from_value::<FullCaptureRequestEnd>(old).is_err());
         FullCaptureRequestEnd::validate_capacity(&"x".repeat(64), &source, key, context).unwrap();
-        assert!(FullCaptureRequestEnd::validate_capacity(&"x".repeat(16_384), &source, key, context).is_err());
+        assert!(
+            FullCaptureRequestEnd::validate_capacity(&"x".repeat(16_384), &source, key, context)
+                .is_err()
+        );
     }
 
     #[test]

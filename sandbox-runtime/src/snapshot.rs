@@ -7,10 +7,10 @@
 use super::{
     Runtime, RuntimeError, RuntimeProcessIdentity, SnapshotLayout, validate_id, verified_process,
 };
-#[path = "snapshot_request_end.rs"]
-mod request_end;
 #[path = "snapshot_full_wait.rs"]
 pub(crate) mod full_wait;
+#[path = "snapshot_request_end.rs"]
+mod request_end;
 use request_end::full_capture_request;
 pub use request_end::{FullCaptureApiContext, FullCaptureRequestEnd, FullCaptureRequestOutcome};
 
