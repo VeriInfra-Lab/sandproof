@@ -143,12 +143,14 @@ impl ActionGate {
 }
 
 type StoredLaunchSecret = (String, BTreeMap<String, String>);
+type LaunchGenerationKey = (u64, core::Generation);
+type StoredTemplate = sandproof_controller_service::templates::TemplateBinding;
 
 struct FakeHost {
     candidate_checks: Option<Arc<AtomicUsize>>,
     template_validation_error: Option<PortError>,
-    secrets: Mutex<BTreeMap<u64, StoredLaunchSecret>>,
-    templates: Mutex<BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>>,
+    secrets: Mutex<BTreeMap<LaunchGenerationKey, StoredLaunchSecret>>,
+    templates: Mutex<BTreeMap<LaunchGenerationKey, StoredTemplate>>,
     launch_error_once: Mutex<Option<PortError>>,
     token_error_once: AtomicBool,
     token_error_for: Option<core::SandboxId>,
@@ -641,15 +643,28 @@ impl HostCapacity for FakeHost {
 }
 
 impl LaunchConfiguration for FakeHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
-        self.put_launch_config(sandbox, token, &BTreeMap::new())
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), PortError> {
+        self.put_launch_config(sandbox, generation, token, &BTreeMap::new())
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
-        Ok(self.secrets.lock().unwrap().contains_key(&sandbox.0))
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, PortError> {
+        Ok(self.secrets.lock().unwrap().contains_key(&(sandbox.0, generation)))
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, PortError> {
         if self.token_error_for == Some(sandbox)
             || self.token_error_once.swap(false, Ordering::SeqCst)
         {
@@ -658,7 +673,7 @@ impl LaunchConfiguration for FakeHost {
         self.secrets
             .lock()
             .unwrap()
-            .get(&sandbox.0)
+            .get(&(sandbox.0, generation))
             .map(|(token, _)| token.clone())
             .ok_or(PortError::Busy)
     }
@@ -666,20 +681,18 @@ impl LaunchConfiguration for FakeHost {
     fn put_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<(), PortError> {
         if let Some(error) = self.launch_error_once.lock().unwrap().take() {
             return Err(error);
         }
-        if self
-            .secrets
-            .lock()
-            .unwrap()
-            .insert(sandbox.0, (token.to_owned(), env_vars.clone()))
-            .is_some()
-        {
-            return Err(PortError::Conflict);
+        match self.secrets.lock().unwrap().entry((sandbox.0, generation)) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert((token.to_owned(), env_vars.clone()));
+            }
+            std::collections::btree_map::Entry::Occupied(_) => return Err(PortError::Conflict),
         }
         Ok(())
     }
@@ -687,9 +700,10 @@ impl LaunchConfiguration for FakeHost {
     fn has_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<bool, PortError> {
-        match self.secrets.lock().unwrap().get(&sandbox.0) {
+        match self.secrets.lock().unwrap().get(&(sandbox.0, generation)) {
             Some((_, stored)) if stored == env_vars => Ok(true),
             Some(_) => Err(PortError::Busy),
             None => Ok(false),
@@ -699,15 +713,16 @@ impl LaunchConfiguration for FakeHost {
     fn put_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &sandproof_controller_service::CreateOptions,
     ) -> Result<(), PortError> {
-        self.put_launch_config(sandbox, token, &options.env_vars)?;
+        self.put_launch_config(sandbox, generation, token, &options.env_vars)?;
         if let Some(template) = &options.template {
             self.templates
                 .lock()
                 .unwrap()
-                .insert(sandbox.0, template.clone());
+                .insert((sandbox.0, generation), template.clone());
         }
         Ok(())
     }
@@ -715,13 +730,49 @@ impl LaunchConfiguration for FakeHost {
     fn has_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &sandproof_controller_service::CreateOptions,
     ) -> Result<bool, PortError> {
-        if self.templates.lock().unwrap().get(&sandbox.0) != options.template.as_ref() {
+        if !self.has_secret(sandbox, generation)? {
+            return Ok(false);
+        }
+        if self.templates.lock().unwrap().get(&(sandbox.0, generation)) != options.template.as_ref() {
             return Err(PortError::Busy);
         }
-        self.has_launch_config(sandbox, &options.env_vars)
+        self.has_launch_config(sandbox, generation, &options.env_vars)
     }
+}
+
+#[test]
+fn launch_fixture_keeps_secret_environment_and_template_in_the_exact_generation() {
+    let host = FakeHost::default();
+    let sandbox = core::SandboxId(1);
+    let catalog = template_catalog();
+    let first = sandproof_controller_service::CreateOptions {
+        env_vars: BTreeMap::from([("SP_GENERATION".into(), "first".into())]),
+        template: Some(catalog.templates[0].clone()),
+        ..Default::default()
+    };
+    let second = sandproof_controller_service::CreateOptions {
+        env_vars: BTreeMap::from([("SP_GENERATION".into(), "second".into())]),
+        template: Some(catalog.templates[1].clone()),
+        ..Default::default()
+    };
+    host.put_bound_launch_config(sandbox, 1, "first-token", &first).unwrap();
+    assert!(!host.has_secret(sandbox, 2).unwrap());
+    assert!(host.token_for(sandbox, 2).is_err());
+    assert!(!host.has_bound_launch_config(sandbox, 2, &first).unwrap());
+    host.put_bound_launch_config(sandbox, 2, "second-token", &second).unwrap();
+    assert_eq!(host.token_for(sandbox, 1).unwrap(), "first-token");
+    assert_eq!(host.token_for(sandbox, 2).unwrap(), "second-token");
+    assert!(host.has_launch_config(sandbox, 1, &second.env_vars).is_err());
+    let changed = sandproof_controller_service::CreateOptions {
+        template: first.template.clone(),
+        ..second.clone()
+    };
+    assert!(host.has_bound_launch_config(sandbox, 2, &changed).is_err());
+    assert!(host.put_secret(sandbox, 2, "replacement").is_err());
+    assert_eq!(host.token_for(sandbox, 2).unwrap(), "second-token");
 }
 
 impl TemplateArtifacts for FakeHost {
@@ -903,7 +954,7 @@ fn due_unknown_prepare_fixture(
         }),
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
         finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
@@ -1112,7 +1163,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
         ..FakeHost::default()
     };
     restarted_host
-        .put_secret(core::SandboxId(1), &"a".repeat(64))
+        .put_secret(core::SandboxId(1), 1, &"a".repeat(64))
         .unwrap();
     let restarted = new_port(
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
@@ -1187,7 +1238,7 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
         public_ipv4_ready: true,
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     let mut settings = config();
     settings.public_ipv4_enabled = true;
     let port = new_port(
@@ -1277,7 +1328,7 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
         public_ipv4_ready: true,
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     let mut settings = config();
     settings.public_ipv4_enabled = true;
     let port = new_port(
@@ -1340,7 +1391,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
         public_ipv4_ready: true,
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
         finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
@@ -1370,6 +1421,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     wrong_host
         .put_launch_config(
             sandbox,
+            1,
             &"b".repeat(64),
             &BTreeMap::from([("SP_RECOVERY".into(), "different".into())]),
         )
@@ -1461,7 +1513,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
         activation_calls: Some(Arc::clone(&calls)),
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
         finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
@@ -1528,7 +1580,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
         activation: ActivationObservation::Unavailable.into(),
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
         finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
@@ -1631,7 +1683,7 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
     drop(journal);
 
     let host = FakeHost::default();
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
@@ -1822,7 +1874,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
         prepare: PrepareObservation::Successful.into(),
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
@@ -1912,7 +1964,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
         ..FakeHost::default()
     };
     for id in [1, 2] {
-        host.put_secret(core::SandboxId(id), &format!("{id:064x}"))
+        host.put_secret(core::SandboxId(id), 1, &format!("{id:064x}"))
             .unwrap();
     }
     let port = new_port(
@@ -1952,7 +2004,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
     };
-    host.put_secret(core::SandboxId(1), &format!("{:064x}", 1))
+    host.put_secret(core::SandboxId(1), 1, &format!("{:064x}", 1))
         .unwrap();
     let port = new_port(journal, host, config());
     let resumed = port.application().recover_on_startup().unwrap();
@@ -2025,7 +2077,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
         prepare: PrepareObservation::Incomplete.into(),
         ..FakeHost::default()
     };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
@@ -2371,7 +2423,7 @@ fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
     );
     drop(journal);
     let host = FakeHost::default();
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    host.put_secret(sandbox, 1, &"a".repeat(64)).unwrap();
     let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
@@ -2556,6 +2608,7 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
     let host = FakeHost::default();
     host.put_bound_launch_config(
         core::SandboxId(1),
+        1,
         &token,
         &sandproof_controller_service::CreateOptions {
             template: Some(old.templates[0].clone()),
@@ -2828,7 +2881,7 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
         assert_eq!(before.domain, configured.domain);
         drop(port);
         let host = FakeHost {
-            secrets: BTreeMap::from([(1, (created.envd_access_token.clone(), BTreeMap::new()))])
+            secrets: BTreeMap::from([((1, 1), (created.envd_access_token.clone(), BTreeMap::new()))])
                 .into(),
             ..FakeHost::default()
         };
@@ -2855,7 +2908,7 @@ fn foreign_detail_and_list_do_not_read_the_host_token() {
     drop(port);
     let host = FakeHost {
         token_error_once: AtomicBool::new(true),
-        secrets: BTreeMap::from([(1, (created.envd_access_token, BTreeMap::new()))]).into(),
+        secrets: BTreeMap::from([((1, 1), (created.envd_access_token, BTreeMap::new()))]).into(),
         ..FakeHost::default()
     };
     let port = new_port(
@@ -2913,7 +2966,7 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
 
     let wrong_host = FakeHost::default();
     wrong_host
-        .put_secret(core::SandboxId(1), &"a".repeat(64))
+        .put_secret(core::SandboxId(1), 1, &"a".repeat(64))
         .unwrap();
     let wrong = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
@@ -3466,7 +3519,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
-            secrets: BTreeMap::from([(2, (survivor.envd_access_token.clone(), BTreeMap::new()))])
+            secrets: BTreeMap::from([((2, 1), (survivor.envd_access_token.clone(), BTreeMap::new()))])
                 .into(),
             ..FakeHost::default()
         },
