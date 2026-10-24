@@ -120,6 +120,19 @@ def validate_restore_gate(record, expected, run_identity):
     return record
 
 
+def assert_same_restore_candidate(running, receipt):
+    """E7 requires the gate's host candidate, independently of guest RNG state."""
+    if (type(running) is not dict or type(receipt) is not dict
+            or type(running.get('source')) is not dict
+            or type(receipt.get('candidate')) is not dict
+            or set(receipt['candidate'])!={'resource_id','pid','start_time_ticks','boot_id'}
+            or any(running['source'].get(key)!=value for key,value in receipt['candidate'].items())
+            or type(receipt.get('namespace')) is not dict
+            or set(receipt['namespace'])!={'name','device','inode'}
+            or running.get('namespace')!=receipt['namespace']):
+        raise ValueError('recovered Running VMM/namespace differs from the original gate candidate')
+
+
 def namespace_witness(record, timeout):
     """Fixed original SDK transport in one independently checked host namespace.
 
@@ -286,7 +299,7 @@ class UnloadRuntime:
             return dict(context=occupied[0],source=expected['source'],live=True)
         return self._host_snapshot(session,deadline,observe)
 
-    def record_running(self,session,deadline,resume_acceptance=None):
+    def record_running(self,session,deadline,resume_acceptance=None,gate_receipt=None):
         def observe(audit,local,lifetime,conn):
             slots=[context for context,phase in audit['host_slots']
                 if context['binding']['sandbox']==local['sandbox'] and phase=='Occupied']
@@ -300,6 +313,19 @@ class UnloadRuntime:
             if source['resource_id']!=resource or not original_process(source):
                 raise ValueError('original live VMM not observed')
             result=dict(session=session,local=local,context=context,source=source,lifetime=lifetime)
+            if gate_receipt is not None:
+                if (resume_acceptance is None or gate_receipt.get('session')!=session
+                        or gate_receipt.get('operation')!=resume_acceptance['key']):
+                    raise ValueError('original Resume acceptance required with activation gate evidence')
+                namespace=Path('/run/netns')/resource
+                meta=namespace.lstat()
+                network=original_json(Path(native['chroot_base'])/'.claims'/resource/'network.json',16384)
+                if (not stat.S_ISREG(meta.st_mode) or meta.st_uid!=0
+                        or network['resource_id']!=resource or network['namespace_inode']!=meta.st_ino
+                        or network['namespace_device']!=meta.st_dev):
+                    raise ValueError('original recovered candidate namespace identity required')
+                result['namespace']=dict(name=resource,device=meta.st_dev,inode=meta.st_ino)
+                assert_same_restore_candidate(result,gate_receipt)
             if resume_acceptance is not None:
                 encoded,checksum=conn.execute(
                     'SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
@@ -471,6 +497,7 @@ class UnloadRuntime:
         if (namespace.lstat().st_dev,namespace.lstat().st_ino)!=(meta.st_dev,meta.st_ino) or not original_process(source):
             raise ValueError('candidate identity changed during fixed read observation')
         receipt=dict(session=session,operation=accepted['key'],candidate=source,
+            namespace=expected['namespace'],
             action_sha256=hashlib.sha256(json.dumps(action,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
             ram_nonce_sha256=hashlib.sha256(witness['nonce'].encode()).hexdigest(),
             activation_nonce_sha256=hashlib.sha256(witness['activation_nonce'].encode()).hexdigest(),

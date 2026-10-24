@@ -78,7 +78,9 @@ while True:
         current_metadata_hash=None
     if current_metadata_hash is not None and current_metadata_hash!=previous_metadata_hash:
         # Only RAM holds both the credential hash and this fresh random value.
-        # Reloading the old capture creates a different activation nonce.
+        # This records metadata observation in RAM. Clone RNG reseeding can
+        # race guest execution: this nonce does not prove a distinct VMM.
+        # E7 separately binds recovery to the same host candidate identity.
         activation_nonce=secrets.token_hex(32)
         metadata_generation+=1
         previous_metadata_hash=current_metadata_hash
@@ -486,7 +488,7 @@ class PublicUnloadScenario:
                 self.witness['nonce'].encode()).hexdigest(),guest_pid=process.pid,
             guest_start_time_ticks=self.witness['start_time_ticks'],counter=1)
 
-    def assert_resumed_workload(self,running,gate_receipt=None):
+    def assert_resumed_workload(self,running,gate_receipt=None,physical_running=None):
         previous=copy.deepcopy(self.witness)
         old_token=self.data_token
         sandbox=self.sdk()
@@ -495,10 +497,12 @@ class PublicUnloadScenario:
         observed=wait_witness_generation(lambda:self.witness_command(sandbox,'read'),
             previous,self.deadline)
         if gate_receipt is not None:
+            from lifecycle_unload_runtime import assert_same_restore_candidate
+            assert_same_restore_candidate(physical_running,gate_receipt)
             assert gate_receipt['guest_pid']==observed['pid']
             assert gate_receipt['guest_start_time_ticks']==observed['start_time_ticks']
             assert gate_receipt['activation_nonce_sha256']==hashlib.sha256(
-                observed['activation_nonce'].encode()).hexdigest(), 'old capture was loaded after lost activation acknowledgement'
+                observed['activation_nonce'].encode()).hexdigest(), 'recovered RAM state differs from the sealed gate observation'
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(previous['counter'])
         current=self.witness_command(sandbox,'advance')
         assert {key:current[key] for key in ('nonce','pid','start_time_ticks')}=={

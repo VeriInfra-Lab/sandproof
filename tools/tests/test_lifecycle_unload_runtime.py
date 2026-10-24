@@ -243,6 +243,27 @@ class RestoreGateBindingTests(unittest.TestCase):
         for name in ('RAM_WITNESS_SERVER','RAM_WITNESS_READY','RAM_WITNESS_CLIENT'):
             compile(getattr(scene,name),'<original-guest-witness>','exec')
 
+    def test_recovered_running_requires_exact_gate_candidate_and_namespace(self):
+        receipt=dict(candidate=self.expected['candidate'],namespace=self.expected['namespace'])
+        running=dict(source=dict(self.expected['candidate']),namespace=dict(self.expected['namespace']))
+        runtime.assert_same_restore_candidate(running,receipt)
+        # Snapshot restoration can reproduce guest PID/start ticks and RNG
+        # output. Those identical values must not excuse a different host VMM.
+        running['guest_witness']=dict(nonce='a'*64,activation_nonce='b'*64,pid=9,start_time_ticks=10)
+        receipt['guest_witness']=dict(running['guest_witness'])
+        for key,value in (('resource_id','vm-other-1'),('pid',124),
+                          ('start_time_ticks',457),('boot_id','other-boot')):
+            changed=dict(running,source=dict(running['source'],**{key:value}))
+            with self.subTest(candidate_field=key),self.assertRaises(ValueError):
+                runtime.assert_same_restore_candidate(changed,receipt)
+        for key,value in (('name','vm-other-1'),('device',9),('inode',10)):
+            changed=dict(running,namespace=dict(running['namespace'],**{key:value}))
+            with self.subTest(namespace_field=key),self.assertRaises(ValueError):
+                runtime.assert_same_restore_candidate(changed,receipt)
+        with self.assertRaises(ValueError):runtime.assert_same_restore_candidate(None,receipt)
+        changed=dict(running);changed.pop('namespace')
+        with self.assertRaises(ValueError):runtime.assert_same_restore_candidate(changed,receipt)
+
 
 class WitnessMetadataBarrierTests(unittest.TestCase):
     def setUp(self):
