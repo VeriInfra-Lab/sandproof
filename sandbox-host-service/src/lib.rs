@@ -362,6 +362,23 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         .await
         .map_err(|_| ReceiveError::Unavailable)?
     }
+    async fn observe_resume(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        let permit = Arc::clone(&self.observations).try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.observe_lifecycle_resume(&intent, &context).map_err(|error| match error {
+                JournalError::Conflict => ReceiveError::Conflict,
+                JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                _ => ReceiveError::Unavailable,
+            })
+        }).await.map_err(|_| ReceiveError::Unavailable)?
+    }
     async fn record_lifecycle(
         &self,
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
