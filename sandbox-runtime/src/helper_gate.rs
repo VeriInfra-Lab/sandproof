@@ -21,10 +21,9 @@ use std::{
 
 const EXEC_GATE: &str =
     "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec \"$@\"";
-// In the Full preparation role, fd2 retains this slot's lock across the
-// initial shell exec. Only a durable caller-authorized release replaces it.
-// Diagnostics after release join the bounded result pipe; parsers must reject
-// anything other than their exact single reply frame.
+// The Full worker retains the slot lock on fd3 across exec. This shell gate
+// only starts bounded preparation; the worker's distinct post-SQL Release
+// controls Full. Ready and the final reply share one bounded output pipe.
 const CAPTURE_EXEC_GATE: &str = "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 3>&2 || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
 pub const MAX_HELPER_MARKER_BYTES: u64 = 16_384;
 
@@ -153,7 +152,6 @@ struct OwnedMarker {
 pub struct PreparedTrackedChild {
     child: OwnedChild,
     witness: OwnedMarker,
-    retain_after_release: bool,
 }
 impl PreparedTrackedChild {
     #[must_use]
@@ -495,11 +493,11 @@ impl RuntimeHelperGuard {
         self.release_tracked(prepared)
     }
 
-    /// Prepare Full's child with its slot lock held on fd2 until permission.
-    /// After release, stderr joins stdout; a Full consumer must require exactly
-    /// one bounded reply frame and reject diagnostics mixed with that frame.
-    /// A caller using this for Full must save the same process/job under its
-    /// original durable work before invoking `release_tracked`.
+    /// Prepare Full's child with its exact process witness and retained lock.
+    /// `release_tracked` starts preparation only. The caller must deliver the
+    /// complete job, validate Ready, then save that same process/job in SQL
+    /// before sending the worker's distinct Full Release. Diagnostics mixed
+    /// with either bounded output frame refuse the preparation/result.
     /// # Errors
     /// Any launch/publication error retains uncertain process evidence.
     pub fn prepare_tracked(
@@ -589,11 +587,6 @@ impl RuntimeHelperGuard {
             .as_mut()
             .ok_or(RuntimeError::Protocol("tracked helper gate pipe"))?
             .write_all(b"release\n")?;
-        // Only Full's retained gate marks this child as durably handed off.
-        // Ordinary helpers retain their original stop-on-Drop policy.
-        if prepared.retain_after_release {
-            prepared.child.retain_until_exit();
-        }
         Ok(prepared.child)
     }
 
@@ -777,7 +770,6 @@ impl RuntimeHelperGuard {
         Ok(PreparedTrackedChild {
             child,
             witness,
-            retain_after_release: retain_waiting_gate,
         })
     }
 
@@ -2081,21 +2073,15 @@ mod tests {
                 "/bin/sh",
                 &[
                     "-c",
-                    "printf ready; IFS= read -r release < \"$1\"",
+                    "printf 'ready\n'; IFS= read -r release < \"$1\"",
                     "full-worker",
                     fifo.to_str().unwrap(),
                 ],
             )
             .unwrap();
         let mut child = guard.release_tracked(prepared).unwrap();
-        let mut ready = [0; 5];
-        child
-            .stdout
-            .as_mut()
-            .unwrap()
-            .read_exact(&mut ready)
-            .unwrap();
-        assert_eq!(&ready, b"ready");
+        let ready = child.prepare_full(&[], HelperLimits::CONTROL).unwrap();
+        assert_eq!(ready, b"ready\n");
         drop(child);
         drop(guard);
         assert!(acquire(&context, false).is_err());

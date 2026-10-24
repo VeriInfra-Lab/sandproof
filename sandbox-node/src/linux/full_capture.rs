@@ -95,7 +95,7 @@ fn require_expected_request(
 }
 
 impl LinuxWorker {
-    pub(crate) fn recover_full_api_end(
+    pub(crate) fn recover_full_request_end(
         &self,
         provider: &ProtectedHostEpochSource,
         profile: &ProtectedCaptureProfile,
@@ -103,7 +103,7 @@ impl LinuxWorker {
         full: &FullCaptureWorkRequest,
         source: &SourceObservationRequirement,
         worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
-    ) -> NodeResult<sandproof_controller_service::capture::CaptureApiEndObservation> {
+    ) -> NodeResult<sandproof_controller_service::capture::CaptureRequestEndObservation> {
         let context = self.require_full_action(action, full)?;
         require_source_binding(&full.pause, source)?;
         let process = RuntimeProcessIdentity {
@@ -121,7 +121,7 @@ impl LinuxWorker {
         let original = crate::source_observation::expected_source(source)?;
         let record = profile
             .layout
-            .read_full_api_end(full_snapshot::capture_directory_key(&full.pause.binding)?)?;
+            .read_full_request_end(full_snapshot::capture_directory_key(&full.pause.binding)?)?;
         record.require_original(
             source.resource.id.as_str(),
             &original,
@@ -130,7 +130,7 @@ impl LinuxWorker {
             &process,
         )?;
         // This is not a pause/continue action, material adoption or SQL receipt.
-        // A GET on a different socket without the original marker is insufficient.
+        // A GET on a different socket without the original tagged end record is insufficient.
         if !matches!(
             expected
                 .runtime
@@ -139,7 +139,7 @@ impl LinuxWorker {
         ) || process.is_alive()?
             || self.require_full_action(action, full)? != context
         {
-            return Err("original Full API-end context/source changed".into());
+            return Err("original Full request-end context/source changed".into());
         }
         provider.observe_original(
             &source.node,
@@ -147,12 +147,15 @@ impl LinuxWorker {
             self.host_bootstrap_inputs(),
         )?;
         Ok(
-            sandproof_controller_service::capture::CaptureApiEndObservation {
+            sandproof_controller_service::capture::CaptureRequestEndObservation {
                 action: action.clone(),
                 full_work_binding: full.binding_digest()?,
                 worker: worker.clone(),
                 source: source.source.clone(),
-                http_status: record.status(),
+                outcome: match record.outcome() {
+                    sandbox_runtime::FullCaptureRequestOutcome::NoRequest => sandproof_controller_service::capture::CaptureRequestEndOutcome::NoRequest,
+                    sandbox_runtime::FullCaptureRequestOutcome::Returned { http_status, .. } => sandproof_controller_service::capture::CaptureRequestEndOutcome::Returned { http_status },
+                },
             },
         )
     }

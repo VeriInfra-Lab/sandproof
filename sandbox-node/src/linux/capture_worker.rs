@@ -7,8 +7,8 @@ use crate::{
     full_snapshot::{self, ExpectedFullCapture},
 };
 use sandbox_runtime::{
-    FullCaptureApiContext, FullCaptureLimits, HelperLimits, OriginalPauseObservation,
-    PreparedTrackedChild, RuntimeConfig, RuntimeHelperGuard, RuntimeProcessIdentity,
+    FullCaptureApiContext, FullCaptureLimits, HelperLimits, OwnedChild, OriginalPauseObservation,
+    RuntimeConfig, RuntimeHelperGuard, RuntimeProcessIdentity,
     SnapshotLayout, snapshot_store::BundleReadLimits,
 };
 use sandproof_controller_service::capture::{
@@ -20,10 +20,12 @@ use sandproof_protocol::lifecycle::ContentDigest;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    io::{Read, Write},
     path::PathBuf,
-    time::Duration,
+    time::{Duration, Instant},
 };
+
+#[path = "capture_worker_handshake.rs"]
+mod handshake;
 
 #[path = "capture_worker_completion.rs"]
 mod completion;
@@ -32,9 +34,12 @@ pub(super) use completion::read_completion;
 pub const CAPTURE_WORKER_INPUT_BYTES: usize = 1_048_576;
 pub const CAPTURE_WORKER_OUTPUT_BYTES: usize = 4096;
 
-/// Only an actual prepared process. It grants no release, budget or Full success.
+/// A complete bound Ready from the original worker, not permission for Full.
 pub struct PreparedCaptureWorker {
-    pub(super) child: PreparedTrackedChild,
+    pub(super) child: OwnedChild,
+    process: RuntimeProcessIdentity,
+    ready_bytes: usize,
+    started: Instant,
     pub(super) gate: RuntimeHelperGuard,
     pub(super) job: CaptureWorkerJob,
     pub(super) body: Vec<u8>,
@@ -44,7 +49,7 @@ pub struct PreparedCaptureWorker {
 impl PreparedCaptureWorker {
     #[must_use]
     pub fn process(&self) -> &RuntimeProcessIdentity {
-        self.child.process()
+        &self.process
     }
     #[must_use]
     pub const fn job_digest(&self) -> &ContentDigest {
@@ -71,13 +76,14 @@ impl PreparedCaptureWorker {
     }
 
     fn require_launch_permit(&self, permit: &FullCaptureLaunchPermit) -> NodeResult<()> {
+        let payload = handshake::frame_payload(&self.body)?;
         if permit.action() != &self.job.action
             || permit.full_work_binding() != &self.full_work_binding
             || self.job.full.binding_digest()? != self.full_work_binding
             || permit.worker() != &self.worker_binding()?
             || self.body.len() > CAPTURE_WORKER_INPUT_BYTES
-            || serde_json::to_vec(&self.job)? != self.body
-            || digest(&self.body) != self.job_digest
+            || serde_json::to_vec(&self.job)? != payload
+            || digest(payload) != self.job_digest
             || !self.job.full.valid()
         {
             return Err("original committed Full/action/process/job permission differs".into());
@@ -95,21 +101,23 @@ impl PreparedCaptureWorker {
         self.require_launch_permit(&permit)?;
         // Consume this unique post-commit permission before opening the child gate.
         drop(permit);
+        let timeout = Duration::from_millis(self.job.full.worker_timeout_ms)
+            .checked_sub(self.started.elapsed()).filter(|value| !value.is_zero())
+            .ok_or("Full caller deadline elapsed before release")?;
         let limits = HelperLimits {
-            timeout: Duration::from_millis(self.job.full.worker_timeout_ms),
+            timeout,
             input_bytes: CAPTURE_WORKER_INPUT_BYTES,
-            stdout_bytes: CAPTURE_WORKER_OUTPUT_BYTES,
+            stdout_bytes: CAPTURE_WORKER_OUTPUT_BYTES - self.ready_bytes,
             stderr_bytes: 0,
         };
-        let mut child = self.gate.release_tracked(self.child)?;
-        let output = child.exchange(&self.body, limits)?;
+        let mut child = self.child;
+        let output = child.exchange(handshake::RELEASE, limits)?;
         let manifest = decode_reply(self.job_digest, &output)?;
         read(&self.job, manifest)
     }
 
-    /// Stop only this still-prepared child before dropping its slot lock.
-    /// This is not an exit/Full-end or budget-release receipt; uncertain child
-    /// exits remain in the original witness/reaper for separate observation.
+    /// Close the Ready worker's release pipe. Only that worker may persist its
+    /// NoRequest decision; dropping these handles supplies no end receipt.
     pub fn cancel(self) {
         drop(self.child);
         drop(self.gate);
@@ -122,12 +130,13 @@ impl PreparedCaptureWorker {
         executable: &std::path::Path,
         job: CaptureWorkerJob,
     ) -> NodeResult<Self> {
+        let started = Instant::now();
         sandbox_runtime::check_trusted_path(executable)?;
         if !executable.is_file() {
             return Err("capture worker executable is not a protected file".into());
         }
         let body = serde_json::to_vec(&job)?;
-        if body.len() > CAPTURE_WORKER_INPUT_BYTES {
+        if body.len() > CAPTURE_WORKER_INPUT_BYTES - 4 {
             return Err("capture worker input exceeds bound".into());
         }
         let job_digest = digest(&body);
@@ -136,12 +145,26 @@ impl PreparedCaptureWorker {
             .to_str()
             .ok_or("capture worker executable path is not UTF-8")?;
         let hex = format!("{:x}", Sha256::digest(&body));
-        let child = gate.prepare_tracked(slot, name, &["capture-worker", &hex])?;
+        let prepared = gate.prepare_tracked(slot, name, &["capture-worker", &hex])?;
+        let process = prepared.process().clone();
+        let mut child = gate.release_tracked(prepared)?;
+        let frame = handshake::job_frame(body)?;
+        let ready = child.prepare_full(&frame, HelperLimits {
+            timeout: Duration::from_millis(job.full.worker_timeout_ms),
+            input_bytes: CAPTURE_WORKER_INPUT_BYTES,
+            stdout_bytes: 1024,
+            stderr_bytes: 0,
+        })?;
+        handshake::check_ready(&ready, job_digest, &process)?;
+        if !process.is_alive()? { return Err("Full worker exited before Ready handoff".into()); }
         Ok(Self {
             child,
+            process,
+            ready_bytes: ready.len(),
+            started,
             gate,
             job,
-            body,
+            body: frame,
             job_digest,
             full_work_binding,
         })
@@ -245,7 +268,7 @@ fn decode_job(expected: ContentDigest, body: &[u8]) -> NodeResult<CaptureWorkerJ
 }
 
 impl CaptureWorkerJob {
-    fn execute(&self, job_digest: ContentDigest) -> NodeResult<ContentDigest> {
+    fn validate_job(&self) -> NodeResult<()> {
         require_source_binding(&self.full.pause, &self.source)?;
         self.action.identity.validate_version()?;
         let core::Command::SealSnapshot { vm, .. } = self.action.command.command() else {
@@ -264,6 +287,11 @@ impl CaptureWorkerJob {
         {
             return Err("capture worker original machine/work binding differs".into());
         }
+        Ok(())
+    }
+
+    fn execute(&self, job_digest: ContentDigest) -> NodeResult<ContentDigest> {
+        self.validate_job()?;
         let provider = ProtectedHostEpochSource::at(self.bootstrap_path.clone())?;
         let inputs = crate::host_epoch::Inputs {
             namespace: &self.namespace,
@@ -380,30 +408,8 @@ impl CaptureWorkerJob {
 /// # Errors
 /// Invalid invocation or reply I/O fails the process; no VM Stop/Resume occurs.
 pub fn run_capture_worker(expected_job_digest: &str) -> NodeResult<()> {
-    let expected = decode_digest(expected_job_digest)?;
-    let mut body = Vec::new();
-    let outcome = match std::io::stdin()
-        .take(u64::try_from(CAPTURE_WORKER_INPUT_BYTES)? + 1)
-        .read_to_end(&mut body)
-    {
-        Ok(_) => match decode_job(expected, &body).and_then(|job| job.execute(expected)) {
-            Ok(manifest_digest) => CaptureWorkerOutcome::Captured { manifest_digest },
-            Err(_) => CaptureWorkerOutcome::Failed,
-        },
-        Err(_) => CaptureWorkerOutcome::Failed,
-    };
-    let reply = serde_json::to_vec(&CaptureWorkerReply {
-        job_digest: expected,
-        outcome,
-    })?;
-    if reply.len() > CAPTURE_WORKER_OUTPUT_BYTES {
-        return Err("capture worker reply exceeds bound".into());
-    }
-    let mut output = std::io::stdout().lock();
-    output.write_all(&reply)?;
-    output.write_all(b"\n")?;
-    output.flush()?;
-    Ok(())
+    handshake::run(expected_job_digest)
+
 }
 
 #[cfg(test)]

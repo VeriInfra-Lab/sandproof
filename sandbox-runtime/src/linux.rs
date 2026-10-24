@@ -57,7 +57,7 @@ pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
 pub use snapshot::{
-    CapturedFullSnapshot, FullCaptureApiContext, FullCaptureApiEnd, FullCaptureLimits,
+    CapturedFullSnapshot, FullCaptureApiContext, FullCaptureRequestEnd, FullCaptureRequestOutcome, FullCaptureLimits,
     OriginalConfigurationObservation, OriginalPauseObservation, PausedOriginalVm,
     PublishedFullCapture, SourceConfigurationLimits,
 };

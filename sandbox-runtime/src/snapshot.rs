@@ -7,12 +7,12 @@
 use super::{
     Runtime, RuntimeError, RuntimeProcessIdentity, SnapshotLayout, validate_id, verified_process,
 };
-#[path = "snapshot_api_end.rs"]
-mod api_end;
+#[path = "snapshot_request_end.rs"]
+mod request_end;
 #[path = "snapshot_full_wait.rs"]
 pub(crate) mod full_wait;
-use api_end::full_capture_request;
-pub use api_end::{FullCaptureApiContext, FullCaptureApiEnd};
+use request_end::full_capture_request;
+pub use request_end::{FullCaptureApiContext, FullCaptureRequestEnd, FullCaptureRequestOutcome};
 
 use crate::snapshot_store::{
     PublishedSnapshotFiles, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStage,
@@ -341,7 +341,7 @@ impl Runtime {
         let (status, response) = super::api_response::read_reply(&mut stream)?;
         // Only a complete response on the checked original VMM connection can
         // create this marker. Timeouts/short frames cannot reach this point.
-        let api_end = FullCaptureApiEnd::returned(
+        let api_end = FullCaptureRequestEnd::returned(
             &paused.original.resource_id,
             &paused.original.identity,
             directory_key,
@@ -350,7 +350,7 @@ impl Runtime {
             status,
             &response,
         )?;
-        layout.publish_full_api_end(&api_end, &paused.original.identity)?;
+        layout.publish_full_request_end(&api_end, &paused.original.identity)?;
         if !(200..300).contains(&status) {
             return Err(RuntimeError::Api {
                 status,

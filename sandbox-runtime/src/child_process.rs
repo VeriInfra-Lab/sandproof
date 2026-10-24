@@ -13,6 +13,7 @@ use std::{
 };
 
 mod reaper;
+mod preparation;
 use reaper::Slot;
 
 /// Trusted operation policy, not a client-selected guest command budget.
