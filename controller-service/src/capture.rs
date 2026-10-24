@@ -6,11 +6,13 @@
 
 use serde::{Deserialize, Serialize};
 mod launch;
+mod restore;
 mod source;
 mod work;
 pub use launch::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureResult, PreparedFullCapture,
 };
+pub use restore::{RestoreActivationPermit, RestoreWorkRequest};
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
 pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 

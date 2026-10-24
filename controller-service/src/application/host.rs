@@ -16,6 +16,19 @@ pub trait WorkEvidence {
 
 /// Execute only controller-claimed work; transport loss remains unknown.
 pub trait WorkExecution: WorkEvidence {
+    /// Load paused or activate only the original durably claimed candidate.
+    /// Activation requires the permit obtained after recording MayHaveExecuted.
+    /// # Errors
+    /// An unknown effect retains the same candidate and material obligation.
+    fn execute_lifecycle_restore_action(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::RestoreWorkRequest,
+        _activation: Option<&crate::capture::RestoreActivationPermit>,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        Err(WorkerTransportError::ConnectionLost)
+    }
+
     /// Propose protected local capture parameters; this performs no Pause/Full.
     /// # Errors
     /// Missing configuration or physical envelope refuses capture admission.
@@ -64,6 +77,15 @@ pub trait WorkExecution: WorkEvidence {
 
 /// Observe or reconcile exact previously dispatched work, never arbitrary replay.
 pub trait WorkRecovery: WorkEvidence {
+    /// Observe the same persisted restore; this must not load another VMM.
+    fn observe_lifecycle_restore_action(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::RestoreWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        None
+    }
+
     /// Observe the same persisted capture attempt without starting another Full.
     fn observe_lifecycle_capture_action(
         &self,
