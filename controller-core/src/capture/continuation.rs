@@ -103,6 +103,7 @@ pub struct OriginalContinuation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CaptureInput {
+    RetireTerminatedCapture(super::drain::CaptureDrainCoverage),
     PrepareOriginalContinue {
         identity: OriginalContinueIdentity,
         end_receipt: CaptureWorkEndReceipt,
@@ -113,12 +114,15 @@ pub enum CaptureInput {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureEvent {
+    RetireTerminatedCapture(OperationKey, OperationKey),
     PrepareOriginalContinue(OriginalContinueIdentity),
     PublishOriginalContinued(OriginalContinueIdentity),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureReject {
     ControllerDown,
+    DrainNotConfirmed,
+    StopNotObserved,
     SandboxNotFound,
     Terminal,
     WrongPhase,
@@ -241,11 +245,14 @@ fn source_resources(world: &World, id: OriginalContinueIdentity) -> Result<(), C
         resources_ready = match world.vm_record(other) {
             None => false,
             Some(machine) => {
-                other == id.vm
-                    || !matches!(
-                        machine.status,
-                        VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen
-                    )
+                if other == id.vm {
+                    true
+                } else {
+                    match machine.status {
+                        VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen => false,
+                        VmStatus::Stopped | VmStatus::Reclaimed => true,
+                    }
+                }
             }
         };
         position += 1;
@@ -783,6 +790,9 @@ pub fn handle_capture(
     input: CaptureInput,
 ) -> Result<CaptureDecision, CaptureReject> {
     match input {
+        CaptureInput::RetireTerminatedCapture(coverage) => {
+            super::drain::retire_terminated_capture(world, coverage)
+        }
         CaptureInput::PrepareOriginalContinue {
             identity,
             end_receipt,

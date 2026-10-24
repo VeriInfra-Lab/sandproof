@@ -323,6 +323,7 @@ fn external_dependencies_closed(
         && foreign_logical_dependencies_closed(world, sandbox, workspace, ids)
         && foreign_stop_coverages_closed(world, sandbox)
         && foreign_capture_ends_closed(world, sandbox, workspace, ids)
+        && foreign_capture_drains_closed(world, sandbox, workspace, ids)
         && foreign_effect_dependencies_closed(world, sandbox, workspace, ids)
         && foreign_effect_keys_closed(world, sandbox, workspace, ids)
         && foreign_inflight_dependencies_closed(world, sandbox, workspace, ids)
@@ -480,6 +481,30 @@ fn foreign_capture_ends_closed(
         id.command().sandbox() != sandbox && matches!(status,
             EffectStatus::RetiredByCaptureEnd(receipt) if end_references(*receipt,workspace,ids))
     })
+}
+
+fn drain_references(
+    coverage: crate::capture::drain::CaptureDrainCoverage,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    coverage.identity.key.sandbox == sandbox
+        || coverage.stop.operation.sandbox == sandbox
+        || ids.vms.contains(&coverage.identity.vm)
+        || coverage.end_receipt.seal.workspace == workspace
+        || ids.snapshots.contains(&coverage.end_receipt.seal.snapshot)
+}
+fn foreign_capture_drains_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    !world.logical_effects.entries().iter().any(|(id,logical)|id.command.sandbox() != sandbox
+        && matches!(logical.result,Some(LogicalEffectResult::RetiredByCaptureDrain {coverage,..}) if drain_references(coverage,sandbox,workspace,ids)))
+        && !world.effects.entries().iter().any(|(id,status)|id.command().sandbox() != sandbox
+            && matches!(status,EffectStatus::RetiredByCaptureDrain(coverage) if drain_references(*coverage,sandbox,workspace,ids)))
 }
 
 fn foreign_stop_coverages_closed(world: &World, sandbox: SandboxId) -> bool {
@@ -1110,6 +1135,14 @@ fn check_logical_effects(
                     && end_receipt == stored
                     && crate::capture::continuation::retired_capture_end_valid(world, &id, stored)
             }
+            (
+                Some(LogicalEffectResult::RetiredByCaptureDrain { attempt, coverage }),
+                EffectStatus::RetiredByCaptureDrain(stored),
+            ) => {
+                attempt == id.attempt
+                    && coverage == stored
+                    && crate::capture::drain::retired_capture_drain_valid(world, &id, stored)
+            }
             (_, EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => {
                 return Err(RetirementReject::UnresolvedEffects);
             }
@@ -1157,6 +1190,8 @@ fn check_effect_attempts(world: &World, sandbox: SandboxId) -> Result<(), Retire
             EffectStatus::RetiredByCaptureEnd(receipt)
                 if crate::capture::continuation::retired_capture_end_valid(world, id, *receipt) => {
             }
+            EffectStatus::RetiredByCaptureDrain(coverage)
+                if crate::capture::drain::retired_capture_drain_valid(world, id, *coverage) => {}
             EffectStatus::Committed if obsolete_committed(world, id, logical) => {}
             EffectStatus::Dispatched | EffectStatus::OutcomeUnknown => {
                 return Err(RetirementReject::UnresolvedEffects);

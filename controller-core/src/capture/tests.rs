@@ -553,6 +553,7 @@ fn finite_capture_state_space_preserves_uses_and_never_revives_failed_registrati
                         capture_work,
                         unload_source,
                         original_continuation: None,
+                        terminal_drain: None,
                     };
                     let failed = original.ordinary_failure();
                     assert_eq!(failed.commit(), original.commit());

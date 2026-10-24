@@ -82,6 +82,14 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
                         world, &current, stored,
                     )
             }
+            (
+                Some(LogicalEffectResult::RetiredByCaptureDrain { attempt, coverage }),
+                EffectStatus::RetiredByCaptureDrain(stored),
+            ) => {
+                attempt == current.attempt
+                    && coverage == stored
+                    && crate::capture::drain::retired_capture_drain_valid(world, &current, stored)
+            }
             _ => false,
         };
         if !consistent {
