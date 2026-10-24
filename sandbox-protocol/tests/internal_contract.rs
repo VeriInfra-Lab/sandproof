@@ -14,7 +14,7 @@ fn deployed_contract_formats_bind_the_single_retention_lane_protocol() {
     let versions = sandproof_protocol::internal::ContractVersions::current();
     assert_eq!(versions.internal_protocol, 2);
     assert_eq!(versions.center_store, 9);
-    assert_eq!(versions.host_store, 20);
+    assert_eq!(versions.host_store, 21);
 }
 
 #[test]
