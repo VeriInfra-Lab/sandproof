@@ -618,3 +618,43 @@ fn terminal_drain_preserves_end_already_referenced_by_original_continuation_hist
         before_end
     );
 }
+
+#[test]
+fn terminal_drain_recovery_rejects_canonical_sql_end_that_disagrees_with_native_coverage() {
+    use sha2::{Digest, Sha256};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source, _) = pending(&path, false, true);
+    destroy(&mut journal);
+    stop(&mut journal, source.work.anchor.local.sandbox);
+    let work = journal.lifecycle_terminated_capture_work(&source.work).unwrap();
+    journal.retire_lifecycle_terminated_capture(
+        &source.work, observed(&work), &mut NeverCrash,
+    ).unwrap();
+    let original_world = journal.world().unwrap();
+    {
+        let tx = journal.journal.connection.unchecked_transaction().unwrap();
+        assert_eq!(crate::controller::checkpoint::load_world(&tx).unwrap(), original_world);
+        tx.commit().unwrap();
+    }
+    let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    let mut json = serde_json::to_value(&saved).unwrap();
+    let inode = json["capture"]["end"]["observation"]["helper_gate_inode"].as_u64().unwrap();
+    json["capture"]["end"]["observation"]["helper_gate_inode"] = serde_json::json!(inode + 1);
+    let changed_observation: TerminatedCaptureObservation =
+        serde_json::from_value(json["capture"]["end"]["observation"].clone()).unwrap();
+    assert!(changed_observation.matches(&work).unwrap());
+    let changed: SourceWorkRecord = serde_json::from_value(json).unwrap();
+    let bytes = serde_json::to_vec(&changed).unwrap();
+    // Change only the synthetic SQL row and its own valid canonical digest.
+    // The original native CaptureDrainCoverage/end_binding remains untouched.
+    assert_eq!(journal.journal.connection.execute(
+        "UPDATE controller_source_work_records SET state_json=?1,sha256=?2 WHERE work_key=?3",
+        rusqlite::params![&bytes,Sha256::digest(&bytes).as_slice(),source.work.requirement().work_binding.as_bytes().as_slice()],
+    ).unwrap(), 1);
+    let tx = journal.journal.connection.unchecked_transaction().unwrap();
+    assert!(matches!(
+        crate::controller::checkpoint::load_world(&tx),
+        Err(JournalError::CorruptStore)
+    ));
+}
