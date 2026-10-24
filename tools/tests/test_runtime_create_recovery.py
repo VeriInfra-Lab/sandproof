@@ -338,7 +338,6 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             ('host',('operations',0,'accepted_version'),2.0),
             ('host',('operations',0,'binding','expected','version'),True),
             ('host',('operations',0,'binding','protocol_version'),4.0),
-            ('host',('operations',0,'binding','protocol_version'),3),
             ('host',('operations',0,'confirmed_terminal','request','retention','slot'),True),
             ('host',('operations',0,'confirmed_terminal','request','accepted_version'),2.0),
         ]
@@ -352,6 +351,13 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             with self.subTest(side=side,path=path),self.assertRaises(ValueError):
                 terminal_result(center,host,self.identity)
         self.assertEqual(terminal_result(self.center,self.host,self.identity)['status'],'cleaned')
+
+    def test_previous_lifecycle_protocol_cannot_authenticate_current_result(self):
+        self.insert(terminal=True)
+        host=copy.deepcopy(self.host)
+        host['operations'][0]['binding']['protocol_version']=3
+        with self.assertRaises(ValueError):
+            terminal_result(self.center,host,self.identity)
 
     def test_original_create_requires_exact_positive_incarnation_operation(self):
         self.insert()
@@ -494,6 +500,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_prepared_checkpoint_and_recovery_require_explicit_supervisor_authority(self):
         self.template['templateId'] = 'ci-' + 'a'*32
         (self.root/'runtime-intent.json').write_text(json.dumps(self.intent))
+        (self.root/'runtime-intent.json').chmod(0o600)
         self.assertEqual(self.load_checkpoint(prepared_ci=True), self.intent)
         with self.assertRaises(ValueError):
             self.load_checkpoint()
@@ -509,6 +516,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_two_point_one_requires_exact_live_dataset_binding(self):
         self.intent['metadata']['benchmark'] = 'terminal-bench@2.1'
         (self.root/'runtime-intent.json').write_text(json.dumps(self.intent))
+        (self.root/'runtime-intent.json').chmod(0o600)
         with self.assertRaises(ValueError):
             self.load_checkpoint()
         self.assertEqual(load_runtime_intent(self.root, task='sample', runtime_attempt='e'*32,
@@ -522,6 +530,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_checkpoint_requires_exact_task_attempt_build_revision_and_fingerprint(self):
         checkpoint = self.root/'runtime-intent.json'
         checkpoint.write_text(json.dumps(self.intent))
+        checkpoint.chmod(0o600)
         self.assertEqual(self.load_checkpoint(), self.intent)
         variants = []
         for field, value in (('task', 'previous-task'), ('runtime_attempt', 'f'*32),
@@ -543,6 +552,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_checkpoint_rejects_partial_duplicate_and_oversized_json(self):
         for raw in ('{', '{"metadata":{},"metadata":{}}', ' '*(256*1024+1)):
             (self.root/'runtime-intent.json').write_text(raw)
+            (self.root/'runtime-intent.json').chmod(0o600)
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 self.load_checkpoint()
 
@@ -562,6 +572,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             self.load_checkpoint()
         checkpoint.unlink()
         checkpoint.write_text(json.dumps(self.intent))
+        checkpoint.chmod(0o600)
         self.root.chmod(0o755)
         try:
             with self.assertRaises(ValueError):
