@@ -165,3 +165,14 @@ fn both_commit_boundaries_keep_original_plan_and_settlement_recoverable() {
         assert_eq!(material_charge(&saved(&journal)).unwrap() == 0, point == CrashPoint::AfterCommit);
     }
 }
+
+#[test]
+fn historical_unloaded_bundle_is_not_a_terminal_material_gc_permit() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, source) = fixture::unloaded_resume_source(&dir.path().join("db"));
+    let before = journal.world().unwrap();
+    assert!(journal.lifecycle_material_retirement_questions(source.work.anchor.local.sandbox).is_err());
+    assert_eq!(journal.world().unwrap(), before);
+    assert!(saved(&journal).retirement.is_none());
+    assert!(material_charge(&saved(&journal)).unwrap() > 0);
+}
