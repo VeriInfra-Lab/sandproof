@@ -166,7 +166,7 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
         accepted=client.current_acceptance
         return dict(session=client.session,operation=accepted['key'],
             current_version=accepted['accepted_version'],phase=phase,
-            unloaded={} if phase=='unloaded' else None,create_refusal=None)
+            unload_outcome=({'state':'unloaded','facts':{}} if phase=='unloaded' else {'state':'pending'} if phase=='unloading' else None),create_refusal=None)
 
     def test_two_restore_cycles_keep_session_owner_and_monotone_original_keys(self):
         client=self.client()
@@ -304,7 +304,7 @@ class DuplicateUnloadHistoryTests(unittest.TestCase):
         operations=[dict(binding=dict(session='session',key=dict(key,sequence=1)),
             operation=dict(kind='create')),unload]
         audit=dict(sandboxes=[dict(create=dict(binding=dict(session='session')),operations=operations)])
-        saved=dict(unloaded=dict(capture=1,source_incarnation=1))
+        saved=dict(unload_outcome=dict(state='unloaded',facts=dict(capture=1,source_incarnation=1)))
         result=runtime.original_unload_operation(audit,acceptance,saved)
         self.assertEqual(result['matching_operations'],1)
         self.assertEqual(result['original_session_operations'],2)

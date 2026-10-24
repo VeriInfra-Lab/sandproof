@@ -162,7 +162,7 @@ impl<H: HostPort, T: TemplateProvider>
                     operation: current.request.binding.key,
                     current_version: current.accepted_version,
                     phase: sandproof_protocol::lifecycle::PublicSessionPhase::Running,
-                    unloaded: None,
+                    unload_outcome: None,
                     create_refusal: None,
                 });
             }

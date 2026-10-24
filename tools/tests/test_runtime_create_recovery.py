@@ -187,9 +187,9 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             unloaded=dict(request=dict(request=dict(binding=copy.deepcopy(operation['binding']),
                 operation=dict(kind='unload', source_incarnation=1, capture=1)),
                 center=copy.deepcopy(operation['center']), retention=copy.deepcopy(operation['retention']),
-                accepted_version=2), unloaded=dict(source_incarnation=1, capture=1,
+                accepted_version=2), outcome=dict(state='unloaded',facts=dict(source_incarnation=1, capture=1,
                 manifest_digest=[7]*32, material_bytes=4096, started_at_ms=1234,
-                end_at_ms=301234, max_end_at_ms=601234, startup_deadline_ms=301000)))
+                end_at_ms=301234, max_end_at_ms=601234, startup_deadline_ms=301000))))
         record['operations'].append(operation)
         record['phase'] = 'unloaded'
         self.assertEqual(find_runtime_create(self.center, self.intent['metadata'],

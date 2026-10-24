@@ -233,7 +233,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     operation: current.request.binding.key.clone(),
                     current_version: current.accepted_version,
                     phase: PublicSessionPhase::Running,
-                    unloaded: None,
+                    unload_outcome: None,
                     create_refusal: None,
                 });
             }
