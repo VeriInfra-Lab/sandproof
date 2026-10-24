@@ -144,6 +144,12 @@ def original_json(path,limit):
     return json.loads(raw,object_pairs_hook=unique_keys)
 
 
+GATE_NAMES=frozenset(('config.json','observation.json','ready-stage.json','ready.json',
+    'command-stage.json','command.json'))
+GATE_FINAL_NAMES=frozenset(('config.json','observation.json','ready.json','command.json'))
+GATE_STAGE_NAMES=GATE_NAMES-GATE_FINAL_NAMES
+
+
 def gate_json(path,limit,*,directory_fd=None):
     """One protected FD: never reopen the observation containing a secret."""
     path=Path(path)
@@ -642,6 +648,22 @@ class UnloadRuntime:
                 or (meta.st_dev,meta.st_ino)!=gate['directory_identity']
                 or (fdmeta.st_dev,fdmeta.st_ino)!=gate['directory_identity']):
             raise ValueError('original root0700 activation gate directory changed')
+        names=set(os.listdir(gate['fd']))
+        if names-GATE_NAMES:
+            raise ValueError('activation gate contains a name outside the fixed six-file budget')
+        for name in names:
+            try:
+                entry=os.stat(name,dir_fd=gate['fd'],follow_symlinks=False)
+            except FileNotFoundError:
+                if name in GATE_STAGE_NAMES:
+                    continue  # An atomic stage-to-final publication may race this inventory.
+                raise
+            limit=16384 if name=='observation.json' else 1024
+            # Producer stage/observation writes may still be incomplete here;
+            # only final ready seals a complete readable observation.
+            if (not stat.S_ISREG(entry.st_mode) or entry.st_uid!=0 or entry.st_nlink!=1
+                    or stat.S_IMODE(entry.st_mode)!=0o600 or not 0<=entry.st_size<=limit):
+                raise ValueError('activation gate entry violates the original finite private-file budget')
 
     def _gate_files_unchanged(self):
         self._gate_directory()
@@ -722,8 +744,7 @@ class UnloadRuntime:
         if (not self.physical_complete or not self.gc_complete
                 or gate.get('exit86_observed') is not True or gate.get('command')!='continue'):
             raise ValueError('original exit86 and settled product resources required before gate cleanup')
-        if not gate['command_sent'] or set(gate['files'])!={
-                'config.json','observation.json','ready.json','command.json'}:
+        if not gate['command_sent'] or set(gate['files'])!=GATE_FINAL_NAMES:
             raise ValueError('complete original activation gate required for cleanup')
         self._gate_files_unchanged()
         if set(os.listdir(gate['fd']))!=set(gate['files']):
@@ -764,7 +785,8 @@ class UnloadRuntime:
         finally:
             os.close(parent_fd)
         gate['cleaned']=True
-        return dict(exact_original_files=4,partial_stage_files_absent=True,
+        return dict(protocol_names=sorted(GATE_NAMES),exact_original_files_removed=sorted(GATE_FINAL_NAMES),
+            transient_stages_absent=sorted(GATE_STAGE_NAMES),
             private_token_record_removed=True,directory_removed=True)
 
     def close_restore_gate(self):
