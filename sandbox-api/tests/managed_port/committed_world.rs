@@ -44,6 +44,7 @@ fn restore_host(sessions: &[SandboxSession], stops: Arc<AtomicUsize>) -> FakeHos
     for (index, session) in sessions.iter().enumerate() {
         host.put_secret(
             core::SandboxId(u64::try_from(index + 1).unwrap()),
+            1, // These fixtures reopen the original Create generation without Resume.
             &session.envd_access_token,
         )
         .unwrap();
