@@ -36,6 +36,52 @@ impl OriginalContinueIdentity {
 pub struct CaptureWorkEndReceipt {
     pub work_binding: [u8; 32],
     pub end_binding: [u8; 32],
+    pub end: CaptureWorkEnd,
+}
+
+/// The original SQL end record distinguishes a never-granted Full permit from
+/// a returned API plus confirmed writer exit. Both retain any material debt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
+pub enum CaptureWorkEnd {
+    NeverReleased { seal: Option<CaptureSealEnd> },
+    Returned { seal: CaptureSealEnd },
+}
+impl CaptureWorkEnd {
+    #[must_use]
+    pub const fn seal(self) -> Option<CaptureSealEnd> {
+        match self {
+            Self::NeverReleased { seal } => seal,
+            Self::Returned { seal } => Some(seal),
+        }
+    }
+}
+
+/// Complete remaining native Seal coordinates; key/epoch/generation/VM are
+/// supplied by the enclosing original identity and checked against its plan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
+pub struct CaptureSealEnd {
+    pub attempt: crate::AttemptNo,
+    pub workspace: crate::FsId,
+    pub snapshot: crate::SnapshotId,
+    pub manifest: crate::SnapshotManifestRef,
+}
+impl CaptureSealEnd {
+    #[must_use]
+    pub const fn command(self, identity: OriginalContinueIdentity) -> Command {
+        Command::SealSnapshot {
+            sandbox: identity.key.sandbox,
+            epoch: identity.epoch,
+            generation: identity.generation,
+            vm: identity.vm,
+            workspace: self.workspace,
+            snapshot: self.snapshot,
+            manifest: self.manifest,
+        }
+    }
 }
 
 use super::{CaptureCommit, CaptureHandoff, RestoreEligibility};
@@ -188,18 +234,24 @@ fn source_resources(world: &World, id: OriginalContinueIdentity) -> Result<(), C
         return Err(CaptureReject::ResourcesNotReady);
     }
     let index = world.resource_index(id.key.sandbox);
-    for other in &index.vms {
-        let machine = world
-            .vm_record(*other)
-            .ok_or(CaptureReject::ResourcesNotReady)?;
-        if *other != id.vm
-            && matches!(
-                machine.status,
-                VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen
-            )
-        {
-            return Err(CaptureReject::ResourcesNotReady);
-        }
+    let mut position = 0;
+    let mut resources_ready = true;
+    while position < index.vms.len() && resources_ready {
+        let other = index.vms[position];
+        resources_ready = match world.vm_record(other) {
+            None => false,
+            Some(machine) => {
+                other == id.vm
+                    || !matches!(
+                        machine.status,
+                        VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen
+                    )
+            }
+        };
+        position += 1;
+    }
+    if !resources_ready {
+        return Err(CaptureReject::ResourcesNotReady);
     }
     if world.worker_fences.get(&id.key.sandbox)
         != Some(&WorkerFence {
@@ -225,29 +277,173 @@ fn capture_command(command: &Command) -> bool {
         Command::FreezeVm { .. } | Command::SealSnapshot { .. } | Command::CommitSnapshot { .. }
     )
 }
-fn ended_attempts(world: &World, id: OriginalContinueIdentity) -> Result<(), CaptureReject> {
-    for effect in world.effect_ids() {
-        if !capture_command(effect.command()) {
-            continue;
-        }
-        let logical = world
+fn seal_end_matches(
+    world: &World,
+    effect: &EffectId,
+    id: OriginalContinueIdentity,
+    receipt: CaptureWorkEndReceipt,
+) -> bool {
+    let Some(seal) = receipt.end.seal() else {
+        return false;
+    };
+    let Some(plan) = world.operation_plan(id.key) else {
+        return false;
+    };
+    let Some(row) = world.sandbox_record(id.key.sandbox) else {
+        return false;
+    };
+    effect.attempt == seal.attempt
+        && *effect.command() == seal.command(id)
+        && plan.key == id.key
+        && plan.epoch == id.epoch
+        && plan.generation == id.generation
+        && plan.vm == Some(id.vm)
+        && plan.target_snapshot
+            == Some(crate::RestoreSource {
+                snapshot: seal.snapshot,
+                manifest: seal.manifest,
+            })
+        && row.workspace == seal.workspace
+        && world
             .logical_effect(&effect.logical)
-            .ok_or(CaptureReject::LedgerMismatch)?;
-        if logical.origin != EffectOrigin::Operation(id.key) {
-            continue;
+            .is_some_and(|logical| {
+                logical.origin == EffectOrigin::Operation(id.key)
+                    && logical.current_attempt == effect.attempt
+            })
+}
+
+/// Checkpoint and metadata retirement recheck the same original saved end.
+/// A retired Seal never counts as a successful snapshot or a failed host call.
+#[must_use]
+pub fn retired_capture_end_valid(
+    world: &World,
+    effect: &EffectId,
+    receipt: CaptureWorkEndReceipt,
+) -> bool {
+    let Some(logical) = world.logical_effect(&effect.logical) else {
+        return false;
+    };
+    let EffectOrigin::Operation(key) = logical.origin else {
+        return false;
+    };
+    let Some(plan) = world.operation_plan(key) else {
+        return false;
+    };
+    let Some(capture) = plan.capture else {
+        return false;
+    };
+    let Some(saved) = capture.original_continuation() else {
+        return false;
+    };
+    capture.eligibility() == RestoreEligibility::Revoked
+        && capture.commit() == CaptureCommit::NotRegistered
+        && !capture.has_unload_source()
+        && saved.end_receipt == receipt
+        && seal_end_matches(
+            world,
+            effect,
+            OriginalContinueIdentity {
+                key,
+                epoch: plan.epoch,
+                generation: plan.generation,
+                vm: saved.vm,
+            },
+            receipt,
+        )
+        && logical.result
+            == Some(crate::LogicalEffectResult::RetiredByCaptureEnd {
+                attempt: effect.attempt,
+                end_receipt: receipt,
+            })
+}
+
+fn retire_ended_seal(
+    world: &mut World,
+    id: OriginalContinueIdentity,
+    receipt: CaptureWorkEndReceipt,
+) {
+    let Some(seal) = receipt.end.seal() else {
+        return;
+    };
+    let effect = EffectId {
+        logical: LogicalEffectId {
+            command: seal.command(id),
+        },
+        attempt: seal.attempt,
+    };
+    if !matches!(
+        world.effect_status(&effect),
+        Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
+    ) {
+        return;
+    }
+    let Some(mut logical) = world.logical_effect(&effect.logical) else {
+        return;
+    };
+    logical.result = Some(crate::LogicalEffectResult::RetiredByCaptureEnd {
+        attempt: effect.attempt,
+        end_receipt: receipt,
+    });
+    world.logical_effects.put(effect.logical.clone(), logical);
+    world
+        .effects
+        .put(effect, EffectStatus::RetiredByCaptureEnd(receipt));
+}
+
+fn ended_attempts(
+    world: &World,
+    id: OriginalContinueIdentity,
+    receipt: CaptureWorkEndReceipt,
+) -> Result<(), CaptureReject> {
+    if let Some(seal) = receipt.end.seal() {
+        let effect = EffectId {
+            logical: LogicalEffectId {
+                command: seal.command(id),
+            },
+            attempt: seal.attempt,
+        };
+        if !seal_end_matches(world, &effect, id, receipt) {
+            return Err(CaptureReject::ReceiptConflict);
         }
-        if effect.command().epoch() != Some(id.epoch)
-            || effect.command().sandbox() != id.key.sandbox
-        {
-            return Err(CaptureReject::LedgerMismatch);
-        }
-        match world.effect_status(effect) {
-            Some(EffectStatus::Committed | EffectStatus::Acknowledged(_)) => {}
-            _ => return Err(CaptureReject::EffectsUnresolved),
-        }
+    }
+    let mut position = 0;
+    let mut result = Ok(());
+    while position < world.effect_ids().len() && matches!(result, Ok(())) {
+        result = capture_attempt_ended(world, &world.effect_ids()[position], id, receipt);
+        position += 1;
+    }
+    result
+}
+
+fn capture_attempt_ended(
+    world: &World,
+    effect: &EffectId,
+    id: OriginalContinueIdentity,
+    receipt: CaptureWorkEndReceipt,
+) -> Result<(), CaptureReject> {
+    if !capture_command(effect.command()) {
+        return Ok(());
+    }
+    let logical = world
+        .logical_effect(&effect.logical)
+        .ok_or(CaptureReject::LedgerMismatch)?;
+    if logical.origin != EffectOrigin::Operation(id.key) {
+        return Ok(());
+    }
+    if effect.command().epoch() != Some(id.epoch) || effect.command().sandbox() != id.key.sandbox {
+        return Err(CaptureReject::LedgerMismatch);
+    }
+    match world.effect_status(effect) {
+        Some(EffectStatus::Committed | EffectStatus::Acknowledged(_)) => {}
+        Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
+            if seal_end_matches(world, effect, id, receipt) && logical.result.is_none() => {}
+        Some(EffectStatus::RetiredByCaptureEnd(saved))
+            if saved == receipt && retired_capture_end_valid(world, effect, saved) => {}
+        _ => return Err(CaptureReject::EffectsUnresolved),
     }
     Ok(())
 }
+
 fn source_can_continue(world: &World, id: OriginalContinueIdentity) -> Result<(), CaptureReject> {
     let freeze = Command::FreezeVm {
         sandbox: id.key.sandbox,
@@ -446,7 +642,7 @@ fn prepare(
         });
     }
     source_resources(world, id)?;
-    ended_attempts(world, id)?;
+    ended_attempts(world, id, receipt)?;
     source_can_continue(world, id)?;
     let mut next = world.clone();
     let mut updated = plan.clone();
@@ -458,6 +654,7 @@ fn prepare(
         return Err(CaptureReject::CaptureNotRevoked);
     }
     next.operation_plans.put(id.key, updated);
+    retire_ended_seal(&mut next, id, receipt);
     crate::transition::enqueue(&mut next, id.activation_command());
     Ok(CaptureDecision {
         event: CaptureEvent::PrepareOriginalContinue(id),
@@ -485,7 +682,11 @@ fn publish(world: &World, id: OriginalContinueIdentity) -> Result<CaptureDecisio
     }
     let failure = compensating(world, id)?;
     source_resources(world, id)?;
-    ended_attempts(world, id)?;
+    let saved = plan
+        .capture
+        .and_then(CaptureHandoff::original_continuation)
+        .ok_or(CaptureReject::ContinuationNotPrepared)?;
+    ended_attempts(world, id, saved.end_receipt)?;
     if row.desired != Authority::Closed
         || row.effective != Authority::Closed
         || world
@@ -573,7 +774,11 @@ pub(crate) fn continuation_resources_ready(world: &World, command: &Command) -> 
     };
     continuation_activation_pending(world, command)
         && source_resources(world, id).is_ok()
-        && ended_attempts(world, id).is_ok()
+        && world
+            .operation_plan(id.key)
+            .and_then(|plan| plan.capture)
+            .and_then(CaptureHandoff::original_continuation)
+            .is_some_and(|saved| ended_attempts(world, id, saved.end_receipt).is_ok())
 }
 /// A historic successful Freeze remains true after the same plan's explicitly
 /// recorded reactivation. This is not evidence for a new/unknown Freeze receipt.

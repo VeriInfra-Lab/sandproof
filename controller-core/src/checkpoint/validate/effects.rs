@@ -69,6 +69,19 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
                 Some(LogicalEffectResult::RetiredByStop { attempt, coverage }),
                 EffectStatus::RetiredByStop(found),
             ) => attempt == current.attempt && coverage == found,
+            (
+                Some(LogicalEffectResult::RetiredByCaptureEnd {
+                    attempt,
+                    end_receipt,
+                }),
+                EffectStatus::RetiredByCaptureEnd(stored),
+            ) => {
+                attempt == current.attempt
+                    && end_receipt == stored
+                    && crate::capture::continuation::retired_capture_end_valid(
+                        world, &current, stored,
+                    )
+            }
             _ => false,
         };
         if !consistent {
@@ -76,24 +89,29 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
         }
     }
     for (id, status) in world.effects.entries() {
-        let logical = world
-            .logical_effect(&id.logical)
-            .ok_or(Reject::InvalidEffect)?;
-        if id.attempt > logical.current_attempt
-            || !world.effect_keys.contains(id)
-            || !world.inflight.contains(id)
-        {
-            return Err(Reject::InvalidEffect);
-        }
-        if matches!(
-            status,
-            EffectStatus::Acknowledged(EffectOutcome::Succeeded(_))
-        ) {
-            historical_success(world, id.command())?;
-        }
-        if let EffectStatus::RetiredByStop(coverage) = status {
-            retired_stop(world, id, *coverage)?;
-        }
+        validate_attempt(world, id, *status)?;
+    }
+    Ok(())
+}
+
+fn validate_attempt(world: &World, id: &EffectId, status: EffectStatus) -> Result<(), Reject> {
+    let logical = world
+        .logical_effect(&id.logical)
+        .ok_or(Reject::InvalidEffect)?;
+    if id.attempt > logical.current_attempt
+        || !world.effect_keys.contains(id)
+        || !world.inflight.contains(id)
+    {
+        return Err(Reject::InvalidEffect);
+    }
+    if matches!(
+        status,
+        EffectStatus::Acknowledged(EffectOutcome::Succeeded(_))
+    ) {
+        historical_success(world, id.command())?;
+    }
+    if let EffectStatus::RetiredByStop(coverage) = status {
+        retired_stop(world, id, coverage)?;
     }
     Ok(())
 }

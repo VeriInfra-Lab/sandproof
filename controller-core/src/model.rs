@@ -392,6 +392,9 @@ pub enum EffectStatus {
     /// has been stopped by this terminal operation, so it must never execute
     /// again. This is deliberately not a successful or failed receipt.
     RetiredByStop(StopCoverage),
+    /// The original capture definitely ended or was never released. This is
+    /// neither a successful snapshot nor a host failure or material deletion.
+    RetiredByCaptureEnd(crate::capture::CaptureWorkEndReceipt),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -461,6 +464,10 @@ pub enum LogicalEffectResult {
     RetiredByStop {
         attempt: AttemptNo,
         coverage: StopCoverage,
+    },
+    RetiredByCaptureEnd {
+        attempt: AttemptNo,
+        end_receipt: crate::capture::CaptureWorkEndReceipt,
     },
 }
 
