@@ -627,19 +627,26 @@ fn terminal_drain_recovery_rejects_canonical_sql_end_that_disagrees_with_native_
     let (mut journal, source, _) = pending(&path, false, true);
     destroy(&mut journal);
     stop(&mut journal, source.work.anchor.local.sandbox);
-    let work = journal.lifecycle_terminated_capture_work(&source.work).unwrap();
-    journal.retire_lifecycle_terminated_capture(
-        &source.work, observed(&work), &mut NeverCrash,
-    ).unwrap();
+    let work = journal
+        .lifecycle_terminated_capture_work(&source.work)
+        .unwrap();
+    journal
+        .retire_lifecycle_terminated_capture(&source.work, observed(&work), &mut NeverCrash)
+        .unwrap();
     let original_world = journal.world().unwrap();
     {
         let tx = journal.journal.connection.unchecked_transaction().unwrap();
-        assert_eq!(crate::controller::checkpoint::load_world(&tx).unwrap(), original_world);
+        assert_eq!(
+            crate::controller::checkpoint::load_world(&tx).unwrap(),
+            original_world
+        );
         tx.commit().unwrap();
     }
     let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
     let mut json = serde_json::to_value(&saved).unwrap();
-    let inode = json["capture"]["end"]["observation"]["helper_gate_inode"].as_u64().unwrap();
+    let inode = json["capture"]["end"]["observation"]["helper_gate_inode"]
+        .as_u64()
+        .unwrap();
     json["capture"]["end"]["observation"]["helper_gate_inode"] = serde_json::json!(inode + 1);
     let changed_observation: TerminatedCaptureObservation =
         serde_json::from_value(json["capture"]["end"]["observation"].clone()).unwrap();

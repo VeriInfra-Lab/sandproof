@@ -304,11 +304,12 @@ pub(super) fn validate_bindings(
                         .is_none_or(|slot| slot.phase != HostSlotPhase::Free)))
         {
             #[cfg(test)]
-            if witness.input_sequence > 0 && witness.input_sequence <= high
+            if witness.input_sequence > 0
+                && witness.input_sequence <= high
                 && witness.context.binding == original
                 && !(row.generation > original.generation
                     || row.phase == core::Phase::Destroyed
-                    || paused_release(world,core::SandboxId(*sandbox)))
+                    || paused_release(world, core::SandboxId(*sandbox)))
             {
                 eprintln!("stage1-fixed-diagnostic: released-witness-phase-rejected");
             }

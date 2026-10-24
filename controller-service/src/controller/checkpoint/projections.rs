@@ -257,7 +257,7 @@ fn effects_and_outbox(
         let status = world
             .effect_status(&action.command)
             .ok_or(JournalError::CorruptStore)?;
-        validate_capture_drain(connection,world,&action,status)?;
+        validate_capture_drain(connection, world, &action, status)?;
         validate_receipts(
             connection,
             id,
@@ -276,11 +276,24 @@ fn effects_and_outbox(
 
 // Retirement does not manufacture a host receipt. Its native effect, logical
 // result and Stop coverage must still match the complete original SQL End.
-fn validate_capture_drain(connection:&Connection,world:&core::World,action:&WorkAction<core::EffectId>,status:core::EffectStatus)->Result<(),JournalError>{
-    let core::EffectStatus::RetiredByCaptureDrain(coverage)=status else {return Ok(())};
-    if !core::capture::drain::retired_capture_drain_valid(world,&action.command,coverage)
-        || !super::super::lifecycle_inbox::source_work::full::permits_continue_input(connection,world,&core::capture::CaptureInput::RetireTerminatedCapture(coverage))?
-    {return Err(JournalError::CorruptStore)}
+fn validate_capture_drain(
+    connection: &Connection,
+    world: &core::World,
+    action: &WorkAction<core::EffectId>,
+    status: core::EffectStatus,
+) -> Result<(), JournalError> {
+    let core::EffectStatus::RetiredByCaptureDrain(coverage) = status else {
+        return Ok(());
+    };
+    if !core::capture::drain::retired_capture_drain_valid(world, &action.command, coverage)
+        || !super::super::lifecycle_inbox::source_work::full::permits_continue_input(
+            connection,
+            world,
+            &core::capture::CaptureInput::RetireTerminatedCapture(coverage),
+        )?
+    {
+        return Err(JournalError::CorruptStore);
+    }
     Ok(())
 }
 
