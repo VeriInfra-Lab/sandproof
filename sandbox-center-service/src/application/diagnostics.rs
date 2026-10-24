@@ -102,7 +102,7 @@ mod tests {
         assert!(text.contains("stage=AuthoritySnapshot authority=Store(Configuration)"));
         assert!(text.contains("stage=LifecycleQueryExpiry authority=Store(Unavailable)"));
         assert!(text.lines().all(|line| line.len() < 220));
-        assert!(!text.contains("payload") && !text.contains("credential") && !text.contains("/"));
+        assert!(!text.contains("payload") && !text.contains("credential") && !text.contains('/'));
     }
 
     #[test]
