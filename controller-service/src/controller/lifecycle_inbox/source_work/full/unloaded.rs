@@ -92,20 +92,14 @@ impl ControllerJournal {
         {
             return Ok(None);
         }
-        // Validate the exact persisted original host position, including its
-        // binding after it has become reusable. Absence is not a release receipt.
-        let configuration =
-            crate::controller::bounded::config(&tx)?.ok_or(JournalError::CorruptStore)?;
-        let slots = crate::controller::bounded::validate_contexts(&tx, &world, &configuration)?;
-        if !slots.iter().any(|context| {
-            context.binding.sandbox == key.sandbox
-                && Some(context.binding.vm) == record.work.anchor.native.current_vm
-                && context.binding.owner == local.owner
-                && context.binding.generation == row.generation
-                && world
-                    .maintenance_state()
-                    .and_then(|m| m.host_slot(context.position))
-                    .is_some_and(|s| s.phase == core::maintenance::slots::HostSlotPhase::Free)
+        // Original ConfirmRelease is durable per sandbox; reusing that physical
+        // position cannot erase this operation's completed release.
+        let released = crate::controller::checkpoint::release_witnesses(&tx, &world)?;
+        if !released.iter().any(|w| {
+            w.context.binding.sandbox == key.sandbox
+                && Some(w.context.binding.vm) == record.work.anchor.native.current_vm
+                && w.context.binding.owner == local.owner
+                && w.context.binding.generation == row.generation
         }) {
             return Ok(None);
         }

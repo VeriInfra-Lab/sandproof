@@ -447,8 +447,17 @@ fn pause_step(
     )))
 }
 
-fn paused_workflow_step(world: &World, sandbox: SandboxId, record: &crate::SandboxRecord, plan: &crate::OperationPlan) -> Option<WorkflowStep> {
-    if record.phase == Phase::Pausing && record.current_operation.is_some_and(|operation| operation.kind == OperationKind::Pause) {
+fn paused_workflow_step(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+    plan: &crate::OperationPlan,
+) -> Option<WorkflowStep> {
+    if record.phase == Phase::Pausing
+        && record
+            .current_operation
+            .is_some_and(|operation| operation.kind == OperationKind::Pause)
+    {
         return Some(pause_step(world, sandbox, record, plan));
     }
     if record.phase == Phase::Paused {

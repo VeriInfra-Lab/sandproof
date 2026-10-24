@@ -317,7 +317,7 @@ fn accepted_source_work_replay_and_restart_keep_one_question_and_raw_result() {
             .sandbox_record(sandbox_controller_core::SandboxId(1))
             .unwrap()
             .phase,
-        sandbox_controller_sandbox_controller_core::Phase::Running
+        sandbox_controller_core::Phase::Running
     );
 }
 
@@ -845,4 +845,188 @@ fn full_pause_commit_reply_loss_preserves_exact_durable_or_uncommitted_outcome()
             }
         );
     }
+}
+
+// Synthetic physical observations exercise the original reducer/SQL protocol;
+// this component test neither runs a VMM nor claims a physical Full passed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct FullEvidence {
+    resource: sandproof_protocol::ResourceRef,
+    command: sandbox_controller_core::Command,
+}
+impl sandproof_protocol::ResourceEvidence for FullEvidence {
+    fn resource(&self) -> &sandproof_protocol::ResourceRef {
+        &self.resource
+    }
+}
+impl HostEvidence for FullEvidence {
+    fn validates(&self, command: &sandbox_controller_core::Command) -> bool {
+        self.command == *command
+    }
+    fn capture_manifest_digest(
+        &self,
+        command: &sandbox_controller_core::Command,
+    ) -> Option<ContentDigest> {
+        (self.command == *command
+            && matches!(
+                command,
+                sandbox_controller_core::Command::SealSnapshot { .. }
+                    | sandbox_controller_core::Command::CommitSnapshot { .. }
+            ))
+        .then_some(ContentDigest::from_sha256([88; 32]))
+    }
+    fn capture_material_bytes(&self, command: &sandbox_controller_core::Command) -> Option<u64> {
+        self.capture_manifest_digest(command).map(|_| 12288)
+    }
+}
+fn finish_full_component(journal: &mut ControllerJournal, record: &SourceWorkRecord) {
+    use sandbox_controller_core::workflow::{self, WorkflowStep};
+    let sandbox = record.work.anchor.local.sandbox;
+    for _ in 0..32 {
+        match workflow::next_step(&journal.world().unwrap(), sandbox) {
+            WorkflowStep::Apply(input) => {
+                journal.apply(*input, &mut NeverCrash).unwrap();
+            }
+            WorkflowStep::Claim => {
+                let action = journal
+                    .claim_next(Some(sandbox), &mut NeverCrash)
+                    .unwrap()
+                    .unwrap();
+                if matches!(
+                    action.command.command(),
+                    sandbox_controller_core::Command::SealSnapshot { .. }
+                ) {
+                    let worker = crate::capture::CaptureWorkerBinding::new(
+                        SourceProcessIdentity {
+                            pid: 2345,
+                            start_time_ticks: 9876,
+                            boot_id: "fixture-boot".into(),
+                        },
+                        ContentDigest::from_sha256([9; 32]),
+                    )
+                    .unwrap();
+                    let permit = journal
+                        .authorize_lifecycle_full_capture(
+                            &record.work,
+                            &v3::context(),
+                            &action,
+                            worker.clone(),
+                            10,
+                            &mut NeverCrash,
+                        )
+                        .unwrap();
+                    assert_eq!(permit.worker(), &worker);
+                    assert!(matches!(
+                        journal.authorize_lifecycle_full_capture(
+                            &record.work,
+                            &v3::context(),
+                            &action,
+                            worker,
+                            10,
+                            &mut NeverCrash
+                        ),
+                        Err(JournalError::Conflict)
+                    ));
+                }
+                journal
+                    .complete(
+                        &sandproof_protocol::WorkReceipt {
+                            identity: action.identity.clone(),
+                            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
+                                FullEvidence {
+                                    resource: action.identity.resource.clone(),
+                                    command: action.command.command().clone(),
+                                },
+                            ),
+                        },
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
+            }
+            WorkflowStep::Complete => return,
+            other => panic!("original full workflow blocked: {other:?}"),
+        }
+    }
+    panic!("original bounded full workflow did not finish");
+}
+#[test]
+fn full_unloaded_survives_slot_reuse_before_first_center_result_and_manager_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, state) = ready(&path);
+    let source = observed_for_full(&mut journal);
+    let full = full_request(&source);
+    let accepted = journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    finish_full_component(&mut journal, &accepted);
+    let local = source.work.anchor.local;
+    let released = journal.host_slot_context(local.sandbox).unwrap().unwrap();
+    assert!(
+        journal
+            .lifecycle_unloaded(&unload(), &v3::context(), 10)
+            .unwrap()
+            .is_none()
+    );
+    journal
+        .release_host_slot(released, |_| Ok(()), &mut NeverCrash)
+        .unwrap();
+    let usage=journal.retained_resource_usage().unwrap();
+    assert_eq!((usage.instances,usage.cpu,usage.memory_bytes),(0,0,0));
+    assert_eq!(usage.disk_bytes,4096);
+    let original = journal
+        .lifecycle_unloaded(&unload(), &v3::context(), 10)
+        .unwrap()
+        .unwrap();
+    drop(journal);
+    let host=v3::fixture::complete_fixture::host(&path,"0123456789abcdef",64,2*1024*1024,v3::fixture::complete_fixture::CLEANUP_BYTES+1000);
+    let app = v3::application_with_active_limit(&path,state,false,v3::config(),host,1);
+    app.establish_lifecycle_host_epoch().unwrap();
+    let mut b = v3::request();
+    b.request.binding.session = "session-b".try_into().unwrap();
+    b.request.binding.key.sequence = 3.try_into().unwrap();
+    b.retention.slot = 2;
+    app.record_lifecycle_intent(&b, &v3::context()).unwrap();
+    app.advance_lifecycle_create_with_verification(
+        &b,
+        &v3::context(),
+        Some(v3::fixture::template()),
+        crate::templates::ComputeLimits {
+            max_vcpus_global:1,max_vcpus_per_tenant:1,
+            max_memory_bytes_global:129*1024*1024,max_memory_bytes_per_tenant:129*1024*1024,
+        },
+        None,
+    )
+    .unwrap();
+    drop(app);
+    let journal = v3::open(&path);
+    assert!(
+        journal
+            .host_slot_inventory()
+            .unwrap()
+            .iter()
+            .any(|(context, phase)| context.position == released.position
+                && context.binding.vm != released.binding.vm
+                && *phase == sandbox_controller_core::maintenance::slots::HostSlotPhase::Occupied)
+    );
+    assert_eq!(
+        journal
+            .lifecycle_unloaded(&unload(), &v3::context(), 10)
+            .unwrap(),
+        Some(original.clone())
+    );
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(
+        journal
+            .lifecycle_unloaded(&unload(), &v3::context(), 10)
+            .unwrap(),
+        Some(original)
+    );
 }

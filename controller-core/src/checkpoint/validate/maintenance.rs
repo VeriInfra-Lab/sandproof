@@ -122,11 +122,12 @@ fn limits_and_clock(state: &MaintenanceState) -> Result<(), Reject> {
 
 fn released(world: &World, binding: HostBinding) -> Result<(), Reject> {
     let row = record(world, binding.sandbox)?;
-    // A paused row alone is not an Unloaded/running-position release witness.
-    if !row.terminal
-        || row.phase != Phase::Destroyed
-        || row.desired != Authority::Closed
-        || row.effective != Authority::Closed
+    // Reuse the same exact released-runtime state accepted by the reducer.
+    // Paused alone is insufficient: material custody and absence of current
+    // runtime bindings must also hold, with every physical/unknown check below.
+    let terminal = row.terminal && row.phase == Phase::Destroyed
+        && row.desired == Authority::Closed && row.effective == Authority::Closed;
+    if !(terminal || crate::maintenance::paused_release_state(world,binding.sandbox,row))
         || world
             .vm_record(binding.vm)
             .is_some_and(|vm| vm.status != VmStatus::Reclaimed)

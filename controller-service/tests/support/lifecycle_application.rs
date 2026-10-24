@@ -139,6 +139,13 @@ pub fn application_with_host_configuration(
     inbox: LifecycleInboxConfig,
     host: sandproof_controller_service::BoundedHostConfig,
 ) -> ControllerApplication<TestHost> {
+    application_with_active_limit(path,state,provision,inbox,host,64)
+}
+
+pub fn application_with_active_limit(
+    path:&Path,state:Arc<Mutex<State>>,provision:bool,inbox:LifecycleInboxConfig,
+    host:sandproof_controller_service::BoundedHostConfig,active_limit:u64,
+)->ControllerApplication<TestHost> {
     let mut journal = ControllerJournal::open_complete(path, NS, host, maintenance(), 0).unwrap();
     if provision {
         journal
@@ -149,8 +156,8 @@ pub fn application_with_host_configuration(
     let app_config = ApplicationConfig {
         public_ipv4_enabled: false,
         limits: sandproof_controller_service::AdmissionLimits {
-            max_active_global: 64,
-            max_active_per_tenant: 64,
+            max_active_global: active_limit,
+            max_active_per_tenant: active_limit,
             max_disk_bytes_global: reserve + 2 * 1024 * 1024,
             max_disk_bytes_per_tenant: 2 * 1024 * 1024,
             cleanup_reserve_bytes: reserve,

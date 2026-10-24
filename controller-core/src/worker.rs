@@ -1,3 +1,4 @@
+mod late_capture;
 use crate::model::{
     AppliedFilePolicy, Authority, Command, EffectId, EffectStatus, LogicalEffectId, NetSlot,
     OperationKey, OperationKind, OperationStatus, Phase, RestoreSource, SandboxRecord, Snapshot,
@@ -377,6 +378,9 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
 
     if crate::terminal::startup_effect_in_current_abort(world, id) {
         return crate::terminal::record_late_startup(world, id);
+    }
+    if let Some(result) = late_capture::record(world, id) {
+        return result;
     }
     match command {
         Command::InstallFence {

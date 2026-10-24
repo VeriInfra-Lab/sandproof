@@ -499,12 +499,14 @@ mod tests {
 #[path = "maintenance/slot_integration_tests.rs"]
 mod slot_integration_tests;
 
-fn paused_release_state(world: &World, sandbox: SandboxId, record: &crate::SandboxRecord) -> bool {
+pub(crate) fn paused_release_state(world: &World, sandbox: SandboxId, record: &crate::SandboxRecord) -> bool {
 !record.terminal
+                && record.current_vm.is_none()
+                && record.net_slot.is_none()
                 && record.phase == Phase::Paused
                 && record.durable_snapshot.is_some_and(|source| {
                     let authority = Authority::Paused {
-                        sandbox: sandbox,
+                        sandbox,
                         source,
                     };
                     record.desired == authority
@@ -512,7 +514,7 @@ fn paused_release_state(world: &World, sandbox: SandboxId, record: &crate::Sandb
                         && record.current_operation.is_some_and(|operation| {
                             world
                                 .operation_plan(crate::OperationKey {
-                                    sandbox: sandbox,
+                                    sandbox,
                                     operation: operation.id,
                                 })
                                 .is_some_and(|plan| {
