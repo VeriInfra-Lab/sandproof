@@ -2,12 +2,7 @@
 #[allow(dead_code, reason = "shared current lifecycle application fixture")]
 #[path = "support/lifecycle_application.rs"]
 mod current;
-#[allow(
-    dead_code,
-    reason = "shared original application fixture supports several suites"
-)]
-#[path = "support/internal_application.rs"]
-mod fixture;
+use current::fixture;
 use fixture::{State, TestClock, complete_fixture, wire};
 use sandproof_controller_service::{ControllerJournal, InternalInboxConfig, NeverCrash};
 use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
@@ -169,6 +164,16 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
         &context,
         local.sandbox,
     );
+    assert_current_health_successor(&app, &state, &context, &free);
+}
+
+fn assert_current_health_successor(
+    app: &sandproof_controller_service::application::ControllerApplication<fixture::TestHost>,
+    state: &Mutex<State>,
+    context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    free: &impl Fn() -> u64,
+) {
+    use sandproof_controller_service::capture::SourceProcessIdentity;
     // The next VM has its own process identity on the same registered boot.
     state.lock().unwrap().source = Some(SourceProcessIdentity {
         pid: 1235,
@@ -179,17 +184,17 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
     next.retention.window = 2.try_into().unwrap();
     next.request.binding.key.window = 2.try_into().unwrap();
     next.request.binding.session = "successor".try_into().unwrap();
-    app.record_lifecycle_intent(&next, &context).unwrap();
+    app.record_lifecycle_intent(&next, context).unwrap();
     app.advance_lifecycle_create_with_verification(
         &next,
-        &context,
+        context,
         Some(current::fixture::template()),
         current::fixture::compute(),
         None,
     )
     .unwrap();
     assert!(matches!(
-        app.observe_lifecycle_create(&next, &context)
+        app.observe_lifecycle_create(&next, context)
             .unwrap()
             .readiness,
         sandproof_controller_service::CreateReadiness::Observed(_)
