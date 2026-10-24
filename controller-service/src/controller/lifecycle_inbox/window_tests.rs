@@ -679,6 +679,19 @@ fn unknown_release_pins_native_work_and_native_retirement_preserves_unconfirmed_
         journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
         Err(JournalError::UnresolvedAction)
     ));
+    assert_native_retirement_preserves_unconfirmed_window(
+        journal, &path, destroy, close, local, position,
+    );
+}
+
+fn assert_native_retirement_preserves_unconfirmed_window(
+    mut journal: ControllerJournal,
+    path: &std::path::Path,
+    destroy: AcceptedLifecycleIntent,
+    close: LifecycleWindowClose,
+    local: InternalLocalBinding,
+    position: crate::HostSlotContext,
+) {
     // Native details may retire before the center confirms its SDK window,
     // but only with the original release and a durable, request-bound receipt.
     let candidates = journal.retirement_candidates().unwrap();
@@ -721,7 +734,7 @@ fn unknown_release_pins_native_work_and_native_retirement_preserves_unconfirmed_
     assert_eq!(saved.lanes, before.lanes);
     assert_eq!(saved.owners, before.owners);
     drop(journal);
-    let mut journal = fixture::open(&path);
+    let mut journal = fixture::open(path);
     fixture::refresh_epoch(&mut journal);
     assert_eq!(inbox(&journal), saved);
     assert_eq!(
