@@ -17,11 +17,25 @@ impl SnapshotStore {
         key: [u8; 32],
         bytes: &[u8],
     ) -> Result<(), RuntimeError> {
+        self.publish_record("completed-", "completion-stage-", key, bytes)
+    }
+
+    pub(crate) fn publish_api_end(&self, key: [u8; 32], bytes: &[u8]) -> Result<(), RuntimeError> {
+        self.publish_record("api-returned-", "api-return-stage-", key, bytes)
+    }
+
+    fn publish_record(
+        &self,
+        prefix: &str,
+        stage_prefix: &str,
+        key: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<(), RuntimeError> {
         if bytes.is_empty() || bytes.len() as u64 > MAX_COMPLETION_BYTES {
             return Err(invalid("capture completion byte bound"));
         }
-        let name = key_name("completed-", &key);
-        let stage = key_name("completion-stage-", &key);
+        let name = key_name(prefix, &key);
+        let stage = key_name(stage_prefix, &key);
         let mut file = File::from(
             openat(
                 &self.directory,
@@ -54,7 +68,13 @@ impl SnapshotStore {
     }
 
     pub(crate) fn read_completion(&self, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
-        let name = key_name("completed-", &key);
+        self.read_record("completed-", key)
+    }
+    pub(crate) fn read_api_end(&self, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
+        self.read_record("api-returned-", key)
+    }
+    fn read_record(&self, prefix: &str, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
+        let name = key_name(prefix, &key);
         let mut file = File::from(
             openat(
                 &self.directory,
@@ -94,6 +114,29 @@ impl SnapshotStore {
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+
+    #[test]
+    fn api_end_is_separate_from_material_completion_and_partial_stage() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(root.path(), Permissions::from_mode(0o700)).unwrap();
+        let owner = rustix::process::geteuid().as_raw();
+        let store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        let key = [13; 32];
+        store.publish_api_end(key, b"original API-end").unwrap();
+        assert_eq!(store.read_api_end(key).unwrap(), b"original API-end");
+        assert!(store.read_completion(key).is_err());
+        assert!(store.publish_api_end(key, b"replacement").is_err());
+        assert_eq!(store.read_api_end(key).unwrap(), b"original API-end");
+        let interrupted = [14; 32];
+        std::fs::write(
+            root.path()
+                .join(key_name("api-return-stage-", &interrupted)),
+            b"partial",
+        )
+        .unwrap();
+        assert!(store.read_api_end(interrupted).is_err());
+        assert!(store.publish_api_end(interrupted, b"new").is_err());
+    }
 
     #[test]
     fn original_completion_survives_reopen_and_never_overwrites() {

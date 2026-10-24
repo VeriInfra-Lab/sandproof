@@ -68,7 +68,12 @@ impl SnapshotBundle {
             ));
         }
         let mut completion = Vec::new();
-        for prefix in ["completed-", "completion-stage-"] {
+        for prefix in [
+            "completed-",
+            "completion-stage-",
+            "api-returned-",
+            "api-return-stage-",
+        ] {
             let name = key_name(prefix, &self.directory_key);
             completion.push((
                 name.clone(),
@@ -111,11 +116,16 @@ impl SnapshotStore {
                 .iter()
                 .zip(["manifest.json", "state.bin", "memory.bin", "disk-0.img"])
                 .all(|((actual, _), expected)| actual == expected)
-            || plan.completion.len() != 2
+            || plan.completion.len() != 4
             || !plan
                 .completion
                 .iter()
-                .zip(["completed-", "completion-stage-"])
+                .zip([
+                    "completed-",
+                    "completion-stage-",
+                    "api-returned-",
+                    "api-return-stage-",
+                ])
                 .all(|((name, _), prefix)| *name == key_name(prefix, &plan.directory_key))
             || DirectoryIdentity::capture(&self.directory)? != plan.parent
         {

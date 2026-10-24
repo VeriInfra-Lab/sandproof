@@ -350,6 +350,23 @@ fn retirement_also_reclaims_the_exact_completion_and_interrupted_stage() {
     let fixture = Fixture::new();
     fixture
         .store
+        .publish_api_end(fixture.key, b"original API-end")
+        .unwrap();
+    let mut api_stage = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(
+            fixture
+                .store
+                .path
+                .join(key_name("api-return-stage-", &fixture.key)),
+        )
+        .unwrap();
+    api_stage.write_all(b"partial API-end").unwrap();
+    api_stage.sync_all().unwrap();
+    fixture
+        .store
         .publish_completion(fixture.key, b"exact original worker completion")
         .unwrap();
     let stage = fixture

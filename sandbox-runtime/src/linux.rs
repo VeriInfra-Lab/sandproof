@@ -16,6 +16,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "api_response.rs"]
+mod api_response;
 #[path = "boot_plan.rs"]
 mod boot_plan;
 #[path = "cgroup.rs"]
@@ -55,8 +57,9 @@ pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
 pub use snapshot::{
-    CapturedFullSnapshot, FullCaptureLimits, OriginalConfigurationObservation,
-    OriginalPauseObservation, PausedOriginalVm, PublishedFullCapture, SourceConfigurationLimits,
+    CapturedFullSnapshot, FullCaptureApiContext, FullCaptureApiEnd, FullCaptureLimits,
+    OriginalConfigurationObservation, OriginalPauseObservation, PausedOriginalVm,
+    PublishedFullCapture, SourceConfigurationLimits,
 };
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
@@ -1338,6 +1341,24 @@ impl Runtime {
         body: Option<&[u8]>,
         timeout: Duration,
     ) -> Result<Vec<u8>, RuntimeError> {
+        let (status, body) = self.api_reply(id, method, path, body, timeout)?;
+        if !(200..300).contains(&status) {
+            return Err(RuntimeError::Api {
+                status,
+                body: String::from_utf8_lossy(&body).into_owned(),
+            });
+        }
+        Ok(body)
+    }
+
+    fn api_reply(
+        &self,
+        id: &str,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<(u16, Vec<u8>), RuntimeError> {
         let mut stream = self.api_stream(id, timeout)?;
         let data = body.unwrap_or_default();
         write!(
@@ -1346,60 +1367,7 @@ impl Runtime {
             data.len()
         )?;
         stream.write_all(data)?;
-        let mut response = Vec::new();
-        let mut chunk = [0_u8; 4096];
-        let header_end = loop {
-            if let Some(position) = response.windows(4).position(|part| part == b"\r\n\r\n") {
-                break position;
-            }
-            if response.len() > 65_536 {
-                return Err(RuntimeError::Protocol("API headers exceeded limit"));
-            }
-            let count = stream.read(&mut chunk)?;
-            if count == 0 {
-                return Err(RuntimeError::Protocol("API closed before headers"));
-            }
-            response.extend_from_slice(&chunk[..count]);
-        };
-        let header = std::str::from_utf8(&response[..header_end])
-            .map_err(|_| RuntimeError::Protocol("non-UTF-8 HTTP headers"))?;
-        let status: u16 = header
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .and_then(|code| code.parse().ok())
-            .ok_or(RuntimeError::Protocol("missing HTTP status"))?;
-        let declared_length: Option<usize> = header.lines().find_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            key.trim()
-                .eq_ignore_ascii_case("content-length")
-                .then(|| value.trim().parse().ok())
-                .flatten()
-        });
-        let content_length = if status == 204 || status == 304 || status < 200 {
-            declared_length.unwrap_or(0)
-        } else {
-            declared_length.ok_or(RuntimeError::Protocol("missing Content-Length"))?
-        };
-        if content_length > 1_048_576 {
-            return Err(RuntimeError::Protocol("API response exceeded limit"));
-        }
-        let body_start = header_end + 4;
-        while response.len() - body_start < content_length {
-            let count = stream.read(&mut chunk)?;
-            if count == 0 {
-                return Err(RuntimeError::Protocol("API closed before response body"));
-            }
-            response.extend_from_slice(&chunk[..count]);
-        }
-        let body = response[body_start..body_start + content_length].to_vec();
-        if !(200..300).contains(&status) {
-            return Err(RuntimeError::Api {
-                status,
-                body: String::from_utf8_lossy(&body).into_owned(),
-            });
-        }
-        Ok(body)
+        api_response::read_reply(&mut stream)
     }
 }
 

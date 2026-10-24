@@ -7,8 +7,9 @@ use crate::{
     full_snapshot::{self, ExpectedFullCapture},
 };
 use sandbox_runtime::{
-    FullCaptureLimits, HelperLimits, OriginalPauseObservation, PreparedTrackedChild, RuntimeConfig,
-    RuntimeHelperGuard, RuntimeProcessIdentity, SnapshotLayout, snapshot_store::BundleReadLimits,
+    FullCaptureApiContext, FullCaptureLimits, HelperLimits, OriginalPauseObservation,
+    PreparedTrackedChild, RuntimeConfig, RuntimeHelperGuard, RuntimeProcessIdentity,
+    SnapshotLayout, snapshot_store::BundleReadLimits,
 };
 use sandproof_controller_service::capture::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureWorkRequest, RawSourceObservation,
@@ -176,6 +177,18 @@ pub(super) enum CaptureWorkerOutcome {
     Captured { manifest_digest: ContentDigest },
     Failed,
 }
+pub(super) fn api_context(
+    action: &WorkAction<core::EffectId>,
+    full: &FullCaptureWorkRequest,
+    job_digest: ContentDigest,
+) -> NodeResult<FullCaptureApiContext> {
+    Ok(FullCaptureApiContext {
+        work_sha256: *full.binding_digest()?.as_bytes(),
+        job_sha256: *job_digest.as_bytes(),
+        action_sha256: Sha256::digest(serde_json::to_vec(action)?).into(),
+    })
+}
+
 fn digest(body: &[u8]) -> ContentDigest {
     ContentDigest::from_sha256(Sha256::digest(body).into())
 }
@@ -301,6 +314,7 @@ impl CaptureWorkerJob {
                 compatibility: &expected,
             },
             FullCaptureLimits {
+                api_context: api_context(&self.action, &self.full, job_digest)?,
                 state_bytes: self.full.state_bytes,
                 disk_bytes: self.full.disk_bytes,
                 api_timeout: Duration::from_millis(self.full.api_timeout_ms),

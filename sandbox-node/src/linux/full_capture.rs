@@ -95,6 +95,68 @@ fn require_expected_request(
 }
 
 impl LinuxWorker {
+    pub(crate) fn recover_full_api_end(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        action: &WorkAction<core::EffectId>,
+        full: &FullCaptureWorkRequest,
+        source: &SourceObservationRequirement,
+        worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
+    ) -> NodeResult<sandproof_controller_service::capture::CaptureApiEndObservation> {
+        let context = self.require_full_action(action, full)?;
+        require_source_binding(&full.pause, source)?;
+        let process = RuntimeProcessIdentity {
+            pid: worker.process().pid,
+            start_time_ticks: worker.process().start_time_ticks,
+            boot_id: worker.process().boot_id.clone(),
+        };
+        if !worker.valid() || process.boot_id != source.source.boot_id || process.is_alive()? {
+            return Err("original Full worker exit not confirmed on this boot".into());
+        }
+        let slot = self.runtime_host_slot(context.position, context.binding.vm)?;
+        let _gate = slot.helper_gate.try_acquire(Some(&slot))?;
+        let expected = self.expected_cold_work(provider, profile, &full.pause, source)?;
+        require_expected_request(full, &expected.request)?;
+        let original = crate::source_observation::expected_source(source)?;
+        let record = profile
+            .layout
+            .read_full_api_end(full_snapshot::capture_directory_key(&full.pause.binding)?)?;
+        record.require_original(
+            source.resource.id.as_str(),
+            &original,
+            full_snapshot::capture_directory_key(&full.pause.binding)?,
+            super::capture_worker::api_context(action, full, *worker.job_digest())?,
+            &process,
+        )?;
+        // This is not a pause/continue action, material adoption or SQL receipt.
+        // A GET on a different socket without the original marker is insufficient.
+        if !matches!(
+            expected
+                .runtime
+                .observe_original_pause_state(source.resource.id.as_str(), &original)?,
+            OriginalPauseObservation::Paused(_)
+        ) || process.is_alive()?
+            || self.require_full_action(action, full)? != context
+        {
+            return Err("original Full API-end context/source changed".into());
+        }
+        provider.observe_original(
+            &source.node,
+            &source.host_bootstrap,
+            self.host_bootstrap_inputs(),
+        )?;
+        Ok(
+            sandproof_controller_service::capture::CaptureApiEndObservation {
+                action: action.clone(),
+                full_work_binding: full.binding_digest()?,
+                worker: worker.clone(),
+                source: source.source.clone(),
+                http_status: record.status(),
+            },
+        )
+    }
+
     // Independent local expectation. It does not read a manifest/Full DTO and
     // does not claim this cold-source rule automatically covers restored MSRs.
     fn expected_cold_work(
@@ -481,6 +543,21 @@ impl LinuxWorker {
                 compatibility: &expected.compatibility,
             },
             FullCaptureLimits {
+                // This direct physical probe is not the prepared SQL worker.
+                // Its distinct job hash cannot satisfy a saved worker binding.
+                api_context: super::capture_worker::api_context(
+                    action,
+                    request,
+                    ContentDigest::from_sha256(
+                        Sha256::digest(serde_json::to_vec(&(
+                            "direct-physical-full",
+                            action,
+                            request,
+                            original,
+                        ))?)
+                        .into(),
+                    ),
+                )?,
                 state_bytes: profile.state_bytes,
                 disk_bytes: profile.disk_bytes,
                 api_timeout: profile.api_timeout,
