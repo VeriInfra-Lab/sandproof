@@ -50,7 +50,7 @@ fn terminal(path: &Path, with_end: bool) -> (ControllerJournal, super::super::So
     if with_end {
         let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
         journal
-            .record_lifecycle_capture_api_end(
+            .record_lifecycle_capture_request_end(
                 &source.work,
                 &v3::context(),
                 fixture::actual_api_end(&saved),
