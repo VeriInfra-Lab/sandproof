@@ -139,11 +139,15 @@ pub(super) fn input_bytes(
 // Refuse unsupported new histories before allocating identity or outbox rows.
 // An exact existing-key replay is still decided by the original reducer.
 pub(super) fn check_input_profile(
-    _connection: &Connection,
-    _world: &core::World,
+    connection: &Connection,
+    world: &core::World,
     input: &core::ControllerInput,
 ) -> Result<(), JournalError> {
-    if let core::ControllerInput::Request(core::Request::Resume(_)) = input {
+    if let core::ControllerInput::Request(core::Request::Resume(request)) = input
+        && !super::lifecycle_inbox::source_work::restore::permits_resume_input(
+            connection, world, request,
+        )?
+    {
         return Err(JournalError::UnsupportedInput);
     }
 

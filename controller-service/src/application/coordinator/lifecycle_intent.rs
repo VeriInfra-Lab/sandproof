@@ -176,7 +176,55 @@ impl<H: ControllerHost> ControllerApplication<H> {
         intent: &AcceptedLifecycleIntent,
         context: &AuthenticatedCenterContext,
     ) -> Result<crate::LifecycleCreateObservation, JournalError> {
-        let (candidate, host, before) = {
+        if !matches!(intent.request.operation, LifecycleOperation::Create { .. }) {
+            return Err(JournalError::UnsupportedInput);
+        }
+        self.observe_lifecycle_execution(intent, context)
+    }
+
+    /// Observe the original resume candidate with current credentials and the
+    /// same persisted material binding before and after lock-free Host I/O.
+    /// # Errors
+    /// Foreign context, changed current work or corrupt receipts fail closed.
+    pub fn observe_lifecycle_resume(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, JournalError> {
+        use sandproof_protocol::lifecycle::{CurrentResumeReadiness, ResumeObservation};
+        if !matches!(intent.request.operation, LifecycleOperation::Resume { .. }) {
+            return Err(JournalError::UnsupportedInput);
+        }
+        let view = self.observe_lifecycle_execution(intent, context)?;
+        let readiness = match view.readiness {
+            crate::CreateReadiness::NotCurrent => CurrentResumeReadiness::NotCurrent,
+            crate::CreateReadiness::NotRunning => CurrentResumeReadiness::NotRunning,
+            crate::CreateReadiness::Expired => CurrentResumeReadiness::Expired,
+            crate::CreateReadiness::Pending(_) => CurrentResumeReadiness::Pending,
+            crate::CreateReadiness::Refused { .. } => return Err(JournalError::CorruptStore),
+            crate::CreateReadiness::Observed(facts) => CurrentResumeReadiness::Observed {
+                facts: sandproof_protocol::lifecycle::CurrentReadyFacts {
+                    started_at_ms: facts.started_at_ms,
+                    end_at_ms: facts.end_at_ms,
+                    max_end_at_ms: facts.max_end_at_ms,
+                    startup_deadline_ms: facts.startup_deadline_ms,
+                    observed_at_ms: facts.observed_at_ms,
+                },
+            },
+        };
+        Ok(ResumeObservation {
+            request: view.request,
+            current_request: view.current_request,
+            readiness,
+        })
+    }
+
+    fn observe_lifecycle_execution(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<crate::LifecycleCreateObservation, JournalError> {
+        let (candidate, host, before, restore) = {
             let inner = self
                 .inner
                 .lock()
@@ -200,13 +248,33 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .generation;
             let before =
                 super::data_credentials::verify_target(&inner, local.sandbox, generation).is_ok();
-            (candidate, std::sync::Arc::clone(&inner.host), before)
+            let restore = if matches!(intent.request.operation, LifecycleOperation::Resume { .. }) {
+                Some(inner.journal.lifecycle_restore_work(intent, context)?)
+            } else {
+                None
+            };
+            (
+                candidate,
+                std::sync::Arc::clone(&inner.host),
+                before,
+                restore,
+            )
         };
         let probes = if before {
             candidate
                 .actions
                 .iter()
-                .map(|action| host.observe(action))
+                .map(|action| match restore.as_ref() {
+                    Some(work)
+                        if !matches!(
+                            action.command.command(),
+                            sandbox_controller_core::Command::InstallFence { .. }
+                        ) =>
+                    {
+                        host.observe_lifecycle_restore_action(action, work)
+                    }
+                    _ => host.observe(action),
+                })
                 .collect()
         } else {
             vec![]

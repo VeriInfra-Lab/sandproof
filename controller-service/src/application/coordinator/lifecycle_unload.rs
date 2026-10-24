@@ -78,6 +78,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         action: &WorkAction<core::EffectId>,
     ) -> Result<Result<WorkReceipt<H::Evidence>, crate::WorkerTransportError>, ApplicationError>
     {
+        if let Some((work, permit)) = self.restore_execution_context(action)? {
+            return Ok(host.execute_lifecycle_restore_action(action, &work, permit.as_ref()));
+        }
         let Some((record, expected)) = self.capture_action_context(action)? else {
             return Ok(host.execute(action));
         };
@@ -135,6 +138,16 @@ impl<H: ControllerHost> ControllerApplication<H> {
         host: &H,
         action: &WorkAction<core::EffectId>,
     ) -> Result<Option<WorkReceipt<H::Evidence>>, ApplicationError> {
+        let restore = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            inner
+                .journal
+                .lifecycle_restore_action_work(action)
+                .map_err(map_journal)?
+        };
+        if let Some(work) = restore {
+            return Ok(host.observe_lifecycle_restore_action(action, &work));
+        }
         let Some((record, expected)) = self.capture_action_context(action)? else {
             return Ok(host.observe(action));
         };

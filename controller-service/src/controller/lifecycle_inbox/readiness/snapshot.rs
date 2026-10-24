@@ -57,7 +57,13 @@ fn expected_commands(
         || plan.slot != Some(slot)
         || plan.epoch != record.epoch
         || plan.generation != record.generation
-        || plan.restore_from.is_some()
+        || world
+            .operation_record(key)
+            .is_none_or(|ledger| match ledger.operation.kind {
+                core::OperationKind::Create => plan.restore_from.is_some(),
+                core::OperationKind::Resume => plan.restore_from.is_none(),
+                _ => true,
+            })
     {
         return Err(JournalError::CorruptStore);
     }
@@ -73,7 +79,7 @@ fn expected_commands(
             generation: plan.generation,
             vm,
             slot,
-            source: None,
+            source: plan.restore_from,
         },
         core::Command::ConfigureNetwork {
             sandbox: local.sandbox,
@@ -207,7 +213,10 @@ pub(in crate::controller) fn base_snapshot(
     let inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
     authenticated(&inbox, intent, context)?;
     let (s, _) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
-    if !matches!(intent.request.operation, LifecycleOperation::Create { .. }) {
+    if !matches!(
+        intent.request.operation,
+        LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
+    ) {
         return Err(JournalError::UnsupportedInput);
     }
     let session = &inbox.sessions[s];
@@ -240,6 +249,9 @@ pub(in crate::controller) fn base_snapshot(
     ) {
         (
             LifecycleOperation::Create {
+                target_incarnation, ..
+            }
+            | LifecycleOperation::Resume {
                 target_incarnation, ..
             },
             LifecycleOperation::Renew { incarnation, .. },
@@ -312,7 +324,7 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
         candidate.view.readiness = CreateReadiness::Pending(CreateReadinessPending::WorkUnknown);
         return Ok(());
     }
-    if !native.has_completed_original_create(local)
+    if !native.has_completed_original_execution(local)
         || candidate.view.historical_result
             != Some(core::OperationResult::Running(native.generation))
     {

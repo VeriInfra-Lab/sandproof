@@ -844,6 +844,13 @@ impl ControllerJournal {
             if !lifecycle_inbox::source_work::full::claim(&transaction, &world, &action)? {
                 continue;
             }
+            if !lifecycle_inbox::source_work::restore::claim_activation(
+                &transaction,
+                &world,
+                &action,
+            )? {
+                continue;
+            }
             crashes.hit(CrashPoint::BeforeDispatchClaim)?;
             storage::apply(&transaction, &self.namespace, input)?;
             transaction.execute("UPDATE outbox SET dispatch_state='dispatched' WHERE id=?1 AND dispatch_state='ready'", [id])?;

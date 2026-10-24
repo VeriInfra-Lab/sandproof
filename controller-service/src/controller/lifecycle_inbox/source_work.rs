@@ -1,6 +1,7 @@
 //! Readonly source responsibility in the original journal. Never a VM phase.
 mod codec;
 pub(in crate::controller) mod full;
+pub(in crate::controller) mod restore;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -26,7 +27,7 @@ use sha2::{Digest, Sha256};
 #[serde(deny_unknown_fields)]
 struct SourceAnchor {
     request: AcceptedLifecycleIntent,
-    create: AcceptedLifecycleIntent,
+    execution_origin: AcceptedLifecycleIntent,
     local: InternalLocalBinding,
     native: NativeCreateSnapshot,
     node: NodeIdentity,
@@ -64,6 +65,10 @@ pub struct SourceWorkRecord {
     pub observation: Option<RawSourceObservation>,
     #[serde(deserialize_with = "required_option")]
     capture: Option<full::CaptureWork>,
+    /// Unique successor and material use are saved beside their original
+    /// source, not reconstructed from a manager's in-memory handles.
+    #[serde(deserialize_with = "required_option")]
+    restore: Option<restore::RestoreClaim>,
 }
 
 fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -120,7 +125,7 @@ pub(super) fn references_intent(
     let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
     Ok(sources.records.iter().any(|record| {
         record.work.anchor.request.request.binding.key == intent.request.binding.key
-            || record.work.anchor.create.request.binding.key == intent.request.binding.key
+            || record.work.anchor.execution_origin.request.binding.key == intent.request.binding.key
     }))
 }
 
@@ -184,6 +189,7 @@ impl ControllerJournal {
             work,
             observation: None,
             capture: None,
+            restore: None,
         };
         sources.records.push(record.clone());
         codec::save(&tx, &sources, inbox.config.max_sessions)?;

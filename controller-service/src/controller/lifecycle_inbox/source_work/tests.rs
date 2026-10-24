@@ -1233,3 +1233,114 @@ fn full_late_capture_after_destroy_keeps_material_and_never_publishes_unloaded()
         assert_late_capture_retained(&journal, &accepted, &destroy, &terminal_row, budget, stage);
     }
 }
+
+fn resume_request() -> AcceptedLifecycleIntent {
+    let mut request = unload();
+    request.accepted_version = 3;
+    request.request.binding.expected = ExpectedSession::Version(2);
+    request.request.binding.key.sequence = 3.try_into().unwrap();
+    request.request.operation = LifecycleOperation::Resume {
+        source_incarnation: 101.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+        target_incarnation: 102.try_into().unwrap(),
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest::from_sha256([42; 32]),
+    };
+    request
+}
+
+#[test]
+fn recording_resume_does_not_mint_a_source_pin_or_change_native_incarnation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, _) = ready(&path);
+    let source = prepare(&mut journal);
+    let before = journal.world().unwrap();
+    let request = resume_request();
+    journal
+        .record_lifecycle_intent(&request, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    let state = journal
+        .lifecycle_work_state(&request, &v3::context())
+        .unwrap();
+    assert_eq!(state.local_operation, None);
+    assert_eq!(journal.world().unwrap(), before);
+    assert_eq!(
+        journal
+            .lifecycle_pending_resumes(&request.request.binding.node)
+            .unwrap(),
+        vec![request.clone()]
+    );
+    assert!(matches!(
+        journal.admit_lifecycle_resume(
+            &request,
+            &v3::context(),
+            10,
+            crate::controller::tests_support::limits(),
+            v3::fixture::compute(),
+            &mut NeverCrash
+        ),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_eq!(journal.world().unwrap(), before);
+    assert_eq!(
+        journal
+            .lifecycle_capture_record(state.local.unwrap().sandbox)
+            .unwrap(),
+        Some(source)
+    );
+    assert_eq!(
+        journal
+            .lifecycle_work_state(&request, &v3::context())
+            .unwrap()
+            .local_operation,
+        None
+    );
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(journal.world().unwrap(), before);
+    assert_eq!(
+        journal
+            .lifecycle_work_state(&request, &v3::context())
+            .unwrap()
+            .local_operation,
+        None
+    );
+}
+
+#[test]
+fn recorded_resume_rejects_changed_source_digest_and_skipped_incarnation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let request = resume_request();
+    let mut skipped = request.clone();
+    if let LifecycleOperation::Resume {
+        target_incarnation, ..
+    } = &mut skipped.request.operation
+    {
+        *target_incarnation = 103.try_into().unwrap();
+    }
+    assert!(
+        journal
+            .record_lifecycle_intent(&skipped, &v3::context(), &mut NeverCrash)
+            .is_err()
+    );
+    journal
+        .record_lifecycle_intent(&request, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    let mut changed = request.clone();
+    if let LifecycleOperation::Resume {
+        manifest_digest, ..
+    } = &mut changed.request.operation
+    {
+        *manifest_digest = sandproof_protocol::lifecycle::ContentDigest::from_sha256([43; 32]);
+    }
+    assert!(matches!(
+        journal.record_lifecycle_intent(&changed, &v3::context(), &mut NeverCrash),
+        Err(JournalError::Conflict)
+    ));
+    assert!(
+        journal
+            .record_lifecycle_intent(&request, &v3::context(), &mut NeverCrash)
+            .is_ok()
+    );
+}

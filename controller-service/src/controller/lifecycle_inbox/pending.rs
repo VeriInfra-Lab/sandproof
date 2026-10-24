@@ -157,3 +157,62 @@ impl ControllerJournal {
         Ok(pending)
     }
 }
+
+impl ControllerJournal {
+    /// Current recorded Resume work from the bounded original inbox. Scanning
+    /// grants no permission; admission and dispatch recheck the full request.
+    /// # Errors
+    /// A foreign node or inconsistent original durable state refuses the scan.
+    pub fn lifecycle_pending_resumes(
+        &self,
+        node: &NodeIdentity,
+    ) -> Result<Vec<AcceptedLifecycleIntent>, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        if &inbox.config.node != node {
+            return Err(JournalError::Conflict);
+        }
+        let mut pending = Vec::new();
+        for session in &inbox.sessions {
+            if session.terminal || session.refusal.is_some() {
+                continue;
+            }
+            let entry = session
+                .entries
+                .iter()
+                .find(|entry| entry.intent.accepted_version == session.current_version)
+                .ok_or(JournalError::CorruptStore)?;
+            if !matches!(
+                entry.intent.request.operation,
+                LifecycleOperation::Resume { .. }
+            ) {
+                continue;
+            }
+            let local = session.local.ok_or(JournalError::CorruptStore)?;
+            let row = world
+                .sandbox_record(local.sandbox)
+                .ok_or(JournalError::CorruptStore)?;
+            if row.owner != local.owner {
+                return Err(JournalError::CorruptStore);
+            }
+            // An admitted Resume remains this same request/candidate. Completed
+            // Running and terminal work are not re-admitted by the scheduler.
+            if !row.terminal
+                && (entry.local_operation.is_none()
+                    || (row.phase == core::Phase::Starting
+                        && row.current_operation.is_some_and(|operation| {
+                            operation.kind == core::OperationKind::Resume
+                                && Some(operation.id) == entry.local_operation
+                        })))
+            {
+                pending.push(entry.intent.clone());
+            }
+        }
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(pending)
+    }
+}

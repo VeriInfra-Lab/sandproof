@@ -24,17 +24,17 @@ const MAX_FULL: usize = 2;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CaptureWork {
-    operation: core::OperationId,
+    pub(super) operation: core::OperationId,
     pub(super) reserved_material_bytes: u64,
-    full: FullCaptureWorkRequest,
+    pub(super) full: FullCaptureWorkRequest,
     #[serde(deserialize_with = "super::required_option")]
-    action: Option<WorkAction<core::EffectId>>,
+    pub(super) action: Option<WorkAction<core::EffectId>>,
     #[serde(deserialize_with = "super::required_option")]
-    worker: Option<CaptureWorkerBinding>,
+    pub(super) worker: Option<CaptureWorkerBinding>,
     #[serde(deserialize_with = "super::required_option")]
-    completed: Option<ContentDigest>,
+    pub(super) completed: Option<ContentDigest>,
     #[serde(deserialize_with = "super::required_option")]
-    material_bytes: Option<u64>,
+    pub(super) material_bytes: Option<u64>,
 }
 fn key(record: &SourceWorkRecord) -> Option<core::OperationKey> {
     Some(core::OperationKey {

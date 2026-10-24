@@ -90,7 +90,30 @@ pub(in crate::controller) fn validate(
             }
             return Err(JournalError::CorruptStore);
         };
-        if row.owner != local.owner || row.generation != 1 || session.terminal && !row.terminal {
+        let origin = session
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.local_operation.is_some()
+                    && matches!(
+                        entry.intent.request.operation,
+                        sandproof_protocol::lifecycle::LifecycleOperation::Create { .. }
+                            | sandproof_protocol::lifecycle::LifecycleOperation::Resume { .. }
+                    )
+            })
+            .ok_or(JournalError::CorruptStore)?;
+        let plan = world
+            .operation_plan(sandbox_controller_core::OperationKey {
+                sandbox: local.sandbox,
+                operation: local.operation,
+            })
+            .ok_or(JournalError::CorruptStore)?;
+        if row.owner != local.owner
+            || plan.generation != row.generation
+            || origin.local_operation != Some(local.operation)
+            || session.terminal && !row.terminal
+        {
             return Err(JournalError::CorruptStore);
         }
         let create = session

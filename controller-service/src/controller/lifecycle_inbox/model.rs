@@ -253,7 +253,7 @@ impl Inbox {
             self.validate_session_shape(i, session)?;
             super::renewal_confirmation::validate_session(session)?;
             let mut maximum = 0;
-            let mut kinds = [0_u16; 4];
+            let mut kinds = [0_u16; 5];
             for entry in &session.entries {
                 let intent = &entry.intent;
                 if intent.accepted_version <= maximum
@@ -265,10 +265,11 @@ impl Inbox {
                 maximum = maximum.max(intent.accepted_version);
                 let kind = self.entry_kind(session, entry, &context)?;
                 kinds[kind] += 1;
-                if kind != 3 && kinds[kind] > 1 {
+                if (kind == 0 || kind == 2) && kinds[kind] > 1 {
                     return Err(JournalError::CorruptStore);
                 }
             }
+            session.validate_execution_lineage()?;
             if session.current_version != maximum
                 || session.terminal != (kinds[2] == 1)
                 || session.local.is_some() && kinds[0] != 1
@@ -409,13 +410,11 @@ impl Inbox {
             return Err(JournalError::CorruptStore);
         }
         match &intent.request.operation {
-            LifecycleOperation::Create {
-                create,
-                target_incarnation,
-            } => {
-                if create.options.len() > self.config.max_options_bytes as usize
-                    || session.incarnation != Some(*target_incarnation)
-                {
+            LifecycleOperation::Create { create, .. } => {
+                // Logical incarnation is an opaque protocol identity; it is
+                // not the local VM generation. Lineage below binds its actual
+                // original value and each exact successor.
+                if create.options.len() > self.config.max_options_bytes as usize {
                     return Err(JournalError::CorruptStore);
                 }
                 Ok(0)
@@ -423,7 +422,7 @@ impl Inbox {
             LifecycleOperation::Unload {
                 source_incarnation, ..
             } => {
-                if session.incarnation != Some(*source_incarnation) || session.local.is_none() {
+                if source_incarnation.get() == 0 || session.local.is_none() {
                     return Err(JournalError::CorruptStore);
                 }
                 Ok(1)
@@ -434,7 +433,7 @@ impl Inbox {
                 end_at_ms,
                 extend_only,
             } => {
-                if session.incarnation != Some(*incarnation)
+                if incarnation.get() == 0
                     || session.local.is_none()
                     || *end_at_ms < 0
                     || entry.applied_deadline.is_some()
@@ -456,7 +455,7 @@ impl Inbox {
                 }
                 Ok(3)
             }
-            LifecycleOperation::Resume { .. } => Err(JournalError::UnsupportedInput),
+            LifecycleOperation::Resume { .. } => Ok(4),
         }
     }
 
@@ -468,9 +467,6 @@ impl Inbox {
             return Ok(found);
         }
         let request = &intent.request;
-        if matches!(request.operation, LifecycleOperation::Resume { .. }) {
-            return Err(JournalError::UnsupportedInput);
-        }
         let existing = self
             .sessions
             .iter()
@@ -509,11 +505,19 @@ impl Inbox {
                 source_incarnation, ..
             } if session.local.is_some()
                 && session.incarnation == Some(*source_incarnation)
-                && !session.entries.iter().any(|e| {
-                    matches!(
-                        e.intent.request.operation,
-                        LifecycleOperation::Unload { .. }
-                    )
+                && session.can_follow_running() => {}
+            LifecycleOperation::Resume {
+                source_incarnation,
+                capture,
+                target_incarnation,
+                ..
+            } if session.local.is_some()
+                && session.incarnation == Some(*source_incarnation)
+                && source_incarnation.checked_next().ok() == Some(*target_incarnation)
+                && session.entries.last().is_some_and(|prior| {
+                    matches!(prior.intent.request.operation,
+                        LifecycleOperation::Unload { source_incarnation: old, capture: old_capture }
+                        if old == *source_incarnation && old_capture == *capture)
                 }) => {}
             LifecycleOperation::Destroy {} => {}
             LifecycleOperation::Renew {
@@ -523,12 +527,7 @@ impl Inbox {
             } if session.local.is_some()
                 && session.incarnation == Some(*incarnation)
                 && *end_at_ms >= 0
-                && !session.entries.iter().any(|e| {
-                    matches!(
-                        e.intent.request.operation,
-                        LifecycleOperation::Unload { .. }
-                    )
-                }) => {}
+                && session.can_follow_running() => {}
             _ => return Err(JournalError::UnsupportedInput),
         }
         // A later public row must not hide an earlier unconfirmed SDK renewal.
@@ -607,5 +606,92 @@ impl Inbox {
             compacted_sdk_through: None,
         });
         Ok((self.sessions.len() - 1, 0))
+    }
+}
+
+impl Session {
+    pub(super) fn current_execution_origin(&self) -> Option<&Entry> {
+        self.entries.iter().rev().find(|entry| {
+            matches!(
+                entry.intent.request.operation,
+                LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
+            )
+        })
+    }
+
+    fn can_follow_running(&self) -> bool {
+        self.entries
+            .last()
+            .is_some_and(|entry| match entry.intent.request.operation {
+                LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. } => {
+                    entry.local_operation.is_some()
+                }
+                // A newer canonical request may fence an unapplied renewal;
+                // receiving Renew did not replace the original running VM.
+                // The SDK acknowledgement gate below remains separate.
+                LifecycleOperation::Renew { .. } => true,
+                _ => false,
+            })
+    }
+
+    /// Historical entries keep their own incarnation. Only a durably attached
+    /// Resume changes the native mapping; receiving its DTO does not do so.
+    fn validate_execution_lineage(&self) -> Result<(), JournalError> {
+        let mut incarnation = None;
+        let mut previous: Option<&Entry> = None;
+        let mut capture_frontier = 0;
+        for entry in &self.entries {
+            match entry.intent.request.operation {
+                LifecycleOperation::Create {
+                    target_incarnation, ..
+                } => {
+                    if incarnation.is_some() || previous.is_some() {
+                        return Err(JournalError::CorruptStore);
+                    }
+                    incarnation = Some(target_incarnation);
+                }
+                LifecycleOperation::Unload {
+                    source_incarnation,
+                    capture,
+                } => {
+                    if incarnation != Some(source_incarnation) || capture.get() <= capture_frontier
+                    {
+                        return Err(JournalError::CorruptStore);
+                    }
+                    capture_frontier = capture.get();
+                }
+                LifecycleOperation::Resume {
+                    source_incarnation,
+                    capture,
+                    target_incarnation,
+                    ..
+                } => {
+                    if incarnation != Some(source_incarnation)
+                        || source_incarnation.checked_next().ok() != Some(target_incarnation)
+                        || previous.is_none_or(|prior| !matches!(prior.intent.request.operation,
+                            LifecycleOperation::Unload { source_incarnation: old, capture: old_capture }
+                            if old == source_incarnation && old_capture == capture)) {
+                        return Err(JournalError::CorruptStore);
+                    }
+                    if entry.local_operation.is_some() {
+                        incarnation = Some(target_incarnation);
+                    }
+                }
+                LifecycleOperation::Renew {
+                    incarnation: current,
+                    ..
+                } => {
+                    if incarnation != Some(current) {
+                        return Err(JournalError::CorruptStore);
+                    }
+                }
+                LifecycleOperation::Destroy {} => {}
+            }
+            previous = Some(entry);
+        }
+        if self.incarnation != incarnation {
+            return Err(JournalError::CorruptStore);
+        }
+        Ok(())
     }
 }

@@ -85,21 +85,21 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
         return Err(JournalError::UnresolvedAction);
     }
     let local = state.local.ok_or(JournalError::UnresolvedAction)?;
-    let create = session
-        .entries
-        .iter()
-        .find(|entry| {
-            matches!(
-                entry.intent.request.operation,
-                LifecycleOperation::Create { .. }
-            )
-        })
+    let execution_origin = session
+        .current_execution_origin()
         .ok_or(JournalError::CorruptStore)?
         .intent
         .clone();
-    let view = base_snapshot(tx, namespace, world, &create, &inbox.config.context())?.view;
+    let view = base_snapshot(
+        tx,
+        namespace,
+        world,
+        &execution_origin,
+        &inbox.config.context(),
+    )?
+    .view;
     let native = view.native.ok_or(JournalError::CorruptStore)?;
-    if !native.has_completed_original_create(local)
+    if !native.has_completed_original_execution(local)
         || view.historical_result != Some(core::OperationResult::Running(native.generation))
     {
         return Err(JournalError::UnresolvedAction);
@@ -130,7 +130,7 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     }
     let anchor = SourceAnchor {
         request: intent.clone(),
-        create,
+        execution_origin,
         local,
         native,
         node: inbox.config.node.clone(),
@@ -170,20 +170,22 @@ pub(super) fn validate_record(
         .map_err(|_| JournalError::CorruptStore)?
         .ok_or(JournalError::CorruptStore)?;
     let session = &inbox.sessions[s];
+    validate_execution_origin(world, inbox, anchor, s)?;
     if !matches!(
         anchor.request.request.operation,
         LifecycleOperation::Unload { .. }
-    ) || session.local != Some(anchor.local)
-        || inbox
-            .find(&anchor.create)
-            .map_err(|_| JournalError::CorruptStore)?
-            .is_none()
-        || anchor.create.request.binding.session != session.id
+    ) || session.local.is_none_or(|local| {
+        local.sandbox != anchor.local.sandbox || local.owner != anchor.local.owner
+    }) || inbox
+        .find(&anchor.execution_origin)
+        .map_err(|_| JournalError::CorruptStore)?
+        .is_none()
+        || anchor.execution_origin.request.binding.session != session.id
         || !matches!(
-            anchor.create.request.operation,
-            LifecycleOperation::Create { .. }
+            anchor.execution_origin.request.operation,
+            LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
         )
-        || !anchor.native.has_completed_original_create(anchor.local)
+        || !anchor.native.has_completed_original_execution(anchor.local)
         || req.limits != *config
         || req.node != inbox.config.node
         || anchor.node != req.node
@@ -205,7 +207,7 @@ pub(super) fn validate_record(
     }
     if let Some(current) = world.sandbox_record(anchor.local.sandbox) {
         if current.owner != anchor.local.owner
-            || current.generation != anchor.native.generation
+            || current.generation < anchor.native.generation
             || world
                 .operation_record(core::OperationKey {
                     sandbox: anchor.local.sandbox,
@@ -249,6 +251,48 @@ pub(super) fn validate_record(
         {
             return Err(JournalError::CorruptStore);
         }
+    }
+    Ok(())
+}
+
+fn validate_execution_origin(
+    world: &core::World,
+    inbox: &Inbox,
+    anchor: &SourceAnchor,
+    session: usize,
+) -> Result<(), JournalError> {
+    let (origin_session, origin_entry) = inbox
+        .find(&anchor.execution_origin)
+        .map_err(|_| JournalError::CorruptStore)?
+        .ok_or(JournalError::CorruptStore)?;
+    if origin_session != session
+        || inbox.sessions[session].entries[origin_entry].local_operation
+            != Some(anchor.local.operation)
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    let origin_key = core::OperationKey {
+        sandbox: anchor.local.sandbox,
+        operation: anchor.local.operation,
+    };
+    let origin_plan = world
+        .operation_plan(origin_key)
+        .ok_or(JournalError::CorruptStore)?;
+    let origin_row = world
+        .operation_record(origin_key)
+        .ok_or(JournalError::CorruptStore)?;
+    let origin_kind = match anchor.execution_origin.request.operation {
+        LifecycleOperation::Create { .. } => core::OperationKind::Create,
+        LifecycleOperation::Resume { .. } => core::OperationKind::Resume,
+        _ => return Err(JournalError::CorruptStore),
+    };
+    if origin_row.operation.kind != origin_kind
+        || origin_plan.generation != anchor.native.generation
+        || origin_plan.epoch != anchor.native.epoch
+        || origin_plan.vm != anchor.native.current_vm
+        || (origin_kind == core::OperationKind::Create) != origin_plan.restore_from.is_none()
+    {
+        return Err(JournalError::CorruptStore);
     }
     Ok(())
 }

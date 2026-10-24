@@ -156,6 +156,7 @@ pub(in crate::controller) fn validate(
     for (index, record) in sources.records.iter().enumerate() {
         super::snapshot::validate_record(connection, world, &inbox, &sources.config, record)?;
         super::full::validate_record(record, world)?;
+        super::restore::validate_record(record, world)?;
         if sources.records[..index].iter().any(|old| {
             old.work.request().request.binding.session
                 == record.work.request().request.binding.session
