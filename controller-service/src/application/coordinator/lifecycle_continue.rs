@@ -187,8 +187,8 @@ impl<H: ControllerHost> ControllerApplication<H> {
             return Ok(false);
         };
         let end = if let Some(worker) = record.capture_worker() {
-            match record.capture_api_end().cloned().or_else(|| {
-                host.observe_lifecycle_capture_api_end(
+            match record.capture_request_end().cloned().or_else(|| {
+                host.observe_lifecycle_capture_request_end(
                     record.capture_action()?,
                     full,
                     record.work.requirement(),

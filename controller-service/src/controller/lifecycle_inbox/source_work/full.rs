@@ -101,9 +101,9 @@ impl SourceWorkRecord {
         self.capture.as_ref()?.action.as_ref()
     }
     #[must_use]
-    pub fn capture_api_end(&self) -> Option<&crate::capture::CaptureApiEndObservation> {
+    pub fn capture_request_end(&self) -> Option<&crate::capture::CaptureRequestEndObservation> {
         match self.capture.as_ref()?.end.as_ref()? {
-            end::CaptureEndRecord::Returned { observation } => Some(observation),
+            end::CaptureEndRecord::WorkerEnded { observation } => Some(observation),
             end::CaptureEndRecord::NeverReleased { .. } => None,
         }
     }
