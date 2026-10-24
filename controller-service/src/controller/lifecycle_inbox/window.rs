@@ -142,7 +142,8 @@ impl ControllerJournal {
             return Err(JournalError::UnresolvedAction);
         }
         if let Some(local) = inbox.sessions[s].local
-            && !super::native_retirement::cleaned(&inbox.sessions[s],&world)? {
+            && !super::native_retirement::cleaned(&inbox.sessions[s], &world)?
+        {
             sandbox_controller_core::maintenance::retirement::validate_terminal_cleanup(
                 &world,
                 local.sandbox,

@@ -7,7 +7,9 @@ use crate::capture::{
 use sandbox_controller_core as core;
 use sandproof_protocol::{UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 
-fn unreleased(path: &Path) -> (
+fn unreleased(
+    path: &Path,
+) -> (
     ControllerJournal,
     SourceWorkRecord,
     WorkAction<core::EffectId>,
@@ -24,13 +26,19 @@ fn unreleased(path: &Path) -> (
         )
         .unwrap();
     let action = claim_full_before_worker_release(&mut journal, source.work.anchor.local.sandbox);
-    (journal,source,action)
+    (journal, source, action)
 }
 
-fn pending(path: &Path, completed: bool, unknown: bool) -> (
-    ControllerJournal, SourceWorkRecord, WorkAction<core::EffectId>,
+fn pending(
+    path: &Path,
+    completed: bool,
+    unknown: bool,
+) -> (
+    ControllerJournal,
+    SourceWorkRecord,
+    WorkAction<core::EffectId>,
 ) {
-    let (mut journal,source,action)=unreleased(path);
+    let (mut journal, source, action) = unreleased(path);
     journal
         .authorize_lifecycle_full_capture(
             &source.work,
@@ -141,14 +149,19 @@ fn observed(work: &TerminatedCaptureWorkRequest) -> TerminatedCaptureObservation
 fn finish_destroy(journal: &mut ControllerJournal, sandbox: core::SandboxId) {
     use core::workflow::{self, WorkflowStep};
     for _ in 0..64 {
-        match workflow::next_step(&journal.world().unwrap(),sandbox) {
-            WorkflowStep::Apply(input)=> {journal.apply(*input,&mut NeverCrash).unwrap();}
-            WorkflowStep::Claim=> {
-                let action=journal.claim_next(Some(sandbox),&mut NeverCrash).unwrap().unwrap();
-                success(journal,&action);
+        match workflow::next_step(&journal.world().unwrap(), sandbox) {
+            WorkflowStep::Apply(input) => {
+                journal.apply(*input, &mut NeverCrash).unwrap();
             }
-            WorkflowStep::Complete=>return,
-            other=>panic!("original terminal cleanup blocked: {other:?}"),
+            WorkflowStep::Claim => {
+                let action = journal
+                    .claim_next(Some(sandbox), &mut NeverCrash)
+                    .unwrap()
+                    .unwrap();
+                success(journal, &action);
+            }
+            WorkflowStep::Complete => return,
+            other => panic!("original terminal cleanup blocked: {other:?}"),
         }
     }
     panic!("original terminal cleanup exceeded finite bound");
@@ -203,7 +216,10 @@ fn terminal_drain_public_transaction_closes_unknown_writer_without_success_or_qu
             held.capture.as_ref().unwrap().reserved_material_bytes
         );
         assert_eq!(journal.retained_resource_usage().unwrap(), usage_before);
-        assert_eq!(super::super::retirement::material_charge(&retained).unwrap(), material_before);
+        assert_eq!(
+            super::super::retirement::material_charge(&retained).unwrap(),
+            material_before
+        );
         assert!(
             retained.capture_work_end_receipt().unwrap().is_none(),
             "terminal End is never Continue"
@@ -396,8 +412,15 @@ fn terminal_drain_end_fits_original_prepaid_budget_without_copying_full() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let (mut journal, source, _) = pending(&path, false, true);
-    let record=journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
-    journal.record_lifecycle_capture_request_end(&source.work,&v3::context(),actual_api_end(&record),&mut NeverCrash).unwrap();
+    let record = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    journal
+        .record_lifecycle_capture_request_end(
+            &source.work,
+            &v3::context(),
+            actual_api_end(&record),
+            &mut NeverCrash,
+        )
+        .unwrap();
     destroy(&mut journal);
     stop(&mut journal, source.work.anchor.local.sandbox);
     let work = journal
@@ -428,84 +451,170 @@ fn terminal_drain_end_fits_original_prepaid_budget_without_copying_full() {
     assert!(!json.contains("kernel_bytes"));
 }
 
-fn end_json(record:&SourceWorkRecord)->serde_json::Value {
+fn end_json(record: &SourceWorkRecord) -> serde_json::Value {
     serde_json::to_value(record.capture.as_ref().unwrap()).unwrap()["end"].clone()
 }
 
 #[test]
 fn terminal_drain_preserves_prior_returned_no_request_and_never_released_without_recursion() {
-    for unknown in [false,true] {
+    for unknown in [false, true] {
         for kind in 0..3 {
-            let dir=tempfile::tempdir().unwrap();let path=dir.path().join("db");
-            let (mut journal,source,seal)=if kind==2 {unreleased(&path)} else {pending(&path,false,unknown)};
-            if kind==2 && unknown {
-                journal.complete(&WorkReceipt::<FullEvidence> {identity:seal.identity.clone(),outcome:WorkOutcome::Unknown {reason:UnknownReason::ObservationUnavailable,last_observation:None}},&mut NeverCrash).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("db");
+            let (mut journal, source, seal) = if kind == 2 {
+                unreleased(&path)
+            } else {
+                pending(&path, false, unknown)
+            };
+            if kind == 2 && unknown {
+                journal
+                    .complete(
+                        &WorkReceipt::<FullEvidence> {
+                            identity: seal.identity.clone(),
+                            outcome: WorkOutcome::Unknown {
+                                reason: UnknownReason::ObservationUnavailable,
+                                last_observation: None,
+                            },
+                        },
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
             }
-            if kind!=2 {
-                let record=journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
-                let mut end=actual_api_end(&record);
-                end.outcome=if kind==0 {crate::capture::CaptureRequestEndOutcome::Returned {http_status:500}} else {crate::capture::CaptureRequestEndOutcome::NoRequest};
-                journal.record_lifecycle_capture_request_end(&source.work,&v3::context(),end,&mut NeverCrash).unwrap();
+            if kind != 2 {
+                let record = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+                let mut end = actual_api_end(&record);
+                end.outcome = if kind == 0 {
+                    crate::capture::CaptureRequestEndOutcome::Returned { http_status: 500 }
+                } else {
+                    crate::capture::CaptureRequestEndOutcome::NoRequest
+                };
+                journal
+                    .record_lifecycle_capture_request_end(
+                        &source.work,
+                        &v3::context(),
+                        end,
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
             }
             destroy(&mut journal);
-            if kind==2 {
+            if kind == 2 {
                 // The public never-released API requires native revocation;
                 // public Destroy supplies it, without a private reducer bypass.
-                journal.record_lifecycle_capture_never_released(&source.work,&v3::context(),&mut NeverCrash).unwrap();
+                journal
+                    .record_lifecycle_capture_never_released(
+                        &source.work,
+                        &v3::context(),
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
             }
-            let prior=end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]);
-            stop(&mut journal,source.work.anchor.local.sandbox);
-            let work=journal.lifecycle_terminated_capture_work(&source.work).unwrap();
-            let observation=observed(&work);
-            journal.retire_lifecycle_terminated_capture(&source.work,observation.clone(),&mut NeverCrash).unwrap();
-            let saved=journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
-            let json=end_json(&saved);
-            assert_eq!(json["prior"],prior);
+            let prior = end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]);
+            stop(&mut journal, source.work.anchor.local.sandbox);
+            let work = journal
+                .lifecycle_terminated_capture_work(&source.work)
+                .unwrap();
+            let observation = observed(&work);
+            journal
+                .retire_lifecycle_terminated_capture(
+                    &source.work,
+                    observation.clone(),
+                    &mut NeverCrash,
+                )
+                .unwrap();
+            let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+            let json = end_json(&saved);
+            assert_eq!(json["prior"], prior);
             assert!(json["prior"].get("prior").is_none());
             assert!(saved.capture_work_end_receipt().unwrap().is_none());
-            let after=journal.world().unwrap();
-            assert!(matches!(after.effect_status(&seal.command),Some(core::EffectStatus::RetiredByCaptureDrain(_))));
-            if kind!=2 {
-                let mut corrupt=serde_json::to_value(&saved).unwrap();
-                corrupt["capture"]["end"]["prior"]["observation"]["source"]["pid"]=serde_json::json!(999);
-                let corrupt:SourceWorkRecord=serde_json::from_value(corrupt).unwrap();
-                assert!(full::material_writer_closed(&corrupt,&after).is_err());
+            let after = journal.world().unwrap();
+            assert!(matches!(
+                after.effect_status(&seal.command),
+                Some(core::EffectStatus::RetiredByCaptureDrain(_))
+            ));
+            if kind != 2 {
+                let mut corrupt = serde_json::to_value(&saved).unwrap();
+                corrupt["capture"]["end"]["prior"]["observation"]["source"]["pid"] =
+                    serde_json::json!(999);
+                let corrupt: SourceWorkRecord = serde_json::from_value(corrupt).unwrap();
+                assert!(full::material_writer_closed(&corrupt, &after).is_err());
             }
-            drop(journal);let mut journal=v3::open(&path);
-            journal.retire_lifecycle_terminated_capture(&source.work,observation,&mut NeverCrash).unwrap();
-            assert_eq!(journal.world().unwrap(),after);
-            assert_eq!(end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]),json);
+            drop(journal);
+            let mut journal = v3::open(&path);
+            journal
+                .retire_lifecycle_terminated_capture(&source.work, observation, &mut NeverCrash)
+                .unwrap();
+            assert_eq!(journal.world().unwrap(), after);
+            assert_eq!(
+                end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]),
+                json
+            );
         }
     }
 }
 
 #[test]
 fn terminal_drain_preserves_end_already_referenced_by_original_continuation_history() {
-    let dir=tempfile::tempdir().unwrap();let path=dir.path().join("db");
-    let (mut journal,source,_)=pending(&path,false,true);
-    let saved=journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
-    journal.prepare_lifecycle_original_continue(&source.work,&v3::context(),Some(actual_api_end(&saved)),10,&mut NeverCrash).unwrap();
-    let before_end=end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source, _) = pending(&path, false, true);
+    let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    journal
+        .prepare_lifecycle_original_continue(
+            &source.work,
+            &v3::context(),
+            Some(actual_api_end(&saved)),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let before_end = end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]);
     destroy(&mut journal);
-    assert!(journal.lifecycle_terminated_capture_work(&source.work).is_err());
-    assert_eq!(end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]),before_end);
-    finish_destroy(&mut journal,source.work.anchor.local.sandbox);
-    let saved=journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
-    assert!(full::material_writer_closed(&saved,&journal.world().unwrap()).unwrap());
-    let context=journal.host_slot_context(source.work.anchor.local.sandbox).unwrap().unwrap();
-    let mut releases=0;
+    assert!(
+        journal
+            .lifecycle_terminated_capture_work(&source.work)
+            .is_err()
+    );
+    assert_eq!(
+        end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]),
+        before_end
+    );
+    finish_destroy(&mut journal, source.work.anchor.local.sandbox);
+    let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    assert!(full::material_writer_closed(&saved, &journal.world().unwrap()).unwrap());
+    let context = journal
+        .host_slot_context(source.work.anchor.local.sandbox)
+        .unwrap()
+        .unwrap();
+    let mut releases = 0;
     // The ordinary controlled host supplies the original release response;
     // native Cleanup alone never establishes this physical boundary fact.
-    journal.release_host_slot(context, |actual| {
-        assert_eq!(*actual,context);
-        releases+=1;
-        Ok(())
-    }, &mut NeverCrash).unwrap();
-    assert_eq!(releases,1);
-    assert!(super::super::retirement::material_charge(&saved).unwrap()>0);
-    assert_eq!(journal.lifecycle_material_retirement_questions(source.work.anchor.local.sandbox).unwrap().len(),1);
-    let before=journal.world().unwrap();drop(journal);
-    let journal=v3::open(&path);
-    assert_eq!(journal.world().unwrap(),before);
-    assert_eq!(end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]),before_end);
+    journal
+        .release_host_slot(
+            context,
+            |actual| {
+                assert_eq!(*actual, context);
+                releases += 1;
+                Ok(())
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert_eq!(releases, 1);
+    assert!(super::super::retirement::material_charge(&saved).unwrap() > 0);
+    assert_eq!(
+        journal
+            .lifecycle_material_retirement_questions(source.work.anchor.local.sandbox)
+            .unwrap()
+            .len(),
+        1
+    );
+    let before = journal.world().unwrap();
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(journal.world().unwrap(), before);
+    assert_eq!(
+        end_json(&journal.lifecycle_source_work(&v3::config().node).unwrap()[0]),
+        before_end
+    );
 }

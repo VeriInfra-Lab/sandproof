@@ -206,15 +206,24 @@ fn saved_plan_never_substitutes_for_the_original_writer_end() {
     let dir = tempfile::tempdir().unwrap();
     let (mut journal, source) = terminal(&dir.path().join("db"));
     let sandbox = source.anchor.local.sandbox;
-    let question = journal.lifecycle_material_retirement_questions(sandbox).unwrap().remove(0);
+    let question = journal
+        .lifecycle_material_retirement_questions(sandbox)
+        .unwrap()
+        .remove(0);
     let certificate = closure(&journal, sandbox);
-    journal.prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash).unwrap();
+    journal
+        .prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash)
+        .unwrap();
     let original = saved(&journal);
     let mut encoded = serde_json::to_value(&original).unwrap();
     encoded["capture"]["end"] = serde_json::Value::Null;
     let changed: SourceWorkRecord = serde_json::from_value(encoded).unwrap();
     assert!(validate_record(&changed, &journal.world().unwrap()).is_err());
-    assert_eq!(saved(&journal), original, "no negative test mutation is written to SQL");
+    assert_eq!(
+        saved(&journal),
+        original,
+        "no negative test mutation is written to SQL"
+    );
     assert!(material_charge(&saved(&journal)).unwrap() > 0);
 }
 

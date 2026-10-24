@@ -97,8 +97,14 @@ fn reservation(full: &FullCaptureWorkRequest) -> Result<u64, JournalError> {
 }
 
 impl SourceWorkRecord {
-    pub(crate) fn source_sandbox(&self)->core::SandboxId{self.work.anchor.local.sandbox}
-    pub(crate) fn capture_has_end(&self)->bool{self.capture.as_ref().is_some_and(|capture|capture.end.is_some())}
+    pub(crate) fn source_sandbox(&self) -> core::SandboxId {
+        self.work.anchor.local.sandbox
+    }
+    pub(crate) fn capture_has_end(&self) -> bool {
+        self.capture
+            .as_ref()
+            .is_some_and(|capture| capture.end.is_some())
+    }
     #[must_use]
     pub fn full_capture(&self) -> Option<&FullCaptureWorkRequest> {
         Some(&self.capture.as_ref()?.full)
