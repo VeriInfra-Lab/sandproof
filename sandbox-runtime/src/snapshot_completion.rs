@@ -96,20 +96,26 @@ impl SnapshotStore {
             },
             &mut source_alive,
         )?;
-        retry_publication(|| {
-            #[cfg(test)]
-            faults::hit(2, &file, &[])?;
-            Ok(file.sync_all()?)
-        }, &mut source_alive)?;
+        retry_publication(
+            || {
+                #[cfg(test)]
+                faults::hit(2, &file, &[])?;
+                Ok(file.sync_all()?)
+            },
+            &mut source_alive,
+        )?;
         retry_publication(
             || Ok(file.set_permissions(Permissions::from_mode(0o400))?),
             &mut source_alive,
         )?;
-        retry_publication(|| {
-            #[cfg(test)]
-            faults::hit(2, &file, &[])?;
-            Ok(file.sync_all()?)
-        }, &mut source_alive)?;
+        retry_publication(
+            || {
+                #[cfg(test)]
+                faults::hit(2, &file, &[])?;
+                Ok(file.sync_all()?)
+            },
+            &mut source_alive,
+        )?;
         matches_entry(&self.directory, OsStr::new(&stage), &file)?;
         retry_publication(
             || {
@@ -126,11 +132,14 @@ impl SnapshotStore {
             },
             &mut source_alive,
         )?;
-        retry_publication(|| {
-            #[cfg(test)]
-            faults::hit(4, &self.directory, &[])?;
-            Ok(self.directory.sync_all()?)
-        }, &mut source_alive)?;
+        retry_publication(
+            || {
+                #[cfg(test)]
+                faults::hit(4, &self.directory, &[])?;
+                Ok(self.directory.sync_all()?)
+            },
+            &mut source_alive,
+        )?;
         matches_entry(&self.directory, OsStr::new(&name), &file)?;
         Ok(())
     }
@@ -186,7 +195,9 @@ fn retry_publication<T>(
 ) -> Result<T, RuntimeError> {
     loop {
         match step() {
-            Err(RuntimeError::Io(error)) if matches!(error.raw_os_error(), Some(4 | 5 | 28 | 122)) => {
+            Err(RuntimeError::Io(error))
+                if matches!(error.raw_os_error(), Some(4 | 5 | 28 | 122)) =>
+            {
                 if !source_alive()? {
                     return Err(RuntimeError::Io(error));
                 }
@@ -209,14 +220,18 @@ mod faults {
     thread_local! { pub(super) static STATE: RefCell<State> = RefCell::default(); }
     pub(super) fn hit(phase: u8, mut file: &File, bytes: &[u8]) -> Result<(), RuntimeError> {
         STATE.with_borrow_mut(|state| {
-            if state.remaining.front().is_none_or(|fault| fault.0 != phase) { return Ok(()); }
+            if state.remaining.front().is_none_or(|fault| fault.0 != phase) {
+                return Ok(());
+            }
             if phase != 4 {
                 let meta = file.metadata()?;
                 let identity = (meta.dev(), meta.ino());
                 assert_eq!(*state.inode.get_or_insert(identity), identity);
             }
             let (_, code) = state.remaining.pop_front().unwrap();
-            if phase == 1 { file.write_all(&bytes[..bytes.len().min(5)])?; }
+            if phase == 1 {
+                file.write_all(&bytes[..bytes.len().min(5)])?;
+            }
             Err(RuntimeError::Io(std::io::Error::from_raw_os_error(code)))
         })
     }
@@ -236,9 +251,14 @@ mod tests {
         let key = [21; 32];
         let original = b"complete original Full API response";
         faults::STATE.with_borrow_mut(|state| {
-            *state = faults::State { remaining: [(1, 28), (2, 5), (3, 28), (4, 5)].into(), inode: None };
+            *state = faults::State {
+                remaining: [(1, 28), (2, 5), (3, 28), (4, 5)].into(),
+                inode: None,
+            };
         });
-        store.publish_retained_api_end(key, original, || Ok(true)).unwrap();
+        store
+            .publish_retained_api_end(key, original, || Ok(true))
+            .unwrap();
         let inode = faults::STATE.with_borrow(|state| {
             assert!(state.remaining.is_empty());
             state.inode.unwrap()
@@ -250,7 +270,12 @@ mod tests {
         let meta = canonical.metadata().unwrap();
         assert_eq!((meta.dev(), meta.ino()), inode);
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
-        assert!(!root.path().join(key_name("api-return-stage-", &key)).exists());
+        assert!(
+            !root
+                .path()
+                .join(key_name("api-return-stage-", &key))
+                .exists()
+        );
     }
 
     #[test]
