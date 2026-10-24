@@ -207,6 +207,22 @@ fn compensating(world: &World, id: OriginalContinueIdentity) -> Result<FailureKi
     }
     Ok(failure)
 }
+// Complete this query's borrow inside a scalar decision. The caller keeps
+// the original sequential scan and stops at its first rejected resource.
+fn other_vm_is_inactive(world: &World, original: VmId, other: VmId) -> bool {
+    let machine = match world.vm_record(other) {
+        None => return false,
+        Some(machine) => *machine,
+    };
+    if other == original {
+        return true;
+    }
+    match machine.status {
+        VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen => false,
+        VmStatus::Stopped | VmStatus::Reclaimed => true,
+    }
+}
+
 fn source_resources(world: &World, id: OriginalContinueIdentity) -> Result<(), CaptureReject> {
     let row = world
         .sandbox_record(id.key.sandbox)
@@ -242,19 +258,7 @@ fn source_resources(world: &World, id: OriginalContinueIdentity) -> Result<(), C
     let mut resources_ready = true;
     while position < index.vms.len() && resources_ready {
         let other = index.vms[position];
-        resources_ready = match world.vm_record(other) {
-            None => false,
-            Some(machine) => {
-                if other == id.vm {
-                    true
-                } else {
-                    match machine.status {
-                        VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen => false,
-                        VmStatus::Stopped | VmStatus::Reclaimed => true,
-                    }
-                }
-            }
-        };
+        resources_ready = other_vm_is_inactive(world, id.vm, other);
         position += 1;
     }
     if !resources_ready {
@@ -623,7 +627,11 @@ pub fn capture_dispatch_permanently_revoked(world: &World, effect: &EffectId) ->
 // The original journal records end facts and this native input atomically.
 // Validate every unknown-effect barrier before using the existing Pause
 // compensation reducer; illegal end input cannot even revoke the capture.
-fn prepare(
+/// Prepare the same original execution only after all original end and
+/// uncertainty checks, using the existing Pause compensation when needed.
+/// # Errors
+/// Rejects changed identity, terminal intent, unresolved work/commit or resources.
+pub fn prepare_original_continue(
     world: &World,
     id: OriginalContinueIdentity,
     receipt: CaptureWorkEndReceipt,
@@ -712,7 +720,13 @@ fn prepare_revoked(
         next,
     })
 }
-fn publish(world: &World, id: OriginalContinueIdentity) -> Result<CaptureDecision, CaptureReject> {
+/// Publish the original continuation only after its exact activation succeeds.
+/// # Errors
+/// Rejects changed/terminal state, unprepared continuation or missing activation.
+pub fn publish_original_continued(
+    world: &World,
+    id: OriginalContinueIdentity,
+) -> Result<CaptureDecision, CaptureReject> {
     let plan = original_plan(world, id)?;
     if !prepared(plan, id) {
         return Err(CaptureReject::ContinuationNotPrepared);
@@ -796,8 +810,10 @@ pub fn handle_capture(
         CaptureInput::PrepareOriginalContinue {
             identity,
             end_receipt,
-        } => prepare(world, identity, end_receipt),
-        CaptureInput::PublishOriginalContinued { identity } => publish(world, identity),
+        } => prepare_original_continue(world, identity, end_receipt),
+        CaptureInput::PublishOriginalContinued { identity } => {
+            publish_original_continued(world, identity)
+        }
     }
 }
 
