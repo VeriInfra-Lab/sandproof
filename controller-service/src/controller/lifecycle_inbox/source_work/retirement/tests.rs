@@ -108,7 +108,7 @@ fn wrong_or_unconfirmed_closure_and_foreign_receipt_preserve_original_charge() {
     let sandbox = source.anchor.local.sandbox;
     let question = journal.lifecycle_material_retirement_questions(sandbox).unwrap().remove(0);
     let certificate = closure(&journal, sandbox);
-    for field in 0..8 {
+    for field in 0..9 {
         let mut wrong = certificate;
         match field {
             0 => wrong.worker_drained = QuiescenceStatus::Unconfirmed,
@@ -118,7 +118,8 @@ fn wrong_or_unconfirmed_closure_and_foreign_receipt_preserve_original_charge() {
             4 => wrong.sandbox = core::SandboxId(sandbox.0 + 1),
             5 => wrong.epoch += 1,
             6 => wrong.operation = core::OperationId(wrong.operation.0 + 1),
-            _ => wrong.workspace = core::FsId(wrong.workspace.0 + 1),
+            7 => wrong.workspace = core::FsId(wrong.workspace.0 + 1),
+            _ => wrong.owner = core::TenantId(wrong.owner.0 + 1),
         }
         assert!(journal.prepare_lifecycle_material_retirement(&question, b"plan", wrong, &mut NeverCrash).is_err());
         assert!(saved(&journal).retirement.is_none());
@@ -176,4 +177,32 @@ fn historical_unloaded_bundle_is_not_a_terminal_material_gc_permit() {
     assert_eq!(journal.world().unwrap(), before);
     assert!(saved(&journal).retirement.is_none());
     assert!(material_charge(&saved(&journal)).unwrap() > 0);
+}
+
+#[test]
+fn persisted_settlement_checks_reject_changed_plan_receipt_reserve_or_unconfirmed_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, source) = terminal(&dir.path().join("db"), true);
+    let sandbox = source.anchor.local.sandbox;
+    let question = journal.lifecycle_material_retirement_questions(sandbox).unwrap().remove(0);
+    let certificate = closure(&journal, sandbox);
+    let permit = journal.prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash).unwrap();
+    journal.settle_lifecycle_material_retirement(&question, &receipt(&permit), certificate, &mut NeverCrash).unwrap();
+    let original = saved(&journal);
+    let world = journal.world().unwrap();
+    for changed in 0..4 {
+        let mut record = original.clone();
+        let Some(MaterialRetirementState::Settled { plan, settlement }) = record.retirement.as_mut() else {
+            panic!("actual matching receipt must have settled the test row");
+        };
+        match changed {
+            0 => plan.bytes[0] ^= 1,
+            1 => settlement.work_binding = ContentDigest::from_sha256([8; 32]),
+            2 => settlement.released_material_bytes -= 1,
+            _ => plan.quiescence.worker_drained = QuiescenceStatus::Unconfirmed,
+        }
+        assert!(validate_record(&record, &world).is_err());
+        assert!(material_charge(&record).is_err());
+    }
+    assert_eq!(saved(&journal), original, "negative checks never write test mutations into SQL");
 }
