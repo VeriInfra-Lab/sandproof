@@ -5,11 +5,7 @@ use sandproof_internal::status::{
 use sandproof_internal::{
     CacheReceiver, DataReceiver, LifecycleReceiver, ReceiveError, ValidationReceiver,
 };
-use sandproof_protocol::internal::{
-    ControlIdentity,
-    lifecycle::{LifecycleRequest, LifecycleResponse, Resources},
-    window::{WindowCloseAck, WindowCloseRequest},
-};
+use sandproof_protocol::internal::lifecycle::Resources;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct Observed(Arc<AtomicUsize>);
@@ -44,32 +40,26 @@ impl StatusReceiver for Observed {
         })
     }
 }
-impl LifecycleReceiver for Observed {
-    async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
-        RejectLifecycle.receive(request).await
-    }
-    async fn confirm(&self, result: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
-        RejectLifecycle.confirm(result).await
-    }
-    async fn close(&self, request: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
-        RejectLifecycle.close(request).await
-    }
-}
+impl LifecycleReceiver for Observed {}
 impl DataReceiver for Observed {
     async fn receive_data(
         &self,
-        identity: ControlIdentity,
+        identity: sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
         request: Request<axum::body::Body>,
     ) -> Response<axum::body::Body> {
-        RejectLifecycle.receive_data(identity, request).await
+        RejectLifecycle
+            .receive_data(identity, context, request)
+            .await
     }
 }
 impl ValidationReceiver for Observed {
     async fn validation_evidence(
         &self,
         request: sandproof_internal::template::ValidationRequest,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
-        RejectLifecycle.validation_evidence(request).await
+        RejectLifecycle.validation_evidence(request, context).await
     }
 }
 impl CacheReceiver for Observed {

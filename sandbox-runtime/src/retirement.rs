@@ -165,6 +165,8 @@ impl RetirementManifest {
                 resource_id: resource_id.to_owned(),
                 pid: u32::MAX,
                 start_time_ticks: u64::MAX,
+                boot_id: "ffffffff-ffff-ffff-ffff-ffffffffffff".into(),
+                launch_cpu_domain: vec![u32::MAX; 256],
             }),
             uplink_intent: false,
             namespace: Some(NamespaceIdentity {
@@ -457,6 +459,10 @@ impl Runtime {
         if !self.uplink_resources_absent(id)? {
             return Err(RuntimeError::IdentityMismatch("retirement uplink remains"));
         }
+        // The original position remains closed and its helper gate is held.
+        // UID absence supplements, rather than replaces, the exact process,
+        // namespace-holder, backing and exclusive-incarnation obligations.
+        super::uid_retirement::require_host_uid_unheld(self.config.vm_uid)?;
         Ok(())
     }
 }
@@ -713,6 +719,8 @@ mod tests {
             resource_id: ID.into(),
             pid: u32::MAX,
             start_time_ticks: u64::MAX,
+            boot_id: "ffffffff-ffff-ffff-ffff-ffffffffffff".into(),
+            launch_cpu_domain: (7936..=8191).collect(),
         });
         manifest.namespace = Some(NamespaceIdentity {
             device: u64::MAX,
@@ -790,6 +798,8 @@ mod tests {
                     resource_id: ID.into(),
                     pid: i32::MAX as u32,
                     start_time_ticks: 1,
+                    boot_id: "01234567-89ab-cdef-0123-456789abcdef".into(),
+                    launch_cpu_domain: vec![0],
                 },
             )
             .unwrap();

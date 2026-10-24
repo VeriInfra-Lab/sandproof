@@ -36,7 +36,7 @@ from tools.template_build_config import host_uid_range, protected_json
 from tools.template_physical_storage import envelope
 from tools.template_build_service import Backend, configuration
 from tools.template_build_store import BuildError
-from tools.runtime_create_recovery import terminal_result
+from tools.runtime_create_recovery import original_create_identity, terminal_result
 from _center_host_services import local_binding
 
 GUEST_FILES = {
@@ -199,12 +199,13 @@ def mapped_context(center, observed, ident, *, node, owner):
     """Only the original checked authorities determine local IDs and ownership."""
     sandbox_id(ident)
     matches = [row for row in center['sandboxes']
-               if row['create']['identity']['sandbox_id'] == ident]
+               if row['create']['binding']['session'] == ident]
     if (center['deployment'] != node['deployment_id'] or len(matches) != 1
             or matches[0]['private'] is not True):
         raise ValueError('original private center identity unknown or ambiguous')
-    create = matches[0]['create']['identity']
-    if create['node'] != node or create['tenant_id'] != str(owner) or create['intent_version'] != 1:
+    create = original_create_identity(matches[0])
+    if (create['binding']['node'] != node or create['binding']['key']['owner'] != str(owner)
+            or create['accepted_version'] != 1):
         raise ValueError('original private create binding mismatch')
     local = local_binding(observed, ident, expected_node=node)
     contexts = [context for context, _phase in observed['host_slots']
@@ -224,13 +225,16 @@ def capture_identity(settings, ident, center, observed, *, node, owner):
     record = claim / 'record.json'
     if record.exists():
         process = private_json(record)
-        if (set(process) != {'resource_id', 'pid', 'start_time_ticks'}
+        if (set(process) != {'resource_id', 'pid', 'start_time_ticks', 'boot_id', 'launch_cpu_domain'}
                 or process['resource_id'] != name
+                or process['boot_id'] != Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+                or type(process['launch_cpu_domain']) is not list or not process['launch_cpu_domain']
+                or any(type(cpu) is not int or cpu < 0 for cpu in process['launch_cpu_domain'])
                 or type(process['pid']) is not int or not 0 < process['pid'] < 2**32
                 or type(process['start_time_ticks']) is not int or process['start_time_ticks'] <= 0):
             raise ValueError('claim identity mismatch')
         result['process'] = dict(resource_id=name, pid=process['pid'],
-            start_time_ticks=process['start_time_ticks'], observed_alive=
+            start_time_ticks=process['start_time_ticks'], boot_id=process['boot_id'], observed_alive=
             process_start_ticks(process['pid']) == process['start_time_ticks'])
     network = claim / 'network.json'
     named = Path('/run/netns') / name

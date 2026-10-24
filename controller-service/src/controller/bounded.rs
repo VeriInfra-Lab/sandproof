@@ -253,8 +253,8 @@ impl ControllerJournal {
     }
 
     /// Commit the release intent before invoking the trusted exact-host release
-    /// operation, then commit its acknowledgement. The caller must hold the
-    /// service/host serial boundary and prove all data routes and pins drained.
+    /// operation, then commit its acknowledgement. The caller must own this
+    /// sandbox's executor and prove all data routes and pins drained.
     /// No host callback runs unless the core accepts the exact terminal binding.
     /// # Errors
     /// Unknown host work keeps Releasing. Unknown commit invalidates the cache.
@@ -264,12 +264,33 @@ impl ControllerJournal {
         release: impl FnOnce(&HostSlotContext) -> Result<(), WorkerTransportError>,
         crashes: &mut impl CrashInjector,
     ) -> Result<(), JournalError> {
+        self.begin_host_slot_release(context, crashes)?;
+        release(&context).map_err(|_| JournalError::UnresolvedAction)?;
+        crashes.hit(CrashPoint::AfterWorkerCall)?;
+        self.confirm_host_slot_release(context, crashes)
+    }
+
+    // Same two original transactions, exposed only inside this crate so the
+    // application can release its global mutex around the exact host callback.
+    pub(crate) fn begin_host_slot_release(
+        &mut self,
+        context: HostSlotContext,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<(), JournalError> {
         if self.host_slot_release_pinned(context.binding.sandbox)? {
             return Err(JournalError::UnresolvedAction);
         }
-        self.transition_host_release(context, false, crashes)?;
-        release(&context).map_err(|_| JournalError::UnresolvedAction)?;
-        crashes.hit(CrashPoint::AfterWorkerCall)?;
+        self.transition_host_release(context, false, crashes)
+    }
+
+    pub(crate) fn confirm_host_slot_release(
+        &mut self,
+        context: HostSlotContext,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<(), JournalError> {
+        if self.host_slot_release_pinned(context.binding.sandbox)? {
+            return Err(JournalError::UnresolvedAction);
+        }
         self.transition_host_release(context, true, crashes)
     }
 

@@ -1,8 +1,7 @@
-use crate::{CenterState, DecisionError, NodeMode, NodeRole, Operation, Sandbox};
-use sandproof_protocol::internal::lifecycle::{
-    CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
-};
-use sandproof_protocol::internal::{ControlIdentity, INTERNAL_PROTOCOL_VERSION, PositiveCounter};
+use crate::{CenterState, DecisionError, NodeMode, NodeRole};
+use sandproof_protocol::internal::lifecycle::{CreateBinding, Resources};
+use sandproof_protocol::internal::{INTERNAL_PROTOCOL_VERSION, NodeIdentity};
+use sandproof_protocol::lifecycle::{RetentionBinding, SessionId};
 use sandproof_protocol::{SandboxId, TenantId};
 
 fn ratio(used: Resources, limit: Resources) -> (u64, u64) {
@@ -14,54 +13,15 @@ fn ratio(used: Resources, limit: Resources) -> (u64, u64) {
         })
         .expect("four positive denominators")
 }
-fn fact_rank(fact: LifecycleFact) -> u8 {
-    match fact {
-        LifecycleFact::Recorded => 0,
-        LifecycleFact::Stopped => 1,
-        _ => 2,
-    }
-}
 
-/// Classification of a response for an already selected original operation.
-/// This does not authenticate its sender, select a sandbox, or commit a result.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ResponseDisposition {
-    Duplicate,
-    Advance,
-}
-
-impl Operation {
-    /// Check the original request before recognizing a duplicate or newer fact.
-    /// # Errors
-    /// Wrong identity/parameters, old observations and non-advancing facts are stale.
-    pub fn classify_response(
-        &self,
-        observed: Option<PositiveCounter>,
-        response: &LifecycleResponse,
-    ) -> Result<ResponseDisposition, DecisionError> {
-        match response.validate_for(&self.request) {
-            Ok(()) => {}
-            Err(_) => return Err(DecisionError::Stale),
-        }
-        if self.response.as_ref() == Some(response) {
-            return Ok(ResponseDisposition::Duplicate);
-        }
-        let old_observation = match observed {
-            Some(version) => response.observation_version.get() <= version.get(),
-            None => false,
-        };
-        if old_observation {
-            return Err(DecisionError::Stale);
-        }
-        let old_fact = match &self.response {
-            Some(prior) => fact_rank(response.fact) <= fact_rank(prior.fact),
-            None => false,
-        };
-        if old_fact {
-            return Err(DecisionError::Stale);
-        }
-        Ok(ResponseDisposition::Advance)
-    }
+/// Candidate fields from the ORIGINAL quota/lane/counter decision.
+/// No state is allocated until the complete business envelope commits.
+pub(crate) struct SessionAllocation {
+    pub(crate) node: NodeIdentity,
+    pub(crate) session: SessionId,
+    pub(crate) retention: RetentionBinding,
+    pub(crate) sandbox_number: u64,
+    pub(crate) operation_number: u64,
 }
 impl CenterState {
     fn select_node(
@@ -69,26 +29,27 @@ impl CenterState {
         create: &CreateBinding,
         now_ms: u64,
         role: NodeRole,
-    ) -> Result<sandproof_protocol::internal::NodeIdentity, DecisionError> {
+    ) -> Result<NodeIdentity, DecisionError> {
         let mut available = false;
         let mut candidates = self
             .nodes
             .iter()
-            .filter_map(|n| {
-                let used = self.reserved(None, Some(&n.identity))?;
-                let registered_ready = n.role == role
-                    && n.mode == NodeMode::Accepting
-                    && n.healthy_until_ms > now_ms
-                    && n.protocol_version == INTERNAL_PROTOCOL_VERSION
-                    && n.templates.iter().any(|t| {
-                        t.revision == create.template_revision && t.digest == create.template_digest
+            .filter_map(|node| {
+                let used = self.reserved(None, Some(&node.identity))?;
+                let registered_ready = node.role == role
+                    && node.mode == NodeMode::Accepting
+                    && node.healthy_until_ms > now_ms
+                    && node.protocol_version == INTERNAL_PROTOCOL_VERSION
+                    && node.templates.iter().any(|template| {
+                        template.revision == create.template_revision
+                            && template.digest == create.template_digest
                     });
                 available |= registered_ready;
                 (registered_ready
-                    && self.available_lane(&n.identity).is_some()
-                    && create.resources.fits(n.free)
-                    && used.checked_add(create.resources)?.fits(n.limit))
-                .then_some((n, ratio(used, n.limit)))
+                    && self.available_lane(&node.identity).is_some()
+                    && create.resources.fits(node.free)
+                    && used.checked_add(create.resources)?.fits(node.limit))
+                .then_some((node, ratio(used, node.limit)))
             })
             .collect::<Vec<_>>();
         candidates.sort_by(|(a, (an, ad)), (b, (bn, bd))| {
@@ -96,7 +57,7 @@ impl CenterState {
                 .cmp(&(u128::from(*bn) * u128::from(*ad)))
                 .then_with(|| a.identity.node_id.as_str().cmp(b.identity.node_id.as_str()))
         });
-        let node = candidates
+        Ok(candidates
             .first()
             .ok_or(if available {
                 DecisionError::Capacity
@@ -105,38 +66,15 @@ impl CenterState {
             })?
             .0
             .identity
-            .clone();
-        Ok(node)
+            .clone())
     }
-    /// # Errors
-    /// Rejects input, quotas, absent candidates or exhausted IDs without consuming IDs.
-    pub fn create(
+    pub(crate) fn allocate_session(
         &self,
         tenant: &TenantId,
-        create: CreateBinding,
-        now_ms: u64,
-    ) -> Result<(Self, LifecycleRequest), DecisionError> {
-        self.create_for_role(tenant, create, now_ms, NodeRole::Runtime)
-    }
-    /// Trusted private build acceptance uses the SAME allocation, outbox and
-    /// lifetime algorithm, but cannot consume a runtime node's resource pool.
-    /// # Errors
-    /// All ordinary admission checks apply; a builder must be registered/fresh.
-    pub fn create_builder(
-        &self,
-        tenant: &TenantId,
-        create: CreateBinding,
-        now_ms: u64,
-    ) -> Result<(Self, LifecycleRequest), DecisionError> {
-        self.create_for_role(tenant, create, now_ms, NodeRole::Builder)
-    }
-    fn create_for_role(
-        &self,
-        tenant: &TenantId,
-        create: CreateBinding,
+        create: &CreateBinding,
         now_ms: u64,
         role: NodeRole,
-    ) -> Result<(Self, LifecycleRequest), DecisionError> {
+    ) -> Result<SessionAllocation, DecisionError> {
         if !self.is_valid()
             || !create.is_valid()
             || create.options.len() > self.bounds.max_options_bytes as usize
@@ -147,28 +85,34 @@ impl CenterState {
         if self.sandboxes.len() >= usize::from(self.bounds.max_sandboxes) {
             return Err(DecisionError::Capacity);
         }
-        let budget_index = self
+        let budget = self
             .tenants
             .iter()
-            .position(|b| &b.tenant == tenant)
+            .find(|budget| budget.tenant == *tenant)
             .ok_or(DecisionError::NotFound)?;
-        let budget = &self.tenants[budget_index];
         let shape = create.resources;
         if self
             .reserved(None, None)
-            .and_then(|r| r.checked_add(shape))
-            .is_none_or(|r| !r.fits(self.bounds.platform))
+            .and_then(|used| used.checked_add(shape))
+            .is_none_or(|used| !used.fits(self.bounds.platform))
             || self
                 .reserved(Some(tenant), None)
-                .and_then(|r| r.checked_add(shape))
-                .is_none_or(|r| !r.fits(budget.limit))
+                .and_then(|used| used.checked_add(shape))
+                .is_none_or(|used| !used.fits(budget.limit))
         {
             return Err(DecisionError::Capacity);
         }
-        let node = self.select_node(&create, now_ms, role)?;
+        let node = self.select_node(create, now_ms, role)?;
         let lane = self.available_lane(&node).ok_or(DecisionError::Capacity)?;
-        let retention_slot = lane.retention_slot();
-        let request_window = lane.current().ok_or(DecisionError::Capacity)?;
+        let retention = RetentionBinding {
+            slot: lane.retention_slot(),
+            window: lane
+                .current()
+                .ok_or(DecisionError::Capacity)?
+                .get()
+                .try_into()
+                .map_err(|_| DecisionError::Exhausted)?,
+        };
         let sandbox_number = self
             .sandbox_highwater
             .checked_add(1)
@@ -177,126 +121,25 @@ impl CenterState {
             .operation_highwater
             .checked_add(1)
             .ok_or(DecisionError::Exhausted)?;
-        // Every accepted nonterminal sandbox owns one FUTURE destroy identity.
+        // Each live nonterminal session retains one future destroy identity.
         let future = self
             .sandboxes
             .iter()
-            .filter(|s| !s.released && !s.terminating)
+            .filter(|record| !record.released() && !record.terminating())
             .count() as u64
             + 1;
         if operation_number.checked_add(future).is_none() {
             return Err(DecisionError::Exhausted);
         }
-        let request = LifecycleRequest {
-            identity: ControlIdentity {
-                protocol_version: INTERNAL_PROTOCOL_VERSION,
-                node,
-                tenant_id: tenant.clone(),
-                sandbox_id: format!("sandbox-{sandbox_number}")
-                    .try_into()
-                    .map_err(|_| DecisionError::Exhausted)?,
-                operation_id: format!("operation-{operation_number}")
-                    .try_into()
-                    .map_err(|_| DecisionError::Exhausted)?,
-                intent_version: 1.try_into().map_err(|_| DecisionError::Exhausted)?,
-                retention_slot,
-                request_window,
-            },
-            create,
-            intent: Intent::Create,
-        };
-        let mut next = self.clone();
-        next.sandbox_highwater = sandbox_number;
-        next.operation_highwater = operation_number;
-        next.sandboxes.push(Sandbox {
-            operations: vec![Operation {
-                request: request.clone(),
-                response: None,
-            }],
-            terminating: false,
-            released: false,
-            started_at_ms: None,
-            end_at_ms: None,
-            max_end_at_ms: None,
-            observation_version: None,
-            terminal_confirmation: None,
-        });
-        Ok((next, request))
-    }
-    /// # Errors
-    /// Requires original owner, live confirmed lifetime, fresh registered node
-    /// health and one free ordinary slot. Destroy remains independent of health.
-    pub fn renew(
-        &self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-        end_at_ms: u64,
-        now_ms: u64,
-    ) -> Result<(Self, LifecycleRequest), DecisionError> {
-        if !self.is_valid() {
-            return Err(DecisionError::Invalid);
-        }
-        let index = self.index(tenant, sandbox)?;
-        let record = &self.sandboxes[index];
-        if record.terminating
-            || record.released
-            || record.end_at_ms.is_none_or(|end| end <= now_ms)
-            || end_at_ms <= now_ms
-            || record.max_end_at_ms.is_none_or(|end| end_at_ms > end)
-            || record.operations.last().is_none_or(|op| {
-                op.response.as_ref().is_none_or(|r| {
-                    !matches!(
-                        r.fact,
-                        LifecycleFact::Ready { .. } | LifecycleFact::Renewed { .. }
-                    )
-                })
-            })
-        {
-            return Err(DecisionError::Conflict);
-        }
-        let node = &record
-            .operations
-            .first()
-            .ok_or(DecisionError::Invalid)?
-            .request
-            .identity
-            .node;
-        if !self.node_is_reachable(node, now_ms) {
-            return Err(DecisionError::Unavailable);
-        }
-        // Keep the last slot for termination even when ordinary history is full.
-        if record.operations.len() + 1 >= usize::from(self.bounds.operations_per_sandbox) {
-            return Err(DecisionError::Capacity);
-        }
-        self.append(index, Intent::Renew { end_at_ms })
-    }
-    /// # Errors
-    /// Only the original owner can terminate; unknown creates retain reservations.
-    pub fn destroy(
-        &self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<(Self, LifecycleRequest), DecisionError> {
-        if !self.is_valid() {
-            return Err(DecisionError::Invalid);
-        }
-        let index = self.index(tenant, sandbox)?;
-        let record = &self.sandboxes[index];
-        if record.terminating {
-            return Ok((
-                self.clone(),
-                record
-                    .operations
-                    .last()
-                    .ok_or(DecisionError::Invalid)?
-                    .request
-                    .clone(),
-            ));
-        }
-        if record.released {
-            return Err(DecisionError::Conflict);
-        }
-        self.append(index, Intent::Destroy)
+        let protocol_id = SandboxId::try_from(format!("sandbox-{sandbox_number}"))
+            .map_err(|_| DecisionError::Exhausted)?;
+        Ok(SessionAllocation {
+            node,
+            session: SessionId::from_protocol_id(protocol_id),
+            retention,
+            sandbox_number,
+            operation_number,
+        })
     }
     pub(crate) fn index(
         &self,
@@ -305,132 +148,12 @@ impl CenterState {
     ) -> Result<usize, DecisionError> {
         self.sandboxes
             .iter()
-            .position(|s| {
-                s.operations.first().is_some_and(|op| {
-                    &op.request.identity.tenant_id == tenant
-                        && &op.request.identity.sandbox_id == sandbox
+            .position(|record| {
+                record.operations.first().is_some_and(|operation| {
+                    operation.intent().request.binding.key.owner == *tenant
+                        && operation.intent().request.binding.session.as_protocol_id() == sandbox
                 })
             })
             .ok_or(DecisionError::NotFound)
-    }
-    fn append(
-        &self,
-        index: usize,
-        intent: Intent,
-    ) -> Result<(Self, LifecycleRequest), DecisionError> {
-        let number = self
-            .operation_highwater
-            .checked_add(1)
-            .ok_or(DecisionError::Exhausted)?;
-        let mut request = self.sandboxes[index]
-            .operations
-            .last()
-            .ok_or(DecisionError::Invalid)?
-            .request
-            .clone();
-        request.identity.operation_id = format!("operation-{number}")
-            .try_into()
-            .map_err(|_| DecisionError::Exhausted)?;
-        request.identity.intent_version = request
-            .identity
-            .intent_version
-            .checked_next()
-            .map_err(|_| DecisionError::Exhausted)?;
-        request.intent = intent;
-        let mut next = self.clone();
-        next.operation_highwater = number;
-        let record = &mut next.sandboxes[index];
-        record.terminating = intent == Intent::Destroy;
-        record.terminal_confirmation = None;
-        record.operations.push(Operation {
-            request: request.clone(),
-            response: None,
-        });
-        if next.is_valid() {
-            Ok((next, request))
-        } else {
-            Err(DecisionError::Exhausted)
-        }
-    }
-    /// # Errors
-    /// Rejects wrong full identity, old intent/observation or regressing facts.
-    /// Communication failures do not call this method or release reservations.
-    pub fn apply_response(&self, response: &LifecycleResponse) -> Result<Self, DecisionError> {
-        if !self.is_valid() {
-            return Err(DecisionError::Invalid);
-        }
-        let index = self.index(&response.identity.tenant_id, &response.identity.sandbox_id)?;
-        let record = &self.sandboxes[index];
-        let operation = record.operations.last().ok_or(DecisionError::Invalid)?;
-        match operation.classify_response(record.observation_version, response)? {
-            ResponseDisposition::Duplicate => return Ok(self.clone()),
-            ResponseDisposition::Advance => {}
-        }
-        let mut next = self.clone();
-        let record = &mut next.sandboxes[index];
-        match response.fact {
-            LifecycleFact::Ready {
-                started_at_ms,
-                end_at_ms,
-                max_end_at_ms,
-            } => {
-                record.started_at_ms = Some(started_at_ms);
-                record.end_at_ms = Some(end_at_ms);
-                record.max_end_at_ms = Some(max_end_at_ms);
-            }
-            LifecycleFact::Renewed { end_at_ms } => record.end_at_ms = Some(end_at_ms),
-            LifecycleFact::Cleaned | LifecycleFact::NotAccepted => record.released = true,
-            LifecycleFact::Recorded | LifecycleFact::Stopped => {}
-        }
-        record.observation_version = Some(response.observation_version);
-        record.terminal_confirmation = None;
-        record
-            .operations
-            .last_mut()
-            .ok_or(DecisionError::Invalid)?
-            .response = Some(response.clone());
-        if next.is_valid() {
-            Ok(next)
-        } else {
-            Err(DecisionError::Invalid)
-        }
-    }
-
-    /// Compact only after the host durably acknowledges the center's EXACT
-    /// committed final result. Keep the original create, current operation and
-    /// last confirmed lifetime before destruction: immutable origin/lifetime
-    /// and the current intent fence must remain independently recoverable.
-    /// This does NOT retire a sandbox/window or release native history pins.
-    /// # Errors
-    /// A stale acknowledgement cannot compact a newer intent or unknown result.
-    pub fn compact_confirmed(&self, response: &LifecycleResponse) -> Result<Self, DecisionError> {
-        if !self.is_valid() {
-            return Err(DecisionError::Invalid);
-        }
-        let index = self.index(&response.identity.tenant_id, &response.identity.sandbox_id)?;
-        let record = &self.sandboxes[index];
-        if record.operations.last().and_then(|op| op.response.as_ref()) != Some(response)
-            || matches!(
-                response.fact,
-                LifecycleFact::Recorded | LifecycleFact::Stopped
-            )
-        {
-            return Err(DecisionError::Stale);
-        }
-        let mut next = self.clone();
-        let renewal_anchor = record.renewal_anchor();
-        let operations = &mut next.sandboxes[index].operations;
-        let last = operations.len() - 1;
-        *operations = operations
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| *index == 0 || *index == last || Some(*index) == renewal_anchor)
-            .map(|(_, operation)| operation.clone())
-            .collect();
-        if next.is_valid() {
-            Ok(next)
-        } else {
-            Err(DecisionError::Invalid)
-        }
     }
 }

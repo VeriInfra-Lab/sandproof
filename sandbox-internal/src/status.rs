@@ -3,7 +3,7 @@ use crate::{ReceiveError, TransportError};
 use sandproof_protocol::internal::{NodeIdentity, lifecycle::Resources};
 use serde::{Deserialize, Serialize};
 
-pub const STATUS_PATH: &str = "/internal/v2/node-status";
+pub const STATUS_PATH: &str = "/internal/node-status";
 pub const STATUS_REQUEST_BYTES: usize = 1024;
 pub const STATUS_RESPONSE_BYTES: usize = 2048;
 

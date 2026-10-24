@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -172,6 +173,25 @@ def native_key(label, command, source, root=ROOT, environment=None):
                 contracts=dict(review=contract_inputs(root), source=contract_inputs(source)),
                 source_archives=source_archive_inputs(env),
                 runtime=json.loads(runtime_path.read_text()))
+    if label == 'stage1-protocol':
+        # Committed/clean is admission, not cache identity. Reports and a new
+        # commit with identical native inputs must not invalidate every proof.
+        subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=source)
+        if subprocess.check_output(['git', 'status', '--porcelain', '-z',
+                                    '--untracked-files=normal'], cwd=source):
+            raise ValueError('stage1 component requires a clean committed source')
+        metadata = {}
+        groups = {'source': (source, set(result['rust']) | set(result['contracts']['source'])),
+                  'review': (root, set(result['rules']) | set(result['contracts']['review']))}
+        for role, (base, names) in groups.items():
+            metadata[role] = {}
+            for name in sorted(names):
+                path = Path(name.removeprefix('@configuration:')) if name.startswith('@configuration:') else base/name
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode):
+                    raise ValueError('stage1 native input is not a regular file: ' + name)
+                metadata[role][name] = dict(kind='regular', executable=bool(info.st_mode & stat.S_IXUSR))
+        result['input_metadata'] = metadata
     if label == 'functional':
         result['repository']=repository_inputs(source)
     return result
@@ -294,9 +314,17 @@ def native_case(label, source, output, action=None):
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()
     key = native_key(label, ['component-case'], Path(source).resolve())
     entry = cache / 'commands' / digest(key)
+    if label == 'stage1-protocol':
+        archive = entry/'evidence/source.tar'
+        if (archive.is_symlink() or (archive.exists() and not archive.is_file())
+                or not archive.parent.resolve().is_relative_to(entry.resolve())):
+            raise ValueError('stage1 cached source.tar must be inside its regular evidence directory')
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
         seal = json.loads((cache / 'complete.json').read_text())
         receipt = load_success(entry, key)
+        if (label == 'stage1-protocol' and receipt is not None
+                and 'evidence/source.tar' not in receipt['files']):
+            receipt = None
         if (not current_native_seal(seal,key['runtime']) or receipt is None
                 or seal['commands'].get(entry.name) != sha(entry / 'receipt.json')):
             raise ValueError('missing/incomplete/changed native component: ' + label)
@@ -307,10 +335,15 @@ def native_case(label, source, output, action=None):
     # case boundary, never by relabelling a Cargo "fresh" artifact as new.
     with locked(entry):
         prior = load_success(entry, key)
+        if (label == 'stage1-protocol' and prior is not None
+                and 'evidence/source.tar' not in prior['files']):
+            prior = None
         if prior:
             record_used(entry,reused=True)
             return prior
         start = time.monotonic()
+        if label == 'stage1-protocol':
+            (entry/'receipt.json').unlink(missing_ok=True)
         action()
         if native_key(label, ['component-case'], Path(source).resolve()) != key:
             raise ValueError('component inputs changed: ' + label)
@@ -324,6 +357,20 @@ def native_case(label, source, output, action=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)
             files['evidence/' + name] = sha(target)
+        if label == 'stage1-protocol':
+            # One explicitly named raw input, not arbitrary archives or Cargo
+            # targets. Historical native source remains verifiable after docs
+            # or proof-only commits without changing the receipt schema.
+            archive = Path(output)/'source.tar'
+            if archive.is_symlink() or not archive.is_file():
+                raise ValueError('stage1 component requires its original regular source.tar')
+            expected = sha(archive)
+            target = entry/'evidence/source.tar'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(archive, target)
+            if sha(target) != expected or sha(archive) != expected:
+                raise ValueError('stage1 original source archive changed while copying')
+            files['evidence/source.tar'] = expected
         if not files:
             raise ValueError('component case has no original evidence')
         receipt = dict(complete=True, exit_code=0, key=key,

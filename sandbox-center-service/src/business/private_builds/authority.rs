@@ -8,11 +8,11 @@ use sandbox_controller_core::maintenance::windows::{
     WindowEvent, WindowInput, WindowReject, reduce_windows,
 };
 use sandproof_api::PortError;
-use sandproof_center_core::DecisionError;
+use sandproof_center_core::{DecisionError, LifecycleSubmission};
 use sandproof_controller_service::{BuildWindow, template_registry::valid_candidate_id};
 use sandproof_protocol::{
     SandboxId, TenantId,
-    internal::lifecycle::{CreateBinding, LifecycleFact, LifecycleRequest},
+    lifecycle::{AcceptedLifecycleIntent, CreateParameters},
 };
 
 fn window_error(error: WindowReject) -> PortError {
@@ -200,9 +200,9 @@ impl SharedBusinessAuthority {
         external: &str,
         build_id: &str,
         parameters: &BuildParameters,
-        binding: CreateBinding,
+        lifecycle_parameters: &CreateParameters,
         now_ms: u64,
-    ) -> Result<LifecycleRequest, PortError> {
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
         if !valid_candidate_id(build_id) {
             return Err(PortError::Invalid);
         }
@@ -242,7 +242,14 @@ impl SharedBusinessAuthority {
                 )
                 .map_err(|e| to_authority(window_error(e)))?
                 .next;
-                let (center, create) = current.center.create_builder(tenant, binding, now_ms)?;
+                let submission = LifecycleSubmission::Create {
+                    key: current.center.next_sdk_operation_key(tenant)?,
+                    parameters: lifecycle_parameters.clone(),
+                };
+                let (center, create) =
+                    current
+                        .center
+                        .accept_builder_lifecycle(tenant, &submission, now_ms)?;
                 if !super::super::RegistryMetadata::request_fits(&create)
                     || !builds.matches_parameters(&current.metadata, &create, parameters)
                 {
@@ -314,7 +321,16 @@ impl SharedBusinessAuthority {
                         Err(DecisionError::Conflict.into())
                     };
                 };
-                if sandbox != Some(&anchor.original_create.identity.sandbox_id) {
+                if sandbox
+                    != Some(
+                        anchor
+                            .original_create
+                            .request
+                            .binding
+                            .session
+                            .as_protocol_id(),
+                    )
+                {
                     return Err(DecisionError::Conflict.into());
                 }
                 if anchor.settlement.is_none() {
@@ -326,19 +342,18 @@ impl SharedBusinessAuthority {
                             record
                                 .operations
                                 .first()
-                                .is_some_and(|first| first.request == anchor.original_create)
+                                .is_some_and(|first| first.intent() == &anchor.original_create)
                         })
                         .ok_or(DecisionError::Conflict)?;
                     let last = record.operations.last().ok_or(DecisionError::Invalid)?;
-                    let cleaned = last.response.as_ref().ok_or(DecisionError::Conflict)?;
+                    let cleaned = last.terminal().ok_or(DecisionError::Conflict)?;
                     if crate::business::publication::terminal_request(
                         &anchor.original_create,
                         cleaned,
                     )
                     .as_ref()
-                        != Some(&last.request)
-                        || (cleaned.fact == LifecycleFact::NotAccepted
-                            && record.terminal_confirmation.as_ref() != Some(cleaned))
+                        != Some(last.intent())
+                        || record.terminal_confirmation.as_ref() != Some(cleaned)
                     {
                         return Err(DecisionError::Conflict.into());
                     }

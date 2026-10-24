@@ -41,13 +41,16 @@ pub(super) fn resource(
         Command::PrepareVm { vm, .. }
         | Command::AbortPrepare { vm, .. }
         | Command::ActivateVm { vm, .. }
+        | Command::FreezeVm { vm, .. }
         | Command::StopVm { vm, .. }
         | Command::CleanupVm { vm, .. } => (ResourceKind::Vm, "vm", vm.0),
         Command::ConfigureNetwork { slot, .. } | Command::CleanupSlot { slot, .. } => {
             (ResourceKind::NetworkSlot, "slot", slot.0)
         }
         Command::ApplyFilePolicy { workspace, .. } => (ResourceKind::Workspace, "fs", workspace.0),
-        _ => return Err(JournalError::UnsupportedInput),
+        Command::SealSnapshot { snapshot, .. } | Command::CommitSnapshot { snapshot, .. } => {
+            (ResourceKind::Snapshot, "snapshot", snapshot.0)
+        }
     };
     Ok(ResourceRef {
         kind,
@@ -97,11 +100,14 @@ pub(super) fn new_actions(
             | core::Command::AbortPrepare { generation, .. }
             | core::Command::ConfigureNetwork { generation, .. }
             | core::Command::ActivateVm { generation, .. }
+            | core::Command::FreezeVm { generation, .. }
+            | core::Command::SealSnapshot { generation, .. }
+            | core::Command::CommitSnapshot { generation, .. }
             | core::Command::ApplyFilePolicy { generation, .. }
             | core::Command::StopVm { generation, .. }
             | core::Command::CleanupVm { generation, .. }
             | core::Command::CleanupSlot { generation, .. } => *generation,
-            _ => record.generation,
+            core::Command::InstallFence { .. } => record.generation,
         };
         actions.push(WorkAction {
             identity: ActionIdentity {
@@ -165,16 +171,24 @@ pub(super) fn input_sandbox(
     Ok(match input {
         I::Request(R::Create(request)) => request.sandbox,
         I::Request(R::Kill(request)) => request.sandbox,
+        I::Request(R::Pause(request)) => request.sandbox,
         I::Request(R::Compensate(request)) => request.sandbox,
-        I::Scheduler(S::ReserveStartup(key)) => key.sandbox,
+        I::Scheduler(S::ReserveStartup(key) | S::ReservePauseSnapshot(key)) => key.sandbox,
         I::Scheduler(
             S::DispatchPrepare(sandbox, ..)
             | S::AbortPrepare(sandbox, ..)
             | S::StopVm(sandbox, ..)
             | S::CleanupVm(sandbox, ..)
-            | S::CleanupSlot(sandbox, ..),
+            | S::CleanupSlot(sandbox, ..)
+            | S::SealSnapshot(sandbox, ..)
+            | S::CommitSnapshot(sandbox, ..),
         )
-        | I::Publication(P::Running(sandbox) | P::Destroyed(sandbox) | P::Failed(sandbox, _))
+        | I::Publication(
+            P::Running(sandbox)
+            | P::Destroyed(sandbox)
+            | P::Failed(sandbox, _)
+            | P::Paused(sandbox, _),
+        )
         | I::RpcTimeout(sandbox) => *sandbox,
         I::Worker(effect)
         | I::Effect(E::Dispatch(effect) | E::Receipt(effect, _) | E::Timeout(effect)) => {

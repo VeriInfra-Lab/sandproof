@@ -23,6 +23,7 @@ use tokio_rustls::TlsConnector;
 
 mod cache;
 mod data;
+mod lifecycle;
 mod status;
 
 /// Fixed protected registration; no URL, redirect, resolver or user target.

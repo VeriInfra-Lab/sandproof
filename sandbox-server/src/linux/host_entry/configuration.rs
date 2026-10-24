@@ -1,18 +1,21 @@
 //! Protected typed host settings. SDK credentials and public routes are absent.
 use super::super::config::{DeploymentContract, NativeSettings};
 use sandproof_api::admission::RequestAdmissionLimits;
-use sandproof_controller_service::InternalInboxConfig;
+use sandproof_controller_service::LifecycleInboxConfig;
+use sandproof_controller_service::capture::SourceObservationConfig;
 use sandproof_controller_service::physical_storage::PhysicalTemplateCache;
 use sandproof_host_service::DriverConfig;
 use sandproof_internal::Limits;
 use serde::Deserialize;
-use std::{error::Error, net::SocketAddr, time::Duration};
+use std::{error::Error, net::SocketAddr, path::PathBuf, time::Duration};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct HostConfig {
     pub(super) native: NativeSettings,
-    pub(super) inbox: InternalInboxConfig,
+    pub(super) inbox: LifecycleInboxConfig,
+    pub(super) protected_bootstrap_path: PathBuf,
+    pub(super) source_observation: SourceObservationConfig,
     pub(super) internal: InternalSettings,
     pub(super) template_cache: PhysicalTemplateCache,
     pub(super) artifact_source: ArtifactSource,
@@ -107,8 +110,9 @@ impl HostConfig {
         }
         self.artifact_source.validate(&self.template_cache)?;
         if !self.inbox.valid()
-            || self.inbox.operations_per_sandbox < 4
-            || self.inbox.required_bytes() as u64
+            || !self.protected_bootstrap_path.is_absolute()
+            || !self.source_observation.valid()
+            || self.inbox.required_bytes()
                 > contract
                     .maintenance
                     .capacity

@@ -53,7 +53,7 @@ def host_settings(value):
 
 class ConfigurationTests(unittest.TestCase):
     def test_shared_churn_exceeds_original_matching_retention_slots_without_raising_them(self):
-        services = SimpleNamespace(host_configs=[dict(inbox=dict(max_sandboxes=4))],
+        services = SimpleNamespace(host_configs=[dict(inbox=dict(max_sessions=4))],
             center_config=dict(nodes=[dict(registration=dict(retention_slots=4))]))
         original = copy.deepcopy(services)
         self.assertEqual(probe.retention_slots(services,6),4)

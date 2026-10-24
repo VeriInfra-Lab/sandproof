@@ -93,7 +93,7 @@ fn build_admit(
     journal.admit_create_with_options(request, admission, &mut NeverCrash)
 }
 fn finish(journal: &mut ControllerJournal, id: u64) {
-    crate::finish_admitted_create_v1(
+    crate::finish_admitted_create(
         journal,
         core::SandboxId(id),
         core::OperationId(1),
@@ -102,7 +102,7 @@ fn finish(journal: &mut ControllerJournal, id: u64) {
     .unwrap();
 }
 fn kill(journal: &mut ControllerJournal, id: u64) {
-    crate::kill_v1(
+    crate::kill(
         journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
@@ -445,7 +445,7 @@ fn end_validation(journal: &mut ControllerJournal, value: &Publication, id: u64,
             .unwrap();
         kill(journal, id);
     } else {
-        let result = crate::finish_admitted_create_v1(
+        let result = crate::finish_admitted_create(
             journal,
             core::SandboxId(id),
             core::OperationId(1),

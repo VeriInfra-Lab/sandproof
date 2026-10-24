@@ -6,8 +6,8 @@ use sandproof_controller_service::physical_storage::{PhysicalPool, PhysicalStora
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
-    os::unix::fs::OpenOptionsExt,
+    io::{Seek, SeekFrom, Write},
+    os::unix::fs::{FileExt, OpenOptionsExt},
     path::PathBuf,
 };
 
@@ -61,12 +61,18 @@ fn protected_file(file: &File, path: &Path, owner: u32) -> Result<(), Box<dyn Er
     Ok(())
 }
 
-fn read_marker(file: &mut File) -> Result<Vec<u8>, Box<dyn Error>> {
-    file.seek(SeekFrom::Start(0))?;
-    let mut bytes = Vec::new();
-    file.take(MAX_PROFILE_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_PROFILE_BYTES {
+// Positional reads preserve the single lease's open-description cursor. A
+// try_clone followed by seek/read would share that cursor across admissions.
+fn read_marker(file: &File) -> Result<Vec<u8>, Box<dyn Error>> {
+    let length = file.metadata()?.len();
+    if length > MAX_PROFILE_BYTES {
         return Err("physical profile is too large".into());
+    }
+    let mut bytes = vec![0; usize::try_from(length)?];
+    file.read_exact_at(&mut bytes, 0)?;
+    let mut trailing = [0];
+    if file.read_at(&mut trailing, length)? != 0 || file.metadata()?.len() != length {
+        return Err("physical profile changed during read".into());
     }
     Ok(bytes)
 }
@@ -374,11 +380,11 @@ impl PhysicalProfileLease {
                 "physical profile exceeds its metadata and block-rounding provision".into(),
             );
         }
-        if read_marker(&mut file)? != marker {
+        if read_marker(&file)? != marker {
             file.unlock()?;
             file.try_lock()?;
             protected_file(&file, path, owner)?;
-            let old = read_marker(&mut file)?;
+            let old = read_marker(&file)?;
             if old != marker {
                 if !marker.starts_with(&old) {
                     return Err("immutable physical profile changed".into());
@@ -415,7 +421,7 @@ impl PhysicalProfileLease {
             file.try_lock_shared()?;
         }
         // Recheck exact content while holding the lifetime shared lease.
-        if read_marker(&mut file)? != marker {
+        if read_marker(&file)? != marker {
             return Err("physical profile changed during activation".into());
         }
         // A previous writer may have completed the bytes but received an
@@ -450,7 +456,7 @@ impl PhysicalProfileLease {
         let metadata = self.file.metadata()?;
         if metadata.dev() != self.device
             || metadata.ino() != self.inode
-            || read_marker(&mut self.file.try_clone()?)? != self.marker
+            || read_marker(&self.file)? != self.marker
         {
             return Err("physical admission activation identity changed".into());
         }
@@ -557,6 +563,57 @@ mod physical_tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn concurrent_marker_reads_share_one_lease_without_sharing_a_cursor() {
+        use std::sync::{Arc, Barrier};
+        let fixture = Fixture::new();
+        let lease = Arc::new(fixture.activate().unwrap());
+        let mut cursor = lease.file.try_clone().unwrap();
+        cursor.seek(SeekFrom::Start(3)).unwrap();
+        let ready = Barrier::new(3);
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                let lease = Arc::clone(&lease);
+                let ready = &ready;
+                scope.spawn(move || {
+                    ready.wait();
+                    for _ in 0..32 {
+                        assert_eq!(read_marker(&lease.file).unwrap(), lease.marker);
+                    }
+                });
+            }
+            ready.wait();
+        });
+        // A seek/read implementation changes this shared cursor, even if a
+        // particular schedule happened to return two complete marker copies.
+        assert_eq!(cursor.stream_position().unwrap(), 3);
+        assert_eq!(read_marker(&lease.file).unwrap(), lease.marker);
+        assert_eq!(cursor.stream_position().unwrap(), 3);
+        let other = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&fixture.profile.coordination_file)
+            .unwrap();
+        assert!(other.try_lock().is_err());
+        drop(cursor);
+        assert!(other.try_lock().is_err());
+        drop(lease);
+        other.try_lock().unwrap();
+    }
+
+    #[test]
+    fn positional_marker_reader_rejects_oversize_without_reading_payload() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(directory.path().join("oversize"))
+            .unwrap();
+        file.set_len(MAX_PROFILE_BYTES + 1).unwrap();
+        assert!(read_marker(&file).is_err());
     }
 
     #[test]

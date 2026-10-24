@@ -171,9 +171,6 @@ impl LinuxWorker {
         template: &TemplateBinding,
         verification: &CandidateVerification,
     ) {
-        let Ok(mut cache) = self.validated_artifacts.lock() else {
-            return;
-        };
         for artifact in [&template.kernel, &template.rootfs] {
             let Ok(stamp) = ArtifactStamp::read(artifact) else {
                 continue;
@@ -181,26 +178,45 @@ impl LinuxWorker {
             if verification.matches(artifact)
                 && ArtifactStamp::read(artifact).is_ok_and(|current| current == stamp)
             {
+                let Ok(mut cache) = self.validated_artifacts.lock() else {
+                    return;
+                };
                 cache.insert(artifact.path.clone(), stamp);
             }
         }
     }
 
     pub(super) fn validate_artifact(&self, artifact: &TemplateArtifact) -> NodeResult<()> {
+        self.validate_artifact_with(artifact, artifact_file_digest)
+    }
+
+    pub(super) fn validate_artifact_with(
+        &self,
+        artifact: &TemplateArtifact,
+        hash: impl FnOnce(File) -> std::io::Result<String>,
+    ) -> NodeResult<()> {
         let stamp = ArtifactStamp::read(artifact)?;
-        let mut cache = self
+        let cached = self
             .validated_artifacts
             .lock()
-            .map_err(|_| "artifact cache lock failed")?;
-        if cache.get(&artifact.path) == Some(&stamp) {
-            return Ok(());
-        }
-        if artifact_file_digest(File::open(&artifact.path)?)? != artifact.sha256
-            || ArtifactStamp::read(artifact)? != stamp
-        {
+            .map_err(|_| "artifact cache lock failed")?
+            .get(&artifact.path)
+            == Some(&stamp);
+        // Neither a full hash nor filesystem I/O runs under the shared cache
+        // lock. A concurrent miss may hash twice, within the caller's bounded
+        // work allowance; it cannot make another sandbox wait for this hash.
+        if !cached && hash(File::open(&artifact.path)?)? != artifact.sha256 {
             return Err("template artifact digest mismatch or changed during verification".into());
         }
-        cache.insert(artifact.path.clone(), stamp);
+        if ArtifactStamp::read(artifact)? != stamp {
+            return Err("template artifact digest mismatch or changed during verification".into());
+        }
+        if !cached {
+            self.validated_artifacts
+                .lock()
+                .map_err(|_| "artifact cache lock failed")?
+                .insert(artifact.path.clone(), stamp);
+        }
         Ok(())
     }
 

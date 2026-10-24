@@ -9,7 +9,7 @@ use sandproof_controller_service::{
     template_registry::{PublicationFailure, PublicationState},
 };
 use sandproof_internal::template::ValidationRequest;
-use sandproof_protocol::internal::lifecycle::{CreateBinding, Intent, LifecycleFact};
+use sandproof_protocol::lifecycle::{CreateParameters, LifecycleOperation};
 
 impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
     pub(super) fn publish_with(
@@ -118,7 +118,7 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
             let binding = validation_binding(&value.metadata, record, driver)?;
             match self.authority.create_validation(
                 &candidate.publication.candidate_id,
-                binding,
+                &binding,
                 driver.now_ms()?,
             ) {
                 Ok(request) => {
@@ -143,11 +143,11 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
                 sandbox
                     .operations
                     .first()
-                    .is_some_and(|first| first.request.identity == link.create)
+                    .is_some_and(|first| first.intent() == &link.create)
             })
             .and_then(|sandbox| sandbox.operations.last())
             .ok_or(PortError::OutcomeUnknown)?;
-        let _ = driver.drive_committed(&current.request);
+        let _ = driver.drive_committed(current.intent());
         self.progress_attached(driver, owner, candidate)
     }
 
@@ -174,30 +174,24 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
                 sandbox
                     .operations
                     .first()
-                    .is_some_and(|first| first.request.identity == link.create)
+                    .is_some_and(|first| first.intent() == &link.create)
             })
             .ok_or(PortError::OutcomeUnknown)?;
-        let original = &sandbox.operations[0].request;
+        let original = sandbox.operations[0].intent();
         let current = sandbox.operations.last().ok_or(PortError::OutcomeUnknown)?;
-        if current.request.intent == Intent::Create {
+        if matches!(
+            current.intent().request.operation,
+            LifecycleOperation::Create { .. }
+        ) {
             // A transport timeout is not a failed VM. Only original Ready or
             // the original startup deadline authorizes ending this validation.
-            if current
-                .response
-                .as_ref()
-                .is_some_and(|response| response.fact == LifecycleFact::NotAccepted)
-            {
-                return self.finish_terminal(driver, candidate);
-            }
-            if !current
-                .response
-                .as_ref()
-                .is_some_and(|response| matches!(response.fact, LifecycleFact::Ready { .. }))
-                && driver.now_ms()? < original.create.startup_deadline_ms
-            {
+            let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+                return Err(PortError::OutcomeUnknown);
+            };
+            if current.running().is_none() && driver.now_ms()? < create.startup_deadline_ms {
                 return Ok(false);
             }
-            let destroy = driver.destroy_exact(&link.create.tenant_id, &link.create.sandbox_id)?;
+            let destroy = driver.destroy_exact(&link.create)?;
             let _ = driver.drive_committed(&destroy);
             return self.finish_terminal(driver, candidate);
         }
@@ -224,16 +218,16 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
                 sandbox
                     .operations
                     .first()
-                    .is_some_and(|first| first.request.identity == link.create)
+                    .is_some_and(|first| first.intent() == &link.create)
             })
             .ok_or(PortError::OutcomeUnknown)?;
         let current = sandbox.operations.last().ok_or(PortError::OutcomeUnknown)?;
-        let Some(cleaned) = &current.response else {
+        let Some(cleaned) = current.terminal() else {
             return Ok(false);
         };
-        let original = &sandbox.operations[0].request;
+        let original = sandbox.operations[0].intent();
         if super::publication::terminal_request(original, cleaned).as_ref()
-            != Some(&current.request)
+            != Some(current.intent())
         {
             return Ok(false);
         }
@@ -241,14 +235,12 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
         // separate durable facts. Reply expiry/loss may leave only the first.
         // Keep Checking until reconciliation confirms this SAME result; do not
         // misclassify pending confirmation as an uncertain authority failure.
-        if cleaned.fact == LifecycleFact::NotAccepted
-            && sandbox.terminal_confirmation.as_ref() != Some(cleaned)
-        {
+        if sandbox.terminal_confirmation.as_ref() != Some(cleaned) {
             return Ok(false);
         }
         let request = ValidationRequest {
             create: link.create.clone(),
-            terminal: current.request.identity.clone(),
+            terminal: cleaned.clone(),
             revision: record.revision().clone(),
             publication: record.initial_publication(),
         };
@@ -270,7 +262,7 @@ fn validation_binding(
     metadata: &super::RegistryMetadata,
     record: &super::GlobalPublication,
     driver: &dyn CommittedDriver,
-) -> Result<CreateBinding, PortError> {
+) -> Result<CreateParameters, PortError> {
     let config = driver.validation_config();
     let public = crate::PublicTemplate::from_binding(
         record.value().binding.clone(),
@@ -283,11 +275,10 @@ fn validation_binding(
         }),
         ..CreateOptions::default()
     };
-    crate::create_binding::create_binding(
+    crate::create_binding::create_parameters(
         &public,
         &options,
         metadata.registry.config().validation_timeout_secs,
-        driver.now_ms()?,
         config.into(),
     )
 }

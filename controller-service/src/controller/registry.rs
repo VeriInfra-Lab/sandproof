@@ -113,8 +113,20 @@ impl ControllerJournal {
         )?;
         let count: i64 = self.journal.connection.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('template_publications','template_aliases','template_registry_meta')", [], |row| row.get(0))?;
         match (version, count) {
-            (10 | 11 | crate::INTERNAL_INBOX_FORMAT_VERSION, 3) => Ok(true),
-            (1..=9 | 11 | crate::INTERNAL_INBOX_FORMAT_VERSION, 0) => Ok(false),
+            (
+                10
+                | 11
+                | crate::INTERNAL_INBOX_FORMAT_VERSION
+                | crate::LIFECYCLE_STORE_FORMAT_VERSION,
+                3,
+            ) => Ok(true),
+            (
+                1..=9
+                | 11
+                | crate::INTERNAL_INBOX_FORMAT_VERSION
+                | crate::LIFECYCLE_STORE_FORMAT_VERSION,
+                0,
+            ) => Ok(false),
             _ => Err(JournalError::CorruptStore),
         }
     }

@@ -6,40 +6,58 @@ use super::{
     decisions, fence_can_advance, fs, node_staging, thread,
 };
 
+/// One execution's receipt and payload-free diagnostic. No shared error slot is
+/// overwritten when independent sandboxes execute concurrently.
+#[derive(Debug)]
+pub struct ExecutionReport {
+    pub receipt: WorkReceipt<HostObservation>,
+    pub diagnostic: Option<sandproof_controller_service::application::fault::FaultRecord>,
+}
+
 impl LinuxWorker {
     /// Execute one already claimed action. Any physical uncertainty becomes an
     /// Unknown receipt, never a fabricated success or an automatic retry.
+    /// The caller coordinates actions for the same sandbox; sharing this worker
+    /// does not grant permission to execute a second action for that sandbox.
     /// # Errors
     /// The current in-process worker transport is infallible; the result type
     /// remains aligned with the controller's fallible worker interface.
     pub fn execute(
-        &mut self,
+        &self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<HostObservation>, WorkerTransportError> {
-        let result = self.perform(action);
-        let outcome = match result {
-            Ok(evidence) => {
-                self.last_error = None;
-                WorkOutcome::ObservedSuccess(evidence)
-            }
+        Ok(self.execute_diagnosed(action).receipt)
+    }
+
+    /// Execute through the same physical path and return this call's diagnostic.
+    /// A diagnostic reports uncertainty, never permission to repeat an effect.
+    #[must_use]
+    pub fn execute_diagnosed(&self, action: &WorkAction<core::EffectId>) -> ExecutionReport {
+        let (outcome, diagnostic) = match self.perform(action) {
+            Ok(evidence) => (WorkOutcome::ObservedSuccess(evidence), None),
             Err(error) => {
                 let fault = crate::fault::project(
                     sandproof_controller_service::application::fault::FaultStage::Execute,
                     sandproof_controller_service::application::fault::FaultContext::action(action),
                     error.as_ref(),
                 );
-                self.last_error = Some(fault.to_string());
                 fault.emit();
-                WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                }
+                (
+                    WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                    Some(fault),
+                )
             }
         };
-        Ok(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome,
-        })
+        ExecutionReport {
+            receipt: WorkReceipt {
+                identity: action.identity.clone(),
+                outcome,
+            },
+            diagnostic,
+        }
     }
 
     #[expect(
@@ -112,6 +130,7 @@ impl LinuxWorker {
                 ObservedResult::Prepared {
                     pid: observation.pid,
                     start_ticks: observation.start_time_ticks,
+                    boot_id: self.source_boot_id(*sandbox, *vm, &observation)?,
                 }
             }
             core::Command::AbortPrepare {
@@ -187,6 +206,7 @@ impl LinuxWorker {
                 ObservedResult::Activated {
                     pid: after.pid,
                     start_ticks: after.start_time_ticks,
+                    boot_id: self.source_boot_id(*sandbox, *vm, &after)?,
                 }
             }
             core::Command::StopVm {

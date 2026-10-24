@@ -10,6 +10,8 @@
 
 它不是 Linux、Firecracker 或 E2B 的完整模型。它是 controller 与 worker 之间的安全协议。
 
+本页所述是既有模型。第一阶段新增要求以[本地验证计划](formal/04-local-core.md)和[生命周期合同](module-contracts.md#第一阶段生命周期合同)为准：旧模型的全有全无动作结果、失败补偿、逻辑 manifest 与文件使用生命周期不足以自动满足新目标。不得将本页历史定理作为真实 snapshot 链路已验证的证据。
+
 ## 1. 用门卡理解模型
 
 可以把一个 sandbox 想成一间实验室：

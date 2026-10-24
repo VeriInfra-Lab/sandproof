@@ -10,6 +10,12 @@ mod fault;
 #[cfg(target_os = "linux")]
 mod host_capacity;
 #[cfg(target_os = "linux")]
+mod host_epoch;
+#[cfg(target_os = "linux")]
+mod source_observation;
+#[cfg(target_os = "linux")]
+pub use host_epoch::ProtectedHostEpochSource;
+#[cfg(target_os = "linux")]
 mod physical_profile;
 #[cfg(target_os = "linux")]
 pub use adapter::NodeHost;
@@ -29,6 +35,11 @@ mod linux;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    CredentialFault, HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus,
-    LinuxObservation, LinuxWorker, NodeConfig, ObservedSlot, RouteCapacityExceeded,
+    CAPTURE_WORKER_INPUT_BYTES, CAPTURE_WORKER_OUTPUT_BYTES, CredentialFault, ExecutionReport,
+    HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus, LinuxObservation,
+    LinuxWorker, NodeConfig, ObservedSlot, PreparedCaptureWorker, ProtectedCaptureSettings,
+    RouteCapacityExceeded, run_capture_worker,
 };
+
+#[cfg(target_os = "linux")]
+pub mod full_snapshot;

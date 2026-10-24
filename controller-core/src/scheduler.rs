@@ -1,7 +1,7 @@
 use crate::effect::effect_succeeded_check;
 use crate::model::{
-    Command, EffectStatus, Event, OperationKey, OperationKind, OperationStatus, Phase,
-    RestoreSource, SandboxRecord, SnapshotStage, WorkerFence, World,
+    Command, Event, OperationKey, OperationKind, OperationStatus, Phase, RestoreSource,
+    SandboxRecord, SnapshotStage, WorkerFence, World,
 };
 use crate::request::Decision;
 use crate::transition::{
@@ -87,49 +87,61 @@ pub fn only_uncertain_prepare_for_abort(world: &World, sandbox: SandboxId) -> bo
     else {
         return false;
     };
+    let (Some(vm), Some(slot)) = (plan.vm, plan.slot) else {
+        return false;
+    };
+    let expected = Command::PrepareVm {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+        slot,
+        source: plan.restore_from,
+    };
     let mut seen = false;
-    for id in world.effect_ids() {
-        if id.command().sandbox() != sandbox
-            || !matches!(
-                world.effect_status(id),
-                Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
-            )
-        {
-            continue;
+    let mut valid = true;
+    let mut index = 0;
+    while index < world.effect_ids().len() && valid {
+        let id = &world.effect_ids()[index];
+        if id.command().sandbox() == sandbox && crate::effect::outcome_is_unresolved(world, id) {
+            seen = true;
+            valid = *id.command() == expected;
         }
-        seen = true;
-        if *id.command()
-            != (Command::PrepareVm {
-                sandbox,
-                epoch: plan.epoch,
-                generation: plan.generation,
-                vm: match plan.vm {
-                    Some(vm) => vm,
-                    None => return false,
-                },
-                slot: match plan.slot {
-                    Some(slot) => slot,
-                    None => return false,
-                },
-                source: plan.restore_from,
-            })
-        {
-            return false;
-        }
+        index += 1;
     }
-    seen
+    seen && valid
+}
+
+fn current_terminal_fence(world: &World, command: &Command) -> bool {
+    let Command::InstallFence {
+        sandbox,
+        epoch,
+        terminal: true,
+    } = command
+    else {
+        return false;
+    };
+    let Some(record) = world.sandboxes.get(sandbox) else {
+        return false;
+    };
+    record.epoch == *epoch
 }
 
 #[must_use]
 pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
     let sandbox = command.sandbox();
     if crate::terminal::only_uncertain_activation_for_abort(world, sandbox) {
-        return world.effect_ids().iter().any(|id| {
-            crate::terminal::activation_in_current_abort(world, id)
-                && (crate::terminal::activation_stop(id).as_ref() == Some(command)
-                    || matches!(command, Command::InstallFence { epoch, terminal: true, .. }
-                        if world.sandboxes.get(&sandbox).is_some_and(|record| record.epoch == *epoch)))
-        });
+        let terminal_fence = current_terminal_fence(world, command);
+        let mut index = 0;
+        let mut found = false;
+        while index < world.effect_ids().len() && !found {
+            let id = &world.effect_ids()[index];
+            found = crate::terminal::activation_in_current_abort(world, id)
+                && (crate::terminal::activation_stop_current(world, id).as_ref() == Some(command)
+                    || terminal_fence);
+            index += 1;
+        }
+        return found;
     }
     if !only_uncertain_prepare_for_abort(world, sandbox) {
         return false;
@@ -241,7 +253,8 @@ pub fn handle_reserve_startup(
     })
 }
 
-/// Rust implementation of Lean's `Controller.handleReservePauseSnapshot`.
+/// Reserve a pause snapshot only for the current eligible capture plan.
+/// Capture eligibility extends the historical Lean correspondence.
 ///
 /// # Errors
 ///
@@ -288,6 +301,12 @@ pub fn handle_reserve_pause_snapshot(
         return Err(SchedulerReject::PlanNotOpen);
     }
     if plan.target_snapshot.is_some() {
+        return Err(SchedulerReject::PlanNotOpen);
+    }
+    if !plan
+        .capture
+        .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
+    {
         return Err(SchedulerReject::PlanNotOpen);
     }
     let Some(vm) = record.current_vm else {
@@ -439,7 +458,8 @@ pub fn handle_dispatch_prepare(
     })
 }
 
-/// Rust implementation of Lean's `Controller.handleScheduleSealSnapshot`.
+/// Schedule sealing for the current eligible capture plan. The added capture
+/// guard is outside the historical Lean correspondence.
 ///
 /// # Errors
 ///
@@ -481,6 +501,12 @@ pub fn handle_schedule_seal_snapshot(
     }
     if plan.target_snapshot != Some(RestoreSource { snapshot, manifest }) {
         return Err(SchedulerReject::PlanMismatch);
+    }
+    if !plan
+        .capture
+        .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
+    {
+        return Err(SchedulerReject::PlanNotOpen);
     }
     let Some(vm_id) = record.current_vm else {
         return Err(SchedulerReject::VmNotFound);
@@ -539,7 +565,8 @@ pub fn handle_schedule_seal_snapshot(
     })
 }
 
-/// Rust implementation of Lean's `Controller.handleScheduleCommitSnapshot`.
+/// Schedule registration for the current eligible capture plan. The added
+/// capture guard is outside the historical Lean correspondence.
 ///
 /// # Errors
 ///
@@ -564,6 +591,11 @@ pub fn handle_schedule_commit_snapshot(
     }
     if record.phase != Phase::Pausing {
         return Err(SchedulerReject::WrongPhase);
+    }
+    if !crate::transition::current_capture(world, sandbox, record)
+        .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
+    {
+        return Err(SchedulerReject::PlanNotOpen);
     }
     let Some(vm) = record.current_vm else {
         return Err(SchedulerReject::VmNotFound);
@@ -1008,6 +1040,7 @@ mod tests {
             slot: None,
             restore_from: None,
             target_snapshot: None,
+            capture: None,
             stop_vms: vec![VmId(8)],
             close_slots: vec![NetSlotId(9)],
             retry_limit: 3,
@@ -1039,7 +1072,9 @@ mod tests {
         world
             .sandboxes
             .put(SID, record(Phase::Pausing, OperationKind::Pause));
-        world.operation_plans.put(key, plan());
+        let mut capture_plan = plan();
+        capture_plan.capture = Some(crate::capture::CaptureHandoff::accepted());
+        world.operation_plans.put(key, capture_plan);
         world
     }
 

@@ -131,7 +131,7 @@ def validate_configuration(settings, host_config, rounds, wait_seconds):
 
 def retention_slots(services, rounds):
     """Use only the original protected lane budget; never enlarge it for churn."""
-    retained = services.host_configs[0]['inbox']['max_sandboxes']
+    retained = services.host_configs[0]['inbox']['max_sessions']
     registration = services.center_config['nodes'][0]['registration']
     if (type(retained) is not int or retained <= 0
             or type(registration['retention_slots']) is not int
@@ -392,7 +392,7 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
     from _center_host_services import local_binding
     from sdk_c02_acceptance import processes_in_uid_range
     from sdk_server_smoke import options
-    from tools.runtime_create_recovery import terminal_result
+    from tools.runtime_create_recovery import original_create_identity, terminal_result
     from e2b import Sandbox
 
     assert sys.platform == 'linux' and os.geteuid() == 0
@@ -471,9 +471,9 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
         assert len(center['sandboxes']) <= bounds['max_sandboxes']
         assert all(len(record['operations']) <= bounds['operations_per_sandbox']
                    for record in center['sandboxes'])
-        assert len(center['retention_lanes']) == len(native['lanes']) == retained_slots
+        assert len(center['retention_lanes']) == len(native['retention_lanes']) == retained_slots
         report['authority_observations'].append(dict(label=label,
-            center_retention_lanes=center['retention_lanes'],host_retention_lanes=native['lanes'],
+            center_retention_lanes=center['retention_lanes'],host_retention_lanes=native['retention_lanes'],
             center_records=len(center['sandboxes']),host_operations=len(native['operations']),
             sandbox_highwater=center['sandbox_highwater'],operation_highwater=center['operation_highwater']))
         return center,native
@@ -481,9 +481,9 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
     def original_mapping(sandbox):
         center,native = audit_pair('mapped-'+sandbox.sandbox_id)
         rows = [record for record in center['sandboxes']
-                if record['create']['identity']['sandbox_id'] == sandbox.sandbox_id]
+                if record['create']['binding']['session'] == sandbox.sandbox_id]
         assert len(rows) == 1 and not rows[0]['released']
-        identity = rows[0]['create']['identity']
+        identity = original_create_identity(rows[0])
         binding = local_binding(native,sandbox.sandbox_id,expected_node=services.host_configs[0]['inbox']['node'])
         report['mappings'].append(dict(create=identity,local=binding))
         return 'sb-'+settings['namespace']+'-'+str(binding['sandbox']),binding['sandbox'],identity
@@ -491,20 +491,20 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
     def exact_retired(identity, survivor_identity=None):
         deadline = time.monotonic()+wait_seconds
         while True:
-            center,native = audit_pair('terminal-'+identity['sandbox_id'])
+            center,native = audit_pair('terminal-'+identity['binding']['session'])
             terminal = terminal_result(center,native,identity)
             if terminal and terminal['status'] == 'retired_terminal_slot':
-                assert terminal['center_retired_through'] == terminal['host_retired_through'] == identity['request_window']
+                assert terminal['center_retired_through'] == terminal['host_retired_through'] == identity['retention']['window']
                 if survivor_identity is not None:
                     # A live peer must retain its exact original incarnation,
                     # never get retired merely to recycle the victim's slot.
                     peers = [row for row in center['sandboxes']
-                             if row['create']['identity'] == survivor_identity]
+                             if original_create_identity(row) == survivor_identity]
                     assert len(peers) == 1 and not peers[0]['released']
-                    assert survivor_identity['retention_slot'] != identity['retention_slot']
-                    for lanes in (center['retention_lanes'],native['lanes']):
-                        lane = next(row for row in lanes if row['retention_slot'] == survivor_identity['retention_slot'])
-                        assert lane['retired_through'] == survivor_identity['request_window']-1
+                    assert survivor_identity['retention']['slot'] != identity['retention']['slot']
+                    for lanes, slot_key in ((center['retention_lanes'], 'retention_slot'), (native['retention_lanes'], 'slot')):
+                        lane = next(row for row in lanes if row[slot_key] == survivor_identity['retention']['slot'])
+                        assert lane['retired_through'] == survivor_identity['retention']['window']-1
                 return terminal
             assert time.monotonic()<deadline,'original exact terminal slot did not retire on both authorities'
             # Give the ORIGINAL instances a complete background scan between
@@ -532,11 +532,11 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
             live.append(victim)
             victim_native,victim_local,victim_create = original_mapping(victim)
             if index == 0:
-                victim_slot = victim_create['retention_slot']
+                victim_slot = victim_create['retention']['slot']
             else:
-                assert victim_create['retention_slot'] == victim_slot
-                assert victim_create['request_window'] == previous_window+1
-            previous_window = victim_create['request_window']
+                assert victim_create['retention']['slot'] == victim_slot
+                assert victim_create['retention']['window'] == previous_window+1
+            previous_window = victim_create['retention']['window']
             assert fetch(opener,url,'GET','/sandboxes/'+survivor.sandbox_id,foreign_key)[0] == 404
             assert fetch(opener,url,'GET','/sandboxes/'+victim.sandbox_id,key)[0] == 404
             snapshot = sample('created-' + str(index))

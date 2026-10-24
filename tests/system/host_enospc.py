@@ -30,7 +30,7 @@ from e2b.exceptions import (
 from sdk_server_smoke import options
 from server_disk_reserve import MIB, RESERVE, SCRATCH_BYTES, Resources, free_bytes, healthy
 from server_disk_reserve import SCRATCH_INODES,prepare_services,wait_disk_veto
-from tools.runtime_create_recovery import recover_original_create,find_runtime_create
+from tools.runtime_create_recovery import recover_original_create,find_runtime_create,original_create_identity
 
 
 def rows(config):
@@ -126,7 +126,7 @@ def inode_case(args, services, config, mounted, resources, sdk, live, filler, ma
     global_audit=services.planned_audit('center')
     create=find_runtime_create(global_audit,{'enospc':'original'},
         deployment=services.center_config['deployment_id'])
-    ident=create['sandbox_id']
+    ident=create['binding']['session']
     assert {p.name for p in resources.claims.iterdir()} == claims
     # The unknown create already consumes admission; it has not booted a VM.
     for sandbox in live:
@@ -196,7 +196,7 @@ def block_case(services, config, mounted, resources, sdk, live, filler, marker, 
     filler.release()
     center_after=services.planned_audit('center')
     original=[record for record in center_after['sandboxes']
-              if record['create']['identity']==victim_create]
+              if original_create_identity(record)==victim_create]
     already_terminating=(not original or original[0]['terminating'] or original[0]['released'])
     expected=dict(instances=1,cpu=1,memory_bytes=768*MIB,disk_bytes=1024*MIB)
     # If the original center retained Destroy, only observe it. A second DELETE

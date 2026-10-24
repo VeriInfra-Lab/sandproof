@@ -208,7 +208,7 @@ def reclaim_resources(deployment, report, *, services_started):
     for row in deployment.center_snapshot()['sandboxes']:
         if row['private'] is False and row['released'] is False:
             code,_=fetch(opener,services.sdk_url,'DELETE',
-                '/sandboxes/'+row['create']['identity']['sandbox_id'],deployment.key)
+                '/sandboxes/'+row['create']['binding']['session'],deployment.key)
             assert code in (200,204,404)
     no_resources(deployment)
     report['resource_cleanup_confirmed']=True

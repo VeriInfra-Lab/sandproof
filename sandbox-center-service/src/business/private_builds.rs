@@ -3,12 +3,11 @@ mod authority;
 mod validation;
 use sandbox_controller_core::maintenance::windows::{WindowId, WindowLimits, WindowState};
 use sandproof_api::PortError;
-use sandproof_protocol::{
-    ResourceId, TenantId,
-    internal::lifecycle::{
-        LIFECYCLE_BODY_BYTES, LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES,
-    },
+use sandproof_internal::lifecycle::REQUEST_BODY_BYTES;
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, TERMINAL_RESULT_BODY_BYTES, TerminalLifecycleObservation,
 };
+use sandproof_protocol::{ResourceId, TenantId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,7 +33,7 @@ impl PrivateBuildConfig {
         // Explicit complete original create, future exact Destroy and Cleaned
         // plus framing. Window frontier/state is independently reserved below.
         self.max_anchors
-            .saturating_mul(2 * LIFECYCLE_BODY_BYTES + RESULT_CONFIRMATION_BODY_BYTES + 4096)
+            .saturating_mul(REQUEST_BODY_BYTES + TERMINAL_RESULT_BODY_BYTES + 4096)
             .saturating_add(
                 usize::try_from(self.windows.max_open_windows())
                     .unwrap_or(usize::MAX)
@@ -56,9 +55,9 @@ pub struct GlobalBuildAnchor {
     pub window: WindowId,
     pub build_id: String,
     pub parameters: BuildParameters,
-    pub original_create: LifecycleRequest,
+    pub original_create: AcceptedLifecycleIntent,
     /// Explicit same-authority Cleaned evidence, not a boolean success flag.
-    pub settlement: Option<LifecycleResponse>,
+    pub settlement: Option<TerminalLifecycleObservation>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

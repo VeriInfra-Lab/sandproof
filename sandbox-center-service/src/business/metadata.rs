@@ -12,12 +12,13 @@ use sandproof_controller_service::{
     },
     templates::TemplateCatalog,
 };
+use sandproof_internal::lifecycle::REQUEST_BODY_BYTES;
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, LifecycleOperation, TERMINAL_RESULT_BODY_BYTES,
+};
 use sandproof_protocol::{
     ResourceId, TenantId,
-    internal::lifecycle::{
-        CreateBinding, Intent, LIFECYCLE_BODY_BYTES, LifecycleFact, LifecycleRequest,
-        RESULT_CONFIRMATION_BODY_BYTES, Resources,
-    },
+    internal::lifecycle::{CreateBinding, Resources},
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,8 +40,8 @@ impl MetadataBudget {
         CreateOptions::MAX_ENCODED_BYTES
             .saturating_mul(3)
             .saturating_add(self.max_certificate_bytes)
-            .saturating_add(LIFECYCLE_BODY_BYTES)
-            .saturating_add(RESULT_CONFIRMATION_BODY_BYTES)
+            .saturating_add(REQUEST_BODY_BYTES)
+            .saturating_add(TERMINAL_RESULT_BODY_BYTES)
             .saturating_add(16 * 1024)
     }
 }
@@ -94,13 +95,18 @@ impl RegistryMetadata {
                 record
                     .validation
                     .as_ref()
-                    .map(|link| link.create.sandbox_id.clone())
+                    .map(|link| link.create.request.binding.session.as_protocol_id().clone())
             })
             .chain(self.private_builds.iter().flat_map(|builds| {
-                builds
-                    .anchors
-                    .iter()
-                    .map(|anchor| anchor.original_create.identity.sandbox_id.clone())
+                builds.anchors.iter().map(|anchor| {
+                    anchor
+                        .original_create
+                        .request
+                        .binding
+                        .session
+                        .as_protocol_id()
+                        .clone()
+                })
             }))
             .collect()
     }
@@ -172,69 +178,80 @@ impl RegistryMetadata {
             .try_into()
             .map_err(|_| PortError::Invalid)
     }
-    pub(super) fn request_fits(request: &LifecycleRequest) -> bool {
-        serde_json::to_vec(request).is_ok_and(|bytes| bytes.len() <= LIFECYCLE_BODY_BYTES)
+    pub(super) fn request_fits(request: &AcceptedLifecycleIntent) -> bool {
+        serde_json::to_vec(request).is_ok_and(|bytes| bytes.len() <= REQUEST_BODY_BYTES)
     }
     fn validation_valid(&self, entry: &GlobalPublication, center: &CenterState) -> bool {
         let Some(link) = &entry.validation else {
             return true;
         };
-        if &link.create.node.deployment_id != center.deployment() {
+        let original = &link.create;
+        let binding = &original.request.binding;
+        if &binding.node.deployment_id != center.deployment()
+            || &original.center != center.center_identity()
+        {
             return false;
         }
-        let Some(lane) = center.lane(&link.create.node, link.create.retention_slot) else {
+        let Some(lane) = center.lane(&binding.node, original.retention.slot) else {
             return false;
         };
         if link.settlement.is_none()
             && lane.phase() == LanePhase::ClosePending
-            && lane.current() == Some(link.create.request_window)
+            && lane.current().map(sandproof_center_store::Revision::get)
+                == Some(original.retention.window.get())
         {
-            // Veto BEFORE the close can be dispatched: the host still owns
-            // the only native history from which this certificate can be made.
             return false;
         }
-        // Search by globally unique sandbox ID, not the whole expected
-        // identity: a changed live owner/node must not masquerade as absence.
-        let live = center.sandboxes().iter().find(|sandbox| {
-            sandbox
-                .operations
+        // Find the unique logical session first. Changed live owner/node must
+        // not be treated as absence by comparing only an expected whole packet.
+        let live = center.sandboxes().iter().find(|record| {
+            record
+                .operations()
                 .first()
-                .is_some_and(|first| first.request.identity.sandbox_id == link.create.sandbox_id)
+                .is_some_and(|first| first.intent().request.binding.session == binding.session)
         });
         if let Some(saved) = &link.settlement {
-            if live.is_none() && lane.retired_through() < link.create.request_window.get() {
-                return false;
-            }
-            if !self
-                .validation_tenant(entry, &saved.original_create.create)
-                .is_ok_and(|tenant| tenant == saved.original_create.identity.tenant_id)
+            if !saved.is_valid_for(link)
+                || (live.is_none() && lane.retired_through() < original.retention.window.get())
             {
                 return false;
             }
-            return live.is_none_or(|sandbox| {
-                sandbox
-                    .operations
+            let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+                return false;
+            };
+            if !self
+                .validation_tenant(entry, create)
+                .is_ok_and(|tenant| tenant == original.request.binding.key.owner)
+            {
+                return false;
+            }
+            return live.is_none_or(|record| {
+                record
+                    .operations()
                     .first()
-                    .is_some_and(|first| first.request == saved.original_create)
-                    && sandbox.operations.last().is_some_and(|last| {
-                        super::publication::terminal_request(&saved.original_create, &saved.cleaned)
-                            .as_ref()
-                            == Some(&last.request)
-                            && last.response.as_ref() == Some(&saved.cleaned)
+                    .is_some_and(|first| first.intent() == original)
+                    && record.operations().last().is_some_and(|last| {
+                        super::publication::terminal_request(original, &saved.cleaned).as_ref()
+                            == Some(last.intent())
+                            && last.terminal() == Some(&saved.cleaned)
                     })
-                    && (saved.cleaned.fact != LifecycleFact::NotAccepted
-                        || sandbox.terminal_confirmation.as_ref() == Some(&saved.cleaned))
+                    && (saved.admission != super::ValidationAdmission::NotAdmitted
+                        || record.terminal_confirmation.as_ref() == Some(&saved.cleaned))
             });
         }
-        let Some(sandbox) = live else {
+        let Some(record) = live else {
             return false;
         };
-        let first = &sandbox.operations[0].request;
-        first.identity == link.create
-            && first.intent == Intent::Create
+        let Some(first) = record.operations().first() else {
+            return false;
+        };
+        let LifecycleOperation::Create { create, .. } = &first.intent().request.operation else {
+            return false;
+        };
+        first.intent() == original
             && self
-                .validation_tenant(entry, &first.create)
-                .is_ok_and(|tenant| tenant == first.identity.tenant_id)
+                .validation_tenant(entry, create)
+                .is_ok_and(|tenant| tenant == binding.key.owner)
     }
     fn structurally_valid(&self) -> bool {
         if self.catalog.validate().is_err()
@@ -277,15 +294,13 @@ impl RegistryMetadata {
                         !serde_json::to_vec(certificate)
                             .is_ok_and(|bytes| bytes.len() <= self.budget.max_certificate_bytes)
                     })
-                || entry
-                    .validation
-                    .as_ref()
-                    .and_then(|link| link.settlement.as_ref())
-                    .is_some_and(|saved| {
-                        !Self::request_fits(&saved.original_create)
-                            || !serde_json::to_vec(&saved.cleaned)
-                                .is_ok_and(|bytes| bytes.len() <= RESULT_CONFIRMATION_BODY_BYTES)
-                    })
+                || entry.validation.as_ref().is_some_and(|link| {
+                    !Self::request_fits(&link.create)
+                        || link.settlement.as_ref().is_some_and(|saved| {
+                            !serde_json::to_vec(&saved.cleaned)
+                                .is_ok_and(|bytes| bytes.len() <= TERMINAL_RESULT_BODY_BYTES)
+                        })
+                })
             {
                 return false;
             }
@@ -356,12 +371,14 @@ impl BusinessMetadata for RegistryMetadata {
                 if previous.create == link.create {
                     return false;
                 }
-                if previous.create.node == link.create.node
+                if previous.create.request.binding.node == link.create.request.binding.node
                     && let (Some(a), Some(b)) = (&previous.local, &link.local)
                     && (a.sandbox == b.sandbox
-                        || (previous.create.tenant_id != link.create.tenant_id
+                        || (previous.create.request.binding.key.owner
+                            != link.create.request.binding.key.owner
                             && a.owner == b.owner)
-                        || (previous.create.tenant_id == link.create.tenant_id
+                        || (previous.create.request.binding.key.owner
+                            == link.create.request.binding.key.owner
                             && a.owner != b.owner
                             && !validation_retired(previous, center)
                             && !validation_retired(link, center)))
@@ -403,13 +420,15 @@ impl BusinessMetadata for RegistryMetadata {
 fn validation_retired(link: &super::ValidationLink, center: &CenterState) -> bool {
     link.settlement.is_some()
         && center
-            .lane(&link.create.node, link.create.retention_slot)
-            .is_some_and(|lane| lane.retired_through() >= link.create.request_window.get())
+            .lane(
+                &link.create.request.binding.node,
+                link.create.retention.slot,
+            )
+            .is_some_and(|lane| lane.retired_through() >= link.create.retention.window.get())
         && !center.sandboxes().iter().any(|sandbox| {
-            sandbox
-                .operations
-                .first()
-                .is_some_and(|first| first.request.identity.sandbox_id == link.create.sandbox_id)
+            sandbox.operations.first().is_some_and(|first| {
+                first.intent().request.binding.session == link.create.request.binding.session
+            })
         })
 }
 fn registry_error(error: &JournalError) -> PortError {
@@ -433,8 +452,8 @@ mod tests {
             budget.record_bytes(),
             3 * CreateOptions::MAX_ENCODED_BYTES
                 + budget.max_certificate_bytes
-                + LIFECYCLE_BODY_BYTES
-                + RESULT_CONFIRMATION_BODY_BYTES
+                + REQUEST_BODY_BYTES
+                + TERMINAL_RESULT_BODY_BYTES
                 + 16 * 1024
         );
         for max_certificate_bytes in [

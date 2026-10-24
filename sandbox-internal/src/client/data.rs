@@ -6,9 +6,8 @@ use super::{
 };
 use axum::body::Body;
 use sandproof_data_transport::WriteIdle;
-use sandproof_protocol::internal::{
-    ControlIdentity, DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX,
-};
+use sandproof_protocol::internal::{DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX};
+use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
 use std::{
     future::Future,
     io,
@@ -71,7 +70,7 @@ impl InternalClient {
     /// failures reject without fallback or a fresh lifecycle operation.
     pub async fn stream_data(
         &self,
-        identity: &ControlIdentity,
+        identity: &LifecycleAccessIdentity,
         mut request: Request<Body>,
         route_lease: Arc<dyn Send + Sync>,
         max_deadline: Instant,
@@ -79,9 +78,9 @@ impl InternalClient {
         if max_deadline <= Instant::now() {
             return Err(TransportError::Deadline);
         }
-        identity
-            .validate_node(&self.endpoint.node)
-            .map_err(|_| TransportError::Rejected)?;
+        if identity.node != self.endpoint.node {
+            return Err(TransportError::Rejected);
+        }
         if request.uri().scheme().is_some() || request.uri().authority().is_some() {
             return Err(TransportError::Rejected);
         }

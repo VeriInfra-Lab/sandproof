@@ -21,7 +21,7 @@ use sandproof_controller_service::application::{
     ApplicationError as PortError, ControllerApplication, ControllerHost, DataAccessPort,
     DataAuthorization, DataKind, DataPermit,
 };
-use sandproof_protocol::internal::ControlIdentity;
+use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     process::{ChildStdin, ChildStdout},
@@ -103,12 +103,13 @@ pub async fn handle<P: DataAccessPort>(
 /// Complete authenticated binding, never a public SDK token or guessed VM ID.
 struct NativeDataPort<H: ControllerHost> {
     application: Arc<ControllerApplication<H>>,
-    identity: ControlIdentity,
+    identity: LifecycleAccessIdentity,
+    context: AuthenticatedCenterContext,
 }
 impl<H: ControllerHost> NativeDataPort<H> {
     fn data_permit(&self, kind: DataKind) -> Result<(DataPermit, Option<String>), PortError> {
         self.application
-            .internal_data_authorization(&self.identity, kind)
+            .lifecycle_data_authorization(&self.identity, &self.context, kind)
             .map(|(permit, secret)| (permit, Some(secret)))
     }
 }
@@ -119,7 +120,8 @@ impl<H: ControllerHost> NativeDataPort<H> {
 pub async fn handle_internal<H: ControllerHost + Send + 'static>(
     application: Arc<ControllerApplication<H>>,
     gateway: Arc<Gateway>,
-    identity: ControlIdentity,
+    identity: LifecycleAccessIdentity,
+    context: AuthenticatedCenterContext,
     request: Request<Body>,
 ) -> Response<Body> {
     let selection = match request_kind(&request) {
@@ -129,6 +131,7 @@ pub async fn handle_internal<H: ControllerHost + Send + 'static>(
     let port = NativeDataPort {
         application: Arc::clone(&application),
         identity,
+        context,
     };
     handle_prepared(
         application,

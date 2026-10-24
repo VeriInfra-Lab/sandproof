@@ -37,6 +37,13 @@ pub const REDIS_VERSION: &str = "7.2.16";
 /// state machine or its persistence adapter has been formally verified.
 pub trait ControlState: Serialize + DeserializeOwned {
     const FORMAT_VERSION: u32;
+    /// Supported nested profile domains, checked before general validation.
+    /// Types without such profiles keep their existing validation contract.
+    /// # Errors
+    /// An unsupported nested profile must reject before general state use.
+    fn check_supported_profiles(&self) -> Result<(), StoreError> {
+        Ok(())
+    }
     fn is_valid(&self) -> bool;
 }
 
@@ -51,6 +58,7 @@ pub enum StoreError {
     AlreadyInitialized,
     InvalidRecord,
     InvalidState,
+    UnsupportedProfile,
     Capacity,
     RevisionExhausted,
     Conflict,
@@ -68,6 +76,7 @@ impl fmt::Display for StoreError {
             Self::AlreadyInitialized => "center authority block already initialized",
             Self::InvalidRecord => "invalid center authority record",
             Self::InvalidState => "invalid center control state",
+            Self::UnsupportedProfile => "unsupported center lifecycle profile",
             Self::Capacity => "center authority capacity exhausted",
             Self::RevisionExhausted => "center revision exhausted",
             Self::Conflict => "center authority revision conflict",

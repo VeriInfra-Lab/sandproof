@@ -103,7 +103,7 @@ fn running_native_in_lane(
         .unwrap()
         .local
         .unwrap();
-    crate::finish_admitted_create_v1_timed(
+    crate::finish_admitted_create_timed(
         journal,
         local.sandbox,
         local.operation,
@@ -135,7 +135,7 @@ fn stop_native(
     journal
         .record_internal_intent(&destroy, &mut NeverCrash)
         .unwrap();
-    crate::finish_accepted_kill_v1(
+    crate::finish_accepted_kill(
         journal,
         local.sandbox,
         core::OperationId(2),

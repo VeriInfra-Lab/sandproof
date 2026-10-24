@@ -51,11 +51,36 @@ pub struct InternalCreateResult {
     pub local: Option<InternalLocalBinding>,
 }
 
-pub(in crate::controller) struct AdmissionAttachment {
+pub(in crate::controller) struct LegacyAttachment {
     pub request: LifecycleRequest,
     pub local: InternalLocalBinding,
     /// Original protected cache descriptor before GLOBAL-to-LOCAL owner mapping.
     pub registered_template: TemplateBinding,
+}
+
+pub(in crate::controller) enum AdmissionAttachment {
+    Legacy(LegacyAttachment),
+    Lifecycle(super::super::lifecycle_inbox::CreateAttachment),
+}
+impl AdmissionAttachment {
+    pub(in crate::controller) fn registered_template(&self) -> &TemplateBinding {
+        match self {
+            Self::Legacy(a) => &a.registered_template,
+            Self::Lifecycle(a) => &a.registered_template,
+        }
+    }
+    pub(in crate::controller) fn local(&self) -> InternalLocalBinding {
+        match self {
+            Self::Legacy(a) => a.local,
+            Self::Lifecycle(a) => a.local,
+        }
+    }
+    pub(in crate::controller) fn authenticated_owner(&self) -> &sandproof_protocol::TenantId {
+        match self {
+            Self::Legacy(a) => &a.request.identity.tenant_id,
+            Self::Lifecycle(a) => &a.intent.request.binding.key.owner,
+        }
+    }
 }
 
 fn policy(options: &CreateOptions) -> Result<core::NetworkPolicy, AdmissionError> {
@@ -75,6 +100,13 @@ fn validate_template_and_time(
     request: &LifecycleRequest,
     admission: &InternalAdmission,
 ) -> Result<(), AdmissionError> {
+    validate_binding_and_time(&request.create, admission)
+}
+
+pub(in crate::controller) fn validate_binding_and_time(
+    binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
+    admission: &InternalAdmission,
+) -> Result<(), AdmissionError> {
     let InternalAdmission {
         now_ms,
         limits,
@@ -82,7 +114,6 @@ fn validate_template_and_time(
         ..
     } = admission;
     let now = u64::try_from(*now_ms).map_err(|_| AdmissionError::InvalidClock)?;
-    let binding = &request.create;
     let shape = template.local.resources;
     let mut projected = template.registered.clone();
     projected
@@ -125,10 +156,16 @@ fn validate_owner(
     request: &LifecycleRequest,
     template: &InternalTemplate,
 ) -> Result<(), AdmissionError> {
+    validate_owner_id(&request.identity.tenant_id, template)
+}
+pub(in crate::controller) fn validate_owner_id(
+    owner: &sandproof_protocol::TenantId,
+    template: &InternalTemplate,
+) -> Result<(), AdmissionError> {
     if template
         .local
         .owner
-        .is_some_and(|expected| expected.to_string() != request.identity.tenant_id.as_str())
+        .is_some_and(|expected| expected.to_string() != owner.as_str())
     {
         return Err(AdmissionError::Unauthorized);
     }
@@ -138,7 +175,12 @@ fn validate_owner(
 fn checked_options(
     request: &LifecycleRequest,
 ) -> Result<(CreateOptions, core::NetworkPolicy), AdmissionError> {
-    let options: CreateOptions = serde_json::from_slice(&request.create.options)
+    checked_binding_options(&request.create)
+}
+pub(in crate::controller) fn checked_binding_options(
+    binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
+) -> Result<(CreateOptions, core::NetworkPolicy), AdmissionError> {
+    let options: CreateOptions = serde_json::from_slice(&binding.options)
         .map_err(|_| AdmissionError::InvalidCreateOptions)?;
     if options.template.is_some()
         || options
@@ -155,13 +197,14 @@ fn checked_options(
 impl InternalAdmission {
     /// The original pure binding checks, before a numeric physical-capacity
     /// veto may become definitive. No mapping, allocation or host I/O occurs.
-    pub(crate) fn validate_attachment(
+    pub(crate) fn validate_create_binding(
         &self,
-        request: &LifecycleRequest,
+        binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
+        owner: &sandproof_protocol::TenantId,
     ) -> Result<(), AdmissionError> {
-        validate_template_and_time(request, self)?;
-        validate_owner(request, &self.template)?;
-        checked_options(request)?;
+        validate_binding_and_time(binding, self)?;
+        validate_owner_id(owner, &self.template)?;
+        checked_binding_options(binding)?;
         Ok(())
     }
 }
@@ -274,11 +317,11 @@ impl ControllerJournal {
             },
             Some(compute),
             None,
-            Some(&AdmissionAttachment {
+            Some(&AdmissionAttachment::Legacy(LegacyAttachment {
                 request: request.clone(),
                 local,
                 registered_template,
-            }),
+            })),
             crashes,
         )?;
         Ok(InternalCreateResult {
@@ -294,6 +337,19 @@ pub(in crate::controller) fn attach_admission(
     tx: &WorldTransaction<'_>,
     namespace: &str,
     attachment: &AdmissionAttachment,
+) -> Result<(), JournalError> {
+    match attachment {
+        AdmissionAttachment::Legacy(a) => attach_legacy_admission(tx, namespace, a),
+        AdmissionAttachment::Lifecycle(a) => {
+            super::super::lifecycle_inbox::attach_create(tx, namespace, a)
+        }
+    }
+}
+
+fn attach_legacy_admission(
+    tx: &WorldTransaction<'_>,
+    namespace: &str,
+    attachment: &LegacyAttachment,
 ) -> Result<(), JournalError> {
     let mut inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
     let entry = inbox
@@ -353,6 +409,16 @@ pub(super) fn attach_terminal(
     let Some(local) = local else {
         return Ok(());
     };
+    terminate_local(tx, namespace, local)
+}
+
+/// Reuse the original starting/unknown-prepare compensation and terminal
+/// cleanup responsibility for either authenticated inbox representation.
+pub(in crate::controller) fn terminate_local(
+    tx: &WorldTransaction<'_>,
+    namespace: &str,
+    local: InternalLocalBinding,
+) -> Result<(), JournalError> {
     let world = tx.world();
     let record = world
         .sandbox_record(local.sandbox)

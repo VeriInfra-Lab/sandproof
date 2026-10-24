@@ -1,0 +1,26 @@
+import SandproofFoundations.FunsExternal
+import SandproofStage1Request.Types
+
+/-! Current-envelope namespace bindings for four existing fixed A6 models.
+No standard-library or sender-authentication proof is claimed here. -/
+open Aeneas Aeneas.Std
+namespace SandproofStage1RequestRust
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
+  .ok (left != right)
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+end SandproofStage1RequestRust

@@ -17,27 +17,49 @@ impl<H: ControllerHost> ControllerApplication<H> {
         node: &NodeIdentity,
         cache: &PhysicalTemplateCache,
     ) -> Result<(), ApplicationError> {
+        let (host, bounded, namespace) = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            inner
+                .journal
+                .lifecycle_pending_creates(node)
+                .map_err(map_journal)?;
+            let bounded = inner
+                .journal
+                .bounded_host_config()
+                .map_err(map_journal)?
+                .ok_or(ApplicationError::Busy)?;
+            (
+                std::sync::Arc::clone(&inner.host),
+                bounded,
+                inner.journal.deployment_namespace().to_owned(),
+            )
+        };
+        let profile = bounded
+            .physical_storage
+            .as_ref()
+            .ok_or(ApplicationError::Busy)?;
+        if profile.template_cache(&namespace).map_err(map_journal)? != cache {
+            return Err(ApplicationError::Invalid);
+        }
+        let pool = profile.pool(&namespace).map_err(map_journal)?;
+        host.validate_physical_storage(profile, pool)?;
+        if host.available_disk_bytes()? < profile.peak_bytes().map_err(map_journal)? {
+            return Err(ApplicationError::QuotaExceeded);
+        }
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        inner.journal.internal_pending(node).map_err(map_journal)?;
-        let bounded = inner
+        inner
+            .journal
+            .lifecycle_pending_creates(node)
+            .map_err(map_journal)?;
+        if inner
             .journal
             .bounded_host_config()
             .map_err(map_journal)?
-            .ok_or(ApplicationError::Busy)?;
-        let profile = bounded.physical_storage.ok_or(ApplicationError::Busy)?;
-        if profile
-            .template_cache(inner.journal.deployment_namespace())
-            .map_err(map_journal)?
-            != cache
+            .as_ref()
+            != Some(&bounded)
+            || inner.journal.deployment_namespace() != namespace
         {
-            return Err(ApplicationError::Invalid);
-        }
-        let pool = profile
-            .pool(inner.journal.deployment_namespace())
-            .map_err(map_journal)?;
-        inner.host.validate_physical_storage(&profile, pool)?;
-        if inner.host.available_disk_bytes()? < profile.peak_bytes().map_err(map_journal)? {
-            return Err(ApplicationError::QuotaExceeded);
+            return Err(ApplicationError::OutcomeUnknown);
         }
         Ok(())
     }
@@ -51,34 +73,56 @@ impl<H: ControllerHost> ControllerApplication<H> {
         node: &NodeIdentity,
         compute: ComputeLimits,
     ) -> Result<(u64, Resources), ApplicationError> {
+        let (host, bounded, namespace) = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            inner
+                .journal
+                .lifecycle_available_instances(node)
+                .map_err(map_journal)?;
+            let bounded = inner
+                .journal
+                .bounded_host_config()
+                .map_err(map_journal)?
+                .ok_or(ApplicationError::Busy)?;
+            (
+                std::sync::Arc::clone(&inner.host),
+                bounded,
+                inner.journal.deployment_namespace().to_owned(),
+            )
+        };
+        let profile = bounded
+            .physical_storage
+            .as_ref()
+            .ok_or(ApplicationError::Busy)?;
+        let pool = profile.pool(&namespace).map_err(map_journal)?;
+        host.validate_physical_storage(profile, pool)?;
+        let disk = host
+            .available_disk_bytes()?
+            .saturating_sub(profile.peak_bytes().map_err(map_journal)?);
+        let (cpu, memory) = host.available_compute()?;
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let slots =
             inner
                 .journal
-                .internal_available_instances(node)
+                .lifecycle_available_instances(node)
                 .map_err(|error| match error {
                     JournalError::Conflict => ApplicationError::Invalid,
                     other => map_journal(other),
                 })?;
+        if inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .as_ref()
+            != Some(&bounded)
+            || inner.journal.deployment_namespace() != namespace
+        {
+            return Err(ApplicationError::OutcomeUnknown);
+        }
         let usage = inner
             .journal
             .retained_resource_usage()
             .map_err(map_admission)?;
-        let bounded = inner
-            .journal
-            .bounded_host_config()
-            .map_err(map_journal)?
-            .ok_or(ApplicationError::Busy)?;
-        let profile = bounded.physical_storage.ok_or(ApplicationError::Busy)?;
-        let pool = profile
-            .pool(inner.journal.deployment_namespace())
-            .map_err(map_journal)?;
-        inner.host.validate_physical_storage(&profile, pool)?;
-        let disk = inner
-            .host
-            .available_disk_bytes()?
-            .saturating_sub(profile.peak_bytes().map_err(map_journal)?);
-        let (cpu, memory) = inner.host.available_compute()?;
         let free = Resources {
             instances: available_resource(
                 self.config.limits.max_active_global,
@@ -108,7 +152,39 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .lock()
             .map_err(|_| JournalError::ControllerBusy)?
             .journal
-            .internal_pending(node)
+            .lifecycle_pending_creates(node)
             .map(|_| ())
+    }
+
+    /// Check the complete protected current configuration without initializing
+    /// or repairing the journal, observing hardware or granting execution.
+    /// # Errors
+    /// Missing, mismatched, fenced or corrupt authority refuses.
+    pub fn check_lifecycle_authority(
+        &self,
+        expected: &crate::LifecycleInboxConfig,
+    ) -> Result<(), JournalError> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?;
+        inner.journal.world()?;
+        if inner.journal.lifecycle_inbox_configuration()?.as_ref() != Some(expected) {
+            return Err(JournalError::UnsupportedStore);
+        }
+        Ok(())
+    }
+
+    /// # Errors
+    /// Stored source limits must exactly match the protected deployment input.
+    pub fn check_lifecycle_source_observations(
+        &self,
+        expected: &crate::capture::SourceObservationConfig,
+    ) -> Result<(), JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?
+            .journal
+            .check_lifecycle_source_observations(expected)
     }
 }

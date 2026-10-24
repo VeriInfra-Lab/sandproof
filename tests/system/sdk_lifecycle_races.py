@@ -180,10 +180,10 @@ def exercise(args: argparse.Namespace) -> None:
         assert fetch(opener, base_url, "DELETE", f"/sandboxes/{sandbox.sandbox_id}", key)[0] == 404
         center = original_center_audit(services)
         saved = [row for row in center["sandboxes"]
-                 if row["create"]["identity"]["sandbox_id"] == sandbox.sandbox_id]
+                 if row['create']['binding']['session'] == sandbox.sandbox_id]
         assert len(saved) == 1 and saved[0]["released"] is True
-        destroys = [operation for operation in saved[0]["operations"] if operation["intent"] == "Destroy"]
-        assert len(destroys) == 1 and destroys[0]["response"]["fact"] == "Cleaned"
+        destroys = [operation for operation in saved[0]["operations"] if operation["operation"] == {"kind": "destroy"}]
+        assert len(destroys) == 1 and destroys[0]["terminal"] is not None and destroys[0]["terminal"]["status"] == "cleaned"
         with sqlite3.connect(root / "db/controller.db") as database:
             inputs = [row[0] for row in database.execute("SELECT input_json FROM controller_inputs")]
         assert sum(b'"Kill"' in row for row in inputs) == 1, "second kill was accepted"
@@ -220,7 +220,7 @@ def exercise(args: argparse.Namespace) -> None:
             assert process.poll() is None, "host crashed during an unavailable template"
             original = original_create_identity(services, marker)
             # Cleaned来自同一真实全局请求和原宿主持久终止围栏，不能从SQL缺席推断。
-            assert fetch(opener, base_url, "DELETE", "/sandboxes/" + original["sandbox_id"], key)[0] == 204
+            assert fetch(opener, base_url, "DELETE", "/sandboxes/" + original['binding']['session'], key)[0] == 204
             with sqlite3.connect(root / "db/controller.db") as database:
                 assert database.execute(
                     "SELECT high_water FROM controller_id_highwaters WHERE kind='sandbox' AND scope=''"
@@ -238,7 +238,7 @@ def exercise(args: argparse.Namespace) -> None:
         failed_vm = f"vm-{namespace}-1"
         assert not Path(f"/run/netns/{failed_vm}").exists()
         assert not (root / "jails" / args.firecracker.name / failed_vm).exists()
-        assert fetch(opener, base_url, "GET", "/sandboxes/" + original["sandbox_id"], key)[0] == 404
+        assert fetch(opener, base_url, "GET", "/sandboxes/" + original['binding']['session'], key)[0] == 404
         assert terminal_cleanup_confirmed(root / "db/controller.db", native_id)
         assert sha256_file(rootfs) == base_digest
         completed = True

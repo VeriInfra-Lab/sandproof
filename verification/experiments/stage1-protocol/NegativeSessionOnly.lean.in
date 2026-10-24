@@ -1,0 +1,31 @@
+import SandproofStage1Request.Funs
+import SandboxModel.Lifecycle.Protocol.ValidationModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.NegativeSessionOnly
+open SandboxModel.Stage1Protocol
+
+theorem actual_mutant_accepts_changed_capture :
+    recorded_matches (EnvelopeValues.receipt 2#u64) (EnvelopeValues.intent 1#u64) = .ok true := by
+  simp [recorded_matches, RecordedLifecycleIntent.matches, EnvelopeValues.receipt, EnvelopeValues.intent,
+    SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem actual_session_only_violates_same_contract : ¬ Validation.FullRecordContract recorded_matches := by
+  classical
+  intro contract
+  have exact_result := contract (EnvelopeValues.receipt 2#u64) (EnvelopeValues.intent 1#u64)
+  rw [actual_mutant_accepts_changed_capture] at exact_result
+  have bad : Validation.expectedRecorded (EnvelopeValues.receipt 2#u64) (EnvelopeValues.intent 1#u64) = false := by
+    simp [Validation.expectedRecorded, Validation.RecordsOriginal, EnvelopeValues.changed_complete_intent]
+  rw [bad] at exact_result
+  simp at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeSessionOnly
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeSessionOnly.actual_mutant_accepts_changed_capture
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeSessionOnly.actual_session_only_violates_same_contract

@@ -466,9 +466,10 @@ pub fn handle_publish_running(
 }
 
 /// Publish a durable pause after every exact pause command has succeeded.
+/// Capture identity and stop-permit checks extend the historical reducer.
 ///
 /// # Errors
-/// Returns the first failed guard in Lean's publication order.
+/// Returns the first failed guard in publication order.
 #[allow(clippy::too_many_lines)]
 pub fn handle_publish_paused(
     world: &World,
@@ -483,6 +484,9 @@ pub fn handle_publish_paused(
     };
     if record.phase != Phase::Pausing {
         return Err(PublicationReject::WrongPhase);
+    }
+    if record.terminal {
+        return Err(PublicationReject::TerminalMismatch);
     }
     let Some(snapshot) = world.snapshots.get(&source.snapshot) else {
         return Err(PublicationReject::SnapshotNotFound);
@@ -568,6 +572,16 @@ pub fn handle_publish_paused(
     };
     if ledger.sandbox != sandbox || ledger.operation != operation || ledger.result.is_some() {
         return Err(PublicationReject::LedgerMismatch);
+    }
+    let Some(plan) = world.operation_plans.get(&key) else {
+        return Err(PublicationReject::LedgerMismatch);
+    };
+    if plan.target_snapshot != Some(source)
+        || plan.vm != Some(vm_id)
+        || !crate::transition::current_capture(world, sandbox, record)
+            .is_some_and(crate::capture::CaptureHandoff::may_stop_original)
+    {
+        return Err(PublicationReject::ResourceNotReady);
     }
     Ok(PublicationDecision {
         event: PublicationEvent::PublishPaused(sandbox, source.snapshot),
@@ -1029,6 +1043,7 @@ mod tests {
                 slot: Some(SLOT),
                 restore_from: None,
                 target_snapshot: None,
+                capture: None,
                 stop_vms: vec![VM],
                 close_slots: vec![SLOT],
                 retry_limit: 3,
@@ -1310,6 +1325,11 @@ mod tests {
         };
         let operation = operation(OperationKind::Pause, OperationStatus::Pending);
         let mut world = terminal_ready_world(OperationKind::Pause, OperationStatus::Pending);
+        let key = operation_key(SID, OPERATION);
+        let mut plan = world.operation_plans.get(&key).expect("plan").clone();
+        plan.target_snapshot = Some(source);
+        plan.capture = crate::capture::CaptureHandoff::accepted().register_bundle();
+        world.operation_plans.put(key, plan);
         let mut paused = record(Phase::Pausing, false, operation);
         paused.terminal = false;
         world.sandboxes.put(SID, paused);

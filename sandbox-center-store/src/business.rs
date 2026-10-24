@@ -1,6 +1,6 @@
 //! One Redis block for coupled lifecycle and engineering business metadata.
 //! This module adds no key, queue, storage engine or recovery algorithm.
-use crate::{ControlState, authority::AuthorityState};
+use crate::{ControlState, StoreError, authority::AuthorityState};
 use sandproof_center_core::CenterState;
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +31,9 @@ pub struct BusinessEnvelope<M> {
 impl<M: BusinessMetadata> ControlState for BusinessEnvelope<M> {
     // No deployment migration: previous center-only blocks are rejected.
     const FORMAT_VERSION: u32 = sandproof_protocol::internal::CENTER_STORE_FORMAT_VERSION;
+    fn check_supported_profiles(&self) -> Result<(), StoreError> {
+        self.center.check_supported_profiles()
+    }
     fn is_valid(&self) -> bool {
         self.center.is_valid()
             && self.metadata.is_valid_for(&self.center)
@@ -47,8 +50,7 @@ impl<M: BusinessMetadata> AuthorityState for BusinessEnvelope<M> {
     }
     fn required_block_bytes(&self) -> usize {
         self.center
-            .bounds()
-            .required_block_bytes()
+            .required_authority_bytes()
             .saturating_add(self.metadata.required_block_bytes())
     }
 }

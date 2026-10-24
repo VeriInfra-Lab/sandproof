@@ -14,13 +14,13 @@ Sandproof 是一个以 Rust 实现、以 Lean 验证关键控制逻辑的有状�
 
 保留真实中心→宿主网络链路：一个有效中心写者及权威 Redis，一个固定 Linux/KVM 宿主及其 SQLite，支持多用户、多会话。中心负责全局授权、绑定、预留和意图；宿主负责本地控制、持久化、实际执行与精确清理。Redis、SQLite、文件和 VMM 之间没有跨层原子事务。
 
-当前范围以[总计划 #1](https://github.com/VeriInfra-Lab/sandproof/issues/1)和 [stage1 项目蓝图](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md)为准；新的 V0–V9 任务见总计划中的 #632–#641。交付要求包括真实系统、指定 Rust 实现的条件证明，以及可复现的状态连续性、故障和资源实验。
+当前范围以[总计划 #1](https://github.com/VeriInfra-Lab/sandproof/issues/1)和 [stage1 项目蓝图](docs/project-blueprint.md)为准；新的 V0–V9 任务见总计划中的 #632–#641。交付要求包括真实系统、指定 Rust 实现的条件证明，以及可复现的状态连续性、故障和资源实验。
 
 ## 目标与现状
 
 既有中心/宿主、冷启动与清理、E2B 核心兼容、模板链、网关和公共证明是后续工作的基础。**新的有状态生命周期正在分批实现与验证，完整 create → unload → 管理进程重启 → resume → destroy 闭环尚不能声明已验收或已证明。** 纯核心中的 Pause/Resume 类型、局部组件测试和历史证明都不能代替真实产品链路的验收。
 
-当前阶段设计维护在 `stage1`，尚未整体进入本分支的文档树。阅读最新范围、合同与验收要求请使用下方 stage1 链接；本分支的代码和[覆盖记录](docs/proof-coverage.md)仅说明各自已集成的基线，后续候选的实际结果见对应 issue/PR。
+本分支已纳入当前 Stage1 设计与已提交实现候选。完整生命周期及整套验收尚未完成；本次为团队开发基线同步，不是部署发布。证明适用范围以[覆盖记录](docs/proof-coverage.md)为准。
 
 第一阶段要求同宿主全量快照及先加载为暂停状态，暂停/恢复不重置会话总寿命；新生命周期操作需要客户端首次发送前已知的操作键。旧无键 SDK create 不自动获得安全重试语义，也不承诺旧 TCP/vsock 连接在恢复后连续。
 
@@ -33,8 +33,8 @@ Sandproof 是一个以 Rust 实现、以 Lean 验证关键控制逻辑的有状�
 - [总计划与任务](https://github.com/VeriInfra-Lab/sandproof/issues/1)、[里程碑](https://github.com/VeriInfra-Lab/sandproof/milestones)
 - [开发指南](CONTRIBUTING.md)：分支、提交、PR、测试和文档维护规则；任务 → integration → test → main
 - [本分支文档目录](docs/README.md)：已集成基线的文档与工具说明
-- [当前阶段蓝图](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/project-blueprint.md)、[架构](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/ARCHITECTURE.md)、[模块合同](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/module-contracts.md)：最新目标、责任及失败语义
-- [当前验证设计](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/formal-verification-design.md)、[证明覆盖](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/proof-coverage.md)、[验收清单](https://github.com/VeriInfra-Lab/sandproof/blob/stage1/docs/testing-plan.md)：目标性质、适用范围及实机判据
+- [当前阶段蓝图](docs/project-blueprint.md)、[架构](docs/ARCHITECTURE.md)、[模块合同](docs/module-contracts.md)：最新目标、责任及失败语义
+- [当前验证设计](docs/formal-verification-design.md)、[证明覆盖](docs/proof-coverage.md)、[验收清单](docs/testing-plan.md)：目标性质、适用范围及实机判据
 - [CI 运行记录](https://github.com/VeriInfra-Lab/sandproof/actions)
 
 ## 代码和证明

@@ -69,3 +69,15 @@ srcDir = "verification/aeneas/protected-directory/correct"
 [[lean_lib]]
 name = "SandproofProtectedDirectoryBad"
 srcDir = "verification/aeneas/protected-directory/bypass-writes"
+
+[[lean_lib]]
+name = "SandproofStage1Carriers"
+srcDir = "verification/aeneas/stage1-protocol/carriers"
+
+[[lean_lib]]
+name = "SandproofStage1Request"
+srcDir = "verification/aeneas/stage1-protocol/request"
+
+[[lean_lib]]
+name = "SandproofStage1Manifest"
+srcDir = "verification/aeneas/stage1-protocol/manifest"

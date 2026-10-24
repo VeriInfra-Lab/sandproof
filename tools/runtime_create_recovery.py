@@ -4,6 +4,7 @@ No raw Redis/SQLite reads, guessed IDs, public-list inference or create retries.
 These diagnostic projections never authorize or release resources. The caller
 still must check exact physical resources and retain evidence on uncertainty.
 """
+import copy
 import hashlib
 import json
 import os
@@ -12,6 +13,8 @@ import re
 import stat
 import time
 
+
+CURRENT_VERSIONS = dict(internal_protocol=2, center_store=8, host_store=20)
 
 BENCHMARKS = frozenset(('terminal-bench-2.0', 'terminal-bench@2.1'))
 
@@ -80,15 +83,94 @@ class RuntimeIdentityUnknown(ValueError):
     """No retained original match; absence is not a terminal result."""
 
 
-def find_runtime_create(audit, metadata, *, deployment):
-    """Correlate a private test intent without exporting user metadata.
+def _counter(value, *, zero=False):
+    return type(value) is int and int(not zero) <= value < 2**64
 
-    Never a permission, idempotency API or cleanup decision. Ambiguity and a
-    changed deployment fail; an absent retained record remains UNKNOWN.
+
+def _identifier(value):
+    return type(value) is str and re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', value) is not None
+
+
+
+def _versions_match(versions):
+    return (type(versions) is dict and versions == CURRENT_VERSIONS
+        and all(type(value) is int for value in versions.values()))
+
+
+def _node_shape(node):
+    return (type(node) is dict and set(node) == {'deployment_id', 'node_id', 'node_generation'}
+        and _identifier(node['deployment_id']) and _identifier(node['node_id'])
+        and _counter(node['node_generation']))
+
+
+def _binding_shape(binding):
+    """Current lifecycle identity only; probe/data protocol has its own version."""
+    if (type(binding) is not dict or set(binding) != {
+            'protocol_version', 'node', 'session', 'key', 'expected'}
+            or type(binding['protocol_version']) is not int or binding['protocol_version'] != 3
+            or not _node_shape(binding['node']) or not _identifier(binding['session'])):
+        return False
+    key, expected = binding['key'], binding['expected']
+    return (type(key) is dict and set(key) == {'deployment', 'owner', 'window', 'sequence'}
+        and key['deployment'] == binding['node']['deployment_id'] and _identifier(key['owner'])
+        and _counter(key['window']) and _counter(key['sequence'])
+        and type(expected) is dict
+        and (expected == {'state': 'absent'} or
+             (set(expected) == {'state', 'version'} and expected['state'] == 'version'
+              and _counter(expected['version'], zero=True))))
+
+
+def _control_shape(identity):
+    """Saved fields of the ORIGINAL accepted Create audit, never a permission."""
+    if (type(identity) is not dict or set(identity) != {
+            'binding', 'center', 'retention', 'accepted_version'}
+            or not _binding_shape(identity['binding'])):
+        return False
+    binding, center, retention = identity['binding'], identity['center'], identity['retention']
+    expected = binding['expected']
+    version = 1 if expected == {'state': 'absent'} else expected['version'] + 1
+    return (type(center) is dict and set(center) == {'deployment', 'center'}
+        and center['deployment'] == binding['node']['deployment_id'] and _identifier(center['center'])
+        and type(retention) is dict and set(retention) == {'slot', 'window'}
+        and type(retention['slot']) is int and 0 < retention['slot'] <= 4096
+        and _counter(retention['window']) and _counter(identity['accepted_version'])
+        and identity['accepted_version'] == version)
+
+
+def original_create_identity(record):
+    """Copy its first checked operation's identity fields, retaining slot/window.
+
+    OperationKey.window and RetentionBinding.window have different meanings.
+    No user options or metadata are exported or reconstructed by this reader.
+    """
+    operations = record.get('operations')
+    if type(operations) is not list or not operations:
+        raise ValueError('complete original Create operation required')
+    first = operations[0]
+    identity = {key: first[key] for key in ('binding', 'center', 'retention', 'accepted_version')}
+    if (not _control_shape(identity) or identity['accepted_version'] != 1
+            or identity['binding']['expected'] != {'state': 'absent'}
+            or not _binding_shape(record['create']['binding'])
+            or record['create']['binding'] != identity['binding']
+            or type(first['operation']) is not dict
+            or set(first['operation']) != {'kind', 'target_incarnation'}
+            or first['operation']['kind'] != 'create'
+            or not _counter(first['operation']['target_incarnation'])):
+        raise ValueError('original Create audit identity mismatch')
+    return copy.deepcopy(identity)
+
+
+def find_runtime_create(audit, metadata, *, deployment):
+    """Correlate a private test intent against the sole current center audit.
+
+    Not a permission, idempotency API or cleanup decision. Ambiguity and changed
+    deployment fail; an absent retained record remains UNKNOWN. Old shapes refuse.
     """
     if (type(metadata) is not dict or any(type(k) is not str or type(v) is not str
-            for k, v in metadata.items()) or audit.get('deployment') != deployment):
-        raise ValueError('exact original test metadata and deployment required')
+            for k, v in metadata.items()) or audit.get('deployment') != deployment
+            or type(audit.get('schema_version')) is not int or audit['schema_version'] != 3
+            or not _versions_match(audit.get('versions'))):
+        raise ValueError('current original test metadata and deployment required')
     checksum = hashlib.sha256(json.dumps(metadata, sort_keys=True, separators=(',', ':'),
         ensure_ascii=False).encode()).hexdigest()
     records = [record for record in audit['sandboxes']
@@ -97,112 +179,132 @@ def find_runtime_create(audit, metadata, *, deployment):
         raise RuntimeIdentityUnknown('original runtime create identity unknown')
     if len(records) != 1:
         raise RuntimeError('ambiguous original runtime create identity')
-    identity = records[0]['create']['identity']
-    if identity['node']['deployment_id'] != deployment:
+    identity = original_create_identity(records[0])
+    if identity['binding']['node']['deployment_id'] != deployment:
         raise ValueError('original runtime create deployment identity mismatch')
     return identity
 
 
-def _control_shape(identity):
-    """Typed original audit projection, not a lifecycle or permission check."""
-    if type(identity) is not dict or set(identity) != {
-            'protocol_version', 'node', 'tenant_id', 'sandbox_id', 'operation_id',
-            'intent_version', 'retention_slot', 'request_window'}:
-        return False
-    node = identity['node']
-    return (type(identity['protocol_version']) is int and identity['protocol_version'] == 2
-        and type(identity['retention_slot']) is int and 0 < identity['retention_slot'] < 2**16
-        and all(type(identity[key]) is int and 0 < identity[key] < 2**64
-                for key in ('intent_version', 'request_window'))
-        and all(type(identity[key]) is str and identity[key]
-                for key in ('tenant_id', 'sandbox_id', 'operation_id'))
-        and type(node) is dict and set(node) == {'deployment_id', 'node_id', 'node_generation'}
-        and all(type(node[key]) is str and node[key] for key in ('deployment_id', 'node_id'))
-        and type(node['node_generation']) is int and 0 < node['node_generation'] < 2**64)
-
-
 def _terminal_shape(response):
-    return (type(response) is dict and set(response) == {'identity', 'observation_version', 'fact'}
-        and _control_shape(response['identity'])
-        and type(response['observation_version']) is int and 0 < response['observation_version'] < 2**64
-        and type(response['fact']) is dict and set(response['fact']) == {'kind'}
-        and response['fact']['kind'] in ('cleaned', 'not_accepted'))
+    if type(response) is not dict or set(response) != {'request', 'status'}:
+        return False
+    request = response['request']
+    if type(request) is not dict or set(request) != {
+            'request', 'accepted_version', 'center', 'retention'}:
+        return False
+    original = request['request']
+    if (type(original) is not dict or set(original) != {'binding', 'operation'}
+            or original['operation'] != {'kind': 'destroy'}):
+        return False
+    identity = dict(binding=original['binding'], center=request['center'],
+                    retention=request['retention'], accepted_version=request['accepted_version'])
+    return (_control_shape(identity) and original['binding']['expected']['state'] == 'version'
+        and response['status'] in ('pending', 'cleaned'))
+
+
+def _same_session(response, identity):
+    request = response['request']
+    binding, original = request['request']['binding'], identity['binding']
+    return (request['accepted_version'] > identity['accepted_version']
+        and binding['node'] == original['node'] and binding['session'] == original['session']
+        and binding['key']['owner'] == original['key']['owner']
+        and request['center'] == identity['center'] and request['retention'] == identity['retention'])
 
 
 def terminal_result(center, host, create_identity):
-    """Read both ORIGINAL exact durable confirmations or one retired slot.
+    """Read original confirmations or already retired ORIGINAL retention lanes.
 
-    This never releases anything. Missing records, Stopped, unconfirmed results
-    and a single advanced frontier remain unknown. The saved create identity
-    must have been obtained from its original checked authority before retirement.
+    Host terminal=True is only intent. HTTP success, historical Running, missing
+    rows, elapsed time and one advanced frontier cannot establish Cleaned. This
+    diagnostic never refunds or replaces separate exact physical observations.
     """
-    if not _control_shape(create_identity):
+    if (not _control_shape(create_identity) or create_identity['accepted_version'] != 1
+            or create_identity['binding']['expected'] != {'state': 'absent'}):
         raise ValueError('complete typed saved create binding required')
-    node, window = create_identity['node'], create_identity['request_window']
-    slot = create_identity.get('retention_slot')
+    node = create_identity['binding']['node']
+    slot, window = (create_identity['retention'][key] for key in ('slot', 'window'))
     versions = center.get('versions')
-    if (type(center.get('schema_version')) is not int or center['schema_version'] != 2
+    if (type(center.get('schema_version')) is not int or center['schema_version'] != 3
             or type(host.get('schema_version')) is not int or host['schema_version'] != 2
             or type(versions) is not dict or versions != host.get('versions')
             or set(versions) != {'internal_protocol', 'center_store', 'host_store'}
             or any(type(value) is not int or value <= 0 for value in versions.values())
-            or versions['internal_protocol'] != 2 or create_identity.get('protocol_version') != 2
-            or type(slot) is not int or not 0 < slot < 2**16
-            or type(window) is not int or not 0 < window < 2**64 or host.get('node') != node
+            or not _versions_match(versions) or not _versions_match(host.get('versions'))
+            or not _node_shape(host.get('node')) or host['node'] != node
             or center.get('deployment') != node['deployment_id']):
         raise ValueError('current audits and original saved create binding required')
     lanes = ([value for value in center['retention_lanes']
               if value['node'] == node and value['retention_slot'] == slot],
-             [value for value in host['lanes'] if value['retention_slot'] == slot])
+             [value for value in host['retention_lanes'] if value['slot'] == slot])
     if any(len(values) != 1 for values in lanes):
         raise ValueError('original retention slot frontier unknown or ambiguous')
     pair = tuple(values[0] for values in lanes)
-    if (any(type(value['retention_slot']) is not int for value in pair)
-            or type(pair[0]['node'].get('node_generation')) is not int):
+    if (type(pair[0]['retention_slot']) is not int or type(pair[1]['slot']) is not int
+            or not _node_shape(pair[0]['node'])):
         raise ValueError('typed original retention slot binding required')
     floors = tuple(value['retired_through'] for value in pair)
-    if any(type(floor) is not int or not 0 <= floor < 2**64 for floor in floors):
+    if any(not _counter(floor, zero=True) for floor in floors):
         raise ValueError('original checked slot frontier required')
-    immutable = ('protocol_version', 'node', 'tenant_id', 'sandbox_id', 'retention_slot', 'request_window')
     for lane, floor in zip(pair, floors):
         stamp = lane.get('last_retired')
         if floor == 0:
             if stamp is not None:
                 raise ValueError('empty slot has a retired stamp')
             continue
-        if (not _terminal_shape(stamp)
-                or stamp['identity'].get('node') != node
-                or stamp['identity'].get('retention_slot') != slot
-                or stamp['identity'].get('request_window') != floor
-                or stamp['identity'].get('protocol_version') != versions['internal_protocol']):
+        if (not _terminal_shape(stamp) or stamp['status'] != 'cleaned'
+                or stamp['request']['request']['binding']['node'] != node
+                or stamp['request']['center'] != create_identity['center']
+                or stamp['request']['retention'] != {'slot': slot, 'window': floor}):
             raise ValueError('original exact retired terminal stamp required')
-        if floor == window and any(stamp['identity'].get(key) != create_identity[key] for key in immutable):
+        if floor == window and not _same_session(stamp, create_identity):
             raise ValueError('retired stamp changed original create binding')
     if floors[0] == floors[1] and pair[0].get('last_retired') != pair[1].get('last_retired'):
         raise ValueError('same slot frontier has different terminal stamps')
     if all(floor >= window for floor in floors):
         return dict(status='retired_terminal_slot', identity=create_identity,
                     center_retired_through=floors[0], host_retired_through=floors[1])
-    records = [value for value in center['sandboxes'] if value['create']['identity'] == create_identity]
-    if len(records) != 1:
+    records = [value for value in center['sandboxes'] if value['create']['binding'] == create_identity['binding']]
+    if len(records) > 1:
+        raise ValueError('ambiguous original retained create')
+    if not records:
         return None
     record = records[0]
-    if not record['released'] or not record['operations']:
+    if original_create_identity(record) != create_identity:
+        raise ValueError('original create binding changed')
+    if record['released'] is not True or not record['operations']:
         return None
-    response = record['operations'][-1]['response']
-    if response is None or response['fact']['kind'] not in ('cleaned', 'not_accepted'):
+    latest = record['operations'][-1]
+    response = latest['terminal']
+    if response is None:
         return None
     if not _terminal_shape(response):
         raise ValueError('complete typed original terminal response required')
-    identity = response['identity']
-    if any(identity[key] != create_identity[key] for key in immutable):
-        raise ValueError('original terminal response changed create binding')
-    rows = [value for value in host['operations'] if value['current'] is True
-            and value['identity'] == identity]
-    if (len(rows) != 1 or record['terminal_confirmation'] != response
-            or rows[0]['response'] != response or rows[0]['confirmed'] != response):
+    if response['status'] != 'cleaned':
         return None
-    return dict(status=response['fact']['kind'], identity=create_identity, response=response)
+    if not _same_session(response, create_identity):
+        raise ValueError('original terminal response changed create binding')
+    intent = response['request']
+    latest_identity = {key: latest[key] for key in ('binding', 'center', 'retention', 'accepted_version')}
+    if (not _control_shape(latest_identity)
+            or latest['binding'] != intent['request']['binding']
+            or latest['accepted_version'] != intent['accepted_version']
+            or latest['center'] != intent['center'] or latest['retention'] != intent['retention']
+            or latest['operation'] != {'kind': 'destroy'}):
+        raise ValueError('original terminal operation differs from its result')
+    rows = [value for value in host['operations'] if value['current'] is True
+            and value['binding'] == intent['request']['binding']]
+    if len(rows) != 1:
+        return None
+    if not _binding_shape(rows[0]['binding']) or not _counter(rows[0]['accepted_version']):
+        raise ValueError('typed original host operation required')
+    confirmations = (record['terminal_confirmation'], rows[0].get('confirmed_terminal'))
+    for confirmation in confirmations:
+        if confirmation is not None and not _terminal_shape(confirmation):
+            raise ValueError('complete typed original confirmation required')
+    if (any(confirmation != response for confirmation in confirmations)
+            or rows[0]['accepted_version'] != intent['accepted_version']):
+        return None
+    return dict(status='cleaned', identity=create_identity, response=response)
 
 
 def recover_runtime_create(intent, *, read_center, read_host, deployment, owner, delete,
@@ -265,14 +367,15 @@ def recover_original_create(metadata, *, expected_resources, read_center, read_h
             except RuntimeIdentityUnknown:
                 sleep(min(.5, max(0, deadline - monotonic())))
                 continue
-        if (identity['node']['deployment_id'] != deployment
-                or identity['tenant_id'] != str(owner)
-                or not re.fullmatch(r'sandbox-[1-9][0-9]*', identity['sandbox_id'])
-                or (sandbox_id is not None and identity['sandbox_id'] != sandbox_id)):
+        if (not _control_shape(identity) or identity['accepted_version'] != 1
+                or identity['binding']['node']['deployment_id'] != deployment
+                or identity['binding']['key']['owner'] != str(owner)
+                or not re.fullmatch(r'sandbox-[1-9][0-9]*', identity['binding']['session'])
+                or (sandbox_id is not None and identity['binding']['session'] != sandbox_id)):
             raise RuntimeError('original runtime creation identity mismatch')
-        outcome.update(sandbox_id=identity['sandbox_id'], create_identity=identity)
+        outcome.update(sandbox_id=identity['binding']['session'], create_identity=identity)
         records = [record for record in center['sandboxes']
-                   if record['create']['identity'] == identity]
+                   if record['create']['binding'] == identity['binding']]
         if len(records) > 1:
             raise RuntimeError('ambiguous original runtime create record')
         if records:
@@ -281,9 +384,9 @@ def recover_original_create(metadata, *, expected_resources, read_center, read_h
                 raise RuntimeError('original runtime create binding changed')
             if record['private'] or record['create']['resources'] != expected_resources:
                 raise RuntimeError('original runtime creation resource binding changed')
-            if record['started_at_ms'] is None and not record['released']:
+            if record['phase'] == 'creating' and not record['released']:
                 outcome['pending_create_observed'] = True
-        host = read_host(identity['node'])
+        host = read_host(identity['binding']['node'])
         terminal = terminal_result(center, host, identity)
         if terminal is not None:
             return outcome | dict(status='destroyed', terminal=terminal)
@@ -300,7 +403,7 @@ def recover_original_create(metadata, *, expected_resources, read_center, read_h
                     continue
             outcome['delete_dispatched'] = True
             try:
-                status = delete(identity['sandbox_id'])
+                status = delete(identity['binding']['session'])
                 outcome.update(delete_http_status=status, delete_acknowledged=status in (200, 204))
                 if status not in (200, 204, 404):
                     raise RuntimeError('original runtime deletion rejected')

@@ -116,11 +116,16 @@ def rows(count=4, phase="Destroyed"):
 
 
 def original_center(count=4):
-    return dict(sandboxes=[dict(private=False,create=dict(identity=dict(sandbox_id='sandbox-'+str(number+1),
-        tenant_id='1',node=dict(deployment_id='domain',node_id='host',node_generation=1),
-        protocol_version=2,retention_slot=number+1,request_window=1,
-        operation_id='operation-'+str(number+1),intent_version=1)),
-        operations=[dict(intent=dict(kind='create'))]) for number in range(count)])
+    records = []
+    for number in range(count):
+        binding = dict(protocol_version=3, node=dict(deployment_id='domain', node_id='host', node_generation=1),
+            session='sandbox-'+str(number+1), key=dict(deployment='domain', owner='1', window=1, sequence=number+1),
+            expected=dict(state='absent'))
+        operation = dict(binding=copy.deepcopy(binding), center=dict(deployment='domain', center='center'),
+            retention=dict(slot=number+1, window=1), accepted_version=1,
+            operation=dict(kind='create', target_incarnation=1))
+        records.append(dict(private=False, create=dict(binding=binding), operations=[operation]))
+    return dict(schema_version=3, sandboxes=records)
 
 
 def fake_services(count=4):
@@ -130,9 +135,9 @@ def fake_services(count=4):
 
 def original_report(count=4):
     report=reports.new_report('sp12-abcdefgh')
-    identities=[row['create']['identity'] for row in original_center(count)['sandboxes']]
-    report['global_identities']={value['sandbox_id']:value for value in identities}
-    report['global_native']={value['sandbox_id']:native for value,native in zip(identities,rows(count))}
+    identities=[runner.original_create_identity(row) for row in original_center(count)['sandboxes']]
+    report['global_identities']={value['binding']['session']:value for value in identities}
+    report['global_native']={value['binding']['session']:native for value,native in zip(identities,rows(count))}
     report['native_owners']={native:1 for native in report['global_native'].values()}
     return report
 
@@ -446,11 +451,11 @@ class IdentityTests(unittest.TestCase):
 
 class ProbeProcessTests(unittest.TestCase):
     def test_parent_records_original_global_to_distinct_local_owner_mapping(self):
-        identity = original_center(2)['sandboxes'][1]['create']['identity']
+        identity = runner.original_create_identity(original_center(2)['sandboxes'][1])
         local = dict(owner=9, sandbox=42)
         context = dict(position=0, binding=dict(owner=9, sandbox=42, vm=11))
-        audit = dict(node=identity['node'], operations=[dict(current=True, identity=identity,
-            response=dict(identity=identity), local=local)], host_slots=[[context, 'Running']])
+        audit = dict(schema_version=2, node=identity['binding']['node'], operations=[dict(current=True,
+            binding=copy.deepcopy(identity['binding']), accepted_version=1, local=local)], host_slots=[[context, 'Running']])
         record = dict(resource_id=f'vm-{NS}-11', pid=123, start_time_ticks=456)
         network = dict(resource_id=record['resource_id'], namespace_inode=789)
         with tempfile.TemporaryDirectory() as temporary:
@@ -464,7 +469,7 @@ class ProbeProcessTests(unittest.TestCase):
             reports.write_once(claim/'network.json', network)
             services = SimpleNamespace(planned_audit=Mock(return_value=original_center(2)),
                 processes=SimpleNamespace(stop=Mock(), audit=Mock(return_value=audit), start=Mock()),
-                host_configs=[dict(inbox=dict(node=identity['node']))],
+                host_configs=[dict(inbox=dict(node=identity['binding']['node']))],
                 native_pools=[dict(namespace=NS, bounded_host=dict(uid_base=1000))], wait_ready=Mock())
             original_stat, original_read = Path.lstat, Path.read_text
             def root_owned(path, *args, **kwargs):
@@ -482,8 +487,7 @@ class ProbeProcessTests(unittest.TestCase):
                 self.assertEqual(reports.json_file(root/'resource-requests'/(name+'.ack.json')),
                                  dict(sandbox='sandbox-2', recorded=True))
                 (root/'resource-requests'/(name+'.ack.json')).unlink()
-                audit['operations'][0]['identity'] = dict(identity, tenant_id='2')
-                audit['operations'][0]['response']['identity'] = audit['operations'][0]['identity']
+                audit['operations'][0]['binding']['key']['owner'] = '2'
                 with self.assertRaises(reports.Failure):
                     runner.record_requests(root, services, reports.new_report('sp12-abcdefgh'))
                 self.assertFalse((root/'resource-requests'/(name+'.ack.json')).exists())

@@ -1,4 +1,5 @@
-//! Serial application boundary: journal decisions, host effects and revocations share one lock.
+//! Serialized durable decisions and revocations; slow physical work runs outside the lock.
+mod lifecycle_source;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -22,8 +23,8 @@ use crate::template_registry::{
 use crate::templates::{TemplateBinding, TemplateCatalog, TemplateError};
 use crate::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
-    JournalError, NeverCrash, WorkerTransportError, finish_accepted_kill_v1,
-    finish_admitted_create_v1_timed, finish_compensating_create_v1,
+    JournalError, NeverCrash, WorkerTransportError, finish_accepted_kill,
+    finish_admitted_create_timed, finish_compensating_create,
 };
 use sandbox_controller_core as core;
 use sandproof_protocol::{WorkAction, WorkReceipt};
@@ -40,11 +41,14 @@ use recovery::{reclaimed_sandboxes, recover_locked, release_reclaimed_slots};
 
 mod data_access;
 mod data_credentials;
+mod execution;
 mod internal_audit;
 mod internal_health;
 mod internal_lifecycle;
 mod internal_validation;
 mod lifecycle;
+mod lifecycle_intent;
+mod lifecycle_pending;
 mod maintenance;
 mod physical_storage;
 pub(super) mod recovery;
@@ -83,6 +87,10 @@ pub struct DataPermit {
     pub drain: DataLease,
     /// Already-locked host gate acquired under the same authority check.
     pub helper_gate: Option<std::fs::File>,
+    lifecycle: Option<(
+        sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+        sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    )>,
 }
 
 fn same_secret(left: &[u8], right: &[u8]) -> bool {
@@ -111,7 +119,9 @@ pub struct ApplicationConfig {
 
 struct Inner<H: ControllerHost> {
     journal: ControllerJournal,
-    host: H,
+    host: Arc<H>,
+    active_sandboxes: BTreeSet<core::SandboxId>,
+    active_sessions: BTreeSet<String>,
     data_revocations: BTreeMap<u64, Vec<watch::Sender<bool>>>,
     data_drains: BTreeMap<u64, DataLease>,
 }
@@ -126,9 +136,9 @@ impl<H: ControllerHost> Inner<H> {
     }
 }
 
-/// The mutex gives one process a serial operation boundary across journal
-/// decisions, host effects, and public responses. `SQLite`'s process lease
-/// excludes another controller process.
+/// The mutex serializes current journal decisions and route admission. Each
+/// physical executor retains a separate session occupancy while using the same
+/// shared Host outside this lock. `SQLite` excludes a second writer process.
 pub struct ControllerApplication<H: ControllerHost> {
     inner: Mutex<Inner<H>>,
     config: ApplicationConfig,
@@ -283,7 +293,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         Self {
             inner: Mutex::new(Inner {
                 journal,
-                host,
+                host: Arc::new(host),
+                active_sandboxes: BTreeSet::new(),
+                active_sessions: BTreeSet::new(),
                 data_revocations: BTreeMap::new(),
                 data_drains: BTreeMap::new(),
             }),

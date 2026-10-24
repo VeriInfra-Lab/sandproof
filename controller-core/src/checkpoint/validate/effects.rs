@@ -1,3 +1,4 @@
+use super::unload;
 use super::{
     Command, EffectId, EffectOrigin, EffectOutcome, EffectStatus, Generation, LogicalEffectId,
     LogicalEffectResult, NetSlotId, OperationKind, OperationPlan, OperationStatus, Reject,
@@ -201,11 +202,7 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
             }
         }
         Command::StopVm { generation, vm, .. } => {
-            let plan = plan.ok_or(Reject::InvalidEffect)?;
-            if !plan.stop_vms.contains(vm) || plan.generation != *generation || !row.terminal {
-                return Err(Reject::InvalidEffect);
-            }
-            vm_reference(world, sandbox, *vm, *generation)?;
+            stop_command(world, row.terminal, plan, *generation, *vm)?;
         }
         Command::CleanupVm { generation, vm, .. } => {
             if plan.is_some() {
@@ -223,9 +220,36 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
         }
         Command::FreezeVm { .. }
         | Command::SealSnapshot { .. }
-        | Command::CommitSnapshot { .. } => return Err(Reject::UnsupportedSnapshotHistory),
+        | Command::CommitSnapshot { .. } => {
+            snapshot_command(world, command, plan)?;
+        }
     }
     Ok(())
+}
+
+fn snapshot_command(
+    world: &World,
+    command: &Command,
+    plan: Option<&OperationPlan>,
+) -> Result<(), Reject> {
+    unload::command(world, command, plan.ok_or(Reject::InvalidEffect)?)
+}
+
+fn stop_command(
+    world: &World,
+    terminal: bool,
+    plan: Option<&OperationPlan>,
+    generation: Generation,
+    vm: VmId,
+) -> Result<(), Reject> {
+    let plan = plan.ok_or(Reject::InvalidEffect)?;
+    if !plan.stop_vms.contains(&vm) || plan.generation != generation {
+        return Err(Reject::InvalidEffect);
+    }
+    if !terminal {
+        unload::stop_plan(world, plan, vm)?;
+    }
+    vm_reference(world, plan.key.sandbox, vm, generation)
 }
 
 fn fence_command(
@@ -239,7 +263,9 @@ fn fence_command(
     let operation = world
         .operation_record(origin.key)
         .ok_or(Reject::InvalidEffect)?;
-    if (!terminal && operation.operation.kind != OperationKind::Create)
+    let opening_kind = operation.operation.kind == OperationKind::Create
+        || operation.operation.kind == OperationKind::Pause;
+    if (!terminal && !opening_kind)
         || epoch == 0
         || epoch > row.epoch
         || (terminal && (!row.terminal || epoch != row.epoch))
@@ -318,7 +344,7 @@ fn historical_success(world: &World, command: &Command) -> Result<(), Reject> {
 }
 
 fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<(), Reject> {
-    let command = terminal::activation_stop(id).ok_or(Reject::InvalidEffect)?;
+    let command = terminal::activation_stop_covered(id, coverage).ok_or(Reject::InvalidEffect)?;
     let stop = EffectId {
         logical: LogicalEffectId {
             command: command.clone(),
@@ -339,14 +365,22 @@ fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<
         && coverage.operation.sandbox == command.sandbox()
         && row.terminal
         && row.epoch == coverage.epoch
-        && ledger.operation.kind == OperationKind::Create
-        && matches!(
-            ledger.operation.status,
-            OperationStatus::Compensating(_) | OperationStatus::Failed(_)
-        )
+        && match ledger.operation.kind {
+            OperationKind::Create => matches!(
+                ledger.operation.status,
+                OperationStatus::Compensating(_) | OperationStatus::Failed(_)
+            ),
+            OperationKind::Kill => matches!(
+                ledger.operation.status,
+                OperationStatus::Pending
+                    | OperationStatus::OutcomeUnknown
+                    | OperationStatus::Succeeded
+            ),
+            OperationKind::Pause | OperationKind::Resume => false,
+        }
         && stop_logical.current_attempt == coverage.attempt
         && stop_logical.origin == EffectOrigin::Operation(coverage.operation)
-        && activation.origin == stop_logical.origin
+        && terminal::activation_coverage_origin(world, id, coverage)
         && activation.current_attempt == id.attempt
         && activation.result
             == Some(LogicalEffectResult::RetiredByStop {

@@ -22,8 +22,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Write};
 
-const VERSION: u16 = 1;
-
 /// Exact successful release protocol witness. It is retained only while its
 /// sandbox's detailed controller state still exists; it is not a permanent
 /// historical host tombstone. Namespace/configuration are bound by the store.
@@ -138,6 +136,20 @@ pub(super) fn input_bytes(
     encode_limited(value, config.max_input_bytes)
 }
 
+// Refuse unsupported new histories before allocating identity or outbox rows.
+// An exact existing-key replay is still decided by the original reducer.
+pub(super) fn check_input_profile(
+    _connection: &Connection,
+    _world: &core::World,
+    input: &core::ControllerInput,
+) -> Result<(), JournalError> {
+    if let core::ControllerInput::Request(core::Request::Resume(_)) = input {
+        return Err(JournalError::UnsupportedInput);
+    }
+
+    Ok(())
+}
+
 pub(super) fn require_input_room(
     connection: &Connection,
     bytes: usize,
@@ -178,7 +190,7 @@ fn envelope(
     let contexts = bounded::validate_contexts(connection, world, &host)?;
     let released = retirement::witnesses(connection, world)?;
     let envelope = Envelope {
-        version: VERSION,
+        version: core::checkpoint::CHECKPOINT_VERSION,
         namespace: namespace(connection)?,
         host,
         maintenance: config.clone(),
