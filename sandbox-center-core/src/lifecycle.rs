@@ -164,7 +164,7 @@ impl LifecycleOperationRecord {
             unloaded: None,
             previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. })
             {
-                previous.running.as_ref().map(|facts| facts.end_at_ms)
+                previous.running().map(|facts| facts.end_at_ms)
             } else {
                 None
             },
@@ -180,7 +180,20 @@ impl LifecycleOperationRecord {
     }
     #[must_use]
     pub const fn running(&self) -> Option<&CurrentReadyFacts> {
-        self.running.as_ref()
+        match self.running.as_ref() {
+            Some(facts) => Some(facts),
+            None => match self.unloaded.as_ref() {
+                Some(result) => result.outcome.continued(),
+                None => None,
+            },
+        }
+    }
+    /// Current confirmed execution lineage, including an original continued VM.
+    pub(super) fn running_incarnation(&self) -> Option<IncarnationId> {
+        if let LifecycleOperation::Unload { source_incarnation, .. } = self.intent.request.operation {
+            return self.unloaded.as_ref()?.outcome.continued().map(|_| source_incarnation);
+        }
+        resume::running_incarnation(&self.intent.request.operation)
     }
     #[must_use]
     pub const fn unloaded(&self) -> Option<&sandproof_protocol::lifecycle::UnloadObservation> {
@@ -264,7 +277,8 @@ impl Sandbox {
             LifecycleOperation::Renew { .. } => SessionPhase::Renewing,
             LifecycleOperation::Destroy {} if self.released() => SessionPhase::Cleaned,
             LifecycleOperation::Destroy {} => SessionPhase::Terminating,
-            LifecycleOperation::Unload { .. } if operation.unloaded.is_some() => {
+            LifecycleOperation::Unload { .. } if operation.running().is_some() => SessionPhase::Running,
+            LifecycleOperation::Unload { .. } if operation.unloaded.as_ref().and_then(|o| o.outcome.unloaded()).is_some() => {
                 SessionPhase::Unloaded
             }
             LifecycleOperation::Unload { .. } => SessionPhase::Unloading,
@@ -534,7 +548,7 @@ impl CenterState {
                 if operation.unloaded.is_some() {
                     return None;
                 }
-                if operation.running.is_some() && record.unconfirmed_sdk_renewal().is_none() {
+                if operation.running().is_some() && record.unconfirmed_sdk_renewal().is_none() {
                     return None;
                 }
                 if operation.terminal.as_ref().is_some_and(|retained| {
@@ -768,6 +782,7 @@ impl CenterState {
                 target_incarnation, ..
             } => *target_incarnation,
             LifecycleOperation::Renew { incarnation, .. } => *incarnation,
+            LifecycleOperation::Unload { source_incarnation, .. } if prior.running().is_some() => *source_incarnation,
             _ if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
             _ => return Err(DecisionError::Conflict),
         };
@@ -785,7 +800,7 @@ impl CenterState {
                 extend_only,
                 ..
             } => {
-                let facts = prior.running.as_ref().ok_or(DecisionError::Conflict)?;
+                let facts = prior.running().ok_or(DecisionError::Conflict)?;
                 let end = normalized_renewal_end(now_ms, *timeout_secs, facts.max_end_at_ms);
                 if *timeout_secs == 0 || facts.end_at_ms <= now_ms || facts.max_end_at_ms <= now_ms
                 {

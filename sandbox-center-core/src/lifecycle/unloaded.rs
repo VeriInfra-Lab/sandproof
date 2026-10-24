@@ -1,6 +1,6 @@
 //! Persist only the original current Unload result; no inferred completion.
 use crate::{CenterState, DecisionError};
-use sandproof_protocol::lifecycle::UnloadObservation;
+use sandproof_protocol::lifecycle::{UnloadObservation, UnloadOutcome};
 
 impl CenterState {
     /// # Errors
@@ -21,9 +21,9 @@ impl CenterState {
         if !observation.matches_request(current.intent()) || session.terminating() {
             return Err(DecisionError::Stale);
         }
-        let Some(facts) = observation.unloaded.as_ref() else {
+        if matches!(observation.outcome, UnloadOutcome::Pending) {
             return Ok(self.clone());
-        };
+        }
         if let Some(saved) = current.unloaded.as_ref() {
             return if saved == observation {
                 Ok(self.clone())
@@ -32,17 +32,21 @@ impl CenterState {
             };
         }
         let prior = session.last_running().ok_or(DecisionError::Invalid)?;
-        if facts.started_at_ms != prior.started_at_ms
-            || facts.end_at_ms != prior.end_at_ms
-            || facts.max_end_at_ms != prior.max_end_at_ms
-            || facts.startup_deadline_ms != prior.startup_deadline_ms
-            || now_ms
-                < current
-                    .acceptance_time
-                    .sampled_at_ms()
-                    .ok_or(DecisionError::Invalid)?
-            || now_ms >= prior.end_at_ms
-        {
+        let accepted = current.acceptance_time.sampled_at_ms().ok_or(DecisionError::Invalid)?;
+        let valid_lifetime = match &observation.outcome {
+            UnloadOutcome::Pending => false,
+            UnloadOutcome::Unloaded { facts } => facts.started_at_ms == prior.started_at_ms
+                && facts.end_at_ms == prior.end_at_ms
+                && facts.max_end_at_ms == prior.max_end_at_ms
+                && facts.startup_deadline_ms == prior.startup_deadline_ms,
+            UnloadOutcome::OriginalContinued { facts } => facts.started_at_ms == prior.started_at_ms
+                && facts.end_at_ms == prior.end_at_ms
+                && facts.max_end_at_ms == prior.max_end_at_ms
+                && facts.startup_deadline_ms == prior.startup_deadline_ms
+                && facts.observed_at_ms >= accepted
+                && facts.observed_at_ms <= now_ms,
+        };
+        if !valid_lifetime || now_ms < accepted || now_ms >= prior.end_at_ms {
             return Err(DecisionError::Stale);
         }
         let mut next = self.clone();

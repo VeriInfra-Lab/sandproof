@@ -44,7 +44,7 @@ pub use renewal::{ConfirmedRenewal, RenewalConfirmation};
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
 pub use resume::{CurrentResumeReadiness, ResumeObservation};
 pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
-pub use unload::{UnloadObservation, UnloadedFacts};
+pub use unload::{UnloadObservation, UnloadOutcome, UnloadedFacts};
 
 /// The only supported lifecycle wire format. Mismatches are refused.
 pub const PROTOCOL_VERSION: u16 = 3;

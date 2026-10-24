@@ -1,5 +1,5 @@
 //! A retained result from the original journal, not a capture execution request.
-use super::{AcceptedLifecycleIntent, CaptureId, ContentDigest, IncarnationId, LifecycleOperation};
+use super::{AcceptedLifecycleIntent, CaptureId, ContentDigest, IncarnationId, LifecycleOperation, CurrentReadyFacts};
 use serde::{Deserialize, Serialize};
 
 /// The provider must establish durable material custody, exact execution exit
@@ -23,8 +23,29 @@ pub struct UnloadedFacts {
 #[serde(deny_unknown_fields)]
 pub struct UnloadObservation {
     pub request: AcceptedLifecycleIntent,
-    /// None means pending/unknown, never absence of material or effects.
-    pub unloaded: Option<UnloadedFacts>,
+    pub outcome: UnloadOutcome,
+}
+
+/// One retained original result. Pending never means absence of effects.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UnloadOutcome {
+    Pending,
+    Unloaded { facts: UnloadedFacts },
+    /// The original journal must establish the durable failed-Pause result,
+    /// ended capture responsibility and confirmed continuation of the SAME
+    /// native VM/epoch/generation. A current Running lookup is insufficient.
+    OriginalContinued { facts: CurrentReadyFacts },
+}
+impl UnloadOutcome {
+    #[must_use]
+    pub const fn unloaded(&self) -> Option<&UnloadedFacts> {
+        match self { Self::Unloaded { facts } => Some(facts), _ => None }
+    }
+    #[must_use]
+    pub const fn continued(&self) -> Option<&CurrentReadyFacts> {
+        match self { Self::OriginalContinued { facts } => Some(facts), _ => None }
+    }
 }
 
 impl UnloadObservation {
@@ -43,13 +64,22 @@ impl UnloadObservation {
             && original.accepted_version > 0
             && original.accepted_version_for_request() == Some(original.accepted_version)
             && original.retention.valid_for(4096)
-            && self.unloaded.as_ref().is_none_or(|facts| {
+            && match &self.outcome {
+                UnloadOutcome::Pending => true,
+                UnloadOutcome::Unloaded { facts } => {
                 facts.material_bytes > 0
                     && facts.source_incarnation == *source_incarnation
                     && facts.capture == *capture
                     && facts.started_at_ms <= facts.startup_deadline_ms
                     && facts.started_at_ms < facts.end_at_ms
                     && facts.end_at_ms <= facts.max_end_at_ms
-            })
+                },
+                UnloadOutcome::OriginalContinued { facts } => {
+                    facts.started_at_ms <= facts.startup_deadline_ms
+                        && facts.started_at_ms <= facts.observed_at_ms
+                        && facts.observed_at_ms < facts.end_at_ms
+                        && facts.end_at_ms <= facts.max_end_at_ms
+                }
+            }
     }
 }
