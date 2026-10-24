@@ -4,7 +4,7 @@
 
 ## 适用版本与证明开工边界（2026-10-25 开发候选）
 
-统一开发候选 `2c7df232` 已组合原失败继续的应用调用、SQL 请求结束记录、Node 执行方法、中心新鲜查询，以及工作器 Ready/Release 与唯一 `RequestEnd` 接口。应用组件已通过，工作器组合仍在验收；终止排空的服务接线及最终 GC 未完成，没有真实 VM 继续或整套生命周期结论。下列组件证据分别绑定其输入，不合并解释为当前候选整套通过。
+统一开发候选 `310bd9cbb261e9e7c0600c519cafc32144511d02` 已组合原失败继续的应用调用、SQL 请求结束记录、Node 执行方法、中心新鲜查询，以及工作器 Ready/Release 与唯一 `RequestEnd` 接口。应用组件和工作器定向组件已分别通过；终止排空的服务接线及最终 GC 未完成，没有真实 VM 继续或整套生命周期结论。下列组件证据分别绑定其输入，不合并解释为当前候选整套通过。
 
 - 核心 `5997fb764b73e4a5f053feb0b78c81a84990ab29` 在 ning 通过 193 项及严格 Clippy。`NeverReleased / Returned` 精确绑定原 Seal，`RetiredByCaptureEnd` 不冒充 Host 回执；同一个 Prepare 输入先核条件，再经原补偿准备继续，覆盖 Pending/OutcomeUnknown 的实际可达路径。原 `3cc9` 的 188 项仅是前序证据，不覆盖后继规则。
 - 服务 `2b3eee845497af82e0c531b96473d4688c5eea1d` 在 ning 通过生命周期 109 项、容量 17 项及严格 Clippy，共 109.574 秒。原事务同时保存 typed End、native 输入和 outbox；未知提交的两种持久结果、错误 End、到期、Destroy 与未知 Freeze 均经公开 journal 入口检查。12 个变更文件及三份日志摘要已核对。它不提供已接通的 application 执行许可或实际激活证据。
@@ -14,6 +14,8 @@
 服务后继 `5ee59662682a6a30f99c2da330bf876467216e58` 在 ning 通过原生继续 11 项、收件处理 115 项（包含 5 项新增应用回归）、公开应用入口 7 项及服务全目标严格 Clippy，耗时 52.60 秒；28 个交付文件和原始日志与实测输入已核对。实际应用先持久派发同 VM 的继续许可，确认后发布新鲜状态，避免继续成功仍进入旧暂停调度；后继 Unload 依据保存的同实例继续记录连接原启动与新操作轮次，保持原 VM、generation、owner 和启动计划绑定。检查包括未冻结/已冻结、SQL 授权与受控工作器返回、未知提交、旧 Access 拒绝及再次卸载。唯一 `CaptureRequestEndObservation` 和 `WorkerEnded` 持久投影取代旧 API-end 类型，`NoRequest` 使用受控提供方输入；本批未执行真实工作器、VM、终止 GC 或 Lean，不用这些组件背书物理结束事实。
 
 Full worker 后继 `a344225cec1119179e2e712b9abfc3c817605364` 已按 8 个 runtime 文件集成为 `36789be5`。ning 同一输入通过两包全目标严格 Clippy、52 项定向组件及格式检查；覆盖已交接工作 timeout/Drop 不 kill、原进程名额保持、父句柄丢弃后真实 helper 锁仍被占用、同 HTTP 解析器跨 socket timeout、EOF 拒绝，以及原受保护 stage 在短写/ENOSPC/EIO 后完成同 inode 的完整记录发布。原 Full shell 的 `exec 2>&1` 曾关闭 worker 的锁 FD，此后继显式保留 FD，不能把前序源码描述为已有该保证。组件使用真实进程、锁、回环连接和文件；没有产品 VM、完整基础入口或 Lean 证据。完整 job 截断、API-end 前任意 worker 死亡/真实断连仍为未解 Unknown；显式终止的实际 Stop 路由与 writer 排空须组合，不能由单独组件推出无等待环。旧 Child/锁/记录对应证明不自动覆盖本次所有权与发布改动。
+
+后继工作器 `3c2e08447193100f8789ac8db7486a4ce4b94c53` 已接完整 job→精确 Ready→原 SQL 授权→同管道 Release，替换旧 API-end 类型及消费者，实际未释放分支写带标签的 `NoRequest`。ning 同一输入通过 59 项定向组件（Child 16、helper gate 25、原 FD 完成发布 8、RequestEnd 3、Node 协议 7）、两包全目标严格 Clippy 和格式检查，零跳过；受测 Node/runtime 与统一候选逐字相同。负例曾发现 Release 恰填满缓冲后用零长度读取误判 EOF、接受多余字节，现保留负例并增加实际探测位修复。原编译/Clippy/行为失败日志保留。测试涵盖真实子进程与锁、记录重开及协议边界，但未运行产品 VM、全仓入口、服务与真实工作器的完整调用链或 Lean；可能发送 Full 后的真实断连、结束记录持久前任意工作器死亡仍为 Unknown，不能从这些组件推出终止与 GC 已闭合。
 
 终止捕获核心 `295fa66f7aa4fedf5b7af5643c9b1f2f9a92bf0b` 的 196 项原生测试及严格 Clippy 通过，覆盖依据绑定的停止、写者和描述符排空事实退休旧捕获责任；这些事实在核心测试中是输入，不证明真实进程已排空。Node `9a140ad76a7bfc9b3d20a1a97b08b188977f9839` 接入原 VM、工作器退出和 helper 门观察：127 项组件通过、原 8 项环境用例未运行，最后测试格式修正后两项相关用例及严格 Clippy 通过。服务当前显式拒绝尚未接线的 `RetireTerminatedCapture` 输入，不能把观察接口存在称为终止回收已启用。
 
