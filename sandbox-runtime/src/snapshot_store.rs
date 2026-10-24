@@ -30,6 +30,7 @@ use std::{
 mod bundle;
 #[path = "snapshot_completion.rs"]
 mod completion;
+pub(crate) use completion::MAX_COMPLETION_BYTES;
 #[path = "snapshot_material_retirement.rs"]
 pub(crate) mod material_retirement;
 #[path = "snapshot_retirement.rs"]

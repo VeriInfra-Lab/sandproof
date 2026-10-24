@@ -357,7 +357,7 @@ fn retirement_also_reclaims_the_exact_completion_and_interrupted_stage() {
     let fixture = Fixture::new();
     fixture
         .store
-        .publish_api_end(fixture.key, b"original API-end")
+        .publish_request_end(fixture.key, b"original API-end")
         .unwrap();
     let mut api_stage = fs::OpenOptions::new()
         .write(true)
