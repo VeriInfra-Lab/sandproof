@@ -59,6 +59,7 @@ class RetainedExclusionTests(unittest.TestCase):
         state.running={'source':{'pid':123,'start_time_ticks':1,'boot_id':'test'}}
         state.physical_complete=True
         state.gc_complete=True
+        state.restore_gate=None
         state.lease=Mock(identity=self.identity)
         state.quota={'deployment_control':str(self.root)}
         report={'complete':True}
