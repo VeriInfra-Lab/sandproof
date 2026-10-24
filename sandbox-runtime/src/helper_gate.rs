@@ -25,7 +25,7 @@ const EXEC_GATE: &str =
 // initial shell exec. Only a durable caller-authorized release replaces it.
 // Diagnostics after release join the bounded result pipe; parsers must reject
 // anything other than their exact single reply frame.
-const CAPTURE_EXEC_GATE: &str = "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
+const CAPTURE_EXEC_GATE: &str = "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 3>&2 || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
 pub const MAX_HELPER_MARKER_BYTES: u64 = 16_384;
 
 /// Fixed gate inode created by the trusted node's mapping initialization.
@@ -153,6 +153,7 @@ struct OwnedMarker {
 pub struct PreparedTrackedChild {
     child: OwnedChild,
     witness: OwnedMarker,
+    retain_after_release: bool,
 }
 impl PreparedTrackedChild {
     #[must_use]
@@ -588,6 +589,11 @@ impl RuntimeHelperGuard {
             .as_mut()
             .ok_or(RuntimeError::Protocol("tracked helper gate pipe"))?
             .write_all(b"release\n")?;
+        // Only Full's retained gate marks this child as durably handed off.
+        // Ordinary helpers retain their original stop-on-Drop policy.
+        if prepared.retain_after_release {
+            prepared.child.retain_until_exit();
+        }
         Ok(prepared.child)
     }
 
@@ -768,7 +774,11 @@ impl RuntimeHelperGuard {
             args,
             &child,
         )?;
-        Ok(PreparedTrackedChild { child, witness })
+        Ok(PreparedTrackedChild {
+            child,
+            witness,
+            retain_after_release: retain_waiting_gate,
+        })
     }
 
     fn abandon_unspawned_stage(&self, stage: &Path, staged: &File) -> Result<(), RuntimeError> {
@@ -2049,6 +2059,52 @@ mod tests {
         assert_reaped(process.pid);
         assert!(context.helper_gate.inflight_paths().unwrap().0.exists());
         guard.finish_tracked().unwrap();
+    }
+
+    #[test]
+    fn released_full_worker_keeps_original_gate_after_parent_handles_drop() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (temp, context) = fixture(1);
+        let fifo = temp.path().join("release-full");
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            &fifo,
+            rustix::fs::FileType::Fifo,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+            0,
+        )
+        .unwrap();
+        let guard = acquire(&context, false).unwrap();
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf ready; IFS= read -r release < \"$1\"",
+                    "full-worker",
+                    fifo.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let mut child = guard.release_tracked(prepared).unwrap();
+        let mut ready = [0; 5];
+        child
+            .stdout
+            .as_mut()
+            .unwrap()
+            .read_exact(&mut ready)
+            .unwrap();
+        assert_eq!(&ready, b"ready");
+        drop(child);
+        drop(guard);
+        assert!(acquire(&context, false).is_err());
+        File::options()
+            .write(true)
+            .open(&fifo)
+            .unwrap()
+            .write_all(b"done\n")
+            .unwrap();
     }
 
     #[test]

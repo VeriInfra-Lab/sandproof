@@ -115,9 +115,12 @@ impl SnapshotLayout {
     pub(super) fn publish_full_api_end(
         &self,
         value: &FullCaptureApiEnd,
+        source: &RuntimeProcessIdentity,
     ) -> Result<(), RuntimeError> {
         self.store_for_runtime(&self.runtime_root())?
-            .publish_api_end(value.directory_key, &serde_json::to_vec(value)?)
+            .publish_retained_api_end(value.directory_key, &serde_json::to_vec(value)?, || {
+                source.is_alive()
+            })
     }
     /// Read the original bounded API-end record, never dispatching any request.
     /// # Errors
