@@ -115,7 +115,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             core::Command::FreezeVm { .. }
                 | core::Command::CommitSnapshot { .. }
                 | core::Command::StopVm { .. }
-                | core::Command::CleanupVm { .. }
+                | core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. }
         ) {
             return Ok(host.execute_lifecycle_capture_action(
                 action,
@@ -157,7 +157,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         if !capture_action_matches(&world, &record, action) {
             return Ok(None);
         }
-        let expected = if matches!(action.command.command(), core::Command::StopVm { .. } | core::Command::CleanupVm { .. }) {
+        let expected = if matches!(action.command.command(), core::Command::StopVm { .. } | core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. }) {
             inner.journal.committed_capture_expectation(sandbox).map_err(map_journal)?
         } else {
             inner.journal.sealed_capture_expectation(sandbox).map_err(map_journal)?
@@ -258,10 +258,19 @@ fn capture_action_matches(world: &core::World, record: &SourceWorkRecord, action
     match *command {
         core::Command::FreezeVm { .. } | core::Command::SealSnapshot { .. } | core::Command::CommitSnapshot { .. } | core::Command::StopVm { .. } => logical.origin==core::EffectOrigin::Operation(key),
         core::Command::CleanupVm { generation, vm, .. } => {
-            logical.origin==core::EffectOrigin::Maintenance(sandbox)
-                && world.sandbox_record(sandbox).is_some_and(|row| !row.terminal && row.phase==core::Phase::Paused && row.current_operation.is_some_and(|op|op.id==operation) && row.generation==generation)
-                && world.operation_plan(key).is_some_and(|plan| plan.key==key && plan.vm==Some(vm) && plan.generation==generation)
+            cleanup_matches(world,key,logical.origin,generation)
+                && world.operation_plan(key).is_some_and(|plan| plan.vm==Some(vm) && plan.stop_vms.contains(&vm))
+        }
+        core::Command::CleanupSlot { generation, slot, .. } => {
+            cleanup_matches(world,key,logical.origin,generation)
+                && world.operation_plan(key).is_some_and(|plan| plan.slot==Some(slot) && plan.close_slots.contains(&slot))
         }
         _=>false,
     }
+}
+
+fn cleanup_matches(world:&core::World,key:core::OperationKey,origin:core::EffectOrigin,generation:core::Generation)->bool {
+    origin==core::EffectOrigin::Maintenance(key.sandbox)
+        && world.sandbox_record(key.sandbox).is_some_and(|row| !row.terminal && row.phase==core::Phase::Paused && row.current_operation.is_some_and(|op|op.id==key.operation) && row.generation==generation)
+        && world.operation_plan(key).is_some_and(|plan| plan.key==key && plan.generation==generation)
 }
