@@ -564,7 +564,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         else {
             return Ok(false);
         };
-        if !observation.matches_request(intent) || observation.unloaded.is_none() {
+        if !observation.matches_request(intent)
+            || (observation.outcome.unloaded().is_none()
+                && observation.outcome.continued().is_none())
+        {
             return Ok(false);
         }
         time_left(deadline)?;

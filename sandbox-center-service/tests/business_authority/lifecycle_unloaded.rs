@@ -1,7 +1,14 @@
 //! Real Redis persistence with a controlled host result; not a VM-exit test.
 use super::*;
 use sandproof_center_store::authority::AuthorityState;
-use sandproof_protocol::lifecycle::{ContentDigest, UnloadObservation, UnloadedFacts};
+use sandproof_protocol::lifecycle::{ContentDigest, UnloadObservation, UnloadOutcome, UnloadedFacts};
+
+fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
+    match &mut observation.outcome {
+        UnloadOutcome::Unloaded { facts } => facts,
+        _ => panic!("expected completed Unloaded fixture"),
+    }
+}
 
 fn accept_unload(app: &Application) -> (SessionId, PublicUnloadRequest, UnloadObservation) {
     let accepted = app
@@ -46,7 +53,7 @@ fn accept_unload(app: &Application) -> (SessionId, PublicUnloadRequest, UnloadOb
         request,
         UnloadObservation {
             request: intent,
-            unloaded: Some(facts),
+            outcome: UnloadOutcome::Unloaded { facts },
         },
     )
 }
@@ -67,7 +74,7 @@ fn unload_requires_completed_fact_and_reopens_original_authorized_result() {
     app.reconcile_once().unwrap();
     let saved = app.query_lifecycle("8", &session).unwrap();
     assert_eq!(saved.phase, PublicSessionPhase::Unloaded);
-    assert_eq!(saved.unloaded, observation.unloaded);
+    assert_eq!(saved.unloaded, observation.outcome.unloaded().cloned());
     let replay = app.unload_lifecycle("8", &session, &request).unwrap();
     assert_eq!(replay.key, saved.operation);
     assert_eq!(app.query_lifecycle("9", &session), Err(PortError::NotFound));
@@ -102,7 +109,7 @@ fn late_unload_cannot_replace_destroy_or_expiry() {
         let (session, _, observation) = accept_unload(&app);
         if expire {
             clock.0.store(
-                observation.unloaded.as_ref().unwrap().end_at_ms,
+                observation.outcome.unloaded().unwrap().end_at_ms,
                 Ordering::SeqCst,
             );
         } else {
@@ -170,7 +177,7 @@ async fn assert_unloaded_query_fault(lost_reply: bool) {
     assert_eq!(before.1["phase"], "unloaded");
     assert_eq!(
         before.1["unloaded"],
-        serde_json::to_value(&observation.unloaded).unwrap()
+        serde_json::to_value(&observation.outcome.unloaded().cloned()).unwrap()
     );
     if lost_reply {
         // Deliver the real reaffirm CAS, then lose only its original reply.
@@ -222,7 +229,7 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
     let (app, host, clock) = application(&authority);
     let (session, _, mut observation) = accept_unload(&app);
     // Same scalar magnitude as the retained real capture, without a VM/file.
-    observation.unloaded.as_mut().unwrap().material_bytes = 3_221_239_189;
+    unloaded_facts_mut(&mut observation).material_bytes = 3_221_239_189;
     let (observed, received) = mpsc::channel();
     let (proceed, wait) = mpsc::channel();
     let release = Release(Some(proceed));
@@ -246,7 +253,7 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
     release.complete();
     let completed = query.join().unwrap().unwrap();
     assert_eq!(completed.phase, PublicSessionPhase::Unloaded);
-    assert_eq!(completed.unloaded, observation.unloaded);
+    assert_eq!(completed.unloaded, observation.outcome.unloaded().cloned());
     assert_eq!(completed.current_version, pending.current_version);
     assert_eq!(completed.operation, pending.operation);
     assert_eq!(completed.session, pending.session);
@@ -260,7 +267,7 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     let authority = lifecycle_public::setup(&fixture, &proxy);
     let (app, host, clock) = application(&authority);
     let (session, _, mut observation) = accept_unload(&app);
-    observation.unloaded.as_mut().unwrap().material_bytes = 3_221_239_189;
+    unloaded_facts_mut(&mut observation).material_bytes = 3_221_239_189;
     *host.unloaded.lock().unwrap() = Some(observation.clone());
     let node = authority.snapshot().unwrap().center.nodes()[0].clone();
     let router = sandproof_api::lifecycle::router_with_admission(
@@ -315,7 +322,7 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     let completed: sandproof_protocol::lifecycle::PublicSessionView =
         serde_json::from_value(completed.1).unwrap();
     assert_eq!(completed.phase, PublicSessionPhase::Unloaded);
-    assert_eq!(completed.unloaded, observation.unloaded);
+    assert_eq!(completed.unloaded, observation.outcome.unloaded().cloned());
     assert_eq!(completed.session, pending.session);
     assert_eq!(completed.operation, pending.operation);
     assert_eq!(completed.current_version, pending.current_version);
@@ -329,4 +336,30 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
         completed
     );
     assert!(clock.0.load(Ordering::SeqCst) < completed.unloaded.unwrap().end_at_ms);
+}
+
+
+#[test]
+fn original_continued_result_restores_running_without_unloaded_material() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let (session, request, mut observation) = accept_unload(&app);
+    let snapshot = app.snapshot().unwrap();
+    let facts = snapshot
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap()
+        .last_running()
+        .unwrap()
+        .clone();
+    observation.outcome = UnloadOutcome::OriginalContinued { facts };
+    *host.unloaded.lock().unwrap() = Some(observation);
+    app.reconcile_once().unwrap();
+    let saved = app.query_lifecycle("8", &session).unwrap();
+    assert_eq!(saved.phase, PublicSessionPhase::Running);
+    assert!(saved.unloaded.is_none());
+    let replay = app.unload_lifecycle("8", &session, &request).unwrap();
+    assert_eq!(replay.key, saved.operation);
+    assert_eq!(replay.session, session);
 }

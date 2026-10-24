@@ -523,7 +523,7 @@ impl SharedBusinessAuthority {
                 .operations()
                 .last()
                 .and_then(|operation| operation.unloaded())
-                .and_then(|observation| observation.unloaded.clone()),
+                .and_then(|observation| observation.outcome.unloaded().cloned()),
             create_refusal: record
                 .operations()
                 .first()
