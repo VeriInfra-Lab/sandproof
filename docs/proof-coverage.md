@@ -11,6 +11,8 @@
 - Node `d13796b6d5af1b529eeb3d0af9d9e4ef1e5fc5ca` 与上述服务/核心组合，在 ning 通过 125 项及全目标严格 Clippy，原 8 项环境用例未运行，总 21 秒。5 个变更文件与实测源码一致；同实例继续要求原许可、策略、位置、进程和凭据事实。没有真实 VM、SDK、E2E 或新 Lean 结论。
 - 消费者 `862a6d3893871d9176afbd71d0697a02dc49a345` 的中心新鲜查询 19 项、协议 21 项及 envelope 10 项通过，七包严格 Clippy/格式通过。19 个交付文件与组合候选一致；使用受控 Host，不证明真实 producer 已提供所需事实。
 
+Full worker 后继 `a344225cec1119179e2e712b9abfc3c817605364` 已按 8 个 runtime 文件集成为 `36789be5`。ning 同一输入通过两包全目标严格 Clippy、52 项定向组件及格式检查；覆盖已交接工作 timeout/Drop 不 kill、原进程名额保持、父句柄丢弃后真实 helper 锁仍被占用、同 HTTP 解析器跨 socket timeout、EOF 拒绝，以及原受保护 stage 在短写/ENOSPC/EIO 后完成同 inode 的完整记录发布。原 Full shell 的 `exec 2>&1` 曾关闭 worker 的锁 FD，此后继显式保留 FD，不能把前序源码描述为已有该保证。组件使用真实进程、锁、回环连接和文件；没有产品 VM、完整基础入口或 Lean 证据。完整 job 截断、API-end 前任意 worker 死亡/真实断连仍为未解 Unknown；显式终止的实际 Stop 路由与 writer 排空须组合，不能由单独组件推出无等待环。旧 Child/锁/记录对应证明不自动覆盖本次所有权与发布改动。
+
 前序源码 `15b8968140f51cba537665215cb412f69967feb8` 的两个真实 Prepare/Publish 薄根在 msra 完成 Charon（1.27 秒，LLBC 无错误），Aeneas 在 0.71 秒因循环内提前返回拒绝，生成 Lean 文件为零。`5997fb` 已将相关扫描改为保持顺序、首次错误和短路的结构。后继 `c102534b` 同两个薄根复验 Charon 成功（1.293 秒），原提前返回错误未再出现；Aeneas 在 10.478 秒于 `source_resources` 的 VM 记录 match/状态分支报告 `InterpReduceCollapse.ml:1137`，仍未生成 Lean。此时尚不能断言已定位内部错误唯一原因，需保持行为的窄改写后复查；不能据原生测试或旧生成体宣称翻译已成功。固定工具、库模型及冻结记录均未改。
 
 上述新核心和真实连接需要对应证明；旧 capture-handoff、多代核心、SQL 和查询定理不自动适用。外部结束事实及实际运行、网络、文件策略和授权仍需各提供方落实。准入前无 native Pause 的失败关闭、API-end 丢失、终止排空及最终引用结算均保留为未完成义务。
