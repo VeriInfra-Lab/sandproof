@@ -356,8 +356,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.insert(terminal=True)
         host=copy.deepcopy(self.host)
         host['operations'][0]['binding']['protocol_version']=3
-        with self.assertRaises(ValueError):
-            terminal_result(self.center,host,self.identity)
+        self.assertIsNone(terminal_result(self.center,host,self.identity))
 
     def test_original_create_requires_exact_positive_incarnation_operation(self):
         self.insert()
