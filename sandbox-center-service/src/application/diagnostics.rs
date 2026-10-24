@@ -80,10 +80,7 @@ mod tests {
             &mut bytes,
         );
         let line = String::from_utf8(bytes).unwrap();
-        assert!(line.contains(&format!(
-            "c=q{}/e",
-            context.sequence
-        )));
+        assert!(line.contains(&format!("c=q{}/e", context.sequence)));
         assert_eq!(line.lines().count(), 1);
         assert!(line.trim_end().len() < 220);
     }
@@ -154,8 +151,7 @@ mod tests {
         assert_eq!(text.lines().count(), LIMIT - 1);
         assert!(
             text.lines()
-                .all(|line| line.contains("authority=RecoveryRequired")
-                    && line.len() < 160)
+                .all(|line| line.contains("authority=RecoveryRequired") && line.len() < 160)
         );
         assert!(text.ends_with("remaining=0\n"));
         assert_eq!(count.load(Ordering::Relaxed), LIMIT);

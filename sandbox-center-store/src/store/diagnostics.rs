@@ -35,9 +35,25 @@ pub struct DiagnosticContext {
 /// A dash is explicitly uncorrelated (including exhausted sequence numbers).
 impl std::fmt::Display for DiagnosticContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.sequence == 0 || self.flow == DiagnosticFlow::Unscoped { return f.write_str("-"); }
-        let flow = match self.flow { DiagnosticFlow::LifecycleQuery => 'q', DiagnosticFlow::Background => 'b', DiagnosticFlow::Unscoped => '-' };
-        let step = match self.step { DiagnosticStep::Unscoped => '-', DiagnosticStep::Lookup => 'l', DiagnosticStep::Expiry => 'e', DiagnosticStep::Projection => 'p', DiagnosticStep::Refresh => 'f', DiagnosticStep::Reconcile => 'c', DiagnosticStep::Retire => 't', DiagnosticStep::Recovery => 'r', DiagnosticStep::Material => 'm' };
+        if self.sequence == 0 || self.flow == DiagnosticFlow::Unscoped {
+            return f.write_str("-");
+        }
+        let flow = match self.flow {
+            DiagnosticFlow::LifecycleQuery => 'q',
+            DiagnosticFlow::Background => 'b',
+            DiagnosticFlow::Unscoped => '-',
+        };
+        let step = match self.step {
+            DiagnosticStep::Unscoped => '-',
+            DiagnosticStep::Lookup => 'l',
+            DiagnosticStep::Expiry => 'e',
+            DiagnosticStep::Projection => 'p',
+            DiagnosticStep::Refresh => 'f',
+            DiagnosticStep::Reconcile => 'c',
+            DiagnosticStep::Retire => 't',
+            DiagnosticStep::Recovery => 'r',
+            DiagnosticStep::Material => 'm',
+        };
         write!(f, "{flow}{}/{step}", self.sequence)
     }
 }
@@ -304,7 +320,11 @@ mod context_tests {
     #[test]
     fn exhausted_sequence_is_explicitly_uncorrelated_and_never_reuses_last_id() {
         let sequence = std::sync::atomic::AtomicU64::new(u64::MAX - 1);
-        let last = next_context(&sequence, DiagnosticFlow::LifecycleQuery, DiagnosticStep::Lookup);
+        let last = next_context(
+            &sequence,
+            DiagnosticFlow::LifecycleQuery,
+            DiagnosticStep::Lookup,
+        );
         assert_eq!(last.sequence, u64::MAX);
         assert_eq!(last.to_string(), "q18446744073709551615/l");
         assert_eq!(last.to_string().len(), 23);

@@ -285,7 +285,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             diagnostics::emit(
                 DiagnosticStage::LifecycleQueryExpiry,
                 DiagnosticFailure::Port(*error),
-            )
+            );
         })?;
         crate::AuthorityPort::expire_current(&mut *authority, now)
             .inspect_err(|error| {
