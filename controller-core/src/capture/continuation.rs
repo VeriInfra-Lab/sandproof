@@ -39,21 +39,31 @@ pub struct CaptureWorkEndReceipt {
     pub end: CaptureWorkEnd,
 }
 
-/// The original SQL end record distinguishes a never-granted Full permit from
-/// a returned API plus confirmed writer exit. Both retain any material debt.
+/// The original SQL end distinguishes a never-granted Full permit, a worker's
+/// explicit no-request outcome, and a returned API with confirmed writer exit.
+/// Every case retains any material debt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub enum CaptureWorkEnd {
-    NeverReleased { seal: Option<CaptureSealEnd> },
-    Returned { seal: CaptureSealEnd },
+    NeverReleased {
+        seal: Option<CaptureSealEnd>,
+    },
+    /// The original worker saved an explicit no-request outcome and exited.
+    /// Neither a missing marker nor a disconnected/dead worker supplies this.
+    NoRequest {
+        seal: CaptureSealEnd,
+    },
+    Returned {
+        seal: CaptureSealEnd,
+    },
 }
 impl CaptureWorkEnd {
     #[must_use]
     pub const fn seal(self) -> Option<CaptureSealEnd> {
         match self {
             Self::NeverReleased { seal } => seal,
-            Self::Returned { seal } => Some(seal),
+            Self::NoRequest { seal } | Self::Returned { seal } => Some(seal),
         }
     }
 }
