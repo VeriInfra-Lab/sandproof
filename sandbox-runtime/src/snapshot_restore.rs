@@ -62,6 +62,27 @@ fn load_request() -> serde_json::Value {
     })
 }
 
+// Keep the actual state-dependent resume decision shared with the interruption
+// regression. The caller still holds the original helper gate and intent.
+fn activate_same_loaded_candidate(
+    before: &LoadedSnapshotObservation,
+    resume: impl FnOnce() -> Result<(), RuntimeError>,
+    observe: impl FnOnce() -> Result<LoadedSnapshotObservation, RuntimeError>,
+) -> Result<LoadedSnapshotObservation, RuntimeError> {
+    match before.state {
+        LoadedSnapshotState::Paused => resume()?,
+        LoadedSnapshotState::Running => {}
+        LoadedSnapshotState::Exited => return Err(invalid("restore candidate exited")),
+    }
+    let after = observe()?;
+    if after.process != before.process || after.state != LoadedSnapshotState::Running {
+        return Err(invalid(
+            "restore activation not observed on original candidate",
+        ));
+    }
+    Ok(after)
+}
+
 impl RestoreIntent {
     fn digest(&self) -> Result<[u8; 32], RuntimeError> {
         Ok(Sha256::digest(serde_json::to_vec(self)?).into())
@@ -256,22 +277,20 @@ impl Runtime {
                 "restore activation original candidate differs or exited",
             ));
         }
-        if before.state == LoadedSnapshotState::Paused {
-            self.configure_access_metadata(id)?;
-            self.api(
-                id,
-                "PATCH",
-                "/vm",
-                Some(&serde_json::to_vec(&json!({"state":"Resumed"}))?),
-            )?;
-        }
-        let after = self.observe_loaded_snapshot(id, manifest_sha256, work_sha256)?;
-        if after.process != *expected || after.state != LoadedSnapshotState::Running {
-            return Err(invalid(
-                "restore activation not observed on original candidate",
-            ));
-        }
-        Ok(after)
+        activate_same_loaded_candidate(
+            &before,
+            || {
+                self.configure_access_metadata(id)?;
+                self.api(
+                    id,
+                    "PATCH",
+                    "/vm",
+                    Some(&serde_json::to_vec(&json!({"state":"Resumed"}))?),
+                )?;
+                Ok(())
+            },
+            || self.observe_loaded_snapshot(id, manifest_sha256, work_sha256),
+        )
     }
 
     /// Physical continuation after an ordinary capture failure. The caller
@@ -305,6 +324,67 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+
+    fn candidate(state: LoadedSnapshotState) -> LoadedSnapshotObservation {
+        LoadedSnapshotObservation {
+            process: RuntimeProcessIdentity {
+                pid: 7,
+                start_time_ticks: 11,
+                boot_id: "00000000-0000-0000-0000-000000000001".into(),
+            },
+            state,
+        }
+    }
+
+    #[test]
+    fn effectful_lost_resume_recovers_running_identity_without_second_patch() {
+        let state = Cell::new(LoadedSnapshotState::Paused);
+        let patches = Cell::new(0);
+        let failed = activate_same_loaded_candidate(
+            &candidate(state.get()),
+            || {
+                patches.set(patches.get() + 1);
+                state.set(LoadedSnapshotState::Running);
+                Err(invalid("reply lost after actual resume"))
+            },
+            || panic!("lost reply must remain unknown"),
+        );
+        assert!(failed.is_err());
+        assert_eq!(state.get(), LoadedSnapshotState::Running);
+        let recovered = activate_same_loaded_candidate(
+            &candidate(state.get()),
+            || panic!("an already running candidate must not be resumed again"),
+            || Ok(candidate(state.get())),
+        )
+        .unwrap();
+        assert_eq!(recovered, candidate(LoadedSnapshotState::Running));
+        assert_eq!(patches.get(), 1);
+    }
+
+    #[test]
+    fn activation_refuses_exit_and_replacement_instead_of_reloading() {
+        assert!(
+            activate_same_loaded_candidate(
+                &candidate(LoadedSnapshotState::Exited),
+                || panic!("cannot resume a dead candidate"),
+                || panic!("cannot adopt a new candidate")
+            )
+            .is_err()
+        );
+        assert!(
+            activate_same_loaded_candidate(
+                &candidate(LoadedSnapshotState::Running),
+                || panic!("running must not send PATCH"),
+                || {
+                    let mut foreign = candidate(LoadedSnapshotState::Running);
+                    foreign.process.start_time_ticks += 1;
+                    Ok(foreign)
+                }
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn fixed_load_request_cannot_auto_run_or_select_other_devices() {
         let request = load_request();

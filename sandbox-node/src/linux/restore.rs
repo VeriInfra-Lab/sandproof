@@ -5,8 +5,32 @@ use super::{
     HostObservation, LinuxWorker, NodeResult, ObservedResult, SlotBinding, WorkAction, core,
 };
 use crate::ProtectedHostEpochSource;
-use sandbox_runtime::LoadedSnapshotState;
+use sandbox_runtime::{LoadedSnapshotObservation, LoadedSnapshotState};
 use sandproof_controller_service::capture::{RestoreActivationPermit, RestoreWorkRequest};
+
+// Called only after checking the original private activation permission. It
+// also serves recovery of that same permitted candidate; no startup or load is
+// dispatched here, and an observation-only call never enters this function.
+fn finish_permitted_activation(
+    before: &LoadedSnapshotObservation,
+    activate: impl FnOnce() -> NodeResult<LoadedSnapshotObservation>,
+    initialize: impl FnOnce() -> NodeResult<()>,
+    confirm: impl FnOnce() -> NodeResult<LoadedSnapshotObservation>,
+) -> NodeResult<LoadedSnapshotObservation> {
+    if before.state == LoadedSnapshotState::Exited {
+        return Err("original restore candidate exited".into());
+    }
+    let activated = activate()?;
+    if activated.process != before.process || activated.state != LoadedSnapshotState::Running {
+        return Err("restore activation changed its original candidate".into());
+    }
+    initialize()?;
+    let after = confirm()?;
+    if after.process != before.process || after.state != LoadedSnapshotState::Running {
+        return Err("restore authorization changed its original candidate".into());
+    }
+    Ok(after)
+}
 
 fn scope(
     action: &WorkAction<core::EffectId>,
@@ -290,29 +314,44 @@ impl LinuxWorker {
         observe_only: bool,
     ) -> NodeResult<ObservedResult> {
         let before = context.observe()?;
-        if !observe_only {
+        let confirm = || {
+            let after = context.observe()?;
+            if after.process != before.process
+                || after.state != LoadedSnapshotState::Running
+                || self.guest_file_status(&context.name, &self.secret(context.sandbox)?.token)?
+                    != "200"
+            {
+                return Err("restore activation/current guest credential not observed".into());
+            }
+            Ok(after)
+        };
+        let after = if observe_only {
+            confirm()?
+        } else {
             let permit =
                 activation.ok_or("restore activation lacks durable MayHaveExecuted permit")?;
             if permit.action() != context.action || permit.work_binding() != &context.work_digest {
                 return Err("restore activation permit differs from original action/work".into());
             }
-            context.runtime.activate_loaded_snapshot(
-                &context.name,
-                context.manifest,
-                *context.work_digest.as_bytes(),
-                &before.process,
-            )?;
-            // RAM already contains the template process: rotate authorization,
-            // without dispatching startup a second time.
-            self.initialize_guest(context.sandbox, context.vm)?;
-        }
-        let after = context.observe()?;
-        if after.process != before.process
-            || after.state != LoadedSnapshotState::Running
-            || self.guest_file_status(&context.name, &self.secret(context.sandbox)?.token)? != "200"
-        {
-            return Err("restore activation/current guest credential not observed".into());
-        }
+            finish_permitted_activation(
+                &before,
+                || {
+                    context
+                        .runtime
+                        .activate_loaded_snapshot(
+                            &context.name,
+                            context.manifest,
+                            *context.work_digest.as_bytes(),
+                            &before.process,
+                        )
+                        .map_err(Into::into)
+                },
+                // RAM already contains the template process. Only rotate
+                // authorization; never dispatch startup a second time.
+                || self.initialize_guest(context.sandbox, context.vm),
+                confirm,
+            )?
+        };
         Ok(ObservedResult::Activated {
             pid: after.process.pid,
             start_ticks: after.process.start_time_ticks,
@@ -320,3 +359,7 @@ impl LinuxWorker {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "restore_activation_tests.rs"]
+mod activation_tests;
