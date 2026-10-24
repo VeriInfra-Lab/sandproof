@@ -202,9 +202,9 @@ fn saturation_cannot_spend_accepted_cleanup_or_result_retention() {
 
 fn assert_next_lease_has_sql_and_slot_room(journal: &ControllerJournal) {
     let world = journal.world().unwrap();
-    let (rows, bytes, lease_rows, lease_bytes) = super::super::super::capacity::fixture_sql_budget(
-        &journal.journal.connection, &world,
-    ).unwrap();
+    let (rows, bytes, lease_rows, lease_bytes) =
+        super::super::super::capacity::fixture_sql_budget(&journal.journal.connection, &world)
+            .unwrap();
     let cap = full_config().capacity.unwrap();
     assert!(rows + lease_rows <= cap.max_sql_rows);
     assert!(bytes + lease_bytes <= cap.max_sql_bytes);

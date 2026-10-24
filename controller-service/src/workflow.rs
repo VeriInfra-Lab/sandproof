@@ -67,13 +67,20 @@ fn startup_operation(
 ) -> Result<(), JournalError> {
     operation(journal, sandbox, id, core::OperationKind::Create)?;
     let world = journal.world()?;
-    let record = world.sandbox_record(sandbox).ok_or(JournalError::UnsupportedInput)?;
-    let status = record.current_operation.ok_or(JournalError::UnsupportedInput)?.status;
+    let record = world
+        .sandbox_record(sandbox)
+        .ok_or(JournalError::UnsupportedInput)?;
+    let status = record
+        .current_operation
+        .ok_or(JournalError::UnsupportedInput)?
+        .status;
     if record.terminal
         || !matches!(
             (record.phase, status),
-            (core::Phase::Starting, core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown)
-                | (core::Phase::Running, core::OperationStatus::Succeeded)
+            (
+                core::Phase::Starting,
+                core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown
+            ) | (core::Phase::Running, core::OperationStatus::Succeeded)
         )
     {
         return Err(JournalError::UnsupportedInput);

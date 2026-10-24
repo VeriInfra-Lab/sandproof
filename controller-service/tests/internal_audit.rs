@@ -1,13 +1,13 @@
 //! Checked read-only snapshots of the actual original journal/application.
+#[allow(dead_code, reason = "shared current lifecycle application fixture")]
+#[path = "support/lifecycle_application.rs"]
+mod current;
 #[allow(
     dead_code,
     reason = "shared original application fixture supports several suites"
 )]
 #[path = "support/internal_application.rs"]
 mod fixture;
-#[allow(dead_code, reason = "shared current lifecycle application fixture")]
-#[path = "support/lifecycle_application.rs"]
-mod current;
 use fixture::{State, TestClock, complete_fixture, wire};
 use sandproof_controller_service::{ControllerJournal, InternalInboxConfig, NeverCrash};
 use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
@@ -109,7 +109,11 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
     .with_clock(Arc::new(TestClock(AtomicI64::new(100))));
     let audit = || {
         ControllerJournal::audit_lifecycle_complete(
-            &path, NAMESPACE, &bounded, &current::maintenance(), &inbox,
+            &path,
+            NAMESPACE,
+            &bounded,
+            &current::maintenance(),
+            &inbox,
         )
         .unwrap()
     };
@@ -121,15 +125,25 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
         resources.instances
     };
     assert!(audit().host_slots.is_empty());
-    assert_eq!(free(), 1, "an initialized empty host must accept its first VM");
+    assert_eq!(
+        free(),
+        1,
+        "an initialized empty host must accept its first VM"
+    );
     let create = current::request();
     let context = current::context();
     app.record_lifecycle_intent(&create, &context).unwrap();
-    assert_eq!(free(), 0, "Recorded without a native mapping still occupies its lane");
+    assert_eq!(
+        free(),
+        0,
+        "Recorded without a native mapping still occupies its lane"
+    );
     app.establish_lifecycle_host_epoch().unwrap();
     let local = current::advance(&app).unwrap().local.unwrap();
     assert!(matches!(
-        app.observe_lifecycle_create(&create, &context).unwrap().readiness,
+        app.observe_lifecycle_create(&create, &context)
+            .unwrap()
+            .readiness,
         sandproof_controller_service::CreateReadiness::Observed(_)
     ));
     assert_eq!(free(), 0);
@@ -139,24 +153,41 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
     destroy.request.binding.key.sequence = 2.try_into().unwrap();
     destroy.request.operation = LifecycleOperation::Destroy {};
     app.record_lifecycle_intent(&destroy, &context).unwrap();
-    assert_current_health_retirement(&app, &state, &free, &audit, destroy, &context, local.sandbox);
+    assert_current_health_retirement(
+        &app,
+        &state,
+        &free,
+        &audit,
+        destroy,
+        &context,
+        local.sandbox,
+    );
     let mut next = current::request();
     next.retention.window = 2.try_into().unwrap();
     next.request.binding.key.window = 2.try_into().unwrap();
     next.request.binding.session = "successor".try_into().unwrap();
     app.record_lifecycle_intent(&next, &context).unwrap();
     app.advance_lifecycle_create_with_verification(
-        &next, &context, Some(current::fixture::template()), current::fixture::compute(), None,
-    ).unwrap();
+        &next,
+        &context,
+        Some(current::fixture::template()),
+        current::fixture::compute(),
+        None,
+    )
+    .unwrap();
     assert!(matches!(
-        app.observe_lifecycle_create(&next, &context).unwrap().readiness,
+        app.observe_lifecycle_create(&next, &context)
+            .unwrap()
+            .readiness,
         sandproof_controller_service::CreateReadiness::Observed(_)
     ));
     assert_eq!(free(), 0);
 }
 
 fn assert_current_health_retirement(
-    app: &sandproof_controller_service::application::ControllerApplication<current::fixture::TestHost>,
+    app: &sandproof_controller_service::application::ControllerApplication<
+        current::fixture::TestHost,
+    >,
     state: &Mutex<current::fixture::State>,
     free: &impl Fn() -> u64,
     audit: &impl Fn() -> sandproof_controller_service::LifecycleAudit,
@@ -177,19 +208,31 @@ fn assert_current_health_retirement(
         audit().host_slots[0].1,
         sandbox_controller_core::maintenance::slots::HostSlotPhase::Releasing
     );
-    assert_eq!(free(), 0, "unknown physical release cannot advertise capacity");
+    assert_eq!(
+        free(),
+        0,
+        "unknown physical release cannot advertise capacity"
+    );
     state.lock().unwrap().release_unknown = false;
     assert!(app.advance_current_workflow(sandbox).unwrap());
     assert!(app.lifecycle_destroy_cleaned(&destroy, context).unwrap());
     assert_eq!(free(), 0, "physical Free does not retire the retained lane");
-    let cleaned = TerminalLifecycleObservation { request: destroy, status: TerminalStatus::Cleaned };
+    let cleaned = TerminalLifecycleObservation {
+        request: destroy,
+        status: TerminalStatus::Cleaned,
+    };
     app.confirm_lifecycle_terminal(&cleaned, context).unwrap();
     assert_eq!(free(), 0, "confirmation alone does not close the lane");
-    app.close_lifecycle_window(&LifecycleWindowClose { terminal: cleaned }, context).unwrap();
+    app.close_lifecycle_window(&LifecycleWindowClose { terminal: cleaned }, context)
+        .unwrap();
     assert_eq!(free(), 1);
     let actions = state.lock().unwrap().actions.len();
     assert_eq!(free(), 1);
-    assert_eq!(state.lock().unwrap().actions.len(), actions, "health is read-only");
+    assert_eq!(
+        state.lock().unwrap().actions.len(),
+        actions,
+        "health is read-only"
+    );
 }
 
 #[test]

@@ -900,7 +900,9 @@ impl ControllerJournal {
         // observation cannot change an already terminal instance, even after
         // exact Stop retired the original uncertain activation.
         if matches!(action.command.command(), core::Command::ActivateVm { .. })
-            && transaction.world().sandbox_record(action.command.command().sandbox())
+            && transaction
+                .world()
+                .sandbox_record(action.command.command().sandbox())
                 .is_some_and(|record| record.terminal)
         {
             return Err(JournalError::ObsoleteReceipt);

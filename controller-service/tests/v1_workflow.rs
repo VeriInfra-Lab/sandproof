@@ -42,11 +42,21 @@ fn admitted_running_replay_neither_dispatches_work_nor_resamples_running_clock()
             calls += 1;
             worker(action)
         };
-        assert_eq!(finish_admitted_create(&mut journal, SANDBOX, operation, &mut host).unwrap(), running);
-        assert_eq!(finish_admitted_create_timed(
-            &mut journal, SANDBOX, operation, &mut host,
-            &mut || panic!("a completed Running replay must not resample its clock"),
-        ).unwrap(), running);
+        assert_eq!(
+            finish_admitted_create(&mut journal, SANDBOX, operation, &mut host).unwrap(),
+            running
+        );
+        assert_eq!(
+            finish_admitted_create_timed(
+                &mut journal,
+                SANDBOX,
+                operation,
+                &mut host,
+                &mut || panic!("a completed Running replay must not resample its clock"),
+            )
+            .unwrap(),
+            running
+        );
     }
     assert_eq!(calls, 0);
     assert_eq!(journal.world().unwrap(), running);

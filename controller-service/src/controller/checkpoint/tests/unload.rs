@@ -295,9 +295,9 @@ fn recovery_profile_does_not_open_unreserved_public_pause_or_resume() {
                 operation: core::OperationId(3),
             }))
         ),
-        Err(JournalError::ControllerRejected(core::controller::ControllerReject::Request(
-            core::request::Reject::WrongPhase
-        )))
+        Err(JournalError::ControllerRejected(
+            core::controller::ControllerReject::Request(core::request::Reject::WrongPhase)
+        ))
     ));
     drop(tx);
     assert_eq!(journal.world().unwrap(), before);
