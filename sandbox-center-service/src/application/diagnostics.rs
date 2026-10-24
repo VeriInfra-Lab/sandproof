@@ -16,6 +16,7 @@ pub(crate) enum Stage {
     SessionProjection,
     ReplyDeadline,
     RetiredSnapshot,
+    AuthorityStore,
     AuthoritySnapshotLock,
     AuthoritySnapshot,
     LifecycleQueryLookup,
@@ -67,6 +68,10 @@ mod tests {
         let mut bytes = vec![];
         let causes = [
             (
+                Stage::AuthorityStore,
+                Failure::Authority(AuthorityError::Store(StoreError::InvalidState)),
+            ),
+            (
                 Stage::AuthoritySnapshotLock,
                 Failure::Authority(AuthorityError::RecoveryRequired),
             ),
@@ -92,6 +97,7 @@ mod tests {
         }
         let text = String::from_utf8(bytes).unwrap();
         assert_eq!(text.lines().count(), LIMIT);
+        assert!(text.contains("stage=AuthorityStore authority=Store(InvalidState)"));
         assert_eq!(count.load(Ordering::Relaxed), LIMIT);
         assert!(text.contains("stage=AuthoritySnapshot authority=Store(Configuration)"));
         assert!(text.contains("stage=LifecycleQueryExpiry authority=Store(Unavailable)"));

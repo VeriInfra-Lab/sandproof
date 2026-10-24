@@ -252,3 +252,74 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
     assert_eq!(completed.session, pending.session);
     assert!(clock.0.load(Ordering::SeqCst) < completed.unloaded.unwrap().end_at_ms);
 }
+
+#[tokio::test]
+async fn original_background_round_and_public_queries_keep_unloaded_without_storage_faults() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, clock) = application(&authority);
+    let (session, _, mut observation) = accept_unload(&app);
+    observation.unloaded.as_mut().unwrap().material_bytes = 3_221_239_189;
+    *host.unloaded.lock().unwrap() = Some(observation.clone());
+    let node = authority.snapshot().unwrap().center.nodes()[0].clone();
+    let router = sandproof_api::lifecycle::router_with_admission(
+        Arc::new(sandproof_center_service::CenterPort::new(app.clone())),
+        vec![sandproof_api::ApiCredential {
+            tenant: "8".into(),
+            secret: "unloaded-query-component-only-key".into(),
+        }],
+        Arc::new(sandproof_api::admission::RequestAdmission::default()),
+    )
+    .unwrap();
+    let (refreshed, refresh_seen) = mpsc::channel();
+    let (after_refresh, refresh_wait) = mpsc::channel();
+    let release_refresh = Release(Some(after_refresh));
+    let (reconciled, reconcile_seen) = mpsc::channel();
+    let (after_reconcile, reconcile_wait) = mpsc::channel();
+    let release_reconcile = Release(Some(after_reconcile));
+    let background_app = app.clone();
+    let background = std::thread::spawn(move || {
+        // Use the runtime's actual three calls in their original order. Free
+        // physical capacity is a veto observation, not release of ownership.
+        authority
+            .refresh_node(&node.identity, node.healthy_until_ms, node.limit)
+            .unwrap();
+        refreshed.send(()).unwrap();
+        refresh_wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        background_app.reconcile_once().unwrap();
+        reconciled.send(()).unwrap();
+        reconcile_wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        background_app.retire_terminal_history_once()
+    });
+    // Gates are between the original background calls. They do not claim to
+    // force a write between the two snapshots inside a single public GET.
+    refresh_seen.recv_timeout(Duration::from_secs(5)).unwrap();
+    let pending = public_query(&router, &session).await;
+    assert_eq!(pending.0, 200);
+    let pending: sandproof_protocol::lifecycle::PublicSessionView =
+        serde_json::from_value(pending.1).unwrap();
+    assert_eq!(pending.phase, PublicSessionPhase::Unloading);
+    assert!(pending.unloaded.is_none());
+    release_refresh.complete();
+    reconcile_seen.recv_timeout(Duration::from_secs(5)).unwrap();
+    let completed = public_query(&router, &session).await;
+    assert_eq!(completed.0, 200);
+    let completed: sandproof_protocol::lifecycle::PublicSessionView =
+        serde_json::from_value(completed.1).unwrap();
+    assert_eq!(completed.phase, PublicSessionPhase::Unloaded);
+    assert_eq!(completed.unloaded, observation.unloaded);
+    assert_eq!(completed.session, pending.session);
+    assert_eq!(completed.operation, pending.operation);
+    assert_eq!(completed.current_version, pending.current_version);
+    release_reconcile.complete();
+    background.join().unwrap().unwrap();
+    let retired = public_query(&router, &session).await;
+    assert_eq!(retired.0, 200);
+    assert_eq!(
+        serde_json::from_value::<sandproof_protocol::lifecycle::PublicSessionView>(retired.1)
+            .unwrap(),
+        completed
+    );
+    assert!(clock.0.load(Ordering::SeqCst) < completed.unloaded.unwrap().end_at_ms);
+}
