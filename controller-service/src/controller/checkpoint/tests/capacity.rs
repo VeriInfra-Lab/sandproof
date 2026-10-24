@@ -10,6 +10,7 @@ pub(super) const RESERVED_REFERENCES: u64 = 14 + 2 * 15 * (core::DEFAULT_RETRY_L
 
 pub(super) fn full_config() -> MaintenanceConfig {
     MaintenanceConfig {
+        max_operations_per_sandbox: 3,
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10_000,
@@ -86,6 +87,33 @@ fn full_mode_rejects_unusable_atomic_tail_and_missing_discard() {
     host.console_policy = None;
     assert!(matches!(
         ControllerJournal::open_complete(dir.path().join("db"), NS, host, full_config(), 1000),
+        Err(JournalError::UnsupportedStore)
+    ));
+}
+
+#[test]
+fn native_operation_bound_is_required_and_requires_its_complete_graph_budget() {
+    let mut bytes = serde_json::to_value(full_config()).unwrap();
+    bytes
+        .as_object_mut()
+        .unwrap()
+        .remove("max_operations_per_sandbox");
+    assert!(serde_json::from_value::<MaintenanceConfig>(bytes).is_err());
+    for n in [0, 2, 129, u64::MAX] {
+        let mut policy = full_config();
+        policy.max_operations_per_sandbox = n;
+        assert!(matches!(
+            policy.validate(),
+            Err(JournalError::UnsupportedStore)
+        ));
+    }
+    let dir = TempDir::new().unwrap();
+    let mut policy = full_config();
+    policy.max_operations_per_sandbox = 8;
+    // Merely changing N cannot authorize a deployment whose checkpoint/SQL
+    // reservations still describe only Create/Pause/Kill.
+    assert!(matches!(
+        ControllerJournal::open_complete(dir.path().join("db"), NS, host(), policy, 1000),
         Err(JournalError::UnsupportedStore)
     ));
 }

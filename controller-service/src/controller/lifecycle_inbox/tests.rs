@@ -127,7 +127,7 @@ pub(super) fn admission() -> InternalAdmission {
     };
     InternalAdmission {
         now_ms: 10,
-        limits: super::super::tests_support::limits(),
+        limits: super::super::tests_support::lifecycle_application::limits(),
         compute: ComputeLimits {
             max_vcpus_global: 2,
             max_vcpus_per_tenant: 2,
@@ -185,16 +185,18 @@ pub(super) fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
         },
     }
 }
-pub(super) fn open(path: &std::path::Path) -> ControllerJournal {
-    let maintenance = super::super::tests_support::lifecycle_application::maintenance();
-    ControllerJournal::open_complete(
+pub(super) fn host(path: &std::path::Path) -> crate::BoundedHostConfig {
+    super::super::tests_support::fixture::host(
         path,
         NS,
-        super::super::tests_support::host(4),
-        maintenance,
-        0,
+        4,
+        100_000,
+        super::super::tests_support::lifecycle_application::CLEANUP_BYTES,
     )
-    .unwrap()
+}
+pub(super) fn open(path: &std::path::Path) -> ControllerJournal {
+    let maintenance = super::super::tests_support::lifecycle_application::maintenance();
+    ControllerJournal::open_complete(path, NS, host(path), maintenance, 0).unwrap()
 }
 pub(super) fn initialize(path: &std::path::Path) -> ControllerJournal {
     let mut j = open(path);
@@ -256,7 +258,7 @@ fn export_closed_fixture(path: &std::path::Path) {
     .unwrap();
     std::fs::write(
         output.join("host.json"),
-        serde_json::to_vec(&super::super::tests_support::host(4)).unwrap(),
+        serde_json::to_vec(&host(path)).unwrap(),
     )
     .unwrap();
 }
@@ -439,7 +441,7 @@ fn v3_changed_full_request_foreign_context_and_old_native_admission_are_rejected
             0,
             60,
             4096,
-            super::super::tests_support::limits(),
+            super::super::tests_support::lifecycle_application::limits(),
             &mut NeverCrash
         )
         .is_err()
@@ -507,24 +509,9 @@ fn v3_missing_required_table_or_relabelled_feature_refuses_reopen() {
         drop(connection);
         let maintenance = super::super::tests_support::lifecycle_application::maintenance();
         assert!(
-            ControllerJournal::preflight_complete(
-                &path,
-                NS,
-                &super::super::tests_support::host(4),
-                &maintenance
-            )
-            .is_err()
+            ControllerJournal::preflight_complete(&path, NS, &host(&path), &maintenance).is_err()
         );
-        assert!(
-            ControllerJournal::open_complete(
-                &path,
-                NS,
-                super::super::tests_support::host(4),
-                maintenance,
-                0
-            )
-            .is_err()
-        );
+        assert!(ControllerJournal::open_complete(&path, NS, host(&path), maintenance, 0).is_err());
     }
 }
 

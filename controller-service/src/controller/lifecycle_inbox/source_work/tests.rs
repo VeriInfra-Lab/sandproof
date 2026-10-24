@@ -234,6 +234,31 @@ fn source_and_inbox_initialize_atomically_with_exact_immutable_limits() {
 }
 
 #[test]
+fn inbox_history_cannot_exceed_the_native_deployment_bound() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = v3::open(&path);
+    let before = journal.world().unwrap();
+    let mut inbox = v3::config();
+    inbox.max_operations_per_session = 9;
+    assert!(matches!(
+        journal.initialize_lifecycle_inbox(inbox, config(), &mut NeverCrash),
+        Err(JournalError::UnsupportedStore)
+    ));
+    assert_eq!(journal.world().unwrap(), before);
+    assert!(journal.lifecycle_inbox_configuration().unwrap().is_none());
+    journal
+        .initialize_lifecycle_inbox(v3::config(), config(), &mut NeverCrash)
+        .unwrap();
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(
+        journal.lifecycle_inbox_configuration().unwrap().unwrap(),
+        v3::config()
+    );
+}
+
+#[test]
 fn source_and_inbox_unknown_commit_recovers_both_or_neither_without_fabricated_work() {
     for durable in [false, true] {
         let dir = tempfile::tempdir().unwrap();
@@ -349,7 +374,7 @@ fn source_late_destroy_lifetime_change_and_expiry_cannot_accept_old_facts() {
                         local.sandbox,
                         20,
                         Some(120),
-                        crate::controller::tests_support::limits(),
+                        v3::limits(),
                     )
                     .unwrap();
                 20
@@ -550,7 +575,7 @@ fn source_18_missing_shapes_hash_budget_node_vm_and_17_stray_table_fail_closed()
             }
         }
         drop(db);
-        let reserve = v3::fixture::complete_fixture::CLEANUP_BYTES + 1000;
+        let reserve = v3::CLEANUP_BYTES + 1000;
         let maintenance = v3::maintenance();
         assert!(
             ControllerJournal::open_complete(
@@ -618,7 +643,7 @@ fn current_source_store_rejects_old_or_unknown_tags_without_changing_bytes() {
         conn.execute("UPDATE controller_meta SET version=?1", [version])
             .unwrap();
         drop(conn);
-        let reserve = v3::fixture::complete_fixture::CLEANUP_BYTES + 1000;
+        let reserve = v3::CLEANUP_BYTES + 1000;
         let host = v3::fixture::complete_fixture::host(
             &path,
             "0123456789abcdef",
@@ -990,7 +1015,7 @@ fn full_unloaded_survives_slot_reuse_before_first_center_result_and_manager_rest
         "0123456789abcdef",
         64,
         2 * 1024 * 1024,
-        v3::fixture::complete_fixture::CLEANUP_BYTES + 1000,
+        v3::CLEANUP_BYTES + 1000,
     );
     let app = v3::application_with_active_limit(&path, state, false, v3::config(), host, 1);
     app.establish_lifecycle_host_epoch().unwrap();
@@ -1275,7 +1300,7 @@ fn recording_resume_does_not_mint_a_source_pin_or_change_native_incarnation() {
             &request,
             &v3::context(),
             10,
-            crate::controller::tests_support::limits(),
+            v3::limits(),
             v3::fixture::compute(),
             &mut NeverCrash
         ),
@@ -1405,7 +1430,7 @@ fn admit_real_resume(
             request,
             &v3::context(),
             10,
-            crate::controller::tests_support::limits(),
+            v3::limits(),
             v3::fixture::compute(),
             &mut NeverCrash,
         )
@@ -1468,7 +1493,7 @@ fn resume_unknown_sql_commit_keeps_source_claim_index_and_native_mapping_atomic(
                 &request,
                 &v3::context(),
                 10,
-                crate::controller::tests_support::limits(),
+                v3::limits(),
                 v3::fixture::compute(),
                 &mut NeverCrash
             ),
@@ -1616,4 +1641,115 @@ fn resumed_store_rejects_historical_action_rebound_to_new_generation_or_epoch() 
             Err(JournalError::CorruptStore)
         ));
     }
+}
+
+fn claim_restore_activation(
+    journal: &mut ControllerJournal,
+    sandbox: sandbox_controller_core::SandboxId,
+) -> sandproof_protocol::WorkAction<sandbox_controller_core::EffectId> {
+    use sandbox_controller_core::workflow::{self, WorkflowStep};
+    for _ in 0..32 {
+        match workflow::next_step(&journal.world().unwrap(), sandbox) {
+            WorkflowStep::Apply(input) => {
+                journal.apply(*input, &mut NeverCrash).unwrap();
+            }
+            WorkflowStep::Claim => {
+                let action = journal
+                    .claim_next(Some(sandbox), &mut NeverCrash)
+                    .unwrap()
+                    .unwrap();
+                if matches!(
+                    action.command.command(),
+                    sandbox_controller_core::Command::ActivateVm { .. }
+                ) {
+                    return action;
+                }
+                journal
+                    .complete(
+                        &sandproof_protocol::WorkReceipt {
+                            identity: action.identity.clone(),
+                            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
+                                FullEvidence {
+                                    resource: action.identity.resource.clone(),
+                                    command: action.command.command().clone(),
+                                },
+                            ),
+                        },
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
+            }
+            other => panic!("original restore blocked before activation: {other:?}"),
+        }
+    }
+    panic!("bounded original restore did not reach activation");
+}
+
+#[test]
+fn unknown_restore_activation_reuses_only_original_live_permit_after_fresh_bootstrap() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source) = unloaded_resume_source(&path);
+    let sandbox = source.work.anchor.local.sandbox;
+    let request = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &request);
+    journal
+        .register_data_credential(sandbox, 2, [99; 32], &mut NeverCrash)
+        .unwrap();
+    let work = journal
+        .lifecycle_restore_work(&request, &v3::context())
+        .unwrap();
+    let action = claim_restore_activation(&mut journal, sandbox);
+    let permit = journal
+        .lifecycle_restore_activation_permit(&work, &action, &v3::context(), 10)
+        .unwrap();
+    assert_eq!(permit.action(), &action);
+    assert_eq!(permit.work_binding(), &work.binding_digest().unwrap());
+    journal
+        .complete::<FullEvidence>(
+            &sandproof_protocol::WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::Unknown {
+                    reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert_eq!(
+        journal
+            .lifecycle_restore_activation_permit(&work, &action, &v3::context(), 10)
+            .unwrap(),
+        permit
+    );
+    let mut changed = action.clone();
+    if let sandbox_controller_core::Command::ActivateVm { vm, .. } =
+        &mut changed.command.logical.command
+    {
+        vm.0 += 1;
+    }
+    assert!(
+        journal
+            .lifecycle_restore_activation_permit(&work, &changed, &v3::context(), 10)
+            .is_err()
+    );
+    let end = resume_lifetime(&journal, sandbox).deadline_ms;
+    assert!(matches!(
+        journal.lifecycle_restore_activation_permit(&work, &action, &v3::context(), end),
+        Err(JournalError::Conflict)
+    ));
+    drop(journal);
+    let mut journal = v3::open(&path);
+    assert!(matches!(
+        journal.lifecycle_restore_activation_permit(&work, &action, &v3::context(), 10),
+        Err(JournalError::UnresolvedAction)
+    ));
+    bootstrap(&mut journal);
+    assert_eq!(
+        journal
+            .lifecycle_restore_activation_permit(&work, &action, &v3::context(), 10)
+            .unwrap(),
+        permit
+    );
 }

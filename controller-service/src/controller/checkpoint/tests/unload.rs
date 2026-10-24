@@ -343,3 +343,123 @@ fn old_config_bytes_stay_old_and_envelope_cannot_lie_about_its_core_version() {
         );
     }
 }
+
+fn finish_native_pause(journal: &mut ControllerJournal) {
+    let source = reserve_and_seal(journal, 1);
+    journal
+        .apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::CommitSnapshot(
+                core::SandboxId(1),
+                source.snapshot,
+            )),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    dispatch_all(journal, 1);
+    journal
+        .apply(
+            core::ControllerInput::Publication(core::PublicationInput::Paused(
+                core::SandboxId(1),
+                source,
+            )),
+            &mut NeverCrash,
+        )
+        .unwrap();
+}
+
+#[test]
+fn native_history_reserves_final_kill_and_keeps_existing_progress_at_the_bound() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = open_unload(&path);
+    create(&mut journal, 1);
+    accepted_pause(&mut journal, 1);
+    finish_native_pause(&mut journal);
+    let before = journal.world().unwrap();
+    let high = allocators::input_high_water(&journal.journal.connection).unwrap();
+    let namespace = journal.namespace.clone();
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
+    let resume = core::ControllerInput::Request(core::Request::Resume(core::ResumeRequest {
+        actor: core::Actor::Tenant(core::TenantId(1)),
+        sandbox: core::SandboxId(1),
+        operation: core::OperationId(3),
+    }));
+    core::handle_controller(&before, resume.clone()).unwrap();
+    // This native-only fixture has no lifecycle SourceWork permission. Check
+    // the actual capacity guard separately; an unbound raw Resume remains
+    // refused by its existing profile before reaching this later guard.
+    assert!(matches!(
+        super::super::super::capacity::require_operation_room(
+            &tx,
+            &before,
+            core::OperationKey {
+                sandbox: core::SandboxId(1),
+                operation: core::OperationId(3)
+            },
+            core::OperationKind::Resume,
+        ),
+        Err(JournalError::MaintenanceCapacity)
+    ));
+    assert!(matches!(
+        super::super::super::storage::apply(&tx, &namespace, resume),
+        Err(JournalError::UnsupportedInput)
+    ));
+    drop(tx);
+    assert_eq!(journal.world().unwrap(), before);
+    assert_eq!(
+        allocators::input_high_water(&journal.journal.connection).unwrap(),
+        high
+    );
+    // The third native position belongs to termination, including all original
+    // followups/receipts. No new fourth position is required for retries.
+    crate::kill(
+        &mut journal,
+        core::KillRequest {
+            actor: core::Actor::Tenant(core::TenantId(1)),
+            sandbox: core::SandboxId(1),
+            operation: core::OperationId(3),
+        },
+        &mut success,
+    )
+    .unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world
+            .operation_records()
+            .iter()
+            .filter(|(k, _)| k.sandbox == core::SandboxId(1))
+            .count(),
+        3
+    );
+    let kill = world
+        .sandbox_record(core::SandboxId(1))
+        .unwrap()
+        .current_operation
+        .unwrap();
+    let high = allocators::input_high_water(&journal.journal.connection).unwrap();
+    journal
+        .check(core::ControllerInput::Request(core::Request::Replay(
+            core::ReplayRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                sandbox: core::SandboxId(1),
+                operation: kill.id,
+                kind: core::OperationKind::Kill,
+                input: world
+                    .operation_record(core::OperationKey {
+                        sandbox: core::SandboxId(1),
+                        operation: kill.id,
+                    })
+                    .unwrap()
+                    .input
+                    .clone(),
+            },
+        )))
+        .unwrap();
+    assert_eq!(
+        allocators::input_high_water(&journal.journal.connection).unwrap(),
+        high
+    );
+    journal.publish_checkpoint(&mut NeverCrash).unwrap();
+    let _ = reopen(journal, &path);
+}

@@ -498,7 +498,7 @@ fn current_renewal_store_refuses_prior_formats_nineteen_and_twenty_without_mutat
             .unwrap();
         drop(journal);
         let before = std::fs::read(&path).unwrap();
-        let host = crate::controller::tests_support::host(4);
+        let host = fixture::host(&path);
         let maintenance = crate::controller::tests_support::lifecycle_application::maintenance();
         assert!(matches!(
             ControllerJournal::preflight_complete(&path, "0123456789abcdef", &host, &maintenance),

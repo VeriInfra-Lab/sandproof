@@ -497,6 +497,9 @@ impl ControllerJournal {
         context: &AuthenticatedCenterContext,
         now_ms: i64,
     ) -> Result<RestoreActivationPermit, JournalError> {
+        if !self.startup_epoch_ready()? {
+            return Err(JournalError::UnresolvedAction);
+        }
         let world = self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
         self.committed_world.check_identity(&tx)?;

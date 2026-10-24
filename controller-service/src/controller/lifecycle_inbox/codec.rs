@@ -53,6 +53,11 @@ pub(in crate::controller) fn load(connection: &Connection) -> Result<Option<Inbo
         return Err(JournalError::CorruptStore);
     }
     inbox.validate()?;
+    let policy =
+        super::super::checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    if u64::from(inbox.config.max_operations_per_session) > policy.max_operations_per_sandbox {
+        return Err(JournalError::CorruptStore);
+    }
     Ok(Some(inbox))
 }
 pub(super) fn save(connection: &Connection, inbox: &Inbox) -> Result<(), JournalError> {

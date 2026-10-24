@@ -337,7 +337,7 @@ fn sql_only_lifetime_change_and_later_intent_invalidate_old_observation_basis() 
             local.sandbox,
             20,
             Some(120),
-            crate::controller::tests_support::limits(),
+            v3::limits(),
         )
         .unwrap();
     let after = journal

@@ -181,6 +181,10 @@ impl ControllerJournal {
             return Err(JournalError::UnsupportedStore);
         }
         let cap = super::capacity::config(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        let maintenance = super::checkpoint::config(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        if u64::from(config.max_operations_per_session) > maintenance.max_operations_per_sandbox {
+            return Err(JournalError::UnsupportedStore);
+        }
         if config.required_bytes() > cap.max_sql_value_bytes {
             return Err(JournalError::MaintenanceCapacity);
         }
