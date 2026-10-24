@@ -57,6 +57,54 @@ def remaining(deadline):
     return value
 
 
+def checked_source_records(conn,host_config,deadline):
+    """Read only HOST23's pre-reserved rows; never adopt an aggregate layout."""
+    remaining(deadline)
+    policy=host_config['native']['maintenance']
+    inbox=host_config['inbox']
+    configuration=host_config['source_observation']
+    if conn.execute('SELECT version FROM controller_meta WHERE id=1').fetchone()!=(23,):
+        raise ValueError('HOST23 original source layout required')
+    q=inbox['max_sessions']*(policy['max_operations_per_sandbox']-2)
+    reserve=configuration['max_work_bytes']+4*configuration['max_configuration_bytes']         +8192+131072+4*16384+4096+8192
+    if not 0<q<=policy['capacity']['max_sql_rows'] or not 0<reserve<=min(16*1024**2,policy['capacity']['max_sql_value_bytes']):
+        raise ValueError('bounded original per-work reservation required')
+    header=conn.execute('SELECT count(*),max(length(state_json)),max(reserve_bytes) '
+        'FROM controller_source_work').fetchone()
+    if header[0]!=1 or header[1]>8192 or header[2]!=8192:
+        raise ValueError('original source metadata reservation changed')
+    encoded,checksum=conn.execute('SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
+    if hashlib.sha256(encoded).digest()!=checksum:
+        raise ValueError('original source metadata checksum changed')
+    metadata=json.loads(encoded,object_pairs_hook=unique_keys)
+    if (set(metadata)!={'config','node','max_sessions'} or metadata['config']!=configuration
+            or metadata['node']!=inbox['node'] or metadata['max_sessions']!=inbox['max_sessions']):
+        raise ValueError('original source metadata differs from this deployment')
+    bounds=conn.execute('SELECT count(*),min(id),max(id),min(reserve_bytes),max(reserve_bytes),'
+        'max(length(state_json)) FROM controller_source_work_records').fetchone()
+    if bounds[:5]!=(q,1,q,reserve,reserve) or bounds[5]>reserve:
+        raise ValueError('original per-work rows or reserved bounds changed')
+    records=[];seen=set()
+    for encoded,checksum,key in conn.execute('SELECT state_json,sha256,work_key '
+            'FROM controller_source_work_records ORDER BY id'):
+        remaining(deadline)
+        if hashlib.sha256(encoded).digest()!=checksum:
+            raise ValueError('original source work checksum changed')
+        record=json.loads(encoded,object_pairs_hook=unique_keys)
+        if record is None:
+            if encoded!=b'null' or key is not None:
+                raise ValueError('vacant original source row is not empty')
+            continue
+        if set(record)!={'work','observation','capture','restore'} or not isinstance(key,bytes) or len(key)!=32:
+            raise ValueError('complete original source work row required')
+        binding=record['work']['requirement']['work_binding']
+        anchor=json.dumps(record['work']['anchor'],ensure_ascii=False,separators=(',',':')).encode()
+        if list(key)!=binding or hashlib.sha256(anchor).digest()!=key or key in seen:
+            raise ValueError('original immutable work key differs or repeats')
+        seen.add(key);records.append(record)
+    return records
+
+
 def original_process(source):
     if source['boot_id']!=Path('/proc/sys/kernel/random/boot_id').read_text().strip():
         raise ValueError('foreign original source boot')
@@ -364,11 +412,7 @@ class UnloadRuntime:
                 result['namespace']=dict(name=resource,device=meta.st_dev,inode=meta.st_ino)
                 assert_same_restore_candidate(result,gate_receipt)
             if resume_acceptance is not None:
-                encoded,checksum=conn.execute(
-                    'SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
-                if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
-                    raise ValueError('original running material-use envelope changed')
-                sources=json.loads(encoded,object_pairs_hook=unique_keys)
+                sources={'records':checked_source_records(conn,self.services.host_configs[0],deadline)}
                 records=[row for row in sources['records'] if row['restore'] is not None
                     and row['restore']['intent']['request']['binding']['session']==session
                     and row['restore']['intent']['request']['binding']['key']==resume_acceptance['key']]
@@ -399,10 +443,7 @@ class UnloadRuntime:
             rows=[row for row in audit['native'] if row['sandbox']==local['sandbox']]
             if len(rows)!=1 or rows[0]['phase']!='Paused' or rows[0]['terminal'] or rows[0]['current_vm'] is not None:
                 raise ValueError('original native unload not complete')
-            encoded,checksum=conn.execute('SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
-            if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
-                raise ValueError('original checked source record changed')
-            sources=json.loads(encoded,object_pairs_hook=unique_keys)
+            sources={'records':checked_source_records(conn,self.services.host_configs[0],deadline)}
             records=[record for record in sources['records']
                 if record['work']['anchor']['request']['request']['binding']['session']==session
                 and record['work']['anchor']['request']['request']['binding']['key']==operation]
@@ -489,11 +530,7 @@ class UnloadRuntime:
         with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
                 timeout=min(2,remaining(deadline)))) as conn:
             conn.execute('BEGIN')
-            encoded,checksum=conn.execute(
-                'SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
-            if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
-                raise ValueError('original restore responsibility checksum changed')
-            sources=json.loads(encoded,object_pairs_hook=unique_keys)
+            sources={'records':checked_source_records(conn,self.services.host_configs[0],deadline)}
         claims=[row['restore'] for row in sources['records'] if row['restore'] is not None
             and row['restore']['intent']['request']['binding']['session']==session
             and row['restore']['intent']['request']['binding']['key']==accepted['key']
@@ -595,11 +632,7 @@ class UnloadRuntime:
             with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
                     timeout=min(2,remaining(deadline)))) as conn:
                 conn.execute('BEGIN')
-                encoded,checksum=conn.execute(
-                    'SELECT state_json,sha256 FROM controller_source_work WHERE id=1').fetchone()
-                if len(encoded)>16*1024**2 or hashlib.sha256(encoded).digest()!=checksum:
-                    raise ValueError('original source accounting envelope changed')
-                sources=json.loads(encoded,object_pairs_hook=unique_keys)
+                sources={'records':checked_source_records(conn,self.services.host_configs[0],deadline)}
             if (database.stat().st_dev,database.stat().st_ino)!=identity:
                 raise ValueError('original SQLite replaced during settlement audit')
             charges=[0 if record['capture'] is None else record['capture']['reserved_material_bytes']

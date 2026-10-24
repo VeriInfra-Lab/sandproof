@@ -404,3 +404,57 @@ class WitnessMetadataBarrierTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+class SourceRowsTests(unittest.TestCase):
+    def setUp(self):
+        import sqlite3
+        import hashlib
+        import time
+        self.hashlib=hashlib
+        self.conn=sqlite3.connect(':memory:')
+        self.addCleanup(self.conn.close)
+        self.deadline=time.monotonic()+10
+        self.config=dict(max_work_bytes=65536,max_configuration_bytes=16384)
+        self.host=dict(native=dict(maintenance=dict(max_operations_per_sandbox=8,
+            capacity=dict(max_sql_value_bytes=16*1024**2,max_sql_rows=8192))),
+            inbox=dict(max_sessions=1,node=dict(node_id='original')),source_observation=self.config)
+        self.reserve=65536+4*16384+8192+131072+4*16384+4096+8192
+        self.conn.executescript('CREATE TABLE controller_meta(id INTEGER,version INTEGER);'
+            'INSERT INTO controller_meta VALUES(1,23);'
+            'CREATE TABLE controller_source_work(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER);'
+            'CREATE TABLE controller_source_work_records(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER,work_key BLOB);')
+        meta=json.dumps(dict(config=self.config,node=self.host['inbox']['node'],max_sessions=1)).encode()
+        self.conn.execute('INSERT INTO controller_source_work VALUES(1,?,?,8192)',
+            (meta,hashlib.sha256(meta).digest()))
+        for index in range(1,7):
+            self.conn.execute('INSERT INTO controller_source_work_records VALUES(?,?,?,?,NULL)',
+                (index,b'null',hashlib.sha256(b'null').digest(),self.reserve))
+
+    def test_vacant_reserved_rows_are_read_without_mutation(self):
+        before=self.conn.total_changes
+        self.assertEqual(runtime.checked_source_records(self.conn,self.host,self.deadline),[])
+        self.assertEqual(self.conn.total_changes,before)
+
+    def test_wrong_format_missing_row_and_changed_reserve_are_rejected(self):
+        for statement in ('UPDATE controller_meta SET version=22',
+                'DELETE FROM controller_source_work_records WHERE id=6',
+                'UPDATE controller_source_work_records SET reserve_bytes=1 WHERE id=1'):
+            with self.subTest(statement=statement):
+                self.conn.execute('SAVEPOINT changed')
+                self.conn.execute(statement)
+                with self.assertRaises(ValueError):
+                    runtime.checked_source_records(self.conn,self.host,self.deadline)
+                self.conn.execute('ROLLBACK TO changed');self.conn.execute('RELEASE changed')
+
+    def test_occupied_row_binds_checksum_and_original_work_digest(self):
+        anchor=dict(original='work')
+        key=self.hashlib.sha256(json.dumps(anchor,separators=(',',':')).encode()).digest()
+        record=dict(work=dict(anchor=anchor,requirement=dict(work_binding=list(key))),
+            observation=None,capture=None,restore=None)
+        encoded=json.dumps(record,separators=(',',':')).encode()
+        self.conn.execute('UPDATE controller_source_work_records SET state_json=?,sha256=?,work_key=? WHERE id=1',
+            (encoded,self.hashlib.sha256(encoded).digest(),key))
+        self.assertEqual(runtime.checked_source_records(self.conn,self.host,self.deadline),[record])
+        self.conn.execute('UPDATE controller_source_work_records SET work_key=? WHERE id=1',(bytes(32),))
+        with self.assertRaises(ValueError):
+            runtime.checked_source_records(self.conn,self.host,self.deadline)
