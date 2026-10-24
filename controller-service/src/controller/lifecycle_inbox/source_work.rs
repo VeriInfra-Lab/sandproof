@@ -23,6 +23,39 @@ use sandproof_protocol::{
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 
+pub(in crate::controller) fn retire_unadmitted(
+    connection: &rusqlite::Connection,
+    world: &sandbox_controller_core::World,
+    intent: &AcceptedLifecycleIntent,
+    original: &NativeCreateSnapshot,
+) -> Result<(), JournalError> {
+    let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    for record in &sources.records {
+        if record.work.request() != intent {
+            continue;
+        }
+        snapshot::validate_record(
+            connection,
+            world,
+            &super::codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?,
+            &sources.config,
+            record,
+        )?;
+        if record.capture.is_some()
+            || record.restore.is_some()
+            || record.work.anchor.native != *original
+        {
+            return Err(JournalError::UnresolvedAction);
+        }
+        let empty = b"null";
+        if connection.execute(
+            "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=NULL WHERE work_key=?3",
+            rusqlite::params![empty.as_slice(),Sha256::digest(empty).as_slice(),record.work.requirement.work_binding.as_bytes().as_slice()],
+        )?!=1 {return Err(JournalError::CorruptStore)}
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SourceAnchor {
@@ -30,6 +63,8 @@ struct SourceAnchor {
     execution_origin: AcceptedLifecycleIntent,
     local: InternalLocalBinding,
     native: NativeCreateSnapshot,
+    #[serde(deserialize_with = "required_option")]
+    continued_from: Option<sandbox_controller_core::capture::OriginalContinueIdentity>,
     node: NodeIdentity,
     host_bootstrap: HostEpochRegistration,
     source: SourceProcessIdentity,

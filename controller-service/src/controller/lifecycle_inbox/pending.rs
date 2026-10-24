@@ -148,6 +148,9 @@ impl ControllerJournal {
                             e.intent.request.operation,
                             LifecycleOperation::Unload { .. }
                         )
+                        && e.unload_resolution
+                            .as_ref()
+                            .is_none_or(|r| r.result().is_none())
                 })
             })
             .map(|e| e.intent.clone())

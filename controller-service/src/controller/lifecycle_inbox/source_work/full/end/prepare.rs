@@ -88,6 +88,9 @@ pub(in crate::controller) fn current_identity(
         .map_err(|_| JournalError::CorruptStore)?
         .ok_or(JournalError::CorruptStore)?;
     if now_ms < 0
+        || lifetime
+            .started_at_ms
+            .is_none_or(|start| now_ms < start || start > lifetime.startup_deadline_ms)
         || now_ms >= lifetime.deadline_ms
         || now_ms >= lifetime.max_deadline_ms
         || Some(lifetime) != source.anchor.native.lifetime

@@ -89,6 +89,16 @@ pub struct OriginalContinuePermit {
     work_binding: ContentDigest,
 }
 impl OriginalContinuePermit {
+    #[cfg(feature = "durable")]
+    pub(crate) const fn after_dispatch_commit(
+        action: WorkAction<EffectId>,
+        work_binding: ContentDigest,
+    ) -> Self {
+        Self {
+            action,
+            work_binding,
+        }
+    }
     #[must_use]
     pub const fn action(&self) -> &WorkAction<EffectId> {
         &self.action
