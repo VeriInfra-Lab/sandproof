@@ -4,6 +4,7 @@ use super::*;
 use crate::capture::{
     CaptureWorkerBinding, TerminatedCaptureObservation, TerminatedCaptureWorkRequest,
 };
+use sandbox_controller_core as core;
 use sandproof_protocol::{UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 
 fn unreleased(path: &Path) -> (
@@ -172,7 +173,11 @@ fn terminal_drain_public_transaction_closes_unknown_writer_without_success_or_qu
         );
         stop(&mut journal, source.work.anchor.local.sandbox);
         let before = journal.world().unwrap();
+        let usage_before = journal.retained_resource_usage().unwrap();
+        assert!(usage_before.instances > 0);
         let held = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+        let material_before = super::super::retirement::material_charge(&held).unwrap();
+        assert!(material_before > 0);
         let work = journal
             .lifecycle_terminated_capture_work(&source.work)
             .unwrap();
@@ -197,16 +202,8 @@ fn terminal_drain_public_transaction_closes_unknown_writer_without_success_or_qu
             retained.capture.as_ref().unwrap().reserved_material_bytes,
             held.capture.as_ref().unwrap().reserved_material_bytes
         );
-        assert_eq!(
-            after
-                .sandbox_record(source.work.anchor.local.sandbox)
-                .unwrap()
-                .accounted,
-            before
-                .sandbox_record(source.work.anchor.local.sandbox)
-                .unwrap()
-                .accounted
-        );
+        assert_eq!(journal.retained_resource_usage().unwrap(), usage_before);
+        assert_eq!(super::super::retirement::material_charge(&retained).unwrap(), material_before);
         assert!(
             retained.capture_work_end_receipt().unwrap().is_none(),
             "terminal End is never Continue"
@@ -296,7 +293,7 @@ fn terminal_drain_wrong_question_components_or_replay_end_are_rejected_atomicall
             full_work_binding,
             seal_action,
             stop_action,
-            source,
+            source: observed_source,
             worker,
             host_slot,
             helper_gate_inode,
@@ -307,8 +304,8 @@ fn terminal_drain_wrong_question_components_or_replay_end_are_rejected_atomicall
             1 => *full_work_binding = ContentDigest::from_sha256([99; 32]),
             2 => seal_action.identity.attempt += 1,
             3 => stop_action.identity.attempt += 1,
-            4 => source.pid += 1,
-            5 => source.boot_id.push('x'),
+            4 => observed_source.pid += 1,
+            5 => observed_source.boot_id.push('x'),
             6 => *worker = None,
             7 => host_slot.position.0 += 1,
             8 => host_slot.binding.vm.0 += 1,
