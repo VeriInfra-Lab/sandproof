@@ -22,6 +22,10 @@ pub(crate) enum Stage {
     LifecycleQueryLookup,
     LifecycleQueryExpiry,
     LifecycleQueryResult,
+    BackgroundRefresh,
+    BackgroundReconcile,
+    BackgroundRetire,
+    BackgroundRecovery,
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Failure {
@@ -42,15 +46,16 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
         .ok()
         .map(|value| value.as_millis());
     let pid = std::process::id();
+    let context = sandproof_center_store::diagnostic_context();
     let _ = match failure {
         Failure::Authority(error) => writeln!(
             output,
-            "center_wait unix_ms={unix_ms:?} pid={pid} stage={stage:?} authority={error:?} remaining={}",
+            "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} authority={error:?} remaining={}",
             LIMIT - previous - 1
         ),
         Failure::Port(error) => writeln!(
             output,
-            "center_wait unix_ms={unix_ms:?} pid={pid} stage={stage:?} port={error:?} remaining={}",
+            "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} port={error:?} remaining={}",
             LIMIT - previous - 1
         ),
     };
@@ -61,6 +66,24 @@ pub(crate) fn emit(stage: Stage, failure: Failure) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failure_is_bound_to_the_synchronous_query_stage_without_identity() {
+        use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
+        let _query = DiagnosticScope::enter(DiagnosticFlow::LifecycleQuery, DiagnosticStep::Lookup);
+        let context = sandproof_center_store::diagnostic_context();
+        let _expiry = DiagnosticScope::step(DiagnosticStep::Expiry);
+        let mut bytes = vec![];
+        record(
+            Stage::LifecycleQueryExpiry,
+            Failure::Port(PortError::OutcomeUnknown),
+            &AtomicUsize::new(0),
+            &mut bytes,
+        );
+        let line = String::from_utf8(bytes).unwrap();
+        assert!(line.contains(&format!("c=q{}/e", context.sequence)));
+        assert_eq!(line.lines().count(), 1);
+        assert!(line.trim_end().len() < 220);
+    }
     #[test]
     fn lifecycle_query_causes_use_only_closed_errors_and_the_same_finite_budget() {
         use sandproof_center_store::StoreError;
