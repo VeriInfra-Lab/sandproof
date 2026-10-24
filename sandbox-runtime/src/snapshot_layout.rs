@@ -301,6 +301,18 @@ impl SnapshotLayout {
             .open_bundle(directory_key, limits)
     }
 
+    /// Delete only an original persisted material retirement witness. The
+    /// controller separately establishes no remaining loader/backing users.
+    /// # Errors
+    /// Changed layout, entries or incomplete sync remain unresolved.
+    pub fn retire_capture_bundle(
+        &self,
+        plan: &crate::snapshot_store::BundleRetirement,
+    ) -> Result<(), RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?
+            .retire_bundle(plan)
+    }
+
     /// Persist one bounded physical worker completion under this original layout.
     /// This does not adopt materials or grant Stop/Free permission.
     /// # Errors

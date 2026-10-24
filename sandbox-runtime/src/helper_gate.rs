@@ -1231,6 +1231,7 @@ mod tests {
         directories.create(root.join(".claims").join(&id)).unwrap();
         let runtime = Runtime {
             config: super::super::RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: Some(context.clone()),
                 jailer: "/usr/bin/true".into(),

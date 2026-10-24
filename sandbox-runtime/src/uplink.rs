@@ -1527,6 +1527,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: crate::RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),

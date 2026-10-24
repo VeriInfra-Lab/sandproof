@@ -308,6 +308,33 @@ impl WorkEvidence for NodeHost {
     type Evidence = HostObservation;
 }
 impl WorkExecution for NodeHost {
+    fn execute_lifecycle_restore_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+        activation: Option<&sandproof_controller_service::capture::RestoreActivationPermit>,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        let outcome = match self.restore_action_observation(action, work, activation, false) {
+            Ok(observed) => sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
+            Err(error) => {
+                project(
+                    FaultStage::Execute,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
+                sandproof_protocol::WorkOutcome::Unknown {
+                    reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                }
+            }
+        };
+        Ok(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome,
+        })
+    }
+
     fn execute_lifecycle_capture_action(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -406,6 +433,19 @@ impl WorkExecution for NodeHost {
 }
 
 impl WorkRecovery for NodeHost {
+    fn observe_lifecycle_restore_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        self.restore_action_observation(action, work, None, true)
+            .ok()
+            .map(|observed| WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
+            })
+    }
+
     fn observe_lifecycle_capture_action(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -995,5 +1035,28 @@ impl NodeHost {
             // interrupted Firecracker Full writer ended. Never redispatch Full.
             _ => Err("capture action has no confirmed physical observation".into()),
         }
+    }
+}
+
+impl NodeHost {
+    fn restore_action_observation(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+        activation: Option<&sandproof_controller_service::capture::RestoreActivationPermit>,
+        observe_only: bool,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.restore_action(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing protected restore bootstrap")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("missing protected restore profile")?,
+            action,
+            work,
+            activation,
+            observe_only,
+        )
     }
 }

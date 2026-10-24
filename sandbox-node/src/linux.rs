@@ -51,6 +51,7 @@ mod inventory;
 mod observation;
 mod readonly;
 mod recovery;
+mod restore;
 mod source_observation;
 mod source_process;
 use decisions::fence_can_advance;

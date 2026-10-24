@@ -332,6 +332,7 @@ fn maximum_runtime_config(
     gate: &sandbox_runtime::RuntimeHelperGate,
 ) -> RuntimeConfig {
     RuntimeConfig {
+        guest_instance_id: format!("sb-{}-{}", config.namespace, u64::MAX),
         console_policy: bounded.console_policy.map(|policy| match policy {
             sandproof_controller_service::ConsolePolicy::Discard => {
                 sandbox_runtime::ConsolePolicy::Discard
@@ -1166,6 +1167,7 @@ impl LinuxWorker {
                     .join(self.vm_name(binding.vm)),
             )?;
             RuntimeConfig {
+                guest_instance_id: format!("sb-{}-{}", self.config.namespace, binding.sandbox.0),
                 console_policy: self.config.bounded_host.console_policy.map(
                     |policy| match policy {
                         sandproof_controller_service::ConsolePolicy::Discard => {

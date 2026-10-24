@@ -199,6 +199,7 @@ mod tests {
     #[test]
     fn physical_observation_uses_original_template_shape_without_credentials() {
         let base = RuntimeObservationConfig {
+            guest_instance_id: "guest-instance".into(),
             console_policy: Some(sandbox_runtime::ConsolePolicy::Discard),
             host_slot: Some(RuntimeHostSlot {
                 position: 1,

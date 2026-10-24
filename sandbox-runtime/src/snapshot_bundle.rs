@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 use std::{
     ffi::OsStr,
     fs::File,
-    io::{Read, Seek, SeekFrom},
-    os::unix::fs::MetadataExt,
+    io::{Read, Seek, SeekFrom, Write},
+    os::unix::fs::{MetadataExt, PermissionsExt},
 };
 
 const NAMES: [&str; 4] = ["manifest.json", "state.bin", "memory.bin", "disk-0.img"];
@@ -23,23 +23,23 @@ pub struct BundleReadLimits {
     pub disk_bytes: u64,
 }
 
-struct OriginalFile {
-    file: File,
-    stamp: FileStamp,
-    measurement: SnapshotFileMeasurement,
+pub(super) struct OriginalFile {
+    pub(super) file: File,
+    pub(super) stamp: FileStamp,
+    pub(super) measurement: SnapshotFileMeasurement,
 }
 
 /// Existing bytes checked through retained original descriptors. This value
 /// does not prove capture provenance, database registration, pin or stop rights.
 pub struct SnapshotBundle {
-    parent: File,
-    directory: File,
-    directory_key: [u8; 32],
-    owner: u32,
-    manifest_file: File,
-    manifest_stamp: FileStamp,
+    pub(super) parent: File,
+    pub(super) directory: File,
+    pub(super) directory_key: [u8; 32],
+    pub(super) owner: u32,
+    pub(super) manifest_file: File,
+    pub(super) manifest_stamp: FileStamp,
     manifest: Vec<u8>,
-    files: Vec<OriginalFile>,
+    pub(super) files: Vec<OriginalFile>,
 }
 
 fn names_only(directory: &File) -> Result<(), RuntimeError> {
@@ -211,6 +211,78 @@ impl SnapshotBundle {
             .iter()
             .map(|entry| entry.measurement.clone())
             .collect()
+    }
+
+    /// Copy an original sealed artifact into one fresh private jail file.
+    /// Source ownership/mode never changes. The caller has already reserved
+    /// both copies and keeps its durable loader/backing responsibility until
+    /// exact process exit and explicit cleanup, including on any error here.
+    /// # Errors
+    /// Existing destinations, changed sources, short I/O or hash mismatches
+    /// preserve the partial destination; they never release source usage.
+    pub(crate) fn copy_for_restore(
+        &self,
+        destination_root: &File,
+        artifact: SnapshotArtifact,
+        uid: u32,
+        gid: u32,
+    ) -> Result<(), RuntimeError> {
+        self.verify_unchanged()?;
+        let original = self
+            .files
+            .iter()
+            .find(|file| file.measurement.artifact == artifact)
+            .ok_or_else(|| invalid("missing restore artifact"))?;
+        let name = match artifact {
+            SnapshotArtifact::State => "restore-state.bin",
+            SnapshotArtifact::Memory => "restore-memory.bin",
+            SnapshotArtifact::Disk(0) => "rootfs.ext4",
+            SnapshotArtifact::Disk(_) => return Err(invalid("unsupported restore disk")),
+        };
+        let mut destination = File::from(
+            fs::openat(
+                destination_root,
+                name,
+                OFlags::CREATE | OFlags::EXCL | OFlags::RDWR | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::RUSR | Mode::WUSR,
+            )
+            .map_err(os_error)?,
+        );
+        let mut source = original.file.try_clone()?;
+        source.seek(SeekFrom::Start(0))?;
+        let mut remaining = original.measurement.length;
+        let mut hash = Sha256::new();
+        let mut buffer = vec![0_u8; super::COPY_BUFFER_BYTES];
+        while remaining > 0 {
+            let count = usize::try_from(remaining.min(buffer.len() as u64))
+                .map_err(|_| invalid("restore copy length"))?;
+            source.read_exact(&mut buffer[..count])?;
+            destination.write_all(&buffer[..count])?;
+            hash.update(&buffer[..count]);
+            remaining -= count as u64;
+        }
+        let mut extra = [0_u8; 1];
+        let digest: [u8; 32] = hash.finalize().into();
+        if source.read(&mut extra)? != 0 || digest != original.measurement.sha256 {
+            return Err(invalid("restore source bytes changed"));
+        }
+        self.verify_unchanged()?;
+        fs::fchown(
+            &destination,
+            Some(rustix::process::Uid::from_raw(uid)),
+            Some(rustix::process::Gid::from_raw(gid)),
+        )
+        .map_err(os_error)?;
+        let mode = if artifact == SnapshotArtifact::Disk(0) {
+            0o600
+        } else {
+            0o400
+        };
+        destination.set_permissions(std::fs::Permissions::from_mode(mode))?;
+        destination.sync_all()?;
+        matches_entry(destination_root, OsStr::new(name), &destination)?;
+        destination_root.sync_all()?;
+        Ok(())
     }
 
     /// Check the same original entries after node binding validation. Immutable

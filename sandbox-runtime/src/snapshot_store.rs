@@ -16,6 +16,7 @@ use crate::{
 use rustix::fs::{
     AtFlags, Mode, OFlags, RenameFlags, mkdirat, open, openat, renameat_with, statat,
 };
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     ffi::OsStr,
@@ -29,7 +30,10 @@ use std::{
 mod bundle;
 #[path = "snapshot_completion.rs"]
 mod completion;
+#[path = "snapshot_retirement.rs"]
+mod retirement;
 pub use bundle::{BundleReadLimits, SnapshotBundle};
+pub use retirement::BundleRetirement;
 
 const MAX_MANIFEST_BYTES: usize = 1_048_576;
 const COPY_BUFFER_BYTES: usize = 65_536;
@@ -62,7 +66,8 @@ pub struct SnapshotFileMeasurement {
     pub sha256: [u8; 32],
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FileStamp {
     device: u64,
     inode: u64,

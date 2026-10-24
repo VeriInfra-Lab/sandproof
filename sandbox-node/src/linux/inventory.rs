@@ -41,7 +41,8 @@ impl LinuxWorker {
                 return Err("original launch has a different physical host context".into());
             }
             options.validate()?;
-            let config = self.observation_config(binding.vm, options.template.as_ref())?;
+            let config =
+                self.observation_config(binding.sandbox, binding.vm, options.template.as_ref())?;
             Ok(RuntimePhysicalObserver::for_existing(config)?)
         })
     }

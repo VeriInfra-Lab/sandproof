@@ -9,7 +9,7 @@ use std::{
     io::{Read, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
 };
-const MAX_COMPLETION_BYTES: u64 = 16_384;
+pub(super) const MAX_COMPLETION_BYTES: u64 = 16_384;
 
 impl SnapshotStore {
     pub(crate) fn publish_completion(
