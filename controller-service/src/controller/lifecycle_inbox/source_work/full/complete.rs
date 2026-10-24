@@ -1,4 +1,4 @@
-use super::*;
+use super::{JournalError, WorkAction, codec, core, matches_action, save};
 use crate::HostEvidence;
 use sandproof_protocol::{WorkOutcome, WorkReceipt};
 

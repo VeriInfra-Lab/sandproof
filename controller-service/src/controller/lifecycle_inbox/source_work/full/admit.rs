@@ -1,5 +1,5 @@
 use super::super::{ControllerJournal, SourceWork, authenticated, snapshot};
-use super::*;
+use super::{CaptureWork, FullCaptureWorkRequest, JournalError, SourceWorkRecord, codec, core, reservation, save, validate};
 use crate::{CrashInjector, CrashPoint, HostEvidence};
 use sandproof_protocol::lifecycle::AuthenticatedCenterContext;
 use serde::de::DeserializeOwned;

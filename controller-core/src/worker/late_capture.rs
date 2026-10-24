@@ -1,5 +1,6 @@
 //! Account for a completed old capture after termination, without restoring access.
-use super::*;
+use super::{Command, EffectId, Phase, RestoreSource, SandboxRecord, Snapshot, SnapshotStage, VmStatus, WorkerDecision, WorkerEvent, WorkerReject, World, put_snapshot, put_vm};
+use crate::OperationPlan;
 
 pub(super) fn record(world: &World, id: &EffectId) -> Option<Result<WorkerDecision, WorkerReject>> {
     let command = id.command();
@@ -34,7 +35,7 @@ fn record_inner(
     let plan = world
         .operation_plan(key)
         .ok_or(WorkerReject::PlanMismatch)?;
-    if plan.key.sandbox != sandbox
+    if plan.key != key || key.sandbox != sandbox
         || key.operation == row.current_operation.ok_or(WorkerReject::PlanMismatch)?.id
         || plan.generation != row.generation
         || command.epoch() != Some(plan.epoch)
@@ -44,8 +45,18 @@ fn record_inner(
     {
         return Err(WorkerReject::PlanMismatch);
     }
-    match *command {
-        Command::FreezeVm { generation, vm, .. } => {
+    match command {
+        Command::FreezeVm { .. } => freeze(world,row,plan,command),
+        Command::SealSnapshot { .. } => seal(world,row,plan,command),
+        Command::CommitSnapshot { .. } => commit(world,row,plan,command),
+        _ => Err(WorkerReject::PlanMismatch),
+    }
+}
+
+fn freeze(world:&World,row:&SandboxRecord,plan:&OperationPlan,command:&Command)->Result<WorkerDecision,WorkerReject> {
+    let Command::FreezeVm {generation,vm,..}=*command else {return Err(WorkerReject::PlanMismatch)};
+    let sandbox=command.sandbox();
+
             let old = world.vm_record(vm).ok_or(WorkerReject::ResourceNotFound)?;
             if old.sandbox != sandbox
                 || old.owner != row.owner
@@ -64,15 +75,13 @@ fn record_inner(
                 event: WorkerEvent::FreezeVm { sandbox, vm },
                 next,
             })
-        }
-        Command::SealSnapshot {
-            generation,
-            vm,
-            workspace,
-            snapshot,
-            manifest,
-            ..
-        } => {
+
+}
+
+fn seal(world:&World,row:&SandboxRecord,plan:&OperationPlan,command:&Command)->Result<WorkerDecision,WorkerReject> {
+    let Command::SealSnapshot {generation,vm,workspace,snapshot,manifest,..}=*command else {return Err(WorkerReject::PlanMismatch)};
+    let sandbox=command.sandbox();
+
             if generation != plan.generation
                 || workspace != row.workspace
                 || plan.vm != Some(vm)
@@ -111,13 +120,13 @@ fn record_inner(
                 },
                 next,
             })
-        }
-        Command::CommitSnapshot {
-            generation,
-            snapshot,
-            manifest,
-            ..
-        } => {
+
+}
+
+fn commit(world:&World,row:&SandboxRecord,plan:&OperationPlan,command:&Command)->Result<WorkerDecision,WorkerReject> {
+    let Command::CommitSnapshot {generation,snapshot,manifest,..}=*command else {return Err(WorkerReject::PlanMismatch)};
+    let sandbox=command.sandbox();
+
             if generation != plan.generation
                 || plan.target_snapshot != Some(RestoreSource { snapshot, manifest })
             {
@@ -143,7 +152,7 @@ fn record_inner(
                     .and_then(crate::capture::CaptureHandoff::observe_bundle)
                     .ok_or(WorkerReject::ResourceBusy)?,
             );
-            next.operation_plans.put(key, old_plan);
+            next.operation_plans.put(plan.key, old_plan);
             let mut durable = *old;
             durable.stage = SnapshotStage::Durable;
             durable.immutable = true;
@@ -153,7 +162,5 @@ fn record_inner(
                 event: WorkerEvent::CommitSnapshot { snapshot },
                 next,
             })
-        }
-        _ => Err(WorkerReject::PlanMismatch),
-    }
+
 }

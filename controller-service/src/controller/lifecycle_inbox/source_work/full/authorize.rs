@@ -1,5 +1,5 @@
 use super::super::{ControllerJournal, SourceWork, authenticated};
-use super::*;
+use super::{CaptureWorkerBinding, JournalError, WorkAction, codec, core, matches_action, save};
 use crate::{CrashInjector, CrashPoint, capture::FullCaptureLaunchPermit};
 use rusqlite::OptionalExtension;
 use sandproof_protocol::lifecycle::AuthenticatedCenterContext;
