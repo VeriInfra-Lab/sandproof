@@ -104,6 +104,15 @@ pub trait WorkExecution: WorkEvidence {
 
 /// Observe or reconcile exact previously dispatched work, never arbitrary replay.
 pub trait WorkRecovery: WorkEvidence {
+    /// Observe the original terminal Stop, writer exit and exact helper gate
+    /// drain. No VM/API command or material deletion is permitted; the existing
+    /// gate protocol may reclaim a dead-helper marker. Missing facts stay None.
+    fn observe_lifecycle_terminated_capture(
+        &self,
+        _work: &crate::capture::TerminatedCaptureWorkRequest,
+    ) -> Option<crate::capture::TerminatedCaptureObservation> {
+        None
+    }
     /// Read only the original candidate. This may not PATCH, retry Full,
     /// initialize a guest, or turn a current Running GET into a new permission.
     fn observe_lifecycle_original_continue(
