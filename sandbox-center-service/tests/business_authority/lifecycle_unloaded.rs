@@ -490,3 +490,57 @@ fn background_transport_timeout_uses_original_recovery_without_replaying_refresh
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
     assert_eq!(app.query_lifecycle("8", &session).unwrap(), before);
 }
+
+
+fn complete_continued(app: &Application, host: &Host) -> (SessionId, u64) {
+    let (session, _, mut observation) = accept_unload(app);
+    let snapshot = app.snapshot().unwrap();
+    let facts = snapshot.lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap().last_running().unwrap().clone();
+    let end = facts.end_at_ms;
+    observation.outcome = UnloadOutcome::OriginalContinued { facts };
+    *host.unloaded.lock().unwrap() = Some(observation);
+    app.reconcile_once().unwrap();
+    (session, end)
+}
+
+#[test]
+fn continued_query_does_not_publish_stale_or_expired_ready() {
+    for expired in [false, true] {
+        let fixture = Engine::new();
+        let proxy = reply_loss::ReplyLoss::new(fixture.address);
+        let authority = lifecycle_public::setup(&fixture, &proxy);
+        let (app, host, clock) = application(&authority);
+        let (session, end) = complete_continued(&app, &host);
+        if expired {
+            clock.0.store(end, Ordering::SeqCst);
+        } else {
+            *host.observed_at_override.lock().unwrap() = Some(0);
+        }
+        let result = app.query_lifecycle("8", &session);
+        assert!(match result { Ok(view) => view.phase != PublicSessionPhase::Running, Err(_) => true });
+    }
+}
+
+#[test]
+fn continued_query_cannot_overwrite_a_destroy_accepted_during_observation() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let (session, _) = complete_continued(&app, &host);
+    let (observed, release) = host.block_next(session.clone());
+    let querying = Arc::clone(&app);
+    let queried = session.clone();
+    let query = std::thread::spawn(move || querying.query_lifecycle("8", &queried));
+    observed.recv_timeout(Duration::from_secs(2)).unwrap();
+    let destroyed = app.destroy_lifecycle("8", &session, &PublicDestroyRequest {
+        window: 1.try_into().unwrap(), sequence: 3.try_into().unwrap(), expected_version: 2,
+    }).unwrap();
+    release.complete();
+    assert!(query.join().unwrap().is_err());
+    let current = app.query_lifecycle("8", &session).unwrap();
+    assert_eq!(current.phase, PublicSessionPhase::Terminating);
+    assert_eq!(current.operation, destroyed.key);
+    assert!(current.unload_outcome.is_none());
+}
