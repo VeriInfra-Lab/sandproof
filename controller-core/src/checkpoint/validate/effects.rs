@@ -143,8 +143,8 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
             source,
             ..
         } => {
-            if source.is_some() {
-                return Err(Reject::UnsupportedSnapshotHistory);
+            if plan.is_none_or(|p| p.restore_from != *source) {
+                return Err(Reject::InvalidEffect);
             }
             startup_command(plan, *generation, *vm, *slot)?;
             reserved_vm(world, sandbox, *vm)?;
@@ -263,8 +263,10 @@ fn fence_command(
     let operation = world
         .operation_record(origin.key)
         .ok_or(Reject::InvalidEffect)?;
-    let opening_kind = operation.operation.kind == OperationKind::Create
-        || operation.operation.kind == OperationKind::Pause;
+    let opening_kind = matches!(
+        operation.operation.kind,
+        OperationKind::Create | OperationKind::Pause | OperationKind::Resume
+    );
     if (!terminal && !opening_kind)
         || epoch == 0
         || epoch > row.epoch
@@ -366,7 +368,7 @@ fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<
         && row.terminal
         && row.epoch == coverage.epoch
         && match ledger.operation.kind {
-            OperationKind::Create => matches!(
+            OperationKind::Create | OperationKind::Resume => matches!(
                 ledger.operation.status,
                 OperationStatus::Compensating(_) | OperationStatus::Failed(_)
             ),
@@ -376,7 +378,7 @@ fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<
                     | OperationStatus::OutcomeUnknown
                     | OperationStatus::Succeeded
             ),
-            OperationKind::Pause | OperationKind::Resume => false,
+            OperationKind::Pause => false,
         }
         && stop_logical.current_attempt == coverage.attempt
         && stop_logical.origin == EffectOrigin::Operation(coverage.operation)

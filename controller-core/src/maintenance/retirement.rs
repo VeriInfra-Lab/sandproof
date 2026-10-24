@@ -564,8 +564,9 @@ fn check_historical_ledgers(
         if !terminal_ledger(*key, ledger) || ledger.operation.epoch > record.epoch {
             return Err(RetirementReject::LedgerMismatch);
         }
-        if matches!(ledger.input, OperationInput::Resume { .. })
-            || matches!(ledger.result, Some(OperationResult::Paused(_)))
+        if (matches!(ledger.input, OperationInput::Resume { .. })
+            || matches!(ledger.result, Some(OperationResult::Paused(_))))
+            && !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox)
         {
             return Err(RetirementReject::SnapshotHistoryUnsupported);
         }
@@ -581,7 +582,8 @@ fn check_historical_ledgers(
                 && *network == record.policy
                 && *file_policy == record.file_policy => {}
             (OperationKind::Pause, OperationInput::Pause { .. })
-            | (OperationKind::Kill, OperationInput::Kill { .. }) => {}
+            | (OperationKind::Kill, OperationInput::Kill { .. })
+            | (OperationKind::Resume, OperationInput::Resume { .. }) => {}
             _ => return Err(RetirementReject::LedgerMismatch),
         }
         let plan = world
@@ -602,7 +604,9 @@ fn check_plan_ledgers(world: &World, sandbox: SandboxId) -> Result<(), Retiremen
             if plan.key != *key || world.operations.get(key).is_none() {
                 return Err(RetirementReject::LedgerMismatch);
             }
-            if plan.restore_from.is_some() || plan.target_snapshot.is_some() {
+            if (plan.restore_from.is_some() || plan.target_snapshot.is_some())
+                && !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox)
+            {
                 return Err(RetirementReject::SnapshotHistoryUnsupported);
             }
         }
@@ -616,10 +620,12 @@ fn check_resources(
     record: &SandboxRecord,
     ids: &OwnedIds,
 ) -> Result<(), RetirementReject> {
-    if record.durable_snapshot.is_some()
+    if (record.durable_snapshot.is_some()
         || record.restore_from.is_some()
         || !ids.snapshots.is_empty()
-        || !world.resource_index(sandbox).snapshots.is_empty()
+        || !world.resource_index(sandbox).snapshots.is_empty())
+        && (world.sandbox_record(sandbox) != Some(record)
+            || !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox))
     {
         return Err(RetirementReject::SnapshotHistoryUnsupported);
     }
@@ -827,8 +833,7 @@ fn origin_bound(world: &World, command: &Command, logical: &LogicalEffectRecord)
                         return false;
                     }
                 }
-                Command::ActivateVm { generation, vm, .. }
-                | Command::FreezeVm { generation, vm, .. } => {
+                Command::ActivateVm { generation, vm, .. } => {
                     if !matches_start(*generation, *vm, None) {
                         return false;
                     }
@@ -844,10 +849,14 @@ fn origin_bound(world: &World, command: &Command, logical: &LogicalEffectRecord)
                     }
                 }
                 Command::InstallFence { .. } => {}
-                Command::SealSnapshot { .. }
-                | Command::CommitSnapshot { .. }
-                | Command::CleanupVm { .. }
-                | Command::CleanupSlot { .. } => return false,
+                Command::FreezeVm { .. }
+                | Command::SealSnapshot { .. }
+                | Command::CommitSnapshot { .. } => {
+                    if !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox) {
+                        return false;
+                    }
+                }
+                Command::CleanupVm { .. } | Command::CleanupSlot { .. } => return false,
             }
         }
     }
@@ -896,13 +905,13 @@ fn command_bound(
             (world.vms.get(vm).is_none() || vm_matches(vm, *generation))
                 && (world.net_slots.get(slot).is_none()
                     || slot_matches(slot, *generation, Some(*vm)))
-                && !matches!(
+                && (!matches!(
                     command,
                     Command::PrepareVm {
                         source: Some(_),
                         ..
                     }
-                )
+                ) || crate::checkpoint::valid_snapshot_retirement_history(world, sandbox))
         }
         Command::ConfigureNetwork {
             generation,
@@ -925,7 +934,9 @@ fn command_bound(
         Command::CleanupSlot {
             generation, slot, ..
         } => slot_matches(slot, *generation, None),
-        Command::SealSnapshot { .. } | Command::CommitSnapshot { .. } => false,
+        Command::SealSnapshot { .. } | Command::CommitSnapshot { .. } => {
+            crate::checkpoint::valid_snapshot_retirement_history(world, sandbox)
+        }
     }
 }
 

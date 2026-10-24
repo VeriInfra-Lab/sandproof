@@ -26,7 +26,7 @@ fn finish(world: &World, id: EffectId) -> World {
     )
 }
 
-fn drain(world: &World) -> World {
+pub(super) fn drain(world: &World) -> World {
     let mut world = world.clone();
     for _ in 0..16 {
         let ready = world
@@ -85,7 +85,7 @@ fn sealed() -> World {
     drain(&world)
 }
 
-fn target(world: &World) -> RestoreSource {
+pub(super) fn target(world: &World) -> RestoreSource {
     world
         .operation_plan(OperationKey {
             sandbox: SandboxId(10),
@@ -96,7 +96,7 @@ fn target(world: &World) -> RestoreSource {
         .unwrap()
 }
 
-fn commit_planned() -> World {
+pub(super) fn commit_planned() -> World {
     let world = sealed();
     let snapshot = target(&world).snapshot;
     advance(
