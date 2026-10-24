@@ -31,7 +31,7 @@ impl LinuxWorker {
     fn material_request(&self, request: &CaptureMaterialRetirementRequest) -> NodeResult<()> {
         let full = request.full();
         require_source_binding(&full.pause, request.source())?;
-        if request.sandbox().0 == 0 || request.generation() == 0 || !full.valid() {
+        if request.generation() == 0 || !full.valid() {
             return Err("invalid original material retirement work".into());
         }
         if let Some(action) = request.seal_action() {

@@ -360,6 +360,18 @@ impl WorkExecution for NodeHost {
             })
     }
 
+    fn execute_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+        permit: &sandproof_controller_service::capture::OriginalContinuePermit,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        restore_action_receipt(
+            action,
+            self.original_continue_observation(action, work, Some(permit), false),
+        )
+    }
+
     fn execute_lifecycle_restore_action(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -506,6 +518,19 @@ impl WorkRecovery for NodeHost {
                 worker,
             )
             .ok()
+    }
+
+    fn observe_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        self.original_continue_observation(action, work, None, true)
+            .ok()
+            .map(|observed| WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
+            })
     }
 
     fn observe_lifecycle_restore_action(
@@ -1135,6 +1160,24 @@ impl NodeHost {
 }
 
 impl NodeHost {
+    fn original_continue_observation(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+        permit: Option<&sandproof_controller_service::capture::OriginalContinuePermit>,
+        observe_only: bool,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.original_continue_action(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing protected original-continuation bootstrap")?,
+            action,
+            work,
+            permit,
+            observe_only,
+        )
+    }
+
     fn restore_action_observation(
         &self,
         action: &WorkAction<core::EffectId>,

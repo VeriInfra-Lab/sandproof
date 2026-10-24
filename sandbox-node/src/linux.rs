@@ -50,6 +50,7 @@ mod identity;
 mod inventory;
 mod material_retirement;
 mod observation;
+mod original_continue;
 mod readonly;
 mod recovery;
 mod restore;
