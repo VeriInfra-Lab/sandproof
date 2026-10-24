@@ -970,7 +970,7 @@ impl Runtime {
                 ),
             )?;
         }
-        self.delete_root_uplink_tables(&plan)?;
+        self.delete_root_uplink_tables(&plan, None)?;
         if !self.uplink_resources_absent(id)?
             || namespace_link_exists(self, id, "uplink0")?
             || namespace_nft_object_exists(self, id, "tables", "ip", "sandproof_uplink", None)?
