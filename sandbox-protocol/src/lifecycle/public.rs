@@ -74,8 +74,8 @@ pub struct PublicRequestWindow {
     pub window: Option<RequestWindowId>,
 }
 
-/// Only facts currently supported by the original center ledger. No Paused to
-/// Unloaded projection exists; that result needs a future checked host fact.
+/// Current center facts. Unloaded requires the exact durable host result;
+/// an accepted Unload or a paused VM alone cannot produce it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PublicSessionPhase {

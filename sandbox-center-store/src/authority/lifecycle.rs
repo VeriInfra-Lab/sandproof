@@ -111,6 +111,20 @@ impl<S: AuthorityState> CenterAuthority<S> {
         Ok(())
     }
 
+    /// Persist only a completed current Unload, preserving unknown-CAS fencing.
+    /// # Errors
+    /// A changed original or an uncertain commit cannot publish success.
+    pub fn accept_lifecycle_unload_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::UnloadObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self.state()?.accept_lifecycle_unload_observation(observation, now_ms)?;
+        if &next == self.state()? { self.snapshot()?; } else { self.commit_center(next)?; }
+        Ok(())
+    }
+
     /// Save the real current terminal result before sending any confirmation.
     /// # Errors
     /// Unknown CAS fences the same block; recovery reuses its original deadline.

@@ -11,11 +11,12 @@ use serde::{Deserialize, Serialize};
 mod key;
 mod ready;
 mod renewal;
+mod unloaded;
 mod validation;
 pub use sandproof_protocol::lifecycle::CreateParameters;
 
 /// One supported current format. Missing registration is not a legacy profile.
-pub const LIFECYCLE_PROFILE_VERSION: u16 = 5;
+pub const LIFECYCLE_PROFILE_VERSION: u16 = 6;
 
 pub(crate) fn required_option<'de, D, T>(input: D) -> Result<Option<T>, D::Error>
 where
@@ -77,6 +78,7 @@ pub enum SessionPhase {
     Running,
     Renewing,
     Unloading,
+    Unloaded,
     Terminating,
     Cleaned,
 }
@@ -90,6 +92,8 @@ pub struct LifecycleOperationRecord {
     pub(crate) allocation_number: u64,
     pub(crate) acceptance_time: AcceptanceTime,
     pub(crate) running: Option<CurrentReadyFacts>,
+    #[serde(deserialize_with = "required_option")]
+    pub(crate) unloaded: Option<sandproof_protocol::lifecycle::UnloadObservation>,
     /// Actual predecessor lifetime sampled on admission, not reconstructed
     /// from Create or a later native observation after compaction.
     #[serde(deserialize_with = "required_option")]
@@ -146,6 +150,7 @@ impl LifecycleOperationRecord {
                 AcceptanceTime::Sampled { at_ms: now_ms }
             },
             running: None,
+            unloaded: None,
             previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. })
             {
                 previous.running.as_ref().map(|facts| facts.end_at_ms)
@@ -164,6 +169,10 @@ impl LifecycleOperationRecord {
     #[must_use]
     pub const fn running(&self) -> Option<&CurrentReadyFacts> {
         self.running.as_ref()
+    }
+    #[must_use]
+    pub const fn unloaded(&self) -> Option<&sandproof_protocol::lifecycle::UnloadObservation> {
+        self.unloaded.as_ref()
     }
     #[must_use]
     pub const fn create_refusal(&self) -> Option<CreateRefusalReason> {
@@ -238,6 +247,7 @@ impl Sandbox {
             LifecycleOperation::Renew { .. } => SessionPhase::Renewing,
             LifecycleOperation::Destroy {} if self.released() => SessionPhase::Cleaned,
             LifecycleOperation::Destroy {} => SessionPhase::Terminating,
+            LifecycleOperation::Unload { .. } if operation.unloaded.is_some() => SessionPhase::Unloaded,
             LifecycleOperation::Unload { .. } | LifecycleOperation::Resume { .. } => {
                 SessionPhase::Unloading
             }
@@ -503,6 +513,9 @@ impl CenterState {
             .iter()
             .filter_map(|record| {
                 let operation = record.operations.last()?;
+                if operation.unloaded.is_some() {
+                    return None;
+                }
                 if operation.running.is_some() && record.unconfirmed_sdk_renewal().is_none() {
                     return None;
                 }
@@ -667,6 +680,7 @@ impl CenterState {
                 allocation_number: allocation.operation_number,
                 acceptance_time: AcceptanceTime::Sampled { at_ms: now_ms },
                 running: None,
+                unloaded: None,
                 previous_effective_end_at_ms: None,
                 create_refusal: None,
                 terminal: None,

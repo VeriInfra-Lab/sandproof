@@ -534,6 +534,14 @@ impl AuthorityPort for SharedBusinessAuthority {
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .terminate_expired(now_ms)
     }
+    fn accept_lifecycle_unload_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::UnloadObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?
+            .accept_lifecycle_unload_observation(observation, now_ms)
+    }
     fn accept_lifecycle_terminal_observation(
         &mut self,
         result: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,

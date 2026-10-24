@@ -8,6 +8,8 @@ mod fixture;
 use fixture::*;
 #[path = "lifecycle/acceptance_time.rs"]
 mod acceptance_time;
+#[path = "lifecycle/unloaded.rs"]
+mod unloaded;
 #[path = "lifecycle/refusal.rs"]
 mod refusal;
 #[path = "lifecycle/renewal_confirmation.rs"]

@@ -103,6 +103,12 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
             .public_lifecycle_intent(&owner, session)?;
+        if phase == SessionPhase::Unloaded {
+            let mut authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+            crate::AuthorityPort::expire_current(&mut *authority, self.now()?)
+                .map_err(crate::application::authority_error)?;
+            return authority.query_public_lifecycle(&owner, session);
+        }
         if matches!(
             phase,
             SessionPhase::Creating | SessionPhase::Running | SessionPhase::Renewing
@@ -167,6 +173,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     operation: current.request.binding.key.clone(),
                     current_version: current.accepted_version,
                     phase: PublicSessionPhase::Running,
+                    unloaded: None,
                     create_refusal: None,
                 });
             }

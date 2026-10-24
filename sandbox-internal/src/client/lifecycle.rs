@@ -284,4 +284,29 @@ impl InternalClient {
             .await
             .map_err(|_| TransportError::Deadline)?
     }
+    /// Read the original journal's retained Unload result through this peer.
+    /// # Errors
+    /// Pending, foreign or unavailable evidence never establishes Unloaded.
+    pub async fn observe_lifecycle_unload(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, TransportError> {
+        intent.request.validate(&self.endpoint.node).map_err(|_| TransportError::Rejected)?;
+        if !matches!(intent.request.operation, sandproof_protocol::lifecycle::LifecycleOperation::Unload { .. }) {
+            return Err(TransportError::Rejected);
+        }
+        let _permit = self.calls.try_acquire().map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded = sandproof_controller_service::template_registry::evidence::encode_bounded(intent, REQUEST_BODY_BYTES)
+                .map_err(|_| TransportError::Rejected)?;
+            let bytes = self.exchange_bytes(sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH,
+                encoded, REQUEST_BODY_BYTES, sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES).await?;
+            let view: sandproof_protocol::lifecycle::UnloadObservation = serde_json::from_slice(&bytes)
+                .map_err(|_| TransportError::InvalidResponse)?;
+            if !view.matches_request(intent) { return Err(TransportError::InvalidResponse); }
+            Ok(view)
+        };
+        timeout(self.limits.request_timeout, work).await.map_err(|_| TransportError::Deadline)?
+    }
+
 }
