@@ -28,9 +28,19 @@ class CaptureAcceptanceTests(unittest.TestCase):
             self.assertEqual(first[0]['layout_parent'],str(root/'p'))
             self.assertNotEqual(first[0]['layout_binding'],second[0]['layout_binding'])
             self.assertEqual(len(first[0]['layout_binding']),32)
+            self.assertEqual(capture.validate_settings(first,1),first)
             for key,value in saved['hosts'][0].items():
                 self.assertEqual(first[0][key],value)
         self.assertEqual(source,saved)
+
+    def test_actual_settings_refuse_missing_binding_unknown_fields_and_bad_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings=capture.bind_settings(profile(),[Path(directory)])
+        for field,value in (('layout_binding',[True]*32),('layout_binding',[256]*32),
+                ('layout_binding',[1]*31),('layout_parent',None),('unexpected',1)):
+            changed=copy.deepcopy(settings);changed[0][field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):
+                capture.validate_settings(changed,1)
 
     def test_missing_or_replayed_layout_identity_and_invalid_bounds_are_rejected(self):
         for change in (

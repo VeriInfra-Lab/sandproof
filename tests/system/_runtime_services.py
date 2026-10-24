@@ -37,7 +37,7 @@ from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.system_acceptance import digest, json_file, private_path
 from tools.template_physical_storage import envelope
-from tools.capture_acceptance import require_capacity
+from tools.capture_acceptance import require_capacity, validate_settings
 
 MIB = 1024**2
 MAX_ACTIVATION_BYTES = 200 * 1024**3
@@ -217,10 +217,7 @@ class RuntimeServices:
         test_credentials(key,extra_credentials)
         root=private_path(root,directory=True)
         pools=copy.deepcopy(native_pools)
-        captures=json_file(private_path(args.capture_settings),limit=65536)
-        if (type(captures) is not list or len(captures)!=len(pools)
-                or any(type(value) is not dict for value in captures)):
-            raise ValueError('explicit current capture settings required for the whole host cohort')
+        captures=validate_settings(json_file(private_path(args.capture_settings),limit=65536),len(pools))
         retained=job_count+sum(pool['max_active_global'] for pool in pools)
         for native,capture in zip(pools,captures):
             pool_root=Path(native['database']).parent.parent

@@ -43,11 +43,29 @@ def validate_profile(profile, count):
             tool = project[key]
             if (type(tool) is not dict or set(tool) != {'path', 'sha256'}
                     or type(tool['path']) is not str or not Path(tool['path']).is_absolute()
+                    or not Path(tool['path']).name
                     or str(Path(tool['path'])) != tool['path'] or '..' in Path(tool['path']).parts
                     or type(tool['sha256']) is not list or len(tool['sha256']) != 32
                     or any(type(value) is not int or not 0 <= value <= 255 for value in tool['sha256'])):
                 raise ValueError('exact protected project tools required')
     return copy.deepcopy(profile['hosts'])
+
+
+def validate_settings(settings, count):
+    if type(settings) is not list or len(settings)!=count:
+        raise ValueError('capture settings must bind the whole original host cohort')
+    declarations=[]
+    for value in settings:
+        if type(value) is not dict or set(value)!=FIELDS|{'layout_parent','layout_binding'}:
+            raise ValueError('complete fresh capture settings required')
+        binding=value['layout_binding']
+        if (type(value['layout_parent']) is not str
+                or type(binding) is not list or len(binding)!=32
+                or any(type(byte) is not int or not 0<=byte<=255 for byte in binding)):
+            raise ValueError('exact layout path and binding bytes required')
+        declarations.append({key:entry for key,entry in value.items() if key in FIELDS})
+    validate_profile(dict(schema_version=1,hosts=declarations),count)
+    return copy.deepcopy(settings)
 
 
 def bind_settings(profile, pool_roots):
