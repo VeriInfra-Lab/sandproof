@@ -190,8 +190,16 @@ impl LifecycleOperationRecord {
     }
     /// Current confirmed execution lineage, including an original continued VM.
     pub(super) fn running_incarnation(&self) -> Option<IncarnationId> {
-        if let LifecycleOperation::Unload { source_incarnation, .. } = self.intent.request.operation {
-            return self.unloaded.as_ref()?.outcome.continued().map(|_| source_incarnation);
+        if let LifecycleOperation::Unload {
+            source_incarnation, ..
+        } = self.intent.request.operation
+        {
+            return self
+                .unloaded
+                .as_ref()?
+                .outcome
+                .continued()
+                .map(|_| source_incarnation);
         }
         resume::running_incarnation(&self.intent.request.operation)
     }
@@ -277,8 +285,16 @@ impl Sandbox {
             LifecycleOperation::Renew { .. } => SessionPhase::Renewing,
             LifecycleOperation::Destroy {} if self.released() => SessionPhase::Cleaned,
             LifecycleOperation::Destroy {} => SessionPhase::Terminating,
-            LifecycleOperation::Unload { .. } if operation.running().is_some() => SessionPhase::Running,
-            LifecycleOperation::Unload { .. } if operation.unloaded.as_ref().and_then(|o| o.outcome.unloaded()).is_some() => {
+            LifecycleOperation::Unload { .. } if operation.running().is_some() => {
+                SessionPhase::Running
+            }
+            LifecycleOperation::Unload { .. }
+                if operation
+                    .unloaded
+                    .as_ref()
+                    .and_then(|o| o.outcome.unloaded())
+                    .is_some() =>
+            {
                 SessionPhase::Unloaded
             }
             LifecycleOperation::Unload { .. } => SessionPhase::Unloading,
@@ -782,7 +798,9 @@ impl CenterState {
                 target_incarnation, ..
             } => *target_incarnation,
             LifecycleOperation::Renew { incarnation, .. } => *incarnation,
-            LifecycleOperation::Unload { source_incarnation, .. } if prior.running().is_some() => *source_incarnation,
+            LifecycleOperation::Unload {
+                source_incarnation, ..
+            } if prior.running().is_some() => *source_incarnation,
             _ if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
             _ => return Err(DecisionError::Conflict),
         };

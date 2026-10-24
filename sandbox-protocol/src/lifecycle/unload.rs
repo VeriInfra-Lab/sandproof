@@ -1,5 +1,8 @@
 //! A retained result from the original journal, not a capture execution request.
-use super::{AcceptedLifecycleIntent, CaptureId, ContentDigest, IncarnationId, LifecycleOperation, CurrentReadyFacts};
+use super::{
+    AcceptedLifecycleIntent, CaptureId, ContentDigest, CurrentReadyFacts, IncarnationId,
+    LifecycleOperation,
+};
 use serde::{Deserialize, Serialize};
 
 /// The provider must establish durable material custody, exact execution exit
@@ -31,20 +34,30 @@ pub struct UnloadObservation {
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum UnloadOutcome {
     Pending,
-    Unloaded { facts: UnloadedFacts },
+    Unloaded {
+        facts: UnloadedFacts,
+    },
     /// The original journal must establish the durable failed-Pause result,
     /// ended capture responsibility and confirmed continuation of the SAME
     /// native VM/epoch/generation. A current Running lookup is insufficient.
-    OriginalContinued { facts: CurrentReadyFacts },
+    OriginalContinued {
+        facts: CurrentReadyFacts,
+    },
 }
 impl UnloadOutcome {
     #[must_use]
     pub const fn unloaded(&self) -> Option<&UnloadedFacts> {
-        match self { Self::Unloaded { facts } => Some(facts), _ => None }
+        match self {
+            Self::Unloaded { facts } => Some(facts),
+            _ => None,
+        }
     }
     #[must_use]
     pub const fn continued(&self) -> Option<&CurrentReadyFacts> {
-        match self { Self::OriginalContinued { facts } => Some(facts), _ => None }
+        match self {
+            Self::OriginalContinued { facts } => Some(facts),
+            _ => None,
+        }
     }
 }
 
@@ -67,13 +80,13 @@ impl UnloadObservation {
             && match &self.outcome {
                 UnloadOutcome::Pending => true,
                 UnloadOutcome::Unloaded { facts } => {
-                facts.material_bytes > 0
-                    && facts.source_incarnation == *source_incarnation
-                    && facts.capture == *capture
-                    && facts.started_at_ms <= facts.startup_deadline_ms
-                    && facts.started_at_ms < facts.end_at_ms
-                    && facts.end_at_ms <= facts.max_end_at_ms
-                },
+                    facts.material_bytes > 0
+                        && facts.source_incarnation == *source_incarnation
+                        && facts.capture == *capture
+                        && facts.started_at_ms <= facts.startup_deadline_ms
+                        && facts.started_at_ms < facts.end_at_ms
+                        && facts.end_at_ms <= facts.max_end_at_ms
+                }
                 UnloadOutcome::OriginalContinued { facts } => {
                     facts.started_at_ms <= facts.startup_deadline_ms
                         && facts.started_at_ms <= facts.observed_at_ms
