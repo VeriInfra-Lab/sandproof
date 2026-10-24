@@ -10,6 +10,7 @@ mod launch;
 mod restore;
 mod retirement;
 mod source;
+mod terminated;
 mod work;
 pub use continuation::{OriginalContinuePermit, OriginalContinueWorkRequest};
 pub use launch::{
@@ -23,6 +24,7 @@ pub use retirement::{
     MaterialRetirementObservation, MaterialRetirementPermit,
 };
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
+pub use terminated::{TerminatedCaptureObservation, TerminatedCaptureWorkRequest};
 pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 
 /// Fact supplied only after the exact Full API response was received and its

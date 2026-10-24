@@ -15,6 +15,9 @@ pub(in crate::controller) fn permits_input(
     input: &CaptureInput,
 ) -> Result<bool, JournalError> {
     let (identity, supplied) = match input {
+        // The terminal SQL producer is not connected in this batch. Native
+        // type support cannot bypass the saved original observation contract.
+        CaptureInput::RetireTerminatedCapture(_) => return Ok(false),
         CaptureInput::PrepareOriginalContinue {
             identity,
             end_receipt,
@@ -51,7 +54,7 @@ pub(in crate::controller) fn permits_input(
     }))
 }
 
-fn current_identity(
+pub(in crate::controller) fn current_identity(
     connection: &rusqlite::Connection,
     namespace: &str,
     source: &SourceWork,
@@ -85,6 +88,9 @@ fn current_identity(
         .map_err(|_| JournalError::CorruptStore)?
         .ok_or(JournalError::CorruptStore)?;
     if now_ms < 0
+        || lifetime
+            .started_at_ms
+            .is_none_or(|start| now_ms < start || start > lifetime.startup_deadline_ms)
         || now_ms >= lifetime.deadline_ms
         || now_ms >= lifetime.max_deadline_ms
         || Some(lifetime) != source.anchor.native.lifetime

@@ -144,6 +144,85 @@ def original_json(path,limit):
     return json.loads(raw,object_pairs_hook=unique_keys)
 
 
+GATE_NAMES=frozenset(('config.json','observation.json','ready-stage.json','ready.json',
+    'command-stage.json','command.json'))
+GATE_FINAL_NAMES=frozenset(('config.json','observation.json','ready.json','command.json'))
+GATE_STAGE_NAMES=GATE_NAMES-GATE_FINAL_NAMES
+
+
+def gate_json(path,limit,*,directory_fd=None):
+    """One protected FD: never reopen the observation containing a secret."""
+    path=Path(path)
+    identity=lambda m:(m.st_dev,m.st_ino,m.st_size,m.st_mtime_ns,m.st_ctime_ns,m.st_mode,m.st_uid,m.st_nlink)
+    name=str(path) if directory_fd is None else path.name
+    metadata=lambda:os.stat(name,dir_fd=directory_fd,follow_symlinks=False)
+    before=metadata()
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid!=0 or before.st_nlink!=1
+            or stat.S_IMODE(before.st_mode)!=0o600 or not 0<before.st_size<=limit):
+        raise ValueError('bounded root0600 original gate file required')
+    fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=directory_fd)
+    with os.fdopen(fd,'rb') as stream:
+        if identity(os.fstat(stream.fileno()))!=identity(before):
+            raise ValueError('gate file changed before protected read')
+        raw=stream.read(limit+1)
+        if (len(raw)!=before.st_size or len(raw)>limit
+                or identity(os.fstat(stream.fileno()))!=identity(before)
+                or identity(metadata())!=identity(before)):
+            raise ValueError('gate file changed during protected read')
+    return json.loads(raw,object_pairs_hook=unique_keys),hashlib.sha256(raw).hexdigest(),identity(before)
+
+
+def validate_gate_ready(value,digest):
+    if (type(value) is not dict or set(value)!={'schema_version','observation_sha256'}
+            or type(value['schema_version']) is not int or value['schema_version']!=1
+            or type(value['observation_sha256']) is not str
+            or re.fullmatch('[0-9a-f]{64}',value['observation_sha256']) is None
+            or value['observation_sha256']!=digest):
+        raise ValueError('ready must seal the exact original gate observation')
+
+
+def gate_command(run_identity,digest,command):
+    if (type(run_identity) is not str or re.fullmatch('[0-9a-f]{64}',run_identity) is None
+            or type(digest) is not str or re.fullmatch('[0-9a-f]{64}',digest) is None
+            or command not in ('continue','fail')):
+        raise ValueError('exact bounded run/observation gate command required')
+    return dict(schema_version=1,run_identity=run_identity,observation_sha256=digest,command=command)
+
+
+def gate_configuration(run_identity,sandbox,generation,timeout_ms):
+    if (type(run_identity) is not str or re.fullmatch('[0-9a-f]{64}',run_identity) is None
+            or type(sandbox) is not str or re.fullmatch('sb-[0-9a-f]{16}-[1-9][0-9]*',sandbox) is None
+            or type(generation) is not int or not 0<generation<2**64
+            or type(timeout_ms) is not int or not 1000<=timeout_ms<=120000):
+        raise ValueError('exact original native target and bounded activation gate required')
+    return dict(schema_version=1,run_identity=run_identity,sandbox=sandbox,
+        generation=generation,timeout_ms=timeout_ms)
+
+
+def gate_publish(directory_fd,name,value):
+    if name not in ('config.json','command.json'):
+        raise ValueError('only fixed activation gate consumer files may be published')
+    data=(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
+    if len(data)>1024:
+        raise ValueError('bounded original gate command required')
+    staging='command-stage.json' if name=='command.json' else name
+    fd=os.open(staging,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,
+        0o600,dir_fd=directory_fd)
+    with os.fdopen(fd,'wb') as stream:
+        stream.write(data);stream.flush();os.fsync(stream.fileno())
+    if name=='command.json':
+        # Linux-only controlled harness. No replace/link fallback: readers
+        # see either no final command or the complete single-link file.
+        import ctypes
+        libc=ctypes.CDLL(None,use_errno=True)
+        rename=libc.renameat2
+        rename.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]
+        rename.restype=ctypes.c_int
+        if rename(directory_fd,staging.encode(),directory_fd,name.encode(),1)!=0:
+            raise OSError(ctypes.get_errno(),'original no-replace command publication failed')
+    os.fsync(directory_fd)
+
+
 def validate_restore_gate(record, expected, run_identity):
     """Only the original activated candidate's consumed bootstrap input is admissible."""
     if (type(run_identity) is not str or re.fullmatch('[0-9a-f]{64}',run_identity) is None
@@ -270,6 +349,7 @@ class UnloadRuntime:
         self.runs={}
         self.material_paths={}
         self.gc_complete=False
+        self.restore_gate=None
         self.deadline=None
         self.physical_complete=False
         self._prepare()
@@ -516,6 +596,203 @@ class UnloadRuntime:
         return dict(materials=files,manifest=measured,completion=checked_file(witness,16384,mode=0o400),
             material_paths=[str(bundle),str(witness)])
 
+    def arm_restore_gate(self,session,deadline,timeout_ms):
+        """Plan only this debug fault, using the original paused native audit."""
+        if self.restore_gate is not None:
+            raise ValueError('one original activation gate only')
+        remaining(deadline)
+        native=self.services.native_pools[0]
+        previous=self.runs[session]['context']['binding']['generation']
+        if type(previous) is not int or not 0<previous<2**64-1:
+            raise ValueError('original positive running generation required before arming')
+        config=gate_configuration(self.lease.identity,
+            'sb-'+native['namespace']+'-'+str(self.runs[session]['local']['sandbox']),previous+1,timeout_ms)
+        old=self.services.processes.children['host-0']
+        if old.poll() is not None:
+            raise ValueError('original live host manager required before arming gate')
+        self.services.processes.stop('host-0')
+        audit=self.services.processes.audit('host-0')
+        local=local_binding(audit,session,expected_node=self.services.host_configs[0]['inbox']['node'])
+        rows=[row for row in audit['native'] if row['sandbox']==local['sandbox']]
+        if (len(rows)!=1 or rows[0]['phase']!='Paused' or rows[0]['terminal']
+                or rows[0]['current_vm'] is not None or local!=self.runs[session]['local']
+                or type(rows[0]['generation']) is not int or rows[0]['generation']!=previous):
+            raise ValueError('original paused generation required for fault selection')
+        control=private_path(self.quota['deployment_control'],directory=True)
+        control_meta=control.stat()
+        path=control/'restore-activation-gate'
+        path.mkdir(mode=0o700)
+        fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        meta=os.fstat(fd)
+        self.restore_gate=dict(path=path,fd=fd,directory_identity=(meta.st_dev,meta.st_ino),
+            control_identity=(control_meta.st_dev,control_meta.st_ino),
+            config=config,session=session,deadline=min(deadline,time.monotonic()+timeout_ms/1000),
+            command_sent=False,observation_sha256=None,files={})
+        self._gate_directory()
+        gate_publish(fd,'config.json',config)
+        _,digest,identity=gate_json(path/'config.json',1024,directory_fd=fd)
+        self.restore_gate['files']['config.json']=(digest,identity)
+        role=self.services.processes.bindings['host-0']
+        if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs['host-0']:
+            raise ValueError('original host product configuration changed before fault restart')
+        process=self.services.processes.start('host-0',env={
+            'SANDPROOF_TEST_RESTORE_ACTIVATION_GATE':str(path),
+            'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION':'activate_vm'})
+        self.restore_gate['host']=process
+        self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
+
+    def _gate_directory(self):
+        gate=self.restore_gate
+        fdmeta=os.fstat(gate['fd']);meta=gate['path'].lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=0 or stat.S_IMODE(meta.st_mode)!=0o700
+                or (meta.st_dev,meta.st_ino)!=gate['directory_identity']
+                or (fdmeta.st_dev,fdmeta.st_ino)!=gate['directory_identity']):
+            raise ValueError('original root0700 activation gate directory changed')
+        names=set(os.listdir(gate['fd']))
+        if names-GATE_NAMES:
+            raise ValueError('activation gate contains a name outside the fixed six-file budget')
+        for name in names:
+            try:
+                entry=os.stat(name,dir_fd=gate['fd'],follow_symlinks=False)
+            except FileNotFoundError:
+                if name in GATE_STAGE_NAMES:
+                    continue  # An atomic stage-to-final publication may race this inventory.
+                raise
+            limit=16384 if name=='observation.json' else 1024
+            # Producer stage/observation writes may still be incomplete here;
+            # only final ready seals a complete readable observation.
+            if (not stat.S_ISREG(entry.st_mode) or entry.st_uid!=0 or entry.st_nlink!=1
+                    or stat.S_IMODE(entry.st_mode)!=0o600 or not 0<=entry.st_size<=limit):
+                raise ValueError('activation gate entry violates the original finite private-file budget')
+
+    def _gate_files_unchanged(self):
+        self._gate_directory()
+        gate=self.restore_gate
+        for name,expected in gate['files'].items():
+            _,digest,identity=gate_json(gate['path']/name,
+                16384 if name=='observation.json' else 1024,directory_fd=gate['fd'])
+            if (digest,identity)!=expected:
+                raise ValueError('original sealed activation gate file changed')
+
+    def wait_resume_gate(self,session,accepted,baseline,deadline):
+        gate=self.restore_gate
+        if gate is None or gate['session']!=session:
+            raise ValueError('original session gate must be armed before Resume')
+        deadline=min(deadline,gate['deadline'])
+        while True:
+            remaining(deadline);self._gate_directory()
+            if gate['host'] is not self.services.processes.children['host-0'] or gate['host'].poll() is not None:
+                raise ValueError('original host exited before its committed activation gate')
+            try:
+                ready,ready_digest,ready_identity=gate_json(gate['path']/'ready.json',1024,directory_fd=gate['fd'])
+            except FileNotFoundError:
+                time.sleep(min(.05,remaining(deadline)));continue
+            _,digest,identity=gate_json(gate['path']/'observation.json',16384,directory_fd=gate['fd'])
+            validate_gate_ready(ready,digest)
+            gate['files'].update({'ready.json':(ready_digest,ready_identity),'observation.json':(digest,identity)})
+            gate['observation_sha256']=digest
+            return self.observe_resume_gate(session,accepted,baseline,gate['path']/'observation.json',deadline)
+
+    def release_resume_gate(self,command):
+        gate=self.restore_gate
+        if gate is None or gate['observation_sha256'] is None or gate['command_sent']:
+            raise ValueError('one command for the original committed gate only')
+        self._gate_files_unchanged()
+        gate_publish(gate['fd'],'command.json',gate_command(
+            self.lease.identity,gate['observation_sha256'],command))
+        _,digest,identity=gate_json(gate['path']/'command.json',1024,directory_fd=gate['fd'])
+        gate['files']['command.json']=(digest,identity)
+        gate['command_sent']=True
+        gate['command']=command
+
+    def recover_resume_gate(self,receipt,deadline):
+        gate=self.restore_gate
+        self.release_resume_gate('continue')
+        process=gate['host']
+        if (process is not self.services.processes.children['host-0']
+                or process.wait(timeout=remaining(deadline))!=86):
+            raise ValueError('original activation manager did not exit at the bounded lost-receipt hook')
+        self._gate_files_unchanged()
+        if not original_process(receipt['candidate']):
+            raise ValueError('gate candidate exited before original manager recovery')
+        role=self.services.processes.bindings['host-0']
+        if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs['host-0']:
+            raise ValueError('original product configuration changed across lost acknowledgement')
+        # No initialize, new product config, inherited environment or fault
+        # variables. The original Processes owner alone restarts this child.
+        recovered=self.services.processes.start('host-0')
+        if recovered is process or recovered.pid==process.pid:
+            raise ValueError('original fault host was not replaced by an actual fresh manager')
+        self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
+        gate['exit86_observed']=True
+        return dict(exit_code=86,fault_manager_pid=process.pid,recovered_manager_pid=recovered.pid,
+            same_product_configuration=True,fault_environment_removed=True,
+            observation_sha256=gate['observation_sha256'],public_authorization_proven=False)
+
+    def fail_resume_gate(self):
+        gate=self.restore_gate
+        if gate is not None and gate['observation_sha256'] is not None and not gate['command_sent']:
+            self.release_resume_gate('fail')
+            return 'original observation rejected; fail command published; outcome remains unknown'
+        return 'no new gate command; original responsibility preserved'
+
+    def cleanup_restore_gate(self):
+        """Only after product settlement: delete exactly our four sealed files."""
+        gate=self.restore_gate
+        if gate is None:
+            return None
+        if (not self.physical_complete or not self.gc_complete
+                or gate.get('exit86_observed') is not True or gate.get('command')!='continue'):
+            raise ValueError('original exit86 and settled product resources required before gate cleanup')
+        if not gate['command_sent'] or set(gate['files'])!=GATE_FINAL_NAMES:
+            raise ValueError('complete original activation gate required for cleanup')
+        self._gate_files_unchanged()
+        if set(os.listdir(gate['fd']))!=set(gate['files']):
+            raise ValueError('unknown or partial gate entries retain original responsibility')
+        control=gate['path'].parent
+        parent_fd=os.open(control,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:
+            meta=os.fstat(parent_fd)
+            if (meta.st_dev,meta.st_ino)!=gate['control_identity']:
+                raise ValueError('original gate control parent changed')
+            for name in ('command.json','ready.json','observation.json','config.json'):
+                self._gate_directory()
+                _,digest,identity=gate_json(gate['path']/name,
+                    16384 if name=='observation.json' else 1024,directory_fd=gate['fd'])
+                if (digest,identity)!=gate['files'][name]:
+                    raise ValueError('gate file replacement forbids exact cleanup')
+                file_fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,
+                    dir_fd=gate['fd'])
+                try:
+                    opened=os.fstat(file_fd)
+                    held=(opened.st_dev,opened.st_ino,opened.st_size,opened.st_mtime_ns,
+                        opened.st_ctime_ns,opened.st_mode,opened.st_uid,opened.st_nlink)
+                    if held!=identity:
+                        raise ValueError('original gate FD changed before exact unlink')
+                    # Producer exited86 and the original managers are stopped;
+                    # only this supervisor writes the root-private directory.
+                    os.unlink(name,dir_fd=gate['fd'])
+                    if os.fstat(file_fd).st_nlink!=0:
+                        raise ValueError('exact original gate FD was not unlinked')
+                    os.fsync(gate['fd'])
+                finally:
+                    os.close(file_fd)
+            if os.listdir(gate['fd']):
+                raise ValueError('activation gate acquired an unknown entry during cleanup')
+            self._gate_directory()
+            os.rmdir(gate['path'].name,dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
+        gate['cleaned']=True
+        return dict(protocol_names=sorted(GATE_NAMES),exact_original_files_removed=sorted(GATE_FINAL_NAMES),
+            transient_stages_absent=sorted(GATE_STAGE_NAMES),
+            private_token_record_removed=True,directory_removed=True)
+
+    def close_restore_gate(self):
+        if self.restore_gate is not None and self.restore_gate['fd'] is not None:
+            os.close(self.restore_gate['fd']);self.restore_gate['fd']=None
+
     def observe_resume_gate(self,session,accepted,baseline,record_path,deadline):
         """Independent E7 physical oracle; never a public readiness assertion."""
         remaining(deadline)
@@ -523,8 +800,13 @@ class UnloadRuntime:
         control=private_path(self.quota['deployment_control'],directory=True)
         if not record_path.is_relative_to(control):
             raise ValueError('gate material must belong to this private run control')
-        observed_file=checked_file(record_path,16384,mode=0o600)
-        gate=original_json(record_path,16384)
+        state=self.restore_gate
+        if state is None or record_path!=state['path']/'observation.json':
+            raise ValueError('only the original selected activation gate observation is admissible')
+        self._gate_files_unchanged()
+        gate,digest,identity=gate_json(record_path,16384,directory_fd=state['fd'])
+        if (digest,identity)!=state['files']['observation.json']:
+            raise ValueError('original observation does not match committed ready digest')
         native=self.services.native_pools[0]
         database=private_path(native['database'])
         with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
@@ -542,6 +824,9 @@ class UnloadRuntime:
                 or any(claim['local'][key]!=self.runs[session]['local'][key] for key in ('sandbox','owner'))):
             raise ValueError('original current global/native restore identity changed')
         action=claim['activation']
+        if (action['identity']['sandbox']!=state['config']['sandbox']
+                or action['identity']['generation']!=state['config']['generation']):
+            raise ValueError('actual independent activation differs from selected gate target')
         command=action['command']['logical']['command']['ActivateVm']
         if (command['sandbox']!=claim['local']['sandbox']
                 or command['generation']!=claim['generation']
@@ -581,9 +866,9 @@ class UnloadRuntime:
             public_authorization_proven=False)
         # Seal the observation before any caller releases the original gate.
         write_once(control/'restore-gate-observed.json',receipt)
-        if checked_file(record_path,16384,mode=0o600)!=observed_file:
-            raise ValueError('original gate bootstrap file changed; preserve responsibility')
-        record_path.unlink()
+        self._gate_files_unchanged()
+        # Producer evidence, including the secret, remains private for exact
+        # supervisor cleanup. No unlink/glob or generic evidence export here.
         return receipt
 
     def destroy_evidence(self,session,deadline):
@@ -705,6 +990,7 @@ class UnloadRuntime:
         if processes_in_uid_range(native['uid_base'],native['uid_base']+slots-1):
             raise RuntimeError('original exclusive VM UID domain not empty')
         self.services.storage_peaks()
+        report['activation_gate_cleanup']=self.cleanup_restore_gate()
         report['cleanup']='product-gc-settled-exact-runtime-free-managers-exited'
         # Actual host audit calls original observe_position_free, including
         # exact retirement of VMM/helpers/network. Product material references

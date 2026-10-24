@@ -520,6 +520,15 @@ impl WorkRecovery for NodeHost {
             .ok()
     }
 
+    fn observe_lifecycle_terminated_capture(
+        &self,
+        work: &sandproof_controller_service::capture::TerminatedCaptureWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::TerminatedCaptureObservation> {
+        self.worker
+            .observe_terminated_capture(self.host_epoch_source.as_ref()?, work)
+            .ok()
+    }
+
     fn observe_lifecycle_original_continue(
         &self,
         action: &WorkAction<core::EffectId>,

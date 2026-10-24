@@ -39,21 +39,31 @@ pub struct CaptureWorkEndReceipt {
     pub end: CaptureWorkEnd,
 }
 
-/// The original SQL end record distinguishes a never-granted Full permit from
-/// a returned API plus confirmed writer exit. Both retain any material debt.
+/// The original SQL end distinguishes a never-granted Full permit, a worker's
+/// explicit no-request outcome, and a returned API with confirmed writer exit.
+/// Every case retains any material debt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub enum CaptureWorkEnd {
-    NeverReleased { seal: Option<CaptureSealEnd> },
-    Returned { seal: CaptureSealEnd },
+    NeverReleased {
+        seal: Option<CaptureSealEnd>,
+    },
+    /// The original worker saved an explicit no-request outcome and exited.
+    /// Neither a missing marker nor a disconnected/dead worker supplies this.
+    NoRequest {
+        seal: CaptureSealEnd,
+    },
+    Returned {
+        seal: CaptureSealEnd,
+    },
 }
 impl CaptureWorkEnd {
     #[must_use]
     pub const fn seal(self) -> Option<CaptureSealEnd> {
         match self {
             Self::NeverReleased { seal } => seal,
-            Self::Returned { seal } => Some(seal),
+            Self::NoRequest { seal } | Self::Returned { seal } => Some(seal),
         }
     }
 }
@@ -103,6 +113,7 @@ pub struct OriginalContinuation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CaptureInput {
+    RetireTerminatedCapture(super::drain::CaptureDrainCoverage),
     PrepareOriginalContinue {
         identity: OriginalContinueIdentity,
         end_receipt: CaptureWorkEndReceipt,
@@ -113,12 +124,15 @@ pub enum CaptureInput {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureEvent {
+    RetireTerminatedCapture(OperationKey, OperationKey),
     PrepareOriginalContinue(OriginalContinueIdentity),
     PublishOriginalContinued(OriginalContinueIdentity),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureReject {
     ControllerDown,
+    DrainNotConfirmed,
+    StopNotObserved,
     SandboxNotFound,
     Terminal,
     WrongPhase,
@@ -203,6 +217,22 @@ fn compensating(world: &World, id: OriginalContinueIdentity) -> Result<FailureKi
     }
     Ok(failure)
 }
+// Complete this query's borrow inside a scalar decision. The caller keeps
+// the original sequential scan and stops at its first rejected resource.
+fn other_vm_is_inactive(world: &World, original: VmId, other: VmId) -> bool {
+    let machine = match world.vm_record(other) {
+        None => return false,
+        Some(machine) => *machine,
+    };
+    if other == original {
+        return true;
+    }
+    match machine.status {
+        VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen => false,
+        VmStatus::Stopped | VmStatus::Reclaimed => true,
+    }
+}
+
 fn source_resources(world: &World, id: OriginalContinueIdentity) -> Result<(), CaptureReject> {
     let row = world
         .sandbox_record(id.key.sandbox)
@@ -238,16 +268,7 @@ fn source_resources(world: &World, id: OriginalContinueIdentity) -> Result<(), C
     let mut resources_ready = true;
     while position < index.vms.len() && resources_ready {
         let other = index.vms[position];
-        resources_ready = match world.vm_record(other) {
-            None => false,
-            Some(machine) => {
-                other == id.vm
-                    || !matches!(
-                        machine.status,
-                        VmStatus::Prepared | VmStatus::Executing | VmStatus::Frozen
-                    )
-            }
-        };
+        resources_ready = other_vm_is_inactive(world, id.vm, other);
         position += 1;
     }
     if !resources_ready {
@@ -616,7 +637,11 @@ pub fn capture_dispatch_permanently_revoked(world: &World, effect: &EffectId) ->
 // The original journal records end facts and this native input atomically.
 // Validate every unknown-effect barrier before using the existing Pause
 // compensation reducer; illegal end input cannot even revoke the capture.
-fn prepare(
+/// Prepare the same original execution only after all original end and
+/// uncertainty checks, using the existing Pause compensation when needed.
+/// # Errors
+/// Rejects changed identity, terminal intent, unresolved work/commit or resources.
+pub fn prepare_original_continue(
     world: &World,
     id: OriginalContinueIdentity,
     receipt: CaptureWorkEndReceipt,
@@ -705,7 +730,13 @@ fn prepare_revoked(
         next,
     })
 }
-fn publish(world: &World, id: OriginalContinueIdentity) -> Result<CaptureDecision, CaptureReject> {
+/// Publish the original continuation only after its exact activation succeeds.
+/// # Errors
+/// Rejects changed/terminal state, unprepared continuation or missing activation.
+pub fn publish_original_continued(
+    world: &World,
+    id: OriginalContinueIdentity,
+) -> Result<CaptureDecision, CaptureReject> {
     let plan = original_plan(world, id)?;
     if !prepared(plan, id) {
         return Err(CaptureReject::ContinuationNotPrepared);
@@ -714,10 +745,10 @@ fn publish(world: &World, id: OriginalContinueIdentity) -> Result<CaptureDecisio
         .sandbox_record(id.key.sandbox)
         .ok_or(CaptureReject::SandboxNotFound)?;
     if row.phase == Phase::Running
-        && matches!(
-            row.current_operation.map(|operation| operation.status),
-            Some(OperationStatus::Failed(_))
-        )
+        && match row.current_operation {
+            Some(operation) => matches!(operation.status, OperationStatus::Failed(_)),
+            None => false,
+        }
     {
         return Ok(CaptureDecision {
             event: CaptureEvent::PublishOriginalContinued(id),
@@ -726,10 +757,11 @@ fn publish(world: &World, id: OriginalContinueIdentity) -> Result<CaptureDecisio
     }
     let failure = compensating(world, id)?;
     source_resources(world, id)?;
-    let saved = plan
-        .capture
-        .and_then(CaptureHandoff::original_continuation)
-        .ok_or(CaptureReject::ContinuationNotPrepared)?;
+    let saved = match plan.capture {
+        Some(capture) => capture.original_continuation(),
+        None => None,
+    }
+    .ok_or(CaptureReject::ContinuationNotPrepared)?;
     ended_attempts(world, id, saved.end_receipt)?;
     if row.desired != Authority::Closed
         || row.effective != Authority::Closed
@@ -783,11 +815,16 @@ pub fn handle_capture(
     input: CaptureInput,
 ) -> Result<CaptureDecision, CaptureReject> {
     match input {
+        CaptureInput::RetireTerminatedCapture(coverage) => {
+            super::drain::retire_terminated_capture(world, coverage)
+        }
         CaptureInput::PrepareOriginalContinue {
             identity,
             end_receipt,
-        } => prepare(world, identity, end_receipt),
-        CaptureInput::PublishOriginalContinued { identity } => publish(world, identity),
+        } => prepare_original_continue(world, identity, end_receipt),
+        CaptureInput::PublishOriginalContinued { identity } => {
+            publish_original_continued(world, identity)
+        }
     }
 }
 

@@ -60,6 +60,7 @@ pub type SourceProbe = Box<
 
 #[derive(Default)]
 pub struct State {
+    pub full_proposal_error: Option<ApplicationError>,
     pub source_probe: Option<SourceProbe>,
     pub source_calls: usize,
     pub actions: Vec<WorkAction<core::EffectId>>,
@@ -89,6 +90,35 @@ impl WorkEvidence for TestHost {
     type Evidence = workflow::FakeHostEvidence;
 }
 impl WorkExecution for TestHost {
+    fn propose_lifecycle_full(
+        &self,
+        _pause: &sandproof_controller_service::capture::PauseWorkRequest,
+        _source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::FullCaptureWorkRequest, ApplicationError>
+    {
+        Err(self
+            .0
+            .lock()
+            .unwrap()
+            .full_proposal_error
+            .unwrap_or(ApplicationError::Busy))
+    }
+    fn execute_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+        permit: &sandproof_controller_service::capture::OriginalContinuePermit,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        if permit.action() != action
+            || permit.work_binding()
+                != &work
+                    .binding_digest()
+                    .map_err(|_| WorkerTransportError::ConnectionLost)?
+        {
+            return Err(WorkerTransportError::ConnectionLost);
+        }
+        self.execute(action)
+    }
     fn execute(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -123,6 +153,13 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
+    fn observe_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        self.observe(action)
+    }
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
         let mut state = self.0.lock().unwrap();
         state.recovery_observations += 1;

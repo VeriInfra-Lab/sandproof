@@ -3,6 +3,7 @@ mod admit;
 mod authorize;
 mod claim;
 mod complete;
+mod continuation;
 mod end;
 mod unloaded;
 mod validate;
@@ -18,6 +19,10 @@ use serde::{Deserialize, Serialize};
 
 pub(in crate::controller) use claim::claim;
 pub(in crate::controller) use complete::save_receipt;
+pub(in crate::controller) use continuation::validate_receipt as validate_continue_receipt;
+pub(in crate::controller) use continuation::{
+    historical_identity as continued_identity, ready_records as continued_ready_records,
+};
 pub(in crate::controller) use end::prepare::permits_input as permits_continue_input;
 pub(super) use validate::validate_record;
 const RECORD_BYTES: usize = 131_072;
@@ -90,6 +95,17 @@ impl SourceWorkRecord {
     #[must_use]
     pub fn capture_worker(&self) -> Option<&CaptureWorkerBinding> {
         self.capture.as_ref()?.worker.as_ref()
+    }
+    #[must_use]
+    pub fn capture_action(&self) -> Option<&WorkAction<core::EffectId>> {
+        self.capture.as_ref()?.action.as_ref()
+    }
+    #[must_use]
+    pub fn capture_api_end(&self) -> Option<&crate::capture::CaptureApiEndObservation> {
+        match self.capture.as_ref()?.end.as_ref()? {
+            end::CaptureEndRecord::Returned { observation } => Some(observation),
+            end::CaptureEndRecord::NeverReleased { .. } => None,
+        }
     }
     #[must_use]
     pub fn captured_manifest(&self) -> Option<ContentDigest> {

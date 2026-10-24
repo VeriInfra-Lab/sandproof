@@ -144,7 +144,8 @@ fn effect_awaiting(status: Option<&EffectStatus>) -> bool {
             EffectStatus::Committed
             | EffectStatus::Acknowledged(_)
             | EffectStatus::RetiredByStop(_)
-            | EffectStatus::RetiredByCaptureEnd(_),
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         )
         | None => false,
     }

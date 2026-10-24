@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 pub(crate) struct ReadyCandidate {
     pub view: LifecycleCreateObservation,
     pub actions: Vec<WorkAction<core::EffectId>>,
+    pub continuation: Option<crate::capture::OriginalContinueWorkRequest>,
     receipts: Vec<Vec<u8>>,
     source: Option<SourceProcessIdentity>,
     credential: Option<(core::Generation, [u8; 32])>,
@@ -28,7 +29,7 @@ pub(crate) struct ReadyCandidate {
 }
 impl ReadyCandidate {
     pub(crate) fn can_probe(&self) -> bool {
-        self.actions.len() == 5
+        (self.actions.len() == if self.continuation.is_some() { 1 } else { 5 })
             && self.source.is_some()
             && self.credential.is_some()
             && self.view.readiness
@@ -55,7 +56,33 @@ fn expected_commands(
     if !plan.sealed
         || plan.vm != Some(vm)
         || plan.slot != Some(slot)
-        || plan.epoch != record.epoch
+        || (plan.epoch != record.epoch
+            && !record.current_operation.is_some_and(|op| {
+                op.kind == core::OperationKind::Pause
+                    && matches!(op.status, core::OperationStatus::Failed(_))
+                    && world
+                        .operation_plan(core::OperationKey {
+                            sandbox: local.sandbox,
+                            operation: op.id,
+                        })
+                        .is_some_and(|p| {
+                            p.epoch == record.epoch
+                                && p.generation == record.generation
+                                && p.capture
+                                    .and_then(core::capture::CaptureHandoff::original_continuation)
+                                    .is_some_and(|c| c.vm == vm)
+                                && core::effect::effect_succeeded_check(
+                                    world,
+                                    &core::capture::OriginalContinueIdentity {
+                                        key: p.key,
+                                        epoch: p.epoch,
+                                        generation: p.generation,
+                                        vm,
+                                    }
+                                    .activation_command(),
+                                )
+                        })
+            }))
         || plan.generation != record.generation
         || world
             .operation_record(key)
@@ -168,7 +195,7 @@ pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>
     Ok(found.into_iter().unzip())
 }
 
-fn native_snapshot(
+pub(in crate::controller) fn native_snapshot(
     tx: &Transaction<'_>,
     namespace: &str,
     world: &core::World,
@@ -267,7 +294,13 @@ pub(in crate::controller) fn base_snapshot(
     };
     let readiness = if let Some(reason) = session.refusal {
         CreateReadiness::Refused { reason }
-    } else if current_request == *intent || applied_renewal {
+    } else if current_request == *intent
+        || applied_renewal
+        || (current_entry.unload_resolution.is_some()
+            && session
+                .current_execution_origin()
+                .is_some_and(|entry| entry.intent == *intent))
+    {
         CreateReadiness::Pending(CreateReadinessPending::NoLocalMapping)
     } else {
         CreateReadiness::NotCurrent
@@ -283,6 +316,7 @@ pub(in crate::controller) fn base_snapshot(
             readiness,
         },
         actions: vec![],
+        continuation: None,
         receipts: vec![],
         source: None,
         credential: None,
@@ -324,7 +358,14 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
         candidate.view.readiness = CreateReadiness::Pending(CreateReadinessPending::WorkUnknown);
         return Ok(());
     }
-    if !native.has_completed_original_execution(local)
+    let continued = if native.has_completed_original_execution(local) {
+        None
+    } else {
+        super::super::source_work::full::continued_ready_records::<E>(
+            tx, world, namespace, local, native,
+        )?
+    };
+    if (!native.has_completed_original_execution(local) && continued.is_none())
         || candidate.view.historical_result
             != Some(core::OperationResult::Running(native.generation))
     {
@@ -345,12 +386,28 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
             CreateReadiness::Pending(CreateReadinessPending::OriginalEvidenceMissing);
         return Ok(());
     }
-    candidate.ready_fact = internal_inbox::native_ready_fact(tx, namespace, world, local)?;
-    let observed =
+    candidate.ready_fact = if continued.is_some() {
+        let facts = super::super::unload_resolution::ready_facts(lifetime, now_ms)?;
+        Some(
+            sandproof_protocol::internal::lifecycle::LifecycleFact::Ready {
+                started_at_ms: facts.started_at_ms,
+                end_at_ms: facts.end_at_ms,
+                max_end_at_ms: facts.max_end_at_ms,
+            },
+        )
+    } else {
+        internal_inbox::native_ready_fact(tx, namespace, world, local)?
+    };
+    let observed = if let Some((work, action, receipt)) = continued {
+        let source = work.source().source.clone();
+        candidate.continuation = Some(work);
+        Ok((source, vec![action], vec![receipt]))
+    } else {
         capture::original_source::<E>(tx, namespace, world, local.sandbox).and_then(|source| {
             startup_records::<E>(tx, namespace, world, local)
                 .map(|(actions, receipts)| (source, actions, receipts))
-        });
+        })
+    };
     let (source, actions, receipts) = match observed {
         Ok(found) => found,
         Err(JournalError::UnresolvedAction) => {
@@ -363,6 +420,10 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
     candidate.source = Some(source);
     candidate.actions = actions;
     candidate.receipts = receipts;
+    fill_host_credentials(candidate, tx, namespace, world, local)
+}
+
+fn fill_host_credentials(candidate:&mut ReadyCandidate,tx:&Transaction<'_>,namespace:&str,world:&core::World,local:InternalLocalBinding)->Result<(),JournalError>{
     candidate.options = Some(
         admission::read_create_options(tx, namespace, local.sandbox)
             .map_err(|_| JournalError::CorruptStore)?,

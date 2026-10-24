@@ -273,7 +273,8 @@ pub fn effect_succeeded_check(world: &World, command: &Command) -> bool {
             | EffectStatus::OutcomeUnknown
             | EffectStatus::Acknowledged(EffectOutcome::Failed(_))
             | EffectStatus::RetiredByStop(_)
-            | EffectStatus::RetiredByCaptureEnd(_),
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         )
         | None => false,
     }
@@ -474,7 +475,8 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
             EffectStatus::Dispatched
             | EffectStatus::Acknowledged(_)
             | EffectStatus::RetiredByStop(_)
-            | EffectStatus::RetiredByCaptureEnd(_),
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         ) => Err(EffectReject::NotDispatchable),
     }
 }
@@ -519,9 +521,11 @@ pub fn handle_effect_receipt(
             })
         }
         Some(EffectStatus::Committed) => Err(EffectReject::NotAwaitingResult),
-        Some(EffectStatus::RetiredByStop(_) | EffectStatus::RetiredByCaptureEnd(_)) => {
-            Err(EffectReject::EffectRetired)
-        }
+        Some(
+            EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
+        ) => Err(EffectReject::EffectRetired),
     }
 }
 
@@ -544,7 +548,8 @@ pub fn handle_effect_timeout(world: &World, id: EffectId) -> Result<EffectDecisi
             EffectStatus::Committed
             | EffectStatus::Acknowledged(_)
             | EffectStatus::RetiredByStop(_)
-            | EffectStatus::RetiredByCaptureEnd(_),
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         ) => Err(EffectReject::NotDispatched),
     }
 }

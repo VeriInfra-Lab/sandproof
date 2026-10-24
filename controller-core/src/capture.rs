@@ -11,6 +11,7 @@
 mod tests;
 
 pub mod continuation;
+pub mod drain;
 pub use continuation::{
     CaptureInput, CaptureSealEnd, CaptureWorkEnd, CaptureWorkEndReceipt, OriginalContinueIdentity,
 };
@@ -41,6 +42,7 @@ pub struct CaptureHandoff {
     capture_work: bool,
     unload_source: bool,
     original_continuation: Option<continuation::OriginalContinuation>,
+    terminal_drain: Option<drain::CaptureDrainCoverage>,
 }
 
 impl CaptureHandoff {
@@ -52,6 +54,7 @@ impl CaptureHandoff {
             capture_work: true,
             unload_source: false,
             original_continuation: None,
+            terminal_drain: None,
         }
     }
 
@@ -157,11 +160,34 @@ impl CaptureHandoff {
             && !self.capture_work
             && !self.unload_source
             && self.original_continuation.is_some()
+            && self.terminal_drain.is_none()
     }
 
     #[must_use]
     pub const fn original_continuation(self) -> Option<continuation::OriginalContinuation> {
         self.original_continuation
+    }
+
+    #[must_use]
+    pub const fn terminal_drain(self) -> Option<drain::CaptureDrainCoverage> {
+        self.terminal_drain
+    }
+    pub(crate) fn finish_terminal_drain(
+        mut self,
+        value: drain::CaptureDrainCoverage,
+    ) -> Option<Self> {
+        if self.commit != CaptureCommit::NotRegistered
+            || self.eligibility != RestoreEligibility::Revoked
+            || !self.capture_work
+            || self.unload_source
+            || self.original_continuation.is_some()
+            || self.terminal_drain.is_some()
+        {
+            return None;
+        }
+        self.capture_work = false;
+        self.terminal_drain = Some(value);
+        Some(self)
     }
 
     // Only the original guarded core transition ends this work. The service
@@ -176,6 +202,7 @@ impl CaptureHandoff {
             || !self.capture_work
             || self.unload_source
             || self.original_continuation.is_some()
+            || self.terminal_drain.is_some()
         {
             return None;
         }

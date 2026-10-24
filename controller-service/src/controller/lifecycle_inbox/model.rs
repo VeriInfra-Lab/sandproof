@@ -94,6 +94,8 @@ pub(super) struct Entry {
     /// Kept even if its previously confirmed SDK predecessor is compacted.
     #[serde(deserialize_with = "required_option")]
     pub previous_effective_end_at_ms: Option<i64>,
+    #[serde(deserialize_with = "required_option")]
+    pub unload_resolution: Option<super::unload_resolution::UnloadResolution>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -389,6 +391,7 @@ impl Inbox {
         entry: &Entry,
         context: &AuthenticatedCenterContext,
     ) -> Result<usize, JournalError> {
+        super::unload_resolution::validate_entry(entry)?;
         let intent = &entry.intent;
         let binding = &intent.request.binding;
         if intent.validate(context).is_err()
@@ -545,6 +548,7 @@ impl Inbox {
             local_operation: None,
             applied_deadline: None,
             previous_effective_end_at_ms: None,
+            unload_resolution: None,
         });
         Ok((s, session.entries.len() - 1))
     }
@@ -600,6 +604,7 @@ impl Inbox {
                 local_operation: None,
                 applied_deadline: None,
                 previous_effective_end_at_ms: None,
+                unload_resolution: None,
             }],
             confirmed_terminal: None,
             confirmed_renewal: None,
@@ -630,7 +635,11 @@ impl Session {
                 // receiving Renew did not replace the original running VM.
                 // The SDK acknowledgement gate below remains separate.
                 LifecycleOperation::Renew { .. } => true,
-                _ => false,
+                LifecycleOperation::Unload { .. } => entry
+                    .unload_resolution
+                    .as_ref()
+                    .is_some_and(|r| r.result().is_some()),
+                LifecycleOperation::Destroy { .. } => false,
             })
     }
 
