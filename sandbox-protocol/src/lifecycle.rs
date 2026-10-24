@@ -37,7 +37,8 @@ pub use observation::{
 };
 pub use public::{
     CreateParameters, PublicAcceptance, PublicCreateRequest, PublicDestroyRequest,
-    PublicRequestWindow, PublicResumeRequest, PublicSessionPhase, PublicSessionView, PublicUnloadRequest,
+    PublicRequestWindow, PublicResumeRequest, PublicSessionPhase, PublicSessionView,
+    PublicUnloadRequest,
 };
 pub use renewal::{ConfirmedRenewal, RenewalConfirmation};
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};

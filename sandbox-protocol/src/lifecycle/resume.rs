@@ -12,7 +12,9 @@ pub enum CurrentResumeReadiness {
     /// The provider must establish that the same possibly activated candidate
     /// has died. Missing replies, a timeout or an absent observation do not.
     StateLost,
-    Observed { facts: CurrentReadyFacts },
+    Observed {
+        facts: CurrentReadyFacts,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,7 +33,10 @@ impl ResumeObservation {
         let binding = &original.request.binding;
         let current = &self.current_request.request.binding;
         if self.request != *original
-            || !matches!(original.request.operation, LifecycleOperation::Resume { .. })
+            || !matches!(
+                original.request.operation,
+                LifecycleOperation::Resume { .. }
+            )
             || original.request.validate(&binding.node).is_err()
             || original.center.deployment != binding.node.deployment_id
             || original.accepted_version == 0
@@ -43,27 +48,42 @@ impl ResumeObservation {
             || current.session != binding.session
             || current.key.owner != binding.key.owner
             || current.key.deployment != binding.key.deployment
-            || self.current_request.request.validate(&binding.node).is_err()
+            || self
+                .current_request
+                .request
+                .validate(&binding.node)
+                .is_err()
             || self.current_request.accepted_version_for_request()
                 != Some(self.current_request.accepted_version)
         {
             return false;
         }
         if self.current_request != *original {
-            if let LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } = self.current_request.request.operation {
-                let LifecycleOperation::Resume { target_incarnation, .. } = original.request.operation else {
+            if let LifecycleOperation::Renew {
+                incarnation,
+                end_at_ms,
+                extend_only,
+            } = self.current_request.request.operation
+            {
+                let LifecycleOperation::Resume {
+                    target_incarnation, ..
+                } = original.request.operation
+                else {
                     return false;
                 };
                 return self.current_request.accepted_version > original.accepted_version
                     && current.key != binding.key
                     && incarnation == target_incarnation
                     && match &self.readiness {
-                        CurrentResumeReadiness::Observed { facts } => {
-                            u64::try_from(end_at_ms).is_ok_and(|end| {
+                        CurrentResumeReadiness::Observed { facts } => u64::try_from(end_at_ms)
+                            .is_ok_and(|end| {
                                 current_facts(facts)
-                                    && if extend_only { facts.end_at_ms >= end } else { facts.end_at_ms == end }
-                            })
-                        }
+                                    && if extend_only {
+                                        facts.end_at_ms >= end
+                                    } else {
+                                        facts.end_at_ms == end
+                                    }
+                            }),
                         CurrentResumeReadiness::NotCurrent => false,
                         _ => true,
                     };
@@ -110,8 +130,12 @@ impl CurrentReadyFacts {
         source: &UnloadedFacts,
     ) -> bool {
         let LifecycleOperation::Resume {
-            source_incarnation, capture, manifest_digest, ..
-        } = &original.request.operation else {
+            source_incarnation,
+            capture,
+            manifest_digest,
+            ..
+        } = &original.request.operation
+        else {
             return false;
         };
         source.source_incarnation == *source_incarnation
@@ -132,17 +156,31 @@ impl CurrentReadyFacts {
         current: &AcceptedLifecycleIntent,
         source: &UnloadedFacts,
     ) -> bool {
-        let LifecycleOperation::Resume { target_incarnation, .. } = original.request.operation else {
+        let LifecycleOperation::Resume {
+            target_incarnation, ..
+        } = original.request.operation
+        else {
             return false;
         };
-        let LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } = current.request.operation else {
+        let LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms,
+            extend_only,
+        } = current.request.operation
+        else {
             return false;
         };
-        let Ok(end) = u64::try_from(end_at_ms) else { return false; };
+        let Ok(end) = u64::try_from(end_at_ms) else {
+            return false;
+        };
         self.matches_resume_source(original, source)
             && incarnation == target_incarnation
             && current_facts(self)
-            && if extend_only { self.end_at_ms >= end } else { self.end_at_ms == end }
+            && if extend_only {
+                self.end_at_ms >= end
+            } else {
+                self.end_at_ms == end
+            }
     }
 }
 

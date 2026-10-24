@@ -291,7 +291,8 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
                 == sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH
             {
                 lifecycle::Call::UnloadObservation
-            } else if request.uri().path() == sandproof_protocol::lifecycle::RESUME_OBSERVATION_PATH {
+            } else if request.uri().path() == sandproof_protocol::lifecycle::RESUME_OBSERVATION_PATH
+            {
                 lifecycle::Call::ResumeObservation
             } else if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
             {

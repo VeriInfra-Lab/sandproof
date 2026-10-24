@@ -15,7 +15,10 @@ fn original() -> AcceptedLifecycleIntent {
             deployment: node.deployment_id.clone(),
             center: "center".try_into().unwrap(),
         },
-        retention: RetentionBinding { slot: 1, window: 1.try_into().unwrap() },
+        retention: RetentionBinding {
+            slot: 1,
+            window: 1.try_into().unwrap(),
+        },
         accepted_version: 3,
         request: LifecycleRequest {
             binding: OperationBinding {
@@ -54,11 +57,15 @@ fn ready() -> CurrentReadyFacts {
 fn resume_observation_keeps_the_complete_current_envelope() {
     let original = original();
     let view = ResumeObservation {
-        request: original.clone(), current_request: original.clone(),
+        request: original.clone(),
+        current_request: original.clone(),
         readiness: CurrentResumeReadiness::Observed { facts: ready() },
     };
     assert!(view.matches_request(&original));
-    assert_eq!(serde_json::from_slice::<ResumeObservation>(&serde_json::to_vec(&view).unwrap()).unwrap(), view);
+    assert_eq!(
+        serde_json::from_slice::<ResumeObservation>(&serde_json::to_vec(&view).unwrap()).unwrap(),
+        view
+    );
     let mut changed = view.clone();
     changed.request.request.binding.key.owner = "foreign".try_into().unwrap();
     assert!(!changed.matches_request(&original));
@@ -74,7 +81,8 @@ fn resume_observation_keeps_the_complete_current_envelope() {
 fn a_later_operation_can_only_report_the_original_resume_as_not_current() {
     let original = original();
     let mut view = ResumeObservation {
-        request: original.clone(), current_request: original.clone(),
+        request: original.clone(),
+        current_request: original.clone(),
         readiness: CurrentResumeReadiness::NotCurrent,
     };
     assert!(!view.matches_request(&original));
@@ -96,18 +104,37 @@ fn resumed_facts_preserve_the_original_source_and_all_lifetime_fields() {
     let original = original();
     let facts = ready();
     let source = UnloadedFacts {
-        source_incarnation: 1.try_into().unwrap(), capture: 1.try_into().unwrap(),
-        manifest_digest: ContentDigest::from_sha256([7; 32]), material_bytes: 3000,
-        started_at_ms: facts.started_at_ms, end_at_ms: facts.end_at_ms,
-        max_end_at_ms: facts.max_end_at_ms, startup_deadline_ms: facts.startup_deadline_ms,
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+        manifest_digest: ContentDigest::from_sha256([7; 32]),
+        material_bytes: 3000,
+        started_at_ms: facts.started_at_ms,
+        end_at_ms: facts.end_at_ms,
+        max_end_at_ms: facts.max_end_at_ms,
+        startup_deadline_ms: facts.startup_deadline_ms,
     };
     assert!(facts.matches_resumed(&original, &source));
     for altered in [
-        CurrentReadyFacts { started_at_ms: 11, ..facts.clone() },
-        CurrentReadyFacts { end_at_ms: 1001, ..facts.clone() },
-        CurrentReadyFacts { max_end_at_ms: 2001, ..facts.clone() },
-        CurrentReadyFacts { startup_deadline_ms: 21, ..facts.clone() },
-        CurrentReadyFacts { observed_at_ms: 1000, ..facts.clone() },
+        CurrentReadyFacts {
+            started_at_ms: 11,
+            ..facts.clone()
+        },
+        CurrentReadyFacts {
+            end_at_ms: 1001,
+            ..facts.clone()
+        },
+        CurrentReadyFacts {
+            max_end_at_ms: 2001,
+            ..facts.clone()
+        },
+        CurrentReadyFacts {
+            startup_deadline_ms: 21,
+            ..facts.clone()
+        },
+        CurrentReadyFacts {
+            observed_at_ms: 1000,
+            ..facts.clone()
+        },
     ] {
         assert!(!altered.matches_resumed(&original, &source));
     }
@@ -123,14 +150,18 @@ fn resumed_facts_preserve_the_original_source_and_all_lifetime_fields() {
 fn original_resume_guard_rejects_invalid_request_versions_and_incarnations() {
     let original = original();
     let mut view = ResumeObservation {
-        request: original.clone(), current_request: original.clone(),
+        request: original.clone(),
+        current_request: original.clone(),
         readiness: CurrentResumeReadiness::Pending,
     };
     view.request.accepted_version = 4;
     view.current_request = view.request.clone();
     assert!(!view.matches_request(&view.request));
     view.request = original;
-    if let LifecycleOperation::Resume { target_incarnation, .. } = &mut view.request.request.operation {
+    if let LifecycleOperation::Resume {
+        target_incarnation, ..
+    } = &mut view.request.request.operation
+    {
         *target_incarnation = 1.try_into().unwrap();
     }
     view.current_request = view.request.clone();
@@ -142,36 +173,56 @@ fn renewed_resume_uses_the_same_execution_and_original_total_lifetime() {
     let original = original();
     let mut renewed = original.clone();
     renewed.request.operation = LifecycleOperation::Renew {
-        incarnation: 2.try_into().unwrap(), end_at_ms: 1800, extend_only: false,
+        incarnation: 2.try_into().unwrap(),
+        end_at_ms: 1800,
+        extend_only: false,
     };
     renewed.request.binding.expected = ExpectedSession::Version(3);
     renewed.request.binding.key.sequence = 4.try_into().unwrap();
     renewed.accepted_version = 4;
     let original_facts = ready();
     let source = UnloadedFacts {
-        source_incarnation: 1.try_into().unwrap(), capture: 1.try_into().unwrap(),
-        manifest_digest: ContentDigest::from_sha256([7; 32]), material_bytes: 3000,
-        started_at_ms: original_facts.started_at_ms, end_at_ms: original_facts.end_at_ms,
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+        manifest_digest: ContentDigest::from_sha256([7; 32]),
+        material_bytes: 3000,
+        started_at_ms: original_facts.started_at_ms,
+        end_at_ms: original_facts.end_at_ms,
         max_end_at_ms: original_facts.max_end_at_ms,
         startup_deadline_ms: original_facts.startup_deadline_ms,
     };
     // Observation may be after the previous deadline, within the accepted
     // renewed deadline. Renewal admission is the journal's separate obligation.
-    let facts = CurrentReadyFacts { end_at_ms: 1800, observed_at_ms: 1500, ..original_facts };
+    let facts = CurrentReadyFacts {
+        end_at_ms: 1800,
+        observed_at_ms: 1500,
+        ..original_facts
+    };
     let mut view = ResumeObservation {
-        request: original.clone(), current_request: renewed.clone(),
-        readiness: CurrentResumeReadiness::Observed { facts: facts.clone() },
+        request: original.clone(),
+        current_request: renewed.clone(),
+        readiness: CurrentResumeReadiness::Observed {
+            facts: facts.clone(),
+        },
     };
     assert!(view.matches_request(&original));
     assert!(facts.matches_resumed_renewal(&original, &renewed, &source));
     assert!(!facts.matches_resumed(&original, &source));
-    if let LifecycleOperation::Renew { incarnation, .. } = &mut view.current_request.request.operation {
+    if let LifecycleOperation::Renew { incarnation, .. } =
+        &mut view.current_request.request.operation
+    {
         *incarnation = 1.try_into().unwrap();
     }
     assert!(!view.matches_request(&original));
     assert!(!facts.matches_resumed_renewal(&original, &view.current_request, &source));
-    let overflow = CurrentReadyFacts { end_at_ms: 2001, ..facts.clone() };
+    let overflow = CurrentReadyFacts {
+        end_at_ms: 2001,
+        ..facts.clone()
+    };
     assert!(!overflow.matches_resumed_renewal(&original, &renewed, &source));
-    let changed_start = CurrentReadyFacts { started_at_ms: 11, ..facts };
+    let changed_start = CurrentReadyFacts {
+        started_at_ms: 11,
+        ..facts
+    };
     assert!(!changed_start.matches_resumed_renewal(&original, &renewed, &source));
 }

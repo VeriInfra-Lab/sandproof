@@ -12,8 +12,8 @@ use sandproof_protocol::{
     TenantId,
     lifecycle::{
         AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, OperationKey,
-        PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase, PublicSessionView,
-        PublicUnloadRequest, SessionId,
+        PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase,
+        PublicSessionView, PublicUnloadRequest, SessionId,
     },
 };
 
@@ -409,21 +409,31 @@ impl SharedBusinessAuthority {
         check_public_window(request.window)?;
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
         authority.snapshot_envelope().map_err(authority_error)?;
-        authority.decide(|current| {
-            if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
-                return Err(DecisionError::NotFound.into());
-            }
-            let submission = LifecycleSubmission::Resume {
-                key: key(&current.center, owner, request.window, request.sequence),
-                session: session.clone(),
-                expected_version: request.expected_version,
-            };
-            if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
-                return Ok((current.clone(), intent));
-            }
-            let (next, intent) = current.center.accept_lifecycle(owner, &submission, now().map_err(to_authority)?)?;
-            Ok((current.with_center(next), intent))
-        }).map_err(authority_error)
+        authority
+            .decide(|current| {
+                if current
+                    .metadata
+                    .private_sandboxes()
+                    .contains(session.as_protocol_id())
+                {
+                    return Err(DecisionError::NotFound.into());
+                }
+                let submission = LifecycleSubmission::Resume {
+                    key: key(&current.center, owner, request.window, request.sequence),
+                    session: session.clone(),
+                    expected_version: request.expected_version,
+                };
+                if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
+                    return Ok((current.clone(), intent));
+                }
+                let (next, intent) = current.center.accept_lifecycle(
+                    owner,
+                    &submission,
+                    now().map_err(to_authority)?,
+                )?;
+                Ok((current.with_center(next), intent))
+            })
+            .map_err(authority_error)
     }
 
     /// # Errors

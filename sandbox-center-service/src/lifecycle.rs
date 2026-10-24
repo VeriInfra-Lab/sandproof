@@ -11,8 +11,8 @@ use sandproof_api::{PortError, lifecycle::LifecyclePort};
 use sandproof_center_core::SessionPhase;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentCreateReadiness, LifecycleOperation, PublicAcceptance,
-    PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase, PublicSessionView,
-    PublicUnloadRequest, SessionId,
+    PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase,
+    PublicSessionView, PublicUnloadRequest, SessionId,
 };
 
 fn query_lock_error(stage: DiagnosticStage) -> PortError {
@@ -301,7 +301,8 @@ impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusine
         session: SessionId,
         request: PublicResumeRequest,
     ) -> Result<PublicAcceptance, PortError> {
-        self.application().resume_lifecycle(owner, &session, &request)
+        self.application()
+            .resume_lifecycle(owner, &session, &request)
     }
 }
 

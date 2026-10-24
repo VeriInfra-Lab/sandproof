@@ -532,7 +532,9 @@ impl AuthorityPort for SharedBusinessAuthority {
         &mut self,
         observation: &sandproof_protocol::lifecycle::ResumeObservation,
     ) -> Result<(), AuthorityError> {
-        self.0.lock().map_err(|_| AuthorityError::RecoveryRequired)?
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
             .accept_lifecycle_resume_observation(observation)
     }
     fn accept_lifecycle_create_refusal(
