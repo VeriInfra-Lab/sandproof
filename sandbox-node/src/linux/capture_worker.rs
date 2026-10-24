@@ -118,7 +118,7 @@ impl PreparedCaptureWorker {
     }
 
     /// Close the Ready worker's release pipe. Only that worker may persist its
-    /// NoRequest decision; dropping these handles supplies no end receipt.
+    /// `NoRequest` decision; dropping these handles supplies no end receipt.
     pub fn cancel(self) {
         drop(self.child);
         drop(self.gate);

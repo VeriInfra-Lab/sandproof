@@ -1,5 +1,5 @@
 //! One job/Ready/Release exchange with the same original worker and pipes.
-use super::*;
+use super::{Serialize, Deserialize, ContentDigest, RuntimeProcessIdentity, NodeResult, CAPTURE_WORKER_INPUT_BYTES, CaptureWorkerJob, decode_job, Instant, Duration, SnapshotLayout, full_snapshot, api_context, decode_digest, CaptureWorkerOutcome, CaptureWorkerReply, CAPTURE_WORKER_OUTPUT_BYTES};
 use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
 
@@ -193,6 +193,7 @@ pub(super) fn run(expected_job_digest: &str) -> NodeResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::digest;
     fn process() -> RuntimeProcessIdentity {
         RuntimeProcessIdentity::capture(std::process::id()).unwrap()
     }
@@ -243,7 +244,7 @@ mod tests {
             },
         })
         .unwrap();
-        assert!(ready.len() + reply.len() + 1 <= CAPTURE_WORKER_OUTPUT_BYTES);
+        assert!(ready.len() + reply.len() < CAPTURE_WORKER_OUTPUT_BYTES);
     }
     #[test]
     fn only_complete_release_and_eof_can_dispatch_original_request() {
