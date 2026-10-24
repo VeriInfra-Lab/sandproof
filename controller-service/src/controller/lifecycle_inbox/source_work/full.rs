@@ -3,6 +3,7 @@ mod admit;
 mod authorize;
 mod claim;
 mod complete;
+mod end;
 mod unloaded;
 mod validate;
 
@@ -35,6 +36,8 @@ pub(super) struct CaptureWork {
     pub(super) completed: Option<ContentDigest>,
     #[serde(deserialize_with = "super::required_option")]
     pub(super) material_bytes: Option<u64>,
+    #[serde(deserialize_with = "super::required_option")]
+    end: Option<end::CaptureEndRecord>,
 }
 fn key(record: &SourceWorkRecord) -> Option<core::OperationKey> {
     Some(core::OperationKey {
@@ -59,7 +62,7 @@ fn matches_action(
 fn save(connection: &rusqlite::Connection, sources: &codec::Sources) -> Result<(), JournalError> {
     for record in &sources.records {
         if let Some(capture) = &record.capture
-            && serde_json::to_vec(capture)?.len() > RECORD_BYTES
+            && end::reserved_record_bytes(capture)? > RECORD_BYTES
         {
             return Err(JournalError::MaintenanceCapacity);
         }

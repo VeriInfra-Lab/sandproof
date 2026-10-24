@@ -2264,3 +2264,374 @@ fn public_unload_observation_keeps_pending_and_persisted_unloaded_mutually_exclu
         }
     }
 }
+
+fn actual_api_end(record: &SourceWorkRecord) -> crate::capture::CaptureApiEndObservation {
+    let capture = record.capture.as_ref().unwrap();
+    crate::capture::CaptureApiEndObservation {
+        action: capture.action.clone().unwrap(),
+        full_work_binding: capture.full.binding_digest().unwrap(),
+        worker: capture.worker.clone().unwrap(),
+        source: record.work.requirement().source.clone(),
+        http_status: 204,
+    }
+}
+
+#[test]
+fn original_api_end_fact_is_durable_but_changes_no_native_or_material_responsibility() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source) = unloaded_resume_source(&path);
+    let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    let before = journal.world().unwrap();
+    let observation = actual_api_end(&saved);
+    let receipt = journal
+        .record_lifecycle_capture_api_end(
+            &source.work,
+            &v3::context(),
+            observation.clone(),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert_eq!(
+        receipt.work_binding,
+        *saved
+            .full_capture()
+            .unwrap()
+            .binding_digest()
+            .unwrap()
+            .as_bytes()
+    );
+    assert_eq!(journal.world().unwrap(), before);
+    let after = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    assert_eq!(after.captured_manifest(), saved.captured_manifest());
+    assert_eq!(
+        after.captured_material_bytes(),
+        saved.captured_material_bytes()
+    );
+    assert_eq!(
+        after.capture.as_ref().unwrap().reserved_material_bytes,
+        saved.capture.as_ref().unwrap().reserved_material_bytes
+    );
+    assert_eq!(after.capture_work_end_receipt().unwrap(), Some(receipt));
+    assert_eq!(
+        journal
+            .record_lifecycle_capture_api_end(
+                &source.work,
+                &v3::context(),
+                observation,
+                &mut NeverCrash
+            )
+            .unwrap(),
+        receipt
+    );
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap()[0]
+            .capture_work_end_receipt()
+            .unwrap(),
+        Some(receipt)
+    );
+}
+
+#[test]
+fn original_api_end_rejects_substituted_source_action_worker_digest_and_incomplete_status() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, source) = unloaded_resume_source(&dir.path().join("db"));
+    let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    let before = journal.world().unwrap();
+    for mode in 0..5 {
+        let mut end = actual_api_end(&saved);
+        match mode {
+            0 => end.source.pid += 1,
+            1 => end.action.identity.generation += 1,
+            2 => end.full_work_binding = ContentDigest::from_sha256([0; 32]),
+            3 => end.http_status = 100,
+            _ => {
+                end.worker = crate::capture::CaptureWorkerBinding::new(
+                    SourceProcessIdentity {
+                        pid: 98765,
+                        start_time_ticks: 33,
+                        boot_id: "fixture-boot".into(),
+                    },
+                    ContentDigest::from_sha256([9; 32]),
+                )
+                .unwrap();
+            }
+        }
+        assert!(matches!(
+            journal.record_lifecycle_capture_api_end(
+                &source.work,
+                &v3::context(),
+                end,
+                &mut NeverCrash
+            ),
+            Err(JournalError::InvalidHostEvidence)
+        ));
+        assert_eq!(journal.world().unwrap(), before);
+        assert!(
+            journal.lifecycle_source_work(&v3::config().node).unwrap()[0]
+                .capture_work_end_receipt()
+                .unwrap()
+                .is_none()
+        );
+    }
+    assert!(matches!(
+        journal.record_lifecycle_capture_never_released(
+            &source.work,
+            &v3::context(),
+            &mut NeverCrash
+        ),
+        Err(JournalError::UnresolvedAction)
+    ));
+}
+
+#[test]
+fn original_api_end_unknown_commit_reopens_the_exact_saved_or_absent_fact() {
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, source) = unloaded_resume_source(&path);
+        let saved = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+        let observation = actual_api_end(&saved);
+        transaction::fail_next_commit(durable);
+        assert!(matches!(
+            journal.record_lifecycle_capture_api_end(
+                &source.work,
+                &v3::context(),
+                observation.clone(),
+                &mut NeverCrash
+            ),
+            Err(JournalError::CommitUncertain(_))
+        ));
+        drop(journal);
+        let mut journal = v3::open(&path);
+        let recovered = journal.lifecycle_source_work(&v3::config().node).unwrap()[0]
+            .capture_work_end_receipt()
+            .unwrap();
+        assert_eq!(recovered.is_some(), durable);
+        let retried = journal
+            .record_lifecycle_capture_api_end(
+                &source.work,
+                &v3::context(),
+                observation,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        if let Some(receipt) = recovered {
+            assert_eq!(retried, receipt);
+        }
+        assert_eq!(
+            journal
+                .lifecycle_source_work(&v3::config().node)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+}
+
+#[test]
+fn never_released_full_fact_requires_revocation_and_cannot_invent_an_api_end() {
+    use sandbox_controller_core as core;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, _) = ready(&path);
+    let source = observed_for_full(&mut journal);
+    let admitted = journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full_request(&source),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let sandbox = source.work.anchor.local.sandbox;
+    assert!(matches!(
+        journal.record_lifecycle_capture_never_released(
+            &source.work,
+            &v3::context(),
+            &mut NeverCrash
+        ),
+        Err(JournalError::UnresolvedAction)
+    ));
+    journal
+        .apply(
+            core::ControllerInput::Request(core::Request::Compensate(
+                core::request::CompensationRequest {
+                    sandbox,
+                    failure: core::FailureKind::Cancelled,
+                    evidence: None,
+                },
+            )),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let before = journal.world().unwrap();
+    let receipt = journal
+        .record_lifecycle_capture_never_released(&source.work, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    assert_eq!(journal.world().unwrap(), before);
+    let work = journal
+        .lifecycle_original_continue_work(&source.work, &v3::context())
+        .unwrap();
+    assert_eq!(work.end_receipt(), receipt);
+    assert_eq!(
+        work.identity().key.operation,
+        admitted.capture_operation().unwrap()
+    );
+    assert_eq!(
+        work.identity().vm,
+        source.work.anchor.native.current_vm.unwrap()
+    );
+    assert_eq!(work.full(), &full_request(&source));
+    let world = journal.world().unwrap();
+    let native = world.sandbox_record(sandbox).unwrap();
+    assert_eq!(work.network_policy(), &native.policy);
+    assert_eq!(work.file_policy(), native.file_policy);
+    assert_eq!(
+        receipt.work_binding,
+        *work.full().binding_digest().unwrap().as_bytes()
+    );
+    let stored = journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone();
+    assert!(stored.capture.as_ref().unwrap().worker.is_none());
+    assert!(stored.capture.as_ref().unwrap().completed.is_none());
+    drop(journal);
+    let mut journal = v3::open(&path);
+    assert_eq!(
+        journal
+            .record_lifecycle_capture_never_released(&source.work, &v3::context(), &mut NeverCrash)
+            .unwrap(),
+        receipt
+    );
+    assert_eq!(
+        journal
+            .lifecycle_original_continue_work(&source.work, &v3::context())
+            .unwrap(),
+        work
+    );
+}
+
+fn claim_full_before_worker_release(
+    journal: &mut ControllerJournal,
+    sandbox: sandbox_controller_core::SandboxId,
+) -> sandproof_protocol::WorkAction<sandbox_controller_core::EffectId> {
+    use sandbox_controller_core::workflow::{self, WorkflowStep};
+    for _ in 0..32 {
+        match workflow::next_step(&journal.world().unwrap(), sandbox) {
+            WorkflowStep::Apply(input) => {
+                journal.apply(*input, &mut NeverCrash).unwrap();
+            }
+            WorkflowStep::Claim => {
+                let action = journal
+                    .claim_next(Some(sandbox), &mut NeverCrash)
+                    .unwrap()
+                    .unwrap();
+                if matches!(
+                    action.command.command(),
+                    sandbox_controller_core::Command::SealSnapshot { .. }
+                ) {
+                    return action;
+                }
+                journal
+                    .complete(
+                        &sandproof_protocol::WorkReceipt {
+                            identity: action.identity.clone(),
+                            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
+                                FullEvidence {
+                                    resource: action.identity.resource.clone(),
+                                    command: action.command.command().clone(),
+                                },
+                            ),
+                        },
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
+            }
+            other => panic!("original Full did not reach closed worker gate: {other:?}"),
+        }
+    }
+    panic!("bounded original Full did not reach worker gate");
+}
+
+#[test]
+fn late_full_worker_authorization_is_rejected_after_native_revocation_before_and_after_end_record()
+{
+    use sandbox_controller_core as core;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, _) = ready(&path);
+    let source = observed_for_full(&mut journal);
+    journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full_request(&source),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let sandbox = source.work.anchor.local.sandbox;
+    let action = claim_full_before_worker_release(&mut journal, sandbox);
+    let cancel = core::ControllerInput::Request(core::Request::Compensate(
+        core::request::CompensationRequest {
+            sandbox,
+            failure: core::FailureKind::Cancelled,
+            evidence: None,
+        },
+    ));
+    // The public coordinator still rejects cancellation with an unresolved
+    // dispatch. Exercise the guard's native-revoked input separately through
+    // the ORIGINAL private reducer transaction; do not weaken that public gate.
+    assert!(matches!(
+        journal.apply(cancel.clone(), &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    let namespace = journal.namespace.clone();
+    let tx = crate::controller::transaction::WorldTransaction::begin(
+        &mut journal.journal.connection,
+        &journal.committed_world,
+    )
+    .unwrap();
+    crate::controller::storage::apply(&tx, &namespace, cancel).unwrap();
+    tx.commit().unwrap();
+    let worker = crate::capture::CaptureWorkerBinding::new(
+        SourceProcessIdentity {
+            pid: 2345,
+            start_time_ticks: 9876,
+            boot_id: "fixture-boot".into(),
+        },
+        ContentDigest::from_sha256([9; 32]),
+    )
+    .unwrap();
+    for end_saved in [false, true] {
+        if end_saved {
+            journal
+                .record_lifecycle_capture_never_released(
+                    &source.work,
+                    &v3::context(),
+                    &mut NeverCrash,
+                )
+                .unwrap();
+        }
+        let before = journal.world().unwrap();
+        assert!(matches!(
+            journal.authorize_lifecycle_full_capture(
+                &source.work,
+                &v3::context(),
+                &action,
+                worker.clone(),
+                10,
+                &mut NeverCrash
+            ),
+            Err(JournalError::Conflict)
+        ));
+        assert_eq!(journal.world().unwrap(), before);
+        assert!(
+            journal.lifecycle_source_work(&v3::config().node).unwrap()[0]
+                .capture_worker()
+                .is_none()
+        );
+    }
+}

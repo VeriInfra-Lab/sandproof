@@ -49,10 +49,20 @@ pub(in crate::controller) fn validate_record(
         || capture
             .material_bytes
             .is_some_and(|n| n == 0 || n > capture.reserved_material_bytes)
-        || serde_json::to_vec(capture)?.len() > RECORD_BYTES
+        || super::end::reserved_record_bytes(capture)? > RECORD_BYTES
         || capture.worker.as_ref().is_some_and(|w| !w.valid())
         || (capture.worker.is_some() && capture.action.is_none())
         || (capture.completed.is_some() && capture.worker.is_none())
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    super::end::validate_record(record)?;
+    if matches!(
+        capture.end,
+        Some(super::end::CaptureEndRecord::NeverReleased { .. })
+    ) && !plan
+        .capture
+        .is_some_and(|handoff| handoff.eligibility() == core::capture::RestoreEligibility::Revoked)
     {
         return Err(JournalError::CorruptStore);
     }

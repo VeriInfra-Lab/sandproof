@@ -90,6 +90,7 @@ impl ControllerJournal {
             worker: None,
             completed: None,
             material_bytes: None,
+            end: None,
         });
         save(&tx, &sources)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
