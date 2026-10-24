@@ -5,38 +5,28 @@ use crate::{AuthorityPort, CenterApplication, HostPort, TemplateProvider};
 use sandproof_api::PortError;
 use sandproof_center_core::SessionPhase;
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CurrentCreateReadiness, CurrentResumeReadiness, LifecycleOperation,
+    AcceptedLifecycleIntent, CurrentCreateReadiness, CurrentReadyFacts, CurrentResumeReadiness, LifecycleOperation,
     PublicSessionPhase, PublicSessionView, SessionId,
 };
 
 impl<H: HostPort, T: TemplateProvider>
     CenterApplication<crate::business::SharedBusinessAuthority, H, T>
 {
-    pub(crate) fn query_continued(
+    fn observe_continued_before(
         &self,
-        owner: &sandproof_protocol::TenantId,
-        session: &SessionId,
+        origin: &AcceptedLifecycleIntent,
         intent: &AcceptedLifecycleIntent,
-    ) -> Result<PublicSessionView, PortError> {
-        let deadline = self.reply_deadline()?;
+        deadline: std::time::Instant,
+    ) -> Result<CurrentReadyFacts, PortError> {
         let policy = self.lifecycle_observation_policy.ok_or(PortError::Busy)?;
-        let snapshot = self.snapshot()?;
-        let record = snapshot.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
-        let current = record.operations().last().ok_or(PortError::Busy)?;
-        if current.intent() != intent || record.phase() != SessionPhase::Running {
-            return Err(PortError::Busy);
-        }
-        let saved = current.unloaded().ok_or(PortError::Busy)?.clone();
-        let prior = saved.outcome.continued().ok_or(PortError::Busy)?;
-        let origin = record.current_execution_origin().ok_or(PortError::Busy)?.clone();
         let before = self.now()?;
         let budget = time_left(deadline)?;
         // The existing authenticated origin observation independently verifies
         // its retained failed Unload and the actual same candidate on the host.
         let facts = match origin.request.operation {
             LifecycleOperation::Create { .. } => {
-                let view = self.hosts.observe_lifecycle_create(&origin, budget)?;
-                if !view.matches_request(&origin) || view.current_request != *intent {
+                let view = self.hosts.observe_lifecycle_create(origin, budget)?;
+                if !view.matches_request(origin) || view.current_request != *intent {
                     return Err(PortError::Busy);
                 }
                 let CurrentCreateReadiness::Observed { facts } = view.readiness else {
@@ -45,8 +35,8 @@ impl<H: HostPort, T: TemplateProvider>
                 facts
             }
             LifecycleOperation::Resume { .. } => {
-                let view = self.hosts.observe_lifecycle_resume(&origin, budget)?;
-                if !view.matches_request(&origin) || view.current_request != *intent {
+                let view = self.hosts.observe_lifecycle_resume(origin, budget)?;
+                if !view.matches_request(origin) || view.current_request != *intent {
                     return Err(PortError::Busy);
                 }
                 let CurrentResumeReadiness::Observed { facts } = view.readiness else {
@@ -60,6 +50,31 @@ impl<H: HostPort, T: TemplateProvider>
         time_left(deadline)?;
         if policy.healthy_until(before, after, facts.observed_at_ms).is_none()
             || after >= facts.end_at_ms
+        {
+            return Err(PortError::Busy);
+        }
+        Ok(facts)
+    }
+
+    pub(crate) fn query_continued(
+        &self,
+        owner: &sandproof_protocol::TenantId,
+        session: &SessionId,
+        intent: &AcceptedLifecycleIntent,
+    ) -> Result<PublicSessionView, PortError> {
+        let deadline = self.reply_deadline()?;
+        let snapshot = self.snapshot()?;
+        let record = snapshot.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
+        let current = record.operations().last().ok_or(PortError::Busy)?;
+        if current.intent() != intent || record.phase() != SessionPhase::Running {
+            return Err(PortError::Busy);
+        }
+        let saved = current.unloaded().ok_or(PortError::Busy)?.clone();
+        let prior = saved.outcome.continued().ok_or(PortError::Busy)?;
+        let origin = record.current_execution_origin().ok_or(PortError::Busy)?.clone();
+        let facts = self.observe_continued_before(&origin, intent, deadline)?;
+        let after = self.now()?;
+        if after >= facts.end_at_ms
             || facts.started_at_ms != prior.started_at_ms
             || facts.end_at_ms != prior.end_at_ms
             || facts.max_end_at_ms != prior.max_end_at_ms

@@ -152,7 +152,9 @@ impl CreateObservation {
                     && current.key != requested.key);
         }
         if self.current_request != *original {
-            if matches!(self.current_request.request.operation, LifecycleOperation::Unload { .. }) {
+            if matches!(self.current_request.request.operation, LifecycleOperation::Unload { .. })
+                && self.readiness != CurrentCreateReadiness::NotCurrent
+            {
                 return continued_request(original, &self.current_request)
                     && match &self.readiness {
                         CurrentCreateReadiness::Observed { facts } => {
