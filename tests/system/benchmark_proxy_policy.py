@@ -117,7 +117,7 @@ def exercise(args):
             'compute_limits': {'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
                 'max_memory_bytes_global': (args.memory_mib + 256) * MIB,
                 'max_memory_bytes_per_tenant': (args.memory_mib + 256) * MIB}}}
-    cfg = complete_runtime(cfg, slots=1)
+    cfg = complete_runtime(cfg, slots=1, inbox_sessions=4+cfg["max_active_global"])
     url = f'http://127.0.0.1:{port}'
     options = dict(api_url=url, sandbox_url=url, api_key=key, domain='example.invalid', retries=0, request_timeout=90)
     proxy = BenchmarkProxy(root / 'proxy', namespaces, args.proxy_binary, args.proxy_sha256, port=args.proxy_socks_port)

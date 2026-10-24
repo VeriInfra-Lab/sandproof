@@ -210,7 +210,7 @@ async def exercise(args):
         "compute_limits": {"max_vcpus_global": 6, "max_vcpus_per_tenant": 6,
                            "max_memory_bytes_global": 4096 * MIB, "max_memory_bytes_per_tenant": 4096 * MIB}},
     }
-    settings = complete_runtime(settings, slots=PHYSICAL_SLOTS)
+    settings = complete_runtime(settings, slots=PHYSICAL_SLOTS, inbox_sessions=VM_COUNT+settings["max_active_global"])
     artifact_bytes=sum(binding[kind]['size_bytes'] for binding in templates+bad_templates for kind in ('kernel','rootfs'))
     registry=dict(root=str(root/'registry'),max_templates_global=4,max_templates_per_tenant=4,
         max_artifact_bytes_global=artifact_bytes,max_artifact_bytes_per_tenant=artifact_bytes,validation_timeout_secs=60)

@@ -471,7 +471,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         # center/host assembly consumes these before Rust deserializes native.
         "startup_timeout_secs": 300, "public_ipv4_enabled": False,
     }
-    config = complete_runtime(config, slots=PHYSICAL_SLOTS)
+    config = complete_runtime(config, slots=PHYSICAL_SLOTS, inbox_sessions=EXPECTED_SANDBOXES+config["max_active_global"])
     # The fixed smoke's 8 MiB+1 refusal and data-contract corpus share this
     # explicit fixture upload budget; it is not an SDK or product default.
     config["data_transfer"]["file_upload_bytes"] = 8 * 1024 * 1024

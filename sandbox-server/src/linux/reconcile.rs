@@ -100,8 +100,8 @@ pub(super) fn audit_host_inventory(
         let fault = audit_launch_credential_binding(
             journal.original_data_credential(slot.sandbox)?,
             slot.generation,
-            || node.has_bound_launch_secret(slot.sandbox, &options),
-            |digest| node.audit_launch_credential(slot.sandbox, &options, digest),
+            || node.has_bound_launch_secret(slot.sandbox, slot.generation, &options),
+            |digest| node.audit_launch_credential(slot.sandbox, slot.generation, &options, digest),
         )?;
         if fault.is_some() {
             eprintln!(
