@@ -930,7 +930,7 @@ fn command_bound(
 }
 
 fn retired_stop_valid(world: &World, id: &EffectId, coverage: crate::StopCoverage) -> bool {
-    let Some(command) = crate::terminal::activation_stop(id) else {
+    let Some(command) = crate::terminal::activation_stop_covered(id, coverage) else {
         return false;
     };
     if command.epoch() != Some(coverage.epoch) || coverage.operation.sandbox != command.sandbox() {
@@ -953,7 +953,7 @@ fn retired_stop_valid(world: &World, id: &EffectId, coverage: crate::StopCoverag
             .logical_effects
             .get(&id.logical)
             .is_some_and(|logical| {
-                logical.origin == EffectOrigin::Operation(coverage.operation)
+                crate::terminal::activation_coverage_origin(world, id, coverage)
                     && logical.current_attempt == id.attempt
                     && logical.result
                         == Some(LogicalEffectResult::RetiredByStop {
@@ -970,8 +970,15 @@ fn obsolete_committed(world: &World, id: &EffectId, logical: &LogicalEffectRecor
     {
         return false;
     }
-    let Ok(candidate) = crate::effect::handle_effect_dispatch(world, id.clone()) else {
-        return false;
+    let candidate = match crate::effect::handle_effect_dispatch(world, id.clone()) {
+        Ok(candidate) => candidate,
+        Err(crate::EffectReject::NotDispatchable) => {
+            // Current attempt, no result and queue membership were checked
+            // above. The same terminal guard forbids all future issuance;
+            // unlike Dispatched work this committed action has no host effect.
+            return crate::effect::startup_dispatch_revoked(world, id.command());
+        }
+        Err(_) => return false,
     };
     // Semantic ineligibility is checked after all ledger/queue/resource binding
     // checks. A missing queue entry or corrupt plan is not quiescence evidence.

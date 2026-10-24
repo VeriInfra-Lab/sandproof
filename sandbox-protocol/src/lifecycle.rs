@@ -1,0 +1,56 @@
+//! Current stateful lifecycle contracts.
+//!
+//! These values do not enable a route or certify a snapshot. In particular,
+//! carrying a digest is distinct from hashing and checking the original files.
+
+mod access;
+mod authority;
+mod confirmation;
+mod digest;
+mod identity;
+mod manifest;
+mod observation;
+mod public;
+mod renewal;
+mod request;
+mod terminal;
+
+pub use access::{AccessIdentityError, LifecycleAccessIdentity};
+pub use authority::{
+    AcceptedIntentError, AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterId,
+    CenterIdentity, RecordedLifecycleIntent,
+};
+pub use confirmation::{ClosedLifecycleWindow, ConfirmedLifecycleResult, LifecycleWindowClose};
+pub use digest::ContentDigest;
+pub use identity::{
+    CaptureId, ExpectedSession, IncarnationId, OperationBinding, OperationKey, RequestSequence,
+    RequestWindowId, RetentionBinding, RetentionWindowId, SessionId,
+};
+pub use manifest::{
+    CaptureBinding, MANIFEST_FORMAT_VERSION, MAX_WRITABLE_DRIVES, ManifestError, SnapshotFile,
+    SnapshotFileKind, SnapshotManifest, VmCompatibility, WritableDrive, disk_bundle_path,
+};
+pub use observation::{
+    CreateObservation, CreateRefusalReason, CurrentCreateReadiness, CurrentReadyFacts,
+};
+pub use public::{
+    CreateParameters, PublicAcceptance, PublicCreateRequest, PublicDestroyRequest,
+    PublicRequestWindow, PublicSessionPhase, PublicSessionView, PublicUnloadRequest,
+};
+pub use renewal::{ConfirmedRenewal, RenewalConfirmation};
+pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
+pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
+
+/// The only supported lifecycle wire format. Mismatches are refused.
+pub const PROTOCOL_VERSION: u16 = 3;
+pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
+pub const CREATE_OBSERVATION_PATH: &str = "/internal/lifecycle/create-observation";
+pub const TERMINAL_OBSERVATION_PATH: &str = "/internal/lifecycle/terminal-observation";
+/// Terminal envelopes carry no Create options; fixed full identities fit here.
+pub const TERMINAL_RESULT_BODY_BYTES: usize = 8192;
+pub const RESULT_CONFIRMATION_PATH: &str = "/internal/lifecycle/result-confirmation";
+pub const WINDOW_CLOSE_PATH: &str = "/internal/lifecycle/window-close";
+/// Only the internal SDK's already-applied Renew may use this confirmation.
+pub const RENEWAL_CONFIRMATION_PATH: &str = "/internal/lifecycle/renewal-confirmation";
+/// Full fixed identities and a deadline, without Create options or a manifest.
+pub const RENEWAL_CONFIRMATION_BODY_BYTES: usize = 8192;

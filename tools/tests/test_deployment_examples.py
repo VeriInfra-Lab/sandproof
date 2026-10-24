@@ -73,7 +73,7 @@ class DeploymentExamplesTests(unittest.TestCase):
         center = json.loads((DEPLOY / 'center.example.json').read_text())
         node = center['nodes'][0]
         self.assertEqual(node['registration']['identity'], host['inbox']['node'])
-        self.assertEqual(node['registration']['retention_slots'], host['inbox']['max_sandboxes'])
+        self.assertEqual(node['registration']['retention_slots'], host['inbox']['max_sessions'])
         self.assertEqual(node['address'], host['internal']['bind'])
         self.assertEqual(host['artifact_source']['address'], center['artifact_service']['bind'])
         self.assertEqual(node['registration']['healthy_until_ms'], 0)

@@ -11,6 +11,7 @@ mod artifact_client;
 pub mod cache;
 mod client;
 pub mod diagnostic;
+pub mod lifecycle;
 #[cfg(unix)]
 mod protected_files;
 mod protected_server;

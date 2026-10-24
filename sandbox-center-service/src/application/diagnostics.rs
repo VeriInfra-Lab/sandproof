@@ -8,19 +8,17 @@ use std::{
 const LIMIT: usize = 64;
 static EMITTED: AtomicUsize = AtomicUsize::new(0);
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Stage {
+pub(crate) enum Stage {
     TemplateResolve,
     CreateAdmission,
     SendSnapshot,
     ApplyResponse,
-    StaleSnapshot,
-    ConfirmSnapshot,
     SessionProjection,
     ReplyDeadline,
     RetiredSnapshot,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Failure {
+pub(crate) enum Failure {
     Authority(AuthorityError),
     Port(PortError),
 }
@@ -51,7 +49,7 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
         ),
     };
 }
-pub(super) fn emit(stage: Stage, failure: Failure) {
+pub(crate) fn emit(stage: Stage, failure: Failure) {
     record(stage, failure, &EMITTED, &mut std::io::stderr().lock());
 }
 #[cfg(test)]

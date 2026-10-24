@@ -38,7 +38,6 @@ impl LinuxWorker {
         let worker = Self {
             config,
             host_lease,
-            last_error: None,
             validated_artifacts: Mutex::new(BTreeMap::new()),
         };
         // The SAME original reader rejects Initializing and validates every
@@ -49,6 +48,18 @@ impl LinuxWorker {
 }
 
 impl LinuxObservation {
+    /// Read the existing protected bootstrap with the same checks as the
+    /// worker. Auditing never provisions, repairs or persists a registration.
+    /// # Errors
+    /// Missing or changed files, host facts and foreign bindings remain errors.
+    pub fn host_epoch_registration(
+        &self,
+        source: &crate::ProtectedHostEpochSource,
+        node: &sandproof_protocol::internal::NodeIdentity,
+    ) -> NodeResult<sandproof_controller_service::capture::HostEpochRegistration> {
+        Ok(self.worker.host_epoch_registration(source, node)?)
+    }
+
     /// # Errors
     /// Original physical observation errors remain errors, never absence.
     pub fn inventory(&self) -> NodeResult<HostInventory> {
@@ -201,6 +212,14 @@ mod tests {
         let before = files(dir.path());
         let observation = LinuxWorker::inspect_existing(config).unwrap();
         assert!(observation.host_slot_inventory().unwrap().is_empty());
+        let source =
+            crate::ProtectedHostEpochSource::at(dir.path().join("not-provisioned")).unwrap();
+        let node = sandproof_protocol::internal::NodeIdentity {
+            deployment_id: sandproof_protocol::DeploymentId::try_from("readonly-test").unwrap(),
+            node_id: sandproof_protocol::NodeId::try_from("node-test").unwrap(),
+            node_generation: sandproof_protocol::internal::PositiveCounter::try_from(1).unwrap(),
+        };
+        assert!(observation.host_epoch_registration(&source, &node).is_err());
         drop(observation);
         assert_eq!(files(dir.path()), before);
     }

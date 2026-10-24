@@ -322,7 +322,7 @@ def exercise(args: argparse.Namespace) -> None:
             assert process_start_ticks(pid) == ticks, "first VM is not running after server exit"
 
         identity = original_create_identity(services, metadata)
-        native_id = services.native_id_for(identity["sandbox_id"])
+        native_id = services.native_id_for(identity['binding']['session'])
         process = services.processes.start("host-0")
         services.wait_ready()
         status, body = fetch(opener, base_url, "GET", "/v2/sandboxes", api_key)
@@ -330,7 +330,7 @@ def exercise(args: argparse.Namespace) -> None:
         items = json.loads(body)
         assert len(items) == 1 and items[0]["state"] == "running", items
         sandbox_id = items[0]["sandboxID"]
-        assert sandbox_id == identity["sandbox_id"], "recovery published a different admitted create"
+        assert sandbox_id == identity['binding']['session'], "recovery published a different admitted create"
         if before_host:
             record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
             assert record["resource_id"] == vm_name

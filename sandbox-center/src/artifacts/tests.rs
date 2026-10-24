@@ -12,7 +12,7 @@ mod engine;
 #[path = "../../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 use sandproof_center_core::{
-    Bounds, CenterState, NodeMode, NodeRegistration, NodeRole, TenantBudget,
+    Bounds, CenterState, LifecycleWindow, NodeMode, NodeRegistration, NodeRole, TenantBudget,
 };
 use sandproof_center_service::RegisteredHost;
 use sandproof_center_service::business::{MetadataBudget, RegistryMetadata, TemplateRegistration};
@@ -32,11 +32,7 @@ use sandproof_internal::{
     status::{HostStatus, StatusReceiver, StatusRequest},
     template::{ValidationEvidence, ValidationRequest},
 };
-use sandproof_protocol::internal::{
-    ControlIdentity, NodeIdentity,
-    lifecycle::{LifecycleRequest, LifecycleResponse, Resources},
-    window::{WindowCloseAck, WindowCloseRequest},
-};
+use sandproof_protocol::internal::{NodeIdentity, lifecycle::Resources};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -176,6 +172,7 @@ fn authority_with_nodes(
             max_sandboxes: 2,
             operations_per_sandbox: 4,
             max_options_bytes: 4096,
+            result_retention_ms: 100,
             platform: resources(),
         },
         nodes
@@ -195,6 +192,14 @@ fn authority_with_nodes(
         vec![TenantBudget {
             tenant: "1".try_into().unwrap(),
             limit: resources(),
+        }],
+        sandproof_protocol::lifecycle::CenterIdentity {
+            deployment: engine::deployment(),
+            center: "center".try_into().unwrap(),
+        },
+        vec![LifecycleWindow {
+            owner: "1".try_into().unwrap(),
+            window: 9.try_into().unwrap(),
         }],
     )
     .unwrap();
@@ -452,32 +457,26 @@ impl CacheReceiver for VerifiedCache {
         })
     }
 }
-impl LifecycleReceiver for VerifiedCache {
-    async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
-        RejectLifecycle.receive(request).await
-    }
-    async fn confirm(&self, result: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
-        RejectLifecycle.confirm(result).await
-    }
-    async fn close(&self, request: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
-        RejectLifecycle.close(request).await
-    }
-}
+impl LifecycleReceiver for VerifiedCache {}
 impl DataReceiver for VerifiedCache {
     async fn receive_data(
         &self,
-        identity: ControlIdentity,
+        identity: sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
         request: axum::http::Request<axum::body::Body>,
     ) -> axum::http::Response<axum::body::Body> {
-        RejectLifecycle.receive_data(identity, request).await
+        RejectLifecycle
+            .receive_data(identity, context, request)
+            .await
     }
 }
 impl ValidationReceiver for VerifiedCache {
     async fn validation_evidence(
         &self,
         request: ValidationRequest,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<ValidationEvidence, ReceiveError> {
-        RejectLifecycle.validation_evidence(request).await
+        RejectLifecycle.validation_evidence(request, context).await
     }
 }
 impl StatusReceiver for VerifiedCache {

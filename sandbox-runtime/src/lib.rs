@@ -21,9 +21,18 @@ mod linux;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    CLAIM_RECORD_NAMES, ConsolePolicy, HostResources, JailObservation, MAX_CLAIM_RECORD_BYTES,
-    MAX_HELPER_MARKER_BYTES, Observation, RetirementManifest, Runtime, RuntimeConfig, RuntimeError,
-    RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig,
+    CLAIM_RECORD_NAMES, CapturedFullSnapshot, ConsolePolicy, FullCaptureLimits, HostResources,
+    JailObservation, MAX_CLAIM_RECORD_BYTES, MAX_HELPER_MARKER_BYTES, Observation,
+    OriginalConfigurationObservation, OriginalPauseObservation, PausedOriginalVm,
+    PreparedTrackedChild, PublishedFullCapture, RetirementManifest, Runtime, RuntimeConfig,
+    RuntimeError, RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig,
     RuntimePhysicalObserver, RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState,
-    VmState, check_trusted_path, check_trusted_path_for_owner,
+    SnapshotLayout, SourceConfigurationLimits, VmState, check_trusted_path,
+    check_trusted_path_for_owner,
 };
+
+#[cfg(target_os = "linux")]
+pub mod snapshot_store;
+
+#[cfg(target_os = "linux")]
+mod snapshot_policy;

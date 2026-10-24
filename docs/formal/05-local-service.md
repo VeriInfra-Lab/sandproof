@@ -1,145 +1,100 @@
-# V5 本地持久服务：SQLite、寿命、编排与恢复
+# V5 SQLite、持久引用与恢复编排
 
-[文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明工作流](../proof-workflow.md)
+[文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-状态：详细证明计划；拟定定理尚待建立。适用代码定位基线与实际证明状态分别见总览和[覆盖记录](../proof-coverage.md)，不因本页完成而新增已证明结论。
+任务：[#637](https://github.com/VeriInfra-Lab/sandproof/issues/637)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
-把 V4 的本地决定、期限、身份、额度和 outbox 放进同一提交，并在重启后安全地继续原操作。它与 V6 的分界是“何时允许执行和相信结果”与“实际如何产生/观察资源效果”；两者分开不等于宿主节点被拆成两套控制器。
+## 1. 唯一持久权威
 
-## 1 实现与状态所有权
+对应 [controller-service](../../controller-service/src/lib.rs) 原 SQLite、工作/结果和恢复入口。snapshot 元数据、唯一认领、持久 pin 与删除意图扩入原权威；不新造第二本业务账。V4 决定是否合法，V6 提供原文件/进程事件。
 
-| 代码 | 入口/责任 |
-|---|---|
-| [journal.rs](../../controller-service/src/journal.rs)、[controller/mod.rs](../../controller-service/src/controller/mod.rs) | `ControllerJournal::apply/dispatch_next/complete/reconcile_observed`，原身份、投影、计划/outbox |
-| [transaction.rs](../../controller-service/src/controller/transaction.rs)、[storage.rs](../../controller-service/src/controller/storage.rs) | WorldTransaction、CommittedWorld、事务顺序、SQL-only写入与缓存失效 |
-| [checkpoint.rs](../../controller-service/src/controller/checkpoint.rs)及 [recovery](../../controller-service/src/controller/checkpoint/recovery.rs)、[retirement](../../controller-service/src/controller/checkpoint/retirement.rs) | 版本化检查点＋连续尾、切换、释放见证与历史退休 |
-| [lifecycle.rs](../../controller-service/src/application/coordinator/lifecycle.rs)、[recovery.rs](../../controller-service/src/application/coordinator/recovery.rs)、[maintenance.rs](../../controller-service/src/application/coordinator/maintenance.rs) | 真实寿命、发布/销毁、原证据恢复、引用/位置结算 |
-| [内部高级入口](../../controller-service/src/application/coordinator/internal_lifecycle.rs)、[driver.rs](../../sandbox-host-service/src/driver.rs) | V3 收件映射后原算法启用，原事实保存与提取 |
-| [host.rs](../../controller-service/src/application/host.rs)、[relay_child.rs](../../controller-service/src/application/relay_child.rs) | 执行端口合同及真实子进程许可/排空的协调侧；实际观察归 V6，传输归 V8 |
+模型区分已提交状态、内存候选、文件已发布、外部工作已发生和提交结果未知。SQLite 引擎是外部条件；实际 schema、SQL 条件、事务边界、回调、参数和重启枚举是自有义务。
 
-拥有 `Ji=(已提交SQL、检查点/连续尾、核心缓存、派发记录、回执、寿命、凭据/路由投影、引用、事务和易失锁状态)`。V3 独立认领 inbox 的业务转换，但用本模块同一事务原语。二者的联合事务必须一次对应，不分成两个假原子提交。
+## 2. 事务与责任接口
 
-## 2 事件与中间状态
-
-决定计算 → 开事务/验证候选 → 写输入、完整投影/额度/期限/动作 → 提交 → 发布缓存 → claim原工作 → 执行/观察 → 保存回执与核心更新 → 重查期限/资格发布。每一箭头之间允许崩溃；事务内部按 SQLite 合同恢复提交前或提交后，不把 VM 纳入 SQLite 事务。
-
-`CommitUnknown` 保留写前/写后可能，失效候选缓存并恢复原身份；只允许已确认提交派发。到期候选在事务内重查最新期限，SQL-only 写入同样参与失效。凭据读取失败按实例拒绝，真正共享存储损坏才全局拒绝；不存在/不可观察分别处理。
-
-## 3 拟定定理
-
-| 定理 | 义务 |
-|---|---|
-| `sqlite_world_representation` | Decode(有效检查点,连续已提交尾)=K；同一提交全部投影/动作/寿命一致，缓存仅来自相应提交 |
-| `local_accept_before_effect` | 每个宿主效果有此前精确本地准入责任；claim/回执不丢计划，失败提交不派发 |
-| `local_commit_unknown_recovery` | 任意声明崩溃点恢复某合法提交并保留可能外部效果，不新建替代实例或假失败 |
-| `lifetime_refines` | 原发布起点、默认/拒绝/截顶、重放、续期/到期事务竞争与持久时间下界符合 D4 |
-| `receipt_to_publication` | V6原事实进入正确尝试并耐久后，重查全部前提才发布运行或销毁；最终成功响应有相应耐久结果 |
-| `checkpoint_retirement_refines` | 原/新完整表示之一可恢复，连续性/模式/高水位保留；记录移除不遗失未清理责任 |
-| `local_orchestration_refines_progress` | 在登记的锁/任务适配合同下，扫描/driver/实际回调业务对应微步骤；已启用工作被取出，引用能按无环顺序解除，局部故障不无限阻断独立实例 |
-
-主要 S4/S6/S8/S10/S13/S14，L1/L2局部提供方、DS3/DS5/DS7。V4 的安全输入判定只是其中一环；`ConfirmRelease` 需 V6/V8 实际见证，不能凭 SQL 行变成 Free。
-
-## 4 抽取与批次
-
-首批用固定原 Charon/Aeneas 抽取真实同步计划/寿命/恢复核心，再建立 rusqlite 调用、SQL 参数及事务微步骤的对应。数据库引擎为 A4，**自有SQL、输入校验、事务范围和缓存发布逻辑不排除**；标准编解码的具体读取/字段搬运合同按依赖登记处理。不支持的 async/锁接线仅在[依赖登记](dependencies.md)逐符号列出的薄适配范围内可信，靠审查及合同测试核对；不要求先证明整个 poll/Drop 翻译，也不把整个 ControllerJournal、真实业务回调或恢复循环放入可信边界。
-
-适配保证同一管理锁保护登记的共享状态、业务输入/结果不串线、许可跟随实际工作，取消等待不伪造工作退出。调用方仍证明锁保护范围、读取快照与请求的完整绑定、先提交后派发、未知后失效缓存、收尾与释放的业务条件。Busy/JoinError 可能在回调产生效果后出现，必须按实际来源分类；panic、部分效果、回执丢失保留原责任。适配的机械释放不证明真实宿主/中继已退出，真实退出与引用可解除条件分别由 V6/V8 和本模块提供。
-
-当前 Host 健康查询先取得 status 名额，再在原 work 门排队，取得后把两张许可交给后台。其同池绑定、取消排队释放 status、FIFO 预留及后台双持额需按当前符号/版本登记；旧单许可试点和 R0 测试不能直接背书新增路径。FIFO 只约束已入队获取，不能替代“前一宿主调用最终返回”等进展条件。
-
-第一链路：原准入/提交→工作派发→启动丢回执→恢复原观察→稳定发布→终止/停止/精确清理。下面 F2 每个故障点都属于该链路，不必首批同时覆盖所有查询/文件接口。
-
-扩展：完整寿命与查询、检查点/退休/完整容量、故障域与跨实例推进。复用 [事务测试](../../controller-service/src/controller/cache_tests.rs)、[检查点测试](../../controller-service/src/controller/checkpoint/tests.rs) 和 [系统故障入口](../../tests/system/center_host_faults.py)。
-
-依赖 V0/V4、A4/A8；V3 提供认证原映射；V6 提供真实证据；V8 提供原连接/辅助执行排空；V9 以共同不变量连接，不互相假定对方已完成清理。开工/完成沿用 [V0](00-foundations.md#5-开工与完成条件)。
-
-## 精确条款
-
-以下条款为本模块的规范定义；跨模块条款通过前提提供方连接，不将下游自有义务假定为已证。
-
-### B5 持久服务还需要哪些状态
-
-`J` 至少包含：数据库已提交版本、持久核心表示、操作与工作日志、检查点及其后的日志、身份高水位、创建参数、不可变模板绑定、寿命记录、资源与未来清理预算、凭据索引、内存缓存所对应的提交版本、恢复阶段、物理释放见证和阻止退休的引用。
-
-事务可处于 `Idle / Executing / CommitUnknown / Committed / Aborted`。`CommitUnknown` 是调用方不知道提交结果，不是数据库允许“提交一半”。外部动作不与 SQLite 共享原子事务。
-
-### C7 未知结果不能用重试掩盖
-
-只允许两种推进未知工作的办法：
-
-1. 观察原资源，获得足以确认该工作后果的证据。
-2. 对特定命令证明重复执行保持相同效果，且不会重复非幂等副作用，再重放同一身份的动作。
-
-“幂等”必须是逐命令定理：执行两次与一次在允许观察上等价。它不能自动用于用户命令、追加文件或镜像中的启动程序。初始化连接可以重试，不表示其中的任意启动命令可以重跑。
-
-未知激活在原虚拟机已被精确停止后，可以被 `RetiredByStop` 覆盖退休。这证明“这次未知激活不再能使实例运行”，不证明我们知道它历史上究竟有没有成功。
-
-核心的工作结果检查使用逻辑资源状态。例如逻辑成功结果尚未出现，是某些失败回执的核心检查条件；它不自动证明物理副作用从未发生。真实适配器必须给出独立的明确失败证据；观察不到或回执丢失只能产生未知，不能借用逻辑记录缺失来伪造失败。
-
-### D4 寿命和时间
-
-寿命不是一个 `timeout` 字段，而是几种不同期限。令 `a` 为创建准入时间，`s` 为首次持久发布运行时间，`d` 为获批可用时长，`D_start` 为启动等待上限，`D_max` 为实例总寿命上限：
-
-```text
-启动截止 = a + D_start
-首次运行发布要求：now < 启动截止
-初始可用截止 = s + d
-总截止 = s + D_max
-```
-
-创建和连接省略寿命使用固定合同的 300 秒；创建必须通过单次和总寿命上限，不静默缩短。连接只延长原实例，设置寿命允许缩短。对已经通过对应前置检查的请求：
-
-```text
-connect：deadline' = max(deadline, min(now + d, 总截止))
-set_timeout：deadline' = min(now + 有符号时长, 总截止)
-```
-
-非正设置结果可立即到期；算术在足够宽的域中计算，转换回持久类型时检查范围。创建或连接的参数拒绝、已到期、正在撤销、外租户与不存在的错误区别由模块合同决定。
-
-到期扫描读取的实例列表只是候选。真正接受到期销毁时，必须在事务内重新比较最新截止，避免续期后仍被旧扫描结果杀死。重启加载已经提交的期限，不根据新配置重新延长。
-
-持久时间下界只防止逻辑时间倒退，不能证明物理时钟正确。若只假设逻辑时钟单调，能证明“观察到到期后不再授予许可”；若要证明“现实时间截止后最多 Δ 毫秒关闭”，还需要时钟误差、扫描延迟、调度及撤销耗时的上界。没有这些上界，就不能把条件最终完成性写成实时承诺。
-
-### F1 提交点决定责任何时成立
-
-本节本地 `Accepted_node(op)` 表示完整输入、计划、预算和期限的本地事务已提交；中心 `Accepted_center(op)` 由 C10 的中心耐久准入定义，两者不能合并为一个跨库提交点。原局部公式中 `Accepted(op)` 按本地责任解释；系统接受与节点责任连接见 F7。对任意宿主派发事件：
-
-```text
-Dispatch(x) ⇒ 之前存在 DurableCommitted(x, exact_plan)
-```
-
-对创建、销毁等需要持久终局结果的生命周期操作，其完成响应必须满足：
-
-```text
-SuccessReply(op,result) ⇒ 之前存在 DurableFinal(op,result)
-```
-
-这不要求为每次查询或命令输出建立终局账本。查询响应对应某个允许的已提交视图；续期成功对应期限提交；文件和命令结果遵守附录 E的数据与端点合同，不能把它们误归为控制器持久生命周期结果。
-
-响应丢失不会撤销提交。提交返回错误但结果不明时，状态是“提交前或提交后，尚待核实”，不能立即分配第二组资源。
-
-### F2 必须覆盖的崩溃位置
-
-| 崩溃位置 | 恢复必须允许的真实情况 | 合法推进 |
+| 接口（语义名，非已实现 API） | 事务必须绑定的内容 | 失败/未知 |
 |---|---|---|
-| 意图事务提交前 | 没有接受该操作 | 不派发；按原身份检查是否实际已提交 |
-| 提交后、派发前 | 有持久责任，没有物理效果 | 派发原尝试 |
-| 宿主登记后、资源创建中 | 有部分目录、磁盘或网络 | 按原登记观察，继续可安全重放的步骤或精确清理 |
-| 虚拟机已启动、回执未写入 | 实际运行，账本仍未知 | 观察原虚拟机，确认原结果或停止；不新建替代实例 |
-| 回执已存、运行发布前 | 所需事实可能已有持久证据 | 重查发布前提和期限，发布原实例或进入补偿 |
-| 终止提交后、停止前 | 新许可关闭，原进程可能仍运行 | 安装终止围栏，排空和停止原资源 |
-| 已删除资源、释放记录未提交 | 物理已无，但额度仍占用 | 原身份范围内确认不存在，再提交释放；不误删同名新对象 |
-| 检查点或退休处理中 | 旧表示或新表示之一仍有效 | 选择完整有效表示恢复，不拼接两个版本 |
+| acceptCapture | 原请求全文、源代、capture、原物理身份、预算、工作 | 未确认不派发；未知查询同一操作 |
+| registerBundle | 原捕获计划、完整校验回执、不可变文件身份、pin/资格 | 文件发布不自动变业务成功；孤儿只按原计划对账 |
+| claimResume | 当前会话/来源/寿命、唯一操作/新代、资源预留、pin | 同键返回原 claim；其它竞争失败，不复制 claim |
+| recordMayExecute | 原 claim/候选和当前终止版本、不可逆标记、激活工作 | 确认提交后才能可能激活；未知不换候选 |
+| releasePin / beginRetire | 具名持有者结束证据；同一事务检查新引用关闭、资格/引用状态 | 活跃/未知使用不清零；重启不靠内存引用数 |
+| scheduleDelete / settleRelease | 精确对象与原删除责任、实际删除/映射释放结果、计费 | 部分成功可重试，未知仍占账 |
 
-### F3 数据库表示关系
+上述接口需映射实际函数/SQL，不要求建立同名壳函数。状态更改与生成待办必须同事务，接受时保留后续记录空间；普通请求不能耗尽内部终止/清理能力。
 
-定义：
+## 3. 崩溃恢复和进展
 
-```text
-Decode(检查点, 连续的已提交日志尾部) = K
-Cache.version = Commit.version ⇒ Cache.state = Decode(Commit)
-```
+每次外部效果之前都已有可枚举的原身份责任。文件 rename 与 SQLite 提交之间崩溃时，原 capture 意图说明文件为何存在；仅扫描到完整文件不能赋予恢复资格。恢复必须核对版本/完整内容/路径身份并按原状态登记或清理。
 
-需要证明日志顺序、缺口检查、模式版本、错误分支、检查点切换和退休保持这一关系。序列化只证明编码可读不够，还要证明它保存的是对应提交的完整状态。
+pin 是具名持久集合，可重建 original loader、candidate、running backing 和 cleanup 责任。未知加载仍持 pin，实际进程消失需精确证明，不用 PID 查询缺席冒充永无迟到 worker。Retiring 后禁止重新取 pin，所有删除者服从同一状态。
 
-重启不能混用新数据库核心与旧缓存凭据、旧宿主路线或重新解析后的模板别名。全局存储损坏可以导致拒绝启动；单个实例凭据读取失败应只拒绝该实例的数据授权，而不是让其他健康实例统一失效。
+恢复驱动独立于 HTTP future。证明待办在条件满足时可被选中、每个本地有限扫描终止、锁/队列不会让停止等待自己的 backing 删除；外部 I/O 永久阻塞不承诺最终完成。锁的机械保证不是这些业务推进的证明。
+
+## 4. 连接与验收
+
+抽取真实同步事务决定、参数构造、回调和结果分类；原异步 SQLite/任务接线仅按已登记窄合同。表约束/受影响行数/比较字段/提交错误顺序全部接实际版本。
+
+覆盖提交前后崩溃、文件发布未登记、capture 已提交但 stop 回执丢失、claim 与 GC 竞争、load 未返回、activate 丢回执、部分删除、ENOSPC、取消等待以及两次 manager 重启。正确版本满足 LC-P3/5/7/10/11/12；“commit unknown 当未提交”“加载返回就释放 pin”的真实错误版本须失败。V6 仍需证明实际文件与进程后果，不能由数据库行自证。
+
+## 5. 显式卸载检查点
+
+`MaintenanceConfig.checkpoint_profile` 明确选择恢复支持范围。默认 `CreateKill` 保留原 schema 1、配置编码和快照拒绝；`FirstUnload` 使用 core schema 2 与服务 envelope 2，支持第一运行代的一次 Pause/Capture/Stop 历史及原 Create/Kill。根 envelope、core schema、不可变部署配置必须一致。Resume 和第二次新 Pause 在分配新身份、产生待办前拒绝；相同操作键仍由原决定检查全文重放。配置不一致不自动迁移或接管旧数据库。
+
+schema 2 仍逐项校验原状态：操作及 epoch、原 VM/网络槽、计划目标与分配上界、快照归属/运行代/workspace/manifest、LocalSealed 与 Durable/immutable 的对应、捕获未知及撤销后的材料责任、效果原计划和尝试记录。快照文件已出现、保留编号或逻辑 manifest 计数都不能单独证明业务已登记。Worker 观察在回执确认前发生，因此 Dispatched/Unknown 和相应已观察状态必须能够持久化；不要求失败或迟到历史假装从未发生。
+
+服务继续使用原 `WorldTransaction`、输入日志、outbox、回执、SQL 投影和 checkpoint 剪枝，不保留全局历史重放作为卸载格式。每个会话的有限状态及责任进入当前检查点，长期保留一个已卸载会话不能钉住其它已结束会话的全部输入。该 profile 在原 Create 预留中加入一次捕获所需的逻辑效果、重试、输入、操作结果和 SQL 空间；这是数据库/核心记录的预算，实际文件、助手与运行资源额度仍须由捕获接受事务绑定。
+
+这层接口只提供结构化恢复支持。公开 Pause/Resume 入口仍拒绝，直至原源身份、完整请求映射、物理预算和工作在同一接受事务中落实。组件测试通过原较低层接受事务与真实 SQLite/outbox/回执检查关闭重开，不手工写入模拟 World，也不声称生产捕获已启用。核心 `Phase::Paused` 不等于对外 `Unloaded`；原 VM 退出、规定运行分量清理、助手排空和原位置归还仍需分别提供证据。结构检查不是到达性、Host 观察真实性或整个 V4/V5 的机器证明；实际通过范围只在 issue/PR 与证明覆盖登记。
+
+## 6. V3 请求到原 Create 的连接
+
+`initialize_lifecycle_inbox` 只配置尚无原生对象、没有旧 inbox 的完整 `FirstUnload` 数据库。它把原接收方、节点、有限会话数量、请求与后续材料记录空间一起登记到原 SQLite；不创建第二个数据库或第二套本地生命周期。该功能的本地 `controller_meta.version` 为 17，旧读者必须拒绝；共享 host 协议版本 16、SQLite `user_version` 5 和 core checkpoint schema 2 是不同层的版本，不相互冒充，也不在启动时自动迁移。
+
+`record_lifecycle_intent` 保存中心已接受的完整请求与顺序。操作键包括 deployment、owner、window 和 sequence；同键须逐项匹配完整内容，不能换会话或请求正文。`admit_lifecycle_create` 复用原 Create 的模板、寿命、配额、计算资源和位置检查，再在原同一事务内写入请求到本地 sandbox/owner/operation 的映射及原待办。中心的 incarnation 与本地 generation 是独立身份，通过保存的映射连接，不把外部编号强转为本地编号。提交结果未知时查询原键；已存在的映射重放不重新分配位置，也不因后来时钟过期而变成新 Create。
+
+Destroy 可以先于 Create 到达，并形成吸收后续 Create 的终止责任；已有本地对象的 Destroy 复用原启动中补偿和清理决定。Unload 目前只登记原请求及其顺序，不代表已接受捕获、生成了停止许可或完成位置归还；Resume 和重复新 Unload 仍拒绝。`LifecycleWorkState` 的返回值是供查询和组装的数据，不能作为 Host 效果或释放许可。
+
+原生 V3 Create 还要求 `establish_host_epoch` 核对配置中提前登记的宿主环境。提供方必须读取原受保护登记并核对实际节点、boot、固定工具及 CPU/内核条件；配置里有一个摘要不表示核对已经发生。服务在没有 SQL 事务时调用提供方，再在原事务内复核并保存完整引用，确认提交后才允许本 manager 实例启动工作。manager 重开后必须重新核对；历史行可用于恢复查询，不能自行允许新 Create 或继续派发原启动 outbox。提供方失败、内容不符或提交结果未知都不能留下可用的旧核对结果；终止与清理待办仍可推进。
+
+这项连接只检查身份、原始检查的复用与提交顺序。提供方陈述是否符合真实硬件与受保护文件仍属于具名依赖；测试替身返回相同字段不提供这项生产保证。真实 Host 提供方、捕获时源进程/配置观察、文件预算及预留、完整 bundle 登记、Stop 与释放接线未完成时，正式卸载入口保持关闭。本连接及新 SQL 恢复检查尚不作为新增 Lean 证明结论。
+
+## 7. 原应用层的接收与启动入口
+
+Host 传输只调用 `ControllerApplication::record_lifecycle_intent` 和 `lifecycle_work_state`，它们在原应用锁下访问同一个 Journal；不向 HTTP 侧暴露私有状态，也不另开数据库。传输仍须提供经独立认证得到的完整上下文。Destroy 的确认接收同时撤销原数据路由；提交结果未知时保守撤销现有订阅，不据此释放资源或认为终止已经完成。
+
+`advance_lifecycle_create_with_verification` 使用原应用的时钟、部署上限、file-policy 和模板检查，复用原物理存储、配额、启动凭据、outbox 与恢复工作流。旧内部 Create 与 V3 共用原准入准备逻辑；Host 侧不能自行构造一份 `InternalAdmission` 绕过应用检查。已有本地映射的重试不重新解析模板别名、分配对象或生成另一份启动凭据；容量拒绝与材料/提供方失败保持原错误分类，不能由本返回值推断中心可释放配额。
+
+`establish_lifecycle_host_epoch` 只调用原 Host 的 `HostCapacity::observe_host_epoch`。该能力默认拒绝，必须由真实受保护提供方实现；HTTP 请求不能注入观察闭包或以摘要存在代替核对。Journal 仍在 SQL 事务外调用提供方，再复核原配置并确认提交。缺少本 manager 的新核对时，应用恢复不仅阻止新启动派发，也把已派发而未知的启动对象保留为未解决，不能通过 reclaim/observe 继续启动。终止、停止和清理仍走原责任，不等待启动资格。
+
+这些入口返回原请求顺序和映射数据；当前 Ready 的专门观察见下节，公开字段由原传输层显式投影，Unloaded 仍须独立证据。真实环境提供方、捕获接受与材料登记、卸载专用物理释放仍需各自接通；不能把完整请求接收、运行态逻辑值或核心 Paused 拼成已完成卸载。应用接线和新增恢复门控的机器证明同样待补。
+
+`lifecycle_pending_creates` 为原后台工作选择提供 V3 输入：在原应用锁和同一读快照内核对持久 Node 配置，只返回尚未被新意图/终止覆盖的 Create，以及其中尚未映射或原生仍在 Starting 的记录。列表上限是已配置 `max_sessions`，每项保留原 owner/session/操作全文；重开从原 inbox 重建，不建立内存权威队列。列表本身不允许创建 VM，原 `advance_lifecycle_create_with_verification` 仍需重新核对请求、环境、模板、配额和寿命。已 Running 的记录不反复排入准入；终止/补偿沿原独立恢复路径处理，不能据列表缺席推断释放。工作选择每轮须给其它候选机会，单项 Busy/材料暂缺不得中止其它项的推进或改成 NotAccepted；实际工作门、模板来源、时钟和有限等待的接线与进展仍由原 worker 提供。未准入且期限已过的记录也不能因扫描而删除或退额度，须由原规定终止/收尾责任处理。
+
+`advance_recorded_lifecycle_create_with_verification` 只处理原 inbox 已接收并保存的全文请求。它先在原锁下核对 Node 与原记录，取回原接收上下文，再释放读锁并调用同一个应用推进入口；后者重新取得原锁并复核当前完整请求。此上下文不是重新认证网络请求的凭据，不允许调用者用本地 Node 身份接收新正文。
+
+## 8. 历史 Create 结果与当前只读 Ready
+
+`observe_lifecycle_create` 返回两类独立信息：`historical_result` 保留原操作的结果，`readiness` 表示本次查询还能否观察到该 Create 对应的运行事实。后续 Unload/Destroy 已被接受时返回 `NotCurrent`，不把历史成功改成失败，也不把它继续用于当前 Running。原生终态/非运行态返回 `NotRunning`；期限已到返回 `Expired`。原映射、启动、源身份、凭据或 Host 观察不足时返回具名 `Pending`，不能推断停机、释放位置或生成另一份凭据。跨模块的公开状态规则统一见[模块合同](../module-contracts.md)。
+
+第一份读快照核对原接收正文、当前会话版本、原本地映射、操作、epoch/generation/VM、寿命、未解决效果、原 CreateOptions 和凭据索引。五项启动动作及其已提交回执均来自原 outbox；身份、原计划、当前尝试、资源和回执须一致。原 Prepare/Activate 保存的源进程身份须一致。寿命事实复用原 `internal_inbox` 的 Ready 投影，不在查询时重新计算开始、结束或最大结束时间。
+
+关闭 SQL 读事务后，应用保留原所有者锁，按原凭据核对和 `WorkRecovery::observe` 观察这五个原动作。此调用不得执行、认领、修复或撤销资源。Host 提供方负责这些操作确实只读、有限等待、对应原动作的当前事实；Prepare/Activate 的当前 PID、进程开始和 boot 须符合原源身份。凭据在观察前后均核对。调用期间期限可以到达，观察完成后仍须用当前受保护时钟检查。
+
+最后重读同一权威并逐项比较正文、版本、映射、原生状态、寿命、原动作与回执字节、选项和凭据。不能仅比较原输入序号：寿命或凭据 SQL 更新可以不改变该序号。内容变化不发布这份旧观察；新意图、终止和到期按最新事实返回。数据库外部变化仍服从原存储身份拒绝规则。只有全部条件仍成立才返回 `Observed`，附原动作身份与回执摘要；这个原生快照依据不是新分配的物理观察序号。
+
+本地 Running 已提交、Ready 尚未发布时 manager 可以重启。该记录无需重新准入，故不列入本地 pending Create；中心原操作的 `ready=None` 责任仍须恢复并继续查询同一请求，不能把接收回执当作查询结束。局部 SQLite 重启样例只能检查本地这一半；中心持久重派发、原 worker 的公平性、真实 Host 的只读事实和受保护配置仍有各自的验收责任。单纯抽取一个纯检查函数也不能证明上述 SQL、外部观察或完整服务接线。
+
+## 9. 显式 Source18 只读责任
+
+`enable_lifecycle_source_observations` 是原完整 FirstUnload/V3 库的受保护配置入口。它保留格式 17 的 Inbox JSON，在同一原 SQLite 事务内登记格式 18、有界配置、空 SourceWork 表及足额后续记录空间。打开数据库不自动启用或降级；17 出现 18 专属表、18 缺表/形状不符/摘要不符/超预算/身份不符均拒绝。共享 Host 16、SQLite user_version 5、core checkpoint 2 不因这项本地功能而改变。真实旧读者须以格式 17 正例和格式 18 拒绝样例实测。
+
+`prepare_lifecycle_source_work` 只在原已接收的当前 Unload、第一代原 Create 已成功且未终止/到期时保存只读问题。它绑定原完整 Unload 键及版本、原 Create/本地映射/VM/运行代/epoch、原寿命、源 PID/开始时间/boot、原五项启动动作和回执摘要、原选项与凭据、提前保存的 HostBootstrap 引用及观察上限。ID 复用原类型与分配：本地 VM 的第一个合法编号是 0，不套用外部正计数的要求。同一个工作只保存一次，不新分配操作编号或重复扣预留；返回的历史工作不构成新的执行许可。
+
+应用 `observe_lifecycle_source_work` 首先从原库核对已提交问题与当前完整绑定，在没有 SQL 事务时调用应用持有的 `HostCapacity::observe_lifecycle_source`，再在原事务内重读当前全部条件并保存原始结果。该 Host 能力默认拒绝。提供方仅允许针对同一原进程做有界 GET 与只读文件读取，不得 Pause、捕获、Stop、修复、改权限或换进程；它须落实配置给出的执行文件、内核、磁盘和配置字节上限。调用期间仍持有原应用锁，不引入新锁框架。
+
+结果是原 GET /vm/config 字节、执行文件与内核 SHA-256、内核长度、运行盘长度，以及精确工作/资源/源身份。配置 Vec 在 SQL 读取前受总记录上限约束，反序列化后再核对每项上限；字节数组 JSON 的最坏编码占用也进入预留。原始设备 JSON 未解释为完整兼容，运行盘长度不证明活盘内容未变化；这些字段既不证明 RAM/设备/磁盘已捕获，也不证明 VMM 的 CPU/XSAVE、实际资源预留或未来持续不变。HostBootstrap 仍只有启动用途。
+
+固定 Firecracker 的 GET /vm/config 不返回全部真实启动项：启动后的 cpu_config、logger、metrics 可为 None，serial 跳过序列化，PCI 和 boot_timer 不在返回结构。`cpu-config:null` 或字段缺失不能解释为“没有自定义 CPU”或“功能已禁用”，也不能补默认值后给出兼容结论。本批 raw 样例故意只给部分字段；保存并重放这些字节不推进原运行阶段。后续完整源接受必须另绑原真实 launch/参数、唯一 API 写者责任及实际禁用事实。
+
+未知、等待方取消或读取后未保存时，原责任仍可枚举，不能据此推断资源消失。未知提交查询同一原键，恢复以实际提交行为为准，不换工作。终止、新版本/代、寿命或其它原绑定变化使迟到结果拒绝；原问题保留为历史数据，不得变成捕获或释放许可。保存过的结果重放为历史字节，不冒充本次新采样；回收只随原会话终止和后续明确的原材料/责任清理规则处理，本批不自动删除或归还位置。实际 Node 提供方、完整兼容校验、物理预算、Capture/Stop/Release 和 Unloaded 接线及本连接的机器证明分别仍有义务。

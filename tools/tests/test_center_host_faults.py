@@ -1,5 +1,6 @@
 """Pure mandatory-DK launcher/identity checks; never a DK or KVM pass."""
 import argparse
+import hashlib
 import copy
 from contextlib import contextmanager, ExitStack
 from http import HTTPStatus
@@ -21,6 +22,23 @@ import center_host_faults as runner
 import _center_fault_harness as harness
 import _runtime_services as services
 import _center_fault_cases as cases
+
+
+def current_create_fixture():
+    from tools.tests.test_internal_fault_relay import InternalFaultRelayTests
+    node, accepted, observation = InternalFaultRelayTests.pair(None)
+    binding = accepted['request']['binding']
+    identity = dict(binding=copy.deepcopy(binding), center=copy.deepcopy(accepted['center']),
+        retention=copy.deepcopy(accepted['retention']), accepted_version=accepted['accepted_version'])
+    create = copy.deepcopy(accepted['request']['operation']['create'])
+    options = create.pop('options')
+    create.update(binding=copy.deepcopy(binding), options_sha256=hashlib.sha256(bytes(options)).hexdigest(),
+        metadata_sha256=hashlib.sha256(b'{}').hexdigest())
+    operation = copy.deepcopy(identity) | dict(operation=dict(kind='create',target_incarnation=1),
+        acceptance_time=dict(kind='sampled',at_ms=800),running=None,create_refusal=None,terminal=None)
+    record = dict(create=create,private=False,operations=[operation],terminating=False,
+        released=False,phase='creating',last_running=None,terminal_confirmation=None)
+    return node, identity, record, observation
 
 
 class CenterHostFaultsTests(unittest.TestCase):
@@ -104,11 +122,11 @@ class CenterHostFaultsTests(unittest.TestCase):
         value.services.wait_ready.assert_not_called()
 
     def redis_fault_fixture(self):
-        identity=dict(sandbox_id='original-sandbox',node=dict(node_id='original-node'))
+        _node,identity,record,_observation=current_create_fixture()
         value=Mock()
-        value.create.return_value=SimpleNamespace(sandbox_id=identity['sandbox_id'])
-        value.known={identity['sandbox_id']:dict(create=identity,physical=dict(pid=123))}
-        value.center.return_value=dict(sandboxes=[dict(create=dict(identity=identity))])
+        value.create.return_value=SimpleNamespace(sandbox_id=identity['binding']['session'])
+        value.known={identity['binding']['session']:dict(create=identity,physical=dict(pid=123))}
+        value.center.return_value=dict(sandboxes=[record])
         value.services.processes.children={'redis':SimpleNamespace(pid=456)}
         module=ModuleType('e2b');module.Sandbox=Mock()
         return value,module
@@ -570,13 +588,17 @@ class CenterHostFaultsTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(ValueError):
                 harness.tuple_address(value)
 
-    def test_physical_claim_comes_from_checked_local_vm_mapping_not_global_suffix(self):
-        node=dict(deployment_id='test',node_id='host-runtime',node_generation=1)
-        identity=dict(protocol_version=2,node=node,tenant_id='1',sandbox_id='sandbox-999',
-            operation_id='operation-999',intent_version=1,retention_slot=1,request_window=1)
+    def physical_claim_fixture(self):
+        node,identity,_record,_observation=current_create_fixture()
+        binding=identity['binding']
         local=dict(sandbox=7,owner=4,operation=9)
-        host=dict(node=node,operations=[dict(identity=identity,current=True,local=local,
-            response=dict(identity=identity))],native=[dict(sandbox=7,current_vm=42)])
+        context=dict(position=0,expected_previous=None,
+            binding=dict(sandbox=7,owner=4,generation=2,vm=42,network=3))
+        host=dict(schema_version=2,node=node,operations=[dict(binding=binding,accepted_version=1,
+            current=True,terminal=False,confirmed_terminal=None,local=local,local_operation=9)],
+            host_slots=[[context,'Occupied']],native=[dict(sandbox=7,owner=4,epoch=1,generation=2,
+                phase='Running',terminal=False,operation=9,current_vm=42,
+                resources=dict(vms=[42],slots=[3],snapshots=[]))])
         control=self.root/'control'
         control.mkdir(mode=0o700)
         path=control/'host.json'
@@ -585,17 +607,107 @@ class CenterHostFaultsTests(unittest.TestCase):
         claim=self.root/'jails/.claims'/('vm-'+'a'*16+'-42')
         claim.mkdir(parents=True,mode=0o700)
         record=claim/'record.json'
-        record.write_text(json.dumps(dict(resource_id=claim.name,pid=123,start_time_ticks=456)))
+        boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        record.write_text(json.dumps(dict(resource_id=claim.name,pid=123,start_time_ticks=456,
+            boot_id=boot,launch_cpu_domain=[0])))
         record.chmod(0o600)
+        return identity,host,record,boot,local,claim
+
+    def test_physical_claim_comes_from_checked_local_vm_mapping_not_global_suffix(self):
+        identity,host,record,boot,local,claim=self.physical_claim_fixture()
         with patch.object(harness,'process_start_ticks',return_value=456):
             result=harness.physical_record(self.root,host,identity)
         self.assertEqual(result['resource_id'],claim.name)
         self.assertEqual(result['local'],local)
-        self.assertNotIn('999',result['resource_id'])
-        wrong=copy.deepcopy(host)
-        wrong['native'][0]['sandbox']=999
-        with self.assertRaises(ValueError):
-            harness.physical_record(self.root,wrong,identity)
+        self.assertEqual(result['boot_id'],boot)
+        self.assertEqual(result['claim_file']['inode'],record.stat().st_ino)
+        self.assertNotIn('sandbox-1',result['resource_id'])
+        for mutation in ('sandbox','owner','vm','generation','resource','slot_phase','duplicate','version'):
+            wrong=copy.deepcopy(host)
+            if mutation=='sandbox': wrong['native'][0]['sandbox']=999
+            elif mutation=='owner': wrong['native'][0]['owner']=999
+            elif mutation=='vm': wrong['native'][0]['current_vm']=999
+            elif mutation=='generation': wrong['native'][0]['generation']=999
+            elif mutation=='resource': wrong['native'][0]['resources']['vms']=[]
+            elif mutation=='slot_phase': wrong['host_slots'][0][1]='Free'
+            elif mutation=='duplicate': wrong['host_slots']*=2
+            else: wrong['operations'][0]['accepted_version']=2
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                harness.physical_record(self.root,wrong,identity)
+        changed=json.loads(record.read_text()); changed['boot_id']='00000000-0000-0000-0000-000000000000'
+        record.write_text(json.dumps(changed))
+        with patch.object(harness,'process_start_ticks',return_value=456), self.assertRaises(ValueError):
+            harness.physical_record(self.root,host,identity)
+
+    def test_claim_replacement_restored_before_read_cannot_mislabel_open_descriptor(self):
+        identity,host,record,_boot,_local,_claim=self.physical_claim_fixture()
+        original_bytes=record.read_bytes()
+        original_inode=record.stat().st_ino
+        saved=record.with_name('saved-original.json')
+        replacement=record.with_name('opened-replacement.json')
+        open_original=harness.os.open
+        opened=[]
+        def exchange(path,flags,*args,**kwargs):
+            if path=='record.json' and 'dir_fd' in kwargs:
+                self.assertFalse(opened)
+                record.rename(saved)
+                record.write_bytes(original_bytes)
+                record.chmod(0o600)
+                descriptor=open_original(path,flags,*args,**kwargs)
+                opened.append(descriptor)
+                record.rename(replacement)  # Keep the opened file regular with one link.
+                saved.rename(record)       # The original pathname is already restored.
+                self.assertEqual(record.stat().st_ino,original_inode)
+                return descriptor
+            return open_original(path,flags,*args,**kwargs)
+        with patch.object(harness.os,'open',side_effect=exchange), \
+                patch.object(harness,'process_start_ticks',return_value=456), \
+                self.assertRaisesRegex(ValueError,'descriptor or path identity'):
+            harness.physical_record(self.root,host,identity)
+        self.assertEqual(len(opened),1)
+        self.assertEqual(record.read_bytes(),original_bytes)
+        self.assertEqual(record.stat().st_ino,original_inode)
+        with self.assertRaises(OSError): harness.os.fstat(opened[0])
+        replacement.unlink()
+        with patch.object(harness,'process_start_ticks',return_value=456):
+            result=harness.physical_record(self.root,host,identity)
+        self.assertEqual(result['claim_file']['inode'],original_inode)
+
+    def test_claim_reader_keeps_finite_unique_json_and_private_regular_file_checks(self):
+        identity,host,record,_boot,_local,_claim=self.physical_claim_fixture()
+        original=record.read_bytes()
+        for mutation in ('duplicate','oversize','permissions','symlink','directory'):
+            with self.subTest(mutation=mutation):
+                if mutation=='duplicate': record.write_bytes(b'{"pid":123,"pid":123}')
+                elif mutation=='oversize': record.write_bytes(b' '*(harness.MIB+1))
+                elif mutation=='permissions': record.chmod(0o644)
+                elif mutation=='symlink':
+                    record.unlink();record.symlink_to('absent')
+                else:
+                    record.unlink();record.mkdir(mode=0o700)
+                with self.assertRaises((ValueError,OSError)):
+                    harness.physical_record(self.root,host,identity)
+                if mutation=='directory': record.rmdir()
+                elif record.is_symlink(): record.unlink()
+                record.write_bytes(original);record.chmod(0o600)
+
+    def test_captured_current_create_binds_center_retention_options_and_incarnation(self):
+        _node,identity,record,observation=current_create_fixture()
+        self.assertEqual(harness.captured_create_matches(record,observation),identity)
+        for mutation in ('center','retention','options','incarnation','resource','current'):
+            changed=copy.deepcopy(observation)
+            if mutation=='center': changed['request']['center']['center']='other'
+            elif mutation=='retention': changed['request']['retention']['window']+=1
+            elif mutation=='options': changed['request']['request']['operation']['create']['options']=[123,32,125]
+            elif mutation=='incarnation': changed['request']['request']['operation']['target_incarnation']=2
+            elif mutation=='resource': changed['request']['request']['operation']['create']['resources']['cpu']=2
+            else: changed['current_request']['accepted_version']=2
+            if mutation!='current': changed['current_request']=copy.deepcopy(changed['request'])
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                harness.captured_create_matches(record,changed)
+        self.assertIsNone(record['last_running'])
+        self.assertIsNone(record['operations'][0]['running'])
+        self.assertNotIn('options',record['create'])
 
     def test_a_pid_with_a_changed_clock_is_not_the_original_living_vm(self):
         with patch.object(harness,'process_start_ticks',return_value=456):
@@ -625,8 +737,7 @@ class CenterHostFaultsTests(unittest.TestCase):
         value.services.processes.audit.assert_called_once_with('host-0')
 
     def test_missing_or_duplicate_original_center_record_never_becomes_absence_success(self):
-        identity=dict(sandbox_id='sandbox-1')
-        row=dict(create=dict(identity=identity))
+        _node,identity,row,_observation=current_create_fixture()
         self.assertEqual(harness.center_record(dict(sandboxes=[row]),identity),row)
         for records in ([],[row,row]):
             with self.assertRaises(ValueError):

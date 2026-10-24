@@ -10,7 +10,7 @@ mod cache_tests;
 #[cfg(test)]
 mod lease_tests;
 #[cfg(test)]
-mod tests_support;
+pub(crate) mod tests_support;
 
 mod capacity;
 mod data_credentials;
@@ -19,13 +19,21 @@ mod admission;
 mod admission_usage;
 mod allocators;
 mod bounded;
+mod capture;
 mod checkpoint;
 mod identity;
 mod internal_inbox;
+mod lifecycle_inbox;
 pub use internal_inbox::{
     InternalAdmission, InternalAudit, InternalAuditOperation, InternalCreateResult,
     InternalInboxConfig, InternalLocalBinding, InternalNativeAudit, InternalRetentionLane,
     InternalTemplate, InternalWorkState,
+};
+pub use lifecycle_inbox::{
+    CreateReadiness, CreateReadinessPending, LifecycleAudit, LifecycleAuditOperation,
+    LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
+    LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState, NativeCreateSnapshot,
+    SourceWork, SourceWorkRecord,
 };
 mod private_build;
 mod registry;
@@ -104,6 +112,9 @@ pub struct ControllerJournal {
     journal: Journal,
     namespace: String,
     committed_world: transaction::CommittedWorld,
+    // Fresh provider observation for this manager; never restored from SQL as
+    // permission to dispatch new startup effects on a possibly different boot.
+    active_host_epoch: Option<crate::capture::HostEpochObservation>,
     // Keep this last: the SQLite journal closes before ownership is released.
     _lease: ControllerLease,
 }
@@ -600,6 +611,7 @@ impl ControllerJournal {
         Ok(Self {
             journal,
             committed_world,
+            active_host_epoch: None,
             namespace: namespace.to_owned(),
             _lease: lease,
         })
@@ -643,10 +655,13 @@ impl ControllerJournal {
         }
         if matches!(
             input,
-            core::ControllerInput::Request(core::Request::Create(_))
+            core::ControllerInput::Request(
+                core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
+            )
         ) {
-            // Full mode requires its lease, options and physical binding in
-            // the same admission transaction before any accepted host work.
+            // Recovery schema support alone does not admit physical work.
+            // Create uses its existing admission; pause needs the separately
+            // committed original source/bundle work before public enablement.
             return Err(JournalError::UnsupportedInput);
         }
         let sandbox = identity::input_sandbox(&input)?;
@@ -773,7 +788,7 @@ impl ControllerJournal {
         }
     }
 
-    fn claim_next(
+    pub(crate) fn claim_next(
         &mut self,
         selected: Option<core::SandboxId>,
         crashes: &mut impl CrashInjector,
@@ -797,6 +812,13 @@ impl ControllerJournal {
             let action: WorkAction<core::EffectId> = serde_json::from_slice(&json)?;
             action.identity.validate_version()?;
             if selected.is_some_and(|sandbox| action.command.command().sandbox() != sandbox) {
+                continue;
+            }
+            if !lifecycle_inbox::dispatch_epoch_allows(
+                &transaction,
+                self.active_host_epoch.as_ref(),
+                action.command.command(),
+            )? {
                 continue;
             }
             if storage::unresolved(&world, action.command.command().sandbox())
@@ -859,20 +881,6 @@ impl ControllerJournal {
         let (id, json, state, previous) = row.ok_or(JournalError::Conflict)?;
         let action: WorkAction<core::EffectId> = serde_json::from_slice(&json)?;
         receipt.validate_for(&action)?;
-        let world = transaction.world();
-        // An initialization result cannot reopen a terminal create, and a
-        // stopped VM must not be misread as proof that initialization worked.
-        if matches!(action.command.command(), core::Command::ActivateVm { .. })
-            && !matches!(
-                world.effect_status(&action.command),
-                Some(core::EffectStatus::Acknowledged(_))
-            )
-            && world
-                .sandbox_record(action.command.command().sandbox())
-                .is_some_and(|record| record.terminal)
-        {
-            return Err(JournalError::ObsoleteReceipt);
-        }
         if state == "ready" {
             return Err(JournalError::ReceiptBeforeDispatch);
         }

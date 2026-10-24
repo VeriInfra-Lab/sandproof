@@ -1284,6 +1284,17 @@ impl LinuxWorker {
         })
     }
 
+    pub(super) fn original_source_context(
+        &self,
+        resource: &sandproof_protocol::ResourceRef,
+    ) -> NodeResult<HostSlotContext> {
+        select_original_source_context(
+            &self.config.namespace,
+            resource,
+            &self.read_host_positions()?,
+        )
+    }
+
     pub(super) fn physical_slot_for_vm(&self, vm: core::VmId) -> NodeResult<HostSlotId> {
         let row = self
             .read_host_positions()?
@@ -1313,6 +1324,33 @@ impl LinuxWorker {
     }
 }
 
+// Original read_host_positions already checks all position cells and VM
+// uniqueness. Keep lookup exact and unambiguous even for a damaged input.
+fn select_original_source_context(
+    namespace: &str,
+    resource: &sandproof_protocol::ResourceRef,
+    rows: &[HostPosition],
+) -> NodeResult<HostSlotContext> {
+    if resource.kind != sandproof_protocol::ResourceKind::Vm {
+        return Err("original source resource is not a VM".into());
+    }
+    let mut matches = rows.iter().filter(|row| {
+        resource.id.as_str() == format!("vm-{namespace}-{}", row.context.binding.vm.0)
+    });
+    let row = matches
+        .next()
+        .ok_or("original source has no occupied position")?;
+    if matches.next().is_some() {
+        return Err("ambiguous original source occupied position".into());
+    }
+    row.require_occupied(row.context.binding)?;
+    Ok(row.context)
+}
+
+#[cfg(test)]
+#[path = "source_context_tests.rs"]
+mod source_context_tests;
+
 fn check_occupied_action(
     rows: &[HostPosition],
     action: &WorkAction<core::EffectId>,
@@ -1337,11 +1375,15 @@ fn check_occupied_action(
         | core::Command::AbortPrepare { vm, slot, .. }
         | core::Command::ConfigureNetwork { vm, slot, .. } => (Some(*vm), Some(*slot)),
         core::Command::ActivateVm { vm, .. }
+        | core::Command::FreezeVm { vm, .. }
+        | core::Command::SealSnapshot { vm, .. }
         | core::Command::StopVm { vm, .. }
         | core::Command::CleanupVm { vm, .. } => (Some(*vm), None),
         core::Command::CleanupSlot { slot, .. } => (None, Some(*slot)),
         core::Command::InstallFence { .. } | core::Command::ApplyFilePolicy { .. } => (None, None),
-        _ => return Err("unsupported bounded host command".into()),
+        core::Command::CommitSnapshot { .. } => {
+            return Err("unsupported bounded host command".into());
+        }
     };
     if vm.is_some_and(|vm| vm != binding.vm) || network.is_some_and(|slot| slot != binding.network)
     {
@@ -1571,6 +1613,23 @@ mod tests {
                 epoch: 1,
                 generation: 3,
                 vm: binding.vm,
+            },
+            core::Command::FreezeVm {
+                sandbox: binding.sandbox,
+                epoch: 1,
+                generation: 3,
+                vm: binding.vm,
+            },
+            core::Command::SealSnapshot {
+                sandbox: binding.sandbox,
+                epoch: 1,
+                generation: 3,
+                vm: binding.vm,
+                workspace: core::FsId(5),
+                snapshot: core::SnapshotId(6),
+                manifest: core::SnapshotManifestRef {
+                    digest: core::ManifestDigest(7),
+                },
             },
             core::Command::StopVm {
                 sandbox: binding.sandbox,

@@ -7,6 +7,7 @@
 pub mod admission;
 mod authentication;
 mod build_vm_api;
+pub mod lifecycle;
 mod list;
 pub use authentication::{
     PRIVATE_BUILD_CREDENTIAL_HEADER, PRIVATE_BUILD_TENANT_HEADER, PrivateBuildCredential,
@@ -164,7 +165,7 @@ pub struct SandboxDetail {
     pub info: SandboxInfo,
     pub envd_access_token: String,
     pub domain: String,
-    /// Outer None means unavailable on a legacy record; inner None is SDK default.
+    /// Outer None means the original request omitted networking; inner None is the SDK default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_internet_access: Option<Option<bool>>,
     #[serde(skip_serializing_if = "Option::is_none")]

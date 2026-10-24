@@ -1,21 +1,18 @@
-use super::*;
-use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
-#[path = "../../../../sandbox-protocol/tests/support/lifecycle.rs"]
-mod fixture;
 use super::super::tests_support as workflow_fixture;
+use super::super::tests_support::lifecycle_application::fixture::wire as fixture;
+use super::*;
 use crate::templates::{ComputeLimits, ResourceShape, TemplateArtifact, TemplateBinding};
 use crate::{AdmissionError, InternalAdmission, InternalTemplate};
 use crate::{CrashPoint, NeverCrash};
 use fixture::*;
 use sandbox_controller_core as core;
+use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
 #[path = "tests/capacity_rejection.rs"]
 mod capacity_rejection;
 #[path = "tests/renewal.rs"]
 mod renewal;
 #[path = "tests/starting_destroy.rs"]
 mod starting_destroy;
-#[path = "tests/validation.rs"]
-mod validation;
 #[path = "tests/window.rs"]
 mod window;
 
@@ -491,7 +488,7 @@ fn internal_inbox_ready_fact_uses_original_publication_time_and_survives_lost_re
             .local
             .unwrap();
         let mut calls = 0;
-        crate::finish_admitted_create_v1_timed(
+        crate::finish_admitted_create_timed(
             &mut j,
             local.sandbox,
             local.operation,
@@ -544,7 +541,7 @@ fn internal_inbox_stopped_is_not_cleaned_until_exact_physical_release_and_detail
         .unwrap()
         .local
         .unwrap();
-    crate::finish_admitted_create_v1_timed(
+    crate::finish_admitted_create_timed(
         &mut j,
         local.sandbox,
         local.operation,
@@ -559,7 +556,7 @@ fn internal_inbox_stopped_is_not_cleaned_until_exact_physical_release_and_detail
         ..r.clone()
     };
     j.record_internal_intent(&destroy, &mut NeverCrash).unwrap();
-    crate::finish_accepted_kill_v1(
+    crate::finish_accepted_kill(
         &mut j,
         local.sandbox,
         core::OperationId(2),
@@ -629,7 +626,7 @@ fn internal_inbox_destroy_and_native_terminal_commit_together_even_during_uncert
             .unwrap()
             .local
             .unwrap();
-        let result = crate::finish_admitted_create_v1_timed(
+        let result = crate::finish_admitted_create_timed(
             &mut j,
             local.sandbox,
             local.operation,
@@ -684,7 +681,7 @@ fn internal_inbox_destroy_and_native_terminal_commit_together_even_during_uncert
             core::OperationId(2)
         );
         assert!(
-            crate::finish_admitted_create_v1_timed(
+            crate::finish_admitted_create_timed(
                 &mut j,
                 local.sandbox,
                 local.operation,

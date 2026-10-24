@@ -19,7 +19,7 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
 // Worker application precedes acknowledgement, so a persisted resource can
 // legitimately have a Dispatched or OutcomeUnknown effect. An unexecuted
 // Committed command or a failure receipt alone is not a resource witness.
-fn observed(world: &World, predicate: impl Fn(&Command) -> bool) -> bool {
+pub(super) fn observed(world: &World, predicate: impl Fn(&Command) -> bool) -> bool {
     world.effects.entries().iter().any(|(id, status)| {
         predicate(id.command())
             && matches!(
@@ -74,7 +74,10 @@ fn machine_record(world: &World, vm: VmId, machine: &Vm) -> Result<(), Reject> {
             world,
             |command| matches!(command, Command::CleanupVm { vm: found, .. } | Command::AbortPrepare { vm: found, .. } if *found == vm),
         ),
-        VmStatus::Frozen => return Err(Reject::UnsupportedSnapshotHistory),
+        VmStatus::Frozen => observed(world, |command| {
+            matches!(command, Command::FreezeVm { sandbox, generation, vm: found, .. }
+                if *sandbox == machine.sandbox && *generation == machine.generation && *found == vm)
+        }),
     };
     if !witnessed {
         return Err(Reject::InvalidResource);
@@ -128,11 +131,17 @@ fn networks(world: &World) -> Result<(), Reject> {
 fn indexes(world: &World) -> Result<(), Reject> {
     for (sandbox, index) in world.resource_indexes.entries() {
         record(world, *sandbox)?;
-        if !index.snapshots.is_empty() {
-            return Err(Reject::UnsupportedSnapshotHistory);
-        }
         unique(&index.vms)?;
         unique(&index.slots)?;
+        unique(&index.snapshots)?;
+        if index.snapshots.iter().any(|id| {
+            world
+                .snapshots
+                .get(id)
+                .is_none_or(|row| row.sandbox != *sandbox)
+        }) {
+            return Err(Reject::InvalidReference);
+        }
         if index.vms.iter().any(|id| {
             world
                 .vm_record(*id)

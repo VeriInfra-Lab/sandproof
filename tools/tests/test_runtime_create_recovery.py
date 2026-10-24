@@ -24,38 +24,94 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.intent = dict(metadata=dict(benchmark='terminal-bench-2.0', task='sample',
             build='a'*32, revision='r1', runtime_attempt='e'*32), template=self.template)
         self.node = dict(deployment_id='test-deployment', node_id='host-runtime', node_generation=3)
-        self.identity = dict(protocol_version=2, node=self.node, tenant_id='1', sandbox_id='sandbox-17',
-                             operation_id='operation-41', intent_version=1, retention_slot=1, request_window=2)
-        previous = dict(identity=dict(self.identity, sandbox_id='sandbox-16', request_window=1),
-                        observation_version=2, fact=dict(kind='cleaned'))
-        versions = dict(internal_protocol=2, center_store=6, host_store=16)
-        self.center = dict(schema_version=2, versions=versions, deployment='test-deployment', sandboxes=[],
-            retention_lanes=[dict(node=self.node, retention_slot=1, retired_through=1, last_retired=previous)])
-        self.host = dict(schema_version=2, versions=versions, node=self.node, operations=[],
-            lanes=[dict(retention_slot=1, retired_through=1, last_retired=previous)])
+        self.binding = dict(protocol_version=3, node=copy.deepcopy(self.node), session='sandbox-17',
+            key=dict(deployment='test-deployment', owner='1', window=7, sequence=41),
+            expected=dict(state='absent'))
+        self.identity = dict(binding=copy.deepcopy(self.binding),
+            center=dict(deployment='test-deployment', center='center-a'),
+            retention=dict(slot=1, window=2), accepted_version=1)
+        previous = self.response(session='sandbox-16', window=1, sequence=39)
+        versions = dict(internal_protocol=2, center_store=8, host_store=20)
+        self.center = dict(schema_version=3, versions=copy.deepcopy(versions),
+            deployment='test-deployment', revision=1, sandbox_highwater=17, operation_highwater=42, nodes=[], sandboxes=[], retention_lanes=[dict(node=copy.deepcopy(self.node),
+                retention_slot=1, retired_through=1, phase='open', last_retired=copy.deepcopy(previous))])
+        self.host = dict(schema_version=2, versions=copy.deepcopy(versions), node=copy.deepcopy(self.node),
+            native=[],host_slots=[],source_observation=dict(max_work_bytes=1024,max_configuration_bytes=1024,
+                max_executable_bytes=1024,max_kernel_bytes=1024,max_disk_bytes=4096),operations=[], retention_lanes=[dict(slot=1, retired_through=1, current_window=2,
+                last_retired=copy.deepcopy(previous))])
         self.now = 0
+
+    def response(self, *, session='sandbox-17', window=2, sequence=42):
+        binding = copy.deepcopy(self.binding)
+        binding.update(session=session, expected=dict(state='version', version=1))
+        binding['key']['sequence'] = sequence
+        return dict(request=dict(request=dict(binding=binding, operation=dict(kind='destroy')),
+            accepted_version=2, center=copy.deepcopy(self.identity['center']),
+            retention=dict(slot=1, window=window)), status='cleaned')
 
     def insert(self, *, pending=False, terminal=False):
         checksum = hashlib.sha256(json.dumps(self.intent['metadata'], sort_keys=True,
-            separators=(',', ':')).encode()).hexdigest()
+            separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
         resources = dict(instances=1, cpu=self.template['cpuCount'],
             memory_bytes=self.template['hostMemoryBytes'], disk_bytes=self.template['diskBytes'])
+        operation = copy.deepcopy(self.identity) | dict(operation=dict(kind='create', target_incarnation=1),
+            acceptance_time=dict(kind='sampled', at_ms=1000), running=None if pending else dict(
+                started_at_ms=1234, end_at_ms=301234, max_end_at_ms=601234,
+                startup_deadline_ms=301000, observed_at_ms=1234), create_refusal=None, terminal=None)
         self.center['sandboxes'] = [dict(private=False,
-            create=dict(identity=copy.deepcopy(self.identity), metadata_sha256=checksum,
-                        resources=resources), started_at_ms=None if pending else 1234,
-            released=terminal, terminal_confirmation=None, operations=[])]
+            create=dict(binding=copy.deepcopy(self.binding), metadata_sha256=checksum, resources=resources,
+                template_revision='r1', template_digest=[1]*32, options_sha256=hashlib.sha256(b'{}').hexdigest(),
+                startup_deadline_ms=301000,timeout_ms=300000,max_lifetime_ms=600000),
+            phase='creating' if pending else 'running', last_running=copy.deepcopy(operation['running']),
+            terminating=False, released=False, terminal_confirmation=None, operations=[operation])]
         self.host['operations'] = []
         if terminal:
             self.finish()
 
     def finish(self):
-        identity = dict(self.identity, operation_id='operation-42', intent_version=2)
-        response = dict(identity=identity, observation_version=3, fact=dict(kind='cleaned'))
-        self.center['sandboxes'][0].update(released=True,
-            terminal_confirmation=copy.deepcopy(response),
-            operations=[dict(response=copy.deepcopy(response))])
-        self.host['operations'] = [dict(identity=identity, current=True, local=None,
-            response=copy.deepcopy(response), confirmed=copy.deepcopy(response))]
+        response = self.response()
+        accepted = response['request']
+        operation = dict(binding=copy.deepcopy(accepted['request']['binding']),
+            center=copy.deepcopy(accepted['center']), retention=copy.deepcopy(accepted['retention']),
+            accepted_version=accepted['accepted_version'], acceptance_time=dict(kind='unsampled'),
+            operation=dict(kind='destroy'), running=None, create_refusal=None, terminal=copy.deepcopy(response))
+        record = self.center['sandboxes'][0]
+        record.update(released=True, terminating=True, phase='cleaned',
+            terminal_confirmation=copy.deepcopy(response))
+        record['operations'] = [record['operations'][0], operation]
+        self.host['operations'] = [dict(binding=copy.deepcopy(operation['binding']), accepted_version=2,
+            current=True, terminal=True, local=None, local_operation=None,
+            confirmed_terminal=copy.deepcopy(response))]
+
+    def test_version_zero_is_representable_but_not_an_original_create_or_authority(self):
+        from tools.runtime_create_recovery import _binding_shape, _control_shape
+        value=copy.deepcopy(self.identity)
+        value['binding']['expected']={'state':'version','version':0}
+        self.assertTrue(_binding_shape(value['binding']))
+        self.assertTrue(_control_shape(value))
+        with self.assertRaises(ValueError):
+            terminal_result(self.center,self.host,value)
+        value['binding']['expected']['version']=2**64-1
+        self.assertFalse(_control_shape(value))
+
+    def test_shape_valid_version_zero_destroy_cannot_retire_an_existing_create(self):
+        self.insert(terminal=True)
+        result=self.center['sandboxes'][0]['operations'][-1]['terminal']
+        result['request']['request']['binding']['expected']['version']=0
+        result['request']['accepted_version']=1
+        with self.assertRaises(ValueError):
+            terminal_result(self.center,self.host,self.identity)
+
+    def test_equal_but_noninteger_versions_and_old_paired_store_formats_refuse(self):
+        self.insert()
+        for versions in (dict(internal_protocol=2.0,center_store=8,host_store=20),
+                         dict(internal_protocol=2,center_store=7,host_store=19)):
+            center,host=copy.deepcopy(self.center),copy.deepcopy(self.host)
+            center['versions']=copy.deepcopy(versions);host['versions']=copy.deepcopy(versions)
+            with self.assertRaises(ValueError):
+                find_runtime_create(center,self.intent['metadata'],deployment='test-deployment')
+            with self.assertRaises(ValueError):
+                terminal_result(center,host,self.identity)
 
     def tick(self, seconds):
         self.now += seconds
@@ -130,11 +186,13 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         delete.assert_not_called()
 
     def test_foreign_owner_deployment_or_saved_sdk_identity_refuses(self):
-        for field, value in (('tenant_id', '2'), ('sandbox_id', 'sb-old-17'),
-                             ('sandbox_id', 'sandbox-18')):
+        for field, value in (('owner', '2'), ('session', 'sb-old-17'), ('session', 'sandbox-18')):
             with self.subTest(field=field, value=value):
                 self.insert()
-                self.center['sandboxes'][0]['create']['identity'][field] = value
+                record = self.center['sandboxes'][0]
+                for binding in (record['create']['binding'], record['operations'][0]['binding']):
+                    if field == 'owner': binding['key']['owner'] = value
+                    else: binding['session'] = value
                 delete = Mock()
                 with self.assertRaisesRegex(RuntimeError, 'identity mismatch'):
                     self.recover(delete, sandbox_id='sandbox-17')
@@ -168,18 +226,62 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.assertEqual(terminal_result(center, host, self.identity)['status'], 'cleaned')
         for altered in (dict(host, operations=[]),
                 dict(host, operations=[dict(host['operations'][0], current=False)]),
-                dict(host, operations=[dict(host['operations'][0], confirmed=None)])):
+                dict(host, operations=[dict(host['operations'][0], confirmed_terminal=None)])):
             with self.subTest(host=altered):
                 self.assertIsNone(terminal_result(center, altered, self.identity))
         center['sandboxes'][0]['terminal_confirmation'] = None
         self.assertIsNone(terminal_result(center, host, self.identity))
 
+    def test_host_versions_and_node_have_independent_types(self):
+        self.insert(terminal=True)
+        for path in (('versions','internal_protocol'), ('node','node_generation')):
+            host=copy.deepcopy(self.host)
+            host[path[0]][path[1]]=float(host[path[0]][path[1]])
+            self.assertEqual(host,self.host)  # Python equality is intentionally insufficient.
+            with self.subTest(path=path),self.assertRaises(ValueError):
+                terminal_result(self.center,host,self.identity)
+            self.assertEqual(terminal_result(self.center,self.host,self.identity)['status'],'cleaned')
+
+    def test_single_terminal_participant_cannot_hide_noninteger_identity(self):
+        self.insert(terminal=True)
+        paths=[
+            ('center',('sandboxes',0,'operations',-1,'accepted_version'),2.0),
+            ('center',('sandboxes',0,'terminal_confirmation','request','accepted_version'),2.0),
+            ('host',('operations',0,'accepted_version'),2.0),
+            ('host',('operations',0,'binding','expected','version'),True),
+            ('host',('operations',0,'binding','protocol_version'),3.0),
+            ('host',('operations',0,'confirmed_terminal','request','retention','slot'),True),
+            ('host',('operations',0,'confirmed_terminal','request','accepted_version'),2.0),
+        ]
+        for side,path,bad in paths:
+            center,host=copy.deepcopy(self.center),copy.deepcopy(self.host)
+            target=center if side=='center' else host
+            for part in path[:-1]: target=target[part]
+            target[path[-1]]=bad
+            self.assertEqual(center,self.center)
+            self.assertEqual(host,self.host)
+            with self.subTest(side=side,path=path),self.assertRaises(ValueError):
+                terminal_result(center,host,self.identity)
+        self.assertEqual(terminal_result(self.center,self.host,self.identity)['status'],'cleaned')
+
+    def test_original_create_requires_exact_positive_incarnation_operation(self):
+        self.insert()
+        variants=[{'kind':'create'}, {'kind':'create','target_incarnation':1,'extra':0}]
+        variants += [dict(kind='create',target_incarnation=v) for v in (True,1.0,0,-1,2**64)]
+        for operation in variants:
+            center=copy.deepcopy(self.center)
+            center['sandboxes'][0]['operations'][0]['operation']=operation
+            with self.subTest(operation=operation),self.assertRaises(ValueError):
+                find_runtime_create(center,self.intent['metadata'],deployment='test-deployment')
+        self.assertEqual(find_runtime_create(self.center,self.intent['metadata'],
+            deployment='test-deployment'),self.identity)
+
     def test_absence_one_frontier_or_stopped_is_not_cleanup(self):
         self.insert(terminal=True)
-        self.center['sandboxes'][0]['operations'][0]['response']['fact']['kind'] = 'stopped'
+        self.center['sandboxes'][0]['operations'][-1]['terminal']['status'] = 'pending'
         self.assertIsNone(terminal_result(self.center, self.host, self.identity))
         self.center['sandboxes'] = []
-        self.retire(self.host['lanes'][0], 2)
+        self.retire(self.host['retention_lanes'][0], 2)
         self.assertIsNone(terminal_result(self.center, self.host, self.identity))
         self.retire(self.center['retention_lanes'][0], 2)
         result = self.recover(Mock(), create_identity=self.identity)
@@ -187,63 +289,93 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
 
     def test_saved_identity_cannot_consume_foreign_host_frontier(self):
         self.retire(self.center['retention_lanes'][0], 2)
-        self.retire(self.host['lanes'][0], 2)
+        self.retire(self.host['retention_lanes'][0], 2)
         self.host['node'] = dict(self.node, node_generation=4)
         with self.assertRaises(ValueError):
             self.recover(Mock(), create_identity=self.identity)
 
     def retire(self, lane, floor):
-        lane.update(retired_through=floor, last_retired=dict(
-            identity=dict(self.identity, operation_id='operation-42', intent_version=2, request_window=floor),
-            observation_version=3, fact=dict(kind='cleaned')))
+        lane.update(retired_through=floor, last_retired=self.response(window=floor))
+        if 'current_window' in lane:
+            lane['current_window'] = floor + 1
 
     def test_other_slot_retirement_does_not_prove_original_cleanup(self):
         self.center['sandboxes'] = []
-        for lane in (self.center['retention_lanes'][0], self.host['lanes'][0]):
-            lane['retention_slot'] = 2
-            lane['last_retired']['identity']['retention_slot'] = 2
+        for lane in (self.center['retention_lanes'][0], self.host['retention_lanes'][0]):
+            lane['retention_slot' if 'node' in lane else 'slot'] = 2
+            lane['last_retired']['request']['retention']['slot'] = 2
         with self.assertRaisesRegex(ValueError, 'slot frontier'):
             terminal_result(self.center, self.host, self.identity)
 
     def test_retirement_requires_exact_stamp_and_current_audit_schema(self):
         self.retire(self.center['retention_lanes'][0], 2)
-        self.retire(self.host['lanes'][0], 2)
+        self.retire(self.host['retention_lanes'][0], 2)
         for side in ('center', 'host'):
             for mutation in ('schema', 'version', 'binding', 'observation', 'missing'):
                 center, host = copy.deepcopy(self.center), copy.deepcopy(self.host)
                 audit = center if side == 'center' else host
-                lane = audit['retention_lanes' if side == 'center' else 'lanes'][0]
+                lane = audit['retention_lanes'][0]
                 if mutation == 'schema': audit['schema_version'] = 1
                 elif mutation == 'version': audit['versions']['host_store'] -= 1
-                elif mutation == 'binding': lane['last_retired']['identity']['sandbox_id'] = 'sandbox-99'
-                elif mutation == 'observation': lane['last_retired']['observation_version'] += 1
+                elif mutation == 'binding': lane['last_retired']['request']['request']['binding']['session'] = 'sandbox-99'
+                elif mutation == 'observation': lane['last_retired']['request']['request']['binding']['key']['sequence'] += 1
                 else: lane['last_retired'] = None
                 with self.subTest(side=side, mutation=mutation), self.assertRaises(ValueError):
                     terminal_result(center, host, self.identity)
 
     def test_terminal_response_cannot_change_original_retention_slot(self):
         self.insert(terminal=True)
-        self.center['sandboxes'][0]['operations'][0]['response']['identity']['retention_slot'] = 2
+        self.center['sandboxes'][0]['operations'][-1]['terminal']['request']['retention']['slot'] = 2
         with self.assertRaisesRegex(ValueError, 'create binding'):
             terminal_result(self.center, self.host, self.identity)
 
     def test_retired_stamps_must_be_complete_and_typed_not_just_equal(self):
         self.retire(self.center['retention_lanes'][0], 2)
-        self.retire(self.host['lanes'][0], 2)
-        for mutation in ('missing_operation', 'missing_intent', 'missing_observation',
+        self.retire(self.host['retention_lanes'][0], 2)
+        for mutation in ('missing_operation', 'missing_intent', 'missing_request',
                          'bool_slot', 'float_schema', 'bool_generation', 'extra_fact'):
             center, host = copy.deepcopy(self.center), copy.deepcopy(self.host)
-            for audit, key in ((center, 'retention_lanes'), (host, 'lanes')):
-                stamp = audit[key][0]['last_retired']
-                if mutation == 'missing_operation': del stamp['identity']['operation_id']
-                elif mutation == 'missing_intent': del stamp['identity']['intent_version']
-                elif mutation == 'missing_observation': del stamp['observation_version']
-                elif mutation == 'bool_slot': stamp['identity']['retention_slot'] = True
-                elif mutation == 'float_schema': audit['schema_version'] = 2.0
-                elif mutation == 'bool_generation': stamp['identity']['node']['node_generation'] = True
-                else: stamp['fact']['extra'] = 'unknown'
+            for audit in (center, host):
+                stamp = audit['retention_lanes'][0]['last_retired']
+                if mutation == 'missing_operation': del stamp['request']['request']['operation']
+                elif mutation == 'missing_intent': del stamp['request']['accepted_version']
+                elif mutation == 'missing_request': del stamp['request']['request']
+                elif mutation == 'bool_slot': stamp['request']['retention']['slot'] = True
+                elif mutation == 'float_schema': audit['schema_version'] = float(audit['schema_version'])
+                elif mutation == 'bool_generation': stamp['request']['request']['binding']['node']['node_generation'] = True
+                else: stamp['extra'] = 'unknown'
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 terminal_result(center, host, self.identity)
+
+    def test_terminal_intent_or_historical_running_never_substitutes_for_confirmation(self):
+        self.insert(terminal=True)
+        self.host['operations'][0]['confirmed_terminal'] = None
+        self.assertTrue(self.host['operations'][0]['terminal'])
+        self.assertIsNotNone(self.center['sandboxes'][0]['last_running'])
+        self.assertIsNone(terminal_result(self.center, self.host, self.identity))
+        del self.host['operations'][0]['confirmed_terminal']
+        self.assertIsNone(terminal_result(self.center, self.host, self.identity))
+
+    def test_saved_create_keeps_independent_request_and_retention_windows_and_is_not_an_alias(self):
+        self.insert()
+        saved = find_runtime_create(self.center, self.intent['metadata'], deployment='test-deployment')
+        self.assertEqual(saved['binding']['key']['window'], 7)
+        self.assertEqual(saved['retention'], dict(slot=1, window=2))
+        self.center['sandboxes'][0]['operations'][0]['retention']['window'] = 3
+        self.assertEqual(saved, self.identity)
+        with self.assertRaises(ValueError):
+            terminal_result(self.center, self.host, saved)
+
+    def test_old_create_projection_and_wrong_current_successor_refuse(self):
+        self.insert()
+        self.center['schema_version'] = 2
+        with self.assertRaises(ValueError):
+            find_runtime_create(self.center, self.intent['metadata'], deployment='test-deployment')
+        self.center['schema_version'] = 3
+        for field, value in (('accepted_version', 2), ('accepted_version', True)):
+            self.center['sandboxes'][0]['operations'][0][field] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                find_runtime_create(self.center, self.intent['metadata'], deployment='test-deployment')
 
     def test_physical_check_precedes_delete_and_failure_retains_original(self):
         self.insert()

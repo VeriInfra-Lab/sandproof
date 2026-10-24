@@ -11,6 +11,8 @@
 extern crate self as sandproof_controller_service;
 
 pub mod application;
+pub mod capture;
+pub mod lifecycle_renewal;
 pub use application::BuildWindow;
 #[cfg(feature = "durable")]
 mod controller;
@@ -31,18 +33,25 @@ pub use host_contract::{
     HostEvidence, HostSlotContext, WorkerTransportError,
 };
 
-/// Current original host metadata format when the authenticated inbox is
-/// explicitly provisioned. Older experimental formats are refused, not upgraded.
-pub const INTERNAL_INBOX_FORMAT_VERSION: i64 =
+// Original inbox remains only while its assertions move to the current path.
+// It must not inherit the serving format from the shared compatibility report.
+pub const INTERNAL_INBOX_FORMAT_VERSION: i64 = 16;
+
+// Only the current fully initialized lifecycle store may serve requests.
+#[cfg(feature = "durable")]
+pub(crate) const LIFECYCLE_STORE_FORMAT_VERSION: i64 =
     sandproof_protocol::internal::HOST_STORE_FORMAT_VERSION;
 
 #[cfg(feature = "durable")]
 pub use controller::{
     BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProgress,
-    ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission, InternalAudit,
-    InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
-    InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState, Lifetime,
-    MaintenanceConfig, RetirementCandidate,
+    ControllerJournal, CreateAdmission, CreateReadiness, CreateReadinessPending,
+    HostReleaseWitness, InternalAdmission, InternalAudit, InternalAuditOperation,
+    InternalCreateResult, InternalInboxConfig, InternalLocalBinding, InternalNativeAudit,
+    InternalRetentionLane, InternalTemplate, InternalWorkState, LifecycleAudit,
+    LifecycleAuditOperation, LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
+    LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState, Lifetime,
+    MaintenanceConfig, NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
 };
 
 #[cfg(feature = "durable")]
@@ -54,8 +63,8 @@ pub use journal::{
 };
 #[cfg(feature = "durable")]
 pub use workflow::{
-    finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
-    finish_compensating_create_v1, kill_v1,
+    finish_accepted_kill, finish_admitted_create, finish_admitted_create_timed,
+    finish_compensating_create, kill,
 };
 
 #[cfg(feature = "durable")]

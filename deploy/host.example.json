@@ -177,14 +177,29 @@
     }
   },
   "inbox": {
+    "center": {
+      "deployment": "example-deployment",
+      "center": "example-center"
+    },
     "node": {
       "deployment_id": "example-deployment",
       "node_id": "host-runtime",
       "node_generation": 1
     },
-    "max_sandboxes": 4,
-    "operations_per_sandbox": 4,
-    "max_options_bytes": 4096
+    "host_epoch": null,
+    "max_sessions": 4,
+    "max_operations_per_session": 8,
+    "max_options_bytes": 4096,
+    "max_profile_bytes": 4096,
+    "max_manifest_bytes": 32768
+  },
+  "protected_bootstrap_path": "/var/lib/sandproof-host/control/host-bootstrap.json",
+  "source_observation": {
+    "max_work_bytes": 65536,
+    "max_configuration_bytes": 16384,
+    "max_executable_bytes": 67108864,
+    "max_kernel_bytes": 268435456,
+    "max_disk_bytes": 2147483648
   },
   "internal": {
     "bind": "127.0.0.1:9000",

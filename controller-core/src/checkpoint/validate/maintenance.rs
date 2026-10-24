@@ -122,6 +122,7 @@ fn limits_and_clock(state: &MaintenanceState) -> Result<(), Reject> {
 
 fn released(world: &World, binding: HostBinding) -> Result<(), Reject> {
     let row = record(world, binding.sandbox)?;
+    // A paused row alone is not an Unloaded/running-position release witness.
     if !row.terminal
         || row.phase != Phase::Destroyed
         || row.desired != Authority::Closed
@@ -149,6 +150,7 @@ fn retained_group(state: &MaintenanceState, sandbox: SandboxId) -> Result<(), Re
     let mut creates = 0_u64;
     let mut kills = 0_u64;
     let mut failed_create = false;
+    let mut pauses = 0_u64;
     for (key, retained) in state.retained.entries() {
         if key.sandbox != sandbox {
             continue;
@@ -160,12 +162,13 @@ fn retained_group(state: &MaintenanceState, sandbox: SandboxId) -> Result<(), Re
                     matches!(retained.ledger.operation.status, OperationStatus::Failed(_));
             }
             OperationKind::Kill => kills += 1,
-            OperationKind::Pause | OperationKind::Resume => {
+            OperationKind::Pause => pauses += 1,
+            OperationKind::Resume => {
                 return Err(Reject::UnsupportedSnapshotHistory);
             }
         }
     }
-    if creates != 1 || kills > 1 || (kills == 0 && !failed_create) {
+    if creates != 1 || kills > 1 || pauses > 1 || (kills == 0 && !failed_create) {
         return Err(Reject::InvalidMaintenance);
     }
     Ok(())

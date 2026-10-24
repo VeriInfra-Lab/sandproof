@@ -1,5 +1,5 @@
 use super::*;
-use crate::{AdmissionLimits, NeverCrash, finish_admitted_create_v1, kill_v1};
+use crate::{AdmissionLimits, NeverCrash, finish_admitted_create, kill};
 use sandbox_controller_core::maintenance::slots::HostSlotPhase;
 use sandproof_protocol::ResourceRef;
 use serde::Deserialize;
@@ -85,7 +85,7 @@ impl CrashInjector for FailAt {
 }
 fn create(journal: &mut ControllerJournal, id: u64) {
     admit(journal, id, &mut NeverCrash).unwrap();
-    finish_admitted_create_v1(
+    finish_admitted_create(
         journal,
         core::SandboxId(id),
         core::OperationId(1),
@@ -94,7 +94,7 @@ fn create(journal: &mut ControllerJournal, id: u64) {
     .unwrap();
 }
 fn destroy(journal: &mut ControllerJournal, id: u64) {
-    kill_v1(
+    kill(
         journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(id)),

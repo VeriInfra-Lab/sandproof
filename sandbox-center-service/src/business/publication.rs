@@ -5,8 +5,10 @@ use sandproof_controller_service::template_registry::{
 };
 use sandproof_protocol::{
     ResourceId,
-    internal::ControlIdentity,
-    internal::lifecycle::{Intent, LifecycleFact, LifecycleRequest, LifecycleResponse},
+    lifecycle::{
+        AcceptedLifecycleIntent, ExpectedSession, LifecycleOperation, TerminalLifecycleObservation,
+        TerminalStatus,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,9 +16,9 @@ pub use sandproof_controller_service::template_registry::LocalValidationBinding;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationLink {
-    pub create: ControlIdentity,
+    pub create: AcceptedLifecycleIntent,
     pub local: Option<LocalValidationBinding>,
-    pub terminal: Option<ControlIdentity>,
+    pub terminal: Option<AcceptedLifecycleIntent>,
     pub settlement: Option<ValidationSettlement>,
 }
 /// Immutable global evidence transferred from the SAME committed lifecycle
@@ -24,10 +26,9 @@ pub struct ValidationLink {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationSettlement {
-    pub original_create: LifecycleRequest,
-    /// Exact terminal response: `Cleaned` after destroy, or the original
-    /// `NotAccepted` create with authenticated, durable non-admission evidence.
-    pub cleaned: LifecycleResponse,
+    /// Exact current Destroy Cleaned. Non-admission is separately attested by
+    /// the original journal; no old Create/NotAccepted shortcut exists.
+    pub cleaned: TerminalLifecycleObservation,
     pub admission: ValidationAdmission,
 }
 /// The authenticated host's original admission outcome, never inferred from
@@ -40,16 +41,9 @@ pub enum ValidationAdmission {
 }
 impl ValidationSettlement {
     pub(super) fn is_valid_for(&self, link: &ValidationLink) -> bool {
-        let create = &self.original_create;
+        let create = &link.create;
         let cleaned = &self.cleaned;
-        if create.identity != link.create
-            || create.intent != Intent::Create
-            || create.identity.intent_version.get() != 1
-            || create.validate(&link.create.node).is_err()
-            || link.terminal.as_ref() != Some(&cleaned.identity)
-            || (cleaned.fact == LifecycleFact::NotAccepted
-                && self.admission != ValidationAdmission::NotAdmitted)
-        {
+        if link.terminal.as_ref() != Some(&cleaned.request) {
             return false;
         }
         terminal_request(create, cleaned).is_some()
@@ -60,26 +54,33 @@ impl ValidationSettlement {
 /// and its existing protocol response checks. Shared by both business pins;
 /// absence, timeouts and an invented destroy never constitute non-admission.
 pub(super) fn terminal_request(
-    create: &LifecycleRequest,
-    result: &LifecycleResponse,
-) -> Option<LifecycleRequest> {
-    let mut terminal = create.clone();
-    match result.fact {
-        LifecycleFact::NotAccepted => {}
-        LifecycleFact::Cleaned
-            if result.identity.intent_version.get() > create.identity.intent_version.get()
-                && result.identity.operation_id != create.identity.operation_id =>
-        {
-            terminal.intent = Intent::Destroy;
-            terminal
-                .identity
-                .operation_id
-                .clone_from(&result.identity.operation_id);
-            terminal.identity.intent_version = result.identity.intent_version;
-        }
-        _ => return None,
+    create: &AcceptedLifecycleIntent,
+    result: &TerminalLifecycleObservation,
+) -> Option<AcceptedLifecycleIntent> {
+    let origin = &create.request.binding;
+    let terminal = &result.request;
+    let binding = &terminal.request.binding;
+    if !matches!(create.request.operation, LifecycleOperation::Create { .. })
+        || origin.expected != ExpectedSession::Absent
+        || create.accepted_version != 1
+        || create.accepted_version_for_request() != Some(1)
+        || create.request.validate(&origin.node).is_err()
+        || !create.retention.valid_for(4096)
+        || result.status != TerminalStatus::Cleaned
+        || !result.matches_request(terminal)
+        || terminal.center != create.center
+        || terminal.retention != create.retention
+        || binding.node != origin.node
+        || binding.key.owner != origin.key.owner
+        || binding.key.deployment != origin.key.deployment
+        || binding.session != origin.session
+        || binding.key == origin.key
+        || terminal.accepted_version <= create.accepted_version
+        || terminal.request.validate(&origin.node).is_err()
+    {
+        return None;
     }
-    result.validate_for(&terminal).is_ok().then_some(terminal)
+    Some(terminal.clone())
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

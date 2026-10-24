@@ -1,4 +1,4 @@
-//! Versioned, checked current-state checkpoints for the V1 create/kill core.
+//! Checked current-state checkpoints using one supported storage format.
 //!
 //! This is a recovery boundary, not an arbitrary `World` deserializer. The
 //! opaque wire value cannot expose a World until `restore` checks its bounds,
@@ -6,8 +6,9 @@
 //! allocation cursors, unknown work and maintenance tombstones. It does not
 //! discard history: the checked retirement reducer must compact it first.
 //!
-//! V1 deliberately excludes pause/resume and every snapshot reference. This
-//! validator checks structure under the trusted-storage/host contracts; it is
+//! Pause/capture state uses the same format and validation as startup and kill.
+//! Resume remains disabled until its explicit source/incarnation rules are
+//! connected. This validator checks structure under the host contracts; it is
 //! not a proof of historical reachability or authenticity of host evidence.
 //! Record bounds alone do not establish a byte bound. The service must bound
 //! encoded input BEFORE parsing and use a bounded writer when encoding, then
@@ -34,8 +35,7 @@ use crate::{
     World,
 };
 
-pub const CHECKPOINT_VERSION: u16 = 1;
-
+pub const CHECKPOINT_VERSION: u16 = 2;
 /// Explicit aggregate record and nested-reference budgets. Neither value may
 /// be zero. Strings and encoded bytes require a separate service-side bound.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +68,14 @@ pub enum CheckpointReject {
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Checkpoint(CheckpointWire);
+
+impl Checkpoint {
+    /// The untrusted schema tag, used to check the service envelope binding.
+    #[must_use]
+    pub const fn version(&self) -> u16 {
+        self.0.version
+    }
+}
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Checkpoint {
@@ -213,7 +221,7 @@ impl CheckpointWire {
     }
 }
 
-/// Capture a structurally valid, already-compacted V1 World, preserving order.
+/// Capture a structurally valid, already-compacted World, preserving order.
 /// # Errors
 /// Rejects unsupported lifecycle history, invalid references or exceeded bounds.
 pub fn capture(world: &World, limits: CheckpointLimits) -> Result<Checkpoint, CheckpointReject> {

@@ -6,11 +6,47 @@
 
 本页是外部依赖 A1–A12 和获批可信薄适配 B1–B4 的唯一明细；模块计划引用合同编号，不再各自列一套“依赖不会出错”。当前采用原 Charon/Aeneas 抽取真实同步业务核心、窄接口模型和显式可信适配的路线，不以开发通用 async/Pin/Drop 翻译器为前置。可信范围来自项目 owner 的明确选择；其余自有业务继续由对应模块证明。
 
+### 当前中心身份的薄连接
+
+[`CenterPeerRegistration::context_for_verified_peer`](../../sandbox-internal/src/lifecycle/peer.rs)只实例化既有 A9/B4：输入必须是原 `ProtectedServer` 在链、用途、时间、角色 pin 和 ALPN 检查后交给 `ProtectedHttp::respond` 的那个 `CertificatePin`。受保护配置将最多两个轮换 pin 绑定到同一 `CenterIdentity` 和完整本地 `NodeIdentity`；未登记 pin 拒绝，不能从 HTTP 头、正文或任意证书字节创建这个认证事实。
+
+输出 `AuthenticatedCenterContext` 不可反序列化，但公开工厂是明确的可信装配接缝，Rust 类型本身不证明调用者无法伪造。配置/pin 来源与调用绑定仍须在正式服务接线时核对；已有摘要值测试只检查映射，不证明 TLS 握手。`AcceptedLifecycleIntent::validate` 的中心全文、部署、原请求节点和接受版本检查属于自有同步判断，不将其整体列为 B4。持久接受、授权、原对象选择、材料完整、退出、清理和发布仍由各业务模块证明。
+
+显式 `InternalServer::with_center_peer` 路由沿原 `ProtectedHttp::respond` 的实际 peer
+调用该映射；原 TLS/连接预算和有限请求期限保留。原 HostFacade 只转交给同一
+HostLifecycle；许可进入实际 blocking worker 后才调用原应用收件，不因 HTTP 取消提前归还。
+可依赖的机械保证限于原对象、完整参数、结果和许可寿命；接受资格、全文重放、
+SQLite 提交与回执匹配是自有业务，仍需对应证明。超时/错误不证明没有提交，
+正常 Recorded 也不证明当前 Ready、执行完成或释放资格。
+真实 TLS 与原 SQLite 的组合测试仅支持该有限接法的工程采用；
+不证明任意 async Rust 精化、panic/abort 收尾或完整生命周期。
+
+## 第一阶段新增依赖合同
+
+这些是固定 Firecracker/文件系统接口的**拟采用条件合同**，并非本次新增已证事实。原 A1–A12/B1–B4 的范围不扩大；下表在 A1/A3 下细化本阶段所需接口。实现时必须补实际调用符号、版本/配置、失败路径和实测证据，不能仅登记编号就算连接完成。
+
+固定参考：[Firecracker snapshot 文档](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/docs/snapshotting/snapshot-support.md)。其中 RAM/设备状态与磁盘文件分别管理，File 后端在 VMM 生命周期内依赖原内存文件，加载可保持暂停。文档不替我们实现 bundle、所有权或 GC。实际发布前再次核对所用 1.16.1 二进制源码与配置，不把网页版本当产物指纹。
+
+| 编号/调用 | 可以依赖的准确后果与条件 | 错误、取消、崩溃及不保证什么 | 必须由自有实现提供 |
+|---|---|---|---|
+| S-C1 / A1：原 VM Pause、Full snapshot | 在支持的 CPU/内核/设备组合、精确受控 VMM 和成功暂停条件下，成功捕获给出该暂停 VM 的内存与设备状态；只采用 Full | 请求/响应丢失可能动作已做；不假设超时未暂停、不假设输出文件不存在；不含外置磁盘或业务提交 | V6 绑定原 VM/参数，V4/V5 禁止在完整来源接管前停止原 VM；V8 排空相关访问 |
+| S-C2 / A1/A3：设备完成与磁盘复制 | 只在声明设备写入已完成到宿主文件系统、原 VM 持续暂停且无宿主写者时，按原 FD 完整复制得到与捕获匹配的 disk；固定支持的磁盘模式 | snapshot 返回不单独证明磁盘介质持久；文件复制可短写/ENOSPC/留下部分对象；不支持任意外部块设备或并发写者 | V6 建立截面/关闭写者/核全字节和盘集合，V5 预留临时峰值与恢复责任 |
+| S-C3 / A3：write/fsync/rename/dir sync | 原受保护目录、同文件系统、无替换写者、成功完整写入及规定文件/目录同步下，发布的唯一对象可在声明 manager-crash 故障域重新打开；rename 只管目录可见性 | 文件与 SQLite 不原子；sync/rename 错误或崩溃可能已产生效果；不覆盖断电/盘损坏/任意旧备份回滚 | 原路径/FD/身份、manifest 内容校验、发布次序、对账和失败保留由 V5/V6 证明；不能从存在即推可恢复 |
+| S-C4 / A1：snapshot Load | 完整兼容的受保护材料、精确新 VMM、File 后端且 resume_vm=false 成功时装载为暂停；设备路径/配置满足固定约束 | 超时可能已装载，加载失败可能有进程/映射；不保证 envd/current credentials 就绪、不赋予运行资格 | V6 核材料/参数/新原对象，V5 pin 先于使用；V4/V5 唯一 claim 和激活前消费由自身证明 |
+| S-C5 / A1/A3：File backing 生命周期 | 原内存文件保持不可变且可用、所有已登记 reader/mapper 受控时，VMM 可按固定实现使用 backing；原 VMM 与相关 worker 结束后对应使用才结束 | load 返回不是使用结束；unlink、Arc 数量、manager Drop 或旧路径缺席均不证明物理释放；外部修改不支持 | V5/V6 持久具名 pin、先取后用、真实退出、retire/取用互斥、精确删除和计费全部是业务证明 |
+| S-C6 / A1/A7/A9：设备重置与恢复连接 | 只按固定设备/guest 接口解释恢复后的连接与初始化；现有连接可断，外部时钟/网络按原合同重新观察 | 不承诺 TCP/vsock 无缝延续、外部副作用回滚或旧凭据自动失效；自有 Rust guest 不能整体当 A7 | V8 关闭旧入口、当前凭据重授权、必要 guest hook 与保留进程断线行为；V6/V7 对接就绪和结果 |
+
+**S-C7（来源/资格）和 S-C8（退休/成功/回滚）不是依赖保证。** 它们分别由 V4/V5/V6 及 V1/V7/V8 提供业务定理：选定正确 manifest、唯一认领、激活前消费、普通失败保状态、当前事实发布、pin/GC 竞争与旧工作失效。这里保留编号仅为防止把它们挪入可信边界，不新增公理。
+
+B1–B4 仍仅允许已登记的参数/回调/锁/任务/通知机械接线。新增 async helper 若含 capture 选择、claim、SQL 条件、授权、成功判断或删除决定，必须拆出透明业务并证明；不能把 helper 全部改为可信。尚未落实的边界不能填“已证明”，实机测试也不使外部假设变成 Lean 定理。
+
+边界变化的阶段验收：V0 登记精确符号与正常/错误/未知/取消/崩溃/修改范围；V5/V6 实测 S-C1–5，V8 实测 S-C6；V9 审计所有输入前提有提供者。只采用管理进程崩溃域；若未来纳入断电，需要重新定义持久性与恢复实验，不能自动扩张结论。
+
 ## 如何阅读和使用本页
 
 这里的“保证”是**在写明条件下，一个具体接口允许我们依赖的行为**。它不是“这个库永远不会出错”，也不是“用了这个库，我们自己的调用就一定正确”。例如：数据库可以保证一笔事务原子提交；把哪些记录放进同一事务，仍是我们要证明的事。
 
-本页统一维护保证内容；[V0 验收点](00-foundations.md#t0t8-公共底座验收点)维护完成要求；[覆盖记录](../proof-coverage.md)记录哪些实现已经证明、适用版本和未完成连接；[#333](https://github.com/VeriInfra-Lab/sandproof/issues/333)是唯一执行任务。原 #515/#510 的工作归入该任务，旧 Future/MIR 工具扩展计划不再执行。T9 继续排除。
+本页统一维护保证内容；[V0 验收点](00-foundations.md#3-t0t9-的有限验收清单)维护完成要求；[覆盖记录](../proof-coverage.md)记录哪些实现已经证明、适用版本和未完成连接；[#632](https://github.com/VeriInfra-Lab/sandproof/issues/632) 是本阶段公共能力执行任务。原 #515/#510 的工作归入该任务，旧 Future/MIR 工具扩展计划不再执行。T9 继续排除。
 
 后续模块使用公共成果时只需：选定合同编号和版本，指出真实调用位置，证明自己的输入满足前提，说明结果怎样进入业务状态，再检查该调用的异常分支。相同库接口不重复建模。新用法超出原范围时补充该合同并检查受影响的调用者；V0 完成不意味着以后任何 Rust 或依赖用法都无需新增工作。
 
@@ -66,7 +102,7 @@ Tokio 条款按锁定的 **1.49.0** 核对：[阻塞任务](https://github.com/t
 
 先用原工具预检真实入口。签名无法表达时，优先拆出真实使用的同步决定和具体值接口；单纯标成 opaque 不能消除不支持的类型。小范围重构需保留首个拒绝、短路、状态/回写、回调次数及资源寿命。未经一般性对应证明的旧新实现对照，只计审查和测试依据。
 
-版本、配置、模型或调用代码发生变化时，先列出受影响合同和调用者，再检查源码差异、重新抽取/编译和相关回归，最后更新冻结记录。发现合同不满足时保留错误或未知，停止引用依赖它的结论。无法通过窄边界解决的实际阻断记入 #333 对应 T 项，不自行扩大工具开发、信任范围或改变业务要求。
+版本、配置、模型或调用代码发生变化时，先列出受影响合同和调用者，再检查源码差异、重新抽取/编译和相关回归，最后更新冻结记录。发现合同不满足时保留错误或未知，停止引用依赖它的结论。无法通过窄边界解决的实际阻断记入 #632 对应 T 项，不自行扩大工具开发、信任范围或改变业务要求。
 
 ## 依赖登记与使用规则
 
@@ -282,6 +318,45 @@ bash scripts/python-entry.sh tools/v0_use_inventory.py query artifacts/use-censu
 
 V0 证明自有 `valid_identifier`、八类 String/&str 构造和取值、协议规范编号解析与中心实际包装；不是将这些自有行为作为外部假设。中心恢复中完整 `CenterState::is_valid`、存储身份恢复、JSON 自有字段访问及全部调用资格仍分别属于未闭合连接。Serde/serde_json 的整套编解码不纳入本合同：将 `from_slice/to_vec<ControlIdentity>` 整体设成不透明，即使翻译成功也不能计作自有字段往返已证。
 
+### A6 v3 同步协议的字符串与完整字节视图
+
+本登记限 [v3 的三组实际抽取根](../../verification/experiments/stage1-protocol/src/lib.rs)。
+Carriers 没有新增外部函数；Request 的四个透明调用根使用完整 String 相等、
+Vec::is_empty、固定 bool 的不等比较及 Option 相等；
+Manifest 的准确七项为 String::eq/deref、Vec::is_empty、str::len/is_empty/as_bytes、
+str::to_owned。自有请求、路径/profile、文件名/数量/总长和 capture 绑定检查保留真实生成体，
+不能把这些决定作为库假设。精确原始 IR、外部清单、完整导入和源摘要在
+[模块冻结](../../verification/experiments/stage1-protocol/frozen.json)检查。
+
+Request 新调用点复用既有 A6 布尔/Option 模型，不新增自有业务假设：
+
+| 实际符号 | 准确保证与调用条件 |
+|---|---|
+| `alloc.string.String.Insts.CoreCmpPartialEqString.eq` | 比较完整原字符串，保持所有字符；不截断或规范化。复用 Foundations 原模型 |
+| `alloc.vec.Vec.is_empty` | 判断原有限逻辑向量是否为空；不据此推出物理分配、所有权或资源已释放 |
+| `Bool.Insts.CoreCmpPartialEqBool.ne` | 两个固定布尔值不相等时且仅此时返回真，覆盖四种布尔组合；不是任意用户 `PartialEq` 的规律 |
+| `core.option.Option.Insts.CoreCmpPartialEqOption.eq` | None/None 为真；构造器不同时为假且不调用元素比较；Some/Some 恰好调用传入比较字典并保留其失败。封套版本检查的实际字典为固定 `core.cmp.PartialEqU64`，不假定任意字典正确 |
+
+这些命名连接见原 request 视图的 `FunsExternal`；纯模型规律见
+[Library](../../SandboxModel/Lifecycle/Protocol/Library.lean)。Bool/Option 复用现有 Network/共享状态定义；
+它们与固定 Rust 标准库符合仍是 A6 条件。请求/封套校验、所有字段相等、版本/retention 判断及首错顺序
+仍由真实生成函数的对应证明承担，不能藏进上述四项保证。模板中的 `axiom` 仅是原工具输出证据，
+实际证明不导入模板，也不添加自定义公理。
+
+除 as_bytes 外，命名适配只转发已有固定 A6 字符串/容器模型与原内核检查的字面量构造。
+新增的 `str::as_bytes` 表示连接要求：输入是有效、有限且长度可表示的原 Rust str；
+在原借用有效期内返回完整 UTF-8 字节的只读视图，保持长度、内容和次序，不做有损解码、
+规范化或截断。后端 Str 本来用同一 Slice 表示，所以可计算模型是 `.ok value`；
+**模型与固定 Rust 原语符合仍是显式 A6 条件**，无公理审计不能把它变成标准库实现证明。
+该普通值视图不携带 FD/许可，不授权延长借用、修改原字节或擦除可观察 Drop。
+
+普通分配成功、panic/abort 与工具链信任沿原 A6/Aeneas 范围；不增加“库永不失败”保证。
+32 字节 ContentDigest 构造仅保存值，不执行哈希。原受保护 profile、文件句柄/内容摘要、
+捕获截面、同步发布及恢复资格仍由 V6/V5 提供，路径文本合法不等于文件系统路径安全。
+新 codec 的 serde/Writer 调用及预算/首错顺序尚未由本组件证明；既有 A6/B4 和 Writer 结果
+只能在实际 schema/原对象/输入/限额连接完成后使用，不能整体信任自有 codec。
+依赖、生成体或上述表示条件变化时，使本模块及实际调用者对应结论失效并重查。
+
 ### A6 JSON 非零计数器叶子接口
 
 这组根并入原 V0 抽取，与已有身份/数值共享同一份生成 Rust 类型；实现对应和原公共定理可以在同一 Lean 环境组合，不维护第二份同名类型。
@@ -385,7 +460,7 @@ A_function := A_safe，加上本次调用期间 envd、来宾文件系统
 
 不承诺宿主隔离已被攻破、管理员恶意篡改受保护数据、硬件或存储静默损坏、任意回滚旧备份、未约定的断电行为，以及外部窃取有效凭据后仍识别真实持有人。不证明用户程序计算正确或必然终止，也不承诺在允许任意内容的外部通道上阻止所有信息外传。
 
-模板边界包含自有构建编排、注册、别名、发布和产物服务，均工程测试；核心使用时仍证明授权/不可变绑定、准入、资源和清理。暂停恢复、快照、共享卷、迁移、多中心及存储自动切换本次不启用，相关类型需证明所选初态/允许输入不进入排除分支。多宿主协议与组合纳入验证，部署限制见[项目蓝图](../project-blueprint.md)。
+模板边界包含自有构建编排、注册、别名、发布和产物服务，均工程测试；核心使用时仍证明授权/不可变绑定、准入、资源和清理。本阶段新增同宿主全量快照卸载/恢复，按上方 S-C1–6 连接；共享卷、迁移、多中心及存储自动切换不启用，相关类型需证明所选初态/允许输入不进入排除分支。当前仅单固定宿主的协议与组合纳入验证；多宿主证明后置，部署限制见[项目蓝图](../project-blueprint.md)。
 
 翻译障碍总单的 T9（浮点与来宾兼容算法工作包）本轮排除，不作为关单前置，也不声称已证明；这不排除来宾其他安全业务。T0–T8 依实际入口分别采用模型、薄适配、业务证明或行为保持重构，未逐个预检前不承诺全部原式可抽取。
 
@@ -454,7 +529,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 ## B1 Host 任务与原许可池的逐符号可信适配
 
-本登记落实 V0 #333 的 T6 验收范围（原 #510 已迁移）。当前候选的生产实现定位为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。许可取得、转移和归还的三个实现文件与此前组合基线逐字一致；驱动回调及测试夹具的变化单列在环境清单，须完成新组合的组件和完整入口复验后认领其适用性。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
+本登记保留旧 V0 #333 的 T6 成果（原 #510 已迁移），本阶段适用性由 #632 核对。当前候选的生产实现定位为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；实际版本由[环境清单](../../verification/task-contract-environment.json)和[输入摘要](../../verification/task-contract-inputs.sha256)固定。许可取得、转移和归还的三个实现文件与此前组合基线逐字一致；驱动回调及测试夹具的变化单列在环境清单，须完成新组合的组件和完整入口复验后认领其适用性。本批不修改生产 Rust、Charon/Aeneas 或工具版本。
 
 ### A6-task-pools 外部原语条件
 
@@ -552,7 +627,7 @@ SQLite 的原子提交也依赖底层输入输出合同，且不替我们把数�
 
 [OwnedMessage](../../SandboxModel/Boundaries/OwnedMessage.lean)提供原载荷/资源身份保持、持额、共享引用与单张分配、FIFO 观察、oneshot 值/传输错误及 Frame 通知顺序的条件模型。公共历史由实际 A6/B3/B4 操作提供，业务仍证明自己何时使用它们；源码摘要和确定性回归不是一般性的 async Rust 精化。`recv` 等待取消、整个 receiver/body 被丢弃、panic/unwind 的可见前缀与已完成析构分别保留；abort/崩溃不承诺执行 Drop，也不提供后续恢复或资源归还。没有无条件调度、公平或最终消费保证。
 
-本批只登记有界 mpsc 的 `try_send/recv/close/Drop` 与上述 oneshot/Bytes 用法；不把异步 `send` 取消、公开 `reserve/Permit`、Notify、JoinSet、broadcast 或 watch 一并纳入。完整命令协议、授权、进程/FD/输入输出归还及系统容量由 V8/V6/V9 提供，其他公共机制仍在 V0 #333 开放。
+本批只登记有界 mpsc 的 `try_send/recv/close/Drop` 与上述 oneshot/Bytes 用法；不把异步 `send` 取消、公开 `reserve/Permit`、Notify、JoinSet、broadcast 或 watch 一并纳入。完整命令协议、授权、进程/FD/输入输出归还及系统容量由 V8/V6/V9 提供，其他机制按本阶段实际需要在 V0 #632 核对。
 
 
 ## A6/B2/B3 Notify：关闭广播与单接收者通知
@@ -715,7 +790,7 @@ A6 仅提供普通值 Vec::retain 的正常有限遍历：对原每一行按原�
 
 ## T7/T8 有限依赖使用目录的读法
 
-[OS/存储目录](../../verification/os-boundary-catalogue.json)在固定五根、60 个编译变体之上核对 25 类接口、71 个代表源码位置；它没有新增可信保证或程序定理。每行说明原对象/配置、正常结果、错误和部分效果、未知/取消、进展和业务提供方。其 public_status 与待办是 review_baseline 的历史审查快照，当前交付状态见 #333 与覆盖记录；business_obligation 表示仍待业务证明。
+[OS/存储目录](../../verification/os-boundary-catalogue.json)在固定五根、60 个编译变体之上核对 25 类接口、71 个代表源码位置；它没有新增可信保证或程序定理。每行说明原对象/配置、正常结果、错误和部分效果、未知/取消、进展和业务提供方。其 public_status 与待办是 review_baseline 的历史审查快照，历史交付状态见 #333，本阶段适用性见 #632 与覆盖记录；business_obligation 表示仍待业务证明。
 
 本页 A/B 是依赖合同的权威位置。目录中对源码行为的解释仍需其自有前提和业务证明，不能把该行整函数变成可信依赖，也不能把有代表例子理解为所有 SQL/Lua、驱动、Guest 或 Firecracker 调用已抽取。尚未接通的具体签名须给最小预检，不提前保证工具支持。有限目录不提供完整调用图、依赖析构或 Future 取消胶水语义。TLS 原借用输入连接仍是公开缺口，不由现有首叶候选或来源定位自动完成。
 

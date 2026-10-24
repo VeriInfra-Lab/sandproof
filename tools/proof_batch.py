@@ -18,7 +18,7 @@ MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-cont
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
            'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer',
-           'btree-set-binding','protected-directory','tokio-mutex')
+           'btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
@@ -27,7 +27,10 @@ EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counte
     'verification/experiments/callback-state/NoWriteToggle.lean',
     'verification/experiments/callback-state/DoubleRecord.lean',
     'verification/experiments/bounded-writer/negative/Counterexample.lean',
-    'verification/experiments/btree-set-binding/model/InvertFlag.lean')
+    'verification/experiments/btree-set-binding/model/InvertFlag.lean',
+    *('verification/experiments/stage1-protocol/' + name + '.lean.in' for name in
+      ('NegativeResume', 'NegativeReplay', 'NegativeManifest',
+       'NegativeValidation', 'NegativeFullReplay', 'NegativeSessionOnly')))
 
 # These generators intentionally reuse a fixed workspace output location.
 # Keep immutable raw copies in the success entry, even when the directory
@@ -229,9 +232,9 @@ def step(name, command, root=ROOT):
             raise ValueError('module inputs changed during acceptance: '+name)
         evidence={}
         for directory in [p for p in artifacts.iterdir() if p.resolve() not in before_dirs]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')))
         for directory in [p for p in temp_root.iterdir() if p.resolve() not in before_tmp and p.name.startswith('sandproof-')]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')))
         for parent,prior_paths in before_external.items():
             for directory in parent.iterdir():
                 if directory.resolve() not in prior_paths:

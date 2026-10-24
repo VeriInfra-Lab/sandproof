@@ -212,8 +212,40 @@ impl<H: ControllerHost> ControllerApplication<H> {
         compute: ComputeLimits,
         verification: Option<&CandidateVerification>,
     ) -> Result<InternalAdmissionDecision, ApplicationError> {
-        let mut options: CreateOptions = serde_json::from_slice(&request.create.options)
-            .map_err(|_| ApplicationError::Invalid)?;
+        let Some(admission) = self.prepare_lifecycle_admission_locked(
+            inner,
+            &request.create,
+            &request.identity.tenant_id,
+            template,
+            compute,
+            verification,
+        )?
+        else {
+            return Ok(InternalAdmissionDecision::CapacityVeto);
+        };
+        let decision = inner
+            .journal
+            .admit_internal_create(request, admission, &mut NeverCrash);
+        match decision {
+            Ok(_) => Ok(InternalAdmissionDecision::Admitted),
+            Err(crate::AdmissionError::QuotaExceeded) => {
+                Ok(InternalAdmissionDecision::CapacityVeto)
+            }
+            Err(error) => Err(map_admission(error)),
+        }
+    }
+
+    pub(super) fn prepare_lifecycle_admission_locked(
+        &self,
+        inner: &mut Inner<H>,
+        binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
+        owner: &sandproof_protocol::TenantId,
+        template: InternalTemplate,
+        compute: ComputeLimits,
+        verification: Option<&CandidateVerification>,
+    ) -> Result<Option<InternalAdmission>, ApplicationError> {
+        let mut options: CreateOptions =
+            serde_json::from_slice(&binding.options).map_err(|_| ApplicationError::Invalid)?;
         // The original journal admission validates the full canonical request,
         // revision/digest, owner and shape before committing local responsibility.
         options.template = Some(template.local.clone());
@@ -257,23 +289,14 @@ impl<H: ControllerHost> ControllerApplication<H> {
         // attachment. Bad material cannot turn into a successful quota release
         // merely because the same host currently has little free space.
         admission
-            .validate_attachment(request)
+            .validate_create_binding(binding, owner)
             .map_err(map_admission)?;
         if inner.host.available_disk_bytes()? < required {
-            return Ok(InternalAdmissionDecision::CapacityVeto);
+            return Ok(None);
         }
         // Preserve the original journal's fresh clock/rejection checks after
         // the potentially slow host observation, rather than reusing its time.
         admission.now_ms = self.clock.now_ms()?;
-        let decision = inner
-            .journal
-            .admit_internal_create(request, admission, &mut NeverCrash);
-        match decision {
-            Ok(_) => Ok(InternalAdmissionDecision::Admitted),
-            Err(crate::AdmissionError::QuotaExceeded) => {
-                Ok(InternalAdmissionDecision::CapacityVeto)
-            }
-            Err(error) => Err(map_admission(error)),
-        }
+        Ok(Some(admission))
     }
 }

@@ -114,7 +114,7 @@ def exercise(args: argparse.Namespace) -> None:
                                            "metadata": metadata}),
                             process, 86 if args.window == "after-host" else 88)
         second_identity = original_create_identity(services, metadata)
-        second_id = second_identity["sandbox_id"]
+        second_id = second_identity['binding']['session']
         second_native_id = services.native_id_for(second_id)
         assert second_native_id == f"sb-{namespace}-2"
         second_record = root / "jails/.claims" / names[1] / "record.json"

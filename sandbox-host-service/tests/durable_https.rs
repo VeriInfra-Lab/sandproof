@@ -1,28 +1,28 @@
+//! Real mTLS and the current original Journal; controlled host effects, not KVM.
 #[path = "durable_https/execution.rs"]
 mod execution;
 #[path = "durable_https/internal_data.rs"]
 mod internal_data;
 #[allow(
     dead_code,
-    reason = "shared application fixture also serves execution/recovery cases"
+    reason = "shared component assembly and original host fixture"
 )]
-#[path = "../../controller-service/tests/support/internal_application.rs"]
+#[path = "durable_https/support.rs"]
 mod local;
+#[path = "../../sandbox-internal/tests/support/tls.rs"]
+mod tls;
 #[path = "durable_https/validation.rs"]
 mod validation;
 #[path = "durable_https/window.rs"]
 mod window;
-use local::wire as fixture;
-#[path = "../../sandbox-internal/tests/support/tls.rs"]
-mod tls;
 use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits};
 use sandproof_data_transport::TransferLimits;
 use sandproof_host_service::{HostFacade, HostLifecycle};
 use sandproof_internal::{
-    ClientTls, InternalClient, InternalServer, LifecycleReceiver, Limits, ReceiveError,
-    RegisteredEndpoint, ServerTls,
+    ClientTls, InternalClient, InternalServer, LifecycleReceiver, Limits, RegisteredEndpoint,
+    ServerTls, lifecycle::CenterPeerRegistration,
 };
-use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
+use sandproof_protocol::lifecycle::{CurrentCreateReadiness, TerminalStatus};
 use std::{
     sync::{Arc, Mutex, atomic::AtomicI64},
     time::Duration,
@@ -58,100 +58,78 @@ fn facade(
     .unwrap()
 }
 
+async fn changed_requests_are_refused(
+    client: &InternalClient,
+    create: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+) {
+    for variant in 0..7 {
+        let mut changed = create.clone();
+        match variant {
+            0 => local::create_mut(&mut changed).timeout_ms += 1,
+            1 => changed.retention.slot = 2,
+            2 => changed.retention.window = 2.try_into().unwrap(),
+            3 => changed.center.center = "other-center".try_into().unwrap(),
+            4 => changed.accepted_version += 1,
+            5 => changed.request.binding.key.owner = "other-owner".try_into().unwrap(),
+            _ => changed.request.binding.node.node_generation = 2.try_into().unwrap(),
+        }
+        assert!(
+            client.record_lifecycle(&changed).await.is_err(),
+            "changed request variant {variant}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn actual_https_records_original_journal_and_replays_after_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let state = Arc::new(Mutex::new(local::State::default()));
+    let state = Arc::new(Mutex::new(local::state()));
     let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
-    let create = fixture::request(1, 1, Intent::Create);
-    let destroy = fixture::request(2, 2, Intent::Destroy);
-    let mut prior = None;
+    let create = local::request();
+    let destroy = local::destroy(&create);
     for provision in [true, false] {
-        let application =
-            local::application(&path, Arc::clone(&state), Arc::clone(&clock), provision);
-        let certs = tls::certificates();
-        let limits = Limits::new(4, Duration::from_secs(2), Duration::from_secs(5)).unwrap();
-        let facade = facade(Arc::clone(&application));
+        let application = local::application(&path, state.clone(), clock.clone(), provision);
+        let facade = facade(application.clone());
         let inbox = facade.lifecycle();
-        let server = InternalServer::new(
-            ServerTls::new(
-                certs.host.material(),
-                vec![certs.ca.der().clone()],
-                vec![certs.center.pin()],
-            )
-            .unwrap(),
-            fixture::node("host-a"),
-            limits,
-            sandproof_internal::diagnostic::RejectTemplateCache::new(facade),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let foreign_client = InternalClient::new(
-            ClientTls::new(
-                certs.other.material(),
-                vec![certs.ca.der().clone()],
-                vec![certs.host.pin()],
-            )
-            .unwrap(),
-            RegisteredEndpoint::new(
-                listener.local_addr().unwrap(),
-                "host.test".into(),
-                fixture::node("host-a"),
-            )
-            .unwrap(),
-            limits,
-        );
-        let client = InternalClient::new(
-            ClientTls::new(
-                certs.center.material(),
-                vec![certs.ca.der().clone()],
-                vec![certs.host.pin()],
-            )
-            .unwrap(),
-            RegisteredEndpoint::new(
-                listener.local_addr().unwrap(),
-                "host.test".into(),
-                fixture::node("host-a"),
-            )
-            .unwrap(),
-            limits,
-        );
+        let (server, listener, client, foreign) = validation::validation_transport(facade).await;
         let (stop, shutdown) = oneshot::channel();
         let run = server.clone();
         let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
-        assert!(foreign_client.lifecycle(&create).await.is_err());
-        let answer = client.lifecycle(&create).await.unwrap();
-        assert_eq!(answer.fact, LifecycleFact::Recorded);
-        if let Some(prior) = &prior {
-            assert_eq!(&answer, prior);
-        } else {
-            prior = Some(answer);
-        }
-        let mut conflict = create.clone();
-        conflict.create.timeout_ms += 1;
-        assert!(client.lifecycle(&conflict).await.is_err());
-        client.lifecycle(&destroy).await.unwrap();
-        // This fixture never admitted a local instance. The original durable
-        // destroy fence permits empty cleanup; HTTPS must replay the saved
-        // fact/version after reopen, not manufacture success in the transport.
-        let cleaned = inbox
-            .advance(destroy.clone(), None, local::compute())
-            .await
-            .unwrap();
-        assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
-        assert_eq!(client.lifecycle(&destroy).await.unwrap(), cleaned);
-        assert_eq!(
-            client.lifecycle(&create).await.unwrap(),
-            prior.clone().unwrap()
+        assert!(foreign.record_lifecycle(&create).await.is_err());
+        let recorded = client.record_lifecycle(&create).await.unwrap();
+        assert!(recorded.matches(&create));
+        assert_eq!(recorded.current, provision);
+        changed_requests_are_refused(&client, &create).await;
+        assert!(
+            client
+                .record_lifecycle(&destroy)
+                .await
+                .unwrap()
+                .matches(&destroy)
         );
-        let mut late = create.clone();
-        late.identity.operation_id = "late-create".try_into().unwrap();
-        assert!(client.lifecycle(&late).await.is_err());
+        // No local admission took place. The original durable Destroy fence,
+        // rather than the transport, establishes that no native work is owed.
+        local::drive(&inbox).await;
+        let cleaned = client.observe_lifecycle_terminal(&destroy).await.unwrap();
+        assert_eq!(cleaned.status, TerminalStatus::Cleaned);
         assert_eq!(
+            client.observe_lifecycle_terminal(&destroy).await.unwrap(),
+            cleaned
+        );
+        let old_create = client.record_lifecycle(&create).await.unwrap();
+        assert_eq!(old_create.intent, create);
+        assert!(!old_create.current);
+        assert!(old_create.terminal);
+        assert_eq!(old_create.current_session_version, 2);
+        let mut late = create.clone();
+        late.request.binding.key.sequence = 3.try_into().unwrap();
+        assert!(client.record_lifecycle(&late).await.is_err());
+        assert!(
             application
-                .internal_pending(&fixture::node("host-a"))
-                .unwrap(),
-            vec![]
+                .lifecycle_pending_creates(&local::config().node)
+                .unwrap()
+                .is_empty()
         );
         assert!(state.lock().unwrap().actions.is_empty());
         assert_eq!(client.active_calls(), 0);
@@ -165,19 +143,23 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
 #[tokio::test]
 async fn cancelled_caller_keeps_actual_blocking_work_budget_until_host_exits() {
     let dir = tempfile::tempdir().unwrap();
-    let state = Arc::new(Mutex::new(local::State::default()));
+    let state = Arc::new(Mutex::new(local::state()));
     let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
-    let app = local::application(&dir.path().join("db"), Arc::clone(&state), clock, true);
-    let inbox = HostLifecycle::new(app);
+    let app = local::application(&dir.path().join("db"), state.clone(), clock, true);
+    let inbox = HostLifecycle::new(app.clone());
     let create = local::request();
-    inbox.receive(create.clone()).await.unwrap();
+    inbox
+        .record_lifecycle(create.clone(), local::context())
+        .await
+        .unwrap();
     let (entered, ready) = std::sync::mpsc::channel();
     let (release, wait) = std::sync::mpsc::channel();
     state.lock().unwrap().block_prepare = Some((entered, wait));
     let worker = inbox.clone();
+    let current = create.clone();
     let caller = tokio::spawn(async move {
         worker
-            .advance(create, Some(local::template()), local::compute())
+            .advance(current, Some(local::template()), local::compute())
             .await
     });
     tokio::task::spawn_blocking(move || ready.recv_timeout(Duration::from_secs(15)).unwrap())
@@ -186,9 +168,24 @@ async fn cancelled_caller_keeps_actual_blocking_work_budget_until_host_exits() {
     caller.abort();
     let _ = caller.await;
     assert_eq!(inbox.active_work(), 1);
+    // The real callback still holds its work permit. Independent control
+    // capacity nevertheless accepts Destroy; recording cannot free that work.
+    let destroy = local::destroy(&create);
+    assert!(
+        inbox
+            .record_lifecycle(destroy.clone(), local::context())
+            .await
+            .unwrap()
+            .matches(&destroy)
+    );
+    assert_eq!(inbox.active_work(), 1);
     assert_eq!(
-        inbox.receive(fixture::request(2, 2, Intent::Destroy)).await,
-        Err(ReceiveError::Capacity)
+        inbox
+            .observe_terminal(destroy.clone(), local::context())
+            .await
+            .unwrap()
+            .status,
+        TerminalStatus::Pending
     );
     release.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -198,9 +195,11 @@ async fn cancelled_caller_keeps_actual_blocking_work_budget_until_host_exits() {
     })
     .await
     .unwrap();
-    let actions = &state.lock().unwrap().actions;
     assert_eq!(
-        actions
+        state
+            .lock()
+            .unwrap()
+            .actions
             .iter()
             .filter(|a| matches!(
                 a.command.command(),
@@ -208,5 +207,14 @@ async fn cancelled_caller_keeps_actual_blocking_work_budget_until_host_exits() {
             ))
             .count(),
         1
+    );
+    local::drive(&inbox).await;
+    assert_eq!(
+        inbox
+            .observe_terminal(destroy, local::context())
+            .await
+            .unwrap()
+            .status,
+        TerminalStatus::Cleaned
     );
 }

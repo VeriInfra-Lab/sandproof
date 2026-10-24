@@ -1,7 +1,7 @@
 use super::{
     AllocatorCursor, Bindings, Envelope, HostReleaseWitness, HostSlotContext, MaintenanceConfig,
-    VERSION, allocators, bounded, config, encode_limited, namespace, projections,
-    read_optional_u64, read_u64, retirement, sql, storage, validate_candidate,
+    allocators, bounded, config, encode_limited, namespace, projections, read_optional_u64,
+    read_u64, retirement, sql, storage, validate_candidate,
 };
 use crate::JournalError;
 use rusqlite::Connection;
@@ -39,7 +39,8 @@ fn root(connection: &Connection, config: &MaintenanceConfig) -> Result<Envelope,
         return Err(JournalError::CorruptStore);
     }
     let root: Envelope = serde_json::from_slice(&bytes).map_err(|_| JournalError::CorruptStore)?;
-    if root.version != VERSION
+    if root.version != core::checkpoint::CHECKPOINT_VERSION
+        || root.core.version() != core::checkpoint::CHECKPOINT_VERSION
         || root.input_cut != u64::try_from(cut).map_err(|_| JournalError::CorruptStore)?
         || &root.maintenance != config
         || root.namespace != namespace(connection)?

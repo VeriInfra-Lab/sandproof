@@ -2,6 +2,394 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## 当前唯一协议与正式装配候选：尚未验收
+
+中心单行收敛候选已替换原 `Sandbox.operations` 与 `LifecycleProfile.sessions` 的重复权威：
+只保留一张会话表、完整当前操作和原分配前沿；当前 Ready/Renew 事实直接写该行，
+不再合成旧 `LifecycleResponse`。注册必填，当前格式不接受旧数据或缺省协议配置。
+新恢复检查同批保留全身份、原参数、分配与版本顺序、寿命、额度、位置代次及精确终态确认。
+原编号/比较引理可作依据，但改动的真实函数及完整状态尚无当前抽取/证明结论。
+
+同一原账本新增显式 `result_retention_ms`：首次 Cleaned 固定期限，重放与重启不续期；
+期限结束、精确确认/关闭回执和业务责任结算是分别保留的删除条件。
+时钟回退仍保存 Cleaned 并暂不建立期限；时钟恢复后沿同一收尾 CAS 只建立一次起点和截止点，
+重复和重启不续期。真正算术耗尽仍保留事实并拒绝删除，不把已发生的完成改成未发生。
+接受时间改为原记录内明确的 Sampled/Unsampled：Create/Renew（以及当前需时钟的Unload）
+保留原采样并精确复算期限，Destroy不要求读取时钟且明确未采样，不用0伪装实际时刻。
+保留期仍核对历史中的全部已采样时间下界；未采样不产生新时间事实，也不免除确认和关闭条件。
+该表示改动和新增恢复回归已纳入下述指定源码的有限检查，不计为已证明或整套验收。
+详情删除时先关闭该会话涉及的当前公开窗口，存活旧记录仍先全文重放；
+较小的新序号在同一个开放窗口内可乱序接受。已删除的 SDK 键不能凭记录缺失再次受理。
+Stale 仅说明这次没有新增受理，不证明这个键历史上未执行。
+
+内部 SDK 续期的有限回收候选在原会话中保存最新完整确认、实际删除版本前沿及被删采样时间最大值；
+每次只删原上一个完整且已应用的 SDK Renew，保留 Create、公开输入、当前行、未知结果和终止责任。
+恢复保留相邻版本检查，间隙只能落在实际删除前沿及完整确认之前；该结构检查不单独证明被删历史。
+Renew 保存原前驱有效期限，不能用 Create 的期限替代；下一 SDK 检查全部保留历史中的未确认 SDK，
+不能靠插入公开操作绕过确认，Destroy 不受此门控。原服务/数据库已接入确认与回收并取得下述有限回归；
+统一候选和真实 Rust 证明尚未闭合，旧恢复和终态抽取结论不自动适用。
+
+当前中心的引用来自 `ValidationLink` 的原 Create/Destroy、`GlobalBuildAnchor` 的原 Create/Cleaned，
+由 `RegistryMetadata::validation_valid`、`PrivateBuilds::valid_for` 与 `publication::terminal_request`
+检查；数据投影读取原 Create 和当前操作，令牌签名不建立另一张旧 SDK 引用表。
+原 `BusinessEnvelope` 的同一 CAS 仍须验证完整交叉引用，不能从“已确认”推导任意资源或 pin 已消失。
+本候选需证明回收保持首行、当前行、终态、位置和所有其它操作，及这些真实引用检查的保持性；
+目前是源码核对和待证业务义务。以后新增 capture/claim/pin 引用旧操作时必须在原同一事务补齐检查，
+不能直接沿用目前没有该引用的范围。
+
+当前生产中心服务已改用完整 `AcceptedLifecycleIntent` 与真实终态观察；私有创建、验证证据和终止
+沿同一原 Redis/CAS，公开查询、卸载和销毁从同一业务包络排除私有实例。
+旧 `wait/send/confirm` 派发路径已从生产中心服务移除；中心核心和中心服务有限单元消费者已有下述当前合同迁移结果；其余未纳入下述有限验收的 Redis/SDK 夹具仍需迁移，
+保留原安全、未知、迟到和退休竞争断言，未迁移用例不能计为通过。
+
+中心原核心/退休窗口/结果分类消费者在 `ccde8ee010dbef0f4bf1ca216977cb41f9a562bf` 完成当前合同迁移：原11＋13＋2场景仍为26，ning实际24＋2全部通过，严格Clippy与格式通过，3.545秒。使用真实同步核心，保留完整原/当前身份、保留时间、重复终态、SDK确认、32轮位置退休、耗尽和损坏恢复；旧观察版本/rank算法对照改为当前合同的绑定与终态重放检查。此次只改测试，宁实际格式字节按前后摘要导回；未重跑既有decisions8、生命周期36和Host21＋1，未取得新增Lean或完整组合结论。
+
+来源观察慢I/O在 `098e12d9e65a2392e398a3a0f694de6e7f686207` 移出原Application管理锁：锁内核对原SourceWork，解锁调用原Host，再入原journal按当前状态保存；没有写回先前整个World。ning真实Application/SQLite与受控Host的并发目标6/6、严格Clippy通过；原持锁实现重新编译后由同一“另一会话Create/Ready必须推进”断言拒绝，恢复正确实现后该项再次通过，共28.167秒。源码和三版本日志/新编译记录保留；实际格式提交为 `616b60314f3aa5f7e58dcd08cd68d86ab9ab1b0a`。Destroy与宿主epoch变化的迟到结果拒绝，以及仅另一会话推进时合法结果仍可保存，均有组件证据；未完成版本切换情景、Full捕获、KVM或此函数的Lean对应，旧锁范围结论不自动适用。这一批不含后续B授权/schema草稿，原失败记录继续保留。
+
+中心服务消费者在 `a8fceb5e891051cc40fe9ea621361c862f02a76a` 使用当前唯一 record/observe/confirm/close 接口，测试Host保存完整受理请求，MemoryAuthority仍调用真实CenterState。原29＋5＋7＋9迁移场景及共享查询3项共53项全部通过；原库目标实际69项为62通过、7失败，15.414秒，生产库Clippy通过但不认领测试代码Clippy。7失败均因原deployment JSON夹具遗漏必填的 `bounds.result_retention_ms`，在解析阶段先返回InvalidConfiguration，尚未进入TLS/ProtectedInput/模板拒绝；原运行日志保留。更早 `9148f837` 仅因测试比较u64/i64编译失败，零场景执行；后继采用受检查转换，没有截断或放宽确认。
+
+`74a7bdf635e0207bb57aa908d1bbbfee9a88f662` 仅补deployment夹具与原示例相同的300000ms保留期，并在原负向场景保留缺失/零值拒绝；未增大存储或元数据预算、未修改生产校验。ning仅重验受共享夹具影响的deployment10项，全部通过，59项过滤，8.363秒；其余59项复用a8fceb5e未变输入的成功结果，不称新一轮69项全部执行。单文件实际格式按前后摘要导回。旧观察版本/rank专用场景已按当前完整绑定、Pending不覆盖并发已保存Ready、冲突寿命不覆盖原事实、原截止时间和终态精确退休重新表达；时间到期仍不证明清理，公共令牌/未知提交/迟到不复活断言保留。该组是受控Host与原同步核心组件测试，真实Redis消费者、完整SDK/基础入口、KVM和当前Rust形式证明尚未由此验收。
+
+真实Redis消费者迁移在 `7bc02a58` 首次实际运行35项（含共享丢回复4项），31通过、4失败，17.102秒；明确测试目标Clippy另有3项诊断，原记录保留，不称已验收。三个失败与当前夹具/调用次序有关：公共跨租户用例须登记第二真实租户及请求窗口；容量拒绝后先保留原Destroy，再由下一次后台推进；关闭回执先重新确认原包络，丢提交回复的故障点须置于其后的CAS。相应测试修正保存于 `a4cfd01e`，未改原拒绝/恢复后退休断言。
+
+其中缺少终态确认的私有构建恢复用例揭示实际检查遗漏：`PrivateBuilds::valid_for` 的已结算且原会话仍存在分支，已有末操作及Cleaned全文匹配，却未核对同一记录的 `terminal_confirmation`；原 `settle_build` 要求该确认，正常路径在退休前不清除。当前修复仅补同一完整确认相等条件；会话已退休时的原位置/回执规则保持。负例保留并明确中心核心仍可合法保存待确认Cleaned，业务结算状态必须拒绝这种缺确认组合。此函数及真实Redis/结算/恢复的形式对应仍未证明。修复源码 `d087789f56715fe3a856ff7d9073e74f4890d145` 在ning实际35/35、零忽略通过，原恢复负例同时断言中心核心合法而业务包络非法；测试目标Clippy当时仅余一项测试长度限制，17.184秒整批未封口。后继 `7c5f6f2fcf93742061b5a7d5435630c7603aadbf` 只导回三处实际格式并按原顺序提取同一结算断言helper，生产/依赖/共享夹具不变；末轮只执行受影响场景1/1、34过滤，完整business_authority测试目标严格检查和格式通过，16.553秒、无格式差异。其余34项精确复用d087成功，不称末轮重跑35。使用已有固定Redis7.2.16，二进制SHA256 `e1a376d0ea42cb9bcd92ed1fc450871bb7d9e298fc3317a742b2892dfdf06244`；官方归档SHA256 `960a8ec15e34ff40e57ff16837b26b33bd81f2da6d24497bb63de532a323a18e` 对应的1584个源文件逐项一致，二进制另以其执行摘要绑定，不冒称可重现构建证明。它与CI保护产物分别登记。原编译、四断言及Clippy失败完整保留；未重跑服务69、Host或其它模块，未修改四个中心证明根、B批格式或固定工具。真实Redis+HTTPS装配消费者、完整SDK/统一基础入口、KVM与形式化仍未由该组件组验收。
+
+[回执屏障](../tests/system/_internal_fault_relay.py)在 `b3e7bbea47d255794e8bd5acd673b4abb3fc943f` 仅迁移原两个 Python 测试文件，基于统一 `d78c9f59` 接入，没有合入 OS 旧父链。屏障只在真实 create-observation 路径的 200 响应中识别完整 `CreateObservation`；收件成功不冒充 Ready。检查原/当前完整请求、独立登记节点、启动和寿命边界，重复观察只允许观察时间变化，其余原请求与执行事实保持。分区记录保存完整 `AcceptedLifecycleIntent`，只有原 record 路径的 Destroy 设置销毁事件。ning 原 Python 单测 **19/19**，原 `secure_probe` 双向 mTLS 状态查询精确 **1/1**，共 **5.973 秒**；原证书链、ALPN、叶子 pin 拒绝和名额收尾断言保留。这里的新 Ready 检查仍是有限 Python 匹配测试；状态查询穿过真实双 TLS 连接，不表示真实 Ready 已穿过屏障，也不是 Rust/Lean 对应证明。该轮 DK02/DK04、原审计和故障脚本读取器尚待迁移；后继源码迁移及普通单测见下方，真实故障场景仍未执行，不能据此认领整个系统故障矩阵。
+
+[Redis＋HTTPS 应用消费者](../sandbox-center-service/tests/redis_https_application.rs)在 `b891414731937dd14de0d748ed7bd184953bab9d` 复用原当前应用包装、真实 SQLite、固定 Redis 及实际 TLS/独立中心上下文；收件、观察、续期/终态确认和关闭均调用原 Host，后台使用原 `run_driver`。ning 显式启用 `redis-tests`，实际 **5/5**、零忽略，完整该测试目标严格 Clippy 和格式通过，共 **22.461 秒**。唯一格式产物按前后摘要导回 `fec85a8a7a84f9e0fb7386b912ce94262f835545`，没有重复运行未变输入。覆盖租户/选项/寿命、当前观察回包丢失后中心重开仍保留原请求和启动/到期/最大寿命、查询的一次 Redis 快照及真实存储失败后的围栏。并发例保持原 normal4/control2：屏障阻塞 A 的原 Prepare，B 仍完成真实 Create/Ready 和 Destroy，再放行 A；两个原 sandbox 各 Prepare 一次，最终额度归零、原位置收到准确释放调用且工作排空。Host 效果和 PID/boot 仍是受控夹具，不能将原 sandbox 计数解释为物理 VM 唯一性或真实宿主释放证明。
+
+该组首轮 `389528d129353e54b88e8359a0aa9a3fc90c29c9` 已实际编译并运行，但 **0/5**，另有测试长度 lint，原记录保留。旧测试 builder 未设置当前必需的 `lifecycle_observation_policy`，原入口在调用 Host 观察前即拒绝，因而出现 503 和未收到观察通知；真实生产装配已经设置该策略。后继仅补原有限 5000/100ms 时效策略、保持实际时间戳/寿命检查，并按原顺序提取相同 Prepare 断言 helper；没有延长等待或放宽安全断言。这两组未修改公共 `internal_application`/`lifecycle_application` 夹具、生产调度器或 B 的捕获/授权/driver 草稿，六份原 B 草稿未入测试归档或提交；不新增 KVM、Guest、SDK、Lean 或完整基础/系统验收结论，不刷新旧冻结记录。
+
+当前审计消费者在 `9a232919a3a64a692c1e45d6c9cdb5122058f564` 接入原 27 个 Python 测试/工具文件；仅应用 OS `e714556e` 相对 `b3e7bbea` 的已审补丁并逐文件核对摘要，没有合入 OS 旧父链，旧 `2ff` 候选未执行。读取器改用完整当前 Create/观察、中心原会话的 running 寿命及 Host 原映射/native/claim 物理身份，不新增生产 Ready 报文或审计输出。分别检查两端 JSON 字段的整数/布尔类型和必填创建代次，拒绝用 Python 数值相等混过单端类型变化；实际读取的文件描述符还须与回报路径指向同一对象。新增单端变异负例保留其它输入合法，换文件负例覆盖读到替换对象而原路径已恢复的情况。这些是有限解析、文件和关联检查的工程测试，不是完整 JSON、任意文件竞争或系统对应证明。
+
+ning 同一批实际发现并通过七个受影响模块 **193/193**，零失败、零跳过；27 个文件语法与已审清单检查通过，总计 **4.258 秒**，源码前后无变化。原日志和各模块实际数量保留，没有将静态方法数直接当作执行结果。原 relay 19 项、双向状态 TLS 1 项及 Rust Redis＋HTTPS 5 项的源码和实际依赖未变，按原版本证据复用，本轮未重跑。真实 DK02/DK04、SDK、KVM、q1 和高权限服务验收仍未执行；生产审计/协议、两个共享 Rust 应用夹具、Node 与六份 B 草稿和配置保持原样，没有新增 Lean、工具链或冻结结论。
+
+以下是分别绑定源码的有限工程结果，不是统一候选或系统验收：
+
+| 源码 | 实际结果 | 尚不能认领 |
+|---|---|---|
+| `a5a02d10` | 同表生命周期20项、完整验证报文及独立子限额3项通过 | 后续私有消费者或最新整个工作区 |
+| `832924d2` | 显式匹配宿主启动身份后，真实网关端口9项通过；原凭据和正文断言保留 | 物理宿主/来宾、TLS或KVM完整组合 |
+| `c694b08c` | 生命周期21项通过，含受保护Builder分配/重放角色；当前中心服务库编译通过 | 旧测试迁移、SDK/Redis完整入口及严格静态检查；严格检查先在中心核心7项诊断处退出 |
+| `4d7bfd58` | 同表生命周期27项、完整Create拒绝观察2项、当前本地应用7项、Host实际SQLite拒绝/重启/终态链1项通过；同归档32.703秒 | 后续接受时间改动；各包全部目标编译仍有旧夹具/调用者，四库严格检查止于中心恢复函数103行限制；双二进制构建止于中心审计投影旧字段，实际版本命令尚未执行 |
+| `f36f225c` | 中心生命周期36项、当前收件78项、watch 5项、应用7项及Host连接2项通过；双实际程序重新构建并报告内部2/中心8/宿主20 | 统一候选、完整SDK/Redis/KVM、形式证明；严格检查当时止于中心两处函数长度 |
+| `20c1593e` | 修复两处长度后，中心原36项再次通过；保留全部原断言 | 后续统一候选；严格检查另有两处文档lint，后继修复不等于已复验通过 |
+| `74b295a3` | 有限借用/枚举重构后中心原36项、四个production lib严格检查、定向格式均通过，9.084秒；实际宁格式结果随后按前后摘要导入 | 后续完整中心抽取、统一候选全部测试及系统验收；不重复认领未变化的78项等检查为本轮执行 |
+
+`f36f225c` 的真实 Rust 删除错误版实际编译成功，再由正确版同一公开重放性质拒绝：
+`confirmed_sdk_compaction_preserves_public_replay_and_current_deadline` 触发
+“public renewal replay must survive SDK compaction”。两版均核对实际业务库和协议库重新编译，
+最后恢复正确源码并通过原断言；这属于原生回归，不是SQL事务或Rust实现的形式证明。
+
+`ffbf3158` 的完整中心确认根经固定原Charon生成完整LLBC
+（摘要 `e88ba845459587abdc4286ac238e83727da0b53fb37a02496de17c91874f652c`），
+但Aeneas在枚举展开、返回借用和分支上下文合并处退出2，尚无完整可检查Lean。
+同源Host真实纯删除判据经Charon/Aeneas生成Lean，LLBC摘要为
+`da0e5ca06824e147b78e861cd37133b33892b131647c3297e9913afc42be20c7`；
+原始生成Types/Funs未改，5个标准库符号连接既有A6定义后，
+`source_reference_prevents_discard`（有来源引用不删）及
+`public_window_prevents_discard`（非SDK窗口不删）已通过Lean内核、原服务完整诊断和依赖检查。
+仅依赖`propext/Classical.choice/Quot.sound`，没有自定义公理；首轮跨生成根重名的失败保留，
+后继成功21.468秒，服务退出时的Python清理警告也保留，完整响应及独立内核均退出0。
+这是实际纯判据在既有A6模型下的两条局部结论，不覆盖SQL取字段、原事务/CAS、引用保持、
+完整中心确认或系统；尚未接入本批正式模块与完整验收，不能把局部通过称整套完成。
+后续有限源码重构仅调整枚举分解、查询借用边界、临时唯一性集合和投影后的短写；
+不改变持久数据格式、拒绝条件或检查顺序，也不把原恢复校验设为opaque或可信假设。
+临时集合持有原值副本会增加有界临时分配，仍依赖既有分配成功条件，未声称无分配失败或新增性能上界。
+
+`0eb78929` 的后继完整中心根仍未通过：Charon退出0，完整LLBC摘要为
+`a08b344c0a764753d7d94df448d7318500c298cbbefaab1db167b522b3518823`；
+Aeneas在`PrePasses.ml:576`拒绝该次重构新增的`valid_lanes`循环提前返回，
+尚未进入透明函数翻译，不能解释成原借用点已经修过仍失败。
+复核原Git还发现`terminal`/`released`的原返回借用闭包未实际修改；后继纠错恢复标志控制循环、
+使用不提前返回的索引查找并准确处理这两处，保持原短路、首匹配与反向首匹配。
+这些纠错仍需重新检查，不从前一轮36项通过或Host两条小定理推导新中心实现已证明。
+
+纠错源码`88ca719f`的原36项、四生产库严格检查及定向格式已在宁通过（10.001秒），
+实际格式后继`51728e61`再做一次完整中心根：Charon退出0，完整LLBC摘要为
+`ee88c2a8f1646dec8d256afcec545db996852346d6de2c4bce023745597b97ba`。
+该轮通过预处理并进入127/210个透明函数，仍在8处分支上下文合并处退出2（8.368秒）；
+没有完整可检查Lean。原恢复校验、确认转换及引用保持仍是自有未解义务，
+后续按实际生产函数分别连接，不将这些业务整体列为可信条件。
+
+内部测试消费者`905822d5`已切到完整已收请求及独立认证中心上下文：实际宁编译、两目标严格检查通过；
+`secure_data`为5/5，`secure_probe`为15/16（整轮13.686秒，仍失败）。
+唯一失败是原Python双mTLS测试代理只允许已退役的`/internal/v2/node-status`，
+当前Rust发送`/internal/node-status`被该固定白名单拒绝；不是证据表明TLS链或ALPN已失败。
+后继将代理有限路径逐项对齐当前生产常量，并保留拒绝旧路径、任意目标及过大正文的检查；
+这些测试改动不覆盖生产授权、SQL或物理结果。该轮代理`ReceiptBarrier`仍用旧packet/fact形状；
+后继完整请求/观察的迁移及实际结果见上方 `b3e7bbea`，状态查询或纯代理向量通过仍不能算完整故障矩阵通过。
+
+后继`882bd629`只复验受影响的原双mTLS状态查询1项及代理Python原11项，全部通过（7.557秒）；
+原证书链、ALPN、未登记叶子拒绝、回调次数和名额归还断言保留。
+`905822d5`已过的其它20项与对应严格检查没有重复执行，不将分批组件结果写成整套验收。
+中心决定消费者`597bd014`的原8个场景迁到真实当前接口后，8/8及该目标严格检查通过（3.346秒）。
+依据现行寿命合同，测试覆盖相对秒输入截顶及伪造超上限Ready的拒绝；
+Pending保额、Cleaned待准确确认、晚到拒绝不能抹去已Ready，以及原配额/健康/模板/分池/u64极限均保留。
+其它中心单元、窗口、分类及Redis/业务测试仍待迁移，不从这8项推导全部中心测试已通过。
+当前Host HTTPS测试的21项与后继精确重放1项来自Core所列两次不变闭包检查，
+后继格式头`a68e3c7a`已整合；不能把它写成本轮重新执行22项或真实KVM验收。
+
+`8cdd12f2` 保存上述7项静态修复，首次Create记录校验独立成实际纯函数，原谓词和短路顺序保留；
+其后继已取得上表有限回归，不能据此认领全部严格检查。后续 `818cec1` 修复中心审计投影、
+保留Create载荷脱敏，并将真实followup校验透明拆分；二进制与受影响检查另按该源码验收。
+没有为取得通过降低lint或改变固定工具。
+
+真实终态根 `terminal_result` 在 `c694b08c` 重新经固定原Charon成功生成完整LLBC；
+Aeneas已越过早退循环和原切片`find`的生命周期约束，进入192个透明函数的翻译，
+但仍报告13处借用返回、分支上下文合并或枚举展开错误。原日志与IR保留，尚无完整可检查Lean产物，
+不能称终态实现已证明。后续按真实业务根和恢复校验分别连接；恢复校验仍是自有业务义务，
+不得将其整体变为opaque或可信假设。
+
+`codex/feat/641-lifecycle-unified` 从保全草稿 `4cb07020` 与 #659/#661 的完整祖先继续开发，
+并完整合入当前审计/配置接口 `a64fcd35`（含 OS `82ba33f8`）。公共身份合同提交
+`32118b6d` 新增 `LifecycleAccessIdentity` 和显式上下文检查；它只校验表示与独立注册的中心、
+完整节点、部署和接受版本，不提供会话访问许可，也不把外部 incarnation 转成本地 generation。
+
+本候选正在将正式数据入口改为：同一次 TLS 的原 peer→受保护中心注册→原当前收件账本映射，
+再检查原本地 VM、凭据、期限与 Access。卸载/销毁登记后的撤销和重新派发前复查归实际业务核心。
+新的共享类型、当前 URL、数据路由、Ready 观察竞争、终止意图和宿主 initialize/audit/serve
+接线尚未完成组合编译、原生回归或形式验收；没有新增本批已证结论。
+
+宿主的显式 Bootstrap 创建和现场读取依 OS 原对象合同；配置、持久登记与真实材料的连接仍需验收，
+不能由登记相等推出 VM 级捕获/恢复兼容。当前原生测试源码保留普通返回、取消持额和 Ready 竞争，
+其源码存在不表示已经执行。当前结果确认、有限窗口退休、完整卸载/恢复/GC及多周期仍有未完成项，
+不能把终止意图、受理回执或永久保留历史当成物理完成与最终闭环。
+
+旧 Status/JSON/字段目录和任务/存储定理只适用于其冻结的真实函数与输入；它们可以作为复用依据，
+不能自动覆盖上述新字段、改动的生产调用或异步外壳。本批不刷新旧冻结摘要、不手改生成体，
+后续由统一候选按实际变化重抽取、审计并运行相关验收。
+
+
+## 第一阶段适用性：重新定目标，不迁记旧结论
+
+本次 `stage1` 是基于 integration `56b14d642c392316043dfbdbe4d26bacc663fb30` 的文档与任务调整，不修改 Rust、Lean、抽取物、工具或冻结摘要。该基线已包含 [#631](https://github.com/VeriInfra-Lab/sandproof/pull/631) 的组合；完整普通检查、证明验收与 CI 证据在该 PR 的精确候选上，合入树对应已核对。下面原有局部证明和限制保留，不能把它们升级为本阶段已完成。
+
+| 第一阶段目标/连接 | 可以复用的基础 | 当前真实缺口 |
+|---|---|---|
+| LC-G1 状态连续 | 原本地状态模型、身份/回执等引理 | 真实 Full 捕获/磁盘截面/封存不存在；旧暂停补偿须重审；完整连续性未证 |
+| LC-G2 唯一恢复执行 | 围栏、代次、原实例观察/授权规则 | 新 claim、激活前不可逆消费、重启继续同候选及真实激活连接未交付 |
+| LC-G3 卸载与材料回收 | 位置复用、原清理/任务责任局部基础 | bundle 独立存储、持久 pin、File backing 实际使用、retire/取 pin 竞争未闭合 |
+| LC-G4 重试/崩溃安全 | Redis/SQLite、JSON、原回调/持额及首链的有限组件 | 公开操作键、新协议、文件/库非原子窗口、各新状态恢复和实际接线未证 |
+| LC-G5 正常接受 | 有界类型/检查与部分正常分支 | 新完整合法域、实际新 handler/状态转换接受性未证 |
+| LC-G6 条件完成 | 部分有限循环与模型进展基础 | 新驱动启用/预算/无环等待和实际全历史提升未证 |
+
+新 V0 的 T0–T9 仅按本阶段实际根重新分类：[详细清单](formal/00-foundations.md)。已交付基础不能按定理数量换算阶段完成百分比；只有公共来源登记也不是实现行为证明。当前 snapshot restore 在真实节点拒绝，内部 Intent 没有 Pause/Resume；核心中的枚举/定理不构成产品支持。
+
+原 P1–P4/C1–C7/D 类清单以下保留为**旧范围的证据索引**，不是新阶段无条件前置。生命周期所需 open_checked、资源移动和新 schema 等仍要补；完整 Guest 编解码、无关容器、完整查询、两执行保密等归后续。准确新待办见 [#632](https://github.com/VeriInfra-Lab/sandproof/issues/632) 与 V1–V9，不从关闭旧 issue 推断完成。
+
+本次文档内容涉及旧证明输入清单中的文档文件。保留原冻结摘要作为旧证据；新候选的冻结一致性/全套证明需要后续按工作流重新验收，本次未声称新输入已通过证明。不得只更新哈希消除该差异。
+
+### 原中心生命周期首片：实际实现与证明缺口
+
+新增 [原 CenterState 的受限 profile](../sandbox-center-core/src/lifecycle.rs)、
+[同一 Redis CAS 接线](../sandbox-center-store/src/authority/lifecycle.rs)和
+[可复现组件](../verification/experiments/stage1-center/README.md)，对应 #633/#634/#635。
+本片保存完整相对提交参数与原分配器派生的规范请求、接受版本、owner/固定节点、预留及可枚举 outbox。
+已有键按全文重放；Ready 连接原寿命守卫；Unload 暂不释额，Destroy 保留原终止预留。
+仍未接正式 HTTP/driver、内部到期责任、完整卸载事实和 manager 实机重启；profile 不默认启用，
+只存在 Creating/Running/Unloading/Terminating，不能把本片查询称为 Unloaded 闭环。
+
+新增真实 Rust 的普通/Redis/错误版测试属于工程证据，精确源码、实际数量、耗时和失败以本批 PR 回执为准。
+原 Charon/Aeneas 对版本检查和全文重放完成过生成；未运行其 Lean 内核/实际文件诊断或新增定理审计，
+不称这些根已证明。完整接受首轮失败于两层原序查询；小拆分后仍在
+`valid_lifecycle_session` 的循环预处理失败，原 IR/诊断保留。
+完整决定、恢复校验、预留/修改范围与实际调用对应仍待证明，不能整体改成库/可信适配假设。
+
+接口依赖提交 `3342edc12dbae5821656914423cb2c302f0d73ca` 的协议/internal 91 项普通测试及严格 Clippy 已通过；
+`AcceptedLifecycleIntent` 是完整数据，不是授权凭证。Context 的 pin/受保护注册连接按
+[准确 A9/B4 条件](formal/dependencies.md#当前中心身份的薄连接)采用，正式服务绑定仍待接通。
+新增 `ResourceKind::Snapshot` 不改变 VM/Workspace 的含义，也不自动证明 snapshot 材料事实。
+
+旧 #642 及旧 V0 局部定理只覆盖各自固定输入；这里的新 CenterState 字段、恢复 checker、
+接受/提交和新增角色不能沿用旧结论背书。全局注册、冻结适用性和完整验收仍须在统一候选完成。
+
+### 第一阶段依赖组合：调用版本与未证明连接
+
+组合的代码输入为 `13cbea4b6856a3449de49832f66ef3ab9cbafd62`，
+其中中心组件来自 #649 的 `e16f022338acf6d03c77d645a2e486dcbdf8f39d`，
+原本地服务完整依赖截至 #651 的 `e542c7cb9077efa93fda8419192c1e549fee1a5a`，
+原运行时完整依赖截至 #650 的 `5e8784429d3f823b79d5be5d2847ec45a9111259`。
+本批实际组合和测试适配的结果见 #641 及对应 PR，不以来源 PR 各自通过代替组合验收。
+
+#651 修改了原[分配准入](../controller-service/src/controller/admission.rs)、
+[内部收件准入](../controller-service/src/controller/internal_inbox/admission.rs)、
+[恢复打开](../controller-service/src/journal.rs)及启动派发的 epoch 检查，
+并增加[原 SQLite 的 v3 收件](../controller-service/src/controller/lifecycle_inbox.rs)。
+#650 的 [BootPlan](../sandbox-runtime/src/boot_plan.rs)实际用于
+[原启动配置调用](../sandbox-runtime/src/linux.rs)。
+这些新调用、事务/恢复连接、真实宿主 epoch 提供方，以及 BootPlan 重构前后的行为对应均未由旧定理证明。
+下文旧结果仍只适用各条原记录列明的精确提交、冻结输入和条件，不能背书本组合新增或修改的函数；
+本批没有新增 Lean 定理，也未迁移旧证明、刷新旧冻结摘要或执行完整证明验收。
+普通编译、测试及严格静态检查属于工程证据；正式 profile 保持默认关闭，
+真实材料登记、原 VMM 退出、必要 runtime 清理和安全复用事实尚未连接为公开 Unloaded。
+
+### 公开接受与受保护 Recorded 收件的历史组件证据
+
+本批在 `279002a0c7be5e0ec650a501f653516334eb0fd0` 的依赖组合上增加
+[显式公开入口](../sandbox-api/src/lifecycle.rs)、
+[原业务包络接受](../sandbox-center-service/src/business/authority/lifecycle.rs)和
+[原 TLS 收件的当前源码位置](../sandbox-internal/src/server/lifecycle.rs)。
+公开认证给出 owner，原中心状态给出 deployment/node/session；客户不能在正文选择它们。
+相对参数按全文重放，首次接受才读取当前受保护模板、政策和时钟，并沿原 Redis CAS 保存。
+该历史候选使用单独的可见性投影；当前开发已改为唯一生命周期行，不保留该旧运行分支。202 仅表示持久接受。历史组件结果不自动适用于当前重构。
+
+受保护路由显式配置原 peer 注册后，将真实 TLS 提供的 pin 转成 context，
+校验完整 accepted intent，再经原 HostFacade/HostLifecycle 工作许可交给
+同一 `ControllerApplication::record_lifecycle_intent` 和 SQLite 收件。
+Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、VM 已启动或资源可释放。
+未配置路由保持拒绝；收件许可由实际 blocking worker 持有，取消等待不补造退出事实。
+这些机械接线沿已登记 A9/B1/B4 条件核对，新的业务接受函数与原应用/事务连接仍须证明，
+不因测试或已抽取的旧同步守卫而自动获得实现定理。
+
+`CreateParameters` 逐字段迁到 protocol 并保留 core 原路径重导出；这改变抽取的名义来源，
+原生成物及旧类型对应不能直接背书该新版本。没有手改生成 Lean 或刷新旧冻结摘要。
+本批新增 Lean 定理为零；相关原生测试、失败及精确适用版本以本批 PR 的回执记录。
+公开 HTTP→真实 CenterPort/Redis 与真实 TLS→原 Facade/SQLite 分别验收，
+不称公开请求已经由正式后台自动派发。原 worker、中心持久待办的重观测/发布、
+当前 Ready、新 Unload 和完整 Unloaded 均尚未接通；正式 profile 不默认启用。
+内部到期仅有设计，未实施前不能启用该 profile；Resume/GC 和真实部署输入仍开放。
+
+### 当前同步封套切片与正式入口接线范围
+
+本组件已检查的真实 Rust 候选为 `6751508c0862194d0100bedd7eece8514f8a8344`。
+原 `stage1-protocol` 的 request 视图保留四个透明入口：`request_validate`、`replay_matches`、
+`accepted_validate`、`recorded_matches`；后两项分别委托生产 `AcceptedLifecycleIntent::validate`
+和 `RecordedLifecycleIntent::matches`。不并存私有 CurrentEnvelope 库，不增加翻译器或独立解释器。
+当前结论来自本候选的实际生成体与原记录，不能仅沿用早期私有原型的结论。
+
+唯一 [ValidationModel](../SandboxModel/Lifecycle/Protocol/ValidationModel.lean) 不导入生成函数，
+[ReplayContract](../SandboxModel/Lifecycle/Protocol/ReplayContract.lean) 描述全文相等；正确版与错误版
+使用逐字相同的独立规格和输入见证。已证明的范围如下：
+
+| 真实入口 | 精确性质 | 不由该性质提供 |
+|---|---|---|
+| `request_validate` | Create/Unload/Resume/Renew/Destroy 的全部成功条件及六类首错；协议版本为 3，先核节点、部署和 expected 形状，再进入操作守卫 | 已解码值到真实输入字节的对应、授权和当前账本事实 |
+| `replay_matches` | 任意两个完整请求值相等，当且仅当返回真；包含 Renew 全部字段、options 每个字节及完整摘要 | 相等的请求不因此合法、已授权或已经耐久处理 |
+| `accepted_validate` | 按原顺序核对独立 context 的 center、部署、内层请求、slot 范围和 accepted 版本。Absent 要求版本为 1；Version(v) 要求 checked_add(v,1) 成功并等于 accepted 版本，耗尽不回绕 | context 确实来自原认证连接/注册、窗口可用和已持久受理 |
+| `recorded_matches` | 完整原 intent 相等、current_session_version 不小于 accepted_version，且 current 恰好等于两版本是否相等 | validate 成功、terminal 的真实性、真实账本中的 current 状态或执行/释放资格 |
+
+原请求首错依次为 UnsupportedVersion、ForeignNode、ForeignDeployment、InvalidExpectation；
+随后 Create 分支可返回 InvalidCreate，Resume 分支可返回 InvalidIncarnation。
+Renew 仍要求 Version 形状，但纯守卫不比较 end_at_ms 与当前时间或业务截止；
+原负期限接受见证已保留，寿命政策由业务处理证明。Retention 只检查 slot 为 1..4096，
+不证明当前窗口仍可用，也不要求操作 key 的 window 等于 retention window。
+[Accepted](../SandboxModel/Lifecycle/Protocol/Accepted.lean) 与
+[Recorded](../SandboxModel/Lifecycle/Protocol/Recorded.lean) 分别连接上述顺序与完整匹配合同。
+
+本候选的实际检查与复用范围：
+
+- 原三视图正向检查完成 47 次实际文件检查，去重后为 38 个文件。`2229bdfc` 的重新抽取保留完整
+  LLBC，生成 Lean、模板和 translation 逐字相同；LLBC 仅原无序 short_names 表的排列不同，
+  其它全部 AST 字段相同。到 `6751508c` 的 42 个实际抽取输入及 38 个证明文件均未变，
+  因此复用原正向记录，没有重复运行正向内核检查。
+- `6751508c` 在普通测试机的原完整单组件检查通过：两包共 113 项测试，零失败/忽略，包含封套七组；
+  八个原阶段全部通过。四个真实单表达式错误版均实际编译成功，被各自未改的原断言以 101 拒绝，
+  恢复原源码后重新编译并通过同一断言；四份完整源码均恢复，独立 native_case 收据已保留。
+- 同一候选在证明机完成四种真实 Rust 错误版与六份形式模板：same-incarnation 的顺序见证和完整守卫合同否定，
+  key-only-replay 的固定 pair 和通用全文重放合同否定，skip-capture-binding 的原 manifest 反例，
+  session-only-envelope 对正确版同一 FullRecordContract 的否定。原 95 条入口命令全部成功，
+  87 次实际文件诊断完整、非陈旧且无警告/错误；耗时 526.279 秒。审计包含辅助引理，不是独立系统性质计数。
+
+四反例原结果摘要为 `021fdd3f0844fba956683285c02cf2f59cf3aaf71fe03c02a28f4cc24411c9ec`；
+候选、源码归档、原生收据、正向复用和原服务返回均在组件原记录中相互绑定并经独立复核。
+`0e981ae9` 的旧格式测试失败和 `9fcda217` 的测试辅助 Clippy 失败继续保留，后续成功未改写原失败。
+
+该 V3 同步组件复用四项既有 [A6 标准模型](formal/dependencies.md#a6-v3-同步协议的字符串与完整字节视图)：
+String.eq、Vec.is_empty、Bool.ne 和 Option.eq；封套的 Option 实例为 U64，字典调用/失败保持条件明确登记。
+固定 Rust 编译器、原 Charon/Aeneas 翻译和模型与标准库的对应仍属显式信任条件，Lean 内核检查未关闭。
+实际 bytes/Serde、TLS/注册到独立 context、完整调用者的顺序/取消、handler/账本/耐久回执真实性，
+以及正常分配之外的 OOM/abort、资源 Drop/unwind、预算、保留前沿和 VM/release 连接不在本组件结论内。
+
+[组件入口](../verification/experiments/stage1-protocol/README.md) 仍要求当前完整共享 native seal 和当前
+functional 文档检查。上述独立单组件收据及六份形式反例没有补造 complete.json；
+`verify-stage1-protocol.sh` 与 `verify-controller.sh` 尚未取得本候选的完整成功记录。
+本节不宣称 V0、完整 V3、V1/V2 账本或系统闭环已完成。
+
+### 同步协议的历史局部证明与适用边界
+
+[草稿 PR #642](https://github.com/VeriInfra-Lab/sandproof/pull/642) 的生产 Rust 适用
+`584e155163f641582e93f5d94538329e257c74f8`。相对首个字段提交，循环/借用写法作保持首错和短路的小拆分，
+当时新增未启用的 codec；其[当前源码位置](../sandbox-internal/src/lifecycle.rs)已随唯一实现重构调整。
+当时尚无新 HTTP 路由、持久收件或驱动。该历史提交保留旧路径，不表示当前运行实现仍支持两套合同；以下局部结论只认领列明版本，源码审查和对照测试不是一般性行为对应证明。
+
+[独立 Model](../SandboxModel/Lifecycle/Protocol/Model.lean) 不导入被检查的生成 Funs。
+三个真实生成视图、原完整 LLBC、准确输入/导入闭包和检查器由
+[模块冻结](../verification/experiments/stage1-protocol/frozen.json)绑定；生成 Lean 未手改。
+局部性质及其限制如下，精确候选的实际组件结果、耗时与失败记录见本批 PR，不以本表代替验收回执。
+
+| 文件与声明组 | 对应范围 | 不能推广为 |
+|---|---|---|
+| Carriers，6 项 | CaptureId 的全 U64 构造/get、零拒绝、一个正常接受、最大值耗尽；任意 32 字节摘要值完整往返 | 其它角色构造已逐项接通、任意非最大 checked_next 已证、摘要已计算或文件已校验 |
+| Request，5 项 | 任意错误版本首拒绝；其余绑定字段固定合法时任意 source/target 的严格顺序；capture 1/2 的完整请求重放 pair | 任意两请求全文等价、所有请求守卫的充要条件、认证/账本或窗口合法 |
+| LoopWitness，6 项；ManifestWitnesses，17 项 | 原生成循环/checked 算术与一个路径/profile/完整文件集见证 | 任意文件集合、所有路径或循环业务都正确 |
+| Manifest，4 项 | 任意错误格式版本首拒绝；原 capture 的 sequence 改变时先拒绝，不依赖其它 profile/文件合法；一盘完整清单接受且总长 3；同一 capture pair 合同 | 实际捕获、完整 profile 合法域、兼容性、持久发布或恢复资格 |
+
+正常 manifest 见证使用可表示路径 `r`、一个 rootfs drive、state/memory/disk 三个文件各长 1、
+32 字节零摘要；这是合法同步守卫输入，不是可恢复的物理快照。
+
+三个真实 Rust 错误版分别允许同代 Resume、只比较操作 key、跳过原 capture 绑定。
+正确版与错误版使用同一个独立 Model 合同，分别给出错误接受见证和合同否定；
+编译/导入失败不能作为反例。第三种修改使原工具生成 loop0/loop1：
+绑定不匹配的实际分支调用 loop0，私有辅助证明只更换六处真实 helper 引用，
+不改错误 Rust、生成实现或 Model；原/新证明摘要随组件记录保存。
+每个错误版有两项反例目标，manifest 视图还保留原 23 项辅助目标，不能因公共根未导入而省略。
+
+生产字段/codec 的原普通组件记录包含 88 项测试（无失败/忽略，20.519539 秒），
+三份错误 Rust 实际新编译后均被原测试同一断言拒绝（6.387291 秒）。
+这些原始记录按精确 Rust/测试输入核对，不能替代新候选的脚本检查、形式组件或完整共享验收。
+[复现入口](../verification/experiments/stage1-protocol/README.md)保留原工具重新生成、
+完整 IR/生成物比较、所有实际文件内核/原服务诊断、准确审计和真实错误版；
+源码恢复、单次 run_code 或裸 success 标记均不能代替该入口。
+
+新增 [ReplayContract](../SandboxModel/Lifecycle/Protocol/ReplayContract.lean) 与
+[ReplayEquality](../SandboxModel/Lifecycle/Protocol/ReplayEquality.lean) 把上述固定 pair 扩展为
+任意两请求的完整值相等：`replay_complete` 总返回 `.ok (decide (request = original))`，
+并给出接受/拒绝充要条件。覆盖 binding 的版本、节点、session、完整 key、expected，
+以及 Create/Unload/Resume/Destroy 的全部字段；Create 的 options 比较包括长度和每个字节，
+摘要比较包括全部 32 字节。它对所有生成值成立，不以请求预先合法为前提，
+但不证明 serde 表示、请求守卫、鉴权、持久账本或跨重启重放。
+
+本扩展的 Rust 输入来自依赖组合 `1c5a085c5df53bdc456c492ff79f9a4488d00e6c`，
+未修改生产 Rust。新增[局部复现入口](../verification/experiments/stage1-protocol/replay_formal.py)
+在独立源码/构建目录内用固定原工具重新抽取两版，保留完整 LLBC 和原样生成文件；
+正确版 15 项审计、key-only 错误版 2 项审计使用逐字节相同的 `FullReplayContract`。
+错误版由原 `negative_native.py` 登记的唯一 Rust 修改生成，形式反例明确否定同一通用合同。
+实际文件经过内核及标准服务完整非陈旧诊断，源码、模型、生成物和日志摘要在局部回执记录。
+此入口只报告局部形式检查：本批未取得 ning 普通检查和原生错误版回执，
+共享 `verify-controller.sh` 仍因原冻结输入与当前候选不同而失败；
+未刷新原 `frozen.json` 或共享输入摘要，也未完成共享模块登记和整套验收。
+仓库保留的旧生成物仍属原冻结版本；上述新候选的对应检查以局部入口的新生成环境为准。
+
+在全文相等扩展之上，[ValidationModel](../SandboxModel/Lifecycle/Protocol/ValidationModel.lean)
+独立规定纯请求守卫的接受条件和六类首错，仅读取生成类型，不导入生成函数。
+Create 复用原 `Foundations.CreatePlan.valid`；[Validation](../SandboxModel/Lifecycle/Protocol/Validation.lean)
+的 12 项审计连接本次真实生成体，证明完整返回值、成功充要条件、每种首错充要条件和总返回。
+版本→完整节点→deployment→期望类别→操作形状的优先级保持；Create 包括资源正值、单实例、
+非空且至多 65536 字节的 options、期限关系与 checked_add 不溢出，Resume 要求严格更大目标代。
+[ValidationExamples](../SandboxModel/Lifecycle/Protocol/ValidationExamples.lean) 另给出四种操作的正常接受见证。
+
+本扩展仍使用 `1c5a085c` 的同一生产 Rust，未增加协议功能；实际 same-incarnation Rust 变体
+把 `<=` 改成 `<`，错误接受同代请求，两个形式反例目标明确否定同一个 `FullValidationContract`。
+局部入口的 `--property validation` 从当前源码重新抽取两版，检查 31 份实际文件、33 项审计，
+其中 15 项是本证明直接复用的全文相等辅助/定理，新增正确版 16 项、错误版 2 项；
+原默认 replay 模式也重新验证。实际结果以精确输入回执为准，不把重复审计计为新增覆盖。
+此结论只刻画已解码、已表示值上的纯守卫，不证明角色构造器/serde、认证 owner、
+账本期望版本确实成立、模板/options 可信装配、资源预留或任何 VM 动作已获授权。
+宁侧普通与原生错误版回执、共享冻结迁移/登记及完整验收的缺口仍保持；未刷新旧摘要。
+
+Request 的两个、Manifest 的七个外部函数按[逐符号 A6 登记](formal/dependencies.md)使用。
+新增 `str::as_bytes = .ok value` 要求有效 Rust str 在原借用内提供完整原序只读 UTF-8 字节；
+标准库与模型符合仍是显式条件，不是库实现已证。正常分配/普通值限制保留；
+OOM/abort、资源 Drop、unwind 和 async shell 未覆盖。
+
+新 codec 的实际 serde_json/有界 Writer 调用及自有预算/首错顺序已有普通测试，
+其完整生成体/字节接线尚未由本组件证明，不把整段自有代码设为 B4。
+认证 owner、原 capture 操作、当前 Resume 键、账本版本和受保护 profile、
+原句柄/哈希/截面/同步、claim/pin/激活资格仍由各实际业务提供。
+三个生成环境按既有独立审计模式检查；公共消费者只导入纯 Model，
+没有同时导入全部生成类型，也没有接通本批的完整共享验收。
+T1/T2/V0、完整 V3 及系统闭环均未因此闭合。
 
 ## 三项公共组件的组合范围：#626、#628、#630
 
@@ -15,9 +403,9 @@
 
 本批全局入口只共同导入可兼容模块；目录判断错误版和正确版保持独立生成环境，全部实际对应和反例进入原形式任务。保留集合登记新增61个唯一审计目标；最终数量及实际执行/复用以同一候选的完整结果核对，登记数量不表示验收通过。G1/G2 尚未发布的新证明、BTreeSet contains 预检和 open_checked 失败试点均未纳入本组合。
 
-## V0 剩余义务的有限范围
+## 旧 V0 剩余义务索引（适用旧目标）
 
-当前收敛决定：先完整验收并集成 #626/#628/#630，暂不启动新接口。后续进度与逐项验收只在 [#333](https://github.com/VeriInfra-Lab/sandproof/issues/333) 维护；本节固定剩余义务的证据类别与边界，不以百分比或新增定理数量关单。来源是当前生产编译目录、D1–D11/52个共享字段位置、schema目录及25类/71个OS存储代表位置；这些有限目录仍不是已完成的语义调用图。新增用法须说明原条目为何不足，经单独认领才扩展，不能自动把未来所有Rust用法加入本轮。
+历史收敛决定及验收记录见 [#333](https://github.com/VeriInfra-Lab/sandproof/issues/333)；#626/#628/#630 已由 #631 集成。下表是调整目标前的缺口记录；本节固定剩余义务的证据类别与边界，不以百分比或新增定理数量关单。来源是当前生产编译目录、D1–D11/52个共享字段位置、schema目录及25类/71个OS存储代表位置；这些有限目录仍不是已完成的语义调用图。新增用法须说明原条目为何不足，经单独认领才扩展，不能自动把未来所有Rust用法加入本轮。
 
 | 编号/类别 | 当前尚缺的内容及已有证据 | 完成时必须能说明什么 |
 |---|---|---|
@@ -435,7 +823,7 @@ a6000 的真实 Lean 服务探索、正式模块构建、12 条实际依赖审�
 
 默认运行时的首轮全量翻译曾因内存不足终止，尚未到一致性检查。复跑只对固定 Aeneas 二进制中的 OCaml 5.2.1 设置 `OCAMLRUNPARAM=o=20`，缩小堆空间冗余；仍保留 8 GiB 硬限、原工具版本、全部抽取根和检查。全量翻译随后完成，整套入口才实际到达上述不一致失败；不把先前资源终止写成定理反例或语义检查失败。新本地类型、库接口、独立规约和历史对应定理的整体迁移仍由 #337 闭合。当前共享抽取已提供经审查的最小库模型，不使用模板公理；这不等于历史完整命名空间及所有状态机定理已迁移。新全量产物保留在忽略的实验目录，历史目录已恢复为验收前原件，未覆盖仓库历史成果或将其用于当前 Rust 背书；**整套验收未通过**。
 
-V0 与 V4 的完成条件按 [V0 模块范围](formal/00-foundations.md#范围和模块验收)分开：整套历史业务迁移留在 #337，不是 #333 的前置条件。完整入口仍执行、失败仍报告；不将独立模块通过写成整套通过。V0 的主要自有剩余项是实际身份 JSON 连接；下表同时列明已交付公共合同的邻接义务，它们不是要求 V0 重做相邻整项业务：
+V0 与 V4 的完成条件按 [V0 模块范围](formal/00-foundations.md#5-开工与完成条件)分开：整套历史业务迁移留在 #337，不是 #333 的前置条件。完整入口仍执行、失败仍报告；不将独立模块通过写成整套通过。V0 的主要自有剩余项是实际身份 JSON 连接；下表同时列明已交付公共合同的邻接义务，它们不是要求 V0 重做相邻整项业务：
 
 | V0 剩余项 | 与下游的分界 |
 |---|---|
@@ -1064,7 +1452,7 @@ V0 循环重构原样复用；本批公共身份 Lean 定义、抽取脚本、�
 
 完整 `verify-controller.sh` 的 Rust 与 V0 检查通过，原嵌套循环障碍已由复用的生产重构解除，固定 Charon/Aeneas 成功重新生成本地控制核心语义；随后因历史提交生成物与当前真实源码生成结果不一致，按原判据退出 1：`generated Rust semantics were stale; regeneration changed checked artifacts`。**整体证明验收仍未通过**，没有进入后续全核心对应证明验收。本工作区的新全核心产物已保留于忽略的实验目录，正式历史产物未覆盖；其迁移及重新对应由 #337 的适用批次负责。该阻碍不同于上节定位旧版本时的循环失败，不能用局部身份结果背书全核心。完整首链的实际处理、提交、宿主/排空、全部分支和最终完成性仍开放，不能由身份子检查推出它们。
 
-首链的真实事件清单与未解提供方统一见 [V9 第一批组合审查](formal/09-system-composition.md#41-342-第一批组合审查与责任投影模型)。FC-ID/COMMIT/EVIDENCE/DRAIN/INIT/EXTEND/IMPLEMENT 均未由本批实例化；有限重试、失败终局、期限、窗口/退休/复用、完整输入拒绝及 Rust/系统精化仍开放。`Safe` 不作为转换守卫，模型性质不是假设“实际实现服从模型”得到的实现结论；类型参数化也不是 V0 交接已完成。本批完成不关闭 #342、V1–V8 或 #101。
+首链的真实事件清单与未解提供方统一见 [V9 第一批组合审查](https://github.com/VeriInfra-Lab/sandproof/blob/56b14d642c392316043dfbdbe4d26bacc663fb30/docs/formal/09-system-composition.md#41-342-第一批组合审查与责任投影模型)。FC-ID/COMMIT/EVIDENCE/DRAIN/INIT/EXTEND/IMPLEMENT 均未由本批实例化；有限重试、失败终局、期限、窗口/退休/复用、完整输入拒绝及 Rust/系统精化仍开放。`Safe` 不作为转换守卫，模型性质不是假设“实际实现服从模型”得到的实现结论；类型参数化也不是 V0 交接已完成。本批完成不关闭 #342、V1–V8 或 #101。
 
 ## V9 Linux 生命周期回执检查
 

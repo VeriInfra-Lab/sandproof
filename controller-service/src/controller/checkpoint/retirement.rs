@@ -145,7 +145,9 @@ fn pinned(
     namespace: &str,
     sandbox: core::SandboxId,
 ) -> Result<bool, JournalError> {
-    if super::super::internal_inbox::pinned(connection, sandbox)? {
+    if super::super::internal_inbox::pinned(connection, sandbox)?
+        || super::super::lifecycle_inbox::pinned(connection, sandbox)?
+    {
         return Ok(true);
     }
     let id = super::super::identity::sandbox_id(namespace, sandbox)?;

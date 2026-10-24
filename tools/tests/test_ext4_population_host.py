@@ -413,21 +413,29 @@ def node_identity():
 
 
 def audit_fixture():
-    create = dict(protocol_version=2, node=node_identity(), tenant_id='1', sandbox_id='sandbox-7',
-                  operation_id='operation-9', intent_version=1, retention_slot=1, request_window=1)
-    current = dict(create, operation_id='operation-10', intent_version=2)
-    response = dict(identity=current, observation_version=5, fact={'kind': 'cleaned'})
-    local = dict(sandbox=41, owner=23, operation=89)  # Deliberately not GLOBAL IDs/owner.
-    context = dict(position=0, expected_previous=None,
-                   binding=dict(sandbox=41, owner=23, vm=77))
-    center = dict(schema_version=2, deployment='test-deployment',
-        versions=dict(internal_protocol=2, center_store=6, host_store=16),
-        retention_lanes=[dict(node=node_identity(), retention_slot=1, retired_through=0, last_retired=None)],
-        sandboxes=[dict(create={'identity': create}, private=True, released=True,
-            operations=[{'response': response}], terminal_confirmation=response)])
+    binding = dict(protocol_version=3, node=node_identity(), session='sandbox-7',
+        key=dict(deployment='test-deployment', owner='1', window=7, sequence=9), expected=dict(state='absent'))
+    create = dict(binding=binding, accepted_version=1, retention=dict(slot=1, window=1),
+        center=dict(deployment='test-deployment', center='center'))
+    current = copy.deepcopy(binding)
+    current['key']['sequence'] = 10
+    current['expected'] = dict(state='version', version=1)
+    response = dict(request=dict(request=dict(binding=current, operation=dict(kind='destroy')),
+        accepted_version=2, center=copy.deepcopy(create['center']), retention=dict(slot=1, window=1)), status='cleaned')
+    first = copy.deepcopy(create) | dict(operation=dict(kind='create', target_incarnation=1), terminal=None)
+    last = dict(binding=current, accepted_version=2, center=copy.deepcopy(create['center']), retention=dict(slot=1, window=1),
+        operation=dict(kind='destroy'), terminal=copy.deepcopy(response))
+    local = dict(sandbox=41, owner=23)  # Deliberately not GLOBAL IDs/owner.
+    context = dict(position=0, expected_previous=None, binding=dict(sandbox=41, owner=23, vm=77))
+    center = dict(schema_version=3, deployment='test-deployment',
+        versions=dict(internal_protocol=2, center_store=8, host_store=20),
+        retention_lanes=[dict(node=node_identity(), retention_slot=1, retired_through=0, phase='open', last_retired=None)],
+        sandboxes=[dict(create={'binding': binding}, private=True, released=True,
+            operations=[first, last], terminal_confirmation=copy.deepcopy(response))])
     host = dict(schema_version=2, versions=copy.deepcopy(center['versions']), node=node_identity(),
-        lanes=[dict(retention_slot=1, retired_through=0, last_retired=None)],
-        operations=[dict(identity=current, current=True, local=local, response=response, confirmed=response)],
+        retention_lanes=[dict(slot=1, retired_through=0, current_window=1, last_retired=None)],
+        operations=[dict(binding=current, accepted_version=2, current=True, local=local,
+            local_operation=89, terminal=True, confirmed_terminal=copy.deepcopy(response))],
         host_slots=[[context, 'Free']],
         native=[dict(sandbox=41, owner=23, phase='Destroyed', terminal=True, current_vm=None,
                      resources=dict(vms=[], slots=[], snapshots=[]))])
@@ -447,7 +455,7 @@ class CheckedMappingAndCleanupTests(unittest.TestCase):
             if mutate == 'generation':
                 h['node']['node_generation'] = 2
             elif mutate == 'owner':
-                c['sandboxes'][0]['create']['identity']['tenant_id'] = '2'
+                c['sandboxes'][0]['create']['binding']['key']['owner'] = '2'
             elif mutate == 'private':
                 c['sandboxes'][0]['private'] = False
             elif mutate == 'local':
@@ -463,7 +471,7 @@ class CheckedMappingAndCleanupTests(unittest.TestCase):
         for mutate in ('unconfirmed', 'missing', 'live', 'resource', 'context', 'occupied'):
             c, h = copy.deepcopy(center), copy.deepcopy(host)
             if mutate == 'unconfirmed':
-                h['operations'][0]['confirmed'] = None
+                h['operations'][0]['confirmed_terminal'] = None
             elif mutate == 'missing':
                 c['sandboxes'] = []
                 h['native'] = []
@@ -480,14 +488,14 @@ class CheckedMappingAndCleanupTests(unittest.TestCase):
 
     def test_exact_both_authority_stamps_allow_retired_records_not_plain_absence(self):
         center, host, identity = audit_fixture()
-        stamp = copy.deepcopy(host['operations'][0]['response'])
+        stamp = copy.deepcopy(host['operations'][0]['confirmed_terminal'])
         center['sandboxes'], host['operations'], host['native'] = [], [], []
-        for lanes in (center['retention_lanes'], host['lanes']):
+        for lanes in (center['retention_lanes'], host['retention_lanes']):
             lanes[0].update(retired_through=1, last_retired=copy.deepcopy(stamp))
         self.assertEqual(probe.controller_cleanup(center, host, identity)['terminal_status'],
                          'retired_terminal_slot')
-        host['lanes'][0]['retired_through'] = 0
-        host['lanes'][0]['last_retired'] = None
+        host['retention_lanes'][0]['retired_through'] = 0
+        host['retention_lanes'][0]['last_retired'] = None
         with self.assertRaises(ValueError):
             probe.controller_cleanup(center, host, identity)
 

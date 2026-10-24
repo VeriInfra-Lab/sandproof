@@ -55,7 +55,7 @@ async fn get_list_and_routing_confirm_exactly_once_independent_of_page_size() {
         let route = application
             .resolve_data_route(session["envdAccessToken"].as_str().unwrap())
             .unwrap();
-        assert_eq!(route.request.identity.sandbox_id.as_str(), sandbox);
+        assert_eq!(route.identity.session.as_protocol_id().as_str(), sandbox);
         assert_eq!(revision(&fixture) - before, 1);
         assert_eq!(
             send(
