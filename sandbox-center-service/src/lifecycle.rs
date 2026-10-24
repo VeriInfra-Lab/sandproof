@@ -165,6 +165,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         if phase == SessionPhase::Unloaded {
             return self.query_unloaded(owner, session);
         }
+        if phase == SessionPhase::Running
+            && matches!(intent.request.operation, LifecycleOperation::Unload { .. })
+        {
+            return self.query_continued(owner, session, intent);
+        }
         if matches!(
             phase,
             SessionPhase::Resuming | SessionPhase::Running | SessionPhase::Renewing

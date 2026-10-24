@@ -401,4 +401,10 @@ fn original_continued_result_restores_running_without_unloaded_material() {
         unreachable!()
     };
     assert_eq!(route.identity.incarnation, *source_incarnation);
+    host.ready.store(false, Ordering::SeqCst);
+    assert_eq!(app.query_lifecycle("8", &session), Err(PortError::Busy));
+    let retained = app.snapshot().unwrap();
+    assert_eq!(retained.lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap().operations().last().unwrap().unloaded().unwrap().outcome,
+        expected_outcome);
 }

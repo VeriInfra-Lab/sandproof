@@ -63,6 +63,16 @@ impl ResumeObservation {
             return false;
         }
         if self.current_request != *original {
+            if matches!(self.current_request.request.operation, LifecycleOperation::Unload { .. }) {
+                return super::observation::continued_request(original, &self.current_request)
+                    && match &self.readiness {
+                        CurrentResumeReadiness::Observed { facts } => current_facts(facts),
+                        CurrentResumeReadiness::NotRunning
+                        | CurrentResumeReadiness::Expired
+                        | CurrentResumeReadiness::Pending => true,
+                        _ => false,
+                    };
+            }
             if let LifecycleOperation::Renew {
                 incarnation,
                 end_at_ms,

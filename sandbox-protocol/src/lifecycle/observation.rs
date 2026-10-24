@@ -152,6 +152,18 @@ impl CreateObservation {
                     && current.key != requested.key);
         }
         if self.current_request != *original {
+            if matches!(self.current_request.request.operation, LifecycleOperation::Unload { .. }) {
+                return continued_request(original, &self.current_request)
+                    && match &self.readiness {
+                        CurrentCreateReadiness::Observed { facts } => {
+                            self.historical_create_succeeded && continued_facts(facts)
+                        }
+                        CurrentCreateReadiness::NotRunning
+                        | CurrentCreateReadiness::Expired
+                        | CurrentCreateReadiness::Pending => true,
+                        _ => false,
+                    };
+            }
             if matches!(
                 self.current_request.request.operation,
                 LifecycleOperation::Renew { .. }
@@ -193,3 +205,28 @@ impl CreateObservation {
 #[cfg(test)]
 #[path = "observation_tests.rs"]
 mod tests;
+
+
+// Shape only: both authorities must independently retain OriginalContinued.
+pub(super) fn continued_request(origin: &AcceptedLifecycleIntent, current: &AcceptedLifecycleIntent) -> bool {
+    let target = match origin.request.operation {
+        LifecycleOperation::Create { target_incarnation, .. }
+        | LifecycleOperation::Resume { target_incarnation, .. } => target_incarnation,
+        _ => return false,
+    };
+    let LifecycleOperation::Unload { source_incarnation, .. } = current.request.operation else {
+        return false;
+    };
+    target == source_incarnation
+        && current.accepted_version > origin.accepted_version
+        && current.request.binding.key != origin.request.binding.key
+        && current.accepted_version_for_request() == Some(current.accepted_version)
+        && origin.accepted_version_for_request() == Some(origin.accepted_version)
+}
+
+pub(super) fn continued_facts(facts: &CurrentReadyFacts) -> bool {
+    facts.started_at_ms <= facts.startup_deadline_ms
+        && facts.started_at_ms <= facts.observed_at_ms
+        && facts.observed_at_ms < facts.end_at_ms
+        && facts.end_at_ms <= facts.max_end_at_ms
+}
