@@ -20,6 +20,8 @@ pub struct ProtectedCaptureSettings {
     pub memory_copy_bytes: u64,
     pub disk_copy_bytes: u64,
     pub api_timeout_ms: u64,
+    /// Whole helper exchange deadline, separate from the Firecracker API call.
+    pub worker_timeout_ms: u64,
 }
 impl ProtectedCaptureSettings {
     pub(super) fn validate(&self) -> NodeResult<()> {
@@ -33,6 +35,7 @@ impl ProtectedCaptureSettings {
             || i64::try_from(self.memory_copy_bytes).is_err()
             || i64::try_from(self.disk_copy_bytes).is_err()
             || !(1000..=300_000).contains(&self.api_timeout_ms)
+            || !(self.api_timeout_ms..=300_000).contains(&self.worker_timeout_ms)
         {
             return Err("unsupported protected Full copy/read settings".into());
         }
@@ -51,6 +54,7 @@ pub(crate) struct ProtectedCaptureProfile {
     pub(super) memory_max: u64,
     pub(super) disk_bytes: u64,
     pub(super) api_timeout: Duration,
+    pub(super) worker_timeout: Duration,
 }
 impl ProtectedCaptureProfile {
     pub(crate) fn assemble(
@@ -76,6 +80,7 @@ impl ProtectedCaptureProfile {
             memory_max: settings.memory_copy_bytes,
             disk_bytes: settings.disk_copy_bytes,
             api_timeout: Duration::from_millis(settings.api_timeout_ms),
+            worker_timeout: Duration::from_millis(settings.worker_timeout_ms),
         })
     }
     pub(super) fn require_original_source(

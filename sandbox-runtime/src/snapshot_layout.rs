@@ -257,6 +257,27 @@ impl SnapshotLayout {
             .open_bundle(directory_key, limits)
     }
 
+    /// Persist one bounded physical worker completion under this original layout.
+    /// This does not adopt materials or grant Stop/Free permission.
+    /// # Errors
+    /// Duplicate/partial publication retains the same work and byte charge.
+    pub fn publish_capture_completion(
+        &self,
+        key: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<(), RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?
+            .publish_completion(key, bytes)
+    }
+
+    /// Read the original bounded completion, without starting or repairing Full.
+    /// # Errors
+    /// Missing, altered, foreign or incomplete records remain unknown.
+    pub fn read_capture_completion(&self, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?
+            .read_completion(key)
+    }
+
     pub(crate) fn store_for_runtime(&self, path: &Path) -> Result<SnapshotStore, RuntimeError> {
         if path != self.runtime_root() {
             return Err(error("runtime root differs from original layout"));

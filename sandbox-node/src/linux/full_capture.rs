@@ -139,6 +139,7 @@ impl LinuxWorker {
             memory_bytes,
             disk_bytes: profile.disk_bytes,
             api_timeout_ms: u64::try_from(profile.api_timeout.as_millis())?,
+            worker_timeout_ms: u64::try_from(profile.worker_timeout.as_millis())?,
         };
         if !request.valid() {
             return Err("independent Full request is invalid".into());
@@ -237,6 +238,233 @@ impl LinuxWorker {
                 layout_binding: profile.layout_binding,
             },
         )
+    }
+
+    pub(crate) fn observe_capture_commit(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        action: &WorkAction<core::EffectId>,
+        full: &FullCaptureWorkRequest,
+        source: &SourceObservationRequirement,
+        expected: &CommittedCaptureExpectation,
+    ) -> NodeResult<super::HostObservation> {
+        self.validate_action(action)?;
+        let seal = expected.seal_action();
+        self.require_full_action(seal, full)?;
+        require_source_binding(&full.pause, source)?;
+        if expected.work() != full
+            || action.identity.owner != seal.identity.owner
+            || action.identity.sandbox != seal.identity.sandbox
+            || action.identity.operation != seal.identity.operation
+            || action.identity.epoch != seal.identity.epoch
+            || action.identity.generation != seal.identity.generation
+        {
+            return Err("Commit differs from original durably completed Full".into());
+        }
+        let core::Command::SealSnapshot {
+            sandbox,
+            epoch,
+            generation,
+            snapshot,
+            manifest,
+            ..
+        } = seal.command.command()
+        else {
+            return Err("original saved material action is not SealSnapshot".into());
+        };
+        if action.command.command()
+            != &(core::Command::CommitSnapshot {
+                sandbox: *sandbox,
+                epoch: *epoch,
+                generation: *generation,
+                snapshot: *snapshot,
+                manifest: *manifest,
+            })
+        {
+            return Err("Commit does not name the complete original Seal command".into());
+        }
+        let context = self.original_source_context(&source.resource)?;
+        let slot = self.runtime_host_slot(context.position, context.binding.vm)?;
+        let _gate = slot.helper_gate.try_acquire(Some(&slot))?;
+        provider.observe_original(
+            &source.node,
+            &source.host_bootstrap,
+            self.host_bootstrap_inputs(),
+        )?;
+        let stored = observe_committed_capture(profile, expected)?;
+        let material_bytes = stored
+            .manifest()
+            .files
+            .iter()
+            .try_fold(0_u64, |n, f| n.checked_add(f.length))
+            .filter(|n| *n > 0)
+            .ok_or("invalid actual material length sum")?;
+        self.require_full_action(seal, full)?;
+        if self.original_source_context(&source.resource)? != context {
+            return Err("source changed during material registration observation".into());
+        }
+        Ok(super::HostObservation {
+            resource: action.identity.resource.clone(),
+            command: action.command.command().clone(),
+            result: super::ObservedResult::SnapshotCommitted {
+                manifest_digest: ContentDigest::from_sha256(stored.manifest_sha256()),
+                material_bytes,
+            },
+        })
+    }
+
+    pub(crate) fn execute_prepared_full_capture(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        prepared: super::capture_worker::PreparedCaptureWorker,
+        permit: sandproof_controller_service::capture::FullCaptureLaunchPermit,
+    ) -> sandproof_controller_service::capture::FullCaptureResult<super::HostObservation> {
+        use sandproof_controller_service::capture::FullCaptureResult;
+        let action = permit.action().clone();
+        match self.release_prepared_full_capture(provider, profile, prepared, permit) {
+            Ok(stored) => {
+                let Some(material_bytes) = stored
+                    .manifest()
+                    .files
+                    .iter()
+                    .try_fold(0_u64, |total, file| total.checked_add(file.length))
+                else {
+                    return FullCaptureResult::UnknownCapture;
+                };
+                if material_bytes == 0 {
+                    return FullCaptureResult::UnknownCapture;
+                }
+                FullCaptureResult::Captured(sandproof_protocol::WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
+                        super::HostObservation {
+                            resource: action.identity.resource.clone(),
+                            command: action.command.command().clone(),
+                            result: super::ObservedResult::SnapshotSealed {
+                                manifest_digest: ContentDigest::from_sha256(
+                                    stored.manifest_sha256(),
+                                ),
+                                material_bytes,
+                            },
+                        },
+                    ),
+                })
+            }
+            Err(_) => FullCaptureResult::UnknownCapture,
+        }
+    }
+
+    pub(crate) fn release_prepared_full_capture(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        prepared: super::capture_worker::PreparedCaptureWorker,
+        permit: sandproof_controller_service::capture::FullCaptureLaunchPermit,
+    ) -> NodeResult<CheckedStoredCapture> {
+        self.require_full_action(&prepared.job.action, &prepared.job.full)?;
+        let expected = self.prepare_full_capture(
+            provider,
+            profile,
+            &prepared.job.full.pause,
+            &prepared.job.source,
+        )?;
+        require_expected_request(&prepared.job.full, &expected)?;
+        let worker = prepared.worker_binding()?;
+        prepared.release_and_read(permit, |job, manifest| {
+            // Read the actual original bundle under the SAME retained gate.
+            // This is material observation, not durable adoption or new access.
+            let stored = self.observe_full_capture(
+                provider,
+                profile,
+                &job.full,
+                &job.source,
+                Some(*manifest.as_bytes()),
+            )?;
+            let completion = super::capture_worker::read_completion(
+                &profile.layout,
+                &job.action,
+                &job.full,
+                &job.source,
+                &worker,
+            )?;
+            let bytes = stored
+                .manifest()
+                .files
+                .iter()
+                .try_fold(0_u64, |n, f| n.checked_add(f.length))
+                .ok_or("material length overflow")?;
+            if completion.manifest_digest != manifest || completion.material_bytes != bytes {
+                return Err("worker completion differs from actual published material".into());
+            }
+            self.require_full_action(&job.action, &job.full)?;
+            Ok(stored)
+        })
+    }
+
+    pub(crate) fn recover_completed_full(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        action: &WorkAction<core::EffectId>,
+        full: &FullCaptureWorkRequest,
+        source: &SourceObservationRequirement,
+        worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
+    ) -> NodeResult<super::HostObservation> {
+        let context = self.require_full_action(action, full)?;
+        require_source_binding(&full.pause, source)?;
+        provider.observe_original(
+            &source.node,
+            &source.host_bootstrap,
+            self.host_bootstrap_inputs(),
+        )?;
+        let process = RuntimeProcessIdentity {
+            pid: worker.process().pid,
+            start_time_ticks: worker.process().start_time_ticks,
+            boot_id: worker.process().boot_id.clone(),
+        };
+        if process.boot_id != source.source.boot_id || process.is_alive()? {
+            return Err("original Full worker exit not confirmed on this boot".into());
+        }
+        let slot = self.runtime_host_slot(context.position, context.binding.vm)?;
+        let _gate = slot.helper_gate.try_acquire(Some(&slot))?;
+        let completion =
+            super::capture_worker::read_completion(&profile.layout, action, full, source, worker)?;
+        let runtime = self.runtime(context.binding.sandbox, context.binding.vm)?;
+        let original = crate::source_observation::expected_source(source)?;
+        if !matches!(
+            runtime.observe_original_pause_state(source.resource.id.as_str(), &original)?,
+            OriginalPauseObservation::Paused(_)
+        ) {
+            return Err("completed Full original source no longer paused".into());
+        }
+        let stored = self.observe_full_capture(
+            provider,
+            profile,
+            full,
+            source,
+            Some(*completion.manifest_digest.as_bytes()),
+        )?;
+        let bytes = stored
+            .manifest()
+            .files
+            .iter()
+            .try_fold(0_u64, |n, f| n.checked_add(f.length))
+            .filter(|n| *n > 0)
+            .ok_or("invalid completed material length sum")?;
+        if completion.material_bytes != bytes || self.require_full_action(action, full)? != context
+        {
+            return Err("completed Full material or original context differs".into());
+        }
+        Ok(super::HostObservation {
+            resource: action.identity.resource.clone(),
+            command: action.command.command().clone(),
+            result: super::ObservedResult::SnapshotSealed {
+                manifest_digest: completion.manifest_digest,
+                material_bytes: bytes,
+            },
+        })
     }
 
     pub(crate) fn capture_original(

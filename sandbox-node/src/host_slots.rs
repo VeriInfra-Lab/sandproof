@@ -977,6 +977,58 @@ impl LinuxWorker {
     /// # Errors
     /// Refuses foreign resources, live VMs and unobservable exact cleanup.
     pub fn release_host_slot(&self, context: &HostSlotContext) -> NodeResult<()> {
+        self.release_host_slot_mode(context, None)
+    }
+
+    pub(crate) fn release_unload_host_slot(
+        &self,
+        context: &HostSlotContext,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        seal: &sandproof_protocol::WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        super::capture::require_source_binding(&full.pause, source)?;
+        self.validate_action(seal)?;
+        let core::Command::SealSnapshot {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+            ..
+        } = seal.command.command()
+        else {
+            return Err("Unload release has no original SealSnapshot".into());
+        };
+        if context.binding.sandbox != *sandbox
+            || context.binding.generation != *generation
+            || context.binding.vm != *vm
+        {
+            return Err("Unload release differs from original captured incarnation".into());
+        }
+        let row = self
+            .read_host_positions()?
+            .into_iter()
+            .find(|row| row.context.position == context.position)
+            .ok_or("missing original Unload position")?;
+        if row.context != *context {
+            return Err("original Unload position changed".into());
+        }
+        if row.phase == HostSlotPhase::Occupied {
+            self.require_fence(*sandbox, *epoch, false)?;
+            let runtime = self.runtime(*sandbox, *vm)?;
+            let original = crate::source_observation::expected_source(source)?;
+            runtime.observe_original_stopped(source.resource.id.as_str(), &original)?;
+        }
+        // Releasing/Free replay uses the original persisted retirement record;
+        // it cannot require deleted source claims or relaunch the old VM.
+        self.release_host_slot_mode(context, Some(*epoch))
+    }
+
+    fn release_host_slot_mode(
+        &self,
+        context: &HostSlotContext,
+        unload_epoch: Option<core::Epoch>,
+    ) -> NodeResult<()> {
         let mut row = self
             .read_host_positions()?
             .into_iter()
@@ -993,7 +1045,7 @@ impl LinuxWorker {
         }
         if row.phase == HostSlotPhase::Occupied {
             let binding = context.binding;
-            row.retirement = Some(self.capture_retirement(context)?);
+            row.retirement = Some(self.capture_retirement(context, unload_epoch)?);
             row.phase = reduce_slot(
                 Some(row.record()),
                 SlotInput::BeginRelease {
@@ -1042,12 +1094,19 @@ impl LinuxWorker {
         )
     }
 
-    fn capture_retirement(&self, context: &HostSlotContext) -> NodeResult<NodeRetirement> {
+    fn capture_retirement(
+        &self,
+        context: &HostSlotContext,
+        unload_epoch: Option<core::Epoch>,
+    ) -> NodeResult<NodeRetirement> {
         let binding = context.binding;
         for path in self.retirement_paths(binding) {
             node_staging::cleanup(&self.config, &path)?;
         }
-        if self.fence_path(binding.sandbox).try_exists()? && !self.fence(binding.sandbox)?.terminal
+        if let Some(epoch) = unload_epoch {
+            self.require_fence(binding.sandbox, epoch, false)?;
+        } else if self.fence_path(binding.sandbox).try_exists()?
+            && !self.fence(binding.sandbox)?.terminal
         {
             return Err("host release requires terminal fence".into());
         }

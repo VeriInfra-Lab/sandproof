@@ -105,6 +105,14 @@ pub(super) fn evidence_matches(observation: &HostObservation, command: &core::Co
                 disk_inode: namespace_inode,
             },
         ) => *namespace_inode != 0,
+        (
+            core::Command::SealSnapshot { .. },
+            ObservedResult::SnapshotSealed { material_bytes, .. },
+        )
+        | (
+            core::Command::CommitSnapshot { .. },
+            ObservedResult::SnapshotCommitted { material_bytes, .. },
+        ) => *material_bytes > 0,
         (core::Command::CleanupVm { .. }, ObservedResult::VmCleaned)
         | (core::Command::CleanupSlot { .. }, ObservedResult::SlotClosed)
         | (core::Command::AbortPrepare { .. }, ObservedResult::PrepareAborted) => true,
@@ -127,14 +135,12 @@ pub(super) fn command_resource(
         core::Command::ConfigureNetwork { slot, .. } | core::Command::CleanupSlot { slot, .. } => {
             (ResourceKind::NetworkSlot, "slot", slot.0)
         }
-        core::Command::SealSnapshot { snapshot, .. } => {
+        core::Command::SealSnapshot { snapshot, .. }
+        | core::Command::CommitSnapshot { snapshot, .. } => {
             (ResourceKind::Snapshot, "snapshot", snapshot.0)
         }
         core::Command::ApplyFilePolicy { workspace, .. } => {
             (ResourceKind::Workspace, "fs", workspace.0)
-        }
-        core::Command::CommitSnapshot { .. } => {
-            return Err("unsupported host resource command".into());
         }
     };
     Ok(ResourceRef {
