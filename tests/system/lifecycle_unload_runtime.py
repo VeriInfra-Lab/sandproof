@@ -120,6 +120,27 @@ def validate_restore_gate(record, expected, run_identity):
     return record
 
 
+def original_unload_operation(audit, acceptance, unloaded):
+    """Read the original center history at the existing manager restart."""
+    sessions=[row for row in audit['sandboxes']
+        if row['create']['binding']['session']==acceptance['session']]
+    if len(sessions)!=1:
+        raise ValueError('one original public session required after duplicate delivery')
+    operations=sessions[0]['operations']
+    matches=[row for session in audit['sandboxes'] for row in session['operations']
+        if row['binding']['key']==acceptance['key']]
+    if (len(matches)!=1 or len(operations)!=2
+            or [row['operation']['kind'] for row in operations]!=['create','unload']
+            or matches[0]['binding']['session']!=acceptance['session']
+            or matches[0]['accepted_version']!=acceptance['accepted_version']
+            or matches[0]['operation']['capture']!=unloaded['unloaded']['capture']
+            or matches[0]['operation']['source_incarnation']!=unloaded['unloaded']['source_incarnation']):
+        raise ValueError('duplicate delivery produced a different/additional original operation')
+    return dict(session=acceptance['session'],key=acceptance['key'],
+        accepted_version=acceptance['accepted_version'],matching_operations=1,
+        original_session_operations=2,capture=matches[0]['operation']['capture'])
+
+
 def assert_same_restore_candidate(running, receipt):
     """E7 requires the gate's host candidate, independently of guest RNG state."""
     if (type(running) is not dict or type(receipt) is not dict
@@ -404,6 +425,7 @@ class UnloadRuntime:
                 material_bytes=captured['material_bytes'],**lifetime)
             self.physical_complete=True
             return dict(facts=facts,original_source_exited=True,original_helper_exited=True,
+                original_capture_responsibilities=len(records),
                 original_position=copy.deepcopy(self.running['context']),position_phase='Free',**physical)
         return self._host_snapshot(session,deadline,observe)
 
@@ -604,12 +626,17 @@ class UnloadRuntime:
             self.services.processes.start('center')
             self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
 
-    def restart_managers(self,deadline):
+    def restart_managers(self,deadline,*,original_unload=None):
         remaining(deadline)
         before=self.services.processes.observe()
         redis=self.services.processes.children['redis']
         self.services.processes.stop('center')
         self.services.processes.stop('host-0')
+        operation_evidence=None
+        if original_unload is not None:
+            acceptance,unloaded=original_unload
+            operation_evidence=original_unload_operation(
+                self.services.processes.audit('center'),acceptance,unloaded)
         for name in ('center','host-0'):
             role=self.services.processes.bindings[name]
             if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs[name]:
@@ -623,7 +650,8 @@ class UnloadRuntime:
             raise ValueError('original Redis process changed during manager restart')
         if any(before[name]['pid']==after[name]['pid'] for name in ('center','host-0')):
             raise ValueError('both original manager children must have exited and restarted')
-        return dict(before=before,after=after,original_configs=self.configs,redis_preserved=True)
+        return dict(before=before,after=after,original_configs=self.configs,redis_preserved=True,
+            original_unload_operation=operation_evidence)
 
     def finish(self,report):
         # Only product GC and original accounting success permit stopping

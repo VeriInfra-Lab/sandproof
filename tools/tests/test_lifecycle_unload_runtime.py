@@ -130,7 +130,7 @@ class ScenarioDiagnosticsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             runner=SimpleNamespace(root=root, services=object(), owner_key='API_SECRET',
-                foreign_key='FOREIGN_SECRET', finish=Mock())
+                foreign_key='FOREIGN_SECRET', finish=Mock(),measurement_identity=lambda:{})
             error=AssertionError('BODY_SECRET API_SECRET TOKEN_SECRET')
             args=SimpleNamespace(scenario_timeout=60)
             module=SimpleNamespace(prepare=lambda _args:runner)
@@ -193,6 +193,35 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
         first,second=self.client(),self.client('2')
         self.assertNotEqual(first.key(1),second.key(1))
         self.assertEqual(second.key(1)['owner'],'2')
+
+    def test_concurrent_unload_uses_one_original_key_and_two_identical_bodies(self):
+        client=self.client()
+        calls=[]
+        def accepted(method,path,*,key,body,status):
+            calls.append((method,path,key,dict(body),status))
+            return dict(session=client.session,key=client.key(body['sequence']),
+                accepted_version=body['expected_version']+1)
+        with patch.object(client,'read_json',side_effect=accepted):
+            client.unload(self.view(client,'running'),concurrent_duplicate=True)
+        self.assertEqual(len(calls),2)
+        self.assertEqual(calls[0],calls[1])
+        self.assertEqual(calls[0][3],dict(window=1,sequence=2,expected_version=1))
+        self.assertEqual(client.sequence,2)
+        self.assertEqual(len(client.timings),1)
+        self.assertEqual(client.concurrent_unload_replies,[client.unload_acceptance]*2)
+
+    def test_concurrent_reply_disagreement_is_not_retried_or_newly_accepted(self):
+        client=self.client()
+        before=client.current_acceptance.copy()
+        replies=[dict(session=client.session,key=client.key(2),accepted_version=value)
+            for value in (2,3)]
+        with patch.object(client,'read_json',side_effect=replies) as send:
+            with self.assertRaises(AssertionError):
+                client.unload(self.view(client,'running'),concurrent_duplicate=True)
+        self.assertEqual(send.call_count,2)
+        self.assertEqual(client.current_acceptance,before)
+        self.assertEqual(client.sequence,2)
+        self.assertIsNone(client.timings[0]['accepted_monotonic'])
 
     def test_uncertain_resume_does_not_retry_or_allocate_a_replacement_key(self):
         client=self.client()
@@ -263,6 +292,31 @@ class RestoreGateBindingTests(unittest.TestCase):
         with self.assertRaises(ValueError):runtime.assert_same_restore_candidate(None,receipt)
         changed=dict(running);changed.pop('namespace')
         with self.assertRaises(ValueError):runtime.assert_same_restore_candidate(changed,receipt)
+
+
+class DuplicateUnloadHistoryTests(unittest.TestCase):
+    def test_original_history_has_one_business_operation_and_exact_capture(self):
+        key=dict(deployment='deployment',owner='1',window=1,sequence=2)
+        acceptance=dict(session='session',key=key,accepted_version=2)
+        binding=dict(session='session',key=key)
+        unload=dict(binding=binding,accepted_version=2,
+            operation=dict(kind='unload',source_incarnation=1,capture=1))
+        operations=[dict(binding=dict(session='session',key=dict(key,sequence=1)),
+            operation=dict(kind='create')),unload]
+        audit=dict(sandboxes=[dict(create=dict(binding=dict(session='session')),operations=operations)])
+        saved=dict(unloaded=dict(capture=1,source_incarnation=1))
+        result=runtime.original_unload_operation(audit,acceptance,saved)
+        self.assertEqual(result['matching_operations'],1)
+        self.assertEqual(result['original_session_operations'],2)
+        import copy
+        duplicate=copy.deepcopy(audit)
+        duplicate['sandboxes'][0]['operations'].append(copy.deepcopy(unload))
+        with self.assertRaises(ValueError):runtime.original_unload_operation(duplicate,acceptance,saved)
+        for key,value in (('capture',2),('source_incarnation',2)):
+            changed=copy.deepcopy(audit)
+            changed['sandboxes'][0]['operations'][1]['operation'][key]=value
+            with self.subTest(field=key),self.assertRaises(ValueError):
+                runtime.original_unload_operation(changed,acceptance,saved)
 
 
 class LifecycleTimingTests(unittest.TestCase):

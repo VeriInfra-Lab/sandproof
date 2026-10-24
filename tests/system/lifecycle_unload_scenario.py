@@ -12,6 +12,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import hashlib
 import json
@@ -20,6 +21,7 @@ import shlex
 from pathlib import Path
 import sys
 import time
+import threading
 import traceback
 import urllib.request
 from urllib.parse import urlsplit
@@ -385,7 +387,7 @@ class PublicUnloadScenario:
             assert self.call('POST', path + '/unload', key=self.foreign_key,
                              body=self.unload_request)[0] == 404
 
-    def unload(self, running):
+    def unload(self, running, *, concurrent_duplicate=False):
         self.step('unload-input')
         self.check_view(running, self.current_acceptance)
         assert running['phase'] == 'running'
@@ -394,8 +396,25 @@ class PublicUnloadScenario:
                                   expected_version=running['current_version'])
         self.step('unload-acceptance', 202)
         self.operation_sent('unload')
-        result = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
-                                body=self.unload_request, status=202)
+        if concurrent_duplicate:
+            # Two workers rendezvous immediately before the original HTTP
+            # call. This schedules duplicate delivery, not two business keys.
+            barrier=threading.Barrier(3)
+            def send():
+                barrier.wait(timeout=min(40,self.remaining()))
+                return self.read_json('POST',self.path()+'/unload',key=self.owner_key,
+                    body=copy.deepcopy(self.unload_request),status=202)
+            with ThreadPoolExecutor(max_workers=2,thread_name_prefix='same-unload-key') as executor:
+                pending=[executor.submit(send) for _ in range(2)]
+                barrier.wait(timeout=min(40,self.remaining()))
+                replies=[future.result(timeout=self.remaining()) for future in pending]
+            self.remaining()
+            assert replies[0]==replies[1], 'concurrent original unload replies differ'
+            result=replies[0]
+            self.concurrent_unload_replies=copy.deepcopy(replies)
+        else:
+            result = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
+                                    body=self.unload_request, status=202)
         self.unload_acceptance = self.acceptance(result, sequence=self.sequence,
             version=running['current_version'] + 1)
         self.current_acceptance = self.unload_acceptance
@@ -627,7 +646,11 @@ def exercise(args):
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
         report['phase'] = 'public-unload'
-        report['unload'] = client.unload(running)
+        report['unload'] = client.unload(running,concurrent_duplicate=True)
+        report['concurrent_unload']=dict(requests=2,distinct_business_keys=1,
+            same_acceptance=client.concurrent_unload_replies[0]==client.concurrent_unload_replies[1],
+            acceptance=copy.deepcopy(client.unload_acceptance),
+            send_control='two HTTP workers and coordinator rendezvous on one barrier; no sleep')
         # This checks new authorization closes at durable Unload acceptance;
         # it does not claim existing holders or physical workers have exited.
         client.assert_data_closed()
@@ -642,10 +665,16 @@ def exercise(args):
         report['before_restart'] = saved
         report['physical_before_restart'] = physical
         client.assert_original_replay(saved)
+        report['concurrent_unload'].update(terminal=copy.deepcopy(saved),
+            original_capture_responsibilities=physical['original_capture_responsibilities'],
+            altered_same_key_status=409,altered_same_key_state_unchanged=True,
+            window_expiry='not exercised: no controlled production clock in this real scenario')
         report['phase'] = 'same-manager-config-reopen'
         client.step('restart-managers')
         restart_started=time.monotonic()
-        report['manager_restart'] = runtime.restart_managers(deadline)
+        report['manager_restart'] = runtime.restart_managers(deadline,
+            original_unload=(client.unload_acceptance,saved))
+        report['concurrent_unload']['original_business_operation']=report['manager_restart']['original_unload_operation']
         restart_ready=time.monotonic()
         client.assert_reopened(saved)
         restart_query_completed=time.monotonic()
@@ -722,6 +751,7 @@ def exercise(args):
             completion_condition='original physical materials/VM absence plus zero resources, material charge and backing pins')
         report['acceptance_cases']={
             'E1':'normal RAM/disk/process continuity and actual slot reuse observed',
+            'E2':'same-key barrier duplicate and altered replay observed; expired window not exercised',
             'E12':'two owners, two sessions and two complete restore cycles observed',
             'E14':'old execution tokens rejected and new token accepted',
             'other_cases':'not claimed by this normal scenario',
