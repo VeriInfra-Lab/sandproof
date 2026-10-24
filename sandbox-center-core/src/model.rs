@@ -176,14 +176,14 @@ impl Sandbox {
     #[must_use]
     pub fn last_running(&self) -> Option<&CurrentReadyFacts> {
         let index = self.last_running_index()?;
-        self.operations.get(index)?.running.as_ref()
+        self.operations.get(index)?.running()
     }
     fn last_running_index(&self) -> Option<usize> {
         let mut index = self.operations.len();
         let mut found = None;
         while found.is_none() && index > 0 {
             index -= 1;
-            if self.operations[index].running.is_some() {
+            if self.operations[index].running().is_some() {
                 found = Some(index);
             }
         }
@@ -192,7 +192,7 @@ impl Sandbox {
     /// Only a result committed for the actual current Create/Renew can route.
     #[must_use]
     pub fn current_running(&self) -> Option<&CurrentReadyFacts> {
-        self.operations.last()?.running.as_ref()
+        self.operations.last()?.running()
     }
     #[must_use]
     pub fn created_at_ms(&self) -> Option<u64> {
@@ -356,7 +356,7 @@ impl CenterState {
                                     .len()
                                     .checked_sub(2)
                                     .and_then(|index| sandbox.operations().get(index))
-                                    .is_some_and(|previous| previous.unloaded().is_some()))
+                                    .is_some_and(|previous| previous.unloaded().and_then(|o| o.outcome.unloaded()).is_some()))
                         {
                             held.instances = 0;
                             held.cpu = 0;
