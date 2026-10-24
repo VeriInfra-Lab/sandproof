@@ -225,7 +225,9 @@ impl HostSlots for BoundedHost {
             )
             .map_err(|_| PortError::Busy)?;
             state.row = Some((current, free.phase));
-            state.secrets.remove(&(context.binding.sandbox.0, context.binding.generation));
+            state
+                .secrets
+                .remove(&(context.binding.sandbox.0, context.binding.generation));
         }
         if std::mem::take(&mut state.lose_release) {
             return Err(PortError::Busy);
@@ -349,7 +351,12 @@ impl LaunchConfiguration for BoundedHost {
         sandbox: core::SandboxId,
         generation: core::Generation,
     ) -> Result<bool, PortError> {
-        Ok(self.0.lock().unwrap().secrets.contains_key(&(sandbox.0, generation)))
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .secrets
+            .contains_key(&(sandbox.0, generation)))
     }
 
     fn token_for(

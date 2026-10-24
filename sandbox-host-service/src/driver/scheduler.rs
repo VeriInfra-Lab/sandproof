@@ -129,13 +129,11 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                         Candidate::Unload(intent) => {
                             app.advance_recorded_lifecycle_unload(&intent, &config.node)
                         }
-                        Candidate::Resume(intent) => {
-                            app.advance_recorded_lifecycle_resume(
-                                &intent,
-                                &config.node,
-                                config.compute,
-                            )
-                        }
+                        Candidate::Resume(intent) => app.advance_recorded_lifecycle_resume(
+                            &intent,
+                            &config.node,
+                            config.compute,
+                        ),
                         Candidate::Native(sandbox, _) => app.advance_current_workflow(sandbox),
                         Candidate::Renew(intent) => app
                             .apply_recorded_lifecycle_renew(&intent, &config.node)

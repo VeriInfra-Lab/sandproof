@@ -372,3 +372,31 @@ fn current_validation_and_version_guards_reject_an_otherwise_valid_later_result(
     changed.current_request.request.binding.expected = ExpectedSession::Absent;
     assert!(!changed.matches_request(&original));
 }
+
+#[test]
+fn continued_unload_observation_keeps_original_resume_without_inferred_state_loss() {
+    let original = original();
+    let mut current = original.clone();
+    current.accepted_version = 4;
+    current.request.binding.expected = ExpectedSession::Version(3);
+    current.request.binding.key.sequence = 4.try_into().unwrap();
+    current.request.operation = LifecycleOperation::Unload {
+        source_incarnation: 2.try_into().unwrap(),
+        capture: 2.try_into().unwrap(),
+    };
+    let mut view = ResumeObservation {
+        request: original.clone(),
+        current_request: current,
+        readiness: CurrentResumeReadiness::Observed { facts: ready() },
+    };
+    assert!(view.matches_request(&original));
+    view.readiness = CurrentResumeReadiness::StateLost;
+    assert!(!view.matches_request(&original));
+    view.readiness = CurrentResumeReadiness::Pending;
+    assert!(view.matches_request(&original));
+    view.current_request.request.operation = LifecycleOperation::Unload {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 2.try_into().unwrap(),
+    };
+    assert!(!view.matches_request(&original));
+}

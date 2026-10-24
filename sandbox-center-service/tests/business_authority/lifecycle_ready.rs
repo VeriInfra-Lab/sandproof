@@ -51,6 +51,7 @@ type RecordedSignal = Arc<Mutex<Option<(SessionId, mpsc::Sender<()>)>>>;
 struct Host {
     clock: Arc<Time>,
     ready: Arc<AtomicBool>,
+    observed_at_override: Arc<Mutex<Option<u64>>>,
     observations: Arc<AtomicUsize>,
     recordings: Arc<AtomicUsize>,
     blocked: Arc<Mutex<Option<Block>>>,
@@ -62,6 +63,7 @@ impl Host {
         Self {
             clock,
             ready: Arc::new(AtomicBool::new(true)),
+            observed_at_override: Arc::new(Mutex::new(None)),
             observations: Arc::new(AtomicUsize::new(0)),
             recordings: Arc::new(AtomicUsize::new(0)),
             blocked: Arc::new(Mutex::new(None)),
@@ -90,7 +92,11 @@ impl Host {
                     end_at_ms: 100 + create.timeout_ms,
                     max_end_at_ms: 100 + create.max_lifetime_ms,
                     startup_deadline_ms: create.startup_deadline_ms,
-                    observed_at_ms: self.clock.0.load(Ordering::SeqCst),
+                    observed_at_ms: self
+                        .observed_at_override
+                        .lock()
+                        .unwrap()
+                        .unwrap_or_else(|| self.clock.0.load(Ordering::SeqCst)),
                 },
             }
         } else {
@@ -98,7 +104,13 @@ impl Host {
         };
         CreateObservation {
             request: intent.clone(),
-            current_request: intent.clone(),
+            current_request: self
+                .unloaded
+                .lock()
+                .unwrap()
+                .as_ref()
+                .filter(|observation| observation.outcome.continued().is_some())
+                .map_or_else(|| intent.clone(), |observation| observation.request.clone()),
             historical_create_succeeded: true,
             readiness,
         }

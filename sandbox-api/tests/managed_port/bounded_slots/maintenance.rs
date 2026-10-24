@@ -121,7 +121,8 @@ impl LaunchConfiguration for FleetHost {
         generation: core::Generation,
         token: &str,
     ) -> Result<(), PortError> {
-        self.sandbox(sandbox)?.put_secret(sandbox, generation, token)
+        self.sandbox(sandbox)?
+            .put_secret(sandbox, generation, token)
     }
 
     fn has_secret(

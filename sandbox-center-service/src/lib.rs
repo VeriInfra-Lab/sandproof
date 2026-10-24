@@ -10,6 +10,7 @@ mod create_binding;
 #[cfg(unix)]
 mod gateway;
 mod lifecycle;
+mod lifecycle_continued;
 mod lifecycle_dispatch;
 mod lifecycle_resume;
 mod private_gate;
