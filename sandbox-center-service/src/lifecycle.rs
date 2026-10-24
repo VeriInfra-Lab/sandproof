@@ -89,10 +89,20 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             return Err(PortError::Conflict);
         }
         if self.is_resumed_execution(&current)? {
-            let observation = self.current_resume_observation_before(&current, self.reply_deadline()?)
+            let observation = self
+                .current_resume_observation_before(&current, self.reply_deadline()?)
                 .map_err(crate::lifecycle_dispatch::CurrentObservationError::into_port)?;
-            let intent = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?
-                .accept_public_resumed_unload(&owner, session, request, &observation, self.now()?)?;
+            let intent = self
+                .authority
+                .lock()
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .accept_public_resumed_unload(
+                    &owner,
+                    session,
+                    request,
+                    &observation,
+                    self.now()?,
+                )?;
             return Ok(acceptance(intent));
         }
         let observation = self.current_create_observation(&current)?;
@@ -145,8 +155,11 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         if phase == SessionPhase::Unloaded {
             return self.query_unloaded(&owner, session);
         }
-        if matches!(phase, SessionPhase::Resuming | SessionPhase::Running | SessionPhase::Renewing)
-            && self.is_resumed_execution(&intent)? {
+        if matches!(
+            phase,
+            SessionPhase::Resuming | SessionPhase::Running | SessionPhase::Renewing
+        ) && self.is_resumed_execution(&intent)?
+        {
             return self.query_resumed(&owner, session, &intent);
         }
         if matches!(
