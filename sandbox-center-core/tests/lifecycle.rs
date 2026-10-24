@@ -12,6 +12,8 @@ mod acceptance_time;
 mod refusal;
 #[path = "lifecycle/renewal_confirmation.rs"]
 mod renewal_confirmation;
+#[path = "lifecycle/resume.rs"]
+mod resume;
 #[path = "lifecycle/unloaded.rs"]
 mod unloaded;
 

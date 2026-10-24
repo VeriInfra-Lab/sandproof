@@ -1,7 +1,7 @@
 use super::*;
 use sandproof_protocol::lifecycle::{ContentDigest, UnloadObservation, UnloadedFacts};
 
-fn pending() -> (CenterState, UnloadObservation) {
+pub(super) fn pending() -> (CenterState, UnloadObservation) {
     let mut config = serde_json::to_value(state()).unwrap();
     for field in ["instances", "cpu"] {
         config["bounds"]["platform"][field] = 1.into();

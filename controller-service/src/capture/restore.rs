@@ -75,7 +75,7 @@ impl RestoreWorkRequest {
 }
 
 /// Constructed only after the original dispatch transaction has recorded the
-/// irreversible MayHaveExecuted state for this exact candidate and action.
+/// irreversible `MayHaveExecuted` state for this exact candidate and action.
 /// Losing the reply does not authorize a second load from the source bundle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RestoreActivationPermit {

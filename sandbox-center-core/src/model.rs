@@ -133,6 +133,22 @@ pub struct Sandbox {
     pub compacted_sampled_acceptance_max_ms: Option<u64>,
 }
 impl Sandbox {
+    /// The latest execution-producing operation. Historical first Create is
+    /// retained for original configuration, never substituted for this origin.
+    #[must_use]
+    pub fn current_execution_origin(&self) -> Option<&sandproof_protocol::lifecycle::AcceptedLifecycleIntent> {
+        let mut index = self.operations.len();
+        let mut found = None;
+        while found.is_none() && index > 0 {
+            index -= 1;
+            if matches!(self.operations[index].intent.request.operation,
+                LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }) {
+                found = Some(index);
+            }
+        }
+        Some(self.operations.get(found?)?.intent())
+    }
+
     #[must_use]
     pub fn terminating(&self) -> bool {
         self.operations.last().is_some_and(|operation| {
@@ -329,10 +345,15 @@ impl CenterState {
                 sum = match (&op.intent().request.operation, sum) {
                     (LifecycleOperation::Create { create, .. }, Some(total)) => {
                         let mut held = create.resources;
-                        if sandbox
-                            .operations()
-                            .iter()
-                            .any(|operation| operation.unloaded().is_some())
+                        if matches!(sandbox.phase(), crate::SessionPhase::Unloaded)
+                            || (sandbox.terminating()
+                                && sandbox
+                                    .operations()
+                                    .iter()
+                                    .rev()
+                                    .skip(1)
+                                    .next()
+                                    .is_some_and(|previous| previous.unloaded().is_some()))
                         {
                             held.instances = 0;
                             held.cpu = 0;

@@ -17,7 +17,7 @@ pub trait WorkEvidence {
 /// Execute only controller-claimed work; transport loss remains unknown.
 pub trait WorkExecution: WorkEvidence {
     /// Load paused or activate only the original durably claimed candidate.
-    /// Activation requires the permit obtained after recording MayHaveExecuted.
+    /// Activation requires the permit obtained after recording `MayHaveExecuted`.
     /// # Errors
     /// An unknown effect retains the same candidate and material obligation.
     fn execute_lifecycle_restore_action(
