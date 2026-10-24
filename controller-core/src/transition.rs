@@ -42,11 +42,13 @@ pub fn authorized(actor: &Actor, owner: TenantId) -> bool {
 
 fn insert_unique<T: Clone + PartialEq>(values: &mut Vec<T>, value: T) {
     let mut index = 0;
-    while index < values.len() {
-        if values[index] == value {
-            return;
-        }
+    let mut found = false;
+    while index < values.len() && !found {
+        found = values[index] == value;
         index += 1;
+    }
+    if found {
+        return;
     }
     let mut updated = Vec::new();
     updated.push(value);
@@ -669,6 +671,41 @@ mod tests {
         assert_eq!(
             reserve_pause_snapshot(&snapshot_world, plan.key, &plan, VmId(8)),
             None
+        );
+    }
+
+    #[test]
+    fn insertion_stops_at_first_equal_element_and_preserves_prepend_order() {
+        use std::{cell::RefCell, rc::Rc};
+        #[derive(Clone)]
+        struct Compared {
+            value: u64,
+            visited: Rc<RefCell<Vec<u64>>>,
+        }
+        impl PartialEq for Compared {
+            fn eq(&self, other: &Self) -> bool {
+                self.visited.borrow_mut().push(self.value);
+                self.value == other.value
+            }
+        }
+        let visited = Rc::new(RefCell::new(Vec::new()));
+        let item = |value| Compared {
+            value,
+            visited: visited.clone(),
+        };
+        let mut values = vec![item(1), item(2), item(3)];
+        super::insert_unique(&mut values, item(2));
+        assert_eq!(*visited.borrow(), vec![1, 2]);
+        assert_eq!(
+            values.iter().map(|entry| entry.value).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        visited.borrow_mut().clear();
+        super::insert_unique(&mut values, item(4));
+        assert_eq!(*visited.borrow(), vec![1, 2, 3]);
+        assert_eq!(
+            values.iter().map(|entry| entry.value).collect::<Vec<_>>(),
+            vec![4, 1, 2, 3]
         );
     }
 }

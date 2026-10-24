@@ -613,7 +613,51 @@ pub fn capture_dispatch_permanently_revoked(world: &World, effect: &EffectId) ->
                 .is_some_and(|capture| capture.eligibility() == RestoreEligibility::Revoked)
     })
 }
+// The original journal records end facts and this native input atomically.
+// Validate every unknown-effect barrier before using the existing Pause
+// compensation reducer; illegal end input cannot even revoke the capture.
 fn prepare(
+    world: &World,
+    id: OriginalContinueIdentity,
+    receipt: CaptureWorkEndReceipt,
+) -> Result<CaptureDecision, CaptureReject> {
+    let plan = original_plan(world, id)?;
+    let row = world
+        .sandbox_record(id.key.sandbox)
+        .ok_or(CaptureReject::SandboxNotFound)?;
+    let operation = row.current_operation.ok_or(CaptureReject::LedgerMismatch)?;
+    if matches!(
+        operation.status,
+        OperationStatus::Pending | OperationStatus::OutcomeUnknown
+    ) {
+        if row.phase != Phase::Pausing {
+            return Err(CaptureReject::WrongPhase);
+        }
+        let capture = plan.capture.ok_or(CaptureReject::LedgerMismatch)?;
+        if capture.commit() != CaptureCommit::NotRegistered {
+            return Err(CaptureReject::CommitUnresolved);
+        }
+        if !capture.accepts_registration() {
+            return Err(CaptureReject::CaptureNotRevoked);
+        }
+        source_resources(world, id)?;
+        ended_attempts(world, id, receipt)?;
+        source_can_continue(world, id)?;
+        let compensated = crate::request::handle_compensation(
+            world,
+            crate::CompensationRequest {
+                sandbox: id.key.sandbox,
+                failure: FailureKind::Cancelled,
+                evidence: None,
+            },
+        )
+        .map_err(|_| CaptureReject::LedgerMismatch)?;
+        return prepare_revoked(&compensated.next, id, receipt);
+    }
+    prepare_revoked(world, id, receipt)
+}
+
+fn prepare_revoked(
     world: &World,
     id: OriginalContinueIdentity,
     receipt: CaptureWorkEndReceipt,
