@@ -159,7 +159,10 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     question(anchor, limits)
 }
 
-fn question(anchor: SourceAnchor, limits: &SourceObservationConfig) -> Result<SourceWork, JournalError> {
+fn question(
+    anchor: SourceAnchor,
+    limits: &SourceObservationConfig,
+) -> Result<SourceWork, JournalError> {
     let requirement = SourceObservationRequirement {
         work_binding: digest(&serde_json::to_vec(&anchor)?),
         node: anchor.node.clone(),
@@ -265,7 +268,11 @@ pub(super) fn validate_record(
     validate_original_actions(world, &namespace, anchor)
 }
 
-fn validate_original_actions(world:&core::World,namespace:&str,anchor:&SourceAnchor)->Result<(),JournalError>{
+fn validate_original_actions(
+    world: &core::World,
+    namespace: &str,
+    anchor: &SourceAnchor,
+) -> Result<(), JournalError> {
     let origin_key = core::OperationKey {
         sandbox: anchor.local.sandbox,
         operation: anchor.local.operation,

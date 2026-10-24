@@ -2366,7 +2366,10 @@ fn original_api_end_rejects_substituted_source_action_worker_digest_and_incomple
             0 => end.source.pid += 1,
             1 => end.action.identity.generation += 1,
             2 => end.full_work_binding = ContentDigest::from_sha256([0; 32]),
-            3 => end.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 100 },
+            3 => {
+                end.outcome =
+                    crate::capture::CaptureRequestEndOutcome::Returned { http_status: 100 }
+            }
             _ => {
                 end.worker = crate::capture::CaptureWorkerBinding::new(
                     SourceProcessIdentity {

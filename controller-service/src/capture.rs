@@ -68,7 +68,9 @@ impl CaptureRequestEndObservation {
             && self.source == source.source
             && match self.outcome {
                 CaptureRequestEndOutcome::NoRequest => true,
-                CaptureRequestEndOutcome::Returned { http_status } => (200..=599).contains(&http_status),
+                CaptureRequestEndOutcome::Returned { http_status } => {
+                    (200..=599).contains(&http_status)
+                }
             })
     }
 }

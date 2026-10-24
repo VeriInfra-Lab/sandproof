@@ -235,45 +235,40 @@ fn captured_question(
     (journal, state, source)
 }
 
-fn save_failed_worker_end(journal:&mut ControllerJournal,source:&SourceWorkRecord){
-            let saved = journal
-                .lifecycle_capture_record(source.work.anchor.local.sandbox)
-                .unwrap()
-                .unwrap();
-            let action = saved.capture_action().unwrap().clone();
-            let worker = crate::capture::CaptureWorkerBinding::new(
-                SourceProcessIdentity {
-                    pid: 2345,
-                    start_time_ticks: 9876,
-                    boot_id: "fixture-boot".into(),
-                },
-                ContentDigest::from_sha256([9; 32]),
-            )
-            .unwrap();
-            journal
-                .authorize_lifecycle_full_capture(
-                    &source.work,
-                    &v3::context(),
-                    &action,
-                    worker,
-                    10,
-                    &mut NeverCrash,
-                )
-                .unwrap();
-            let saved = journal
-                .lifecycle_capture_record(source.work.anchor.local.sandbox)
-                .unwrap()
-                .unwrap();
-            let mut end = actual_api_end(&saved);
-            end.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 500 };
-            journal
-                .record_lifecycle_capture_request_end(
-                    &source.work,
-                    &v3::context(),
-                    end,
-                    &mut NeverCrash,
-                )
-                .unwrap();
+fn save_failed_worker_end(journal: &mut ControllerJournal, source: &SourceWorkRecord) {
+    let saved = journal
+        .lifecycle_capture_record(source.work.anchor.local.sandbox)
+        .unwrap()
+        .unwrap();
+    let action = saved.capture_action().unwrap().clone();
+    let worker = crate::capture::CaptureWorkerBinding::new(
+        SourceProcessIdentity {
+            pid: 2345,
+            start_time_ticks: 9876,
+            boot_id: "fixture-boot".into(),
+        },
+        ContentDigest::from_sha256([9; 32]),
+    )
+    .unwrap();
+    journal
+        .authorize_lifecycle_full_capture(
+            &source.work,
+            &v3::context(),
+            &action,
+            worker,
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let saved = journal
+        .lifecycle_capture_record(source.work.anchor.local.sandbox)
+        .unwrap()
+        .unwrap();
+    let mut end = actual_api_end(&saved);
+    end.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 500 };
+    journal
+        .record_lifecycle_capture_request_end(&source.work, &v3::context(), end, &mut NeverCrash)
+        .unwrap();
 }
 
 #[test]
@@ -282,7 +277,9 @@ fn actual_application_continues_only_original_frozen_or_running_vm_and_rechecks_
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
         let (mut journal, state, source) = captured_question(&path, frozen);
-        if frozen { save_failed_worker_end(&mut journal, &source); }
+        if frozen {
+            save_failed_worker_end(&mut journal, &source);
+        }
         let before = journal.world().unwrap();
         let sandbox = source.work.anchor.local.sandbox;
         let original = before.sandbox_record(sandbox).unwrap().clone();
